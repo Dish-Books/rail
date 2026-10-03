@@ -49,15 +49,11 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
 
   defp source_id(%{id: id}), do: id
 
-  # The past answer each suggestion offered, so one taken as it stood is told apart from one rewritten.
+  # The answer each suggestion offered, the rule as it reads now, so one taken as offered is told apart from one rewritten.
   defp suggested_answers(records) do
     ids = for %Question{suggested_learning_id: id} <- records, is_binary(id), do: id
 
-    from(o in Observation,
-      where: o.learning_id in ^ids and o.source_kind == :answer,
-      order_by: [asc: o.inserted_at],
-      select: {o.learning_id, o.excerpt}
-    )
+    from(l in Learning, where: l.id in ^ids, select: {l.id, l.rule})
     |> Repo.all()
     |> Map.new()
   end

@@ -43,10 +43,16 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearnings do
     dir = Path.join([Rail.scratch_root(), project.id, "learnings", "tasks", task.id])
     File.rm_rf!(dir)
     File.mkdir_p!(Path.join(dir, "transcripts"))
-    write_files(task, dir)
 
-    with {:ok, result} <- run_curator_role(project, dir, brief(task, dir)) do
-      record(task, result)
+    # The files are copies of what the database holds, so none outlive the pass.
+    try do
+      write_files(task, dir)
+
+      with {:ok, result} <- run_curator_role(project, dir, brief(task, dir)) do
+        record(task, result)
+      end
+    after
+      File.rm_rf(dir)
     end
   end
 

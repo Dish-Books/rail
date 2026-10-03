@@ -55,14 +55,23 @@ defmodule Rail.Learnings.Actions.ApproveLearningProposalTest do
     end
   end
 
-  test "a retire retires its rule and settles an override on it", %{project: project, scope: scope} do
+  test "a retire retires its rule and rejects what else was pending on it", %{project: project, scope: scope} do
     rule = learning(project, %{rule: "Code gone", kind: :environment})
     override = Repo.insert!(%LearningProposal{project_id: project.id, action: :override, learning_id: rule.id})
     proposal = Repo.insert!(%LearningProposal{project_id: project.id, action: :retire, learning_id: rule.id})
 
     assert {:ok, _approved} = Learnings.approve_learning_proposal(scope, proposal)
     assert %Learning{status: :retired} = Repo.reload!(rule)
-    assert %LearningProposal{status: :approved} = Repo.reload!(override)
+    assert %LearningProposal{status: :rejected} = Repo.reload!(override)
+  end
+
+  test "an add on a rule retired since is refused and the rule stays retired", %{project: project, scope: scope} do
+    rule = learning(project, %{rule: "Retired since", kind: :convention}, status: :retired)
+    proposal = Repo.insert!(%LearningProposal{project_id: project.id, action: :add, learning_id: rule.id})
+
+    assert {:error, :retired} = Learnings.approve_learning_proposal(scope, proposal)
+    assert %Learning{status: :retired} = Repo.reload!(rule)
+    assert %LearningProposal{status: :pending} = Repo.reload!(proposal)
   end
 
   test "a conflict and an override are marked resolved and change no rule", %{project: project, scope: scope} do

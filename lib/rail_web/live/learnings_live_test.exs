@@ -111,6 +111,17 @@ defmodule RailWeb.LearningsLiveTest do
     assert [_before, after_near] = String.split(html, "learning-card-#{near.id}")
     assert after_near =~ "learning-card-#{far_rule.id}"
 
+    assert_received {:embedded, "doc on components", "RETRIEVAL_QUERY"}
+    send(view.pid, {:learnings_changed, project.id})
+    assert has_element?(view, "#learnings-match-line", "2 matches, best first")
+    refute_received {:embedded, _text, _task_type}
+
+    view |> form("#learnings-search-form", %{q: "components"}) |> render_change()
+    assert_received {:embedded, "components", "RETRIEVAL_QUERY"}
+
+    {:ok, _view, _html} = live(conn, ~p"/learnings?status=review&q=components")
+    refute_received {:embedded, _text, _task_type}
+
     stub_vertex_down()
     {:ok, view, _html} = live(conn, ~p"/learnings?status=active&q=anything")
     assert has_element?(view, "#learnings-match-line", "Search is unavailable right now")
@@ -193,6 +204,42 @@ defmodule RailWeb.LearningsLiveTest do
     assert_patch(view, ~p"/learnings?status=review")
     assert %Learning{status: :active} = Repo.reload!(other)
     assert has_element?(view, "#learnings-empty", "Nothing to review")
+  end
+
+  test "a second click on Approve after the first decided names the proposal, so it never decides the next", %{
+    conn: conn,
+    project: project
+  } do
+    [first, second] =
+      for n <- 1..2 do
+        draft = learning(project, %{rule: "Draft #{n}", kind: :convention}, status: :proposed)
+        Repo.insert!(%LearningProposal{project_id: project.id, action: :add, learning_id: draft.id})
+      end
+
+    {:ok, view, _html} = live(conn, ~p"/learnings/proposals/#{first.id}")
+    view |> element("#approve-proposal-button") |> render_click()
+    render_click(view, "approve_proposal", %{"id" => first.id})
+
+    assert has_element?(view, "#learnings-error", "Someone already decided this proposal.")
+    assert %LearningProposal{status: :approved} = Repo.reload!(first)
+    assert %LearningProposal{status: :pending} = Repo.reload!(second)
+
+    render_click(view, "reject_proposal", %{"id" => "lpr_none"})
+    assert has_element?(view, "#learnings-error", "Someone already decided this proposal.")
+  end
+
+  test "Keep rule clicked twice decides its override once and leaves the page working", %{conn: conn, project: project} do
+    rule = learning(project, %{rule: "Don't flag a missing @doc", kind: :calibration})
+    override = Repo.insert!(%LearningProposal{project_id: project.id, action: :override, learning_id: rule.id})
+
+    {:ok, view, _html} = live(conn, ~p"/learnings/#{rule.id}")
+    view |> element("#keep-rule-button") |> render_click()
+    render_click(view, "keep_rule", %{"id" => override.id})
+    render_click(view, "keep_rule", %{})
+
+    assert %LearningProposal{status: :rejected} = Repo.reload!(override)
+    assert has_element?(view, "#learning-rule", "Don't flag a missing @doc")
+    refute has_element?(view, "#keep-rule-button")
   end
 
   test "rejecting a proposal leaves its rule as it was", %{conn: conn, project: project} do
@@ -376,6 +423,15 @@ defmodule RailWeb.LearningsLiveTest do
 
     assert has_element?(view, "#learning-form-modal")
     refute Repo.get_by(Learning, rule: "Smuggled")
+
+    override = Repo.insert!(%LearningProposal{project_id: hidden.id, action: :override, learning_id: rule.id})
+
+    for {event, id} <- [{"approve_proposal", proposal.id}, {"reject_proposal", proposal.id}, {"keep_rule", override.id}] do
+      render_click(view, event, %{"id" => id})
+    end
+
+    assert %LearningProposal{status: :pending} = Repo.reload!(proposal)
+    assert %LearningProposal{status: :pending} = Repo.reload!(override)
   end
 
   test "the digest link names the triage channel and opens the latest digest", %{conn: conn, project: project} do
@@ -494,6 +550,8 @@ defmodule RailWeb.LearningsLiveTest do
       assert has_element?(view, "#proposal-promote", "Approving opens an issue to make this a role prompt")
 
       {:ok, view, _html} = live(conn, ~p"/learnings/proposals/#{proposals.add.id}")
+      assert [_one] = Regex.scan(~r/data-qa="proposal-draft"/, render(view))
+      refute has_element?(view, "[data-qa=proposal-subject]")
       assert has_element?(view, "#proposal-detail", "Curator, Oct 3 06:00")
       assert has_element?(view, "#proposal-evidence", "Evidence · 4")
       assert has_element?(view, "#proposal-evidence", "PRV-1")
@@ -561,7 +619,9 @@ defmodule RailWeb.LearningsLiveTest do
   end
 
   test "Keep rule from a second tab is told it was already decided, and the queue opens an override on its rule", %{
-    conn: conn
+    conn: conn,
+    user: user,
+    project: granted
   } do
     {:ok, project} =
       Rail.Projects.create_project(system_scope(), %{
@@ -573,6 +633,7 @@ defmodule RailWeb.LearningsLiveTest do
         clone_path: "/tmp/repos/keep-rule"
       })
 
+    {:ok, _user} = Users.update_user(system_scope(), user, %{project_ids: [granted.id, project.id]})
     conn = Plug.Conn.put_session(conn, :selected_project_id, project.id)
     rule = learning(project, %{rule: "Don't flag docs", kind: :calibration})
     override = Repo.insert!(%LearningProposal{project_id: project.id, action: :override, learning_id: rule.id})

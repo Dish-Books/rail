@@ -16,7 +16,8 @@ defmodule Rail.Learnings.Actions.ListLearnings do
 
   @doc """
   Returns `{:ok, learnings}` with project and card figures, taking `search_learnings/2`'s filters, `:status`, `:query`,
-  `:limit` (50 for a query, 100 otherwise) and `sources: true`; or `{:error, reason}` when the query cannot be embedded.
+  `:embedding` (the query's, already made), `:limit` (50 for a query, 100 otherwise) and `sources: true`;
+  or `{:error, reason}` when the query cannot be embedded.
   """
   def list_learnings(opts \\ []) do
     filters =
@@ -24,7 +25,7 @@ defmodule Rail.Learnings.Actions.ListLearnings do
       |> Keyword.take(@filters)
       |> Keyword.put_new(:statuses, opts[:status] && [opts[:status]])
 
-    with {:ok, learnings} <- search(filters, text(opts[:query]), opts[:limit]) do
+    with {:ok, learnings} <- search(filters, text(opts[:query]), opts[:embedding], opts[:limit]) do
       learnings =
         learnings
         |> Repo.preload([:project, :approved_by])
@@ -35,11 +36,14 @@ defmodule Rail.Learnings.Actions.ListLearnings do
     end
   end
 
-  defp search(filters, nil, limit), do: {:ok, search_learnings([{:limit, limit || 100} | filters], nil)}
+  defp search(filters, nil, _embedding, limit), do: {:ok, search_learnings([{:limit, limit || 100} | filters], nil)}
 
-  defp search(filters, query, limit) do
+  defp search(filters, _query, embedding, limit) when is_list(embedding),
+    do: {:ok, search_learnings([{:limit, limit || 50} | filters], embedding)}
+
+  defp search(filters, query, nil, limit) do
     with {:ok, embedding} <- Vertex.embed(query, "RETRIEVAL_QUERY") do
-      {:ok, search_learnings([{:limit, limit || 50} | filters], embedding)}
+      search(filters, query, embedding, limit)
     end
   end
 

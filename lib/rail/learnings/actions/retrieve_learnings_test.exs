@@ -93,4 +93,13 @@ defmodule Rail.Learnings.Actions.RetrieveLearningsTest do
     refute_received {:embedded, _text, _task_type}
     assert [] = Repo.all(from r in LearningRetrieval, join: l in assoc(r, :learning), where: l.project_id == ^project.id)
   end
+
+  test "Goth exiting at run start leaves the run with its pinned rules", %{project: project, run: run} do
+    learning(project, %{rule: "Embedded", kind: :convention}, embedding: [1.0])
+    %{id: pinned_id} = learning(project, %{rule: "Pinned", kind: :convention, pinned: true})
+    stub(Rail, :goth_enabled?, fn -> true end)
+    stub(Goth, :fetch, fn Rail.Goth -> exit(:noproc) end)
+
+    assert [%Learning{id: ^pinned_id}] = Learnings.retrieve_learnings(run, ["the ticket"])
+  end
 end

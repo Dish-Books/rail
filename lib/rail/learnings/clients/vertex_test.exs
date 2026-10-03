@@ -47,4 +47,31 @@ defmodule Rail.Learnings.Clients.VertexTest do
   test "with Goth off it returns an error and sends nothing" do
     assert {:error, :goth_disabled} = Vertex.embed("Use the factory", "RETRIEVAL_DOCUMENT")
   end
+
+  describe "Goth failing" do
+    setup do
+      stub(Rail, :goth_enabled?, fn -> true end)
+      stub(Goth.Config, :get, fn :project_id -> {:ok, "rail-testing"} end)
+      Req.Test.stub(Vertex, fn _conn -> flunk("a request was sent without a token") end)
+      :ok
+    end
+
+    test "an exit fetching the token is an error, not a crash" do
+      stub(Goth, :fetch, fn Rail.Goth -> exit(:timeout) end)
+      assert {:error, {:goth_unavailable, :timeout}} = Vertex.embed("text", "RETRIEVAL_QUERY")
+
+      stub(Goth, :fetch, fn Rail.Goth -> {:error, :refused} end)
+      assert {:error, {:goth_unavailable, :refused}} = Vertex.embed("text", "RETRIEVAL_QUERY")
+    end
+
+    test "no project, or credentials that do not resolve, are errors" do
+      stub(Goth, :fetch, fn Rail.Goth -> {:ok, %Goth.Token{token: "test_token"}} end)
+
+      stub(Goth.Config, :get, fn :project_id -> :error end)
+      assert {:error, :no_project_id} = Vertex.embed("text", "RETRIEVAL_QUERY")
+
+      stub(Goth.Config, :get, fn :project_id -> raise "no credentials" end)
+      assert {:error, {:goth_unavailable, %RuntimeError{}}} = Vertex.embed("text", "RETRIEVAL_QUERY")
+    end
+  end
 end

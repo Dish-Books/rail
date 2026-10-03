@@ -13,14 +13,17 @@ defmodule Rail.Learnings.Utils.ApplyProposal do
   alias Rail.Scope
 
   @doc """
-  Applies `proposal` as `scope`: a system scope activates its draft as `auto`.
-  Returns `{:ok, proposal}`, or the error opening a promotion's issue gave.
+  Applies `proposal` as `scope`: a system scope activates its draft as `auto`. Returns `{:ok, proposal}`,
+  `{:error, :retired}` for a rule no longer proposed or provisional, or the error opening a promotion's issue gave.
   """
   def apply_proposal(%Scope{} = scope, %LearningProposal{} = proposal) do
     %LearningProposal{learning: %Learning{} = learning} = proposal = Repo.preload(proposal, [:project, :learning])
     now = DateTime.utc_now()
 
     case proposal.action do
+      action when action in [:add, :merge, :rewrite] and learning.status not in [:proposed, :provisional] ->
+        {:error, :retired}
+
       action when action in [:add, :merge, :rewrite] ->
         learning
         |> Ecto.Changeset.change(
@@ -54,10 +57,9 @@ defmodule Rail.Learnings.Utils.ApplyProposal do
 
     Repo.update_all(
       from(p in LearningProposal,
-        where: p.learning_id in ^ids and p.project_id == ^project_id,
-        where: p.action == :override and p.status == :pending
+        where: p.learning_id in ^ids and p.project_id == ^project_id and p.status == :pending
       ),
-      set: [status: :approved, decided_at: now]
+      set: [status: :rejected, decided_at: now]
     )
   end
 

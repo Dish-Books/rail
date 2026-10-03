@@ -1,7 +1,7 @@
 defmodule Rail.Learnings.Actions.RetireLearning do
   @moduledoc """
-  Retires a rule, settling any override flagging it. A rule already retired is
-  returned as it is, so a second tab retiring it too succeeds.
+  Retires a rule and rejects every proposal still pending on it, so none can bring
+  it back. A rule already retired is returned as it is, so a second tab succeeds too.
   """
 
   import Ecto.Query
@@ -28,9 +28,9 @@ defmodule Rail.Learnings.Actions.RetireLearning do
         Repo.update_all(
           from(p in LearningProposal,
             where: p.learning_id == ^id and p.project_id == ^project_id,
-            where: p.action == :override and p.status == :pending
+            where: p.status == :pending
           ),
-          set: [status: :approved, decided_by_id: scope.user && scope.user.id, decided_at: now]
+          set: [status: :rejected, decided_by_id: scope.user && scope.user.id, decided_at: now]
         )
 
         Repo.get!(Learning, id)

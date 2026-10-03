@@ -118,4 +118,9 @@ defmodule Rail.Learnings.Workers.CollectPullRequestTest do
     assert [%Observation{abandoned: false, task_id: nil}, %Observation{abandoned: true}] =
              Repo.all(from o in Observation, where: o.project_id == ^project.id, order_by: [asc: o.abandoned])
   end
+
+  test "is queued apart from agent passes", %{project: project} do
+    assert {:ok, %Oban.Job{queue: "learnings_embed"}} =
+             %{project_id: project.id, number: 5} |> CollectPullRequest.new() |> Oban.insert()
+  end
 end

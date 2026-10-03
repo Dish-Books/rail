@@ -1579,5 +1579,17 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       assert [%Question{answered_by_rail: true, delivered_at: nil}, %Question{status: :pending}] =
                Repo.all(from q in Question, where: q.task_id == ^task.id, order_by: [asc: q.inserted_at, asc: q.id])
     end
+
+    test "waits on a turn a person stopped, rather than resuming it", %{task: task, exited: exited, asked: asked} do
+      {run, os_process} = exited.(:product, %{})
+      asked.(run, os_process, ["Which database?"])
+      {:ok, os_process} = os_process |> Ecto.Changeset.change(ended_reason: :stopped) |> Repo.update()
+      reject(&Tools.start_os_process/2)
+
+      assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+
+      assert [%Question{answered_by_rail: true, delivered_at: nil}] =
+               Repo.all(from q in Question, where: q.task_id == ^task.id)
+    end
   end
 end

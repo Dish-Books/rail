@@ -3,7 +3,7 @@ defmodule Rail.Learnings.Workers.EmbedLearning do
   Embeds one rule after its text is written, unique only while waiting so an edit made mid-run gets a job of its own.
   """
   use Oban.Worker,
-    queue: :learnings,
+    queue: :learnings_embed,
     max_attempts: 5,
     unique: [keys: [:learning_id], states: [:available, :scheduled, :retryable]]
 

@@ -212,5 +212,22 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
                %Question{prompt: "Ship behind a flag?", status: :pending, suggested_learning_id: nil}
              ] = Repo.all(from q in Question, where: q.task_id == ^task_id, order_by: [asc: q.inserted_at, asc: q.id])
     end
+
+    test "a rule edited since it was learned answers with what it says now", %{
+      task: %Task{id: task_id},
+      run: run,
+      rule: rule,
+      spawn_os_process: spawn_os_process,
+      say: say
+    } do
+      {:ok, _edited} = Rail.Learnings.update_learning(system_scope(), rule, %{rule: "Postgres, with pgvector."})
+      os_process = spawn_os_process.()
+      say.(os_process, "[QUESTION: Which database?]")
+
+      assert [_one] = register_asked_questions(os_process, run)
+
+      assert [%Question{status: :answered, answer: "Postgres, with pgvector.", answered_by_rail: true}] =
+               Repo.all(from q in Question, where: q.task_id == ^task_id)
+    end
   end
 end

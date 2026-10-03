@@ -20,7 +20,8 @@ defmodule RailWeb.Components.LearningProposalDetail do
         action when action in [:merge, :rewrite] -> {proposal.targets, nil}
         :retire -> {[proposal.learning], nil}
         :conflict -> {[], [proposal.learning | proposal.targets]}
-        _add_or_promote -> {[], [proposal.learning]}
+        :promote -> {[], [proposal.learning]}
+        _add_or_override -> {[], nil}
       end
 
     assigns =
@@ -51,7 +52,13 @@ defmodule RailWeb.Components.LearningProposalDetail do
           </h2>
         </div>
         <div class="shrink-0 flex gap-2">
-          <.button size="sm" variant="ghost" id="reject-proposal-button" phx-click="reject_proposal">
+          <.button
+            size="sm"
+            variant="ghost"
+            id="reject-proposal-button"
+            phx-click="reject_proposal"
+            phx-value-id={@proposal.id}
+          >
             Reject
           </.button>
           <.button :if={@show_edit} size="sm" id="edit-proposal-button" phx-click="edit_learning">
@@ -62,6 +69,7 @@ defmodule RailWeb.Components.LearningProposalDetail do
             variant="primary"
             id="approve-proposal-button"
             phx-click="approve_proposal"
+            phx-value-id={@proposal.id}
           >
             <.icon name="pi-check-bold" class="size-[1.1em]" />Approve
           </.button>

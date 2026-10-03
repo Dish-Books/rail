@@ -425,4 +425,59 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     assert text =~ "1 retire"
     assert text =~ "*Provisional since the last run 1:* from a diff comment on CUR-1"
   end
+
+  test "a third task's sighting linked to a pending add on a retired rule activates nothing", %{
+    project: project,
+    tasks: [one, two, three | _rest],
+    sighting: sighting
+  } do
+    rule = learning(project, %{rule: "Retired since", kind: :convention}, status: :retired)
+    early = Enum.map([one, two], &sighting.(&1, %{learning_id: rule.id, curator_pass_id: nil}))
+
+    proposal =
+      Repo.insert!(%LearningProposal{
+        project_id: project.id,
+        action: :add,
+        learning_id: rule.id,
+        evidence_ids: Enum.map(early, & &1.id)
+      })
+
+    later = sighting.(three, %{})
+
+    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+      File.write!(
+        Path.join(opts[:cd], "result.json"),
+        Jason.encode!(%{"outcomes" => [%{"observation" => later.id, "outcome" => "link", "learning" => rule.id}]})
+      )
+
+      {:ok, ""}
+    end)
+
+    assert {:ok, %CuratorPass{}} = Learnings.curate_learnings(project)
+    assert %Learning{status: :retired} = Repo.reload!(rule)
+    assert %LearningProposal{status: :pending} = Repo.reload!(proposal)
+  end
+
+  test "the pass's folder is gone after it, whether it finished or failed", %{project: project} do
+    test = self()
+
+    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+      send(test, {:dir, opts[:cd]})
+      File.write!(Path.join(opts[:cd], "result.json"), ~s({}))
+      {:ok, ""}
+    end)
+
+    assert {:ok, _pass} = Learnings.curate_learnings(project)
+    assert_received {:dir, dir}
+    refute File.exists?(dir)
+
+    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+      send(test, {:dir, opts[:cd]})
+      {:error, {:exit, 1}}
+    end)
+
+    assert {:error, _failed} = Learnings.curate_learnings(project)
+    assert_received {:dir, failed_dir}
+    refute File.exists?(failed_dir)
+  end
 end

@@ -60,7 +60,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
           |> settle_run(outcome)
           |> finish(os_process, opts)
           |> drain_queued_message(opts)
-          |> send_rail_answers()
+          |> send_rail_answers(os_process)
           |> broadcast_pipeline_changed()
 
         {:ok, run}
@@ -241,9 +241,11 @@ defmodule Rail.Pipeline.Actions.RunFinished do
     %{latched | task: run.task, role: run.role}
   end
 
-  # A round Rail answered whole from past answers waits on nobody, so it goes
-  # back at once; a round with anything a person still has to answer waits.
-  defp send_rail_answers(%Run{} = run) do
+  # A round Rail answered whole from past answers waits on nobody, so it goes back at
+  # once; one a person still has to answer waits, as does one whose turn was stopped.
+  defp send_rail_answers(%Run{} = run, %OsProcess{ended_reason: :stopped}), do: run
+
+  defp send_rail_answers(%Run{} = run, %OsProcess{}) do
     round = unsent_round(run)
 
     if round != [] and Enum.all?(round, &(&1.status == :answered and &1.answered_by_rail)) do

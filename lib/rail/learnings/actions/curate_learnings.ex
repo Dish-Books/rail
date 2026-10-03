@@ -94,11 +94,15 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
 
     dir = Path.join([Rail.scratch_root(), project.id, "learnings", "curator", pass.id])
 
-    with {:ok, _queued} <- enqueue_pull_requests(project, since),
-         {:ok, checkout} <- Git.checkout_detached_worktree(project, checkout),
-         :ok <- write_files(project, dir, observations, since),
-         {:ok, result} <- run_curator_role(project, dir, brief(project, dir, checkout)) do
-      {:ok, fold(project, pass, observations, result)}
+    try do
+      with {:ok, _queued} <- enqueue_pull_requests(project, since),
+           {:ok, checkout} <- Git.checkout_detached_worktree(project, checkout),
+           :ok <- write_files(project, dir, observations, since),
+           {:ok, result} <- run_curator_role(project, dir, brief(project, dir, checkout)) do
+        {:ok, fold(project, pass, observations, result)}
+      end
+    after
+      File.rm_rf(dir)
     end
   end
 
@@ -195,7 +199,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
           |> Enum.filter(&(&1.action == :add))
           |> Enum.uniq_by(& &1.id)
           |> Enum.filter(&backed?/1)
-          |> Enum.map(&activate/1)
+          |> Enum.flat_map(&activate/1)
 
         Repo.update_all(from(o in Observation, where: o.id in ^MapSet.to_list(read)), set: [curator_pass_id: pass_id])
         Repo.update_all(from(p in CuratorPass, where: p.id == ^pass_id), set: [finished_at: DateTime.utc_now()])
@@ -324,14 +328,19 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
     tasks >= @auto_tasks
   end
 
+  # A rule retired since its add was proposed stays retired.
   defp activate(%LearningProposal{id: id} = proposal) do
-    {:ok, _applied} = apply_proposal(Scope.for_system(), proposal)
+    case apply_proposal(Scope.for_system(), proposal) do
+      {:ok, _applied} ->
+        Repo.update_all(from(p in LearningProposal, where: p.id == ^id),
+          set: [status: :approved, decided_at: DateTime.utc_now()]
+        )
 
-    Repo.update_all(from(p in LearningProposal, where: p.id == ^id),
-      set: [status: :approved, decided_at: DateTime.utc_now()]
-    )
+        [Repo.get!(Learning, proposal.learning_id)]
 
-    Repo.get!(Learning, proposal.learning_id)
+      {:error, :retired} ->
+        []
+    end
   end
 
   defp strings(list) when is_list(list), do: Enum.filter(list, &is_binary/1)

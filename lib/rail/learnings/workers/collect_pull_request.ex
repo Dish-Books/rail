@@ -4,7 +4,7 @@ defmodule Rail.Learnings.Workers.CollectPullRequest do
   so a PR queued twice is fetched once; a failed fetch writes nothing and is retried.
   """
   use Oban.Worker,
-    queue: :learnings,
+    queue: :learnings_embed,
     max_attempts: 5,
     unique: [keys: [:project_id, :number], states: :incomplete]
 

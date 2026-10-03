@@ -230,4 +230,29 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
     assert {:ok, %Task{learnings_extracted_at: %DateTime{}}} = Learnings.extract_task_learnings(plain)
     refute_enqueued(worker: CollectPullRequest)
   end
+
+  test "the task's folder is gone after the pass, whether it finished or failed", %{project: project} do
+    test = self()
+    finished = learnings_task(project, "EXT-3")
+    failing = learnings_task(project, "EXT-4")
+
+    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+      send(test, {:dir, opts[:cd]})
+      File.write!(Path.join(opts[:cd], "result.json"), ~s({"observations": []}))
+      {:ok, ""}
+    end)
+
+    assert {:ok, _extracted} = Learnings.extract_task_learnings(finished)
+    assert_received {:dir, dir}
+    refute File.exists?(dir)
+
+    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+      send(test, {:dir, opts[:cd]})
+      {:error, {:exit, 1}}
+    end)
+
+    assert {:error, {:exit, 1}} = Learnings.extract_task_learnings(failing)
+    assert_received {:dir, failed_dir}
+    refute File.exists?(failed_dir)
+  end
 end

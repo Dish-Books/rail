@@ -87,7 +87,12 @@ defmodule RailWeb.Components.LearningDetail do
             <p class="flex-1 min-w-0 text-[13px] text-amber-900 dark:text-amber-100">
               <.override_line override={@stats.pending_override} />
             </p>
-            <.button size="sm" id="keep-rule-button" phx-click="keep_rule">
+            <.button
+              size="sm"
+              id="keep-rule-button"
+              phx-click="keep_rule"
+              phx-value-id={@stats.pending_override.proposal.id}
+            >
               <.icon name="pi-check-bold" class="size-[1.1em]" />Keep rule
             </.button>
           </div>

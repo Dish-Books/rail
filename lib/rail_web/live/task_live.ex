@@ -759,12 +759,16 @@ defmodule RailWeb.TaskLive do
 
       ids ->
         {:ok, rules} = Learnings.list_learnings(ids: Enum.uniq(ids), sources: true)
-        sources = Map.new(rules, &{&1.id, Enum.find(&1.observations, fn source -> source.source_kind == :answer end)})
+        rules = Map.new(rules, &{&1.id, &1})
 
-        for %{suggested_learning_id: id} = question <- round_questions, source = sources[id], into: %{} do
+        # The answer is the rule as it reads now; who gave it, where and when are its latest source's.
+        for %{suggested_learning_id: id} = question <- round_questions,
+            rule = rules[id],
+            source = Enum.find(rule.observations, &(&1.source_kind == :answer)),
+            into: %{} do
           {question.id,
            %{
-             answer: source.excerpt,
+             answer: rule.rule,
              by: Observation.actor_label(source),
              identifier: source.task && source.task.issue.identifier,
              task_id: source.task_id,

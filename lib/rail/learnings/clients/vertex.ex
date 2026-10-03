@@ -19,8 +19,8 @@ defmodule Rail.Learnings.Clients.Vertex do
   end
 
   defp request(text, task_type) do
-    with {:ok, %{token: token}} <- Goth.fetch(Rail.Goth),
-         {:ok, project_id} <- Goth.Config.get(:project_id) do
+    with {:ok, token} <- token(),
+         {:ok, project_id} <- project_id() do
       [
         base_url: "https://aiplatform.googleapis.com/v1",
         url: "/projects/#{project_id}/locations/global/publishers/google/models/#{@model}:predict",
@@ -42,5 +42,25 @@ defmodule Rail.Learnings.Clients.Vertex do
           {:error, reason}
       end
     end
+  end
+
+  # Goth exits when its server is slow or gone and raises when no credentials
+  # resolve; either is an embedding that cannot be made, not a crash for the caller.
+  defp token do
+    case Goth.fetch(Rail.Goth) do
+      {:ok, %{token: token}} -> {:ok, token}
+      {:error, reason} -> {:error, {:goth_unavailable, reason}}
+    end
+  catch
+    :exit, reason -> {:error, {:goth_unavailable, reason}}
+  end
+
+  defp project_id do
+    case Goth.Config.get(:project_id) do
+      {:ok, project_id} when is_binary(project_id) -> {:ok, project_id}
+      _missing -> {:error, :no_project_id}
+    end
+  rescue
+    exception -> {:error, {:goth_unavailable, exception}}
   end
 end

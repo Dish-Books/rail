@@ -5,15 +5,19 @@ defmodule Rail.Learnings.Actions.RetireLearningTest do
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Learnings.Schemas.LearningProposal
 
-  test "retiring sets the status and time, settles an override and broadcasts", %{project: %{id: project_id} = project} do
-    rule = learning(project, %{rule: "Don't flag docs", kind: :calibration})
+  test "retiring sets the status and time, rejects every proposal pending on the rule and broadcasts", %{
+    project: %{id: project_id} = project
+  } do
+    rule = learning(project, %{rule: "Don't flag docs", kind: :calibration}, status: :provisional)
     override = Repo.insert!(%LearningProposal{project_id: project.id, action: :override, learning_id: rule.id})
+    confirm = Repo.insert!(%LearningProposal{project_id: project.id, action: :add, learning_id: rule.id})
     Phoenix.PubSub.subscribe(Rail.PubSub, "learnings")
 
     assert {:ok, %Learning{status: :retired, retired_at: %DateTime{} = retired_at}} =
              Learnings.retire_learning(system_scope(), rule)
 
-    assert %LearningProposal{status: :approved} = Repo.reload!(override)
+    assert %LearningProposal{status: :rejected, decided_at: %DateTime{}} = Repo.reload!(override)
+    assert %LearningProposal{status: :rejected} = Repo.reload!(confirm)
     assert_received {:learnings_changed, ^project_id}
 
     assert {:ok, %Learning{status: :retired, retired_at: ^retired_at}} = Learnings.retire_learning(system_scope(), rule)

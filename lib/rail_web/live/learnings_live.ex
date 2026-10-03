@@ -13,6 +13,8 @@ defmodule RailWeb.LearningsLive do
 
   @errors %{
     already_decided: "Someone already decided this proposal.",
+    not_found: "Someone already decided this proposal.",
+    retired: "This rule was retired, so it cannot be made active again.",
     linear_team_not_found: "This project has no Linear team to open the issue in."
   }
 
@@ -36,6 +38,7 @@ defmodule RailWeb.LearningsLive do
       |> assign(:form_project_id, nil)
       |> assign(:error, nil)
       |> assign(:show_all_suppressed, false)
+      |> assign(:query_embedding, nil)
 
     {:ok, socket}
   end
@@ -231,21 +234,25 @@ defmodule RailWeb.LearningsLive do
     {:noreply, load(socket)}
   end
 
-  def handle_event("keep_rule", _params, socket) do
-    %{pending_override: %{proposal: proposal}} = socket.assigns.stats
-
-    case Learnings.reject_learning_proposal(socket.assigns.current_scope, proposal) do
-      {:ok, _kept} -> {:noreply, load(socket)}
+  # Each decision names its proposal, so a second click lands on the one already
+  # decided, never on whichever the queue opened after it.
+  def handle_event("keep_rule", %{"id" => id}, socket) do
+    with {:ok, proposal} <- visible_proposal(socket, id),
+         {:ok, _kept} <- Learnings.reject_learning_proposal(socket.assigns.current_scope, proposal) do
+      {:noreply, load(socket)}
+    else
       {:error, reason} -> refused(socket, reason)
     end
   end
 
-  def handle_event("approve_proposal", _params, socket) do
-    decided(socket, Learnings.approve_learning_proposal(socket.assigns.current_scope, socket.assigns.proposal))
+  def handle_event("keep_rule", _no_override, socket), do: {:noreply, load(socket)}
+
+  def handle_event("approve_proposal", %{"id" => id}, socket) do
+    decide(socket, id, &Learnings.approve_learning_proposal(socket.assigns.current_scope, &1))
   end
 
-  def handle_event("reject_proposal", _params, socket) do
-    decided(socket, Learnings.reject_learning_proposal(socket.assigns.current_scope, socket.assigns.proposal))
+  def handle_event("reject_proposal", %{"id" => id}, socket) do
+    decide(socket, id, &Learnings.reject_learning_proposal(socket.assigns.current_scope, &1))
   end
 
   def handle_event("show_all_suppressed", _params, socket) do
@@ -262,8 +269,24 @@ defmodule RailWeb.LearningsLive do
   def handle_info(_message, socket), do: {:noreply, socket}
 
   # A decided proposal leaves the queue, so the next one is opened in its place.
-  defp decided(socket, {:ok, _proposal}), do: {:noreply, push_patch(socket, to: list_path(socket.assigns, []))}
-  defp decided(socket, {:error, reason}), do: refused(socket, reason)
+  defp decide(socket, id, action) do
+    with {:ok, proposal} <- visible_proposal(socket, id),
+         {:ok, _decided} <- action.(proposal) do
+      {:noreply, push_patch(socket, to: list_path(socket.assigns, []))}
+    else
+      {:error, reason} -> refused(socket, reason)
+    end
+  end
+
+  # A crafted id for another project's proposal is told what a missing one is.
+  defp visible_proposal(socket, id) do
+    with {:ok, proposal} <- Learnings.get_learning_proposal(id),
+         true <- Scope.can_access_project?(socket.assigns.current_scope, proposal.project_id) do
+      {:ok, proposal}
+    else
+      _missing_or_hidden -> {:error, :not_found}
+    end
+  end
 
   defp refused(socket, reason) do
     socket = socket |> load() |> assign(:error, error_message(reason))
@@ -280,10 +303,12 @@ defmodule RailWeb.LearningsLive do
     project_id = assigns.project_filter
     detail = detail(assigns.selected, assigns.current_scope)
     status = assigns.status_param || status_of(detail)
-    {learnings, proposals, unavailable} = list(assigns, project_id, status)
+    query_embedding = query_embedding(assigns, status)
+    {learnings, proposals, unavailable} = list(assigns, project_id, status, query_embedding)
     detail = detail || first(learnings, proposals, assigns.current_scope)
 
     socket
+    |> assign(:query_embedding, query_embedding)
     |> assign(:status, status)
     |> assign(:counts, Learnings.count_learnings(project_id: project_id))
     |> assign(:learnings, learnings)
@@ -294,23 +319,32 @@ defmodule RailWeb.LearningsLive do
     |> assign_params()
   end
 
-  defp list(assigns, project_id, :review) do
+  # A reload with the same search reuses its embedding, so a broadcast costs no Vertex request.
+  defp query_embedding(%{query: ""}, _status), do: nil
+  defp query_embedding(_assigns, :review), do: nil
+  defp query_embedding(%{query: query, query_embedding: {query, {:ok, _vector}} = cached}, _status), do: cached
+  defp query_embedding(%{query: query}, _status), do: {query, Learnings.embed_query(query)}
+
+  defp list(assigns, project_id, :review, _query_embedding) do
     {[], Learnings.list_learning_proposals(project_id: project_id, kind: assigns.kind), false}
   end
 
-  defp list(assigns, project_id, status) do
-    case Learnings.list_learnings(
-           project_id: project_id,
-           status: status,
-           kind: assigns.kind,
-           role: assigns.role,
-           auto: assigns.auto,
-           activated_since: if(assigns.week, do: DateTime.shift(DateTime.utc_now(), week: -1)),
-           query: assigns.query
-         ) do
-      {:ok, learnings} -> {learnings, [], false}
-      {:error, _unembeddable} -> {[], [], true}
-    end
+  defp list(_assigns, _project_id, _status, {_query, {:error, _unembeddable}}), do: {[], [], true}
+
+  defp list(assigns, project_id, status, query_embedding) do
+    {:ok, learnings} =
+      Learnings.list_learnings(
+        project_id: project_id,
+        status: status,
+        kind: assigns.kind,
+        role: assigns.role,
+        auto: assigns.auto,
+        activated_since: if(assigns.week, do: DateTime.shift(DateTime.utc_now(), week: -1)),
+        query: assigns.query,
+        embedding: with({_query, {:ok, vector}} <- query_embedding, do: vector)
+      )
+
+    {learnings, [], false}
   end
 
   # A rule or proposal in a project the person cannot see opens as one that is not there.

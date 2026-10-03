@@ -29,4 +29,10 @@ defmodule Rail.Learnings.Workers.EmbedLearningTest do
   test "a rule that is gone has nothing to embed" do
     assert :ok = perform_job(EmbedLearning, %{learning_id: "lrn_gone"})
   end
+
+  test "is queued apart from agent passes, so an embedding never waits behind one", %{project: project} do
+    rule = learning(project, %{rule: "Use the factory", kind: :convention})
+
+    assert_enqueued(worker: EmbedLearning, args: %{learning_id: rule.id}, queue: :learnings_embed)
+  end
 end

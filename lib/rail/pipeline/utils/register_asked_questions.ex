@@ -67,7 +67,8 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestions do
 
   defp gate(%Run{task: task}, %Question{} = question) do
     case Learnings.match_past_answer(task, question) do
-      {:answer, %{learning: learning, observation: %{excerpt: answer}}} when is_binary(answer) ->
+      # The rule as it reads now, so a person's edit to it is what Rail answers with.
+      {:answer, %{learning: %{rule: answer} = learning}} ->
         question
         |> Question.changeset(%{
           answer: answer,
@@ -78,7 +79,7 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestions do
         })
         |> Repo.update!()
 
-      {_answer_or_suggestion, %{learning: learning}} ->
+      {:suggestion, %{learning: learning}} ->
         question |> Question.changeset(%{suggested_learning_id: learning.id}) |> Repo.update!()
 
       nil ->

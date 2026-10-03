@@ -25,14 +25,15 @@ config :posthog,
 
 config :rail, Oban,
   repo: Rail.Repo,
-  queues: [issues: 5, tools: 1, git: 1, learnings: 2],
+  queues: [issues: 5, tools: 1, git: 1, learnings: 2, learnings_embed: 5],
   plugins: [
     {Oban.Plugins.Cron,
      crontab: [
        {"* * * * *", Rail.Tools.Workers.ReconcileOsProcesses},
        {"*/5 * * * *", Rail.Tools.Workers.RefreshUsage},
        {"*/15 * * * *", Rail.Git.Workers.FetchDefaultBranches},
-       {"0 6 * * *", Rail.Learnings.Workers.ScheduleCurators}
+       {"0 6 * * *", Rail.Learnings.Workers.ScheduleCurators},
+       {"15 * * * *", Rail.Learnings.Workers.EmbedPending}
      ]}
   ]
 
