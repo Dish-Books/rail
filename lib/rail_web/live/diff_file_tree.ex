@@ -1,7 +1,8 @@
 defmodule RailWeb.Live.DiffFileTree do
   @moduledoc """
-  The list of files beside the diff, a component of its own so that a mark or a
-  selection patches the list and not every line of the pane.
+  The list of files beside the diff, or of the reader's comments on it, a
+  component of its own so that a mark or a selection patches the list and not
+  every line of the pane.
   """
   use RailWeb, :live_component
 
@@ -22,12 +23,34 @@ defmodule RailWeb.Live.DiffFileTree do
         data-qa="diff-tree diff_file_tree"
         class="w-[248px] shrink-0 overflow-y-auto border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/30 p-2"
       >
-        <p class="px-2 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+        <.segmented_control
+          id="diff-list"
+          data-qa="diff_list_switch"
+          class="mb-1.5 w-full [&>button]:flex-1 [&>button]:px-2"
+          options={[files: "Files #{@file_count}", comments: "Comments #{@comment_count}"]}
+          selected={@list}
+          event="select_diff_list"
+          target={@target}
+          value_name="list"
+        />
+
+        <.diff_comment_list
+          :if={@list == :comments}
+          groups={@groups}
+          selected={@selected_comment}
+          target={@target}
+        />
+
+        <p
+          :if={@list == :files}
+          class="px-2 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400"
+        >
           {@label}
         </p>
 
         <button
           :for={row <- @rows}
+          :if={@list == :files}
           :key={row.id}
           type="button"
           phx-click="select_diff_file"

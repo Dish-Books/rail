@@ -102,6 +102,7 @@ defmodule Rail.Pipeline do
   defdelegate list_diff_comments(scope, task), to: Actions.ListDiffComments
   defdelegate delete_diff_comment(scope, comment), to: Actions.DeleteDiffComment
   defdelegate send_diff_comments(scope, run), to: Actions.SendDiffComments
+  defdelegate set_diff_comment_resolved(scope, comment, resolved?), to: Actions.SetDiffCommentResolved
   defdelegate stop_and_send_message(scope, run, opts \\ []), to: Actions.StopAndSendMessage
   defdelegate stop_run(scope, run, opts \\ []), to: Actions.StopRun
 

@@ -14,12 +14,14 @@ defmodule RailWeb.Utils.CalculateDiffPane do
   `tree` (`nil` while there are no files) and each of its `sections`, keyed by
   the id that file's component goes by. A section's rows come in `segments`, cut
   after each line with comments or the comment being written under it, and the
-  comments that no longer have their line are `lifted` to the top of it.
+  comments that no longer have their line are `lifted` to the top of it. Only
+  unsent comments are counted, since the counts are of what Send would send.
   """
   def calculate_diff_pane(assigns) do
     %{files: files, query: query, target: target} = assigns
     visible = Enum.filter(files, &matches?(&1, query))
     comments = Enum.group_by(assigns.comments, & &1.path)
+    open = MapSet.new(assigns.open_comments)
 
     shared =
       for {path, count} <- Enum.frequencies_by(files, & &1.path), count > 1 or path == "", into: MapSet.new(), do: path
@@ -30,7 +32,7 @@ defmodule RailWeb.Utils.CalculateDiffPane do
         empty_message: if(files == [], do: assigns.empty_message),
         no_match: if(files != [] and visible == [], do: query),
         scroll_to: assigns.scroll_to,
-        stray: stray(comments, files)
+        stray: stray(comments, files, open)
       },
       toolbar: %{
         target: target,
@@ -41,19 +43,25 @@ defmodule RailWeb.Utils.CalculateDiffPane do
         deletions: Enum.sum_by(files, & &1.deletions),
         viewed: Enum.count(files, & &1.viewed?),
         total: length(files),
-        unsent: length(assigns.comments),
+        unsent: Enum.count(assigns.comments, &(&1.status == :unsent)),
         engineer_running?: assigns.engineer_running?
       },
-      tree:
-        if(files != [],
-          do: %{
-            target: target,
-            show?: assigns.show_file_tree,
-            label: files_changed(files),
-            rows: Enum.map(visible, &tree_row(&1, shared, assigns.selected_file, comments))
-          }
-        ),
-      sections: Enum.map(visible, &{section_id(&1, shared), section(&1, Map.get(comments, &1.path, []), assigns)})
+      tree: if(files != [], do: tree(visible, shared, comments, assigns)),
+      sections: Enum.map(visible, &{section_id(&1, shared), section(&1, Map.get(comments, &1.path, []), open, assigns)})
+    }
+  end
+
+  defp tree(visible, shared, comments, assigns) do
+    %{
+      target: assigns.target,
+      show?: assigns.show_file_tree,
+      label: files_changed(assigns.files),
+      rows: Enum.map(visible, &tree_row(&1, shared, assigns.selected_file, comments)),
+      list: assigns.comment_list,
+      file_count: length(assigns.files),
+      comment_count: length(assigns.comments),
+      selected_comment: assigns.selected_comment,
+      groups: comment_groups(assigns.comments, comments, assigns.files, assigns.filter)
     }
   end
 
@@ -71,10 +79,32 @@ defmodule RailWeb.Utils.CalculateDiffPane do
   end
 
   # Only a file missing from the view entirely: one the query hides is still there.
-  defp stray(comments, files) do
+  defp stray(comments, files, open) do
     paths = MapSet.new(files, & &1.path)
 
-    comments |> Enum.reject(fn {path, _comments} -> MapSet.member?(paths, path) end) |> Enum.sort()
+    for {path, mine} <- Enum.sort(comments),
+        not MapSet.member?(paths, path),
+        do: {path, Enum.map(mine, &{&1, MapSet.member?(open, &1.id)})}
+  end
+
+  # Empty groups are left out; each keeps the order the comments were listed in.
+  defp comment_groups(comments, by_path, files, filter) do
+    changed =
+      for file <- files,
+          comment <- Map.get(by_path, file.path, []),
+          changed?(comment, file.rows, filter),
+          into: MapSet.new(),
+          do: comment.id
+
+    by_status = Enum.group_by(comments, & &1.status)
+
+    for {status, label} <- [unsent: "Not sent", sent: "Sent", resolved: "Resolved"],
+        Map.has_key?(by_status, status),
+        do: %{
+          status: status,
+          label: label,
+          rows: Enum.map(by_status[status], &%{comment: &1, changed?: MapSet.member?(changed, &1.id)})
+        }
   end
 
   defp tree_row(file, shared, selected_file, comments) do
@@ -83,11 +113,11 @@ defmodule RailWeb.Utils.CalculateDiffPane do
       file: Map.drop(file, [:rows, :viewed?]),
       viewed?: file.viewed?,
       selected?: file.path == selected_file,
-      unsent: length(Map.get(comments, file.path, []))
+      unsent: unsent(Map.get(comments, file.path, []))
     }
   end
 
-  defp section(file, comments, assigns) do
+  defp section(file, comments, open, assigns) do
     gap_keys = for %{kind: :gap, key: key} <- file.rows, do: key
     draft = if assigns.draft && assigns.draft.path == file.path, do: assigns.draft
     {placed, lifted} = Enum.split_with(comments, &(anchor(&1, file.rows, assigns.filter) != nil))
@@ -98,13 +128,16 @@ defmodule RailWeb.Utils.CalculateDiffPane do
       file: Map.drop(file, [:rows, :viewed?]),
       segments: segments(file.rows, placed, draft, assigns.filter),
       lifted: lifted,
-      changed_count: Enum.count(lifted, fn {_comment, changed?} -> changed? end),
-      unsent: length(comments),
+      changed_count: Enum.count(lifted, fn {comment, changed?} -> changed? and comment.status == :unsent end),
+      unsent: unsent(comments),
+      open: for(comment <- comments, MapSet.member?(open, comment.id), do: comment.id),
       viewed?: file.viewed?,
       collapsed?: file.path in assigns.collapsed,
       expanded_gaps: Map.take(assigns.expanded_gaps, gap_keys)
     }
   end
+
+  defp unsent(comments), do: Enum.count(comments, &(&1.status == :unsent))
 
   # Rows with nothing under them stay in one run, so a file with no comments is
   # still one comprehension over its lines.

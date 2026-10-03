@@ -137,6 +137,25 @@ defmodule RailWeb.Components.DiffPaneTest do
     assert html =~ ~r/filter\.ex.*diff_comment_stray_section/s
   end
 
+  test "a section holding only sent comments counts nothing unsent", %{diff: diff} do
+    gone = %DiffComment{
+      id: "dcm_gone_sent",
+      path: "lib/gone.ex",
+      line_kind: :added,
+      line: 1,
+      line_text: "def feature, do: :ok",
+      filter: :branch,
+      body: "Already sent.",
+      status: :sent
+    }
+
+    html = render_component(&DiffPane.diff_pane/1, files: [diff], comments: [gone])
+
+    assert [stray] = html |> Floki.parse_fragment!() |> Floki.find("[data-qa='diff_comment_stray_section']")
+    assert Floki.text(stray) =~ "Already sent."
+    refute Floki.text(stray) =~ "unsent"
+  end
+
   test "has no such section while every comment's file is in view", %{diff: diff} do
     here = %{
       %DiffComment{

@@ -2756,7 +2756,12 @@ defmodule RailWeb.TaskLiveTest do
       assert Pipeline.list_run_events(run) == []
     end
 
-    test "unsent comments are still there after a reload, and nobody else sees them", %{conn: conn, task: task} do
+    test "comments are still there after a reload, and nobody else sees them in any state", %{
+      conn: conn,
+      task: task,
+      scope: scope,
+      engineer_run: run
+    } do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       view
@@ -2780,9 +2785,20 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, theirs, _html} = live(log_in_user(build_conn(), someone), ~p"/tasks/#{task.id}")
       refute has_element?(theirs, "[data-qa='diff_comment']")
       refute has_element?(theirs, "#send-diff-comments")
+
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      {:ok, _delivery, _run} = Pipeline.send_diff_comments(scope, run)
+      [sent] = Pipeline.list_diff_comments(scope, task)
+      {:ok, _resolved} = Pipeline.set_diff_comment_resolved(scope, sent, true)
+      {:ok, _unsent} = Pipeline.create_diff_comment(scope, task, Map.from_struct(sent))
+
+      assert {:ok, theirs, _html} = live(log_in_user(build_conn(), someone), ~p"/tasks/#{task.id}")
+      refute has_element?(theirs, "[data-qa='diff_comment']")
+      theirs |> element("#diff-list-comments", "Comments 0") |> render_click()
+      assert has_element?(theirs, "#diff-comment-list", "You have no comments on this diff.")
     end
 
-    test "sending to an idle engineer starts a turn on one message holding every comment", %{
+    test "sending to an idle engineer starts a turn on one message holding every comment, and they stay, sent", %{
       conn: conn,
       task: task,
       scope: scope,
@@ -2820,7 +2836,49 @@ defmodule RailWeb.TaskLiveTest do
 
       assert Floki.text(bubble) =~ ~r/tracked\.txt, removed line 1.*- one.*Keep the first line\./s
       assert Floki.text(bubble) =~ ~r/tracked\.txt, line 2.*\+ three.*Why\?/s
-      refute has_element?(view, "[data-qa='diff_comment']")
+      assert [_one, _two, _three] = view |> render() |> Floki.parse_fragment!() |> Floki.find("[data-qa='diff_comment']")
+      assert has_element?(view, "#diff-file-shipped-ex [data-qa='diff_comment']", "Sent")
+      refute has_element?(view, "[data-qa='diff_comment']", "Not sent")
+      refute has_element?(view, "#send-diff-comments")
+      refute has_element?(view, "[data-qa='diff_comments_hint']")
+      refute has_element?(view, "[data-qa='diff_file_unsent']")
+    end
+
+    test "a comment written after a send is the only one sent next", %{
+      conn: conn,
+      task: task,
+      scope: scope
+    } do
+      comment = %{path: "shipped.ex", line_kind: :added, line: 1, line_text: "committed", filter: :branch}
+      {:ok, _first} = Pipeline.create_diff_comment(scope, task, Map.put(comment, :body, "First round, one."))
+      {:ok, _second} = Pipeline.create_diff_comment(scope, task, Map.put(comment, :body, "First round, two."))
+      test_pid = self()
+
+      stub(Tools, :start_os_process, fn spawned, argv ->
+        send(test_pid, {:turn, argv})
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#send-diff-comments", "Send 2 comments") |> render_click()
+      assert_receive {:turn, _first_round}, 5_000
+
+      view
+      |> with_target("#engineer-stage")
+      |> render_click("open_diff_comment", %{
+        "path" => "shipped.ex",
+        "kind" => "added",
+        "old_line" => "",
+        "new_line" => "1"
+      })
+
+      view |> form("[data-qa='diff_comment_form']", %{"body" => "Second round."}) |> render_submit()
+      view |> element("#send-diff-comments", "Send 1 comment") |> render_click()
+
+      # The first round's turn is still going, so the second waits for it.
+      assert has_element?(view, "#queued-banner", "1 comment on the diff")
+      assert has_element?(view, "#queued-banner", "Second round.")
+      refute has_element?(view, "#queued-banner", "First round")
       refute has_element?(view, "#send-diff-comments")
     end
 
@@ -2849,7 +2907,8 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("#send-diff-comments", "Send 1 comment") |> render_click()
 
       assert has_element?(view, "#queued-banner", "1 comment on the diff")
-      refute has_element?(view, "[data-qa='diff_comment']")
+      assert has_element?(view, "[data-qa='diff_comment']", "Sent")
+      refute has_element?(view, "#send-diff-comments")
     end
 
     test "a comment whose line the engineer rewrote is lifted, and still sent quoting the line as it was", %{
@@ -2899,7 +2958,7 @@ defmodule RailWeb.TaskLiveTest do
       assert Enum.join(argv, " ") =~ "shipped.ex, line 1\n+ committed\nSay what was committed."
     end
 
-    test "a removed comment is not sent, and with none left there is nothing to send", %{
+    test "a removed comment is not sent, and with none left Send does nothing", %{
       conn: conn,
       task: task,
       scope: scope,
@@ -2923,7 +2982,7 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "#send-diff-comments")
 
       view |> with_target("#engineer-stage") |> render_click("send_diff_comments", %{})
-      assert has_element?(view, "#engineer-error", "There are no comments to send.")
+      refute has_element?(view, "#engineer-error")
       assert Pipeline.list_run_events(run) == []
     end
 
@@ -2949,7 +3008,12 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("#send-diff-comments") |> render_click()
 
       assert has_element?(view, "#engineer-error", "The engineer has no conversation to send these to yet.")
-      assert has_element?(view, "[data-qa='diff_comment']", "Say what was committed.")
+      assert has_element?(view, "[data-qa='diff_comment']", "Not sent")
+      refute has_element?(view, "[data-qa='diff_comment']", "Sent")
+      assert has_element?(view, "#send-diff-comments", "Send 1 comment")
+
+      assert {:ok, again, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(again, "[data-qa='diff_comment']", "Not sent")
     end
 
     test "the comment being written can be put away, and is not saved blank", %{conn: conn, task: task} do
@@ -3078,8 +3142,191 @@ defmodule RailWeb.TaskLiveTest do
 
       _settled = render(here)
       _settled = render(here)
-      refute has_element?(here, "[data-qa='diff_comment']")
+      assert has_element?(here, "[data-qa='diff_comment']", "Sent")
       refute has_element?(here, "#send-diff-comments")
+
+      # This tab drew the comment before it was sent, so its Send and Remove are stale.
+      here |> with_target("#engineer-stage") |> render_click("send_diff_comments", %{})
+      here |> with_target("#engineer-stage") |> render_click("remove_diff_comment", %{"id" => dropped.id})
+      refute has_element?(here, "#engineer-error")
+      assert [%{status: :sent}] = Pipeline.list_diff_comments(scope, task)
+    end
+
+    test "resolving a sent comment folds it in every tab, and unresolving sends nothing", %{
+      conn: conn,
+      task: task,
+      scope: scope,
+      engineer_run: run,
+      repo: repo
+    } do
+      {:ok, %{id: id}} =
+        Pipeline.create_diff_comment(scope, task, %{
+          path: "shipped.ex",
+          line_kind: :added,
+          line: 1,
+          line_text: "committed",
+          filter: :branch,
+          body: "Say what was committed."
+        })
+
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      {:ok, _delivery, _run} = Pipeline.send_diff_comments(scope, run)
+      events = Pipeline.list_run_events(run)
+
+      assert {:ok, here, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert {:ok, there, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      refute has_element?(here, "#diff-comment-#{id} [data-qa='diff_comment_remove']")
+      here |> element("#diff-comment-#{id} [data-qa='diff_comment_resolve']") |> render_click()
+
+      assert has_element?(here, "#diff-comment-#{id}[aria-expanded='false']", "Resolved")
+      refute has_element?(here, "[data-qa='diff_comment_unresolve']")
+      _settled = render(there)
+      _settled = render(there)
+      assert has_element?(there, "#diff-comment-#{id}[aria-expanded='false']", "Resolved")
+
+      # A second click from a tab drawn before the first is a harmless repeat.
+      there |> with_target("#engineer-stage") |> render_click("resolve_diff_comment", %{"id" => id, "resolved" => "true"})
+      assert has_element?(there, "#diff-comment-#{id}[aria-expanded='false']")
+
+      here |> element("#diff-comment-#{id}") |> render_click()
+      assert has_element?(here, "#diff-comment-#{id}", "Say what was committed.")
+      assert has_element?(here, "#diff-comment-#{id} [data-qa='diff_comment_unresolve']")
+      refute has_element?(there, "#diff-comment-#{id} [data-qa='diff_comment_unresolve']")
+
+      here |> element("#diff-comment-#{id} [data-qa='diff_comment_fold']") |> render_click()
+      assert has_element?(here, "#diff-comment-#{id}[aria-expanded='false']")
+
+      assert {:ok, again, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(again, "#diff-comment-#{id}[aria-expanded='false']", "Resolved")
+
+      # Lifted once the engineer rewrites the line, it quotes the line when opened.
+      File.write!(Path.join(repo, "shipped.ex"), "rewritten\n")
+      assert {:ok, lifted, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(
+               lifted,
+               "#diff-file-shipped-ex [data-qa='diff_comments_lifted'] #diff-comment-#{id}",
+               "Line changed"
+             )
+
+      lifted |> element("#diff-comment-#{id}") |> render_click()
+      assert has_element?(lifted, "#diff-comment-#{id} [data-qa='diff_comment_quote']", "committed")
+
+      lifted |> element("#diff-comment-#{id} [data-qa='diff_comment_unresolve']") |> render_click()
+      assert has_element?(lifted, "#diff-comment-#{id}", "Sent")
+      assert has_element?(lifted, "#diff-comment-#{id} [data-qa='diff_comment_resolve']")
+      _settled = render(here)
+      _settled = render(here)
+      assert has_element?(here, "#diff-comment-#{id} [data-qa='diff_comment_resolve']")
+      refute has_element?(here, "#send-diff-comments")
+      refute has_element?(lifted, "#send-diff-comments")
+      assert Pipeline.list_run_events(run) == events
+    end
+
+    test "a sent comment whose line the engineer rewrote is lifted, and stays so after a reload", %{
+      conn: conn,
+      task: task,
+      scope: scope,
+      engineer_run: run,
+      repo: repo
+    } do
+      {:ok, %{id: id}} =
+        Pipeline.create_diff_comment(scope, task, %{
+          path: "shipped.ex",
+          line_kind: :added,
+          line: 1,
+          line_text: "committed",
+          filter: :branch,
+          body: "Say what was committed."
+        })
+
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      {:ok, _delivery, _run} = Pipeline.send_diff_comments(scope, run)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      File.write!(Path.join(repo, "shipped.ex"), "rewritten\n")
+      send(view.pid, {:run_events, run.id, []})
+      _settled = render(view)
+      _settled = render(view)
+
+      for page <- [view, elem(live(conn, ~p"/tasks/#{task.id}"), 1)] do
+        assert has_element?(page, "#diff-file-shipped-ex [data-qa='diff_comments_lifted'] #diff-comment-#{id}", "Sent")
+        assert has_element?(page, "#diff-comment-#{id} [data-qa='diff_comment_changed']", "Line changed")
+        assert has_element?(page, "#diff-comment-#{id} [data-qa='diff_comment_quote']", "committed")
+        refute has_element?(page, "[data-qa='diff_comments_lifted']", "on a line that has changed")
+      end
+    end
+
+    test "an unsent comment cannot be resolved", %{conn: conn, task: task, scope: scope} do
+      {:ok, %{id: id}} =
+        Pipeline.create_diff_comment(scope, task, %{
+          path: "shipped.ex",
+          line_kind: :added,
+          line: 1,
+          line_text: "committed",
+          filter: :branch,
+          body: "Say what was committed."
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#diff-comment-#{id} [data-qa='diff_comment_remove']")
+      refute has_element?(view, "#diff-comment-#{id} [data-qa='diff_comment_resolve']")
+
+      view |> with_target("#engineer-stage") |> render_click("resolve_diff_comment", %{"id" => id, "resolved" => "true"})
+
+      view
+      |> with_target("#engineer-stage")
+      |> render_click("resolve_diff_comment", %{"id" => "dcm_gone", "resolved" => "true"})
+
+      assert has_element?(view, "#diff-comment-#{id}", "Not sent")
+    end
+
+    test "the comments list beside the diff jumps to a comment, unfolding what hides it", %{
+      conn: conn,
+      task: task,
+      scope: scope,
+      engineer_run: run
+    } do
+      {:ok, %{id: id}} =
+        Pipeline.create_diff_comment(scope, task, %{
+          path: "shipped.ex",
+          line_kind: :added,
+          line: 1,
+          line_text: "committed",
+          filter: :branch,
+          body: "Say what was committed."
+        })
+
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      {:ok, _delivery, _run} = Pipeline.send_diff_comments(scope, run)
+      [sent] = Pipeline.list_diff_comments(scope, task)
+      {:ok, _resolved} = Pipeline.set_diff_comment_resolved(scope, sent, true)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#diff-header-shipped-ex [data-qa='diff_collapse_toggle']") |> render_click()
+      view |> form("#diff-file-filter", %{"query" => "nothing-like-this"}) |> render_change()
+      refute has_element?(view, "#diff-comment-#{id}")
+
+      view |> element("#diff-list-comments", "Comments 1") |> render_click()
+      refute has_element?(view, "[data-qa='diff-file-row']")
+      assert has_element?(view, "[data-qa='diff_comment_group_resolved']", "Resolved 1")
+
+      view |> element("[data-qa='diff_comment_list_jump'][phx-value-id='#{id}']") |> render_click()
+
+      assert_push_event(view, "diff:scroll_to", %{id: "diff-comment-" <> ^id})
+      assert has_element?(view, "#diff-comment-#{id} [data-qa='diff_comment_unresolve']")
+      assert has_element?(view, "[data-qa='diff_comment_list_row'][aria-current='true']", "Say what was committed.")
+
+      view |> element("[data-qa='diff_comment_list_resolve'][phx-value-id='#{id}']") |> render_click()
+      assert has_element?(view, "[data-qa='diff_comment_group_sent']", "Sent 1")
+      assert has_element?(view, "#diff-comment-#{id} [data-qa='diff_comment_resolve']")
+
+      # A row from a page drawn before the comment went is a jump to nowhere.
+      view |> with_target("#engineer-stage") |> render_click("select_diff_comment", %{"id" => "dcm_gone"})
+
+      view |> element("#diff-list-files") |> render_click()
+      assert has_element?(view, "[data-qa='diff-file-row']", "shipped.ex")
     end
   end
 

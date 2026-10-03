@@ -108,6 +108,7 @@ defmodule RailWeb.Live.DiffFile do
             target={@target}
             lifted?={true}
             changed?={changed?}
+            open?={comment.id in @open}
           />
         </div>
       </div>
@@ -127,7 +128,7 @@ defmodule RailWeb.Live.DiffFile do
               commentable={true}
             />
             <div :for={comment <- segment.comments} class="diff-comment-row">
-              <.diff_comment comment={comment} target={@target} />
+              <.diff_comment comment={comment} target={@target} open?={comment.id in @open} />
             </div>
             <.comment_composer :if={segment.draft} draft={segment.draft} target={@target} />
           </div>

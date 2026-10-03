@@ -24,7 +24,63 @@ defmodule RailWeb.Components.DiffCommentTest do
 
     assert html =~ "Not sent"
     assert html =~ "Name this for what it does."
+    assert html =~ ~s(id="diff-comment-dcm_placed")
+    assert html =~ "diff_comment_remove"
+    refute html =~ "diff_comment_resolve"
     refute html =~ "diff_comment_quote"
+  end
+
+  test "a sent comment can be resolved, and no longer removed" do
+    comment = %DiffComment{
+      id: "dcm_sent",
+      path: "lib/rail/feature.ex",
+      line_kind: :added,
+      line: 1,
+      line_text: "def feature, do: :ok",
+      filter: :branch,
+      body: "Name this for what it does.",
+      status: :sent
+    }
+
+    html = render_component(&Card.diff_comment/1, comment: comment)
+
+    assert html =~ "Sent"
+    assert html =~ "Name this for what it does."
+    assert html =~ ~s(phx-click="resolve_diff_comment")
+    assert html =~ ~s(phx-value-resolved="true")
+    refute html =~ "Not sent"
+    refute html =~ "diff_comment_remove"
+  end
+
+  test "a resolved comment is one line until it is opened" do
+    comment = %DiffComment{
+      id: "dcm_resolved",
+      path: "lib/rail/feature.ex",
+      line_kind: :deleted,
+      line: 96,
+      line_text: ~s[defp ci_label(%{state: :failed}), do: "CI failed"],
+      filter: :branch,
+      body: "Keep the failed label.",
+      status: :resolved
+    }
+
+    folded = render_component(&Card.diff_comment/1, comment: comment, lifted?: true, changed?: true)
+
+    assert [row] = folded |> Floki.parse_fragment!() |> Floki.find("button[data-qa='diff_comment']")
+    assert Floki.attribute(row, "aria-expanded") == ["false"]
+    assert Floki.attribute(row, "phx-click") == ["toggle_diff_comment"]
+    assert Floki.text(row) =~ ~r/Resolved.*Keep the failed label\..*Line changed/s
+    refute folded =~ "diff_comment_quote"
+    refute folded =~ "Unresolve"
+
+    open = render_component(&Card.diff_comment/1, comment: comment, lifted?: true, changed?: true, open?: true)
+
+    assert open =~
+             ~r/Resolved.*Line changed.*Unresolve.*Removed line 96 when you commented.*CI failed.*Keep the failed label\./s
+
+    assert open =~ ~s(phx-value-resolved="false")
+    assert open =~ ~s(aria-label="Fold comment")
+    refute open =~ "diff_comment_remove"
   end
 
   test "lifted off an unchanged line, it quotes the line as it read" do

@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Schemas.DiffComment do
   @moduledoc """
-  One person's unsent comment on one line of a task's diff, for the engineer.
+  One person's comment on one line of a task's diff, for the engineer: unsent,
+  then sent, then resolved once its author is satisfied.
 
   It is drawn under its line only while a line on the same side, at the same
   number, still reads `line_text`; otherwise it is lifted to the top of its file.
@@ -21,6 +22,8 @@ defmodule Rail.Pipeline.Schemas.DiffComment do
     # the same line in the view it was written in.
     field :filter, Ecto.Enum, values: [:branch, :uncommitted]
     field :body, :string
+    # Left out of the changeset, so only the actions that send or resolve move it.
+    field :status, Ecto.Enum, values: [:unsent, :sent, :resolved], default: :unsent
 
     belongs_to :task, Task
     belongs_to :user, User

@@ -1,6 +1,6 @@
 defmodule Rail.Pipeline.Actions.ListDiffComments do
   @moduledoc """
-  The comments this reader has written on a task's diff and not yet sent.
+  The comments this reader has written on a task's diff, unsent, sent and resolved.
   """
 
   import Ecto.Query
