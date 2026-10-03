@@ -252,8 +252,11 @@ defmodule RailWeb.LearningsLive do
     {:noreply, assign(socket, :show_all_suppressed, true)}
   end
 
-  # Every writer broadcasts, so a rule another tab or the curator changed shows here too.
-  def handle_info({:learnings_changed, _project_id}, socket), do: {:noreply, load(socket)}
+  # Every writer broadcasts, so a rule another tab or the curator changed shows here
+  # too; another project's change is only news under All projects.
+  def handle_info({:learnings_changed, project_id}, %{assigns: %{project: project}} = socket) do
+    if is_nil(project) or project.id == project_id, do: {:noreply, load(socket)}, else: {:noreply, socket}
+  end
 
   # The navigation hook and the issue dialog broadcast things this page has no use for.
   def handle_info(_message, socket), do: {:noreply, socket}

@@ -561,9 +561,19 @@ defmodule RailWeb.LearningsLiveTest do
   end
 
   test "Keep rule from a second tab is told it was already decided, and the queue opens an override on its rule", %{
-    conn: conn,
-    project: project
+    conn: conn
   } do
+    {:ok, project} =
+      Rail.Projects.create_project(system_scope(), %{
+        name: "Keep rule #{System.unique_integer([:positive])}",
+        github_repo: "example/keep-rule",
+        github_installation_id: 1,
+        default_branch: "main",
+        linear_team_key: "KPR",
+        clone_path: "/tmp/repos/keep-rule"
+      })
+
+    conn = Plug.Conn.put_session(conn, :selected_project_id, project.id)
     rule = learning(project, %{rule: "Don't flag docs", kind: :calibration})
     override = Repo.insert!(%LearningProposal{project_id: project.id, action: :override, learning_id: rule.id})
 
@@ -575,6 +585,9 @@ defmodule RailWeb.LearningsLiveTest do
     # The other tab's ruling lands before its broadcast does.
     Repo.update_all(from(p in LearningProposal, where: p.id == ^override.id), set: [status: :rejected])
     view |> element("#keep-rule-button") |> render_click()
+    assert has_element?(view, "#learnings-error", "Someone already decided this proposal.")
+
+    send(view.pid, {:learnings_changed, "prj_elsewhere"})
     assert has_element?(view, "#learnings-error", "Someone already decided this proposal.")
   end
 
