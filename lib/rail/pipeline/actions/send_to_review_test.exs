@@ -202,7 +202,7 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
 
     File.write!(Path.join(worktree_path, "resolved.ex"), "both\n")
     git!(worktree_path, ["add", "."])
-    git!(worktree_path, ["commit", "-m", "resolve the rebase"])
+    git!(worktree_path, ["commit", "-m", "resolve the merge"])
     git!(worktree_path, ["push", "origin", "main"])
 
     assert Pipeline.changed_since_review?(task)

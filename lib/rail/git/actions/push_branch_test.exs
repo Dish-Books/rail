@@ -83,7 +83,7 @@ defmodule Rail.Git.Actions.PushBranchTest do
     assert {:error, {:github_api_error, 404, _body}} = Git.push_branch(scope, task)
   end
 
-  test "pushes a branch that was rebased since it was last pushed", %{
+  test "refuses a branch rewritten since it was last pushed", %{
     scope: scope,
     task: task,
     repo: repo,
@@ -95,15 +95,17 @@ defmodule Rail.Git.Actions.PushBranchTest do
     git!(repo, ["add", "."])
     git!(repo, ["commit", "-m", "feature"])
     assert :ok = Git.push_branch(scope, task)
+    pushed = git!(remote, ["rev-parse", "main"])
 
     git!(repo, ["commit", "--amend", "-m", "feature, rewritten"])
 
-    assert :ok = Git.push_branch(scope, task)
-    assert git!(repo, ["rev-parse", "HEAD"]) == git!(remote, ["rev-parse", "main"])
+    assert {:error, output} = Git.push_branch(scope, task)
+    assert output =~ "[rejected]"
+    assert git!(remote, ["rev-parse", "main"]) == pushed
   end
 
   # A push cut off after the remote took it, but before git wrote down that it
-  # had, leaves a lease that can never match again.
+  # had, is one the next push extends.
   test "pushes again over a push of its own that git never recorded", %{
     scope: scope,
     task: task,
@@ -125,15 +127,14 @@ defmodule Rail.Git.Actions.PushBranchTest do
     assert git!(repo, ["rev-parse", "HEAD"]) == git!(remote, ["rev-parse", "main"])
   end
 
-  # The lease is what stops Rail overwriting work it never saw, so a remote that
-  # moved on outside Rail is still refused after the fetch.
-  test "still refuses a remote that holds someone else's push", %{
+  # A remote that moved on outside Rail holds work Rail never saw.
+  test "refuses a remote that holds someone else's push", %{
     scope: scope,
     task: task,
     repo: repo,
     remote: remote
   } do
-    Req.Test.expect(Client, 2, &Req.Test.json(&1, %{"token" => "ghs_installation_token"}))
+    Req.Test.expect(Client, &Req.Test.json(&1, %{"token" => "ghs_installation_token"}))
 
     elsewhere = Path.join(System.tmp_dir!(), "rail_git_elsewhere_#{System.unique_integer([:positive])}")
     on_exit(fn -> File.rm_rf(elsewhere) end)
@@ -152,7 +153,7 @@ defmodule Rail.Git.Actions.PushBranchTest do
     git!(repo, ["commit", "-m", "feature"])
 
     assert {:error, output} = Git.push_branch(scope, task)
-    assert output =~ "stale info"
+    assert output =~ "[rejected]"
     assert git!(elsewhere, ["rev-parse", "HEAD"]) == git!(remote, ["rev-parse", "main"])
   end
 end

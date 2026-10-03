@@ -1,14 +1,14 @@
-defmodule Rail.Pipeline.Actions.RebaseTask do
+defmodule Rail.Pipeline.Actions.UpdateBranch do
   @moduledoc """
-  Rebases the task's branch onto the default branch.
+  Merges the default branch into the task's branch.
 
-  Rail fetches and rebases itself, and a rebase that goes through cleanly needs
+  Rail fetches and merges itself, and a merge that goes through cleanly needs
   nobody: it is sent on as any finished round is. Only one that stops on a
   conflict goes to the engineer, because a conflict is a question about the code.
-  Either way, a rebase that rewrites the branch sends the task back to Engineer.
+  Either way, a merge that brings anything in sends the task back to Engineer.
   """
 
-  import Rail.Pipeline.Utils.RebasePass
+  import Rail.Pipeline.Utils.UpdateBranchPass
 
   alias Rail.Git
   alias Rail.Pipeline.Schemas.Run
@@ -20,21 +20,21 @@ defmodule Rail.Pipeline.Actions.RebaseTask do
   alias Rail.Scope
 
   @doc """
-  Fetches the default branch and rebases onto it. Returns `{:ok, task}`, with the
+  Fetches the default branch and merges it in. Returns `{:ok, task}`, with the
   branch sent on or the engineer resolving conflicts, or `{:error, reason}`.
   """
-  def rebase_task(%Scope{} = scope, %Task{} = task) do
+  def update_branch(%Scope{} = scope, %Task{} = task) do
     %Task{project: %Project{} = project} = task = Repo.preload(task, [:project, :runs], force: true)
 
-    with :ok <- rebasable(task),
+    with :ok <- updatable(task),
          {:ok, %Run{} = run} <- engineer_run(task),
          :ok <- Git.fetch_default_branch(project, task.worktree_path),
-         {:ok, _run} <- rebase_pass(scope, %{run | task: task}) do
+         {:ok, _run} <- update_branch_pass(scope, %{run | task: task}) do
       {:ok, Repo.reload!(task)}
     end
   end
 
-  defp rebasable(%Task{} = task) do
+  defp updatable(%Task{} = task) do
     cond do
       is_struct(task.cleaned_up_at, DateTime) ->
         {:error, :cleaned_up}
@@ -45,8 +45,8 @@ defmodule Rail.Pipeline.Actions.RebaseTask do
       not Task.worktree_present?(task) ->
         {:error, :no_worktree}
 
-      # A rebase stopped on conflicts is dirty by nature, and asking again carries it on.
-      Git.worktree_dirty?(task.worktree_path) and not Git.rebase_in_progress?(task.worktree_path) ->
+      # A merge stopped on conflicts is dirty by nature, and asking again carries it on.
+      Git.worktree_dirty?(task.worktree_path) and not Git.merge_in_progress?(task.worktree_path) ->
         {:error, :uncommitted_changes}
 
       true ->

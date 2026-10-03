@@ -11,7 +11,7 @@ defmodule Rail.Git.Utils.BranchBase do
   `HEAD` when it shares no history with it yet.
 
   The merge base rather than the base branch's tip keeps the base moving ahead
-  out of the picture. It is `origin/`'s, the one rebases land on.
+  out of the picture. It is `origin/`'s, the one merged in.
   """
   def branch_base(%Task{worktree_path: worktree_path} = task) do
     case Tools.run("git", ["merge-base", "origin/#{base_branch(task)}", "HEAD"],

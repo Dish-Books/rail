@@ -1079,12 +1079,12 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       assert [%OsProcess{id: ^agent_id}] = Tools.list_os_processes(run_id: run.id, kind: :agent)
     end
 
-    test "a rebase carried on through CI is not done while CI waits in line", %{task: task, exited: exited} do
-      {:ok, _task} = Pipeline.update_task(task, %{is_rebasing: true})
+    test "a merge carried on through CI is not done while CI waits in line", %{task: task, exited: exited} do
+      {:ok, _task} = Pipeline.update_task(task, %{is_updating_branch: true})
       {_run, os_process} = exited.(:engineer, %{stage_outcome: :done})
 
-      stub(Git, :rebase_in_progress?, fn _path -> true end)
-      expect(Git, :rebase_branch, fn _scope, _task -> :ok end)
+      stub(Git, :merge_in_progress?, fn _path -> true end)
+      expect(Git, :merge_default_branch, fn _scope, _task -> :ok end)
 
       assert {:ok, %Run{status: :waiting_for_resources, stage_outcome: :in_progress}} =
                Pipeline.run_finished(os_process, %{exit_code: 0})
@@ -1403,34 +1403,34 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     end
   end
 
-  # The conflicts already sent the task back to engineer, and finishing the rebase
+  # The conflicts already sent the task back to engineer, and finishing the merge
   # leaves it there for review to see the result.
   test "conflicts the engineer resolved are carried on and the branch sent on", %{task: task, exited: exited} do
     {:ok, task} =
-      Pipeline.update_task(task, %{stage: :engineer, is_rebasing: true, worktree_path: create_temp_git_repo()})
+      Pipeline.update_task(task, %{stage: :engineer, is_updating_branch: true, worktree_path: create_temp_git_repo()})
 
     {_run, os_process} = exited.(:engineer, %{stage_outcome: :done})
 
-    stub(Git, :rebase_in_progress?, fn _path -> true end)
+    stub(Git, :merge_in_progress?, fn _path -> true end)
 
-    expect(Git, :rebase_branch, fn _scope, _task ->
-      git!(task.worktree_path, ["commit", "--allow-empty", "-m", "replayed onto main"])
+    expect(Git, :merge_default_branch, fn _scope, _task ->
+      git!(task.worktree_path, ["commit", "--allow-empty", "-m", "merged main in"])
       :ok
     end)
 
     expect(Git, :push_branch, fn _scope, _task -> :ok end)
 
     assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-    assert %Task{is_rebasing: false, stage: :engineer} = Repo.reload!(task)
+    assert %Task{is_updating_branch: false, stage: :engineer} = Repo.reload!(task)
   end
 
-  test "a rebase carried on through CI is not done until CI passes", %{project: project, task: task, exited: exited} do
+  test "a merge carried on through CI is not done until CI passes", %{project: project, task: task, exited: exited} do
     {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
-    {:ok, _task} = Pipeline.update_task(task, %{is_rebasing: true, worktree_path: create_temp_git_repo()})
+    {:ok, _task} = Pipeline.update_task(task, %{is_updating_branch: true, worktree_path: create_temp_git_repo()})
     {_run, os_process} = exited.(:engineer, %{stage_outcome: :done})
 
-    stub(Git, :rebase_in_progress?, fn _path -> true end)
-    expect(Git, :rebase_branch, fn _scope, _task -> :ok end)
+    stub(Git, :merge_in_progress?, fn _path -> true end)
+    expect(Git, :merge_default_branch, fn _scope, _task -> :ok end)
     reject(&Git.push_branch/2)
     stub(Git, :credential_env, fn _project -> {:ok, %{}} end)
     expect(Tools, :start_command_process, fn run, :ci, "mise run ci", _opts -> {:ok, %OsProcess{kind: :ci, run: run}} end)
@@ -1438,12 +1438,12 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert {:ok, %Run{status: :running, stage_outcome: :in_progress}} = Pipeline.run_finished(os_process, %{exit_code: 0})
   end
 
-  test "the next commit conflicting goes back to the engineer", %{task: task, exited: exited} do
-    {:ok, _task} = Pipeline.update_task(task, %{is_rebasing: true, worktree_path: create_temp_git_repo()})
+  test "a merge that stops on conflicts again goes back to the engineer", %{task: task, exited: exited} do
+    {:ok, _task} = Pipeline.update_task(task, %{is_updating_branch: true, worktree_path: create_temp_git_repo()})
     {_run, os_process} = exited.(:engineer, %{})
 
-    stub(Git, :rebase_in_progress?, fn _path -> true end)
-    expect(Git, :rebase_branch, fn _scope, _task -> {:conflicts, ["lib/next.ex"]} end)
+    stub(Git, :merge_in_progress?, fn _path -> true end)
+    expect(Git, :merge_default_branch, fn _scope, _task -> {:conflicts, ["lib/next.ex"]} end)
 
     expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
       assert prompt =~ "- lib/next.ex"
@@ -1453,55 +1453,55 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert {:ok, %Run{status: :running}} = Pipeline.run_finished(os_process, %{exit_code: 0})
   end
 
-  test "an engineer that stopped with conflicts unresolved stays rebasing", %{task: task, exited: exited} do
-    {:ok, task} = Pipeline.update_task(task, %{is_rebasing: true, worktree_path: create_temp_git_repo()})
+  test "an engineer that stopped with conflicts unresolved stays updating the branch", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{is_updating_branch: true, worktree_path: create_temp_git_repo()})
     {_run, os_process} = exited.(:engineer, %{})
 
     stub(Git, :conflicted_files, fn _path -> ["lib/app.ex"] end)
-    reject(&Git.rebase_branch/2)
+    reject(&Git.merge_default_branch/2)
 
     assert {:ok, %Run{error: "The engineer stopped with conflicts still unresolved." <> _rest}} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
 
-    assert %Task{is_rebasing: true} = Repo.reload!(task)
+    assert %Task{is_updating_branch: true} = Repo.reload!(task)
   end
 
-  test "a rebase the engineer abandoned is said so", %{task: task, exited: exited} do
-    {:ok, _task} = Pipeline.update_task(task, %{is_rebasing: true, worktree_path: create_temp_git_repo()})
+  test "a merge the engineer abandoned is said so", %{task: task, exited: exited} do
+    {:ok, _task} = Pipeline.update_task(task, %{is_updating_branch: true, worktree_path: create_temp_git_repo()})
     {_run, os_process} = exited.(:engineer, %{})
 
-    stub(Git, :rebase_in_progress?, fn _path -> false end)
-    stub(Git, :rebased_onto?, fn _path, "main" -> false end)
+    stub(Git, :merge_in_progress?, fn _path -> false end)
+    stub(Git, :up_to_date_with?, fn _path, "main" -> false end)
 
-    assert {:ok, %Run{error: "The rebase onto origin/main was abandoned before it finished." <> _rest}} =
+    assert {:ok, %Run{error: "The merge of origin/main was abandoned before it finished." <> _rest}} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
   end
 
-  test "a rebase that cannot be carried on says why", %{task: task, exited: exited} do
-    {:ok, _task} = Pipeline.update_task(task, %{is_rebasing: true, worktree_path: create_temp_git_repo()})
+  test "a merge that cannot be carried on says why", %{task: task, exited: exited} do
+    {:ok, _task} = Pipeline.update_task(task, %{is_updating_branch: true, worktree_path: create_temp_git_repo()})
     {_run, os_process} = exited.(:engineer, %{})
 
-    stub(Git, :rebase_in_progress?, fn _path -> true end)
-    expect(Git, :rebase_branch, fn _scope, _task -> {:error, {:github_api_error, 401, %{}}} end)
+    stub(Git, :merge_in_progress?, fn _path -> true end)
+    expect(Git, :merge_default_branch, fn _scope, _task -> {:error, {:github_api_error, 401, %{}}} end)
 
-    assert {:ok, %Run{error: "The rebase could not be finished: {:github_api_error, 401, %{}}"}} =
+    assert {:ok, %Run{error: "The merge could not be finished: {:github_api_error, 401, %{}}"}} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
   end
 
-  test "a rebase carried on whose push fails says why", %{task: task, exited: exited} do
-    {:ok, _task} = Pipeline.update_task(task, %{is_rebasing: true, worktree_path: create_temp_git_repo()})
+  test "a merge carried on whose push fails says why", %{task: task, exited: exited} do
+    {:ok, _task} = Pipeline.update_task(task, %{is_updating_branch: true, worktree_path: create_temp_git_repo()})
     {_run, os_process} = exited.(:engineer, %{})
 
-    stub(Git, :rebase_in_progress?, fn _path -> true end)
-    expect(Git, :rebase_branch, fn _scope, _task -> :ok end)
+    stub(Git, :merge_in_progress?, fn _path -> true end)
+    expect(Git, :merge_default_branch, fn _scope, _task -> :ok end)
     expect(Git, :push_branch, fn _scope, _task -> {:error, "! [rejected] (stale info)"} end)
 
-    assert {:ok, %Run{error: "The rebase could not be finished: ! [rejected] (stale info)"}} =
+    assert {:ok, %Run{error: "The merge could not be finished: ! [rejected] (stale info)"}} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
   end
 
-  test "an engineer that asks something while rebasing parks on it", %{task: task, exited: exited} do
-    {:ok, task} = Pipeline.update_task(task, %{is_rebasing: true})
+  test "an engineer that asks something while updating the branch parks on it", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{is_updating_branch: true})
     {run, os_process} = exited.(:engineer, %{})
     now = DateTime.utc_now()
 
@@ -1516,7 +1516,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       }
     ])
 
-    reject(&Git.rebase_branch/2)
+    reject(&Git.merge_default_branch/2)
 
     assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert [%{prompt: "Keep both migrations?"}] = pending_questions(task.id)

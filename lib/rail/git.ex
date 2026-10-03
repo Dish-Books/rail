@@ -33,10 +33,10 @@ defmodule Rail.Git do
   defdelegate ci_env(project, task), to: Actions.CiEnv
   defdelegate fetch_default_branch(project, worktree_path), to: Actions.FetchDefaultBranch
   defdelegate read_default_branch_file(project, path), to: Actions.ReadDefaultBranchFile
-  defdelegate rebased_onto?(worktree_path, base_branch), to: Actions.RebasedOnto
-  defdelegate rebase_in_progress?(worktree_path), to: Actions.RebaseInProgress
+  defdelegate up_to_date_with?(worktree_path, base_branch), to: Actions.UpToDateWith
+  defdelegate merge_in_progress?(worktree_path), to: Actions.MergeInProgress
   defdelegate conflicted_files(worktree_path), to: Actions.ConflictedFiles
-  defdelegate rebase_branch(scope, task), to: Actions.RebaseBranch
+  defdelegate merge_default_branch(scope, task), to: Actions.MergeDefaultBranch
 
   defdelegate load_diff(scope, task, filter \\ :branch, previous_files \\ []), to: Actions.LoadDiff
   defdelegate load_diff_hunk(scope, task, path, line \\ nil), to: Actions.LoadDiffHunk

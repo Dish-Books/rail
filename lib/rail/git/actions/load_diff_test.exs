@@ -50,7 +50,7 @@ defmodule Rail.Git.Actions.LoadDiffTest do
   end
 
   # The clone's own main stays where the branch forked; only origin's moves on.
-  test "a branch rebased onto a newer main shows only what the branch did", %{
+  test "a branch with a newer main merged in shows only what the branch did", %{
     scope: scope,
     task: task,
     repo: repo,
@@ -60,7 +60,7 @@ defmodule Rail.Git.Actions.LoadDiffTest do
     git!(remote, ["add", "."])
     git!(remote, ["commit", "-m", "upstream change"])
     git!(repo, ["fetch", "origin", "main"])
-    git!(repo, ["rebase", "origin/main"])
+    git!(repo, ["merge", "--no-edit", "origin/main"])
 
     assert {:ok, files} = Git.load_diff(scope, task, :branch)
 

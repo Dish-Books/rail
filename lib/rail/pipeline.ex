@@ -51,7 +51,7 @@ defmodule Rail.Pipeline do
   defdelegate send_to_review(run), to: Actions.SendToReview
   defdelegate changed_since_review?(task), to: Actions.ChangedSinceReview
   defdelegate run_ci(scope, run), to: Actions.RunCi
-  defdelegate rebase_task(scope, task), to: Actions.RebaseTask
+  defdelegate update_branch(scope, task), to: Actions.UpdateBranch
   defdelegate get_ci_status(run), to: Actions.GetCiStatus
 
   defdelegate start_review_run(run), to: Actions.StartReviewRun

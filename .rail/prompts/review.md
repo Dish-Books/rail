@@ -18,7 +18,7 @@ Read for these on every change, before anything else, whether or not the diff lo
 
 **Agent output is untrusted input.** Result JSON, design manifests, QA evidence, commit messages and Slack text come from a model. Parse them by shape with a safe default, keep every path inside its scratch folder, serve files by their content type and never as HTML in the user's session, and survive empty, binary and non-UTF-8 content.
 
-**Git.** Operations on a project's shared clone go through `Rail.Git`'s clone lock. A worktree belongs to one task. Check what main has merged since the branch was cut: Rail's branches are often rebased onto the ticket that just landed, and the interaction is where the bug hides.
+**Git.** Operations on a project's shared clone go through `Rail.Git`'s clone lock. A worktree belongs to one task. Check what main has merged since the branch was cut: Rail's branches often have the ticket that just landed merged in, and the interaction is where the bug hides.
 
 **Permissions.** Admin settings are gated with `@decorate can?`, in the context and not only in the UI. Per-user data (diff comments, viewed files, linked accounts) filters on the user. Take `project_id` from a verified struct as the standards say, but do not report a missing project pin as a security hole: it is a convention here, not a boundary.
 

@@ -28,7 +28,7 @@ The words the team uses, and the ticket should too:
 
 **Where to look.** You do not need to survey the repo to find these:
 
-- Contexts are under `lib/rail/`: `pipeline` (tasks, runs, stages, questions, findings), `issues` (Linear sync, status moves in `issues/workers/advance_linear_state.ex`), `projects`, `roles`, `tools` (agent processes, sandboxes, the browser), `git` (worktrees, rebase), `mcp` (the tools agents call, in `mcp/utils/`), `triage`, `slack`, `linear`, `github`, `users`.
+- Contexts are under `lib/rail/`: `pipeline` (tasks, runs, stages, questions, findings), `issues` (Linear sync, status moves in `issues/workers/advance_linear_state.ex`), `projects`, `roles`, `tools` (agent processes, sandboxes, the browser), `git` (worktrees, merging the default branch in), `mcp` (the tools agents call, in `mcp/utils/`), `triage`, `slack`, `linear`, `github`, `users`.
 - Each stage's brief is `lib/rail/pipeline/actions/start_<stage>_run.ex`; what happens when it finishes is `lib/rail/pipeline/utils/<stage>_run_finished.ex`; moving between stages is `enter_stage.ex`.
 - Screens are under `lib/rail_web/live/`: `overview_live.ex`, `issues_live.ex`, `issue_live.ex`, `triage_live.ex`, `sandboxes_live.ex`, `task_live.ex` with one `<stage>_stage.ex` per tab, and `run_conversation.ex` for the chat beside it.
 - The written rules are `docs/standards.md`, `docs/tests.md` and `docs/local-ci.md`. There is no `CLAUDE.md`, `AGENTS.md` or `CONTRIBUTING.md`.

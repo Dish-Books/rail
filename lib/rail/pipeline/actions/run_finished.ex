@@ -33,12 +33,12 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   import Rail.Pipeline.Utils.ProductRunFinished
   import Rail.Pipeline.Utils.QaRunFinished
   import Rail.Pipeline.Utils.QuestionQueue
-  import Rail.Pipeline.Utils.RebaseRunFinished
   import Rail.Pipeline.Utils.RegisterAskedQuestions
   import Rail.Pipeline.Utils.ReturnToEngineer
   import Rail.Pipeline.Utils.ReviewRunFinished
   import Rail.Pipeline.Utils.SetupRunFinished
   import Rail.Pipeline.Utils.TurnStamp
+  import Rail.Pipeline.Utils.UpdateBranchRunFinished
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -125,10 +125,14 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp finish(%Run{} = run, %OsProcess{kind: :setup}, opts), do: setup_run_finished(run, opts)
   defp finish(%Run{} = run, %OsProcess{kind: :ci} = os_process, _opts), do: ci_run_finished(run, os_process)
 
-  # A rebase is judged by the branch, whatever the stage had already concluded.
-  defp finish(%Run{role: %Role{stage: :engineer}, task: %Task{is_rebasing: true}} = run, %OsProcess{} = os_process, _opts) do
+  # A merge is judged by the branch, whatever the stage had already concluded.
+  defp finish(
+         %Run{role: %Role{stage: :engineer}, task: %Task{is_updating_branch: true}} = run,
+         %OsProcess{} = os_process,
+         _opts
+       ) do
     case register_asked_questions(os_process, run) do
-      [] -> rebase_run_finished(run)
+      [] -> update_branch_run_finished(run)
       _asked -> run
     end
   end

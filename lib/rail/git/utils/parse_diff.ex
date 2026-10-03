@@ -8,7 +8,7 @@ defmodule Rail.Git.Utils.ParseDiff do
   the pane does anything with it but render it.
 
   The digest covers paths and hunk lines only, leaving out index hashes, mode
-  lines and similarity metrics, so a rebase that changed no code leaves a
+  lines and similarity metrics, so a merge or rebase that changed no code leaves a
   reader's viewed marks standing. A block it cannot parse degrades into a
   readable fallback rather than taking the whole diff down.
   """
