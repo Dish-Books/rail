@@ -152,6 +152,7 @@ defmodule RailWeb.TaskLive do
           :if={@task != nil and @pane == :design}
           module={DesignStage}
           id={stage_component_id(@selected_role)}
+          current_scope={@current_scope}
           task={@task}
           run={@selected_run}
           stage_run={@stage_run}
@@ -452,8 +453,8 @@ defmodule RailWeb.TaskLive do
     end
   end
 
-  # The reader's comments moved in another of their tabs, or in this one. Only the
-  # comments are read again: the diff under them has not moved.
+  # Comments the reader sees moved, in another tab or this one. Only the comments
+  # are read again: the diff under them has not moved.
   def handle_info({:diff_comments_changed, task_id}, socket) do
     with %{pane: :engineer, task_id: ^task_id, selected_role: %Role{} = role} <- socket.assigns do
       send_update(EngineerStage, id: stage_component_id(role), reload_comments: true)
@@ -622,6 +623,7 @@ defmodule RailWeb.TaskLive do
       questions={@round_questions}
       run={@conversation_run}
       role_name={@roles_map[@conversation_run.role_id].name}
+      current_scope={@current_scope}
     />
 
     <.live_component
@@ -879,14 +881,16 @@ defmodule RailWeb.TaskLive do
     if connected?(socket), do: task_id, else: watched
   end
 
-  # One topic per task and reader: unsent comments are theirs alone, and every tab
-  # they have open has to show and count what Send would send.
+  # Sent and resolved comments are everyone's, so the task has a topic; unsent ones
+  # are the reader's alone, so every tab of theirs also hears their own topic.
   defp watch_diff_comments(socket, %Task{id: task_id}) do
     watched = socket.assigns.watched_comments_task_id
     user_id = socket.assigns.current_scope.user.id
 
     if connected?(socket) and watched != task_id do
+      if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "diff_comments:#{watched}")
       if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "diff_comments:#{watched}:#{user_id}")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task_id}")
       Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task_id}:#{user_id}")
     end
 

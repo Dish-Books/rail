@@ -12,19 +12,21 @@ defmodule Rail.Pipeline.Actions.PickDesignOption do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
+  alias Rail.Scope
 
   @doc """
-  Picks the option `key` from the design `run` produced.
+  Picks the option `key` from the design `run` produced, telling the designer as
+  the scope's user.
 
   Returns `{:ok, run}` once the designer has been told, the message sent or queued.
   """
-  def pick_design_option(%Run{} = run, key) when is_binary(key) do
+  def pick_design_option(%Scope{} = scope, %Run{} = run, key) when is_binary(key) do
     run = Repo.preload(run, [task: :runs], force: true)
     dir = Path.join(run.task.scratch_path, "design")
 
     with :ok <- pickable(run.task),
          {:ok, option, others} <- option(run.task, key),
-         {:ok, _delivery, sent} <- Pipeline.send_message(run, message(option)) do
+         {:ok, _delivery, sent} <- Pipeline.send_message(scope, run, message(option)) do
       manifest = Path.join(dir, "manifest.json")
       %{"options" => entries} = manifest |> File.read!() |> Jason.decode!()
       entry = Enum.find(entries, &match?(%{"key" => ^key}, &1))

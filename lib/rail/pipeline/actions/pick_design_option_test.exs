@@ -57,7 +57,7 @@ defmodule Rail.Pipeline.Actions.PickDesignOptionTest do
   test "records the pick and tells the designer to refine only it", %{task: task, run: run, design_dir: dir} do
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
-    assert {:ok, %Run{}} = Pipeline.pick_design_option(run, "table")
+    assert {:ok, %Run{}} = Pipeline.pick_design_option(system_scope(), run, "table")
 
     assert File.read!(Path.join(dir, "picked")) == "table"
     assert Enum.sort(File.ls!(dir)) == ["manifest.json", "picked", "table.html", "table.png"]
@@ -83,7 +83,7 @@ defmodule Rail.Pipeline.Actions.PickDesignOptionTest do
       Jason.encode!(%{"options" => ["not an option", %{"key" => "cards", "title" => "Cards"}, table]})
     )
 
-    assert {:ok, %Run{}} = Pipeline.pick_design_option(run, "table")
+    assert {:ok, %Run{}} = Pipeline.pick_design_option(system_scope(), run, "table")
 
     assert %{"options" => [^table]} = dir |> Path.join("manifest.json") |> File.read!() |> Jason.decode!()
   end
@@ -92,7 +92,7 @@ defmodule Rail.Pipeline.Actions.PickDesignOptionTest do
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
     File.rm!(Path.join(dir, "timeline.png"))
 
-    assert {:ok, %Run{}} = Pipeline.pick_design_option(run, "table")
+    assert {:ok, %Run{}} = Pipeline.pick_design_option(system_scope(), run, "table")
 
     assert Enum.sort(File.ls!(dir)) == ["manifest.json", "picked", "table.html", "table.png"]
   end
@@ -100,7 +100,7 @@ defmodule Rail.Pipeline.Actions.PickDesignOptionTest do
   test "a design that already has a pick is not picked again", %{run: run, design_dir: dir, manifest: manifest} do
     File.write!(Path.join(dir, "picked"), "cards")
 
-    assert {:error, :already_picked} = Pipeline.pick_design_option(run, "table")
+    assert {:error, :already_picked} = Pipeline.pick_design_option(system_scope(), run, "table")
 
     assert Enum.sort(File.ls!(dir)) ==
              [
@@ -118,7 +118,7 @@ defmodule Rail.Pipeline.Actions.PickDesignOptionTest do
   end
 
   test "only an option the designer wrote can be picked", %{run: run, design_dir: dir, manifest: manifest} do
-    assert {:error, :option_not_found} = Pipeline.pick_design_option(run, "grid")
+    assert {:error, :option_not_found} = Pipeline.pick_design_option(system_scope(), run, "grid")
     refute File.exists?(Path.join(dir, "picked"))
 
     assert Enum.sort(File.ls!(dir)) ==
@@ -130,13 +130,13 @@ defmodule Rail.Pipeline.Actions.PickDesignOptionTest do
   test "nothing is picked before the designer writes its options", %{run: run, design_dir: dir} do
     File.rm!(Path.join(dir, "manifest.json"))
 
-    assert {:error, :design_not_found} = Pipeline.pick_design_option(run, "cards")
+    assert {:error, :design_not_found} = Pipeline.pick_design_option(system_scope(), run, "cards")
   end
 
   test "nothing is picked while the designer is still working", %{run: run, design_dir: dir, manifest: manifest} do
     {:ok, working} = Pipeline.update_run(run, %{status: :running})
 
-    assert {:error, :stage_running} = Pipeline.pick_design_option(working, "cards")
+    assert {:error, :stage_running} = Pipeline.pick_design_option(system_scope(), working, "cards")
 
     assert Enum.sort(File.ls!(dir)) ==
              ["cards.html", "cards.png", "manifest.json", "table.html", "table.png", "timeline.html", "timeline.png"]
@@ -147,7 +147,7 @@ defmodule Rail.Pipeline.Actions.PickDesignOptionTest do
   test "a task past design has nothing left to pick", %{task: task, run: run, design_dir: dir, manifest: manifest} do
     {:ok, _moved} = Pipeline.update_task(task, %{stage: :architect})
 
-    assert {:error, {:invalid_stage, :architect}} = Pipeline.pick_design_option(run, "cards")
+    assert {:error, {:invalid_stage, :architect}} = Pipeline.pick_design_option(system_scope(), run, "cards")
 
     assert Enum.sort(File.ls!(dir)) ==
              ["cards.html", "cards.png", "manifest.json", "table.html", "table.png", "timeline.html", "timeline.png"]
@@ -169,7 +169,7 @@ defmodule Rail.Pipeline.Actions.PickDesignOptionTest do
         started_at: DateTime.utc_now()
       })
 
-    assert {:error, :chat_unavailable} = Pipeline.pick_design_option(silent, "cards")
+    assert {:error, :chat_unavailable} = Pipeline.pick_design_option(system_scope(), silent, "cards")
     refute File.exists?(Path.join(dir, "picked"))
 
     assert Enum.sort(File.ls!(dir)) ==

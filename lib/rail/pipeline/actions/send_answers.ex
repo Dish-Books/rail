@@ -12,14 +12,15 @@ defmodule Rail.Pipeline.Actions.SendAnswers do
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Repo
+  alias Rail.Scope
 
   @doc """
-  Sends `run` the round it is parked on.
+  Sends `run` the round it is parked on, from the scope's user.
 
   Returns `{:error, :questions_pending}` while anything it asked is open, `{:error, :nothing_to_send}`
   when there is no round, and `{:error, :nothing_answered}` when every question was dismissed.
   """
-  def send_answers(%Run{} = run) do
+  def send_answers(%Scope{} = scope, %Run{} = run) do
     round = unsent_round(run)
 
     cond do
@@ -36,7 +37,7 @@ defmodule Rail.Pipeline.Actions.SendAnswers do
         mark_delivered(round)
         # A page open elsewhere hears nothing else when the message cannot go out.
         Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run.id}", {:run_changed, run.id})
-        Pipeline.send_message(run, format(round))
+        Pipeline.send_message(scope, run, format(round))
     end
   end
 

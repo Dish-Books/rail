@@ -1,5 +1,5 @@
 // Keeps a reader where they were while the diff underneath them changes, and
-// takes them to one file when they ask for it.
+// takes them to one file or comment when they ask for it.
 //
 // The engineer writes files as it works, so the pane re-reads and LiveView
 // patches the rows. Anything that grows above the viewport would otherwise carry
@@ -10,12 +10,13 @@ export const DiffScroller = {
   mounted() {
     this.anchor = null;
     this.scrolledTo = null;
+    this.pendingComment = null;
     this.honorScrollTo();
 
-    // Picking a file out of the tree is asking to read it, so the server says
-    // which one and the scroller goes there. It is an event rather than an
-    // attribute because asking twice for the same file has to work twice.
-    this.handleEvent("diff:scroll_to", ({ path }) => this.scrollTo(path));
+    // Picking a file or a comment out of the list beside the diff is asking to
+    // read it, so the server says which and the scroller goes there. It is an
+    // event rather than an attribute because asking twice has to work twice.
+    this.handleEvent("diff:scroll_to", ({ path, id }) => (id ? this.scrollToComment(id) : this.scrollTo(path)));
 
     // A header pinned to the top of the pane is no longer the top of its own
     // card, so it drops its rounded corners. It sits a pixel above the scrollport
@@ -32,7 +33,18 @@ export const DiffScroller = {
     this.el.addEventListener("diff:section-before-update", () => {
       if (!this.anchor) this.anchor = this.currentAnchor();
     });
-    this.el.addEventListener("diff:section-updated", () => this.restoreAnchor());
+
+    // A comment in a folded file is only drawn once that file's own patch lands,
+    // which can be after the event asking for it. It is looked for that once, and
+    // reaching it drops the place held from before the jump.
+    this.el.addEventListener("diff:section-updated", () => {
+      if (this.retryComment()) {
+        this.anchor = null;
+        return;
+      }
+
+      this.restoreAnchor();
+    });
 
     this.watchHeaders();
   },
@@ -58,7 +70,7 @@ export const DiffScroller = {
 
     // Being sent to a file wins over holding the reader's place: they asked for
     // this one, and the place they were holding is the one they just left.
-    if (this.honorScrollTo()) {
+    if (this.honorScrollTo() || this.retryComment()) {
       this.anchor = null;
       return;
     }
@@ -90,11 +102,38 @@ export const DiffScroller = {
   },
 
   scrollTo(path) {
-    const section = this.sectionFor(path);
-    if (!section) return false;
+    return this.jump(() => this.sectionFor(path), () => 0);
+  },
 
-    this.el.scrollTop += this.offsetOf(section);
-    this.settle(path, 3);
+  scrollToComment(id) {
+    this.pendingComment = this.commentJump(id) ? null : id;
+  },
+
+  retryComment() {
+    const id = this.pendingComment;
+    this.pendingComment = null;
+
+    return id ? this.commentJump(id) : false;
+  },
+
+  // A comment is put just under its file's header, which stays pinned over it.
+  commentJump(id) {
+    return this.jump(
+      () => this.el.querySelector(`#${CSS.escape(id)}`),
+      (comment) => {
+        const header = comment.closest("[data-qa='diff_file_section']")?.querySelector("[data-qa='diff_file_header']");
+
+        return (header ? header.offsetHeight : 0) + 8;
+      }
+    );
+  },
+
+  jump(find, under) {
+    const target = find();
+    if (!target) return false;
+
+    this.el.scrollTop += this.offsetOf(target) - under(target);
+    this.settle(find, under, 3);
 
     return true;
   },
@@ -102,17 +141,17 @@ export const DiffScroller = {
   // A section is only laid out once it is scrolled near, so the first jump lands
   // against `contain-intrinsic-size` rather than the real thing. Re-measuring
   // over the next few frames closes the gap the real layout opened.
-  settle(path, frames) {
+  settle(find, under, frames) {
     if (frames <= 0) return;
 
     requestAnimationFrame(() => {
-      const section = this.sectionFor(path);
-      if (!section) return;
+      const target = find();
+      if (!target) return;
 
-      const offset = this.offsetOf(section);
+      const offset = this.offsetOf(target) - under(target);
       if (Math.abs(offset) > 1) this.el.scrollTop += offset;
 
-      this.settle(path, frames - 1);
+      this.settle(find, under, frames - 1);
     });
   },
 
@@ -145,7 +184,7 @@ export const DiffScroller = {
     return this.el.querySelectorAll("[data-qa='diff_file_section']");
   },
 
-  offsetOf(section) {
-    return section.getBoundingClientRect().top - this.el.getBoundingClientRect().top;
+  offsetOf(element) {
+    return element.getBoundingClientRect().top - this.el.getBoundingClientRect().top;
   }
 };

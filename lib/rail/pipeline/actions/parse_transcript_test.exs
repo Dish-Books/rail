@@ -65,6 +65,22 @@ defmodule Rail.Pipeline.Actions.ParseTranscriptTest do
     assert event.author == :event
   end
 
+  # Everyone on a task reads the same conversation, so each message says whose it is.
+  test "a human's lines carry who sent them, and two people's messages are two turns" do
+    logs = [
+      "[human:usr_dana] Please look again",
+      "[human:usr_dana] at the header.",
+      "[human:usr_omar] And the footer.",
+      "[human] An older note."
+    ]
+
+    assert [
+             %Turn{author: :human, sender_id: "usr_dana", content: "Please look again\nat the header."},
+             %Turn{author: :human, sender_id: "usr_omar", content: "And the footer."},
+             %Turn{author: :human, sender_id: nil, content: "An older note."}
+           ] = Pipeline.parse_transcript(logs)
+  end
+
   # Rail's own note to the agent reads as a message to it, not as something
   # the agent said, and the label says which of the reminders it was.
   test "consecutive reminder lines are one reminder, ending whatever came before" do

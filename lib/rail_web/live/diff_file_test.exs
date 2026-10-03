@@ -31,6 +31,8 @@ defmodule RailWeb.Live.DiffFileTest do
         lifted: [],
         changed_count: 0,
         unsent: 0,
+        open: [],
+        reader_id: "usr_reader",
         viewed?: false,
         collapsed?: false,
         expanded_gaps: %{}
@@ -89,6 +91,7 @@ defmodule RailWeb.Live.DiffFileTest do
             body: "Name this for what it does."
           }
           | id: "dcm_on_removed",
+            user_id: "usr_reader",
             line_kind: :deleted,
             line: 2,
             body: "Keep this one."
@@ -151,6 +154,27 @@ defmodule RailWeb.Live.DiffFileTest do
       assert html =~ "Removed line 2 when you commented"
       refute html =~ "has changed"
       refute html =~ "Line changed"
+    end
+
+    test "a resolved comment is one line under its line or lifted, until the reader opens it", %{
+      section: section,
+      rows: rows,
+      comment: comment
+    } do
+      placed = %{comment | status: :resolved}
+      lifted = %{comment | id: "dcm_lifted", body: "Lifted and resolved.", status: :resolved}
+      segments = [%{rows: [rows.header, rows.opening, rows.removed], comments: [placed], draft: nil}]
+      section = %{section | segments: segments, lifted: [{lifted, true}]}
+
+      folded = DiffFile |> render_component(section) |> Floki.parse_fragment!()
+
+      assert ["false", "false"] = folded |> Floki.find("[data-qa='diff_comment']") |> Floki.attribute("aria-expanded")
+      assert [] = Floki.find(folded, "[data-qa='diff_comment_quote']")
+
+      open = render_component(DiffFile, %{section | open: ["dcm_on_removed", "dcm_lifted"]})
+
+      assert open =~ ~r/Unresolve.*Removed line 2 when you commented.*Lifted and resolved\..*Unresolve.*Keep this one\./s
+      refute open =~ "has changed"
     end
 
     test "opens the comment being written under its line", %{section: section, rows: rows} do

@@ -136,6 +136,12 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
     Repo.insert!(%RunEvent{
       run_id: run.id,
       os_process_id: os_process.id,
+      line: "[human:usr_dana] Looks close.\n[QUESTION: Is this done yet?]"
+    })
+
+    Repo.insert!(%RunEvent{
+      run_id: run.id,
+      os_process_id: os_process.id,
       line: "[reminder 1 of 2] Attach a screenshot.\n[QUESTION: Where is the evidence?]"
     })
 

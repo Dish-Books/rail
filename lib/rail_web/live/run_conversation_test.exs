@@ -132,6 +132,55 @@ defmodule RailWeb.Live.RunConversationTest do
     assert html =~ ~s(data-qa="system-event")
   end
 
+  # Everyone on the task reads the same conversation, so "You" is only the reader.
+  test "a person's message is theirs: You for the reader, their name for anyone else", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    {:ok, %{id: dana_id}} =
+      Rail.Users.register_oauth_user(%{
+        github_id: "gh_cnv_dana",
+        login: "dana",
+        name: "Dana Reyes",
+        email: "d@example.com"
+      })
+
+    {:ok, %{id: reader_id} = reader} =
+      Rail.Users.register_oauth_user(%{github_id: "gh_cnv_reader", login: "reader", email: "r@example.com"})
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :finished,
+        conversation_id: "conv_shared",
+        started_at: ~U[2026-09-09 10:00:00.000000Z]
+      })
+
+    Pipeline.append_run_events(run.id, nil, [
+      "[human] Written before senders were kept.",
+      "[human:#{dana_id}] 3 comments on the diff",
+      "[human:usr_gone] From someone since removed.",
+      "[human:#{reader_id}] My own follow-up."
+    ])
+
+    html =
+      render_component(RunConversation,
+        id: "conv",
+        task: task,
+        runs: [run],
+        roles_map: roles_map,
+        current_scope: user_scope(user: reader)
+      )
+
+    assert ["You", "Dana Reyes", "Someone", "You"] =
+             html
+             |> Floki.parse_fragment!()
+             |> Floki.find("[data-qa='human-bubble-sender']")
+             |> Enum.map(&String.trim(Floki.text(&1)))
+  end
+
   # What Rail sent on its own is a message to the agent like a person's, but it
   # says it was Rail and which reminder it was.
   test "a note Rail sent the agent by itself reads as Rail's, not as the human's", %{

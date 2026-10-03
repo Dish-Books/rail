@@ -4,6 +4,9 @@ defmodule Rail.Pipeline.Actions.DeleteDiffCommentTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
+  alias Rail.Roles
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
   setup %{project: project} do
@@ -55,6 +58,36 @@ defmodule Rail.Pipeline.Actions.DeleteDiffCommentTest do
   test "nobody else can remove it", %{task: task, ada: ada, grace: grace, comment: comment} do
     assert_raise FunctionClauseError, fn -> Pipeline.delete_diff_comment(grace, comment) end
     assert [%DiffComment{}] = Pipeline.list_diff_comments(ada, task)
+  end
+
+  test "a sent or resolved comment stays, and offers no removal", %{
+    project: project,
+    task: task,
+    ada: ada,
+    comment: comment
+  } do
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :finished,
+        conversation_id: "sess_delete_diff_comment",
+        started_at: DateTime.utc_now()
+      })
+
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    {:ok, :sent, _run} = Pipeline.send_diff_comments(ada, run)
+    [sent] = Pipeline.list_diff_comments(ada, task)
+    {:ok, resolved} = Pipeline.set_diff_comment_resolved(ada, sent, true)
+
+    assert_raise FunctionClauseError, fn -> Pipeline.delete_diff_comment(ada, sent) end
+    assert_raise FunctionClauseError, fn -> Pipeline.delete_diff_comment(ada, resolved) end
+
+    # A tab drawn before the send still holds it as unsent.
+    assert {:ok, %DiffComment{}} = Pipeline.delete_diff_comment(ada, comment)
+    assert [%DiffComment{status: :resolved}] = Pipeline.list_diff_comments(ada, task)
   end
 
   test "tells the author's pages on the task", %{task: %{id: task_id}, ada: ada, comment: comment} do

@@ -31,6 +31,10 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
         empty_message: "Nothing yet.",
         scroll_to: nil,
         comments: [],
+        reader_id: "usr_reader",
+        open_comments: [],
+        comment_list: :files,
+        selected_comment: nil,
         draft: nil,
         engineer_running?: false
       }
@@ -104,7 +108,8 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
               body: "Name this for what it does."
             }
             | id: UXID.generate!(prefix: "dcm"),
-              path: diff.path
+              path: diff.path,
+              user_id: "usr_reader"
           },
           attrs
         )
@@ -192,19 +197,106 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
       on_gone = comment.(path: "lib/gone.ex")
       on_hidden = comment.(path: "mix.exs")
 
-      assert %{frame: %{stray: [{"lib/gone.ex", [^on_gone]}], sections: ["lib/filter.ex"]}} =
+      assert %{frame: %{stray: [{"lib/gone.ex", [{^on_gone, false}]}], sections: ["lib/filter.ex"]}} =
                calculate_diff_pane(%{assigns | files: [diff, hidden], query: "filter", comments: [on_gone, on_hidden]})
     end
 
     test "counts every unsent comment, and each file its own", %{assigns: assigns, diff: diff, comment: comment} do
       other = %{diff | path: "mix.exs", display_path: "mix.exs", digest: "mix_digest"}
-      comments = [comment.(path: "lib/gone.ex"), comment.([]), comment.(path: "mix.exs"), comment.(path: "mix.exs")]
+
+      comments = [
+        comment.(path: "lib/gone.ex"),
+        comment.([]),
+        comment.(status: :sent),
+        comment.(path: "mix.exs"),
+        comment.(path: "mix.exs"),
+        comment.(path: "mix.exs", status: :resolved)
+      ]
 
       assert %{
                toolbar: %{unsent: 4, engineer_running?: true},
                tree: %{rows: [%{unsent: 1}, %{unsent: 2}]},
                sections: [{_filter, %{unsent: 1}}, {_mix, %{unsent: 2}}]
              } = calculate_diff_pane(%{assigns | files: [diff, other], comments: comments, engineer_running?: true})
+    end
+
+    # Line changed is said of every comment, but the notice is about what Send sends.
+    test "a sent or resolved comment whose line changed is lifted, and only unsent ones are in the notice", %{
+      assigns: assigns,
+      diff: diff,
+      comment: comment
+    } do
+      sent = comment.(line_kind: :added, line: 2, line_text: "  was here", status: :sent)
+      resolved = comment.(line_kind: :added, line: 2, line_text: "  was here", status: :resolved)
+
+      assert %{sections: [{_id, %{lifted: [{^sent, true}, {^resolved, true}], changed_count: 0, unsent: 0}}]} =
+               calculate_diff_pane(%{assigns | files: [diff], comments: [sent, resolved]})
+
+      unsent = comment.(line_kind: :added, line: 2, line_text: "  was here")
+
+      assert %{sections: [{_id, %{changed_count: 1}}]} =
+               calculate_diff_pane(%{assigns | files: [diff], comments: [sent, unsent]})
+    end
+
+    test "a resolved comment the reader unfolded says so, in its file or out of the view", %{
+      assigns: assigns,
+      diff: diff,
+      rows: rows,
+      comment: comment
+    } do
+      %{id: open_id} = open = comment.(line_kind: :context, line: 3, line_text: rows.closing.text, status: :resolved)
+      folded = comment.(line_kind: :context, line: 3, line_text: rows.closing.text, status: :resolved)
+      %{id: gone_id} = gone = comment.(path: "lib/gone.ex", status: :resolved)
+
+      assert %{
+               sections: [{_id, %{open: [^open_id], reader_id: "usr_reader"}}],
+               frame: %{stray: [{"lib/gone.ex", [{^gone, true}]}]}
+             } =
+               calculate_diff_pane(%{
+                 assigns
+                 | files: [diff],
+                   comments: [open, folded, gone],
+                   open_comments: [open_id, gone_id]
+               })
+    end
+
+    test "lists every comment under its state, leaving out a state with none", %{
+      assigns: assigns,
+      diff: diff,
+      comment: comment
+    } do
+      %{id: selected_id} = unsent = comment.(line: 40)
+      rewritten = comment.(line_kind: :added, line: 2, line_text: "  was here", status: :resolved)
+      gone = comment.(path: "lib/gone.ex", status: :resolved, user_id: "usr_teammate")
+      other = %{diff | path: "mix.exs", display_path: "mix.exs", digest: "mix_digest"}
+
+      assert %{
+               tree: %{
+                 list: :comments,
+                 file_count: 2,
+                 comment_count: 3,
+                 selected_comment: ^selected_id,
+                 groups: [
+                   %{status: :unsent, label: "Not sent", rows: [%{comment: ^unsent, changed?: false, mine?: true}]},
+                   %{
+                     status: :resolved,
+                     label: "Resolved",
+                     rows: [
+                       %{comment: ^rewritten, changed?: true, mine?: true},
+                       %{comment: ^gone, changed?: false, mine?: false}
+                     ]
+                   }
+                 ]
+               }
+             } =
+               calculate_diff_pane(%{
+                 assigns
+                 | files: [diff, other],
+                   query: "mix",
+                   comments: [unsent, rewritten, gone],
+                   comment_list: :comments,
+                   selected_comment: selected_id
+               })
     end
 
     test "the comment being written sits under its line", %{assigns: assigns, diff: diff, rows: %{added: added}} do

@@ -9,8 +9,8 @@ defmodule RailWeb.Live.EngineerStage do
   is what review means, and only what is uncommitted, which is what "what has it
   changed since I last looked" means. Marking a file read is per person and
   pinned to the file as it was read, so a file the engineer touches again comes
-  back unread. Comments on lines are the reader's own until they send them all to
-  the engineer as one message.
+  back unread. Comments on lines are the reader's own until Send sends them as one
+  message; then everyone sees them, and their author resolves them.
   """
   use RailWeb, :live_component
 
@@ -24,12 +24,11 @@ defmodule RailWeb.Live.EngineerStage do
   alias RailWeb.Live.DiffFileTree
   alias RailWeb.Live.DiffToolbar
 
-  # Another of the reader's tabs saved, removed or sent comments. Only they moved,
-  # so the diff is not read again.
+  # Another of the reader's tabs saved, removed, sent or resolved comments. Only
+  # they moved, so the diff is not read again.
   @impl true
   def update(%{reload_comments: true}, socket) do
-    %{current_scope: scope, task: task} = socket.assigns
-    socket = socket |> assign(:comments, Pipeline.list_diff_comments(scope, task)) |> sync_pane()
+    socket = socket |> assign_comments() |> sync_pane()
 
     {:ok, socket}
   end
@@ -51,6 +50,9 @@ defmodule RailWeb.Live.EngineerStage do
       |> assign_new(:drawn, fn -> nil end)
       |> assign_new(:sent, fn -> nil end)
       |> assign_new(:comments, fn -> [] end)
+      |> assign_new(:open_comments, fn -> [] end)
+      |> assign_new(:comment_list, fn -> :files end)
+      |> assign_new(:selected_comment, fn -> nil end)
       |> assign_new(:draft, fn -> nil end)
 
     socket = if socket.assigns.focus_file, do: assign(socket, :selected_file, socket.assigns.focus_file), else: socket
@@ -318,11 +320,7 @@ defmodule RailWeb.Live.EngineerStage do
 
     case Pipeline.create_diff_comment(scope, task, Map.put(draft, :body, body)) do
       {:ok, _comment} ->
-        socket =
-          socket
-          |> assign(:comments, Pipeline.list_diff_comments(scope, task))
-          |> assign(:draft, nil)
-          |> sync_pane()
+        socket = socket |> assign_comments() |> assign(:draft, nil) |> sync_pane()
 
         {:noreply, socket}
 
@@ -331,11 +329,12 @@ defmodule RailWeb.Live.EngineerStage do
     end
   end
 
+  # Read back rather than dropped from the list, since another tab may have sent it.
   def handle_event("remove_diff_comment", %{"id" => id}, socket) do
-    case Enum.find(socket.assigns.comments, &(&1.id == id)) do
+    case Enum.find(socket.assigns.comments, &(&1.id == id and &1.status == :unsent)) do
       %{} = comment ->
         {:ok, _removed} = Pipeline.delete_diff_comment(socket.assigns.current_scope, comment)
-        socket = socket |> assign(:comments, List.delete(socket.assigns.comments, comment)) |> sync_pane()
+        socket = socket |> assign_comments() |> sync_pane()
 
         {:noreply, socket}
 
@@ -344,16 +343,86 @@ defmodule RailWeb.Live.EngineerStage do
     end
   end
 
+  # Nothing left to send is a second click or another tab having sent them, so
+  # the list is only read again.
   def handle_event("send_diff_comments", _params, socket) do
     case Pipeline.send_diff_comments(socket.assigns.current_scope, socket.assigns.run) do
       {:ok, _delivery, _run} ->
         send(self(), :task_changed)
-        socket = socket |> assign(:comments, []) |> assign(:error, nil) |> sync_pane()
+        socket = socket |> assign_comments() |> assign(:error, nil) |> sync_pane()
+
+        {:noreply, socket}
+
+      {:error, :nothing_to_send} ->
+        socket = socket |> assign_comments() |> sync_pane()
 
         {:noreply, socket}
 
       {:error, reason} ->
         {:noreply, assign(socket, :error, message_for(reason))}
+    end
+  end
+
+  # Only a comment's author resolves it. One found unsent or gone was clicked on a
+  # stale page, which reading the list again puts right.
+  def handle_event("resolve_diff_comment", %{"id" => id, "resolved" => resolved}, socket) do
+    %{comments: comments, current_scope: %{user: %{id: user_id}}} = socket.assigns
+
+    case Enum.find(comments, &(&1.id == id and &1.user_id == user_id)) do
+      %{} = comment ->
+        {_outcome, _comment_or_reason} =
+          Pipeline.set_diff_comment_resolved(socket.assigns.current_scope, comment, resolved == "true")
+
+        socket =
+          socket
+          |> assign(:open_comments, List.delete(socket.assigns.open_comments, id))
+          |> assign_comments()
+          |> sync_pane()
+
+        {:noreply, socket}
+
+      nil ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("toggle_diff_comment", %{"id" => id}, socket) do
+    socket =
+      socket
+      |> assign(:open_comments, toggle(socket.assigns.open_comments, id, id not in socket.assigns.open_comments))
+      |> sync_pane()
+
+    {:noreply, socket}
+  end
+
+  def handle_event("select_diff_list", %{"list" => list}, socket) do
+    socket = socket |> assign(:comment_list, if(list == "comments", do: :comments, else: :files)) |> sync_pane()
+
+    {:noreply, socket}
+  end
+
+  # Jumping to a comment is asking to read it, so whatever would hide it is undone:
+  # its file's fold, its own fold if resolved, and a filter its file falls outside.
+  def handle_event("select_diff_comment", %{"id" => id}, socket) do
+    %{comments: comments, query: query} = socket.assigns
+
+    case Enum.find(comments, &(&1.id == id)) do
+      %{path: path} = comment ->
+        hidden? = not String.contains?(String.downcase(path), String.downcase(query))
+
+        socket =
+          socket
+          |> assign(:selected_comment, id)
+          |> assign(:collapsed, toggle(socket.assigns.collapsed, path, false))
+          |> assign(:open_comments, toggle(socket.assigns.open_comments, id, comment.status == :resolved))
+          |> assign(:query, if(hidden?, do: "", else: query))
+          |> push_event("diff:scroll_to", %{id: "diff-comment-#{id}"})
+          |> sync_pane()
+
+        {:noreply, socket}
+
+      nil ->
+        {:noreply, socket}
     end
   end
 
@@ -508,7 +577,7 @@ defmodule RailWeb.Live.EngineerStage do
     socket
     |> fold_away_read_files(files)
     |> assign(:files, files)
-    |> assign(:comments, Pipeline.list_diff_comments(scope, task))
+    |> assign_comments()
     |> assign(:work?, highlighted.branch != [])
     |> assign(:highlighted, highlighted)
     |> assign(:loading?, false)
@@ -548,9 +617,23 @@ defmodule RailWeb.Live.EngineerStage do
       target: assigns.myself,
       empty_message: empty_message(assigns.filter),
       comments: assigns.comments,
+      reader_id: assigns.current_scope.user.id,
+      open_comments: assigns.open_comments,
+      comment_list: assigns.comment_list,
+      selected_comment: assigns.selected_comment,
       draft: assigns.draft,
       engineer_running?: Run.running?(assigns.run)
     }
+  end
+
+  # A comment only stays unfolded while it is resolved, so one resolved again later
+  # comes back folded.
+  defp assign_comments(socket) do
+    %{current_scope: scope, task: task, open_comments: open} = socket.assigns
+    comments = Pipeline.list_diff_comments(scope, task)
+    resolved = for %{status: :resolved, id: id} <- comments, do: id
+
+    socket |> assign(:comments, comments) |> assign(:open_comments, Enum.filter(open, &(&1 in resolved)))
   end
 
   # Only to parts already on the page: a part the frame is adding is drawn by it.
@@ -689,7 +772,6 @@ defmodule RailWeb.Live.EngineerStage do
   defp message_for(:ci_not_passed), do: "CI has to pass on the latest commit before this goes to review."
   defp message_for(:nothing_new_to_review), do: "Review has already seen this commit."
   defp message_for(:chat_unavailable), do: "The engineer has no conversation to send these to yet."
-  defp message_for(:nothing_to_send), do: "There are no comments to send."
   defp message_for(reason) when is_binary(reason), do: reason
   defp message_for(reason), do: "Could not finish that: #{inspect(reason)}"
 end

@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Roles
   alias Rail.Tools
@@ -43,7 +44,7 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
     %{task: task, role: role, run: run, ada: user_scope(user: ada), grace: user_scope(user: grace)}
   end
 
-  test "an idle engineer gets every comment in one message, and they leave the diff", %{
+  test "an idle engineer gets every comment in one message, and they stay on the diff, sent", %{
     task: task,
     run: run,
     ada: ada
@@ -102,10 +103,51 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
                  """,
                  "\n"
                ),
-               &"[human] #{&1}"
+               &"[human:#{ada.user.id}] #{&1}"
              )
 
-    assert Pipeline.list_diff_comments(ada, task) == []
+    assert [%DiffComment{status: :sent}, %DiffComment{status: :sent}, %DiffComment{status: :sent}] =
+             Pipeline.list_diff_comments(ada, task)
+  end
+
+  test "only the comments not sent yet are sent, and once each", %{task: task, run: run, ada: ada} do
+    comment = %{path: "lib/a.ex", line_kind: :added, line: 1, line_text: "def feature, do: :ok", filter: :branch}
+    {:ok, _first} = Pipeline.create_diff_comment(ada, task, Map.put(comment, :body, "First round, one."))
+    {:ok, _second} = Pipeline.create_diff_comment(ada, task, Map.put(comment, :body, "First round, two."))
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    {:ok, :sent, _run} = Pipeline.send_diff_comments(ada, run)
+    {:ok, %{id: new_id}} = Pipeline.create_diff_comment(ada, task, Map.put(comment, :body, "Second round."))
+    sent_before = length(Pipeline.list_run_events(run))
+
+    assert {:ok, :sent, %Run{}} = Pipeline.send_diff_comments(ada, run)
+
+    later = run |> Pipeline.list_run_events() |> Enum.drop(sent_before) |> Enum.map_join("\n", & &1.line)
+    assert later =~ "1 comment on the diff"
+    assert later =~ "Second round."
+    refute later =~ "First round"
+
+    assert [%DiffComment{status: :sent}, %DiffComment{status: :sent}, %DiffComment{id: ^new_id, status: :sent}] =
+             Pipeline.list_diff_comments(ada, task)
+  end
+
+  # A second tab, or a second click, finds every comment already sent.
+  test "sending again with nothing new sends nothing", %{task: task, run: run, ada: ada} do
+    {:ok, _only} =
+      Pipeline.create_diff_comment(ada, task, %{
+        path: "lib/a.ex",
+        line_kind: :added,
+        line: 1,
+        line_text: "def feature, do: :ok",
+        filter: :branch,
+        body: "Name it."
+      })
+
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    {:ok, :sent, _run} = Pipeline.send_diff_comments(ada, run)
+    events = Pipeline.list_run_events(run)
+
+    assert {:error, :nothing_to_send} = Pipeline.send_diff_comments(ada, run)
+    assert Pipeline.list_run_events(run) == events
   end
 
   test "a working engineer gets them queued for when its turn ends", %{task: task, run: run, ada: ada} do
@@ -124,7 +166,7 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
     assert {:ok, :queued, %Run{pending_chat: "1 comment on the diff\n\nlib/a.ex, line 3\n+ x = 1\nName it."}} =
              Pipeline.send_diff_comments(ada, running)
 
-    assert Pipeline.list_diff_comments(ada, task) == []
+    assert [%DiffComment{status: :sent}] = Pipeline.list_diff_comments(ada, task)
   end
 
   test "with nothing unsent nothing is sent", %{run: run, ada: ada} do
@@ -140,25 +182,25 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
     {:ok, fresh} =
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :finished, started_at: DateTime.utc_now()})
 
-    {:ok, comment} =
-      Pipeline.create_diff_comment(ada, task, %{
-        path: "lib/a.ex",
-        line_kind: :added,
-        line: 1,
-        line_text: "def feature, do: :ok",
-        filter: :branch,
-        body: "Name it."
-      })
+    comment = %{path: "lib/a.ex", line_kind: :added, line: 1, line_text: "def feature, do: :ok", filter: :branch}
+    {:ok, %{id: first_id}} = Pipeline.create_diff_comment(ada, task, Map.put(comment, :body, "Name it."))
+    {:ok, %{id: second_id}} = Pipeline.create_diff_comment(ada, task, Map.put(comment, :body, "And this."))
+    Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task.id}")
+    Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task.id}:#{ada.user.id}")
 
     assert {:error, :chat_unavailable} = Pipeline.send_diff_comments(ada, fresh)
-    assert [^comment] = Pipeline.list_diff_comments(ada, task)
+
+    assert [%DiffComment{id: ^first_id, status: :unsent}, %DiffComment{id: ^second_id, status: :unsent}] =
+             Pipeline.list_diff_comments(ada, task)
+
+    refute_receive {:diff_comments_changed, _task_id}
   end
 
-  test "another person's comments are neither sent nor removed", %{task: task, run: run, ada: ada, grace: grace} do
+  test "another person's comments are neither sent nor marked sent", %{task: task, run: run, ada: ada, grace: grace} do
     comment = %{path: "lib/a.ex", line_kind: :added, line: 1, line_text: "def feature, do: :ok", filter: :branch}
 
-    {:ok, _adas} = Pipeline.create_diff_comment(ada, task, Map.put(comment, :body, "Ada's"))
-    {:ok, graces} = Pipeline.create_diff_comment(grace, task, Map.put(comment, :body, "Grace's"))
+    {:ok, %{id: adas_id}} = Pipeline.create_diff_comment(ada, task, Map.put(comment, :body, "Ada's"))
+    {:ok, %{id: graces_id}} = Pipeline.create_diff_comment(grace, task, Map.put(comment, :body, "Grace's"))
 
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
@@ -167,15 +209,18 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
     lines = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
     assert lines =~ "Ada's"
     refute lines =~ "Grace's"
-    assert [^graces] = Pipeline.list_diff_comments(grace, task)
+
+    assert [%DiffComment{id: ^adas_id, status: :sent}, %DiffComment{id: ^graces_id, status: :unsent}] =
+             Pipeline.list_diff_comments(grace, task)
   end
 
-  test "tells the author's pages on the task once the comments are sent, not before", %{
+  # Everyone sees a sent comment, so every page on the task hears of the send.
+  test "tells every page on the task once the comments are sent, not before", %{
     task: %{id: task_id} = task,
     run: run,
     ada: ada
   } do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task_id}:#{ada.user.id}")
+    Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task_id}")
 
     assert {:error, :nothing_to_send} = Pipeline.send_diff_comments(ada, run)
     refute_receive {:diff_comments_changed, ^task_id}
@@ -190,7 +235,8 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
         body: "Name it."
       })
 
-    assert_receive {:diff_comments_changed, ^task_id}
+    # An unsent comment is its author's alone, so only their own pages hear of it.
+    refute_receive {:diff_comments_changed, ^task_id}
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
     assert {:ok, :sent, %Run{}} = Pipeline.send_diff_comments(ada, run)

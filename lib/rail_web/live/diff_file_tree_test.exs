@@ -3,6 +3,7 @@ defmodule RailWeb.Live.DiffFileTreeTest do
 
   import Phoenix.LiveViewTest
 
+  alias Rail.Pipeline.Schemas.DiffComment
   alias RailWeb.Live.DiffFileTree
 
   setup do
@@ -22,7 +23,12 @@ defmodule RailWeb.Live.DiffFileTreeTest do
             selected?: false,
             unsent: 0
           }
-        ]
+        ],
+        list: :files,
+        file_count: 1,
+        comment_count: 0,
+        selected_comment: nil,
+        groups: []
       }
     }
   end
@@ -61,6 +67,39 @@ defmodule RailWeb.Live.DiffFileTreeTest do
 
   test "hides the list when the reader has put it away", %{tree: tree} do
     refute render_component(DiffFileTree, %{tree | show?: false}) =~ "diff_file_tree"
+  end
+
+  test "switches between the files and the reader's comments, counting each", %{tree: tree} do
+    comment = %DiffComment{
+      id: "dcm_listed",
+      path: "lib/rail/invoices/filter.ex",
+      line_kind: :added,
+      line: 3,
+      line_text: "x",
+      filter: :branch,
+      body: "Name it.",
+      status: :sent
+    }
+
+    tree = %{
+      tree
+      | comment_count: 1,
+        groups: [%{status: :sent, label: "Sent", rows: [%{comment: comment, changed?: false, mine?: true}]}]
+    }
+
+    files = render_component(DiffFileTree, tree)
+
+    assert files =~ ~r/aria-pressed="true"[^>]*>\s*Files 1\s*<.*Comments 1/s
+    assert files =~ ~s(phx-click="select_diff_list")
+    assert files =~ "diff-file-row"
+    refute files =~ "diff_comment_list"
+
+    comments = render_component(DiffFileTree, %{tree | list: :comments})
+
+    assert comments =~ ~r/Files 1.*aria-pressed="true"[^>]*>\s*Comments 1/s
+    assert comments =~ "Name it."
+    refute comments =~ "diff-file-row"
+    refute comments =~ "1 file changed"
   end
 
   test "counts a file's unsent comments beside its name", %{tree: tree} do

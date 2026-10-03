@@ -33,7 +33,15 @@ defmodule RailWeb.Components.DiffPane do
   attr :empty_message, :string, default: "Nothing has been changed on this branch yet."
   attr :scroll_to, :string, default: nil
   attr :target, :any, default: nil
-  attr :comments, :list, default: [], doc: "the reader's unsent comments on this task"
+
+  attr :comments, :list,
+    default: [],
+    doc: "everyone's sent and resolved comments on this task, and the reader's unsent ones"
+
+  attr :reader_id, :string, default: nil
+  attr :open_comments, :list, default: [], doc: "ids of the resolved comments the reader has unfolded"
+  attr :comment_list, :atom, default: :files, doc: "which of files or comments the column beside the diff lists"
+  attr :selected_comment, :string, default: nil
   attr :draft, :map, default: nil, doc: "the line a comment is being written on"
   attr :engineer_running?, :boolean, default: false
 
@@ -60,6 +68,7 @@ defmodule RailWeb.Components.DiffPane do
             :for={{path, comments} <- @pane.frame.stray}
             name={diff_file_name(%{display_path: path})}
             comments={comments}
+            reader_id={@reader_id}
             target={@target}
           />
         </div>
@@ -101,6 +110,7 @@ defmodule RailWeb.Components.DiffPane do
               :for={{path, comments} <- @pane.frame.stray}
               name={diff_file_name(%{display_path: path})}
               comments={comments}
+              reader_id={@reader_id}
               target={@target}
             />
           </div>
@@ -111,12 +121,16 @@ defmodule RailWeb.Components.DiffPane do
   end
 
   attr :name, :map, required: true
-  attr :comments, :list, required: true
+  attr :comments, :list, required: true, doc: "each comment and whether it is unfolded"
+  attr :reader_id, :string, required: true
   attr :target, :any, required: true
 
   # A file this view does not draw, such as a committed one under Uncommitted,
   # still has its comments counted and sent, so they are shown after the rest.
   defp stray_comments(assigns) do
+    assigns =
+      assign(assigns, :unsent, Enum.count(assigns.comments, fn {comment, _open?} -> comment.status == :unsent end))
+
     ~H"""
     <div
       data-qa="diff_comment_stray_section"
@@ -127,13 +141,23 @@ defmodule RailWeb.Components.DiffPane do
           <span class="truncate text-slate-500 dark:text-slate-400">{@name.dir}</span>
           <span class="shrink-0 font-bold text-slate-900 dark:text-slate-100">{@name.name}</span>
         </span>
-        <span class="ml-auto shrink-0 inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-950 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:text-amber-300">
-          <.icon name="pi-chat-text-fill" class="size-3" />{length(@comments)} unsent
+        <span
+          :if={@unsent > 0}
+          class="ml-auto shrink-0 inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-950 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:text-amber-300"
+        >
+          <.icon name="pi-chat-text-fill" class="size-3" />{@unsent} unsent
         </span>
       </div>
 
       <div class="px-4 py-2.5 space-y-2 bg-slate-50 dark:bg-slate-800/40">
-        <.diff_comment :for={comment <- @comments} comment={comment} target={@target} lifted?={true} />
+        <.diff_comment
+          :for={{comment, open?} <- @comments}
+          comment={comment}
+          target={@target}
+          lifted?={true}
+          open?={open?}
+          mine?={comment.user_id == @reader_id}
+        />
       </div>
     </div>
     """

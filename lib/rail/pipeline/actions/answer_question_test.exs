@@ -80,7 +80,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
 
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
-    {:ok, :sent, %Run{}} = Pipeline.send_answers(Repo.reload!(run))
+    {:ok, :sent, %Run{}} = Pipeline.send_answers(system_scope(), Repo.reload!(run))
 
     assert {:error, :already_sent} = Pipeline.answer_question(Repo.reload!(question), "Sqlite")
     assert %Question{answer: "Postgres"} = Repo.reload!(question)
@@ -93,7 +93,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
 
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
-    {:ok, :sent, %Run{}} = Pipeline.send_answers(Repo.reload!(run))
+    {:ok, :sent, %Run{}} = Pipeline.send_answers(system_scope(), Repo.reload!(run))
 
     lines = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
     assert lines =~ "The answer is: Sqlite"
@@ -106,7 +106,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
     {:ok, _dismissed} = Pipeline.dismiss_question(first)
     {:ok, _dismissed} = Pipeline.dismiss_question(second)
 
-    assert {:error, :nothing_answered} = Pipeline.send_answers(Repo.reload!(run))
+    assert {:error, :nothing_answered} = Pipeline.send_answers(system_scope(), Repo.reload!(run))
 
     refute Repo.reload!(first).delivered_at
     refute Repo.reload!(second).delivered_at
@@ -122,7 +122,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
 
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
-    assert {:ok, :sent, %Run{}} = Pipeline.send_answers(Repo.reload!(run))
+    assert {:ok, :sent, %Run{}} = Pipeline.send_answers(system_scope(), Repo.reload!(run))
 
     assert %Question{delivered_at: %DateTime{}} = Repo.reload!(first)
     assert %Question{delivered_at: %DateTime{}} = Repo.reload!(second)
@@ -139,12 +139,12 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
 
     {:ok, _answered} = Pipeline.answer_question(first, "Postgres")
 
-    assert {:error, :questions_pending} = Pipeline.send_answers(Repo.reload!(run))
+    assert {:error, :questions_pending} = Pipeline.send_answers(system_scope(), Repo.reload!(run))
     refute Repo.reload!(first).delivered_at
   end
 
   test "a run with no round to hand back sends nothing", %{run: run} do
-    assert {:error, :nothing_to_send} = Pipeline.send_answers(Repo.reload!(run))
+    assert {:error, :nothing_to_send} = Pipeline.send_answers(system_scope(), Repo.reload!(run))
   end
 
   test "a single answer reads as one question asked", %{run: run} do
@@ -153,7 +153,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
 
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
-    assert {:ok, :sent, %Run{}} = Pipeline.send_answers(Repo.reload!(run))
+    assert {:ok, :sent, %Run{}} = Pipeline.send_answers(system_scope(), Repo.reload!(run))
 
     lines = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
     assert lines =~ "You asked: Which database?"

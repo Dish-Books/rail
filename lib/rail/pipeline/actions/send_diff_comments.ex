@@ -1,9 +1,10 @@
 defmodule Rail.Pipeline.Actions.SendDiffComments do
   @moduledoc """
-  Sends every comment a person left on the diff to the engineer, as one message.
+  Sends the comments a person left on the diff and has not sent yet to the
+  engineer, as one message, and marks them sent.
 
   Each quotes its line as it read when it was written, since line numbers move
-  as the engineer edits. Once sent, the conversation is their only record.
+  as the engineer edits.
   """
 
   import Ecto.Query
@@ -16,25 +17,40 @@ defmodule Rail.Pipeline.Actions.SendDiffComments do
   alias Rail.Scope
 
   @doc """
-  Sends the scope user's comments on `run`'s task to `run`.
+  Sends the scope user's unsent comments on `run`'s task to `run`.
 
   Returns what `Rail.Pipeline.send_message/2` does, or `{:error, :nothing_to_send}`
-  when there are no comments.
+  when none are unsent.
   """
-  def send_diff_comments(%Scope{user: %{id: user_id}}, %Run{task_id: task_id} = run) do
+  def send_diff_comments(%Scope{user: %{id: user_id}} = scope, %Run{task_id: task_id} = run) do
     mine = from comment in DiffComment, where: comment.task_id == ^task_id and comment.user_id == ^user_id
 
-    with [_first | _rest] = comments <- Repo.all(from comment in mine, order_by: [:path, :inserted_at, :id]),
-         {:ok, _delivery, _run} = sent <- Pipeline.send_message(run, format(comments)) do
-      # Sent before deleting and outside a transaction: the dispatch reads the run
-      # from another process, which would not see an uncommitted message.
-      ids = Enum.map(comments, & &1.id)
-      Repo.delete_all(from comment in mine, where: comment.id in ^ids)
-      broadcast_diff_comments(task_id, user_id)
+    # Claimed before sending, so a second tab's Send finds nothing left to send.
+    # Committed rather than held in a transaction: the dispatch reads the run from
+    # another process, which would not see an uncommitted message.
+    {_claimed, comments} =
+      Repo.update_all(from(comment in mine, where: comment.status == :unsent, select: comment),
+        set: [status: :sent, updated_at: DateTime.utc_now()]
+      )
+
+    comments = Enum.sort_by(comments, &{&1.path, DateTime.to_unix(&1.inserted_at, :microsecond), &1.id})
+
+    with [_first | _rest] <- comments,
+         {:ok, _delivery, _run} = sent <- Pipeline.send_message(scope, run, format(comments)) do
+      broadcast_diff_comments(task_id, :everyone)
       sent
     else
-      [] -> {:error, :nothing_to_send}
-      {:error, reason} -> {:error, reason}
+      [] ->
+        {:error, :nothing_to_send}
+
+      {:error, reason} ->
+        ids = Enum.map(comments, & &1.id)
+
+        Repo.update_all(from(comment in mine, where: comment.id in ^ids and comment.status == :sent),
+          set: [status: :unsent, updated_at: DateTime.utc_now()]
+        )
+
+        {:error, reason}
     end
   end
 

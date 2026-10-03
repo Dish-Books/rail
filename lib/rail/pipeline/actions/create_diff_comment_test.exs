@@ -43,7 +43,8 @@ defmodule Rail.Pipeline.Actions.CreateDiffCommentTest do
               line: 28,
               line_text: "  defp newest_first(query)",
               filter: :uncommitted,
-              body: "Keep this ordering."
+              body: "Keep this ordering.",
+              status: :unsent
             }} =
              Pipeline.create_diff_comment(ada, task, %{
                "path" => "lib/ledger/billing/invoice_query.ex",
@@ -75,7 +76,7 @@ defmodule Rail.Pipeline.Actions.CreateDiffCommentTest do
     assert %{line: ["must be greater than 0"]} = errors_on(changeset)
   end
 
-  test "cannot be filed as someone else or on another task", %{
+  test "cannot be filed as someone else, on another task or as already sent", %{
     task: task,
     task_id: task_id,
     user_id: user_id,
@@ -84,6 +85,7 @@ defmodule Rail.Pipeline.Actions.CreateDiffCommentTest do
     attrs = %{
       task_id: "tsk_someone_elses",
       user_id: "usr_someone_else",
+      status: :sent,
       path: "lib/a.ex",
       line_kind: :context,
       line: 3,
@@ -92,7 +94,8 @@ defmodule Rail.Pipeline.Actions.CreateDiffCommentTest do
       body: "Why?"
     }
 
-    assert {:ok, %DiffComment{task_id: ^task_id, user_id: ^user_id}} = Pipeline.create_diff_comment(ada, task, attrs)
+    assert {:ok, %DiffComment{task_id: ^task_id, user_id: ^user_id, status: :unsent}} =
+             Pipeline.create_diff_comment(ada, task, attrs)
   end
 
   # Every page the author has open on the task shows what Send would send.

@@ -17,6 +17,7 @@ defmodule RailWeb.Live.RunConversation do
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
+  alias Rail.Users
 
   @doc """
   Takes the task and its runs; everything else the conversation decides itself.
@@ -142,6 +143,8 @@ defmodule RailWeb.Live.RunConversation do
                 run={@selected_run}
                 role={selected_role(@selected_run, @roles_map)}
                 turns={@turns}
+                reader_id={reader_id(@current_scope)}
+                senders={@senders}
                 expanded_activities={@expanded_activities}
                 runs={@runs}
                 roles_map={@roles_map}
@@ -208,6 +211,8 @@ defmodule RailWeb.Live.RunConversation do
   attr :run, :any, required: true
   attr :role, :any, required: true
   attr :turns, :list, default: []
+  attr :reader_id, :string, default: nil
+  attr :senders, :map, default: %{}, doc: "each sender's name by id, `nil` for one who is gone"
   attr :expanded_activities, MapSet, required: true
   attr :runs, :list, default: []
   attr :roles_map, :map, default: %{}
@@ -245,6 +250,7 @@ defmodule RailWeb.Live.RunConversation do
             <.message_item
               msg={msg}
               idx={idx}
+              sender={sender_label(msg, @reader_id, @senders)}
               role={@role}
               runs={@runs}
               roles_map={@roles_map}
@@ -263,6 +269,7 @@ defmodule RailWeb.Live.RunConversation do
 
   attr :msg, :any, required: true
   attr :idx, :integer, required: true
+  attr :sender, :string, default: "You"
   attr :role, :any, required: true
   attr :runs, :list, default: []
   attr :roles_map, :map, default: %{}
@@ -323,7 +330,7 @@ defmodule RailWeb.Live.RunConversation do
         >
           <div class="flex items-center gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
             <.icon name="pi-user" class="h-3 w-3 shrink-0" />
-            <span>You</span>
+            <span data-qa="human-bubble-sender">{@sender}</span>
           </div>
           <%!-- Kept on one line: pre-wrap would render the template's own indentation. --%>
           <div
@@ -970,7 +977,7 @@ defmodule RailWeb.Live.RunConversation do
     if String.trim(message) == "" or socket.assigns.chat_sending do
       socket
     else
-      case Pipeline.send_message(run, message) do
+      case Pipeline.send_message(socket.assigns.current_scope, run, message) do
         {:ok, _delivery, run} -> socket |> assign(:chat_input, "") |> select(run)
         {:error, _reason} -> socket
       end
@@ -999,6 +1006,8 @@ defmodule RailWeb.Live.RunConversation do
     |> assign_new(:chat_input, fn -> "" end)
     |> assign_new(:chat_sending, fn -> false end)
     |> assign_new(:run_events, fn -> [] end)
+    |> assign_new(:current_scope, fn -> nil end)
+    |> assign_new(:senders, fn -> %{} end)
     |> assign_new(:line, fn -> nil end)
   end
 
@@ -1027,11 +1036,35 @@ defmodule RailWeb.Live.RunConversation do
       end)
 
     socket
+    |> assign_senders(turns)
     |> assign(:run_events, run_events)
     |> assign(:log_lines, lines)
     |> assign(:turns, turns)
     |> assign_elapsed(Map.values(processes))
   end
+
+  # Looked up once per person, so a batch of lines from someone already known reads
+  # nothing; one who has since gone is remembered as gone.
+  defp assign_senders(socket, turns) do
+    known = socket.assigns.senders
+    missing = for %Turn{sender_id: id} when is_binary(id) <- turns, not Map.has_key?(known, id), uniq: true, do: id
+
+    if missing == [] do
+      socket
+    else
+      found = socket.assigns.current_scope |> Users.list_users_by_ids(missing) |> Map.new(&{&1.id, &1.name || &1.login})
+      assign(socket, :senders, known |> Map.merge(Map.new(missing, &{&1, nil})) |> Map.merge(found))
+    end
+  end
+
+  defp reader_id(%{user: %{id: id}}), do: id
+  defp reader_id(_no_reader), do: nil
+
+  # A line with no sender predates them or was written by Rail for a human, and
+  # reads as it always has.
+  defp sender_label(%Turn{sender_id: nil}, _reader_id, _senders), do: "You"
+  defp sender_label(%Turn{sender_id: reader_id}, reader_id, _senders), do: "You"
+  defp sender_label(%Turn{sender_id: sender_id}, _reader_id, senders), do: senders[sender_id] || "Someone"
 
   defp said(events, socket) do
     events |> Enum.map(& &1.line) |> readable_lines(socket.assigns) |> Pipeline.parse_transcript()

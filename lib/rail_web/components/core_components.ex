@@ -14,6 +14,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate assignee(assigns), to: Components.IssueIcons
   defdelegate button(assigns), to: Components.Button
   defdelegate diff_comment(assigns), to: Components.DiffComment
+  defdelegate diff_comment_list(assigns), to: Components.DiffCommentList
   defdelegate diff_hunk(assigns), to: Components.DiffHunk
   defdelegate diff_pane(assigns), to: Components.DiffPane
   defdelegate diff_row(assigns), to: Components.DiffRow

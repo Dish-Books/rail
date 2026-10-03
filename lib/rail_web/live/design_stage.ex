@@ -240,7 +240,7 @@ defmodule RailWeb.Live.DesignStage do
   end
 
   def handle_event("pick", %{"key" => key}, socket) do
-    socket.assigns.run |> Pipeline.pick_design_option(key) |> respond(socket)
+    socket.assigns.current_scope |> Pipeline.pick_design_option(socket.assigns.run, key) |> respond(socket)
   end
 
   def handle_event("approve", _params, socket) do

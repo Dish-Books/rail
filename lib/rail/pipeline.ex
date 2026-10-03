@@ -36,7 +36,7 @@ defmodule Rail.Pipeline do
 
   defdelegate start_design_run(run), to: Actions.StartDesignRun
   defdelegate read_design(task), to: Actions.ReadDesign
-  defdelegate pick_design_option(run, key), to: Actions.PickDesignOption
+  defdelegate pick_design_option(scope, run, key), to: Actions.PickDesignOption
   defdelegate approve_design(run), to: Actions.ApproveDesign
 
   defdelegate start_architect_run(run), to: Actions.StartArchitectRun
@@ -91,17 +91,18 @@ defmodule Rail.Pipeline do
 
   defdelegate register_question(run, question), to: Actions.RegisterQuestion
   defdelegate answer_question(question, answer), to: Actions.AnswerQuestion
-  defdelegate send_answers(run), to: Actions.SendAnswers
+  defdelegate send_answers(scope, run), to: Actions.SendAnswers
   defdelegate dismiss_round(run), to: Actions.DismissRound
   defdelegate dismiss_question(question), to: Actions.DismissQuestion
   defdelegate get_question(id), to: Actions.GetQuestion
   defdelegate list_questions(task, opts \\ []), to: Actions.ListQuestions
 
-  defdelegate send_message(run, text), to: Actions.SendMessage
+  defdelegate send_message(scope, run, text), to: Actions.SendMessage
   defdelegate create_diff_comment(scope, task, attrs), to: Actions.CreateDiffComment
   defdelegate list_diff_comments(scope, task), to: Actions.ListDiffComments
   defdelegate delete_diff_comment(scope, comment), to: Actions.DeleteDiffComment
   defdelegate send_diff_comments(scope, run), to: Actions.SendDiffComments
+  defdelegate set_diff_comment_resolved(scope, comment, resolved?), to: Actions.SetDiffCommentResolved
   defdelegate stop_and_send_message(scope, run, opts \\ []), to: Actions.StopAndSendMessage
   defdelegate stop_run(scope, run, opts \\ []), to: Actions.StopRun
 
