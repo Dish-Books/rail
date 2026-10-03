@@ -477,6 +477,25 @@ defmodule RailWeb.TaskLiveTest do
     assert {:ok, %{status: :pending}} = Pipeline.get_question(question.id)
   end
 
+  # The ids come back from the browser, so a page drawn before a question went away can still name it.
+  test "a question that is gone is neither answered nor dismissed", %{conn: conn, task: task, run: run} do
+    {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+    blocked = Repo.preload(blocked, task: :issue)
+
+    {:ok, question} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?"})
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    view
+    |> element("#answer-question-form")
+    |> render_submit(%{"question_id" => "qst_gone", "answer" => "Postgres"})
+
+    view |> element("#dismiss-question-button") |> render_click(%{"question_id" => "qst_gone"})
+
+    assert has_element?(view, "#question-prompt", "Which database?")
+    assert {:ok, %{status: :pending}} = Pipeline.get_question(question.id)
+  end
+
   test "a round sent from another tab leaves this one", %{conn: conn, task: task, run: run} do
     {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
 
