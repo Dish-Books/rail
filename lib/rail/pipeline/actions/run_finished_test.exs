@@ -1571,10 +1571,11 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       assert Enum.any?(
                lines,
                &(&1 =~ ~s([answered from past answers] Answered by Rail from Rail's answer on RFG-1, ) and
-                   &1 =~ ~s(: When asked "Postgres or SQLite?": Postgres.))
+                   String.ends_with?(&1, ": Postgres."))
              )
 
       refute Enum.any?(lines, &String.starts_with?(&1, "[human]"))
+      refute Enum.any?(lines, &(&1 =~ "When asked"))
     end
 
     test "waits while a person still has a question to answer", %{task: task, exited: exited, asked: asked} do

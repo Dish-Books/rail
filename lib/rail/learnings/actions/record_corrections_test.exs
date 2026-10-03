@@ -146,7 +146,7 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
     taken = %Question{
       id: "qst_rc_2",
       prompt: "Blue or indigo?",
-      answer: past.rule,
+      answer: "Blue, to match the review tab.",
       status: :answered,
       suggested_learning_id: past.id
     }
@@ -165,7 +165,11 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
     assert %Observation{learning_id: ^past_id} = Repo.get_by!(Observation, source_id: "qst_rc_2")
   end
 
-  test "an answer taken from a rule edited since joins that rule", %{project: project, task: task, records: records} do
+  test "an answer taken from a rule reworded since, as the person's answer offered, joins that rule", %{
+    project: project,
+    task: task,
+    records: records
+  } do
     {:ok, [_comment, _review, _qa, %Learning{id: past_id} = past]} = Learnings.record_corrections(task, records)
     {:ok, _edited} = Learnings.update_learning(system_scope(), past, %{rule: "Blue, as the review tab is."})
     later = learnings_task(project, "COR-3")
@@ -173,7 +177,7 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
     taken = %Question{
       id: "qst_rc_4",
       prompt: "Blue or indigo?",
-      answer: "Blue, as the review tab is.",
+      answer: "Blue, to match the review tab.",
       status: :answered,
       suggested_learning_id: past_id
     }

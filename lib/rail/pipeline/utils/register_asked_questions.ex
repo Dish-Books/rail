@@ -68,8 +68,8 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestions do
 
   defp gate(%Run{task: task}, %Question{} = question) do
     case Learnings.match_past_answer(task, question) do
-      # The rule as it reads now, so a person's edit to it is what Rail answers with.
-      {:answer, %{learning: %{rule: answer} = learning}} ->
+      # The person's own answer, since the rule restates the question it settled.
+      {:answer, %{learning: learning, observation: %{excerpt: answer}}} ->
         question
         |> Question.changeset(%{
           answer: answer,

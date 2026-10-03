@@ -199,7 +199,7 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
                %Question{
                  prompt: "Which database?",
                  status: :answered,
-                 answer: ~s(When asked "Postgres or SQLite?": Postgres.),
+                 answer: "Postgres.",
                  answered_by_rail: true,
                  suggested_learning_id: ^rule_id
                },
@@ -213,7 +213,7 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
              ] = Repo.all(from q in Question, where: q.task_id == ^task_id, order_by: [asc: q.inserted_at, asc: q.id])
     end
 
-    test "a rule edited since it was learned answers with what it says now", %{
+    test "a rule reworded since it was learned still answers with the person's own answer", %{
       task: %Task{id: task_id},
       run: run,
       rule: rule,
@@ -226,7 +226,7 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
 
       assert [_one] = register_asked_questions(os_process, run)
 
-      assert [%Question{status: :answered, answer: "Postgres, with pgvector.", answered_by_rail: true}] =
+      assert [%Question{status: :answered, answer: "Postgres.", answered_by_rail: true}] =
                Repo.all(from q in Question, where: q.task_id == ^task_id)
     end
   end

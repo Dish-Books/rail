@@ -6482,6 +6482,7 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("#question-tab-1") |> render_click()
 
       assert has_element?(view, "#likely-answer", "Blue, to match the review tab.")
+      refute has_element?(view, "#likely-answer", "When asked")
       assert has_element?(view, "#likely-answer", "Dana Okafor on")
 
       view |> element("#answer-myself") |> render_click()
@@ -6492,11 +6493,8 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("#question-tab-1") |> render_click()
       view |> element("#use-likely-answer") |> render_click()
 
-      assert %{
-               status: :answered,
-               answer: ~s(When asked "Indigo or blue?": Blue, to match the review tab.),
-               answered_by_rail: false
-             } = Repo.reload!(second)
+      assert %{status: :answered, answer: "Blue, to match the review tab.", answered_by_rail: false} =
+               Repo.reload!(second)
     end
   end
 end
