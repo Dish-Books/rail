@@ -2788,7 +2788,6 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "everyone on the task sees sent and resolved comments as they happen, and only the author acts on them", %{
-      conn: conn,
       task: task,
       scope: scope,
       engineer_run: run
