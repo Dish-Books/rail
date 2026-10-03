@@ -152,6 +152,7 @@ defmodule RailWeb.TaskLive do
           :if={@task != nil and @pane == :design}
           module={DesignStage}
           id={stage_component_id(@selected_role)}
+          current_scope={@current_scope}
           task={@task}
           run={@selected_run}
           stage_run={@stage_run}
@@ -622,6 +623,7 @@ defmodule RailWeb.TaskLive do
       questions={@round_questions}
       run={@conversation_run}
       role_name={@roles_map[@conversation_run.role_id].name}
+      current_scope={@current_scope}
     />
 
     <.live_component

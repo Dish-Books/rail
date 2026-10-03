@@ -103,7 +103,7 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
                  """,
                  "\n"
                ),
-               &"[human] #{&1}"
+               &"[human:#{ada.user.id}] #{&1}"
              )
 
     assert [%DiffComment{status: :sent}, %DiffComment{status: :sent}, %DiffComment{status: :sent}] =

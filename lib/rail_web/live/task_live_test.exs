@@ -508,7 +508,7 @@ defmodule RailWeb.TaskLiveTest do
     view |> element("#change-answer-button") |> render_click()
 
     # A run with no conversation to resume takes the round without a word on its topic.
-    _sent = Pipeline.send_answers(Repo.reload!(run))
+    _sent = Pipeline.send_answers(system_scope(), Repo.reload!(run))
 
     refute has_element?(view, "#answer-field-card")
   end
@@ -769,7 +769,7 @@ defmodule RailWeb.TaskLiveTest do
       assert length(earlier) == 3
 
       for question <- questions, do: {:ok, _answered} = Pipeline.answer_question(question, "Postgres")
-      _sent = run |> Repo.reload!() |> Repo.preload(:role) |> Pipeline.send_answers()
+      _sent = run |> Repo.reload!() |> Repo.preload(:role) |> then(&Pipeline.send_answers(system_scope(), &1))
       Pipeline.append_run_events(run.id, nil, ["[tool] Edit lib/rail/repo.ex", "Carrying on with Postgres."])
 
       _settled = render(view)

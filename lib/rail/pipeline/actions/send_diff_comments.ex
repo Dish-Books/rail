@@ -22,7 +22,7 @@ defmodule Rail.Pipeline.Actions.SendDiffComments do
   Returns what `Rail.Pipeline.send_message/2` does, or `{:error, :nothing_to_send}`
   when none are unsent.
   """
-  def send_diff_comments(%Scope{user: %{id: user_id}}, %Run{task_id: task_id} = run) do
+  def send_diff_comments(%Scope{user: %{id: user_id}} = scope, %Run{task_id: task_id} = run) do
     mine = from comment in DiffComment, where: comment.task_id == ^task_id and comment.user_id == ^user_id
 
     # Claimed before sending, so a second tab's Send finds nothing left to send.
@@ -36,7 +36,7 @@ defmodule Rail.Pipeline.Actions.SendDiffComments do
     comments = Enum.sort_by(comments, &{&1.path, DateTime.to_unix(&1.inserted_at, :microsecond), &1.id})
 
     with [_first | _rest] <- comments,
-         {:ok, _delivery, _run} = sent <- Pipeline.send_message(run, format(comments)) do
+         {:ok, _delivery, _run} = sent <- Pipeline.send_message(scope, run, format(comments)) do
       broadcast_diff_comments(task_id, :everyone)
       sent
     else

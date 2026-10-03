@@ -75,7 +75,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
     assert pending_questions(task.id) == []
     refute Repo.get!(Question, q.id).delivered_at
 
-    {:ok, :sent, %Run{id: ^run_id} = sent} = Pipeline.send_answers(Repo.reload!(run))
+    {:ok, :sent, %Run{id: ^run_id} = sent} = Pipeline.send_answers(system_scope(), Repo.reload!(run))
 
     assert Repo.get!(Question, q.id).delivered_at
 

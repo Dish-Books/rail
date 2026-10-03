@@ -142,4 +142,28 @@ defmodule RailWeb.Components.DiffCommentTest do
     assert open =~ "diff_comment_fold"
     refute open =~ "Unresolve"
   end
+
+  # Comments are shared once sent, so a folded row still says whose it is.
+  test "a folded resolved comment names its author" do
+    comment = %DiffComment{
+      id: "dcm_folded",
+      path: "lib/rail/feature.ex",
+      line_kind: :added,
+      line: 7,
+      line_text: "def feature, do: :ok",
+      filter: :branch,
+      body: "Name this for what it does.",
+      status: :resolved,
+      user: %User{login: "dana", name: "Dana Reyes"}
+    }
+
+    theirs = (&Card.diff_comment/1) |> render_component(comment: comment, mine?: false) |> Floki.parse_fragment!()
+    mine = (&Card.diff_comment/1) |> render_component(comment: comment, mine?: true) |> Floki.parse_fragment!()
+
+    assert ["Dana Reyes"] =
+             theirs |> Floki.find("[data-qa='diff_comment_author']") |> Enum.map(&String.trim(Floki.text(&1)))
+
+    assert ["You"] = mine |> Floki.find("[data-qa='diff_comment_author']") |> Enum.map(&String.trim(Floki.text(&1)))
+    assert Floki.text(theirs) =~ ~r/Resolved.*Dana Reyes.*Name this for what it does\./s
+  end
 end

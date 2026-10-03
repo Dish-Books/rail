@@ -16,6 +16,8 @@ defmodule RailWeb.Components.DiffComment do
   attr :mine?, :boolean, required: true, doc: "the reader wrote it"
 
   def diff_comment(%{comment: %{status: :resolved}, open?: false} = assigns) do
+    assigns = assign(assigns, :author, if(assigns.mine?, do: "You", else: author_name(assigns.comment)))
+
     ~H"""
     <button
       type="button"
@@ -30,6 +32,12 @@ defmodule RailWeb.Components.DiffComment do
       <.icon name="pi-caret-right" class="size-3.5 text-slate-500 dark:text-slate-400" />
       <span class="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 shrink-0">
         <.icon name="pi-check-circle-fill" class="size-3.5" />Resolved
+      </span>
+      <span
+        data-qa="diff_comment_author"
+        class="shrink-0 max-w-[40%] truncate text-[11px] font-semibold text-slate-500 dark:text-slate-400"
+      >
+        {@author}
       </span>
       <span class="min-w-0 flex-1 truncate text-[12px] text-slate-500 dark:text-slate-400">
         {@comment.body}

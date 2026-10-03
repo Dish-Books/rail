@@ -115,7 +115,7 @@ defmodule RailWeb.Live.QuestionCard do
   end
 
   def handle_event("send_answers", _params, socket) do
-    _sent = Pipeline.send_answers(socket.assigns.run)
+    _sent = Pipeline.send_answers(socket.assigns.current_scope, socket.assigns.run)
     send(self(), :task_changed)
     {:noreply, socket}
   end

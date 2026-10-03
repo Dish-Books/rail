@@ -5,7 +5,7 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
 
   alias Rail.Pipeline.Turn
 
-  @human_prefix ~r/^\[human\]\s*/
+  @human_prefix ~r/^\[human(?::([^\]\s]+))?\]\s*/
   @reminder_prefix ~r/^\[(reminder \d+ of \d+)\]\s*/
   @system_prefix ~r/^\[(run|init|tool|tool error|result|rail|handoff|denied|recovered|error|rate limit|stderr|human)(\s|\]|:)/
 
@@ -54,7 +54,7 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
         end
       end)
 
-    initial_state = %{human_lines: nil, reminder: nil, activity_lines: [], role_lines: [], turns: []}
+    initial_state = %{human_lines: nil, sender_id: nil, reminder: nil, activity_lines: [], role_lines: [], turns: []}
 
     flat_lines
     |> Enum.reduce(initial_state, &process_log_line/2)
@@ -81,10 +81,13 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
         process_log_line(line, flush_reminder(state))
 
       Regex.match?(@human_prefix, line) ->
+        sender_id = @human_prefix |> Regex.run(line) |> Enum.at(1)
         state = state |> flush_activity() |> flush_role()
+        # Two people's messages one after the other are two turns, each theirs.
+        state = if sender_id == state.sender_id, do: state, else: flush_human(state)
 
         stripped = Regex.replace(@human_prefix, line, "")
-        %{state | human_lines: [stripped | state.human_lines || []]}
+        %{state | human_lines: [stripped | state.human_lines || []], sender_id: sender_id}
 
       # Only the harness ends what a human was saying: a plain line after a
       # comment is the rest of that comment, however it is indented or wrapped.
@@ -160,8 +163,8 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
   defp flush_human(%{human_lines: nil} = state), do: state
 
   defp flush_human(%{human_lines: lines} = state) do
-    turn = %Turn{author: :human, content: joined(lines)}
-    %{state | human_lines: nil, turns: [turn | state.turns]}
+    turn = %Turn{author: :human, content: joined(lines), sender_id: state.sender_id}
+    %{state | human_lines: nil, sender_id: nil, turns: [turn | state.turns]}
   end
 
   defp flush_activity(%{activity_lines: []} = state), do: state

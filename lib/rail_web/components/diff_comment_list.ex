@@ -90,7 +90,17 @@ defmodule RailWeb.Components.DiffCommentList do
             data-qa="diff_comment_list_jump"
             class="min-w-0 flex-1 text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
           >
-            <span class="flex items-center gap-1.5 font-mono text-[10px] text-slate-500 dark:text-slate-400">
+            <span
+              :if={not row.mine?}
+              data-qa="diff_comment_list_author"
+              class="block truncate text-[11px] font-semibold text-slate-600 dark:text-slate-300"
+            >
+              {author_name(row.comment)}
+            </span>
+            <span
+              data-qa="diff_comment_list_meta"
+              class="flex items-center gap-1.5 font-mono text-[10px] text-slate-500 dark:text-slate-400"
+            >
               <span class="shrink-0">{line_label(row.comment)}</span>
               <span
                 :if={row.changed?}
@@ -99,13 +109,6 @@ defmodule RailWeb.Components.DiffCommentList do
                 class="shrink-0 inline-flex items-center gap-0.5 text-slate-500 dark:text-slate-400"
               >
                 <.icon name="pi-arrows-clockwise-bold" class="size-2.5" />changed
-              </span>
-              <span
-                :if={not row.mine?}
-                data-qa="diff_comment_list_author"
-                class="truncate max-w-20"
-              >
-                {author_name(row.comment)}
               </span>
               <span class="truncate">{Path.basename(row.comment.path)}</span>
             </span>

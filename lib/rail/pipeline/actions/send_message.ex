@@ -16,18 +16,19 @@ defmodule Rail.Pipeline.Actions.SendMessage do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Repo
+  alias Rail.Scope
 
   @doc """
-  Sends `text` to `run`.
+  Sends `text` to `run` from the scope's user.
 
   Returns `{:ok, :sent, run}` when it went out, `{:ok, :queued, run}` when the
   agent is still working and it will go out when the turn ends.
   """
-  def send_message(%Run{} = run, text) do
+  def send_message(%Scope{} = scope, %Run{} = run, text) do
     with %Run{} = run <- Repo.get(Run, run.id),
          :ok <- validate_can_chat(run),
          {:ok, trimmed} <- validate_message(text) do
-      deliver(run, trimmed)
+      deliver(scope, run, trimmed)
     else
       nil -> {:error, :not_found}
       {:error, reason} -> {:error, reason}
@@ -47,8 +48,8 @@ defmodule Rail.Pipeline.Actions.SendMessage do
 
   defp validate_message(_other), do: {:error, :empty_message}
 
-  defp deliver(%Run{} = run, text) do
-    record_transcript(run, text)
+  defp deliver(scope, %Run{} = run, text) do
+    record_transcript(scope, run, text)
     {:ok, run} = run |> Run.changeset(%{pending_chat: append(run.pending_chat, text)}) |> Repo.update()
 
     if Run.running?(run) do
@@ -60,9 +61,11 @@ defmodule Rail.Pipeline.Actions.SendMessage do
   end
 
   # The human's words go into the log as they are typed, so the conversation reads
-  # in order whether the agent sees them now or at the end of its turn.
-  defp record_transcript(%Run{} = run, text) do
-    lines = text |> String.split("\n") |> Enum.map(&"[human] #{&1}")
+  # in order whether the agent sees them now or at the end of its turn. Each line
+  # names who sent it, since everyone on the task reads the same conversation.
+  defp record_transcript(scope, %Run{} = run, text) do
+    tag = if scope.user, do: "[human:#{scope.user.id}]", else: "[human]"
+    lines = text |> String.split("\n") |> Enum.map(&"#{tag} #{&1}")
     Pipeline.append_run_events(run.id, nil, lines)
   end
 

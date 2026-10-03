@@ -31,7 +31,7 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestions do
     "[recovered]",
     "[rate limit]",
     "[rail]",
-    "[human]",
+    "[human",
     "[reminder",
     "[handoff]",
     "[stderr]",

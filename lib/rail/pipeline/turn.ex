@@ -24,8 +24,11 @@ defmodule Rail.Pipeline.Turn do
 
   `:reminder` is a note Rail sent the agent on its own, such as a QA report sent
   back for evidence. `label` says which reminder it was, as in "reminder 1 of 2".
+
+  A `:human` turn carries the `sender_id` of the person who sent it, or `nil` for
+  lines logged before senders were recorded and for those Rail wrote for a human.
   """
-  defstruct author: :role, content: "", label: nil, at: nil, duration_seconds: nil, process: nil
+  defstruct author: :role, content: "", label: nil, at: nil, duration_seconds: nil, process: nil, sender_id: nil
 
   @type t :: %__MODULE__{
           author: :human | :role | :activity | :driving | :event | :turn_start | :command | :reminder,
@@ -33,6 +36,7 @@ defmodule Rail.Pipeline.Turn do
           label: String.t() | nil,
           at: DateTime.t() | nil,
           duration_seconds: non_neg_integer() | nil,
-          process: struct() | nil
+          process: struct() | nil,
+          sender_id: String.t() | nil
         }
 end

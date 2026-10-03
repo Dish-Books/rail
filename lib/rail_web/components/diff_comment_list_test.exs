@@ -4,6 +4,7 @@ defmodule RailWeb.Components.DiffCommentListTest do
   import Phoenix.LiveViewTest
 
   alias Rail.Pipeline.Schemas.DiffComment
+  alias Rail.Users.Schemas.User
   alias RailWeb.Components.DiffCommentList
 
   setup do
@@ -90,7 +91,7 @@ defmodule RailWeb.Components.DiffCommentListTest do
 
   test "someone else's comment names them and has no box to resolve it", %{groups: groups} do
     [_unsent, %{rows: [%{comment: sent}]} = sent_group, %{rows: [%{comment: resolved}]} = resolved_group] = groups
-    grace = %Rail.Users.Schemas.User{login: "grace", name: "Grace Hopper"}
+    grace = %User{login: "grace", name: "Grace Hopper"}
 
     theirs = [
       %{sent_group | rows: [%{comment: %{sent | user: grace}, changed?: false, mine?: false}]},
@@ -105,5 +106,22 @@ defmodule RailWeb.Components.DiffCommentListTest do
 
     assert ["Grace Hopper", "Grace Hopper"] =
              document |> Floki.find("[data-qa='diff_comment_list_author']") |> Enum.map(&String.trim(Floki.text(&1)))
+  end
+
+  # The name is the part a reader looks for, so it is not squeezed into the
+  # line label, changed mark and file name.
+  test "someone else's name has a line of its own, apart from the line and file", %{groups: groups} do
+    [_unsent, %{rows: [%{comment: sent}]} = sent_group | _resolved] = groups
+    dana = %User{login: "dana", name: "Dana Reyes"}
+    theirs = [%{sent_group | rows: [%{comment: %{sent | user: dana}, changed?: true, mine?: false}]}]
+
+    html = render_component(&DiffCommentList.diff_comment_list/1, groups: theirs, target: nil)
+    document = Floki.parse_fragment!(html)
+
+    assert [author] = Floki.find(document, "[data-qa='diff_comment_list_author']")
+    assert String.trim(Floki.text(author)) == "Dana Reyes"
+    refute hd(Floki.attribute(author, "class")) =~ "max-w"
+    assert [] = Floki.find(document, "[data-qa='diff_comment_list_meta'] [data-qa='diff_comment_list_author']")
+    assert [_meta] = Floki.find(document, "[data-qa='diff_comment_list_meta']")
   end
 end
