@@ -8,7 +8,7 @@ defmodule Rail.Learnings.Schemas.LearningProposalTest do
              ["Add", "Merge", "Rewrite", "Retire", "Conflict", "Promote", "Overridden"]
 
     assert Enum.map(LearningProposal.promote_targets(), &LearningProposal.promote_label/1) ==
-             ["a rail_credo check", "a role prompt", "a line in the repo's CLAUDE.md"]
+             ["a lint check", "a role prompt", "a line in the repo's CLAUDE.md"]
   end
 
   test "only an add, a merge and a rewrite carry a draft" do

@@ -159,7 +159,8 @@ default_roles = [
     backend_id: claude_backend.id,
     model: "claude-opus-5-5",
     reasoning_effort: :high,
-    system_prompt: read_prompt.("curator"),
+    # Every curator pass carries its whole job in its brief, so the role needs no prompt file.
+    system_prompt: "You curate a project's knowledge base for Rail. Each brief says what to read and what to write.",
     max_concurrent: 1,
     position: 8
   }

@@ -457,7 +457,19 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
 
     #{checkout} is a checkout of the default branch. Read it to check whether the code a rule names still exists. Change nothing in it, and write no file but #{result}.
 
-    Every observation needs an outcome. Link it to the rule or pending draft it is another sighting of, make it the evidence of a new proposal, or dismiss it as one-off. A sighting from an abandoned task counts for less.
+    Every rule is an instruction to every run that meets it, so a bad one costs every run it reaches and a missing one costs a person correcting the same thing again. A good rule:
+
+    - is one instruction an agent can follow without having seen the task it came from: "context functions take the scope first", not "the scope was wrong on the last task";
+    - is scoped as narrowly as it holds, to the roles that act on it and, where it is about some files and not others, a path glob;
+    - says in its why what breaks without it, so an agent can tell when it does not apply.
+
+    Weigh the evidence before you propose:
+
+    - Every observation needs an outcome. Link it to the rule or pending draft it is another sighting of, make it the evidence of a new proposal, or dismiss it as one-off.
+    - A sighting from three tasks is a pattern and from one an anecdote. Count a sighting as evidence only when it is the same lesson, since Rail activates an add on its own once its evidence spans three tasks.
+    - A sighting from an abandoned task counts for less: the work may have been wrong for reasons no review saw.
+    - A rule given to runs and broken anyway is not working. Rewrite it so it is followed, or promote it out of the knowledge base to somewhere it is enforced or always read.
+    - Propose a calibration rule, which says what review should not raise, only when people dismissed the same kind of finding again and again.
 
     Write #{result} with a heredoc, the closing JSON line at column zero:
 
@@ -482,7 +494,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
     - An observation you make the evidence of a proposal needs no outcome of its own.
     - `kind` is convention, decision, environment, product, design, qa or calibration. A calibration rule says what review should not raise.
     - `roles` are product, design, architect, engineer, review, qa, demo and triage, and an empty list means every role. `path_glob` scopes a rule to files, such as `lib/rail_web/**`.
-    - Retire a rule whose code is gone, or that a newer decision contradicts. Flag a conflict where two rules disagree. Promote a rule broken again and again, to `credo_check`, `role_prompt` or `claude_md`.
+    - Retire a rule whose code is gone, or that a newer decision contradicts. Flag a conflict where two rules disagree. Promote a rule broken again and again to `credo_check` (a lint check the project runs), `role_prompt` (the prompt of the roles it is for) or `claude_md` (a line in the repository's CLAUDE.md).
     - Ids are only ever ones from these files. A proposal naming any other is dropped.
     - `{"outcomes": [], "proposals": []}` is right when there was nothing to read.
     """)

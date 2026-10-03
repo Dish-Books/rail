@@ -90,14 +90,14 @@ defmodule Rail.Learnings.Actions.ApproveLearningProposalTest do
 
     Req.Test.expect(Rail.Linear, fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn)
-      assert body =~ "Make a rail_credo check of a rule that keeps being broken"
+      assert body =~ "Make a lint check of a rule that keeps being broken"
       assert body =~ "Context functions take Rail.Scope first"
 
       Req.Test.json(conn, %{
         "data" => %{
           "issueCreate" => %{
             "success" => true,
-            "issue" => %{"id" => "lin_promote_1", "identifier" => "TST-91", "title" => "Make a rail_credo check"}
+            "issue" => %{"id" => "lin_promote_1", "identifier" => "TST-91", "title" => "Make a lint check"}
           }
         }
       })

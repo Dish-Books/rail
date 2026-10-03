@@ -72,7 +72,7 @@ defmodule Rail.Learnings.Schemas.LearningProposal do
   def action_label(:promote), do: "Promote"
   def action_label(:override), do: "Overridden"
 
-  def promote_label(:credo_check), do: "a rail_credo check"
+  def promote_label(:credo_check), do: "a lint check"
   def promote_label(:role_prompt), do: "a role prompt"
   def promote_label(:claude_md), do: "a line in the repo's CLAUDE.md"
 
