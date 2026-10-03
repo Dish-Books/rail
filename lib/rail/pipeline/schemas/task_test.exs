@@ -10,6 +10,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles
+  alias Rail.Roles.Schemas.Role
 
   setup %{project: project} do
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :product)
@@ -142,6 +143,20 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
 
     assert Task.running?(%{task | runs: [idle, busy]})
+  end
+
+  test "ready_to_mark?/1 is true for a draft pull request once the engineer is done", %{task: task} do
+    engineer_done = %Run{status: :finished, stage_outcome: :done, role: %Role{stage: :engineer}}
+    engineer_running = %Run{status: :running, role: %Role{stage: :engineer}}
+    qa_running = %Run{status: :running, role: %Role{stage: :qa}}
+    draft = %{task | pr_number: 7, pr_is_draft: true, runs: [engineer_done, qa_running]}
+
+    assert Task.ready_to_mark?(draft)
+    refute Task.ready_to_mark?(%{draft | runs: [engineer_running]})
+    refute Task.ready_to_mark?(%{draft | pr_number: nil, pr_is_draft: nil})
+    refute Task.ready_to_mark?(%{draft | pr_is_draft: false})
+    refute Task.ready_to_mark?(%{draft | cleaned_up_at: DateTime.utc_now()})
+    refute Task.ready_to_mark?(%{task | pr_number: 7, pr_is_draft: true})
   end
 
   test "worktree_present?/1 answers for the directory, not the path", %{task: task} do

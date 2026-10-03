@@ -127,6 +127,17 @@ defmodule Rail.Pipeline.Schemas.Task do
   def running?(%__MODULE__{runs: runs}) when is_list(runs), do: Enum.any?(runs, &Run.running?/1)
   def running?(%__MODULE__{}), do: false
 
+  @doc """
+  True when a person can take the task's draft pull request out of draft: it has
+  one, and no engineer run is in flight. Requires `runs` preloaded with `:role`.
+  """
+  def ready_to_mark?(%__MODULE__{pr_number: number, pr_is_draft: true, cleaned_up_at: nil, runs: runs})
+      when is_integer(number) and is_list(runs) do
+    not Enum.any?(runs, &(&1.role.stage == :engineer and Run.running?(&1)))
+  end
+
+  def ready_to_mark?(%__MODULE__{}), do: false
+
   def stages, do: @stages
 
   @doc "True when the demo stage has a video on disk for `task`."

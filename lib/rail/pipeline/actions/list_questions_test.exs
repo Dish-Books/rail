@@ -62,6 +62,19 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     assert [%Question{id: ^q2_id}] = Pipeline.list_questions(task, status: :pending)
   end
 
+  test "filters by several statuses at once", %{task: task, run: run} do
+    {:ok, %Question{id: pending_id}} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Pending?"})
+    {:ok, left} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Left behind?"})
+    {:ok, %Question{id: left_id}} = left |> Question.changeset(%{status: :unanswered}) |> Repo.update()
+    {:ok, answered} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Answered?"})
+    {:ok, _answered} = Pipeline.answer_question(answered, "Yes")
+    {:ok, dismissed} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Dismissed?"})
+    {:ok, _dismissed} = Pipeline.dismiss_question(dismissed)
+
+    assert [%Question{id: ^pending_id}, %Question{id: ^left_id}] =
+             Pipeline.list_questions(task, status: [:pending, :unanswered], order_by: [asc: :inserted_at])
+  end
+
   test "covers every run of the task", %{task: task, run: run, roles: roles} do
     {:ok, other_run} =
       Pipeline.create_run(%{
