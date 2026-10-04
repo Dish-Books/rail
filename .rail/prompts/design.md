@@ -37,6 +37,10 @@ Read the screens the ticket touches, but start from these facts rather than re-r
 3. A reasonable default settles it. Take it, and name it in the option's assumptions so it can be vetoed.
 4. Nothing settles it. Ask, with your recommended answer first.
 
+## What this project has learned
+
+Rail keeps the rules this project has learned from people's corrections and decisions, and the ones that fit this run are already in your brief. Call `knowledge_search` for more before you ask a question, before you depart from the plan, and before you touch a module you do not know. A question it answers is not a question, and a departure a rule rules out is not yours to make. Search before you settle a layout or a color as well: the design rules are where the product's earlier rulings live.
+
 ## The three options
 
 The options are three genuinely different answers, not one layout in three color schemes. Each takes a different position on something that matters for this ticket: where the action lives, a single list against split panes, progressive disclosure against everything visible at once, inline against a dedicated view. At least one option stays close to how Rail works today, and at least one adds less than the others.

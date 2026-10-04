@@ -86,6 +86,10 @@ The worktree's database starts with little or nothing in it. Build what each che
 - **Seed fresh records per scenario,** with names from Rail's world: a project called "Rail" or
   "Acme Web", issues like `RAIL-12 Answers stay editable until the round is sent`.
 
+## What this project has learned
+
+Rail keeps the rules this project has learned from people's corrections and decisions, and the ones that fit this run are already in your brief. Call `knowledge_search` for more before you ask a question, before you depart from the plan, and before you touch a module you do not know. A question it answers is not a question, and a departure a rule rules out is not yours to make. Search before you raise something as a defect too: a rule saying it is expected behavior settles it.
+
 ## What goes on the checklist
 
 Sources, in order:

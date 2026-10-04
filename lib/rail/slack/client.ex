@@ -54,6 +54,15 @@ defmodule Rail.Slack.Client do
   end
 
   @doc """
+  Posts `text` as a new message in `channel`, as the workspace's bot. Returns `{:ok, ts}`.
+  """
+  def post_channel_message(%SlackWorkspace{token: token}, channel, text) do
+    with {:ok, %{"ts" => ts}} <- request(:post, token, "chat.postMessage", json: %{channel: channel, text: text}) do
+      {:ok, ts}
+    end
+  end
+
+  @doc """
   Downloads an attached file, sending the bot token only to Slack's file host.
   """
   def download_file(%SlackWorkspace{token: token}, url) do

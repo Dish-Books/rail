@@ -227,7 +227,10 @@ defmodule Rail.Triage.Actions.HandleSlackEventTest do
       assert_receive {:triage_scheduled, ^bot_id, 15_000}
     end
 
-    test "from Rail's own bot never triggers, even where bots do", %{event: event, project: project} do
+    test "from Rail's own bot, such as the learnings digest, is not filed, even where bots trigger", %{
+      event: event,
+      project: project
+    } do
       %{workspace: workspace, channel: channel} = connect_slack_channel(project, bot_triage_enabled: true)
 
       event =
@@ -236,9 +239,16 @@ defmodule Rail.Triage.Actions.HandleSlackEventTest do
         |> put_in(["event", "bot_id"], workspace.bot_id)
         |> put_in(["event", "bot_profile"], %{"name" => "Rail"})
 
-      assert {:ok, %Thread{id: thread_id, status: :done}} = Triage.handle_slack_event(workspace, event)
-      assert [%Message{author_name: "Rail"}] = Repo.all(from m in Message, where: m.thread_id == ^thread_id)
-      refute_received {:triage_scheduled, ^thread_id, _delay}
+      assert :ignored = Triage.handle_slack_event(workspace, event)
+      assert [] = Repo.all(from t in Thread, where: t.slack_channel_id == ^channel.id)
+    end
+
+    test "posted as Rail's bot user is not filed either", %{project: project} do
+      %{workspace: workspace, channel: channel} = connect_slack_channel(project)
+      event = slack_message_event(channel, %{"user" => workspace.bot_user_id, "text" => "Learnings for rail"})
+
+      assert :ignored = Triage.handle_slack_event(workspace, event)
+      assert [] = Repo.all(from t in Thread, where: t.slack_channel_id == ^channel.id)
     end
   end
 

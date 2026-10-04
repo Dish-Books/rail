@@ -18,6 +18,7 @@ defmodule RailWeb.Live.EngineerStage do
 
   alias Rail.Git
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias RailWeb.Live.DiffFile
@@ -263,17 +264,15 @@ defmodule RailWeb.Live.EngineerStage do
     {:noreply, socket}
   end
 
-  # The line is read off the diff this pane drew, so the comment quotes what the
-  # reader saw. The numbers come from the page, which may be stale or not numbers.
+  # The line and its code are read off the diff this pane drew, so the comment quotes
+  # what the reader saw. The numbers come from the page, and may be stale or not numbers.
   def handle_event("open_diff_comment", %{"path" => path, "kind" => kind} = params, socket) do
     number = if kind == "deleted", do: params["old_line"], else: params["new_line"]
+    rows = socket.assigns.files |> Enum.filter(&(&1.path == path)) |> Enum.flat_map(& &1.rows)
 
     row =
       with {line, ""} <- Integer.parse(number || "") do
-        socket.assigns.files
-        |> Enum.filter(&(&1.path == path))
-        |> Enum.flat_map(& &1.rows)
-        |> Enum.find(&(&1.kind == :line and to_string(&1.line_kind) == kind and line_number(&1) == line))
+        Enum.find(rows, &(&1.kind == :line and to_string(&1.line_kind) == kind and line_number(&1) == line))
       end
 
     socket =
@@ -284,6 +283,7 @@ defmodule RailWeb.Live.EngineerStage do
             line_kind: line_kind,
             line: line_number(row),
             line_text: text,
+            context_text: DiffComment.calculate_context_text(rows, row),
             filter: socket.assigns.filter
           }
 

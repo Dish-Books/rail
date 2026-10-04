@@ -11,7 +11,7 @@ defmodule Rail.Pipeline.Actions.ListRuns do
   Lists runs, filtered and preloaded as `opts` asks.
 
   `:project_id`, one id or a list, reaches through the task each run belongs to, so a caller showing
-  one project's work asks for runs and gets exactly those. `:owner_user_id` reaches
+  one project's work asks for runs and gets exactly those. `:task_id` keeps one task's. `:owner_user_id` reaches
   on to the task's issue and keeps the runs on issues that user owns.
 
   Runs on cleaned-up tasks are left out unless `include_cleaned_up: true`.
@@ -23,10 +23,14 @@ defmodule Rail.Pipeline.Actions.ListRuns do
     |> order_by(^Keyword.get(opts, :order_by, asc: :inserted_at))
     |> preload(^Keyword.get(opts, :preload, []))
     |> filter_project(opts[:project_id])
+    |> filter_task(opts[:task_id])
     |> filter_owner(opts[:owner_user_id])
     |> filter_cleaned_up(opts[:include_cleaned_up])
     |> Repo.all()
   end
+
+  defp filter_task(query, task_id) when is_binary(task_id), do: where(query, [run: r], r.task_id == ^task_id)
+  defp filter_task(query, nil), do: query
 
   defp filter_project(query, project_id) when is_binary(project_id) do
     where(query, [task: t], t.project_id == ^project_id)

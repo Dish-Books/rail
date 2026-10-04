@@ -183,8 +183,8 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
       ])
 
     {:ok, _stopped} = Pipeline.update_run(run, %{status: :finished})
-    {:ok, _to_fix} = Pipeline.decide_review_finding(to_fix, :fix)
-    {:ok, _skipped} = Pipeline.decide_review_finding(dismissed, :skip)
+    {:ok, _to_fix} = Pipeline.decide_review_finding(system_scope(), to_fix, :fix)
+    {:ok, _skipped} = Pipeline.decide_review_finding(system_scope(), dismissed, :skip)
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
       assert ["-p", prompt | _rest] = argv
@@ -202,5 +202,60 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     end)
 
     assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_review_run(run)
+  end
+
+  describe "the checklist" do
+    test "carries the rules found per changed file, with ids, the calibration instruction and the rule field", %{
+      project: project,
+      run: run
+    } do
+      stub_vertex(%{"Repo.insert!" => vector([1.0])})
+
+      stub(Rail.Git, :load_diff, fn _scope, _task, :branch ->
+        {:ok,
+         [
+           %{
+             path: "test/a_test.exs",
+             rows: [
+               %{kind: :hunk_header},
+               %{kind: :line, line_kind: :added, text: "Repo.insert!(row)"},
+               %{kind: :line, line_kind: :context, text: "end"}
+             ]
+           },
+           %{path: "priv/logo.png", rows: [%{kind: :binary}]}
+         ]}
+      end)
+
+      rule =
+        learning(project, %{rule: "Tests use the factory", kind: :convention, path_glob: "test/**"}, embedding: [1.0])
+
+      calibration = learning(project, %{rule: "Don't flag a missing @doc", kind: :calibration, pinned: true})
+
+      expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+        assert prompt =~ "The checklist: rules this project has learned."
+        assert prompt =~ "- `#{rule.id}` Convention: Tests use the factory Applies to `test/**`."
+        assert prompt =~ "- `#{calibration.id}` Calibration: Don't flag a missing @doc"
+        assert prompt =~ "A finding one says not to raise is still written, with that rule's id as `rule`"
+        assert prompt =~ ~s("rule": null)
+        assert prompt =~ "`rule` is the id of the checklist rule a finding comes from"
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %OsProcess{}} = Pipeline.start_review_run(run)
+      assert_received {:embedded, "test/a_test.exs\nRepo.insert!(row)", "CODE_RETRIEVAL_QUERY"}
+      refute_received {:embedded, "priv/logo.png" <> _rest, _task_type}
+    end
+
+    test "a worktree that is gone gives no per-file rules", %{project: project, run: run} do
+      stub(Rail.Git, :load_diff, fn _scope, _task, :branch -> {:error, :no_worktree} end)
+      learning(project, %{rule: "Pinned anyway", kind: :convention, pinned: true})
+
+      expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+        assert prompt =~ "Pinned anyway"
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %OsProcess{}} = Pipeline.start_review_run(run)
+    end
   end
 end

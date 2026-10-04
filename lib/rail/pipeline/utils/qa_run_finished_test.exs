@@ -99,7 +99,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
         }
       ])
 
-    {:ok, _to_fix} = Pipeline.decide_qa_finding(finding, :fix)
+    {:ok, _to_fix} = Pipeline.decide_qa_finding(system_scope(), finding, :fix)
 
     File.write!(path, """
     {"verdict": "pass", "findings": [
@@ -126,7 +126,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
         }
       ])
 
-    {:ok, _to_fix} = Pipeline.decide_qa_finding(finding, :fix)
+    {:ok, _to_fix} = Pipeline.decide_qa_finding(system_scope(), finding, :fix)
 
     File.write!(path, """
     {"verdict": "fail", "findings": [

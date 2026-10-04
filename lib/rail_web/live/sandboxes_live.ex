@@ -157,7 +157,6 @@ defmodule RailWeb.SandboxesLive do
                   <.th>Task</.th>
                   <.th>Role</.th>
                   <.th>For</.th>
-                  <.th>Reserved</.th>
                   <.th>CPU in use</.th>
                   <.th>Memory in use</.th>
                   <.th>Running</.th>
@@ -166,7 +165,7 @@ defmodule RailWeb.SandboxesLive do
               </thead>
               <tbody>
                 <tr :if={@running == []}>
-                  <td colspan="8" class="px-4 py-4 text-sm text-slate-500 dark:text-slate-400">
+                  <td colspan="7" class="px-4 py-4 text-sm text-slate-500 dark:text-slate-400">
                     No sandbox is running.
                   </td>
                 </tr>
@@ -184,12 +183,6 @@ defmodule RailWeb.SandboxesLive do
                     class="whitespace-nowrap px-4 py-2.5 text-xs text-slate-500 dark:text-slate-400"
                   >
                     {sandbox_for(sandbox)}
-                  </td>
-                  <td
-                    data-qa="reserved"
-                    class="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-slate-700 dark:text-slate-300"
-                  >
-                    {format_reservation(sandbox)}
                   </td>
                   <td class="whitespace-nowrap px-4 py-2.5">
                     <.sandbox_usage_meter
@@ -236,13 +229,12 @@ defmodule RailWeb.SandboxesLive do
                   <.th>Role</.th>
                   <.th>For</.th>
                   <.th>How it ended</.th>
-                  <.th>Freed</.th>
                   <.th>Ended</.th>
                 </tr>
               </thead>
               <tbody>
                 <tr :if={@ended == []}>
-                  <td colspan="6" class="px-4 py-4 text-sm text-slate-500 dark:text-slate-400">
+                  <td colspan="5" class="px-4 py-4 text-sm text-slate-500 dark:text-slate-400">
                     No sandbox ended in the last hour.
                   </td>
                 </tr>
@@ -269,12 +261,6 @@ defmodule RailWeb.SandboxesLive do
                     >
                       <.icon name={ending.icon} class="size-3.5" />{ending.label}
                     </span>
-                  </td>
-                  <td
-                    data-qa="freed"
-                    class="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-slate-700 dark:text-slate-300"
-                  >
-                    {format_reservation(sandbox)}
                   </td>
                   <td class="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-slate-500 dark:text-slate-400">
                     <.clock id={"ended-at-#{sandbox.id}"} at={sandbox.ended_at} />

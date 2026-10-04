@@ -2,6 +2,7 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues
+  alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Run
@@ -241,5 +242,67 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
 
     assert {:ok, :sent, %Run{}} = Pipeline.send_diff_comments(ada, run)
     assert_receive {:diff_comments_changed, ^task_id}
+  end
+
+  describe "the code around each line" do
+    test "each comment quotes its block with its line marked, and becomes a provisional rule once sent", %{
+      task: task,
+      run: run,
+      ada: ada
+    } do
+      {:ok, %{id: comment_id}} =
+        Pipeline.create_diff_comment(ada, task, %{
+          path: "test/a_test.exs",
+          line_kind: :added,
+          line: 4,
+          line_text: "Repo.insert!(row)",
+          context_text: "  + row = %Row{}\n> + Repo.insert!(row)\n    end",
+          filter: :branch,
+          body: "Use the factory here."
+        })
+
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      assert {:ok, :sent, %Run{}} = Pipeline.send_diff_comments(ada, run)
+
+      tag = "[human:#{ada.user.id}]"
+
+      assert Enum.map(Pipeline.list_run_events(run), & &1.line) == [
+               "#{tag} 1 comment on the diff",
+               "#{tag} ",
+               "#{tag} test/a_test.exs, line 4",
+               "#{tag}   + row = %Row{}",
+               "#{tag} > + Repo.insert!(row)",
+               "#{tag}     end",
+               "#{tag} Use the factory here."
+             ]
+
+      assert [
+               %Observation{
+                 source_id: ^comment_id,
+                 excerpt: "  + row = %Row{}\n> + Repo.insert!(row)\n    end",
+                 learning: %{status: :provisional, rule: "Use the factory here.", roles: [:engineer, :review]}
+               }
+             ] =
+               Repo.all(from o in Observation, where: o.task_id == ^task.id, preload: :learning)
+    end
+
+    test "comments that cannot go out are not learned from", %{task: task, run: run, ada: ada} do
+      {:ok, _comment} =
+        Pipeline.create_diff_comment(ada, task, %{
+          path: "a.ex",
+          line_kind: :added,
+          line: 1,
+          line_text: "x",
+          filter: :branch,
+          body: "No"
+        })
+
+      {:ok, _run} = Pipeline.update_run(run, %{status: :finished})
+      Repo.update_all(from(r in Run, where: r.id == ^run.id), set: [conversation_id: nil])
+
+      assert {:error, :chat_unavailable} = Pipeline.send_diff_comments(ada, Repo.reload!(run))
+      assert [] = Repo.all(from o in Observation, where: o.task_id == ^task.id)
+    end
   end
 end

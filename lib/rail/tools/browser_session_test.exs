@@ -320,6 +320,7 @@ defmodule Rail.Tools.BrowserSessionTest do
     </script>
     """)
 
+    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}")
     {:ok, session} = Tools.start_browser_session(task)
     {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: "file://#{page}"})
 
@@ -373,6 +374,7 @@ defmodule Rail.Tools.BrowserSessionTest do
       make_ref()
     end)
 
+    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}")
     {:ok, session} = Tools.start_browser_session(task)
     {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
     assert_receive :photographing, 10_000
@@ -382,6 +384,21 @@ defmodule Rail.Tools.BrowserSessionTest do
 
     assert "" <> _frame = BrowserSession.last_frame(session)
     assert {:ok, _evaluated} = BrowserSession.call(session, "Runtime.evaluate", %{expression: "1"})
+  end
+
+  # A tab left open between passes is encoded for nobody: with nobody listening
+  # Chrome's ack is held, so it stops, and no frame the page may since have moved
+  # on from is offered. Somebody arriving gets the page as it is.
+  test "a tab nobody is watching sends nothing until somebody is", %{task: task, page: page} do
+    {:ok, session} = Tools.start_browser_session(task)
+    {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
+
+    eventually(fn -> assert %BrowserSession{holding?: true} = :sys.get_state(session) end, 10_000)
+    assert BrowserSession.last_frame(session) == nil
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}")
+    assert_receive {:browser_frame, _task_id, _data}, 10_000
+    assert "" <> _frame = BrowserSession.last_frame(session)
   end
 
   # The tab closed from under the session between its last frame and the

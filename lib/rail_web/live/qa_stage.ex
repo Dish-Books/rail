@@ -222,7 +222,7 @@ defmodule RailWeb.Live.QaStage do
 
     socket =
       with false <- double_click?(socket.assigns.advanced_to, key),
-           {:ok, _decided} <- Pipeline.decide_qa_finding(finding, decision(decision)) do
+           {:ok, _decided} <- Pipeline.decide_qa_finding(socket.assigns.current_scope, finding, decision(decision)) do
         socket
         |> assign(:error, nil)
         |> assign(:selected_key, selected_key)

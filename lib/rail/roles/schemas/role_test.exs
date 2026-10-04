@@ -36,15 +36,27 @@ defmodule Rail.Roles.Schemas.RoleTest do
     %{backend: backend, project: project, role: role}
   end
 
-  test "canonical_stages/0 returns list of 9 stages" do
+  test "canonical_stages/0 returns list of 10 stages" do
     stages = Role.canonical_stages()
-    assert length(stages) == 9
+    assert length(stages) == 10
     assert :triage in stages
+    assert :curator in stages
     assert :debugger in stages
     assert :design in stages
     refute :designer in stages
     # Rebase is an engineer action, not a stage a role can bind to
     refute :rebase in stages
+  end
+
+  test "a role can be saved at the curator stage, which no task enters", %{backend: backend, project: project} do
+    assert {:ok, %Role{stage: :curator}} =
+             Roles.create_role(system_scope(), project, %{
+               backend_id: backend.id,
+               name: "Curator",
+               stage: :curator,
+               model: "claude-opus-5-5",
+               system_prompt: "You curate."
+             })
   end
 
   test "changeset validates required fields" do

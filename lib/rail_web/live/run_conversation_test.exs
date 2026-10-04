@@ -212,6 +212,33 @@ defmodule RailWeb.Live.RunConversationTest do
     refute html =~ ~s(data-qa="human-bubble")
   end
 
+  test "a round Rail answered from past answers reads as Rail's, not as the viewer's", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :running,
+        conversation_id: "conv_past_answers",
+        started_at: ~U[2026-09-09 10:00:00.000000Z]
+      })
+
+    Pipeline.append_run_events(run.id, nil, [
+      "[answered from past answers] You asked: Which database?",
+      "[answered from past answers] Answered by Rail from Dana's answer on RAIL-65, Oct 3: Postgres."
+    ])
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+    assert [bubble] = html |> Floki.parse_fragment!() |> Floki.find("[data-qa='reminder-bubble']")
+    assert Floki.text(bubble) =~ ~r/Rail, automatically\s*· answered from past answers/
+    assert Floki.text(bubble) =~ "Answered by Rail from Dana's answer on RAIL-65, Oct 3: Postgres."
+    refute html =~ ~s(data-qa="human-bubble")
+  end
+
   test "reads the agent's stream as a conversation, not as JSON", %{task: task, roles: roles, roles_map: roles_map} do
     {:ok, run} =
       Pipeline.create_run(%{

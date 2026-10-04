@@ -6,19 +6,34 @@ alias Rail.Tools.Schemas.Backend
 # `System.unique_integer/1` starts over every boot, so a temp path built from it can be one an
 # earlier run, or another suite on the same machine, left behind. Each run gets its own; kept short for socket paths.
 run_tmp_dir = Path.join(System.tmp_dir!(), "rt#{System.pid()}")
+# The shared Chrome is detached, like it is beside Rail in dev, and its profile is under its run's
+# directory - which is how the one a run started is told apart from anybody else's. The slash keeps
+# rt123's from matching rt1234's.
+stop_chrome = fn dir -> System.cmd("pkill", ["-f", "--", "--user-data-dir=#{dir}/"], stderr_to_stdout: true, env: []) end
+
+# A run cut short never reaches `after_suite`, so its Chrome is still up. One whose run is gone is
+# stopped here; another suite still running keeps its own.
+for stale <- Path.wildcard(Path.join(System.tmp_dir!(), "rt*")),
+    {os_pid, ""} <- [Integer.parse(String.trim_leading(Path.basename(stale), "rt"))],
+    match?({_out, 1}, System.cmd("kill", ["-0", "#{os_pid}"], stderr_to_stdout: true, env: [])) do
+  stop_chrome.(stale)
+  File.rm_rf(stale)
+end
+
 File.rm_rf!(run_tmp_dir)
 File.mkdir_p!(run_tmp_dir)
 System.put_env("TMPDIR", run_tmp_dir)
-# The shared Chrome is detached, like it is beside Rail in dev, and its profile is under this run's
-# directory - which is how the one this run started is told apart from anybody else's.
+
 ExUnit.after_suite(fn _result ->
-  System.cmd("pkill", ["-f", "--", "--user-data-dir=#{run_tmp_dir}"], stderr_to_stdout: true, env: [])
+  stop_chrome.(run_tmp_dir)
   File.rm_rf(run_tmp_dir)
 end)
 
 Mimic.copy(Date)
 Mimic.copy(DateTime)
 Mimic.copy(File)
+Mimic.copy(Goth)
+Mimic.copy(Goth.Config)
 Mimic.copy(Port)
 Mimic.copy(Rail)
 Mimic.copy(Rail.Git)

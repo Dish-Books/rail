@@ -6,7 +6,7 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
   alias Rail.Pipeline.Turn
 
   @human_prefix ~r/^\[human(?::([^\]\s]+))?\]\s*/
-  @reminder_prefix ~r/^\[(reminder \d+ of \d+)\]\s*/
+  @reminder_prefix ~r/^\[(reminder \d+ of \d+|answered from past answers)\]\s*/
   @system_prefix ~r/^\[(run|init|tool|tool error|result|rail|handoff|denied|recovered|error|rate limit|stderr|human)(\s|\]|:)/
 
   @doc """

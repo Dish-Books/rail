@@ -2,6 +2,7 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues
+  alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -75,7 +76,7 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
     # the reviewer advised and each test changes only what it is about.
     findings =
       Enum.map(raised, fn finding ->
-        {:ok, decided} = Pipeline.decide_review_finding(finding, finding.recommendation)
+        {:ok, decided} = Pipeline.decide_review_finding(system_scope(), finding, finding.recommendation)
         decided
       end)
 
@@ -132,7 +133,7 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
         }
       ])
 
-    Enum.each(findings, fn finding -> {:ok, _fix} = Pipeline.decide_review_finding(finding, :fix) end)
+    Enum.each(findings, fn finding -> {:ok, _fix} = Pipeline.decide_review_finding(system_scope(), finding, :fix) end)
 
     # Whitespace is nothing, so the field is stored as nothing and nothing is
     # written over it.
@@ -165,7 +166,7 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
 
   test "a finding the human put back is sent too", %{review_run: run, findings: findings} do
     nit = Enum.find(findings, &(&1.key == "naming-nit"))
-    {:ok, _promoted} = Pipeline.decide_review_finding(nit, :fix)
+    {:ok, _promoted} = Pipeline.decide_review_finding(system_scope(), nit, :fix)
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
       assert ["-p", prompt | _rest] = argv
@@ -192,7 +193,7 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
   end
 
   test "there is nothing to send when the human dismissed everything", %{review_run: run, findings: findings} do
-    for finding <- findings, do: {:ok, _dismissed} = Pipeline.decide_review_finding(finding, :skip)
+    for finding <- findings, do: {:ok, _dismissed} = Pipeline.decide_review_finding(system_scope(), finding, :skip)
 
     assert {:error, :nothing_outstanding} = Pipeline.send_findings_to_engineer(run)
   end
@@ -230,5 +231,85 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
 
     assert {:error, :stage_running} = Pipeline.send_findings_to_engineer(run)
     assert %Task{stage: :review} = Repo.reload!(task)
+  end
+
+  describe "what is learned from a send" do
+    test "each Fix sent becomes a provisional rule, and the same finding sent again adds nothing", %{
+      task: task,
+      review_run: run,
+      engineer_run: engineer_run,
+      findings: findings
+    } do
+      assert {:ok, _sent} = Pipeline.send_findings_to_engineer(run)
+
+      %{id: fixed_id} = Enum.find(findings, &(&1.decision == :fix))
+
+      assert [
+               %Observation{
+                 source_kind: :review_finding,
+                 source_id: ^fixed_id,
+                 learning: %{status: :provisional, rule: "Nil is not handled"}
+               }
+             ] =
+               Repo.all(from o in Observation, where: o.task_id == ^task.id, preload: :learning)
+
+      {:ok, _back} = Pipeline.update_task(Repo.reload!(task), %{stage: :review})
+      {:ok, _idle} = Pipeline.update_run(Repo.reload!(engineer_run), %{status: :finished})
+      {:ok, run} = Pipeline.update_run(run, %{stage_outcome: :in_progress})
+      assert {:ok, _sent} = Pipeline.send_findings_to_engineer(Repo.preload(run, [:task, :role], force: true))
+      assert 1 == Repo.aggregate(from(o in Observation, where: o.task_id == ^task.id), :count)
+    end
+
+    test "a finding switched back to Don't fix before the send is not learned from", %{
+      task: task,
+      review_run: run,
+      findings: findings
+    } do
+      Enum.each(findings, &({:ok, _skip} = Pipeline.decide_review_finding(system_scope(), &1, :skip)))
+      [first | _rest] = findings
+      {:ok, _fix} = Pipeline.decide_review_finding(system_scope(), Repo.reload!(first), :fix)
+      {:ok, _back} = Pipeline.decide_review_finding(system_scope(), Repo.reload!(first), :skip)
+
+      assert {:error, :nothing_outstanding} = Pipeline.send_findings_to_engineer(run)
+      assert [] = Repo.all(from o in Observation, where: o.task_id == ^task.id)
+    end
+
+    test "a suppressed finding never blocks the send, and one sent as Fix is an override of its rule", %{
+      project: project,
+      task: task,
+      review_run: run
+    } do
+      %{id: calibration_id} = calibration = learning(project, %{rule: "Don't flag docs", kind: :calibration})
+
+      {:ok, findings} =
+        Pipeline.sync_review_findings(task, [
+          %{
+            key: "doc-a",
+            title: "Missing @doc on a",
+            severity: :nit,
+            recommendation: :skip,
+            status: :open,
+            rule: calibration.id
+          },
+          %{
+            key: "doc-b",
+            title: "Missing @doc on b",
+            severity: :nit,
+            recommendation: :skip,
+            status: :open,
+            rule: calibration.id
+          }
+        ])
+
+      %{id: overridden_id} = overridden = Enum.find(findings, &(&1.key == "doc-a"))
+      {:ok, _fix} = Pipeline.decide_review_finding(system_scope(), overridden, :fix)
+
+      assert {:ok, _sent} = Pipeline.send_findings_to_engineer(run)
+
+      assert [%Observation{source_kind: :override, learning_id: ^calibration_id}] =
+               Repo.all(from o in Observation, where: o.source_id == ^overridden_id)
+
+      assert {:ok, [%{flagged: true}]} = Rail.Learnings.list_learnings(ids: [calibration_id])
+    end
   end
 end

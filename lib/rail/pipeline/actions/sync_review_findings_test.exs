@@ -86,7 +86,7 @@ defmodule Rail.Pipeline.Actions.SyncReviewFindingsTest do
 
   test "a second pass does not overrule the human", %{task: task, raised: raised} do
     {:ok, [finding]} = Pipeline.sync_review_findings(task, [raised])
-    {:ok, _dismissed} = Pipeline.decide_review_finding(finding, :skip)
+    {:ok, _dismissed} = Pipeline.decide_review_finding(system_scope(), finding, :skip)
 
     assert {:ok, [%ReviewFinding{recommendation: :fix, decision: :skip, status: :not_fixed}]} =
              Pipeline.sync_review_findings(task, [%{raised | status: :not_fixed}])
@@ -101,5 +101,46 @@ defmodule Rail.Pipeline.Actions.SyncReviewFindingsTest do
 
   test "a pass that found nothing leaves the task as it was", %{task: task} do
     assert {:ok, []} = Pipeline.sync_review_findings(task, [])
+  end
+
+  describe "the rule a finding names" do
+    test "a checklist rule's id is the finding's rule, a calibration rule's suppresses it, and an unknown one is dropped",
+         %{
+           project: project,
+           task: task,
+           raised: raised
+         } do
+      %{id: convention_id} = convention = learning(project, %{rule: "Handle nil", kind: :convention})
+      %{id: calibration_id} = calibration = learning(project, %{rule: "Don't flag nits in docs", kind: :calibration})
+
+      {:ok, other} =
+        Rail.Projects.create_project(system_scope(), %{
+          name: "Elsewhere #{System.unique_integer([:positive])}",
+          github_repo: "x/y",
+          github_installation_id: 1,
+          default_branch: "main",
+          linear_team_key: "ELS",
+          clone_path: "/tmp/repos/elsewhere"
+        })
+
+      foreign = learning(other, %{rule: "Theirs", kind: :convention})
+
+      {:ok, synced} =
+        Pipeline.sync_review_findings(task, [
+          Map.put(raised, :rule, convention.id),
+          Map.put(%{raised | key: "doc-nit"}, :rule, calibration.id),
+          Map.put(%{raised | key: "foreign"}, :rule, foreign.id),
+          Map.put(%{raised | key: "unknown"}, :rule, "lrn_unknown")
+        ])
+
+      assert [
+               %ReviewFinding{key: "unhandled-nil", rule_id: ^convention_id, suppressed_by_id: nil},
+               %ReviewFinding{key: "doc-nit", rule_id: nil, suppressed_by_id: ^calibration_id} = suppressed,
+               %ReviewFinding{key: "foreign", rule_id: nil, suppressed_by_id: nil},
+               %ReviewFinding{key: "unknown", rule_id: nil, suppressed_by_id: nil}
+             ] = synced
+
+      assert ReviewFinding.state(suppressed) == :suppressed
+    end
   end
 end

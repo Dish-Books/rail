@@ -111,8 +111,8 @@ defmodule Rail.Pipeline.Schemas.QaFindingTest do
   end
 
   test "the human's ruling is the only thing that changeset writes" do
-    changeset = QaFinding.decision_changeset(%QaFinding{title: "unchanged"}, :fix)
+    changeset = QaFinding.decision_changeset(%QaFinding{title: "unchanged"}, :fix, "usr_decider")
 
-    assert changeset.changes == %{decision: :fix}
+    assert changeset.changes == %{decision: :fix, decided_by_id: "usr_decider"}
   end
 end

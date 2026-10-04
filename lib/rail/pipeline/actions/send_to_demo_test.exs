@@ -65,7 +65,7 @@ defmodule Rail.Pipeline.Actions.SendToDemoTest do
         %{key: "one", title: "One", check: "A check", severity: :blocker, recommendation: :fix, status: :open}
       ])
 
-    for finding <- raised, do: {:ok, _dismissed} = Pipeline.decide_qa_finding(finding, :skip)
+    for finding <- raised, do: {:ok, _dismissed} = Pipeline.decide_qa_finding(system_scope(), finding, :skip)
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.send_to_demo(run)
     assert %Task{stage: :demo} = Repo.reload!(task)
@@ -87,7 +87,7 @@ defmodule Rail.Pipeline.Actions.SendToDemoTest do
         %{key: "one", title: "One", check: "A check", severity: :major, recommendation: :fix, status: :open}
       ])
 
-    {:ok, _to_fix} = Pipeline.decide_qa_finding(finding, :fix)
+    {:ok, _to_fix} = Pipeline.decide_qa_finding(system_scope(), finding, :fix)
 
     assert {:error, :findings_outstanding} = Pipeline.send_to_demo(run)
     assert %Task{stage: :qa} = Repo.reload!(task)

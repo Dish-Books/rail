@@ -7,20 +7,23 @@ defmodule Rail.Pipeline.Actions.DecideReviewFinding do
   decision's whole effect is on what the next send-back carries, and refused
   while something is running, because that is the run whose findings are being
   ruled on.
+
+  Nothing is learned here: the decision can still change until the findings are sent.
   """
 
   alias Rail.Pipeline.Schemas.ReviewFinding
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
+  alias Rail.Scope
 
   @doc """
-  Sets `decision` on `finding`, and returns it as it now stands.
+  Sets `decision` on `finding` as the scope's user, and returns it as it now stands.
   """
-  def decide_review_finding(%ReviewFinding{} = finding, decision) when decision in [:fix, :skip] do
+  def decide_review_finding(%Scope{} = scope, %ReviewFinding{} = finding, decision) when decision in [:fix, :skip] do
     task = Repo.preload(Repo.get!(Task, finding.task_id), :runs)
 
     with :ok <- decidable(task) do
-      finding |> ReviewFinding.decision_changeset(decision) |> Repo.update()
+      finding |> ReviewFinding.decision_changeset(decision, scope.user && scope.user.id) |> Repo.update()
     end
   end
 

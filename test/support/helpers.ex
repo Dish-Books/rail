@@ -12,6 +12,13 @@ defmodule RailTest.Helpers do
   defdelegate triage_bug(overrides \\ %{}), to: RailTest.TriageHelpers
   defdelegate slack_user(team_id, name \\ "Michael"), to: RailTest.TriageHelpers
 
+  defdelegate stub_vertex(vectors \\ %{}), to: RailTest.LearningsHelpers
+  defdelegate stub_vertex_down(), to: RailTest.LearningsHelpers
+  defdelegate vector(components), to: RailTest.LearningsHelpers
+  defdelegate far(), to: RailTest.LearningsHelpers
+  defdelegate learning(project, attrs, overrides \\ []), to: RailTest.LearningsHelpers
+  defdelegate learnings_task(project, identifier, stage \\ :engineer), to: RailTest.LearningsHelpers
+
   @doc """
   Runs `fun` until its assertions hold, or `timeout` passes.
 

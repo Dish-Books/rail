@@ -4,8 +4,9 @@ defmodule Rail.Triage.Actions.HandleSlackEvent do
   pass when it is something triage should read.
 
   Only people's messages in a project's connected channels trigger one. A bot's
-  post triggers only where the channel opted in and never when it is Rail's own,
-  and a message a teammate posted through Rail never does. A message that
+  post triggers only where the channel opted in, and a message a teammate posted
+  through Rail never does. Rail's own bot, which posts the learnings digest, is
+  not filed at all. A message that
   triggers nothing leaves the thread where it stood, and one that triggers
   reopens a dismissed thread. Edits and deletions are ignored.
   """
@@ -29,6 +30,7 @@ defmodule Rail.Triage.Actions.HandleSlackEvent do
   """
   def handle_slack_event(%SlackWorkspace{} = workspace, %{"event" => %{"type" => "message"} = event}) do
     with true <- event["channel_type"] not in ["im", "mpim"] and event["subtype"] in @subtypes,
+         false <- own_bot?(workspace, event),
          {:ok, %SlackChannel{} = channel} <- channel(workspace, event["channel"]) do
       file(workspace, channel, event)
     else
@@ -37,6 +39,10 @@ defmodule Rail.Triage.Actions.HandleSlackEvent do
   end
 
   def handle_slack_event(%SlackWorkspace{}, _payload), do: :ignored
+
+  defp own_bot?(%SlackWorkspace{bot_id: bot_id}, %{"bot_id" => bot_id}) when is_binary(bot_id), do: true
+  defp own_bot?(%SlackWorkspace{bot_user_id: user_id}, %{"user" => user_id}) when is_binary(user_id), do: true
+  defp own_bot?(%SlackWorkspace{}, _event), do: false
 
   defp channel(%SlackWorkspace{id: workspace_id}, channel_id) when is_binary(channel_id) do
     case Projects.get_slack_channel(external_id: channel_id) do

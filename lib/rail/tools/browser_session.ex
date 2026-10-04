@@ -40,6 +40,8 @@ defmodule Rail.Tools.BrowserSession do
   # this long keeps a busy tab to about eighteen a second and half the CPU.
   @ack_after_ms 133
   @settled_after_ms 250
+  # How often a held ack looks again for somebody to show the frame to.
+  @unwatched_poll_ms 250
 
   defstruct [
     :session_id,
@@ -53,6 +55,7 @@ defmodule Rail.Tools.BrowserSession do
     :url,
     :capture,
     frame_seq: 0,
+    holding?: false,
     screenshot_echo?: false,
     problems: []
   ]
@@ -98,7 +101,7 @@ defmodule Rail.Tools.BrowserSession do
 
   @doc """
   The last frame the tab painted, as base64 JPEG, or `nil` before it has painted
-  one.
+  one, or while nobody is watching and the page may have moved on since.
 
   A panel opened part way through a pass has missed every frame broadcast so far,
   and a browser sitting on a form nobody is touching will not paint another until
@@ -148,7 +151,7 @@ defmodule Rail.Tools.BrowserSession do
   end
 
   def handle_call(:last_frame, _from, %__MODULE__{} = state) do
-    {:reply, state.frame, state}
+    {:reply, if(not state.holding?, do: state.frame), state}
   end
 
   def handle_call(:where, _from, %__MODULE__{} = state) do
@@ -165,7 +168,7 @@ defmodule Rail.Tools.BrowserSession do
   # Chrome sends no frame until the last one is acknowledged, so holding the ack
   # is what sets the frame rate. The frame is broadcast whether or not anybody is
   # listening, which on a local PubSub with no subscribers is a lookup and
-  # nothing else.
+  # nothing else; it is the ack that waits for a listener.
   #
   # The frame a screenshot of our own paints is let straight through, or every
   # screenshot would be followed by another.
@@ -185,11 +188,22 @@ defmodule Rail.Tools.BrowserSession do
     {:noreply, %{show(state, data) | frame_seq: seq}}
   end
 
-  def handle_info({:ack_frame, ack, seq}, %__MODULE__{} = state) do
-    ack(state, ack)
-    Process.send_after(self(), {:settled, seq}, @settled_after_ms)
+  # A tab is left open between passes, and a page that keeps repainting would
+  # have Chrome encode frames for nobody until the task moves on. So with nobody
+  # listening the ack waits, and Chrome stops. Once somebody is, the page is
+  # photographed when it settles, as after any frame, so they start on the page
+  # as it is rather than as it was when the frames stopped.
+  def handle_info({:ack_frame, ack, seq} = held, %__MODULE__{} = state) do
+    if watched?(state) do
+      ack(state, ack)
+      Process.send_after(self(), {:settled, seq}, @settled_after_ms)
 
-    {:noreply, state}
+      {:noreply, %{state | holding?: false}}
+    else
+      Process.send_after(self(), held, @unwatched_poll_ms)
+
+      {:noreply, %{state | holding?: true}}
+    end
   end
 
   # Whatever the page painted while an ack was held was never sent, and a page
@@ -260,6 +274,9 @@ defmodule Rail.Tools.BrowserSession do
     %{state | frame: data}
   end
 
+  # Phoenix.PubSub keeps its local subscribers in a Registry of its own name.
+  defp watched?(%__MODULE__{task_id: task_id}), do: Registry.count_match(Rail.PubSub, "browser:#{task_id}", :_) > 0
+
   defp ack(%__MODULE__{} = state, ack) do
     Browser.cast(state.browser, "Page.screencastFrameAck", %{session: state.cdp_session_id, sessionId: ack})
   end
@@ -311,11 +328,13 @@ defmodule Rail.Tools.BrowserSession do
        when is_binary(context) and is_binary(target) do
     state = %{state | browser_context_id: context, target_id: target}
 
+    # Where the tab is comes from its main frame, as a navigation reports it: the
+    # target's own info catches up later, and reads blank in between.
     with {:ok, %{"sessionId" => cdp}} <-
            Browser.call(state.browser, "Target.attachToTarget", %{targetId: target, flatten: true}),
-         {:ok, %{"targetInfo" => %{"url" => url}}} <-
-           Browser.call(state.browser, "Target.getTargetInfo", %{targetId: target}) do
-      {:ok, %{state | cdp_session_id: cdp, url: url}}
+         state = %{state | cdp_session_id: cdp},
+         {:ok, %{"frameTree" => %{"frame" => %{"url" => url}}}} <- command(state, "Page.getFrameTree", %{}) do
+      {:ok, %{state | url: url}}
     else
       {:error, _gone} ->
         dispose(state)

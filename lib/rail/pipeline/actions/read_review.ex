@@ -51,7 +51,8 @@ defmodule Rail.Pipeline.Actions.ReadReview do
       line: line(finding["line"]),
       severity: enum(finding["severity"], ReviewFinding.severities()),
       recommendation: enum(finding["recommendation"], ReviewFinding.recommendations()),
-      status: enum(finding["status"], ReviewFinding.statuses()) || :open
+      status: enum(finding["status"], ReviewFinding.statuses()) || :open,
+      rule: text(finding["rule"])
     }
   end
 

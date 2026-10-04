@@ -180,6 +180,55 @@ defmodule Rail.GitHub.Client do
     end
   end
 
+  @doc """
+  One page of pull requests in `repo`, filtered by GitHub's own params, such as
+  `state`, `sort`, `direction`, `per_page` and `page`.
+  """
+  def list_pull_requests(token, repo, params, opts \\ []) do
+    opts
+    |> build_req()
+    |> Req.get(url: "/repos/#{repo}/pulls", params: params, auth: {:bearer, token}, headers: headers())
+    |> case do
+      {:ok, %{status: 200, body: pull_requests}} when is_list(pull_requests) -> {:ok, pull_requests}
+      {:ok, %{status: status, body: body}} -> {:error, {:github_api_error, status, body}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc "Every inline review comment on a pull request, across all pages."
+  def list_review_comments(token, repo, number, opts \\ []) do
+    paginate(token, "/repos/#{repo}/pulls/#{number}/comments", opts)
+  end
+
+  @doc "Every review submitted on a pull request, with its body, across all pages."
+  def list_reviews(token, repo, number, opts \\ []) do
+    paginate(token, "/repos/#{repo}/pulls/#{number}/reviews", opts)
+  end
+
+  @doc "Compares `base` with `head` in `repo`: the commits between them and each file's patch."
+  def compare_commits(token, repo, base, head, opts \\ []) do
+    opts
+    |> build_req()
+    |> Req.get(url: "/repos/#{repo}/compare/#{base}...#{head}", auth: {:bearer, token}, headers: headers())
+    |> case do
+      {:ok, %{status: 200, body: %{"files" => _files} = comparison}} -> {:ok, comparison}
+      {:ok, %{status: status, body: body}} -> {:error, {:github_api_error, status, body}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp paginate(token, url, opts, page \\ 1, acc \\ []) do
+    opts
+    |> build_req()
+    |> Req.get(url: url, params: [per_page: 100, page: page], auth: {:bearer, token}, headers: headers())
+    |> case do
+      {:ok, %{status: 200, body: items}} when length(items) == 100 -> paginate(token, url, opts, page + 1, acc ++ items)
+      {:ok, %{status: 200, body: items}} when is_list(items) -> {:ok, acc ++ items}
+      {:ok, %{status: status, body: body}} -> {:error, {:github_api_error, status, body}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   defp app_id do
     case config()[:app_id] do
       id when is_binary(id) and id != "" -> {:ok, id}
