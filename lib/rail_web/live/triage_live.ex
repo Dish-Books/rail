@@ -19,6 +19,7 @@ defmodule RailWeb.TriageLive do
     already_posted: "Someone already accepted this.",
     locked: "This item is being triaged again, so it cannot change yet.",
     needs_issue_link: "This reply links the issue, so create the issue first.",
+    external_issue_link: "This reply cannot link the issue in an external channel. Take out {issue link} to post it.",
     no_reply: "There is no reply to post.",
     settled: "This item is settled and takes no more notes."
   }
@@ -31,7 +32,10 @@ defmodule RailWeb.TriageLive do
   }
 
   def mount(_params, _session, socket) do
-    if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "triage")
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Rail.PubSub, "triage")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "projects")
+    end
 
     socket =
       socket
@@ -166,6 +170,7 @@ defmodule RailWeb.TriageLive do
               form={Map.fetch!(@item_forms, item.id)}
               slack_linked={!@show_slack_link_prompt}
               project_name={@thread.project.name}
+              external_channel={@thread.slack_channel.external}
               corrected_by={Map.get(@corrected_by, item.id)}
               error={Map.get(@item_errors, item.id)}
             />
@@ -248,6 +253,9 @@ defmodule RailWeb.TriageLive do
   end
 
   def handle_info({:triage_changed, _thread_id}, socket), do: {:noreply, load(socket)}
+
+  # A project's name and its channels' switches show on the open thread.
+  def handle_info({:project_changed, _project_id}, socket), do: {:noreply, load(socket)}
 
   # The navigation hook and the issue dialog broadcast things this page has no use for.
   def handle_info(_message, socket), do: {:noreply, socket}

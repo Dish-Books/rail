@@ -225,6 +225,38 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                Projects.list_slack_channels(project)
     end
 
+    test "marks a channel external, leaves the others and any sent without the switch unmarked, and unmarks it", %{
+      project: %{id: project_id} = project,
+      feedback: %{"external_id" => feedback_id} = feedback,
+      posthog: %{"external_id" => posthog_id} = posthog
+    } do
+      Phoenix.PubSub.subscribe(Rail.PubSub, "projects")
+
+      assert {:ok,
+              %Project{
+                slack_channels: [
+                  %SlackChannel{external_id: ^feedback_id, external: true},
+                  %SlackChannel{external_id: ^posthog_id, external: false}
+                ]
+              } = project} =
+               Projects.update_project(system_scope(), project, %{
+                 "slack_channels" => [Map.put(feedback, "external", "true"), posthog]
+               })
+
+      assert_received {:project_changed, ^project_id}
+
+      assert [%SlackChannel{external_id: ^posthog_id, external: false}, %SlackChannel{external: true} = channel] =
+               Projects.list_slack_channels(project)
+
+      # The describe's one Slack answer is spent, so unmarking that reached Slack would crash.
+      unmarked = Map.merge(feedback, %{"id" => channel.id, "external" => "false"})
+
+      assert {:ok, %Project{slack_channels: [%SlackChannel{external_id: ^feedback_id, external: false}]}} =
+               Projects.update_project(system_scope(), project, %{"slack_channels" => [unmarked]})
+
+      assert_received {:project_changed, ^project_id}
+    end
+
     test "refuses a channel another project holds, or a workspace Rail does not have", %{
       project: project,
       feedback: feedback
