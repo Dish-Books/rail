@@ -25,7 +25,21 @@ defmodule RailWeb.Components.Nav do
         <!-- Brand / Leading -->
         <div class="flex items-center px-2 py-2" id="app-brand">
           <div class="flex items-center justify-center h-9 w-9 rounded-lg bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 shrink-0">
-            <.icon name="pi-stack" class="h-5 w-5" />
+            <svg viewBox="0 0 64 64" class="h-9 w-9" fill="none" aria-hidden="true" id="brand-mark">
+              <mask id="brand-mark-rails" stroke-linejoin="round">
+                <path
+                  d="M21 56V17H35a9.5 9.5 0 0 1 0 19H21M32 36 46 57"
+                  stroke="#fff"
+                  stroke-width="12"
+                />
+                <path
+                  d="M21 56V17H35a9.5 9.5 0 0 1 0 19H21M32 36 46 57"
+                  stroke="#000"
+                  stroke-width="4.5"
+                />
+              </mask>
+              <rect width="64" height="52" fill="currentColor" mask="url(#brand-mark-rails)" />
+            </svg>
           </div>
           <span
             :if={@is_rail_extended}
