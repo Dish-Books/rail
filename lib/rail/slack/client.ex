@@ -33,6 +33,13 @@ defmodule Rail.Slack.Client do
     with {:ok, %{"user" => user}} <- get(token, "users.info", user: user_id), do: {:ok, user}
   end
 
+  @doc """
+  One channel as Slack describes it now, so its current name can be shown without storing it.
+  """
+  def channel_info(%SlackWorkspace{token: token}, channel) do
+    with {:ok, %{"channel" => info}} <- get(token, "conversations.info", channel: channel), do: {:ok, info}
+  end
+
   def permalink(%SlackWorkspace{token: token}, channel, ts) do
     with {:ok, %{"permalink" => permalink}} <- get(token, "chat.getPermalink", channel: channel, message_ts: ts) do
       {:ok, permalink}

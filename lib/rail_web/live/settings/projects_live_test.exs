@@ -609,6 +609,196 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
 
       assert has_element?(view, "#slack-channel-unlisted-#{channel.external_id}", "Not listed by Slack")
       refute has_element?(view, "#slack-channel-#{posthog}")
+
+      view |> element("#learnings-channel-picker-trigger") |> render_click()
+      assert has_element?(view, "#learnings-channel-picker-none")
+      refute has_element?(view, "#learnings-channel-picker-options", "Acme")
+    end
+
+    test "the learnings digest shows Don't post, or the channel Slack names now and its workspace", %{
+      admin_conn: conn,
+      project: project,
+      posthog: posthog,
+      workspace: workspace
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      Req.Test.allow(Rail.Slack, self(), view.pid)
+      view |> element("#edit-project-#{project.id}") |> render_click()
+
+      assert has_element?(view, "#learnings-channel-picker", "The curator's 06:00 UTC digest.")
+      assert has_element?(view, "#learnings-channel-picker-trigger", "Don't post")
+      refute has_element?(view, "#learnings-channel-picker-saved")
+
+      view |> element("#close-modal-button") |> render_click()
+
+      {:ok, _project} =
+        Projects.update_project(system_scope(), project, %{
+          "learnings_slack_workspace_id" => workspace.id,
+          "learnings_channel_external_id" => posthog
+        })
+
+      view |> element("#edit-project-#{project.id}") |> render_click()
+      assert has_element?(view, "#learnings-channel-picker-trigger", "#posthog-index")
+      assert has_element?(view, "#learnings-channel-picker-trigger", "Acme")
+
+      # A channel Slack cannot name, such as one the app was removed from, shows its id.
+      {:ok, _project} =
+        Projects.update_project(system_scope(), project, %{
+          "learnings_slack_workspace_id" => workspace.id,
+          "learnings_channel_external_id" => "C_GONE"
+        })
+
+      assert has_element?(view, "#learnings-channel-picker-trigger", "#C_GONE")
+    end
+
+    test "the picker lists Don't post and each workspace's channels, and a search narrows them", %{
+      admin_conn: conn,
+      project: project,
+      channel: channel,
+      posthog: posthog
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      Req.Test.allow(Rail.Slack, self(), view.pid)
+      view |> element("#edit-project-#{project.id}") |> render_click()
+      refute has_element?(view, "#learnings-channel-picker-options")
+
+      view |> element("#learnings-channel-picker-trigger") |> render_click()
+      assert has_element?(view, "#learnings-channel-picker-none", "Don't post")
+      assert has_element?(view, "#learnings-channel-picker-options", "Acme")
+      assert has_element?(view, "#learnings-channel-picker-channel-#{channel.external_id}", "#rail-feedback")
+      assert has_element?(view, "#learnings-channel-picker-channel-#{posthog}", "#posthog-index")
+      refute has_element?(view, "#learnings-channel-picker-permalink")
+
+      view |> form("#learnings-channel-picker-search-form", %{"q" => " PostHog "}) |> render_change()
+      assert has_element?(view, "#learnings-channel-picker-channel-#{posthog}")
+      refute has_element?(view, "#learnings-channel-picker-channel-#{channel.external_id}")
+      assert has_element?(view, "#learnings-channel-picker-none")
+
+      view |> form("#learnings-channel-picker-search-form", %{"q" => "nothing like it"}) |> render_change()
+      refute has_element?(view, "#learnings-channel-picker-options", "Acme")
+
+      assert has_element?(view, "#learnings-channel-picker-options[phx-key=Escape]")
+      render_keydown(element(view, "#learnings-channel-picker-options"), %{"key" => "Escape"})
+      refute has_element?(view, "#learnings-channel-picker-options")
+
+      # Opening again searches afresh, with the channels already listed.
+      view |> element("#learnings-channel-picker-trigger") |> render_click()
+      assert has_element?(view, "#learnings-channel-picker-channel-#{channel.external_id}")
+
+      view |> element("#learnings-channel-picker-trigger") |> render_click()
+      refute has_element?(view, "#learnings-channel-picker-options")
+    end
+
+    test "picking a channel saves it at once and never makes triage read it, and Don't post clears it", %{
+      admin_conn: conn,
+      project: project,
+      channel: %{id: channel_id},
+      posthog: posthog,
+      workspace: %{id: workspace_id}
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      Req.Test.allow(Rail.Slack, self(), view.pid)
+      view |> element("#edit-project-#{project.id}") |> render_click()
+
+      view |> element("#learnings-channel-picker-trigger") |> render_click()
+      view |> element("#learnings-channel-picker-channel-#{posthog}") |> render_click()
+
+      assert {:ok, %Project{learnings_slack_workspace_id: ^workspace_id, learnings_channel_external_id: ^posthog}} =
+               Projects.get_project(project.id)
+
+      assert has_element?(view, "#learnings-channel-picker-saved", "Saved")
+      assert has_element?(view, "#learnings-channel-picker-trigger", "#posthog-index")
+      refute has_element?(view, "#learnings-channel-picker-options")
+      refute has_element?(view, "#slack-channel-#{posthog}[checked]")
+      assert [%{id: ^channel_id}] = Projects.list_slack_channels(project)
+
+      view |> element("#learnings-channel-picker-trigger") |> render_click()
+      assert has_element?(view, "#learnings-channel-picker-channel-#{posthog} .pi-check-bold")
+      view |> element("#learnings-channel-picker-none") |> render_click()
+
+      assert {:ok, %Project{learnings_slack_workspace_id: nil, learnings_channel_external_id: nil}} =
+               Projects.get_project(project.id)
+
+      assert has_element?(view, "#learnings-channel-picker-trigger", "Don't post")
+    end
+
+    test "a channel the picker did not list is never saved", %{
+      admin_conn: conn,
+      project: project,
+      workspace: workspace
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      Req.Test.allow(Rail.Slack, self(), view.pid)
+      view |> element("#edit-project-#{project.id}") |> render_click()
+      view |> element("#learnings-channel-picker-trigger") |> render_click()
+
+      render_click(element(view, "#learnings-channel-picker-none"), %{
+        "workspace_id" => workspace.id,
+        "channel_id" => "C_SMUGGLED"
+      })
+
+      assert {:ok, %Project{learnings_channel_external_id: nil}} = Projects.get_project(project.id)
+      refute has_element?(view, "#learnings-channel-picker-saved")
+    end
+
+    test "unchecking a triage channel that is also the learnings channel keeps the learnings channel", %{
+      admin_conn: conn,
+      project: project,
+      channel: %{external_id: channel_id},
+      posthog: posthog,
+      workspace: %{id: workspace_id}
+    } do
+      {:ok, _project} =
+        Projects.update_project(system_scope(), project, %{
+          "learnings_slack_workspace_id" => workspace_id,
+          "learnings_channel_external_id" => channel_id
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      Req.Test.allow(Rail.Slack, self(), view.pid)
+      view |> element("#edit-project-#{project.id}") |> render_click()
+
+      view
+      |> form("#slack-channels-form", %{
+        "channels" => %{channel_id => %{"included" => "false"}, posthog => %{"included" => "true"}}
+      })
+      |> render_submit()
+
+      assert has_element?(view, "#slack-channels-saved")
+      assert [%{external_id: ^posthog}] = Projects.list_slack_channels(project)
+
+      assert {:ok, %Project{learnings_slack_workspace_id: ^workspace_id, learnings_channel_external_id: ^channel_id}} =
+               Projects.get_project(project.id)
+
+      assert has_element?(view, "#learnings-channel-picker-trigger", "#rail-feedback")
+    end
+
+    test "a pick made elsewhere redraws the open modal and the list follows any edit", %{
+      admin_conn: conn,
+      project: project,
+      posthog: posthog,
+      workspace: workspace
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      Req.Test.allow(Rail.Slack, self(), view.pid)
+      view |> element("#edit-project-#{project.id}") |> render_click()
+
+      {:ok, project} =
+        Projects.update_project(system_scope(), project, %{
+          "learnings_slack_workspace_id" => workspace.id,
+          "learnings_channel_external_id" => posthog
+        })
+
+      assert has_element?(view, "#learnings-channel-picker-trigger", "#posthog-index")
+
+      {:ok, _project} = Projects.update_project(system_scope(), project, %{"name" => "Renamed elsewhere"})
+      assert has_element?(view, "#project-name-#{project.id}", "Renamed elsewhere")
+      assert has_element?(view, "#learnings-channel-picker-trigger", "#posthog-index")
+
+      # An edit to a project this page does not list, or another page's news, changes nothing here.
+      send(view.pid, {:project_updated, "prj_not_listed"})
+      send(view.pid, {:pipeline_event, "for another page"})
+      assert has_element?(view, "#learnings-channel-picker-trigger", "#posthog-index")
     end
 
     test "names whose MCP connections triage uses", %{admin_conn: conn, admin_user: %{id: admin_id}, project: project} do
@@ -629,5 +819,9 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     view |> element("#edit-project-#{project.id}") |> render_click()
 
     assert has_element?(view, "#slack-channels-empty", "Add a Slack workspace")
+
+    view |> element("#learnings-channel-picker-trigger") |> render_click()
+    assert has_element?(view, "#learnings-channel-picker-none")
+    refute has_element?(view, "#learnings-channel-picker-options button[phx-value-channel_id]")
   end
 end

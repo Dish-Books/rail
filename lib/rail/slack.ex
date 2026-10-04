@@ -7,6 +7,7 @@ defmodule Rail.Slack do
   defdelegate list_channels(workspace), to: Client
   defdelegate replies(workspace, channel, thread_ts), to: Client
   defdelegate user_info(workspace, user_id), to: Client
+  defdelegate channel_info(workspace, channel), to: Client
   defdelegate permalink(workspace, channel, ts), to: Client
   defdelegate open_connection(workspace), to: Client
   defdelegate download_file(workspace, url), to: Client

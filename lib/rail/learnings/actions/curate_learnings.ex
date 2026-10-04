@@ -20,8 +20,9 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline.Schemas.ReviewFinding
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects
   alias Rail.Projects.Schemas.Project
-  alias Rail.Projects.Schemas.SlackChannel
+  alias Rail.Projects.Schemas.SlackWorkspace
   alias Rail.Repo
   alias Rail.Scope
   alias Rail.Slack
@@ -391,31 +392,18 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
           preload: [observations: ^from(o in Observation, order_by: [asc: o.inserted_at], preload: [task: :issue])]
       )
 
+    # Read again as it posts, so a channel picked while the pass ran gets its digest.
     with true <- activated != [] or proposals != [] or provisional != [],
-         %SlackChannel{} = channel <- triage_channel(project),
-         {:ok, ts} <-
-           Slack.post_channel_message(
-             channel.slack_workspace,
-             channel.external_id,
-             digest_text(project, pass, activated, provisional)
-           ),
-         {:ok, permalink} <- Slack.permalink(channel.slack_workspace, channel.external_id, ts) do
+         {:ok, %Project{learnings_slack_workspace: %SlackWorkspace{} = workspace, learnings_channel_external_id: channel}}
+         when is_binary(channel) <- Projects.get_project(project.id),
+         {:ok, ts} <- Slack.post_channel_message(workspace, channel, digest_text(project, pass, activated, provisional)),
+         {:ok, permalink} <- Slack.permalink(workspace, channel, ts) do
       posted = pass |> Ecto.Changeset.change(digest_permalink: permalink) |> Repo.update!()
       broadcast_learnings_changed(project.id)
       posted
     else
       _quiet_or_unposted -> pass
     end
-  end
-
-  defp triage_channel(%Project{id: project_id}) do
-    Repo.one(
-      from c in SlackChannel,
-        where: c.project_id == ^project_id,
-        order_by: [asc: c.inserted_at, asc: c.id],
-        limit: 1,
-        preload: :slack_workspace
-    )
   end
 
   defp digest_text(%Project{} = project, %CuratorPass{} = pass, activated, provisional) do

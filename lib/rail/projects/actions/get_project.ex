@@ -7,7 +7,7 @@ defmodule Rail.Projects.Actions.GetProject do
   alias Rail.Repo
 
   def get_project(id) when is_binary(id) do
-    case Repo.one(from p in Project, where: p.id == ^id, preload: :linear_workspace) do
+    case Repo.one(from p in Project, where: p.id == ^id, preload: [:linear_workspace, :learnings_slack_workspace]) do
       %Project{} = project -> {:ok, project}
       nil -> {:error, :not_found}
     end

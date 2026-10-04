@@ -83,6 +83,21 @@ defmodule Rail.Slack.ClientTest do
     assert {:ok, "https://slack.example/p1"} = Slack.permalink(workspace, "C1", "1.0")
   end
 
+  test "describes one channel on the bot token, and a channel it cannot see is an error", %{workspace: workspace} do
+    Req.Test.expect(Slack, fn conn ->
+      assert conn.request_path == "/api/conversations.info"
+      assert %{"channel" => "C1"} = conn.query_params
+      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer xoxb-bot"]
+      Req.Test.json(conn, %{"ok" => true, "channel" => %{"id" => "C1", "name" => "rail-learnings"}})
+    end)
+
+    assert {:ok, %{"id" => "C1", "name" => "rail-learnings"}} = Slack.channel_info(workspace, "C1")
+
+    Req.Test.expect(Slack, &Req.Test.json(&1, %{"ok" => false, "error" => "channel_not_found"}))
+
+    assert {:error, {:slack_error, "channel_not_found"}} = Slack.channel_info(workspace, "C_GONE")
+  end
+
   test "opens a Socket Mode connection on the app-level token", %{workspace: workspace} do
     Req.Test.expect(Slack, fn conn ->
       assert conn.method == "POST"

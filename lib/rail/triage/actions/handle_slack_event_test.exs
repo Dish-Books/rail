@@ -155,6 +155,23 @@ defmodule Rail.Triage.Actions.HandleSlackEventTest do
     assert [] = Repo.all(from t in Thread, where: t.slack_channel_id == ^channel.id)
   end
 
+  test "a person's message in a channel that is only a learnings channel files nothing", %{
+    workspace: workspace,
+    channel: channel,
+    project: project
+  } do
+    {:ok, _project} =
+      Rail.Projects.update_project(system_scope(), project, %{
+        "learnings_slack_workspace_id" => workspace.id,
+        "learnings_channel_external_id" => "C_LEARNINGS"
+      })
+
+    assert :ignored =
+             Triage.handle_slack_event(workspace, slack_message_event(channel, %{"channel" => "C_LEARNINGS"}))
+
+    assert [] = Repo.all(Thread)
+  end
+
   test "a channel of another workspace is ignored", %{workspace: workspace, channel: channel} do
     assert :ignored = Triage.handle_slack_event(%{workspace | id: "sw_other"}, slack_message_event(channel, %{}))
   end
