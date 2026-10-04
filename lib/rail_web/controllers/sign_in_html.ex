@@ -13,8 +13,16 @@ defmodule RailWeb.SignInHTML do
         <div class="flex items-center justify-center size-14 rounded-2xl bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 ring-1 ring-blue-100 dark:ring-blue-900">
           <svg viewBox="0 0 64 64" class="size-14" fill="none" aria-hidden="true" id="sign-in-mark">
             <mask id="sign-in-mark-rails" stroke-linejoin="round">
-              <path d="M21 56V17H35a9.5 9.5 0 0 1 0 19H21M32 36 46 57" stroke="#fff" stroke-width="12" />
-              <path d="M21 56V17H35a9.5 9.5 0 0 1 0 19H21M32 36 46 57" stroke="#000" stroke-width="4.5" />
+              <path
+                d="M21 56V17H35a9.5 9.5 0 0 1 0 19H21M32 36 46 57"
+                stroke="#fff"
+                stroke-width="12"
+              />
+              <path
+                d="M21 56V17H35a9.5 9.5 0 0 1 0 19H21M32 36 46 57"
+                stroke="#000"
+                stroke-width="4.5"
+              />
             </mask>
             <rect width="64" height="52" fill="currentColor" mask="url(#sign-in-mark-rails)" />
           </svg>
