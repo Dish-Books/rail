@@ -731,6 +731,47 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
       refute has_element?(view, "#learnings-channel-picker-options")
     end
 
+    test "the picker never offers a channel triage marked as shared outside the team", %{
+      admin_conn: conn,
+      project: project,
+      channel: channel,
+      posthog: posthog,
+      workspace: workspace
+    } do
+      {:ok, _project} =
+        Projects.update_project(system_scope(), project, %{
+          "slack_channels" => [
+            %{
+              "id" => channel.id,
+              "external_id" => channel.external_id,
+              "name" => channel.name,
+              "slack_workspace_id" => workspace.id
+            },
+            %{
+              "external_id" => posthog,
+              "name" => "posthog-index",
+              "slack_workspace_id" => workspace.id,
+              "external" => "true"
+            }
+          ]
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      Req.Test.allow(Rail.Slack, self(), view.pid)
+      view |> element("#edit-project-#{project.id}") |> render_click()
+      view |> element("#learnings-channel-picker-trigger") |> render_click()
+
+      assert has_element?(view, "#learnings-channel-picker-channel-#{channel.external_id}", "#rail-feedback")
+      refute has_element?(view, "#learnings-channel-picker-channel-#{posthog}")
+
+      render_click(element(view, "#learnings-channel-picker-none"), %{
+        "workspace_id" => workspace.id,
+        "channel_id" => posthog
+      })
+
+      assert {:ok, %Project{learnings_channel_external_id: nil}} = Projects.get_project(project.id)
+    end
+
     test "picking a channel saves it at once and never makes triage read it, and Don't post clears it", %{
       admin_conn: conn,
       project: project,
