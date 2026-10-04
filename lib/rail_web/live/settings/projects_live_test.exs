@@ -487,7 +487,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
 
       view |> form("#slack-channels-form", params) |> render_change()
       assert has_element?(view, "#slack-channel-bots-#{posthog}")
-      assert has_element?(view, "#slack-channels-form", "For channels where tools such as PostHog report issues")
+      assert has_element?(view, "#slack-channels-form", "Triage bot messages is for channels where tools such as PostHog")
 
       params = put_in(params, ["channels", posthog, "bot_triage_enabled"], "true")
       view |> form("#slack-channels-form", params) |> render_submit()
@@ -502,6 +502,48 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
       |> render_submit()
 
       assert [%{id: ^posthog_row, bot_triage_enabled: false}] = Projects.list_slack_channels(project)
+    end
+
+    test "an admin marks one channel external beside its bot switch, and it stays marked on reopening", %{
+      admin_conn: conn,
+      project: project,
+      channel: %{external_id: channel_id} = channel,
+      posthog: posthog
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      Req.Test.allow(Rail.Slack, self(), view.pid)
+      view |> element("#edit-project-#{project.id}") |> render_click()
+
+      assert has_element?(view, "label > #slack-channel-bots-#{channel.external_id}")
+      assert has_element?(view, "label + label > #slack-channel-external-#{channel.external_id}")
+      refute has_element?(view, "#slack-channel-external-#{channel.external_id}[checked]")
+      refute has_element?(view, "#slack-channel-external-#{posthog}")
+
+      assert has_element?(
+               view,
+               "#slack-channels-form",
+               "External is for channels shared with people outside the team: Rail never posts an issue link there."
+             )
+
+      params = %{
+        "channels" => %{
+          channel.external_id => %{"included" => "true", "external" => "true"},
+          posthog => %{"included" => "true"}
+        }
+      }
+
+      view |> form("#slack-channels-form", params) |> render_submit()
+      assert has_element?(view, "#slack-channels-saved")
+
+      assert [%{external_id: ^posthog, external: false}, %{external_id: ^channel_id, external: true}] =
+               Projects.list_slack_channels(project)
+
+      view |> element("#close-modal-button") |> render_click()
+      view |> element("#edit-project-#{project.id}") |> render_click()
+
+      assert has_element?(view, "#slack-channel-external-#{channel.external_id}[checked]")
+      refute has_element?(view, "#slack-channel-external-#{posthog}[checked]")
+      refute has_element?(view, "#slack-channel-bots-#{channel.external_id}[checked]")
     end
 
     test "a stored channel Slack no longer lists stays checked and survives a save, with its threads", %{

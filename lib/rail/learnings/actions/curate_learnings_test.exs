@@ -356,6 +356,71 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     assert text =~ "/learnings|Open Learnings in Rail>"
   end
 
+  test "the digest never goes to a learnings channel triage marked external", %{
+    project: project,
+    tasks: [one, two | _rest],
+    sighting: sighting
+  } do
+    %{channel: external, workspace: workspace} = connect_slack_channel(project, external: true)
+    internal_id = "C#{System.unique_integer([:positive])}int"
+
+    {:ok, project} =
+      Projects.update_project(system_scope(), project, %{
+        "slack_channels" => [
+          %{
+            "id" => external.id,
+            "external_id" => external.external_id,
+            "name" => external.name,
+            "slack_workspace_id" => workspace.id,
+            "external" => "true"
+          },
+          %{"external_id" => internal_id, "name" => "rail-team", "slack_workspace_id" => workspace.id}
+        ],
+        "learnings_slack_workspace_id" => workspace.id,
+        "learnings_channel_external_id" => external.external_id
+      })
+
+    test = self()
+
+    Req.Test.stub(Rail.Slack, fn conn ->
+      case conn.request_path do
+        "/api/chat.postMessage" ->
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+          send(test, {:posted, Jason.decode!(body)["channel"]})
+          Req.Test.json(conn, %{"ok" => true, "ts" => "1790000000.000902"})
+
+        "/api/chat.getPermalink" ->
+          Req.Test.json(conn, %{"ok" => true, "permalink" => "https://slack.example/p3"})
+      end
+    end)
+
+    curate = fn task, rule ->
+      seen = sighting.(task, %{})
+
+      expect(Tools, :run_agent, fn _backend, _argv, opts ->
+        File.write!(
+          Path.join(opts[:cd], "result.json"),
+          Jason.encode!(%{
+            "proposals" => [%{"action" => "add", "rule" => rule, "kind" => "convention", "evidence" => [seen.id]}]
+          })
+        )
+
+        {:ok, ""}
+      end)
+
+      Learnings.curate_learnings(project)
+    end
+
+    assert {:ok, %CuratorPass{digest_permalink: nil}} = curate.(one, "New")
+    refute_received {:posted, _channel}
+
+    {:ok, _project} =
+      Projects.update_project(system_scope(), project, %{"learnings_channel_external_id" => internal_id})
+
+    assert {:ok, %CuratorPass{digest_permalink: "https://slack.example/p3"}} = curate.(two, "Other")
+    assert_received {:posted, ^internal_id}
+  end
+
   test "a quiet day, or a project with triage channels but no learnings channel, posts no digest", %{
     project: %{id: project_id} = project,
     tasks: [one | _rest],

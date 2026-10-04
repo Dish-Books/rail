@@ -22,6 +22,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
+  alias Rail.Projects.Schemas.SlackChannel
   alias Rail.Projects.Schemas.SlackWorkspace
   alias Rail.Repo
   alias Rail.Scope
@@ -392,10 +393,16 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
           preload: [observations: ^from(o in Observation, order_by: [asc: o.inserted_at], preload: [task: :issue])]
       )
 
-    # Read again as it posts, so a channel picked while the pass ran gets its digest.
+    # Read again as it posts, so a channel picked while the pass ran gets its digest. It names Linear
+    # issues, so never in a channel triage has marked as shared outside the team.
     with true <- activated != [] or proposals != [] or provisional != [],
          {:ok, %Project{learnings_slack_workspace: %SlackWorkspace{} = workspace, learnings_channel_external_id: channel}}
          when is_binary(channel) <- Projects.get_project(project.id),
+         false <-
+           match?(
+             {:ok, %SlackChannel{external: true}},
+             Projects.get_slack_channel(external_id: channel, slack_workspace_id: workspace.id)
+           ),
          {:ok, ts} <- Slack.post_channel_message(workspace, channel, digest_text(project, pass, activated, provisional)),
          {:ok, permalink} <- Slack.permalink(workspace, channel, ts) do
       posted = pass |> Ecto.Changeset.change(digest_permalink: permalink) |> Repo.update!()

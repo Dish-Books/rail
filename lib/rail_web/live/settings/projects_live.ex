@@ -514,7 +514,10 @@ defmodule RailWeb.Settings.ProjectsLive do
                 and invite its app to the channels triage should read.
               </p>
               <ul :if={@slack_channel_options != []} class="max-h-56 overflow-y-auto space-y-1.5">
-                <li :for={channel <- @slack_channel_options} class="flex items-center gap-3 text-sm">
+                <li
+                  :for={channel <- @slack_channel_options}
+                  class="flex items-center gap-3 text-sm min-w-0"
+                >
                   <input type="hidden" name={"channels[#{channel.id}][included]"} value="false" />
                   <input type="hidden" name={"channels[#{channel.id}][name]"} value={channel.name} />
                   <input
@@ -538,7 +541,7 @@ defmodule RailWeb.Settings.ProjectsLive do
                   />
                   <label
                     for={"slack-channel-#{channel.id}"}
-                    class="font-mono text-slate-900 dark:text-slate-100"
+                    class="font-mono text-slate-900 dark:text-slate-100 truncate min-w-0"
                   >
                     #{channel.name}
                   </label>
@@ -549,34 +552,50 @@ defmodule RailWeb.Settings.ProjectsLive do
                   >
                     Not listed by Slack
                   </span>
-                  <label
+                  <span
                     :if={Map.has_key?(@channel_selection, channel.id)}
-                    class="ml-auto inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer"
+                    class="ml-auto flex items-center gap-4 shrink-0"
                   >
-                    <input
-                      type="hidden"
-                      name={"channels[#{channel.id}][bot_triage_enabled]"}
-                      value="false"
-                    />
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      name={"channels[#{channel.id}][bot_triage_enabled]"}
-                      id={"slack-channel-bots-#{channel.id}"}
-                      value="true"
-                      checked={Map.get(@channel_selection, channel.id) == true}
-                      class="peer sr-only"
-                    />
-                    <span class="relative h-5 w-9 shrink-0 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-indigo-600 after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
-                    Triage bot messages
-                  </label>
+                    <label class="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer whitespace-nowrap">
+                      <input
+                        type="hidden"
+                        name={"channels[#{channel.id}][bot_triage_enabled]"}
+                        value="false"
+                      />
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        name={"channels[#{channel.id}][bot_triage_enabled]"}
+                        id={"slack-channel-bots-#{channel.id}"}
+                        value="true"
+                        checked={@channel_selection[channel.id].bot_triage_enabled}
+                        class="peer sr-only"
+                      />
+                      <span class="relative h-5 w-9 shrink-0 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-indigo-600 after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
+                      Triage bot messages
+                    </label>
+                    <label class="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer whitespace-nowrap">
+                      <input type="hidden" name={"channels[#{channel.id}][external]"} value="false" />
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        name={"channels[#{channel.id}][external]"}
+                        id={"slack-channel-external-#{channel.id}"}
+                        value="true"
+                        checked={@channel_selection[channel.id].external}
+                        class="peer sr-only"
+                      />
+                      <span class="relative h-5 w-9 shrink-0 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-indigo-600 after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
+                      External
+                    </label>
+                  </span>
                 </li>
               </ul>
               <p
                 :if={map_size(@channel_selection) > 0}
                 class="text-xs text-slate-500 dark:text-slate-400"
               >
-                For channels where tools such as PostHog report issues.
+                Triage bot messages is for channels where tools such as PostHog report issues. External is for channels shared with people outside the team: Rail never posts an issue link there.
               </p>
               <div
                 :if={@channels_confirm}
@@ -655,7 +674,10 @@ defmodule RailWeb.Settings.ProjectsLive do
         socket =
           socket
           |> assign(:slack_channel_options, slack_channel_options(channels))
-          |> assign(:channel_selection, Map.new(channels, &{&1.external_id, &1.bot_triage_enabled}))
+          |> assign(
+            :channel_selection,
+            Map.new(channels, &{&1.external_id, %{bot_triage_enabled: &1.bot_triage_enabled, external: &1.external}})
+          )
           |> assign(:channel_ids, Map.new(channels, &{&1.external_id, &1.id}))
           |> assign(:channels_confirm, nil)
           |> assign(:channels_saved, false)
@@ -692,7 +714,8 @@ defmodule RailWeb.Settings.ProjectsLive do
           "external_id" => id,
           "name" => channel["name"],
           "slack_workspace_id" => channel["slack_workspace_id"],
-          "bot_triage_enabled" => channel["bot_triage_enabled"] == "true"
+          "bot_triage_enabled" => channel["bot_triage_enabled"] == "true",
+          "external" => channel["external"] == "true"
         }
       end
 
@@ -873,7 +896,7 @@ defmodule RailWeb.Settings.ProjectsLive do
 
   defp channel_selection(params) do
     for {id, %{"included" => "true"} = channel} <- Map.get(params, "channels", %{}), into: %{} do
-      {id, channel["bot_triage_enabled"] == "true"}
+      {id, %{bot_triage_enabled: channel["bot_triage_enabled"] == "true", external: channel["external"] == "true"}}
     end
   end
 

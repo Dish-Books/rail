@@ -13,9 +13,11 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
   alias Rail.Triage.Schemas.Thread
   alias Rail.Users
 
-  setup do
+  setup context do
     %{project: project, role: role, remote: remote} = triage_project()
-    %{workspace: workspace, channel: channel} = connect_slack_channel(project, users: %{"U_PRIYA" => "Priya"})
+
+    %{workspace: workspace, channel: channel} =
+      connect_slack_channel(project, users: %{"U_PRIYA" => "Priya"}, external: context[:external] == true)
 
     {:ok, thread} =
       Triage.handle_slack_event(
@@ -181,6 +183,42 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
 
     assert [%Item{existing_issue_id: ^issue_id, issue_title: nil, issue_description: nil, reply_text: "Good call."}] =
              Repo.all(from i in Item, where: i.thread_id == ^thread_id)
+  end
+
+  test "a pass in an ordinary channel drafts replies that link the issue with the placeholder", %{
+    thread: thread,
+    result_path: result_path
+  } do
+    expect(Tools, :run_agent, fn _backend, argv, _opts ->
+      brief = Enum.find(argv, &(&1 =~ "Triage the Slack thread in"))
+      assert brief =~ "Where the issue should be linked, write `{issue link}`"
+      assert brief =~ "the reply says the item is already tracked in that issue, giving its identifier"
+      refute brief =~ "external"
+      File.write!(result_path, Jason.encode!(%{"items" => []}))
+      {:ok, ""}
+    end)
+
+    assert :ok = Triage.triage_thread(thread)
+  end
+
+  @tag :external
+  test "a pass in an external channel drafts replies that neither link nor name an issue, even one tracking it", %{
+    thread: thread,
+    result_path: result_path
+  } do
+    expect(Tools, :run_agent, fn _backend, argv, _opts ->
+      brief = Enum.find(argv, &(&1 =~ "Triage the Slack thread in"))
+      assert brief =~ "channel is external, shared with people outside the team"
+      assert brief =~ "never write `{issue link}` and never name a Linear issue or its identifier in a reply"
+      assert brief =~ "the reply says the item is already tracked, without naming the issue or its identifier"
+      assert brief =~ "Still fill in `existing_issue`"
+      refute brief =~ "Where the issue should be linked"
+      refute brief =~ "giving its identifier"
+      File.write!(result_path, Jason.encode!(%{"items" => []}))
+      {:ok, ""}
+    end)
+
+    assert :ok = Triage.triage_thread(thread)
   end
 
   test "an existing issue Rail has not mirrored yet is brought in from Linear and linked", %{
