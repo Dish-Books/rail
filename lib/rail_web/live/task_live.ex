@@ -746,7 +746,7 @@ defmodule RailWeb.TaskLive do
     |> assign(:tabs, build_tabs(task, started, role, questions))
     |> assign(:engineer_tab, engineer_tab(started))
     |> assign(:subscribed_run_ids, sync_run_subscriptions(socket, task.runs))
-    |> assign(:watched_browser_task_id, watch_browser(socket, task))
+    |> assign(:watched_browser_task_id, watch_browser(socket, task, role, selected_run))
     |> assign(:round_questions, round_questions)
     |> assign(:suggestions, suggestions(round_questions))
     |> load_issue(task)
@@ -930,18 +930,22 @@ defmodule RailWeb.TaskLive do
     current
   end
 
-  # One topic per task, carrying whatever its browser is painting. Subscribing
-  # whatever the pane is, because the pane changes without the task changing and a
-  # browser nobody is watching broadcasts to nobody at almost no cost.
-  defp watch_browser(socket, %Task{id: task_id}) do
+  # One topic per task, carrying whatever its browser is painting, heard only while
+  # the panel can show it: on the QA or demo tab, with its run running. A finished
+  # pass leaves its tab open until the task moves on, and a page that keeps
+  # repainting would otherwise send every viewer frames nobody sees, which every
+  # click on the page waits behind. Being heard is also what keeps Chrome painting
+  # them, so a tab nobody can see costs nothing.
+  defp watch_browser(socket, %Task{id: task_id}, role, run) do
     watched = socket.assigns.watched_browser_task_id
+    wanted = if pane(role) in [:qa, :demo] and Run.running?(run), do: task_id
 
-    if connected?(socket) and watched != task_id do
+    if connected?(socket) and watched != wanted do
       if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "browser:#{watched}")
-      Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task_id}")
+      if wanted, do: Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{wanted}")
     end
 
-    if connected?(socket), do: task_id, else: watched
+    if connected?(socket), do: wanted, else: watched
   end
 
   # Sent and resolved comments are everyone's, so the task has a topic; unsent ones

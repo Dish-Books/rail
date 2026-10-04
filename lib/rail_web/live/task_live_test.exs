@@ -5314,6 +5314,27 @@ defmodule RailWeb.TaskLiveTest do
       assert_push_event(view, "browser:frame", %{data: "after the lull"}, 0)
     end
 
+    # A finished pass leaves its tab open until the task moves on, and a page that
+    # keeps repainting would send frames the panel no longer shows, which every
+    # click waits behind. So the browser is heard only while its pass runs.
+    test "the browser is heard only while its pass runs", %{conn: conn, task: task, qa_run: run} do
+      {:ok, running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}", {:browser_frame, task.id, "while running"})
+      _settled = render(view)
+      assert_push_event(view, "browser:frame", %{data: "while running"})
+
+      {:ok, _finished} = Pipeline.update_run(running, %{status: :finished, stage_outcome: :done})
+      send(view.pid, :task_changed)
+      send(view.pid, :frame_window_closed)
+      _settled = render(view)
+
+      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}", {:browser_frame, task.id, "after it finished"})
+      _settled = render(view)
+      refute_push_event(view, "browser:frame", %{data: "after it finished"}, 100)
+    end
+
     # A frame for a task nobody is reading, or while another pane is in front, is
     # nothing to send anywhere.
     test "a frame for another task is ignored", %{conn: conn, task: task} do
