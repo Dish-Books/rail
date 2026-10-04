@@ -197,7 +197,7 @@ defmodule RailWeb.SandboxesLiveTest do
     assert has_element?(view, "#waiting-#{behind.id} [data-qa='short-of']", "—")
   end
 
-  test "lists what runs, with what it reserves and uses", %{
+  test "lists what runs and what it uses of its reservation", %{
     conn: conn,
     busy: busy,
     ci: ci,
@@ -208,7 +208,8 @@ defmodule RailWeb.SandboxesLiveTest do
     assert has_element?(view, "#running-sandboxes-title", "Running · 2")
     assert has_element?(view, "#running-#{busy.id}", building_issue.identifier)
     assert has_element?(view, "#running-#{busy.id} [data-qa='for']", "Turn 1")
-    assert has_element?(view, "#running-#{busy.id} [data-qa='reserved']", "2 CPUs · 4 GB")
+    refute has_element?(view, "#running-sandboxes thead", "Reserved")
+    refute has_element?(view, "#running-#{busy.id} [data-qa='reserved']")
     assert has_element?(view, "#running-#{busy.id} [data-qa='running-for']", "31m")
 
     assert render_async(view) =~ "1.9"
@@ -222,7 +223,7 @@ defmodule RailWeb.SandboxesLiveTest do
     assert has_element?(view, "#running-#{ci.id} [data-qa='cpu-in-use']", "—")
   end
 
-  test "lists what ended in the last hour, how, and what it freed", %{
+  test "lists what ended in the last hour, and how", %{
     conn: conn,
     finished: finished,
     killed: killed,
@@ -235,7 +236,8 @@ defmodule RailWeb.SandboxesLiveTest do
 
     assert has_element?(view, "#ended-#{finished.id} [data-qa='ended-how']", "Finished")
     assert has_element?(view, "#ended-#{killed.id} [data-qa='ended-how']", "Killed · used more than its 4 GB")
-    assert has_element?(view, "#ended-#{killed.id} [data-qa='freed']", "2 CPUs · 4 GB")
+    refute has_element?(view, "#ended-sandboxes thead", "Freed")
+    refute has_element?(view, "#ended-#{killed.id} [data-qa='freed']")
     assert has_element?(view, "#ended-#{stopped.id} [data-qa='ended-how']", "Stopped by Lucas Stellet")
     assert has_element?(view, "#ended-#{timed_out.id} [data-qa='ended-how']", "Timed out")
     assert has_element?(view, "#ended-#{killed_otherwise.id} [data-qa='ended-how']", "Killed")
