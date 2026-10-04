@@ -567,9 +567,11 @@ defmodule RailWeb.LearningsLiveTest do
     refute has_element?(view, "#learnings-digest-picker")
   end
 
-  test "a broadcast that leaves the learnings channel alone asks Slack nothing", %{conn: conn, project: project} do
+  test "a page load asks Slack for the channel's name once, and a broadcast that leaves it alone asks nothing", %{
+    conn: conn,
+    project: project
+  } do
     %{workspace: workspace} = connect_slack_channel(project)
-    stub_slack(team_id: workspace.external_id, channels: [{"C_LEARN", "rail-learnings"}])
 
     {:ok, project} =
       Rail.Projects.update_project(system_scope(), project, %{
@@ -577,21 +579,27 @@ defmodule RailWeb.LearningsLiveTest do
         "learnings_channel_external_id" => "C_LEARN"
       })
 
-    {:ok, view, _html} = live(conn, ~p"/learnings")
     test = self()
 
     Req.Test.stub(Rail.Slack, fn conn ->
-      send(test, :asked_slack)
-      Req.Test.json(conn, %{"ok" => false, "error" => "not_expected"})
+      send(test, {:asked_slack, conn.request_path})
+      Req.Test.json(conn, %{"ok" => true, "channel" => %{"id" => "C_LEARN", "name" => "rail-learnings"}})
     end)
 
-    Req.Test.allow(Rail.Slack, self(), view.pid)
+    assert conn |> get(~p"/learnings") |> html_response(200) =~ "#C_LEARN"
+    refute_received {:asked_slack, _path}
 
+    {:ok, view, _html} = live(conn, ~p"/learnings")
+    assert has_element?(view, "span#learnings-digest-link", "#rail-learnings")
+    assert_received {:asked_slack, "/api/conversations.info"}
+    refute_received {:asked_slack, _path}
+
+    Req.Test.allow(Rail.Slack, self(), view.pid)
     Phoenix.PubSub.broadcast(Rail.PubSub, "learnings", {:learnings_changed, project.id})
     {:ok, _project} = Rail.Projects.update_project(system_scope(), project, %{"name" => "Renamed"})
 
     assert has_element?(view, "span#learnings-digest-link", "#rail-learnings")
-    refute_received :asked_slack
+    refute_received {:asked_slack, _path}
   end
 
   test "a change from another writer updates an open page", %{conn: conn, project: project} do

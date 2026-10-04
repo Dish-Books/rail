@@ -790,7 +790,7 @@ defmodule RailWeb.Settings.ProjectsLive do
   end
 
   # An edit from anywhere, such as a learnings channel picked on the Learnings page, shows here too.
-  def handle_info({:project_updated, project_id}, socket) do
+  def handle_info({:project_changed, project_id}, socket) do
     if Enum.any?(socket.assigns.projects, &(&1.id == project_id)),
       do: {:noreply, refresh_project(socket, project_id)},
       else: {:noreply, socket}

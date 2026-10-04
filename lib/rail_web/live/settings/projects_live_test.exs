@@ -796,7 +796,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
       assert has_element?(view, "#learnings-channel-picker-trigger", "#posthog-index")
 
       # An edit to a project this page does not list, or another page's news, changes nothing here.
-      send(view.pid, {:project_updated, "prj_not_listed"})
+      send(view.pid, {:project_changed, "prj_not_listed"})
       send(view.pid, {:pipeline_event, "for another page"})
       assert has_element?(view, "#learnings-channel-picker-trigger", "#posthog-index")
     end

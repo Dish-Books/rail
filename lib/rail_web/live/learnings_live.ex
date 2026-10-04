@@ -32,12 +32,20 @@ defmodule RailWeb.LearningsLive do
         _all_projects -> nil
       end
 
+    # Only the connected mount asks Slack, so a page load costs one call; the dead render shows the id.
+    channel_name =
+      cond do
+        is_nil(project) -> nil
+        connected?(socket) -> LearningsChannelPicker.channel_name(project)
+        true -> project.learnings_channel_external_id
+      end
+
     socket =
       socket
       |> assign(:page_title, "Learnings")
       |> assign(:current_section, :learnings)
       |> assign(:project, project)
-      |> assign(:channel_name, project && LearningsChannelPicker.channel_name(project))
+      |> assign(:channel_name, channel_name)
       |> assign(:show_digest_picker, is_struct(project, Project) and Scope.admin?(socket.assigns.current_scope))
       |> assign(:open_menu, nil)
       |> assign(:form, nil)
@@ -286,7 +294,7 @@ defmodule RailWeb.LearningsLive do
   end
 
   # A channel picked here or in another tab is named again; anything else about the project costs no Slack call.
-  def handle_info({:project_updated, id}, %{assigns: %{project: %Project{id: id}}} = socket) do
+  def handle_info({:project_changed, id}, %{assigns: %{project: %Project{id: id}}} = socket) do
     {:ok, project} = Projects.get_project(id)
     channel_name = LearningsChannelPicker.channel_name(project, socket.assigns.project, socket.assigns.channel_name)
 

@@ -242,7 +242,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                  "learnings_channel_external_id" => "C_LEARN"
                })
 
-      assert_received {:project_updated, ^project_id}
+      assert_received {:project_changed, ^project_id}
 
       assert {:ok, %Project{learnings_slack_workspace_id: nil, learnings_channel_external_id: nil}} =
                Projects.update_project(system_scope(), updated, %{
