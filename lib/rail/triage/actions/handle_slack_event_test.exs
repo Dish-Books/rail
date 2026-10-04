@@ -206,6 +206,27 @@ defmodule Rail.Triage.Actions.HandleSlackEventTest do
       refute_received {:triage_scheduled, ^thread_id, _delay}
     end
 
+    test "an external channel triages exactly what it would otherwise, bots only where the option is on", %{
+      event: event,
+      project: project
+    } do
+      %{workspace: workspace, channel: channel} = connect_slack_channel(project, external: true)
+
+      assert {:ok, %Thread{id: person_id}} = Triage.handle_slack_event(workspace, slack_message_event(channel, %{}))
+      assert_receive {:triage_scheduled, ^person_id, 15_000}
+
+      bot = event |> put_in(["event", "channel"], channel.external_id) |> put_in(["event", "ts"], "1790000000.000200")
+      assert {:ok, %Thread{id: bot_id, status: :done}} = Triage.handle_slack_event(workspace, bot)
+      refute_received {:triage_scheduled, ^bot_id, _delay}
+
+      %{workspace: workspace, channel: channel} = connect_slack_channel(project, external: true, bot_triage_enabled: true)
+
+      assert {:ok, %Thread{id: bot_id}} =
+               Triage.handle_slack_event(workspace, put_in(event, ["event", "channel"], channel.external_id))
+
+      assert_receive {:triage_scheduled, ^bot_id, 15_000}
+    end
+
     test "from Rail's own bot, such as the learnings digest, is not filed, even where bots trigger", %{
       event: event,
       project: project

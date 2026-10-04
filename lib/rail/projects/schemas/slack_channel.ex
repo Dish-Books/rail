@@ -1,7 +1,7 @@
 defmodule Rail.Projects.Schemas.SlackChannel do
   @moduledoc """
-  A Slack channel a project triages. Bot posts only trigger triage where
-  `bot_triage_enabled` is on, such as a channel an error tracker reports in.
+  A Slack channel a project triages. Bot posts only trigger triage where `bot_triage_enabled` is on,
+  and an `external` channel is shared with people outside the team, so Rail never posts an issue link there.
   """
   use Rail.Schema
 
@@ -13,6 +13,7 @@ defmodule Rail.Projects.Schemas.SlackChannel do
     field :external_id, :string
     field :name, :string
     field :bot_triage_enabled, :boolean, default: false
+    field :external, :boolean, default: false
 
     belongs_to :project, Project
     belongs_to :slack_workspace, SlackWorkspace
@@ -26,7 +27,7 @@ defmodule Rail.Projects.Schemas.SlackChannel do
   """
   def changeset(%__MODULE__{} = channel, attrs) do
     channel
-    |> cast(attrs, [:external_id, :name, :slack_workspace_id, :bot_triage_enabled])
+    |> cast(attrs, [:external_id, :name, :slack_workspace_id, :bot_triage_enabled, :external])
     |> validate_required([:external_id, :name, :slack_workspace_id])
     |> foreign_key_constraint(:slack_workspace_id)
     |> unique_constraint(:external_id, message: "is connected to another project")

@@ -340,11 +340,27 @@ defmodule Rail.Triage.Actions.TriageThread do
     - `change` is `raised` for the message that first brought an item up, `widened` or `narrowed` when a later message changes its scope, and `added` for a new item raised later in the thread. `passage` is quoted verbatim from the message.
     - `kind` is `bug` or `feature_request`. A bug's `verdict` is `confirmed`, `not_reproduced` or `already_fixed`; a request's is `built`, `partly_built` or `not_built`.
     - Never propose a fix, a design or a plan, anywhere. There is no field for one.
-    - `existing_issue` is the identifier of the Linear issue that already covers the item, such as `TRI-23`, or null. When one does, leave `issue` null, and the reply says the item is already tracked in that issue, giving its identifier and its state in Linear.
+    - `existing_issue` is the identifier of the Linear issue that already covers the item, such as `TRI-23`, or null. When one does, leave `issue` null, and #{tracked(thread)}
     - `priority` is `urgent`, `high`, `medium` or `low`.
-    - A reply is posted by the teammate who accepts it, under their name. Write it in their voice. Where the issue should be linked, write `{issue link}`: Rail fills in the existing issue that tracks the item, or the one you draft once it exists. Leave `reply` null where only a bot would read it.
+    - A reply is posted by the teammate who accepts it, under their name. Write it in their voice. #{issue_link(thread)} Leave `reply` null where only a bot would read it.
     """)
   end
+
+  # People outside the team read an external channel's replies, so they never point into Linear.
+  defp tracked(%Thread{slack_channel: %{external: true}}),
+    do:
+      "the reply says the item is already tracked, without naming the issue or its identifier. Still fill in `existing_issue`: only teammates see it."
+
+  defp tracked(%Thread{}),
+    do: "the reply says the item is already tracked in that issue, giving its identifier and its state in Linear."
+
+  defp issue_link(%Thread{slack_channel: %{external: true}}),
+    do:
+      "This thread's channel is external, shared with people outside the team: never write `{issue link}` and never name a Linear issue or its identifier in a reply. Rail refuses a reply that links the issue here."
+
+  defp issue_link(%Thread{}),
+    do:
+      "Where the issue should be linked, write `{issue link}`: Rail fills in the existing issue that tracks the item, or the one you draft once it exists."
 
   # A pass is not a run, so what it was given is not logged.
   defp rules(%Thread{messages: messages}, role) do

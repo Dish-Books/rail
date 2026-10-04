@@ -62,7 +62,7 @@ defmodule RailTest.TriageHelpers do
   @doc """
   Adds a Slack workspace and connects one channel of it to `project`. Returns
   `%{workspace: workspace, channel: channel}`. Takes `:bot_triage_enabled` for the
-  channel's option to triage bot posts.
+  channel's option to triage bot posts, and `:external` for one shared outside the team.
   """
   def connect_slack_channel(project, opts \\ []) do
     unique = System.unique_integer([:positive])
@@ -84,7 +84,8 @@ defmodule RailTest.TriageHelpers do
             "external_id" => channel_id,
             "name" => "rail-feedback",
             "slack_workspace_id" => workspace.id,
-            "bot_triage_enabled" => Keyword.get(opts, :bot_triage_enabled, false)
+            "bot_triage_enabled" => Keyword.get(opts, :bot_triage_enabled, false),
+            "external" => Keyword.get(opts, :external, false)
           }
         ]
       })

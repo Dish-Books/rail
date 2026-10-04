@@ -1,10 +1,11 @@
 defmodule Rail.Triage.Actions.CreateTriageIssue do
   @moduledoc """
   Accepts an item's proposed issue: creates it with the person's edits, starts
-  its product stage, and posts its link in the thread as them.
+  its product stage, and posts its link in the thread as them, unless the channel is external.
   """
 
   import Ecto.Query
+  import Rail.Triage.Utils.CanLinkIssue
   import Rail.Triage.Utils.CanPostToSlack
   import Rail.Triage.Utils.ClaimReply
   import Rail.Triage.Utils.PostToSlack
@@ -29,13 +30,13 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
     with :ok <- can_post_to_slack(scope, item.thread),
          :ok <- open(item),
          {:ok, drafted} <- item |> Item.draft_changeset(attrs) |> Ecto.Changeset.apply_action(:update),
+         :ok <- can_link_issue(item.thread, if(is_nil(item.reply_posted_by_id), do: drafted.reply_text)),
          :ok <- claim(item, user_id),
          {:ok, issue} <- create(scope, item, drafted) do
-      item = item |> Repo.reload!() |> Repo.preload(thread: [:project, slack_channel: :slack_workspace])
-      # The reply goes out as the person left it in the form, not as the pass drafted it.
-      item = %{item | reply_text: drafted.reply_text}
+      # The post honors the channel as it was checked, and the row keeps its draft until what was posted replaces it.
+      item = %{Repo.reload!(item) | thread: item.thread}
       started = product(issue)
-      posted = post(scope, item, issue)
+      posted = post(scope, item, drafted, issue)
       {:ok, item} = item |> Ecto.Changeset.change(Map.merge(started, posted)) |> Repo.update()
       {:ok, _thread} = settle_thread(item.thread)
       {:ok, item}
@@ -91,19 +92,22 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
     end
   end
 
-  defp post(scope, %Item{} = item, %Issue{} = issue) do
+  # The reply goes out as the person left it in the form, not as the pass drafted it.
+  defp post(scope, %Item{} = item, %Item{reply_text: reply_text} = drafted, %Issue{} = issue) do
     link = slack_issue_link(issue)
-    # Someone already posting the reply gets it posted once; the link goes out on its own.
-    reply? = Item.reply_draft?(item) and is_nil(item.reply_posted_at) and claim_reply(item, scope.user.id) == :ok
+    # Someone already posting the reply gets it posted once; the link goes out on its own, never in an external channel.
+    reply? = Item.reply_draft?(drafted) and is_nil(item.reply_posted_at) and claim_reply(item, scope.user.id) == :ok
 
     text =
       cond do
+        item.thread.slack_channel.external and reply? -> reply_text
+        item.thread.slack_channel.external -> nil
         not reply? -> "Filed as #{link}"
-        String.contains?(item.reply_text, "{issue link}") -> String.replace(item.reply_text, "{issue link}", link)
-        true -> "#{item.reply_text}\n\nFiled as #{link}"
+        String.contains?(reply_text, "{issue link}") -> String.replace(reply_text, "{issue link}", link)
+        true -> "#{reply_text}\n\nFiled as #{link}"
       end
 
-    case post_to_slack(scope, item.thread, text) do
+    case text && post_to_slack(scope, item.thread, text) do
       {:ok, message} when reply? ->
         %{reply_posted_at: DateTime.utc_now(), reply_posted_by_id: scope.user.id, reply_text: message.text}
 
@@ -113,6 +117,9 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
       {:error, reason} ->
         if reply?, do: :ok = release_reply(item)
         %{error: "Created #{issue.identifier}, but could not post in Slack. #{inspect(reason)}"}
+
+      nil ->
+        %{}
     end
   end
 end
