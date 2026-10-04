@@ -33,10 +33,10 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
          :ok <- can_link_issue(item.thread, if(is_nil(item.reply_posted_by_id), do: drafted.reply_text)),
          :ok <- claim(item, user_id),
          {:ok, issue} <- create(scope, item, drafted) do
-      # The reply goes out as the person left it in the form, and the post honors the channel as it was checked.
-      item = %{Repo.reload!(item) | thread: item.thread, reply_text: drafted.reply_text}
+      # The post honors the channel as it was checked, and the row keeps its draft until what was posted replaces it.
+      item = %{Repo.reload!(item) | thread: item.thread}
       started = product(issue)
-      posted = post(scope, item, issue)
+      posted = post(scope, item, drafted, issue)
       {:ok, item} = item |> Ecto.Changeset.change(Map.merge(started, posted)) |> Repo.update()
       {:ok, _thread} = settle_thread(item.thread)
       {:ok, item}
@@ -92,18 +92,19 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
     end
   end
 
-  defp post(scope, %Item{} = item, %Issue{} = issue) do
+  # The reply goes out as the person left it in the form, not as the pass drafted it.
+  defp post(scope, %Item{} = item, %Item{reply_text: reply_text} = drafted, %Issue{} = issue) do
     link = slack_issue_link(issue)
     # Someone already posting the reply gets it posted once; the link goes out on its own, never in an external channel.
-    reply? = Item.reply_draft?(item) and is_nil(item.reply_posted_at) and claim_reply(item, scope.user.id) == :ok
+    reply? = Item.reply_draft?(drafted) and is_nil(item.reply_posted_at) and claim_reply(item, scope.user.id) == :ok
 
     text =
       cond do
-        item.thread.slack_channel.external and reply? -> item.reply_text
+        item.thread.slack_channel.external and reply? -> reply_text
         item.thread.slack_channel.external -> nil
         not reply? -> "Filed as #{link}"
-        String.contains?(item.reply_text, "{issue link}") -> String.replace(item.reply_text, "{issue link}", link)
-        true -> "#{item.reply_text}\n\nFiled as #{link}"
+        String.contains?(reply_text, "{issue link}") -> String.replace(reply_text, "{issue link}", link)
+        true -> "#{reply_text}\n\nFiled as #{link}"
       end
 
     case text && post_to_slack(scope, item.thread, text) do

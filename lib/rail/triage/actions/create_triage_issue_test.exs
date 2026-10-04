@@ -273,6 +273,9 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
                Triage.create_triage_issue(scope, item, %{
                  "reply_text" => "Thanks Priya, we reproduced this. We'll update this thread when it ships."
                })
+
+      assert %Item{reply_text: "Thanks Priya, we reproduced this. We'll update this thread when it ships."} =
+               Repo.get!(Item, item.id)
     end
 
     test "a reply that links the issue creates nothing until the placeholder is taken out", %{
@@ -302,6 +305,8 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
 
       assert {:ok, %Item{created_issue_id: "iss_" <> _id, reply_posted_at: %DateTime{}}} =
                Triage.create_triage_issue(scope, item, %{"reply_text" => "Thanks, a fix is underway."})
+
+      assert %Item{reply_text: "Thanks, a fix is underway."} = Repo.get!(Item, item.id)
     end
 
     test "accepting while someone else posts the reply creates the issue and posts nothing", %{

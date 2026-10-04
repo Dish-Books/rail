@@ -306,7 +306,7 @@ defmodule RailWeb.Components.TriageItem do
               phx-debounce="500"
               class="w-full px-2.5 py-1.5 text-[12px] leading-relaxed rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 resize-none"
             >{Ecto.Changeset.get_field(@form, :issue_description)}</textarea>
-            <div class="flex items-center gap-2 min-w-0">
+            <div class="flex flex-wrap items-center gap-2 min-w-0">
               <select
                 id={"issue-priority-#{@item.id}"}
                 name="item[issue_priority]"
@@ -320,7 +320,7 @@ defmodule RailWeb.Components.TriageItem do
               </select>
               <span
                 id={"issue-line-#{@item.id}"}
-                class="text-[11px] text-slate-500 dark:text-slate-400 min-w-0 truncate"
+                class="flex-1 basis-40 min-w-0 text-[11px] text-slate-500 dark:text-slate-400"
               >
                 {@project_name} · starts Product · {@link_line}
               </span>
