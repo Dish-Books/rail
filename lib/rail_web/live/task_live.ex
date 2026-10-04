@@ -18,6 +18,9 @@ defmodule RailWeb.TaskLive do
   import RailWeb.Utils.HandleIssueEvent
 
   alias Rail.Issues
+  alias Rail.Learnings
+  alias Rail.Learnings.Schemas.Learning
+  alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -80,6 +83,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:held_frame, nil)
       |> assign(:roles_map, %{})
       |> assign(:round_questions, [])
+      |> assign(:suggestions, %{})
       |> assign(:cleaning_up, false)
       |> assign(:focus_file, nil)
       |> assign(:engineer_tab, nil)
@@ -149,6 +153,7 @@ defmodule RailWeb.TaskLive do
               current_scope={@current_scope}
               roles_map={@roles_map}
               round_questions={@round_questions}
+              suggestions={@suggestions}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -177,6 +182,7 @@ defmodule RailWeb.TaskLive do
               current_scope={@current_scope}
               roles_map={@roles_map}
               round_questions={@round_questions}
+              suggestions={@suggestions}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -204,6 +210,7 @@ defmodule RailWeb.TaskLive do
               current_scope={@current_scope}
               roles_map={@roles_map}
               round_questions={@round_questions}
+              suggestions={@suggestions}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -233,6 +240,7 @@ defmodule RailWeb.TaskLive do
               current_scope={@current_scope}
               roles_map={@roles_map}
               round_questions={@round_questions}
+              suggestions={@suggestions}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -262,6 +270,7 @@ defmodule RailWeb.TaskLive do
               current_scope={@current_scope}
               roles_map={@roles_map}
               round_questions={@round_questions}
+              suggestions={@suggestions}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -290,6 +299,7 @@ defmodule RailWeb.TaskLive do
               current_scope={@current_scope}
               roles_map={@roles_map}
               round_questions={@round_questions}
+              suggestions={@suggestions}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -318,6 +328,7 @@ defmodule RailWeb.TaskLive do
               current_scope={@current_scope}
               roles_map={@roles_map}
               round_questions={@round_questions}
+              suggestions={@suggestions}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -374,6 +385,7 @@ defmodule RailWeb.TaskLive do
               current_scope={@current_scope}
               roles_map={@roles_map}
               round_questions={@round_questions}
+              suggestions={@suggestions}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -619,6 +631,7 @@ defmodule RailWeb.TaskLive do
   attr :task, :any, required: true
   attr :roles_map, :map, required: true
   attr :round_questions, :list, required: true
+  attr :suggestions, :map, required: true
   attr :conversation_run, :any, required: true
   attr :current_scope, Scope, required: true
 
@@ -631,6 +644,7 @@ defmodule RailWeb.TaskLive do
       module={QuestionCard}
       id={"question-card-#{@conversation_run.id}"}
       questions={@round_questions}
+      suggestions={@suggestions}
       run={@conversation_run}
       role_name={@roles_map[@conversation_run.role_id].name}
       current_scope={@current_scope}
@@ -714,6 +728,7 @@ defmodule RailWeb.TaskLive do
 
     asked = Pipeline.list_questions(task, order_by: [asc: :inserted_at, asc: :id])
     questions = Enum.filter(asked, &(&1.status == :pending))
+    round_questions = round_questions(asked, selected_run)
 
     socket
     |> assign(:task, task)
@@ -732,8 +747,36 @@ defmodule RailWeb.TaskLive do
     |> assign(:engineer_tab, engineer_tab(started))
     |> assign(:subscribed_run_ids, sync_run_subscriptions(socket, task.runs))
     |> assign(:watched_browser_task_id, watch_browser(socket, task))
-    |> assign(:round_questions, round_questions(asked, selected_run))
+    |> assign(:round_questions, round_questions)
+    |> assign(:suggestions, suggestions(round_questions))
     |> load_issue(task)
+  end
+
+  # The past answer each of the round's questions was matched to, read in one query.
+  defp suggestions(round_questions) do
+    case for(%{suggested_learning_id: id} <- round_questions, is_binary(id), do: id) do
+      [] ->
+        %{}
+
+      ids ->
+        {:ok, rules} = Learnings.list_learnings(ids: Enum.uniq(ids), sources: true)
+        rules = Map.new(rules, &{&1.id, &1})
+
+        # The answer is the gate's; who gave it, where and when are the rule's latest answer's.
+        for %{suggested_learning_id: id} = question <- round_questions,
+            rule = rules[id],
+            source = Enum.find(rule.observations, &(&1.source_kind == :answer)),
+            into: %{} do
+          {question.id,
+           %{
+             answer: Learning.calculate_answer(rule, rule.observations),
+             by: Observation.actor_label(source),
+             identifier: source.task && source.task.issue.identifier,
+             task_id: source.task_id,
+             date: source.inserted_at
+           }}
+        end
+    end
   end
 
   # The issue is a tab of its own and costs a query of its own, so it is read

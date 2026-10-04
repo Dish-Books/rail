@@ -23,7 +23,7 @@ defmodule Rail.Pipeline.Turn do
   script: its whole output as one block, with the `process` that ran it.
 
   `:reminder` is a note Rail sent the agent on its own, such as a QA report sent
-  back for evidence. `label` says which reminder it was, as in "reminder 1 of 2".
+  back for evidence or a round it answered from past answers. `label` says which, as in "reminder 1 of 2".
 
   A `:human` turn carries the `sender_id` of the person who sent it, or `nil` for
   lines logged before senders were recorded and for those Rail wrote for a human.

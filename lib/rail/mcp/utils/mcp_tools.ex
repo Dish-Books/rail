@@ -36,6 +36,9 @@ defmodule Rail.Mcp.Utils.McpTools do
   pass said it would do, going green a row at a time with its evidence beside it.
   None of the four opens a browser of its own.
 
+  `@knowledge_tools` are offered to every role: `knowledge_search` reads the
+  rules the project has learned, which no stage should have to guess at.
+
   `@demo_tools` are about a recording. `demo_start` is the camera, and it is the
   agent's to switch on: a run filmed from its first call to its last is a film of
   an agent working out how the application behaves, which is not the demo. So the
@@ -211,11 +214,29 @@ defmodule Rail.Mcp.Utils.McpTools do
     }
   ]
 
+  @knowledge_tools [
+    %{
+      "name" => "knowledge_search",
+      "description" =>
+        "Search the rules this project has learned from people's corrections and decisions, nearest " <>
+          "first. Search before you ask a question, before you depart from the plan, and before you " <>
+          "change a module you do not know: the answer is often already a rule. Describe what you are " <>
+          "about to do or decide in a sentence; the search matches meaning, not words.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{
+          "query" => %{"type" => "string", "description" => "What you are about to decide, ask or change."}
+        },
+        "required" => ["query"]
+      }
+    }
+  ]
+
   @doc """
   The tools Rail serves this run itself: the browser for the two stages that
-  drive one, and whatever else that stage reports with.
+  drive one, whatever else that stage reports with, and the knowledge base for all.
   """
-  def mcp_tools(%Role{stage: :qa}), do: @browser_tools ++ @qa_tools
-  def mcp_tools(%Role{stage: :demo}), do: @browser_tools ++ @demo_tools
-  def mcp_tools(%Role{}), do: []
+  def mcp_tools(%Role{stage: :qa}), do: @browser_tools ++ @qa_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :demo}), do: @browser_tools ++ @demo_tools ++ @knowledge_tools
+  def mcp_tools(%Role{}), do: @knowledge_tools
 end

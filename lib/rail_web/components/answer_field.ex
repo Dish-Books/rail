@@ -3,11 +3,15 @@ defmodule RailWeb.Components.AnswerField do
   Renders the question card for a run's unsent round: one tab per question, open, answered or dismissed.
 
   Saved answers stay on the card and can be changed until Send answers hands the round back.
+  A question Rail answered from a past answer says so in a card of its own, and a likely past
+  answer is offered on the question it matches.
   """
   use RailWeb, :html
 
   attr :question, :any, required: true
   attr :questions, :list, default: []
+  attr :suggestions, :map, default: %{}, doc: "question id to the past answer matched to it"
+  attr :answering_myself, :any, default: MapSet.new(), doc: "question ids whose likely answer was waved away"
   attr :answer_text, :string, default: ""
   attr :changing_answer, :boolean, default: false
   attr :role_name, :string, required: true
@@ -48,8 +52,47 @@ defmodule RailWeb.Components.AnswerField do
       |> assign(:pending_note, calculate_pending_note(open_count, changing?))
       |> assign(:send_blocked?, open_count > 0 or changing?)
       |> assign(:all_dismissed?, all_dismissed?)
+      |> assign(:rail_answered, rail_answered(questions, assigns.suggestions))
+      |> assign(:by_rail?, get_field(question, :answered_by_rail) == true)
+      |> assign(
+        :likely,
+        (status == :pending and not changing? and not MapSet.member?(assigns.answering_myself, get_field(question, :id))) &&
+          Map.get(assigns.suggestions, get_field(question, :id))
+      )
 
     ~H"""
+    <div
+      :for={answered <- @rail_answered}
+      id={"rail-answer-#{answered.number}"}
+      data-qa="rail-answer"
+      class="mb-3 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2.5 text-[12.5px]"
+    >
+      <p class="flex items-center gap-1.5 font-semibold text-slate-800 dark:text-slate-200">
+        <.icon name="pi-check-circle-fill" class="size-4 text-emerald-500" />
+        Rail answered question {answered.number} from a past answer
+      </p>
+      <p class="mt-1 text-slate-600 dark:text-slate-300 break-words">“{answered.answer}”</p>
+      <p class="mt-1 text-[11.5px] text-slate-500 dark:text-slate-400">
+        <span :if={answered.source}>
+          {answered.source.by} on <.link
+            :if={answered.source.task_id}
+            navigate={~p"/tasks/#{answered.source.task_id}"}
+            class="font-mono text-blue-600 dark:text-blue-400 hover:underline"
+          >{answered.source.identifier}</.link>, {Calendar.strftime(answered.source.date, "%b %-d")} ·
+        </span>
+        <button
+          type="button"
+          id={"change-rail-answer-#{answered.number}"}
+          phx-click="change_answer"
+          phx-target={@target}
+          phx-value-question_id={answered.id}
+          class="font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+        >
+          Change answer
+        </button>
+      </p>
+    </div>
+
     <div
       id="answer-field-card"
       data-qa="answer-field"
@@ -117,8 +160,51 @@ defmodule RailWeb.Components.AnswerField do
         </p>
       </div>
 
+      <div
+        :if={@likely}
+        id="likely-answer"
+        data-qa="likely-answer"
+        class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-3 py-2.5"
+      >
+        <p class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Likely answer</p>
+        <p class="mt-1 text-[13px] text-slate-800 dark:text-slate-100 break-words">
+          {@likely.answer}
+        </p>
+        <p class="mt-1 text-[11.5px] text-slate-500 dark:text-slate-400">
+          {@likely.by} on <.link
+            :if={@likely.task_id}
+            navigate={~p"/tasks/#{@likely.task_id}"}
+            class="font-mono text-blue-600 dark:text-blue-400 hover:underline"
+          >{@likely.identifier}</.link>, {Calendar.strftime(@likely.date, "%b %-d")}
+        </p>
+        <div class="mt-2.5 flex gap-2">
+          <.button
+            size="sm"
+            variant="primary"
+            id="use-likely-answer"
+            phx-click="use_suggested_answer"
+            phx-target={@target}
+            phx-value-question_id={get_field(@question, :id)}
+          >
+            <.icon name="pi-check-bold" class="size-[1.1em]" />Use this answer
+          </.button>
+          <.button
+            size="sm"
+            variant="ghost"
+            id="answer-myself"
+            phx-click="answer_myself"
+            phx-target={@target}
+            phx-value-question_id={get_field(@question, :id)}
+          >
+            Answer myself
+          </.button>
+        </div>
+      </div>
+
       <div :if={@show_saved_answer?}>
-        <div class="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Your answer</div>
+        <div class="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
+          {if @by_rail?, do: "Rail's answer, from a past answer", else: "Your answer"}
+        </div>
         <div
           id="saved-answer"
           data-qa="saved-answer"
@@ -310,6 +396,18 @@ defmodule RailWeb.Components.AnswerField do
       </div>
     </div>
     """
+  end
+
+  defp rail_answered(questions, suggestions) do
+    for {question, number} <- Enum.with_index(questions, 1),
+        get_field(question, :answered_by_rail) == true and get_field(question, :status) == :answered do
+      %{
+        id: get_field(question, :id),
+        number: number,
+        answer: get_field(question, :answer),
+        source: Map.get(suggestions, get_field(question, :id))
+      }
+    end
   end
 
   defp calculate_tab({question, number}) do

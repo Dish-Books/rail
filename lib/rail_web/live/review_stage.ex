@@ -12,11 +12,13 @@ defmodule RailWeb.Live.ReviewStage do
 
   Nothing about a dismissed finding is hidden. "What is left" only means
   something next to what was dealt with: six findings with five dismissed reads
-  very differently from one lone nit.
+  very differently from one lone nit. A finding a calibration rule suppressed
+  sits apart, collapsed, until a person decides to fix it anyway.
   """
   use RailWeb, :live_component
 
   alias Rail.Git
+  alias Rail.Learnings
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ReviewFinding
   alias Rail.Pipeline.Schemas.Run
@@ -32,6 +34,7 @@ defmodule RailWeb.Live.ReviewStage do
       |> assign_new(:error, fn -> nil end)
       |> assign_new(:selected_key, fn -> nil end)
       |> assign_new(:advanced_to, fn -> nil end)
+      |> assign_new(:show_suppressed, fn -> false end)
 
     socket = socket |> load() |> load_hunk()
 
@@ -89,9 +92,16 @@ defmodule RailWeb.Live.ReviewStage do
         <.review_pending :if={@findings == []} running={@running} pending={@pending} />
 
         <div :if={@findings != []} id="review-findings" data-qa="review_findings" class="h-full flex">
-          <.finding_list findings={@findings} selected={@selected} target={@myself} />
+          <.finding_list
+            findings={@listed}
+            suppressed={@suppressed}
+            show_suppressed={@show_suppressed or ReviewFinding.suppressed?(@selected)}
+            selected={@selected}
+            target={@myself}
+          />
           <.finding_detail
             finding={@selected}
+            suppressor={@suppressor}
             position={@position}
             count={length(@findings)}
             hunk={@hunk}
@@ -115,6 +125,10 @@ defmodule RailWeb.Live.ReviewStage do
     {:noreply, socket}
   end
 
+  def handle_event("toggle_suppressed", _params, socket) do
+    {:noreply, assign(socket, :show_suppressed, not socket.assigns.show_suppressed)}
+  end
+
   def handle_event("decide", %{"key" => key, "decision" => decision}, socket) do
     finding = Enum.find(socket.assigns.findings, &(&1.key == key))
 
@@ -127,7 +141,7 @@ defmodule RailWeb.Live.ReviewStage do
 
     socket =
       with false <- double_click?(socket.assigns.advanced_to, key),
-           {:ok, _decided} <- Pipeline.decide_review_finding(finding, decision(decision)) do
+           {:ok, _decided} <- Pipeline.decide_review_finding(socket.assigns.current_scope, finding, decision(decision)) do
         socket
         |> assign(:error, nil)
         |> assign(:selected_key, selected_key)
@@ -165,6 +179,8 @@ defmodule RailWeb.Live.ReviewStage do
   end
 
   attr :findings, :list, required: true
+  attr :suppressed, :list, required: true
+  attr :show_suppressed, :boolean, required: true
   attr :selected, :any, required: true
   attr :target, :any, required: true
 
@@ -220,10 +236,66 @@ defmodule RailWeb.Live.ReviewStage do
               Needs your call
             </span>
             <span class="block truncate font-mono text-[10px] text-slate-500 dark:text-slate-400">
+              <span
+                :if={finding.rule_id}
+                data-qa="review_finding_rule"
+                title="Raised from a rule on the checklist"
+                class="inline-flex items-center gap-0.5"
+              >
+                <.icon name="pi-list-checks" class="size-[11px]" />rule ·
+              </span>
               {list_subtitle(finding)}
             </span>
           </span>
         </button>
+
+        <div :if={@suppressed != []} class="pt-1 mt-1 border-t border-slate-200 dark:border-slate-700">
+          <button
+            type="button"
+            id="review-suppressed-toggle"
+            data-qa="review_suppressed_toggle"
+            phx-click="toggle_suppressed"
+            phx-target={@target}
+            aria-expanded={to_string(@show_suppressed)}
+            class="w-full flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60 cursor-pointer"
+          >
+            <.icon :if={@show_suppressed} name="pi-caret-down-bold" class="size-[11px]" />
+            <.icon :if={not @show_suppressed} name="pi-caret-right-bold" class="size-[11px]" />
+            Suppressed ({length(@suppressed)})
+          </button>
+          <button
+            :for={finding <- @suppressed}
+            :if={@show_suppressed}
+            type="button"
+            id={"finding-#{finding.key}"}
+            data-qa="review_finding_suppressed"
+            data-state="suppressed"
+            phx-click="select_finding"
+            phx-target={@target}
+            phx-value-key={finding.key}
+            aria-current={to_string(@selected.key == finding.key)}
+            class={[
+              "w-full flex gap-2.5 px-3 py-2 rounded-lg text-left cursor-pointer",
+              @selected.key == finding.key &&
+                "bg-blue-50 dark:bg-blue-950/40 ring-1 ring-blue-300 dark:ring-blue-800",
+              @selected.key != finding.key && "hover:bg-slate-100 dark:hover:bg-slate-800/60"
+            ]}
+          >
+            <.icon name="pi-funnel-simple" class="mt-0.5 size-3 shrink-0 text-slate-400" />
+            <span class="min-w-0 flex-1">
+              <span class={[
+                "block text-[12.5px] leading-snug truncate",
+                @selected.key == finding.key && "font-semibold text-slate-900 dark:text-slate-100",
+                @selected.key != finding.key && "text-slate-600 dark:text-slate-400"
+              ]}>
+                {finding.title}
+              </span>
+              <span class="block truncate font-mono text-[10px] text-slate-500 dark:text-slate-400">
+                {list_subtitle(finding)}
+              </span>
+            </span>
+          </button>
+        </div>
       </div>
 
       <p
@@ -237,6 +309,7 @@ defmodule RailWeb.Live.ReviewStage do
   end
 
   attr :finding, :any, required: true
+  attr :suppressor, :any, default: nil
   attr :position, :integer, required: true
   attr :count, :integer, required: true
   attr :hunk, :any, required: true
@@ -265,11 +338,18 @@ defmodule RailWeb.Live.ReviewStage do
               {@position} of {@count}
             </span>
             <span
-              :if={@finding.decision == nil and @finding.status != :fixed}
+              :if={ReviewFinding.undecided?(@finding)}
               data-qa="finding_undecided"
               class="text-xs font-semibold text-blue-600 dark:text-blue-400"
             >
               Needs your call
+            </span>
+            <span
+              :if={ReviewFinding.suppressed?(@finding)}
+              data-qa="finding_suppressed"
+              class="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 dark:text-slate-400"
+            >
+              <.icon name="pi-funnel-simple" class="size-3.5" />Suppressed
             </span>
             <span
               :if={@finding.decision == :skip}
@@ -311,7 +391,7 @@ defmodule RailWeb.Live.ReviewStage do
         and the advice all go: what is left is the record that it was dealt with. -->
         <div :if={@decidable and @finding.status != :fixed} class="shrink-0 flex gap-2">
           <button
-            :for={{decision, label} <- [fix: "Fix", skip: "Don't fix"]}
+            :for={{decision, label} <- decisions(@finding)}
             type="button"
             id={"decide-#{decision}-#{@finding.key}"}
             data-qa={"decide_#{decision}"}
@@ -334,6 +414,35 @@ defmodule RailWeb.Live.ReviewStage do
 
       <div class="flex-1 min-h-0 overflow-y-auto px-7 py-6">
         <div class="max-w-4xl space-y-5">
+          <div
+            :if={ReviewFinding.suppressed?(@finding) and @suppressor != nil}
+            id="finding-suppressor"
+            data-qa="finding_suppressor"
+            class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 px-4 py-3"
+          >
+            <p class="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+              <.icon name="pi-funnel-simple" class="size-3.5" />Suppressed by a calibration rule
+            </p>
+            <p class="mt-1.5 text-[13.5px] font-medium text-slate-900 dark:text-slate-100 break-words">
+              {@suppressor.rule}
+            </p>
+            <p class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+              <span>Suppressed {@suppressor.suppressed_count} findings · {overridden(
+                @suppressor.override_count
+              )}</span>
+              <.link
+                navigate={~p"/learnings/#{@suppressor.id}"}
+                id="finding-open-rule"
+                class="inline-flex items-center gap-1 font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Open rule<.icon name="pi-arrow-up-right" class="size-3" />
+              </.link>
+            </p>
+            <p class="mt-2 text-xs text-slate-600 dark:text-slate-300">
+              Fix records an override against this rule and flags it for review.
+            </p>
+          </div>
+
           <.markdown :if={@finding.detail} content={@finding.detail} class="text-[13.5px]" />
 
           <div
@@ -456,13 +565,20 @@ defmodule RailWeb.Live.ReviewStage do
     """
   end
 
-  # The order is fixed by each finding itself, so ruling on one never moves it.
+  # The order is fixed by each finding itself, so ruling on one never moves it; a
+  # suppressed one is read after the rest, the way the list shows it.
   defp load(socket) do
-    findings = Pipeline.list_review_findings(socket.assigns.task)
+    {suppressed, listed} =
+      socket.assigns.task |> Pipeline.list_review_findings() |> Enum.split_with(&ReviewFinding.suppressed?/1)
+
+    findings = listed ++ suppressed
     selected = Enum.find(findings, List.first(findings), &(&1.key == socket.assigns.selected_key))
 
     socket
     |> assign(:findings, findings)
+    |> assign(:listed, listed)
+    |> assign(:suppressed, suppressed)
+    |> assign(:suppressor, suppressor(selected))
     |> assign(:selected, selected)
     |> assign(:selected_key, selected && selected.key)
     |> assign(:position, position(findings, selected))
@@ -497,6 +613,24 @@ defmodule RailWeb.Live.ReviewStage do
       true -> :clean
     end
   end
+
+  defp suppressor(%ReviewFinding{suppressed_by_id: rule_id} = finding) when is_binary(rule_id) do
+    if ReviewFinding.suppressed?(finding) do
+      {:ok, rules} = Learnings.list_learnings(ids: [rule_id])
+      List.first(rules)
+    end
+  end
+
+  defp suppressor(_unsuppressed), do: nil
+
+  # Leaving a suppressed finding alone is what the rule already did, so the only call left is Fix.
+  defp decisions(finding) do
+    if ReviewFinding.suppressed?(finding), do: [fix: "Fix"], else: [fix: "Fix", skip: "Don't fix"]
+  end
+
+  defp overridden(0), do: "never overridden"
+  defp overridden(1), do: "overridden once"
+  defp overridden(count), do: "overridden #{count} times"
 
   defp position(_findings, nil), do: 0
   defp position(findings, selected), do: Enum.find_index(findings, &(&1.key == selected.key)) + 1

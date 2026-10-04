@@ -3,7 +3,8 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
   Mirrors an issue event Linear sent for a workspace into Rail.
 
   The row is written with `Issue.linear_changeset/2`: the change came from
-  Linear, so nothing is pushed back to it.
+  Linear, so nothing is pushed back to it. An update that finishes an open issue
+  is handed to Learnings, which only queues its work.
   """
 
   import Ecto.Query
@@ -12,6 +13,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
 
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Learnings
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -36,10 +38,10 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
           |> format_linear_issue()
           |> Map.merge(%{project_id: project_id, owner_user_id: owner_user_id(data["assigneeId"])})
 
-        with {:ok, issue} <-
-               (Repo.get_by(Issue, external_id: external_id) || %Issue{})
-               |> Issue.linear_changeset(attrs)
-               |> Repo.insert_or_update() do
+        existing = Repo.get_by(Issue, external_id: external_id) || %Issue{}
+
+        with {:ok, issue} <- existing |> Issue.linear_changeset(attrs) |> Repo.insert_or_update() do
+          if finished?(action, existing, issue), do: {:ok, _job} = Learnings.handle_issue_finished(issue)
           Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id})
           {:ok, issue}
         end
@@ -91,6 +93,11 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
   end
 
   def handle_linear_webhook(%LinearWorkspace{}, _payload), do: :ok
+
+  defp finished?("update", %Issue{id: id, state: was}, %Issue{state: now}) when is_binary(id),
+    do: not Issue.finished_state?(was) and Issue.finished_state?(now)
+
+  defp finished?(_action, _existing, _issue), do: false
 
   # An assignee with no linked Rail user leaves the issue unowned, as the full sync does.
   defp owner_user_id(linear_user_id) when is_binary(linear_user_id) do

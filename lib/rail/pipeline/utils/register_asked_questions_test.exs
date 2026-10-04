@@ -5,6 +5,7 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
   import Rail.Pipeline.Utils.RegisterAskedQuestions
 
   alias Rail.Issues
+  alias Rail.Learnings.Schemas.Learning
   alias Rail.Pipeline
   alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Question
@@ -164,5 +165,102 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
 
     assert register_asked_questions(os_process, run) == []
     assert pending_questions(task_id) == []
+  end
+
+  describe "the questions gate" do
+    setup %{project: project} do
+      earlier = learnings_task(project, "GTE-1")
+      past = %Question{id: "qst_gate_past", prompt: "Postgres or SQLite?", answer: "Postgres.", status: :answered}
+      {:ok, [rule]} = Rail.Learnings.record_corrections(earlier, [past])
+
+      Repo.update_all(from(l in Learning, where: l.id == ^rule.id),
+        set: [embedding: Pgvector.new(vector([1.0])), embedding_model: "gemini-embedding-001"]
+      )
+
+      stub_vertex(%{"Which database" => vector([1.0, 0.1]), "Which store" => vector([1.0, 0.6])})
+      %{rule: rule}
+    end
+
+    test "a strong match is answered by Rail with its source, a likely one carries the suggestion, the rest stay plain",
+         %{
+           task: %Task{id: task_id},
+           run: run,
+           rule: %{id: rule_id},
+           spawn_os_process: spawn_os_process,
+           say: say
+         } do
+      os_process = spawn_os_process.()
+      say.(os_process, "[QUESTION: Which database?]")
+      say.(os_process, "[QUESTION: Which store for blobs?]")
+      say.(os_process, "[QUESTION: Ship behind a flag?]")
+
+      assert [_one, _two, _three] = register_asked_questions(os_process, run)
+
+      assert [
+               %Question{
+                 prompt: "Which database?",
+                 status: :answered,
+                 answer: "Postgres.",
+                 answered_by_rail: true,
+                 suggested_learning_id: ^rule_id
+               },
+               %Question{
+                 prompt: "Which store for blobs?",
+                 status: :pending,
+                 answer: nil,
+                 suggested_learning_id: ^rule_id
+               },
+               %Question{prompt: "Ship behind a flag?", status: :pending, suggested_learning_id: nil}
+             ] = Repo.all(from q in Question, where: q.task_id == ^task_id, order_by: [asc: q.inserted_at, asc: q.id])
+    end
+
+    test "a rule a person reworded answers with what it says now", %{
+      task: %Task{id: task_id},
+      run: run,
+      rule: rule,
+      spawn_os_process: spawn_os_process,
+      say: say
+    } do
+      {:ok, _edited} = Rail.Learnings.update_learning(system_scope(), rule, %{rule: "Postgres, with pgvector."})
+
+      Repo.update_all(from(l in Learning, where: l.id == ^rule.id),
+        set: [embedding: Pgvector.new(vector([1.0])), embedding_model: "gemini-embedding-001"]
+      )
+
+      os_process = spawn_os_process.()
+      say.(os_process, "[QUESTION: Which database?]")
+
+      assert [_one] = register_asked_questions(os_process, run)
+
+      assert [%Question{status: :answered, answer: "Postgres, with pgvector.", answered_by_rail: true}] =
+               Repo.all(from q in Question, where: q.task_id == ^task_id)
+    end
+
+    # Taking a suggestion adds a source asked in other words, which leaves the rule as it was made.
+    test "a rule a later question joined still answers with the person's words", %{
+      project: project,
+      task: %Task{id: task_id},
+      run: run,
+      rule: rule,
+      spawn_os_process: spawn_os_process,
+      say: say
+    } do
+      taken = %Question{
+        id: "qst_gate_taken",
+        prompt: "Which store?",
+        answer: "Postgres.",
+        status: :answered,
+        suggested_learning_id: rule.id
+      }
+
+      {:ok, []} = Rail.Learnings.record_corrections(learnings_task(project, "GTE-2"), [taken])
+      os_process = spawn_os_process.()
+      say.(os_process, "[QUESTION: Which database?]")
+
+      assert [_one] = register_asked_questions(os_process, run)
+
+      assert [%Question{status: :answered, answer: "Postgres.", answered_by_rail: true}] =
+               Repo.all(from q in Question, where: q.task_id == ^task_id)
+    end
   end
 end

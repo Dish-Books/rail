@@ -46,6 +46,8 @@ defmodule Rail.Pipeline.Schemas.Task do
     field :is_updating_branch, :boolean, default: false
     # A person settled the demo stage as not needed rather than recording one.
     field :demo_skipped_at, :utc_datetime_usec
+    # Set once the curator has distilled the finished task, so it is never read twice.
+    field :learnings_extracted_at, :utc_datetime_usec
 
     belongs_to :project, Project
     belongs_to :issue, Issue
@@ -72,7 +74,8 @@ defmodule Rail.Pipeline.Schemas.Task do
     :pr_url,
     :pr_is_draft,
     :is_updating_branch,
-    :demo_skipped_at
+    :demo_skipped_at,
+    :learnings_extracted_at
   ]
 
   @required_fields [

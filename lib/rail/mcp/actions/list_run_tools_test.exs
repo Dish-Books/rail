@@ -93,6 +93,7 @@ defmodule Rail.Mcp.Actions.ListRunToolsTest do
 
     assert {:ok,
             [
+              %{"name" => "knowledge_search"},
               %{"name" => "lrt_linear__get_issue"},
               %{"name" => "lrt_open__a", "inputSchema" => %{}},
               %{"name" => "lrt_open__b"}
@@ -103,10 +104,11 @@ defmodule Rail.Mcp.Actions.ListRunToolsTest do
   test "an unassigned issue only reaches servers that need no account" do
     context = %RunContext{role: %Role{mcp_tools: ["lrt_linear__*", "lrt_open__b"]}, user: nil}
 
-    assert {:ok, [%{"name" => "lrt_open__b"}]} = Mcp.list_run_tools(context)
+    assert {:ok, [%{"name" => "knowledge_search"}, %{"name" => "lrt_open__b"}]} = Mcp.list_run_tools(context)
   end
 
-  test "a role without MCP tools lists none" do
-    assert {:ok, []} = Mcp.list_run_tools(%RunContext{role: %Role{mcp_tools: []}, user: nil})
+  test "a role without MCP tools lists only Rail's own" do
+    assert {:ok, [%{"name" => "knowledge_search"}]} =
+             Mcp.list_run_tools(%RunContext{role: %Role{mcp_tools: []}, user: nil})
   end
 end

@@ -23,6 +23,10 @@ A single message can raise both, or several of each. Each separate problem or re
 
 A report a bot posted, such as an error tracker's alert, is a bug report like any other. Verify it the same way: find the code that raised it and say why.
 
+## What this project has learned
+
+Rail keeps the rules this project has learned from people's corrections and decisions, and the ones that fit this run are already in your brief. Call `knowledge_search` for more before you ask a question, before you depart from the plan, and before you touch a module you do not know. A question it answers is not a question, and a departure a rule rules out is not yours to make. Search before you call something a bug: a ruling that it is expected behavior, or a known duplicate, is the answer to the report.
+
 ## Verify every claim
 
 You have the project's code, read only, and whatever MCP tools you were offered. Use both for evidence, never for changes.

@@ -48,8 +48,8 @@ defmodule Rail.Pipeline.Actions.ListReviewFindingsTest do
         %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
       ])
 
-    {:ok, _dismissed} = Pipeline.decide_review_finding(blocker, :skip)
-    {:ok, _decided} = Pipeline.decide_review_finding(major, :fix)
+    {:ok, _dismissed} = Pipeline.decide_review_finding(system_scope(), blocker, :skip)
+    {:ok, _decided} = Pipeline.decide_review_finding(system_scope(), major, :fix)
 
     assert ["a-blocker", "a-major", "a-nit"] =
              task |> Pipeline.list_review_findings() |> Enum.map(& &1.key)

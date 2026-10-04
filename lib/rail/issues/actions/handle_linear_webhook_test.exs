@@ -6,6 +6,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.SyncIssue
+  alias Rail.Learnings.Workers.IssueFinished
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -285,5 +286,56 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
              })
 
     assert [] = Repo.all(Comment)
+  end
+
+  describe "an issue finishing" do
+    setup %{project: project, workspace: workspace} do
+      update = fn external_id, state_type ->
+        Issues.handle_linear_webhook(workspace, %{
+          "type" => "Issue",
+          "action" => "update",
+          "data" => %{
+            "id" => external_id,
+            "teamId" => "lin_team_id",
+            "identifier" => "HWH-F",
+            "title" => "Finishing",
+            "state" => %{"id" => "st_#{state_type}", "name" => state_type, "type" => state_type}
+          }
+        })
+      end
+
+      insert = fn external_id, state ->
+        %Issue{}
+        |> Issue.linear_changeset(%{
+          project_id: project.id,
+          external_id: external_id,
+          identifier: "HWH-F",
+          title: "Finishing",
+          state: state
+        })
+        |> Repo.insert!()
+      end
+
+      %{update: update, insert: insert}
+    end
+
+    test "an update into done hands the issue to Learnings once", %{update: update, insert: insert} do
+      %Issue{id: issue_id} = insert.("lin_fin_1", :in_review)
+
+      assert {:ok, %Issue{state: :done}} = update.("lin_fin_1", "completed")
+      assert {:ok, %Issue{state: :done}} = update.("lin_fin_1", "completed")
+
+      assert [_once] = all_enqueued(worker: IssueFinished, args: %{issue_id: issue_id})
+    end
+
+    test "an update between two open states or two finished states does not", %{update: update, insert: insert} do
+      insert.("lin_fin_2", :todo)
+      insert.("lin_fin_3", :done)
+
+      assert {:ok, %Issue{state: :in_progress}} = update.("lin_fin_2", "started")
+      assert {:ok, %Issue{state: :canceled}} = update.("lin_fin_3", "canceled")
+
+      refute_enqueued(worker: IssueFinished)
+    end
   end
 end

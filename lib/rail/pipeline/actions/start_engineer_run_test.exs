@@ -2,6 +2,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues
+  alias Rail.Learnings.Schemas.LearningRetrieval
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Run
@@ -205,5 +206,57 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     end)
 
     assert {:ok, %OsProcess{}} = Pipeline.start_engineer_run(run)
+  end
+
+  describe "what the project has learned" do
+    test "the brief carries the rules retrieved with the ticket and the plan, and the run's retrievals are logged", %{
+      project: project,
+      task: task,
+      run: run
+    } do
+      stub_vertex(%{"Filter invoices" => vector([1.0])})
+
+      %ImplementationPlan{}
+      |> ImplementationPlan.changeset(%{
+        task_id: task.id,
+        content: "Extend the invoices module.",
+        captured_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+      rule =
+        learning(project, %{rule: "Filters live in the URL", why: "So a view can be linked", kind: :convention},
+          embedding: [1.0]
+        )
+
+      pinned = learning(project, %{rule: "Never run git", kind: :environment, pinned: true})
+
+      expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+        assert prompt =~ "What this project has learned."
+        assert prompt =~ "- Convention: Filters live in the URL\n  Why: So a view can be linked"
+        assert prompt =~ "- Environment: Never run git"
+        assert prompt =~ "`knowledge_search`"
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %OsProcess{}} = Pipeline.start_engineer_run(run)
+      assert_received {:embedded, "Invoice filters\n\nFilter invoices by vendor.", "RETRIEVAL_QUERY"}
+      assert_received {:embedded, "Extend the invoices module.", "RETRIEVAL_QUERY"}
+
+      assert Enum.sort([rule.id, pinned.id]) ==
+               Enum.sort(Repo.all(from r in LearningRetrieval, where: r.run_id == ^run.id, select: r.learning_id))
+    end
+
+    test "an answer turn is given no rules, since only the answer is sent", %{project: project, run: run} do
+      learning(project, %{rule: "Never run git", kind: :environment, pinned: true})
+
+      expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+        refute prompt =~ "Never run git."
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %OsProcess{}} = Pipeline.start_engineer_run(%{run | pending_answer: "Blue."})
+      assert [] = Repo.all(from r in LearningRetrieval, where: r.run_id == ^run.id)
+    end
   end
 end

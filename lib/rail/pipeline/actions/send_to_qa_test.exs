@@ -64,7 +64,7 @@ defmodule Rail.Pipeline.Actions.SendToQaTest do
 
   test "findings the human dismissed are not outstanding either", %{task: task, run: run, raised: raised} do
     {:ok, [finding]} = Pipeline.sync_review_findings(task, [raised])
-    {:ok, _dismissed} = Pipeline.decide_review_finding(finding, :skip)
+    {:ok, _dismissed} = Pipeline.decide_review_finding(system_scope(), finding, :skip)
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.send_to_qa(run)
     assert %Task{stage: :qa} = Repo.reload!(task)
@@ -72,7 +72,7 @@ defmodule Rail.Pipeline.Actions.SendToQaTest do
 
   test "a change with something still to fix does not go on", %{task: task, run: run, raised: raised} do
     {:ok, [finding]} = Pipeline.sync_review_findings(task, [raised])
-    {:ok, _to_fix} = Pipeline.decide_review_finding(finding, :fix)
+    {:ok, _to_fix} = Pipeline.decide_review_finding(system_scope(), finding, :fix)
 
     assert {:error, :findings_outstanding} = Pipeline.send_to_qa(run)
     assert %Task{stage: :review} = Repo.reload!(task)

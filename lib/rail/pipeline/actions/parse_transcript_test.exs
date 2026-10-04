@@ -110,6 +110,12 @@ defmodule Rail.Pipeline.Actions.ParseTranscriptTest do
 
     assert [%Turn{label: "reminder 1 of 2", content: "First."}, %Turn{label: "reminder 2 of 2", content: "Second."}] =
              Pipeline.parse_transcript(["[reminder 1 of 2] First.", "[reminder 2 of 2] Second."])
+
+    assert [%Turn{author: :reminder, label: "answered from past answers", content: "You asked: X?\nAnswered by Rail."}] =
+             Pipeline.parse_transcript([
+               "[answered from past answers] You asked: X?",
+               "[answered from past answers] Answered by Rail."
+             ])
   end
 
   test "consecutive tool lines group into one activity block" do

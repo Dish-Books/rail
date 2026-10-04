@@ -19,6 +19,7 @@ defmodule RailWeb.Live.QuestionCard do
       |> assign_new(:selected_id, fn -> nil end)
       |> assign_new(:answer_text, fn -> "" end)
       |> assign_new(:changing?, fn -> false end)
+      |> assign_new(:answering_myself, fn -> MapSet.new() end)
 
     %{questions: questions, selected_id: selected_id} = socket.assigns
 
@@ -44,6 +45,8 @@ defmodule RailWeb.Live.QuestionCard do
       <.answer_field
         question={@question}
         questions={@questions}
+        suggestions={@suggestions}
+        answering_myself={@answering_myself}
         answer_text={@answer_text}
         changing_answer={@changing?}
         role_name={@role_name}
@@ -79,14 +82,17 @@ defmodule RailWeb.Live.QuestionCard do
       {:noreply, socket}
     else
       question_id = question_id(socket, params)
-
-      answered =
-        with {:ok, question} <- round_question(socket, question_id) do
-          Pipeline.answer_question(question, answer)
-        end
-
-      {:noreply, saved(socket, question_id, answered)}
+      {:noreply, saved(socket, question_id, answer_one(socket, question_id, answer))}
     end
+  end
+
+  def handle_event("use_suggested_answer", %{"question_id" => question_id}, socket) do
+    %{answer: answer} = Map.fetch!(socket.assigns.suggestions, question_id)
+    {:noreply, saved(socket, question_id, answer_one(socket, question_id, answer))}
+  end
+
+  def handle_event("answer_myself", %{"question_id" => question_id}, socket) do
+    {:noreply, assign(socket, :answering_myself, MapSet.put(socket.assigns.answering_myself, question_id))}
   end
 
   def handle_event("dismiss_question", params, socket) do
@@ -98,6 +104,19 @@ defmodule RailWeb.Live.QuestionCard do
       end
 
     {:noreply, saved(socket, question_id, dismissed)}
+  end
+
+  # Rail's answer is changed from its own card, which names the question.
+  def handle_event("change_answer", %{"question_id" => question_id}, socket) do
+    question = Enum.find(socket.assigns.questions, &(&1.id == question_id))
+
+    socket =
+      socket
+      |> assign(:selected_id, question_id)
+      |> assign(:changing?, true)
+      |> assign(:answer_text, question.answer || "")
+
+    {:noreply, socket}
   end
 
   def handle_event("change_answer", _params, socket) do
@@ -138,6 +157,12 @@ defmodule RailWeb.Live.QuestionCard do
     if Enum.any?(socket.assigns.questions, &(&1.id == question_id)),
       do: Pipeline.get_question(question_id),
       else: {:error, :not_found}
+  end
+
+  defp answer_one(socket, question_id, answer) do
+    with {:ok, question} <- round_question(socket, question_id) do
+      Pipeline.answer_question(socket.assigns.current_scope, question, answer)
+    end
   end
 
   # The saved question is folded in at once, so the card moves on to the next open

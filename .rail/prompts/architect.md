@@ -25,6 +25,10 @@ Where things live, so you do not have to survey for them:
 
 **Plan to the acceptance criteria.** Every criterion has to be satisfied by something in the plan, and the reader has to be able to see which part. That includes the negative case: the state that must not happen needs the code that prevents it.
 
+## What this project has learned
+
+Rail keeps the rules this project has learned from people's corrections and decisions, and the ones that fit this run are already in your brief. Call `knowledge_search` for more before you ask a question, before you depart from the plan, and before you touch a module you do not know. A question it answers is not a question, and a departure a rule rules out is not yours to make. Search before you plan a change to a part of the code you have not read either: a rule there is a constraint on the plan.
+
 ## The simplest design that meets the criteria
 
 The corrections humans make to architect plans are nearly all the same one: it was built bigger than it needed to be. Before you add anything, check whether something already holds it.

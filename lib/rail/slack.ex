@@ -11,6 +11,7 @@ defmodule Rail.Slack do
   defdelegate open_connection(workspace), to: Client
   defdelegate download_file(workspace, url), to: Client
   defdelegate post_message(user_token, channel, thread_ts, text), to: Client
+  defdelegate post_channel_message(workspace, channel, text), to: Client
   defdelegate authorize_url(opts \\ []), to: Client
   defdelegate exchange_code(code), to: Client
 end

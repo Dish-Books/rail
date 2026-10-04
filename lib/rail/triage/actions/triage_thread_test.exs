@@ -922,4 +922,35 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
       assert :ok = Triage.triage_thread(thread)
     end
   end
+
+  test "the brief carries the rules retrieved with the thread's text, and nothing is logged", %{
+    project: project,
+    thread: thread,
+    result_path: result_path
+  } do
+    stub_vertex(%{"wait times" => vector([1.0])})
+
+    learning(
+      project,
+      %{
+        rule: "Up next is ordered by wait; that is expected",
+        why: "Decided on RAIL-12",
+        kind: :product,
+        roles: [:triage]
+      },
+      embedding: [1.0]
+    )
+
+    expect(Tools, :run_agent, fn _backend, argv, _opts ->
+      prompt = Enum.join(argv, " ")
+      assert prompt =~ "What this project has learned"
+      assert prompt =~ "- Product: Up next is ordered by wait; that is expected Why: Decided on RAIL-12"
+      File.write!(result_path, Jason.encode!(%{"items" => []}))
+      {:ok, ""}
+    end)
+
+    assert :ok = Triage.triage_thread(thread)
+    assert_received {:embedded, "Approved BILL-88" <> _rest, "RETRIEVAL_QUERY"}
+    assert [] = Repo.all(Rail.Learnings.Schemas.LearningRetrieval)
+  end
 end

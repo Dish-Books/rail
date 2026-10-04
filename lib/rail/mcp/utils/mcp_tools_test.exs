@@ -16,7 +16,8 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
              "qa_plan",
              "qa_check",
              "qa_shot",
-             "qa_file"
+             "qa_file",
+             "knowledge_search"
            ]
   end
 
@@ -25,11 +26,18 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
              "browser_connect",
              "browser_problems",
              "demo_start",
-             "demo_say"
+             "demo_say",
+             "knowledge_search"
            ]
   end
 
-  test "every other stage reads code and is offered nothing", %{roles: roles} do
-    assert mcp_tools(roles[:review]) == []
+  test "every other stage reads code and is offered only the knowledge base", %{roles: roles} do
+    assert [%{"name" => "knowledge_search"}] = mcp_tools(roles[:review])
+  end
+
+  test "every role stage is offered knowledge_search" do
+    for stage <- Role.canonical_stages() do
+      assert Enum.any?(mcp_tools(%Role{stage: stage}), &(&1["name"] == "knowledge_search"))
+    end
   end
 end
