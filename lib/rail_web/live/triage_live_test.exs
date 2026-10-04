@@ -4,6 +4,7 @@ defmodule RailWeb.TriageLiveTest do
   import Ecto.Query
   import Phoenix.LiveViewTest
 
+  alias Rail.Projects
   alias Rail.Repo
   alias Rail.Triage
   alias Rail.Triage.Schemas.Item
@@ -206,6 +207,42 @@ defmodule RailWeb.TriageLiveTest do
     view |> form("#reply-form-#{bug.id}") |> render_submit()
 
     assert has_element?(view, "#triage-item-error-#{bug.id}", "create the issue first")
+  end
+
+  test "marking the channel external changes an open item's issue line, and a reply that links the issue is refused", %{
+    conn: conn,
+    project: project,
+    channel: channel,
+    thread: %Thread{items: [bug, _request]}
+  } do
+    {:ok, view, _html} = live(conn, ~p"/triage")
+    assert has_element?(view, "#issue-line-#{bug.id}", "starts Product · link posted in thread")
+
+    {:ok, _project} =
+      Projects.update_project(system_scope(), project, %{
+        "slack_channels" => [
+          %{
+            "id" => channel.id,
+            "external_id" => channel.external_id,
+            "name" => channel.name,
+            "slack_workspace_id" => channel.slack_workspace_id,
+            "external" => "true"
+          }
+        ]
+      })
+
+    assert has_element?(view, "#issue-line-#{bug.id}", "starts Product · no link posted, external channel")
+    refute has_element?(view, "#issue-line-#{bug.id}", "link posted in thread")
+
+    refusal = "This reply cannot link the issue in an external channel. Take out {issue link} to post it."
+    view |> form("#reply-form-#{bug.id}") |> render_submit()
+    assert has_element?(view, "#triage-item-error-#{bug.id}", refusal)
+
+    {:ok, view, _html} = live(conn, ~p"/triage")
+    refute has_element?(view, "#triage-item-error-#{bug.id}")
+    view |> form("#issue-form-#{bug.id}") |> render_submit()
+    assert has_element?(view, "#triage-item-error-#{bug.id}", refusal)
+    assert %Item{created_issue_id: nil, issue_created_by_id: nil} = Repo.get!(Item, bug.id)
   end
 
   test "a person who has not linked Slack cannot accept, and is told how to", %{

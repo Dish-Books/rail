@@ -408,10 +408,11 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
     end
   end
 
+  # The digest names Linear issues, which never go to a channel shared outside the team.
   defp triage_channel(%Project{id: project_id}) do
     Repo.one(
       from c in SlackChannel,
-        where: c.project_id == ^project_id,
+        where: c.project_id == ^project_id and not c.external,
         order_by: [asc: c.inserted_at, asc: c.id],
         limit: 1,
         preload: :slack_workspace

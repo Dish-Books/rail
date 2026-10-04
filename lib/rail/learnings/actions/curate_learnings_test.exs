@@ -8,6 +8,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
   alias Rail.Learnings.Schemas.LearningProposal
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Learnings.Workers.CollectPullRequest
+  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
 
@@ -341,9 +342,61 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     assert text =~ "/learnings|Open Learnings in Rail>"
   end
 
-  test "a quiet day, or a project with no triage channel, posts no digest", %{
+  test "the digest skips an external channel for the first one that is not", %{
     project: project,
     tasks: [one | _rest],
+    sighting: sighting
+  } do
+    %{channel: external, workspace: workspace} = connect_slack_channel(project, external: true)
+    internal_id = "C#{System.unique_integer([:positive])}int"
+
+    {:ok, _project} =
+      Projects.update_project(system_scope(), project, %{
+        "slack_channels" => [
+          %{
+            "id" => external.id,
+            "external_id" => external.external_id,
+            "name" => external.name,
+            "slack_workspace_id" => workspace.id,
+            "external" => "true"
+          },
+          %{"external_id" => internal_id, "name" => "rail-team", "slack_workspace_id" => workspace.id}
+        ]
+      })
+
+    seen = sighting.(one, %{})
+    test = self()
+
+    Req.Test.stub(Rail.Slack, fn conn ->
+      case conn.request_path do
+        "/api/chat.postMessage" ->
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+          send(test, {:posted, Jason.decode!(body)["channel"]})
+          Req.Test.json(conn, %{"ok" => true, "ts" => "1790000000.000902"})
+
+        "/api/chat.getPermalink" ->
+          Req.Test.json(conn, %{"ok" => true, "permalink" => "https://slack.example/p3"})
+      end
+    end)
+
+    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+      File.write!(
+        Path.join(opts[:cd], "result.json"),
+        Jason.encode!(%{
+          "proposals" => [%{"action" => "add", "rule" => "New", "kind" => "convention", "evidence" => [seen.id]}]
+        })
+      )
+
+      {:ok, ""}
+    end)
+
+    assert {:ok, %CuratorPass{digest_permalink: "https://slack.example/p3"}} = Learnings.curate_learnings(project)
+    assert_received {:posted, ^internal_id}
+  end
+
+  test "a quiet day, or a project with no triage channel, posts no digest", %{
+    project: project,
+    tasks: [one, two | _rest],
     sighting: sighting
   } do
     Req.Test.stub(Rail.Slack, fn _conn -> flunk("posted a digest") end)
@@ -363,6 +416,24 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
         Path.join(opts[:cd], "result.json"),
         Jason.encode!(%{
           "proposals" => [%{"action" => "add", "rule" => "New", "kind" => "convention", "evidence" => [seen.id]}]
+        })
+      )
+
+      {:ok, ""}
+    end)
+
+    assert {:ok, %CuratorPass{digest_permalink: nil}} = Learnings.curate_learnings(project)
+
+    # A project whose only channel is external has no channel the digest may go to.
+    connect_slack_channel(project, external: true)
+    Req.Test.stub(Rail.Slack, fn _conn -> flunk("posted a digest") end)
+    seen = sighting.(two, %{})
+
+    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+      File.write!(
+        Path.join(opts[:cd], "result.json"),
+        Jason.encode!(%{
+          "proposals" => [%{"action" => "add", "rule" => "Other", "kind" => "convention", "evidence" => [seen.id]}]
         })
       )
 

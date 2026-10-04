@@ -1,6 +1,7 @@
 defmodule Rail.Triage.Actions.PostTriageReply do
   @moduledoc false
 
+  import Rail.Triage.Utils.CanLinkIssue
   import Rail.Triage.Utils.CanPostToSlack
   import Rail.Triage.Utils.ClaimReply
   import Rail.Triage.Utils.PostToSlack
@@ -23,6 +24,7 @@ defmodule Rail.Triage.Actions.PostTriageReply do
     with :ok <- open(item),
          item = Repo.preload(item, [:created_issue, :existing_issue, thread: [slack_channel: :slack_workspace]]),
          {:ok, drafted} <- item |> Item.draft_changeset(attrs) |> Ecto.Changeset.apply_action(:update),
+         :ok <- can_link_issue(item.thread, drafted.reply_text),
          {:ok, text} <- text(drafted),
          :ok <- can_post_to_slack(scope, item.thread),
          :ok <- claim_reply(item, scope.user.id),

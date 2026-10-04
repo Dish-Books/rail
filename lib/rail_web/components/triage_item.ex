@@ -15,6 +15,7 @@ defmodule RailWeb.Components.TriageItem do
   attr :form, :any, required: true, doc: "the item's draft changeset"
   attr :slack_linked, :boolean, required: true
   attr :project_name, :string, required: true
+  attr :external_channel, :boolean, required: true
   attr :corrected_by, :string, default: nil
   attr :error, :string, default: nil
 
@@ -132,6 +133,10 @@ defmodule RailWeb.Components.TriageItem do
       |> assign(:show_reply_form, Item.reply_draft?(item) and is_nil(item.reply_posted_at))
       |> assign(:priorities, Enum.map(Issue.priorities(), &{Issue.priority_label(&1), &1}))
       |> assign(:error, assigns.error || item.error)
+      |> assign(
+        :link_line,
+        if(assigns.external_channel, do: "no link posted, external channel", else: "link posted in thread")
+      )
 
     ~H"""
     <article
@@ -301,7 +306,7 @@ defmodule RailWeb.Components.TriageItem do
               phx-debounce="500"
               class="w-full px-2.5 py-1.5 text-[12px] leading-relaxed rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 resize-none"
             >{Ecto.Changeset.get_field(@form, :issue_description)}</textarea>
-            <div class="flex items-center gap-2">
+            <div class="flex flex-wrap items-center gap-2 min-w-0">
               <select
                 id={"issue-priority-#{@item.id}"}
                 name="item[issue_priority]"
@@ -313,8 +318,11 @@ defmodule RailWeb.Components.TriageItem do
                   Ecto.Changeset.get_field(@form, :issue_priority) || :medium
                 )}
               </select>
-              <span class="text-[11px] text-slate-500 dark:text-slate-400">
-                {@project_name} · starts Product · link posted in thread
+              <span
+                id={"issue-line-#{@item.id}"}
+                class="flex-1 basis-40 min-w-0 text-[11px] text-slate-500 dark:text-slate-400"
+              >
+                {@project_name} · starts Product · {@link_line}
               </span>
               <.button
                 type="submit"
