@@ -17,6 +17,14 @@ defmodule Rail.Git.Utils.FileLinesTest do
     assert file_lines(repo, "tracked.txt") == ["one", "two"]
   end
 
+  test "reads a file larger than one read whole", %{repo: repo} do
+    File.write!(Path.join(repo, "long.txt"), Enum.map_join(1..20_000, "", &"line #{&1}\n"))
+
+    assert ["line 1" | _rest] = lines = file_lines(repo, "long.txt")
+    assert length(lines) == 20_000
+    assert List.last(lines) == "line 20000"
+  end
+
   test "reads a file's lines as it was at a revision", %{repo: repo} do
     File.write!(Path.join(repo, "tracked.txt"), "one\ntwo\n")
 

@@ -18,10 +18,12 @@ defmodule Rail.Git.Utils.FileLines do
     full_path = root |> Path.join(path) |> Path.expand()
 
     with true <- String.starts_with?(full_path, root <> "/"),
-         false <- linked?(root, full_path),
-         false <- File.dir?(full_path),
-         {:ok, content} <- File.read(full_path) do
-      lines(content)
+         {:ok, file} <- :file.open(full_path, [:read, :raw, :binary]) do
+      try do
+        if opened?(file, root, full_path), do: file |> read([]) |> lines()
+      after
+        :file.close(file)
+      end
     else
       _unreadable -> nil
     end
@@ -35,12 +37,32 @@ defmodule Rail.Git.Utils.FileLines do
     end
   end
 
+  # Checked after opening, against the file actually opened, so a link swapped in
+  # between a check and the open is never the file read.
+  defp opened?(file, root, full_path) do
+    with false <- linked?(root, full_path),
+         {:ok, info} <- :file.read_file_info(file),
+         %File.Stat{type: :regular, inode: inode, major_device: device} <- File.Stat.from_record(info),
+         {:ok, %File.Stat{type: :regular, inode: ^inode, major_device: ^device}} <- File.lstat(full_path) do
+      true
+    else
+      _swapped -> false
+    end
+  end
+
   defp linked?(root, full_path) do
     full_path
     |> Path.relative_to(root)
     |> Path.split()
     |> Enum.scan(root, &Path.join(&2, &1))
     |> Enum.any?(&match?({:ok, %File.Stat{type: :symlink}}, File.lstat(&1)))
+  end
+
+  defp read(file, chunks) do
+    case :file.read(file, 65_536) do
+      {:ok, chunk} -> read(file, [chunks | chunk])
+      :eof -> IO.iodata_to_binary(chunks)
+    end
   end
 
   defp lines(content) do
