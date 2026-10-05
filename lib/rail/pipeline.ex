@@ -48,8 +48,8 @@ defmodule Rail.Pipeline do
   defdelegate get_implementation_plan(task), to: Actions.GetImplementationPlan
 
   defdelegate start_engineer_run(run), to: Actions.StartEngineerRun
-  defdelegate end_turn_and_commit(task, message), to: Actions.EndTurnAndCommit
-  defdelegate end_turn_and_merge(task), to: Actions.EndTurnAndMerge
+  defdelegate end_turn_and_commit(task, os_process, message), to: Actions.EndTurnAndCommit
+  defdelegate end_turn_and_merge(task, os_process), to: Actions.EndTurnAndMerge
   defdelegate commit_engineer_work(scope, task, message), to: Actions.CommitEngineerWork
   defdelegate commit_and_send_to_review(scope, run), to: Actions.CommitAndSendToReview
   defdelegate send_to_review(run), to: Actions.SendToReview

@@ -10,8 +10,8 @@ defmodule Rail.Mcp.Utils.RunToolCommit do
   Commits `task`'s worktree under `arguments["message"]`, or says why not while
   the turn is still going.
   """
-  def run_tool_commit(%Task{} = task, arguments, _opts) do
-    with {:ok, :committing} <- Pipeline.end_turn_and_commit(task, arguments["message"]) do
+  def run_tool_commit(%Task{} = task, arguments, opts) do
+    with {:ok, :committing} <- Pipeline.end_turn_and_commit(task, opts[:os_process], arguments["message"]) do
       {:ok, "Your turn is over. Rail is committing your work and sending it on; there is nothing more to do."}
     end
   end

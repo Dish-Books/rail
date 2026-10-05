@@ -5,6 +5,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommit do
   """
 
   import Rail.Pipeline.Utils.EndEngineerTurn
+  import Rail.Pipeline.Utils.WithLiveTurn
 
   alias Rail.Git
   alias Rail.Pipeline
@@ -14,14 +15,24 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommit do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
+  alias Rail.Tools.Schemas.OsProcess
 
   @doc """
-  Ends `task`'s engineer turn and commits under `message`: `{:ok, :committing}`
-  once the turn is stopped, or `{:refused, text}` while it is still going.
+  Ends `task`'s engineer turn, carried by `os_process`, and commits under
+  `message`: `{:ok, :committing}` once the turn is stopped, or `{:refused, text}`
+  while it is still going or once it has already ended.
   """
-  def end_turn_and_commit(%Task{} = task, message) do
-    task = Repo.reload!(task)
+  def end_turn_and_commit(%Task{} = task, %OsProcess{} = os_process, message) do
+    case with_live_turn(os_process, fn -> accept(Repo.reload!(task), message) end) do
+      :ended ->
+        {:refused, "Refused, nothing committed again. This turn has already ended and handed its work to Rail."}
 
+      result ->
+        result
+    end
+  end
+
+  defp accept(%Task{} = task, message) do
     cond do
       not is_binary(message) or String.trim(message) == "" ->
         {:refused,

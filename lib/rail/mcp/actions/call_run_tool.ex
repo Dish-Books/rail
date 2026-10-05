@@ -99,7 +99,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
       {:ok, task} ->
         if not answers_itself?(name), do: log(context, name, line)
 
-        result = name |> run(task, arguments, stage: context.role.stage) |> refusal()
+        result = name |> run(task, arguments, stage: context.role.stage, os_process: context.os_process) |> refusal()
 
         if answers_itself?(name), do: log(context, name, said(name, line, result))
 

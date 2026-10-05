@@ -63,6 +63,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
       assert prompt =~ "```elixir\ndef list_invoices(scope, filters)\n```"
       assert prompt =~ "Calling the `commit` tool is how you say the work is finished"
       assert prompt =~ "the call ends your turn on the spot"
+      assert prompt =~ "write your last message to the human first, alongside the call"
       assert prompt =~ "`request_merge` asks Rail to merge main into a clean worktree"
       refute prompt =~ "<<'MSG'"
       refute prompt =~ commits_dir
