@@ -61,6 +61,9 @@ services:
     env_file: .env
     environment: *rail-env
     command: ["eval", "Rail.Release.migrate()"]
+    # Some migrations rewrite the files tasks keep under /srv/rail; without it they find none and skip.
+    volumes:
+      - /srv/rail:/srv/rail
     restart: "no"
     depends_on:
       db:
