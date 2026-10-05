@@ -90,7 +90,10 @@ defmodule Rail.Pipeline.Actions.DescribePullRequest do
         end
 
       lines = written |> String.split(~r/\R/) |> Enum.map(&String.trim_trailing/1)
-      if Enum.all?(@sections, &(&1 in lines)), do: {:ok, written}, else: {:error, :incomplete_description}
+
+      if String.valid?(written) and Enum.all?(@sections, &(&1 in lines)),
+        do: {:ok, written},
+        else: {:error, :incomplete_description}
     end
   end
 

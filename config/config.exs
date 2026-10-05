@@ -26,6 +26,8 @@ config :posthog,
 config :rail, Oban,
   repo: Rail.Repo,
   queues: [issues: 5, tools: 1, git: 1, pull_requests: 2],
+  # Longer than any job runs (OpenPullRequest stops at 20 minutes), so only one a restart orphaned is rescued.
+  lifeline: [rescue_after: {30, :minutes}],
   plugins: [
     {Oban.Plugins.Cron,
      crontab: [

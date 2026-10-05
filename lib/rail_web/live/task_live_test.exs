@@ -1608,6 +1608,26 @@ defmodule RailWeb.TaskLiveTest do
       assert %Task{pr_is_draft: false} = Repo.reload!(task)
     end
 
+    test "Mark ready pressed in one tab goes from every other tab on the task", %{conn: conn, task: task} do
+      {:ok, task} =
+        Pipeline.update_task(task, %{pr_number: 12, pr_url: "https://github.com/org/app/pull/12", pr_is_draft: true})
+
+      Req.Test.stub(Client, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"POST", "/app/installations/" <> _id} -> Req.Test.json(conn, %{"token" => "ghs_token"})
+          {"GET", "/repos/example/test-seed/pulls/12"} -> Req.Test.json(conn, %{"number" => 12, "draft" => false})
+        end
+      end)
+
+      assert {:ok, pressed, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert {:ok, other, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(other, "#mark-ready")
+
+      pressed |> element("#mark-ready") |> render_click()
+
+      refute has_element?(other, "#mark-ready")
+    end
+
     test "Mark ready is not offered while the engineer runs, before a pull request, or once it is ready", %{
       conn: conn,
       task: task,

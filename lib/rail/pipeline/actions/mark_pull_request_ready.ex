@@ -13,9 +13,11 @@ defmodule Rail.Pipeline.Actions.MarkPullRequestReady do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias Rail.Roles.Schemas.Role
   alias Rail.Scope
 
   require Logger
@@ -39,8 +41,15 @@ defmodule Rail.Pipeline.Actions.MarkPullRequestReady do
 
       # Only the press that flips the flag posts, so a double click cannot post twice.
       case Repo.update_all(out_of_draft, set: [pr_is_draft: false, updated_at: DateTime.utc_now()]) do
-        {1, _rows} -> post_open_questions(token, project, task)
-        {0, _rows} -> :ok
+        {1, _rows} ->
+          # Every task page refreshes on its runs' changes, so other tabs drop the button too.
+          for %Run{role: %Role{stage: :engineer}} = run <- task.runs,
+              do: Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run.id}", {:run_changed, run.id})
+
+          post_open_questions(token, project, task)
+
+        {0, _rows} ->
+          :ok
       end
 
       {:ok, Repo.reload!(task)}

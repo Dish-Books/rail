@@ -240,6 +240,24 @@ defmodule Rail.Pipeline.Actions.DescribePullRequestTest do
     assert {:error, :incomplete_description} = Pipeline.describe_pull_request(task)
   end
 
+  # GitHub takes the body as JSON, which cannot carry bytes that are not UTF-8.
+  test "a description that is not valid UTF-8 is not written", %{
+    task: task,
+    placeholder: placeholder,
+    written: written,
+    pr_file: file
+  } do
+    Req.Test.expect(Client, &Req.Test.json(&1, %{"token" => "ghs_token"}))
+    Req.Test.expect(Client, &Req.Test.json(&1, %{"number" => 7, "body" => placeholder}))
+
+    expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+      File.write!(file, written <> <<0xFF>>)
+      {:ok, ""}
+    end)
+
+    assert {:error, :incomplete_description} = Pipeline.describe_pull_request(task)
+  end
+
   # A file from an earlier attempt is not this agent's answer.
   test "an agent that writes nothing is an incomplete description, whatever an earlier attempt left", %{
     task: task,

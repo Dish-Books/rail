@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Workers.OpenPullRequest do
   It is opened as the ticket's owner, the same person its commits are by, and as
   the Rail app only when there is no owner or GitHub turns their token away. A
   failure is retried, and only the last attempt says so in the engineer's log.
+  Oban's Lifeline rescues a job a restart left executing, so it is retried too.
   """
   use Oban.Worker,
     queue: :pull_requests,
