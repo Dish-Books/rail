@@ -30,6 +30,10 @@ There is no `CLAUDE.md`, `AGENTS.md`, `CONTEXT-MAP.md`, `CONTEXT.md` or `.codera
 
 **Contexts.** Contexts are under `lib/rail/` and are reached only through their top-level module. A change that reaches into another context's actions or utils, or adds logic to a context module beyond `defdelegate`, is a finding even when it compiles.
 
+## What this project has learned
+
+Rail keeps the rules this project has learned from people's corrections and decisions, and the ones that fit this run are already in your brief. Call `knowledge_search` for more before you ask a question, before you depart from the plan, and before you touch a module you do not know. A question it answers is not a question, and a departure a rule rules out is not yours to make. Your brief's checklist is the rules for the files this change touches; a calibration rule there says what not to raise, and a finding it covers is still written with its id.
+
 ## Your environment
 
 - There is no production database to check against, and you never connect to `rail_prod`. Where a finding turns on real data, say what you would want to confirm and mark it unverified.

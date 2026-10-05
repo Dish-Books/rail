@@ -83,7 +83,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
 
   test "a re-test that finds everything fixed goes on to demo", %{task: task, run: run, finding: finding} do
     {:ok, saved} = Pipeline.save_qa_finding(task, finding)
-    {:ok, _to_fix} = Pipeline.decide_qa_finding(saved, :fix)
+    {:ok, _to_fix} = Pipeline.decide_qa_finding(system_scope(), saved, :fix)
     {:ok, _fixed} = Pipeline.save_qa_finding(task, Map.put(finding, :status, :fixed))
     {:ok, _verdict} = Pipeline.save_qa_verdict(task, %{verdict: :pass, summary: "Fixed."})
 
@@ -93,7 +93,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
 
   test "a re-test that finds a fix still missing stays at QA", %{task: task, run: run, finding: finding} do
     {:ok, saved} = Pipeline.save_qa_finding(task, finding)
-    {:ok, _to_fix} = Pipeline.decide_qa_finding(saved, :fix)
+    {:ok, _to_fix} = Pipeline.decide_qa_finding(system_scope(), saved, :fix)
     {:ok, _not_fixed} = Pipeline.save_qa_finding(task, Map.put(finding, :status, :not_fixed))
     {:ok, _verdict} = Pipeline.save_qa_verdict(task, %{verdict: :fail, summary: "Still wrong."})
 

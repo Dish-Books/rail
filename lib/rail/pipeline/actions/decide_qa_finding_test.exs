@@ -47,19 +47,20 @@ defmodule Rail.Pipeline.Actions.DecideQaFindingTest do
   end
 
   test "the human overrules QA", %{finding: finding} do
-    assert {:ok, %QaFinding{recommendation: :fix, decision: :skip}} = Pipeline.decide_qa_finding(finding, :skip)
+    assert {:ok, %QaFinding{recommendation: :fix, decision: :skip}} =
+             Pipeline.decide_qa_finding(system_scope(), finding, :skip)
   end
 
   test "and can put it back", %{finding: finding} do
-    {:ok, dismissed} = Pipeline.decide_qa_finding(finding, :skip)
+    {:ok, dismissed} = Pipeline.decide_qa_finding(system_scope(), finding, :skip)
 
-    assert {:ok, %QaFinding{decision: :fix}} = Pipeline.decide_qa_finding(dismissed, :fix)
+    assert {:ok, %QaFinding{decision: :fix}} = Pipeline.decide_qa_finding(system_scope(), dismissed, :fix)
   end
 
   test "a task that has left QA has nothing left to decide", %{task: task, finding: finding} do
     {:ok, _moved} = Pipeline.update_task(task, %{stage: :demo})
 
-    assert {:error, {:invalid_stage, :demo}} = Pipeline.decide_qa_finding(finding, :skip)
+    assert {:error, {:invalid_stage, :demo}} = Pipeline.decide_qa_finding(system_scope(), finding, :skip)
   end
 
   test "a finding is not ruled on while the run that raised it is still going", %{
@@ -75,6 +76,14 @@ defmodule Rail.Pipeline.Actions.DecideQaFindingTest do
         started_at: DateTime.utc_now()
       })
 
-    assert {:error, :stage_running} = Pipeline.decide_qa_finding(finding, :skip)
+    assert {:error, :stage_running} = Pipeline.decide_qa_finding(system_scope(), finding, :skip)
+  end
+
+  test "records who decided", %{finding: finding} do
+    {:ok, %{id: user_id} = user} =
+      Rail.Users.register_oauth_user(%{github_id: "dqf-u", login: "dana", name: "Dana", email: "dana@dqf.example"})
+
+    assert {:ok, %{decision: :fix, decided_by_id: ^user_id}} =
+             Pipeline.decide_qa_finding(Rail.Scope.for_user(user), finding, :fix)
   end
 end

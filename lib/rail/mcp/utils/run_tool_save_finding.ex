@@ -9,7 +9,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveFinding do
   alias Rail.Pipeline.Schemas.ReviewFinding
   alias Rail.Pipeline.Schemas.Task
 
-  @review ["key", "title", "detail", "suggestion", "file", "line", "severity", "recommendation", "status"]
+  @review ["key", "title", "detail", "suggestion", "file", "line", "severity", "recommendation", "status", "rule"]
 
   @qa [
     "key",

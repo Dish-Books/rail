@@ -39,6 +39,9 @@ defmodule Rail.Mcp.Utils.McpTools do
   Every stage hands its output over through save tools of its own, checked when
   called; review and QA each have a `save_finding`, with that stage's own fields.
 
+  `@knowledge_tools` are offered to every role: `knowledge_search` reads the
+  rules the project has learned, which no stage should have to guess at.
+
   `@demo_tools` are about a recording. `demo_start` is the camera, and it is the
   agent's to switch on: a run filmed from its first call to its last is a film of
   an agent working out how the application behaves, which is not the demo. So the
@@ -355,7 +358,13 @@ defmodule Rail.Mcp.Utils.McpTools do
           "line" => %{"type" => "integer", "description" => "One line number, a positive whole number."},
           "severity" => @severity,
           "recommendation" => @recommendation,
-          "status" => @status
+          "status" => @status,
+          "rule" => %{
+            "type" => "string",
+            "description" =>
+              "The id of the checklist rule the finding comes from; leave it out when it comes from none. " <>
+                "A finding a calibration rule says not to raise is still saved, with that rule's id."
+          }
         },
         "required" => ["key", "title", "severity", "recommendation"]
       }
@@ -463,16 +472,35 @@ defmodule Rail.Mcp.Utils.McpTools do
     }
   ]
 
+  @knowledge_tools [
+    %{
+      "name" => "knowledge_search",
+      "description" =>
+        "Search the rules this project has learned from people's corrections and decisions, nearest " <>
+          "first. Search before you ask a question, before you depart from the plan, and before you " <>
+          "change a module you do not know: the answer is often already a rule. Describe what you are " <>
+          "about to do or decide in a sentence; the search matches meaning, not words.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{
+          "query" => %{"type" => "string", "description" => "What you are about to decide, ask or change."}
+        },
+        "required" => ["query"]
+      }
+    }
+  ]
+
   @doc """
   The tools Rail serves this run itself: the browser for the two stages that
-  drive one, and the save tools each stage hands its output over with.
+  drive one, the save tools each stage hands its output over with, and the
+  knowledge base for all.
   """
-  def mcp_tools(%Role{stage: :product}), do: @product_tools
-  def mcp_tools(%Role{stage: :design}), do: @design_tools
-  def mcp_tools(%Role{stage: :architect}), do: @architect_tools
-  def mcp_tools(%Role{stage: :engineer}), do: @engineer_tools
-  def mcp_tools(%Role{stage: :review}), do: @review_tools
-  def mcp_tools(%Role{stage: :qa}), do: @browser_tools ++ @qa_tools ++ @qa_report_tools
-  def mcp_tools(%Role{stage: :demo}), do: @browser_tools ++ @demo_tools ++ @demo_report_tools
-  def mcp_tools(%Role{}), do: []
+  def mcp_tools(%Role{stage: :product}), do: @product_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :design}), do: @design_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :architect}), do: @architect_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :engineer}), do: @engineer_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :review}), do: @review_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :qa}), do: @browser_tools ++ @qa_tools ++ @qa_report_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :demo}), do: @browser_tools ++ @demo_tools ++ @demo_report_tools ++ @knowledge_tools
+  def mcp_tools(%Role{}), do: @knowledge_tools
 end

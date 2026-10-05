@@ -168,4 +168,17 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
     refute Repo.exists?(Run)
     refute_enqueued(worker: AdvanceLinearState)
   end
+
+  test "the brief carries the rules retrieved with the ticket", %{project: project, issue: issue} do
+    stub_vertex(%{"source document" => vector([1.0])})
+    learning(project, %{rule: "Copy says task, never ticket", kind: :product}, embedding: [1.0])
+
+    expect(Tools, :start_os_process, fn %Run{} = run, ["-p", prompt | _rest] ->
+      assert prompt =~ "- Product: Copy says task, never ticket"
+      {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_product_run(issue)
+    assert_received {:embedded, "Attachments follow their source document" <> _description, "RETRIEVAL_QUERY"}
+  end
 end

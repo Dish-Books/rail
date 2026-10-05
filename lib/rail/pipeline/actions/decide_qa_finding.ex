@@ -11,15 +11,16 @@ defmodule Rail.Pipeline.Actions.DecideQaFinding do
   alias Rail.Pipeline.Schemas.QaFinding
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
+  alias Rail.Scope
 
   @doc """
-  Sets `decision` on `finding`, and returns it as it now stands.
+  Sets `decision` on `finding` as the scope's user, and returns it as it now stands.
   """
-  def decide_qa_finding(%QaFinding{} = finding, decision) when decision in [:fix, :skip] do
+  def decide_qa_finding(%Scope{} = scope, %QaFinding{} = finding, decision) when decision in [:fix, :skip] do
     task = Repo.preload(Repo.get!(Task, finding.task_id), :runs)
 
     with :ok <- decidable(task) do
-      finding |> QaFinding.decision_changeset(decision) |> Repo.update()
+      finding |> QaFinding.decision_changeset(decision, scope.user && scope.user.id) |> Repo.update()
     end
   end
 

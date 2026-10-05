@@ -32,6 +32,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   import Rail.Mcp.Utils.RunToolCommit
   import Rail.Mcp.Utils.RunToolDemoSay
   import Rail.Mcp.Utils.RunToolDemoStart
+  import Rail.Mcp.Utils.RunToolKnowledgeSearch
   import Rail.Mcp.Utils.RunToolQaCheck
   import Rail.Mcp.Utils.RunToolQaFile
   import Rail.Mcp.Utils.RunToolQaPlan
@@ -80,6 +81,15 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   end
 
   def call_run_tool(_context, _name, _arguments), do: {:error, :unknown_tool}
+
+  # The knowledge base is the project's, not a task's, so a triage pass with no task can search it.
+  defp own(%RunContext{role: role} = context, "knowledge_search" = name, arguments) do
+    arguments = arguments || %{}
+    log(context, name, asked(name, arguments))
+
+    {:ok, text} = run_tool_knowledge_search(role, arguments, [])
+    {:ok, %{"content" => [%{"type" => "text", "text" => text}]}}
+  end
 
   defp own(%RunContext{} = context, name, arguments) do
     arguments = arguments || %{}
@@ -192,6 +202,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp asked("qa_file", %{"name" => name}), do: "file #{inspect(name)}"
   defp asked("demo_say", %{"text" => text}), do: "say #{inspect(text)}"
   defp asked("demo_say", _arguments), do: "say"
+  defp asked("knowledge_search", %{"query" => query}), do: "search #{inspect(query)}"
   defp asked(name, _arguments), do: name |> String.split("_", parts: 2) |> List.last()
 
   # A run that has not started has nowhere to write, which is every call made

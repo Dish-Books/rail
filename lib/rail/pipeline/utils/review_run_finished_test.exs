@@ -68,7 +68,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
 
   test "a re-review that finds everything fixed goes on to QA", %{task: task, run: run, finding: finding} do
     {:ok, saved} = Pipeline.save_review_finding(task, finding)
-    {:ok, _to_fix} = Pipeline.decide_review_finding(saved, :fix)
+    {:ok, _to_fix} = Pipeline.decide_review_finding(system_scope(), saved, :fix)
     {:ok, _fixed} = Pipeline.save_review_finding(task, Map.put(finding, :status, :fixed))
     {:ok, _closed} = Pipeline.save_review(task)
 
@@ -81,7 +81,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
   test "a re-review that leaves only what the human dismissed goes on to QA", %{task: task, run: run} do
     long_name = %{key: "long-name", title: "The name is long", severity: :nit, recommendation: :skip}
     {:ok, saved} = Pipeline.save_review_finding(task, long_name)
-    {:ok, _dismissed} = Pipeline.decide_review_finding(saved, :skip)
+    {:ok, _dismissed} = Pipeline.decide_review_finding(system_scope(), saved, :skip)
     {:ok, _restated} = Pipeline.save_review_finding(task, Map.put(long_name, :status, :not_fixed))
     {:ok, _closed} = Pipeline.save_review(task)
 
@@ -91,7 +91,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
 
   test "a re-review that finds a fix still missing stays at review", %{task: task, run: run, finding: finding} do
     {:ok, saved} = Pipeline.save_review_finding(task, finding)
-    {:ok, _to_fix} = Pipeline.decide_review_finding(saved, :fix)
+    {:ok, _to_fix} = Pipeline.decide_review_finding(system_scope(), saved, :fix)
     {:ok, _not_fixed} = Pipeline.save_review_finding(task, Map.put(finding, :status, :not_fixed))
     {:ok, _closed} = Pipeline.save_review(task)
 

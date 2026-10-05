@@ -25,7 +25,21 @@ defmodule RailWeb.Components.Nav do
         <!-- Brand / Leading -->
         <div class="flex items-center px-2 py-2" id="app-brand">
           <div class="flex items-center justify-center h-9 w-9 rounded-lg bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 shrink-0">
-            <.icon name="pi-stack" class="h-5 w-5" />
+            <svg viewBox="0 0 64 64" class="h-9 w-9" fill="none" aria-hidden="true" id="brand-mark">
+              <mask id="brand-mark-rails" stroke-linejoin="round">
+                <path
+                  d="M21 56V17H35a9.5 9.5 0 0 1 0 19H21M32 36 46 57"
+                  stroke="#fff"
+                  stroke-width="12"
+                />
+                <path
+                  d="M21 56V17H35a9.5 9.5 0 0 1 0 19H21M32 36 46 57"
+                  stroke="#000"
+                  stroke-width="4.5"
+                />
+              </mask>
+              <rect width="64" height="52" fill="currentColor" mask="url(#brand-mark-rails)" />
+            </svg>
           </div>
           <span
             :if={@is_rail_extended}
@@ -69,6 +83,17 @@ defmodule RailWeb.Components.Nav do
             icon_active="pi-lightbulb-fill"
             icon_inactive="pi-lightbulb"
             href={~p"/issues"}
+            attention_count={0}
+          />
+
+          <.nav_item
+            section={:learnings}
+            active={@current_section == :learnings}
+            is_extended={@is_rail_extended}
+            label="Learnings"
+            icon_active="pi-brain-fill"
+            icon_inactive="pi-brain"
+            href={~p"/learnings"}
             attention_count={0}
           />
 
@@ -395,6 +420,7 @@ defmodule RailWeb.Components.Nav do
   defp section_title(:issues), do: "Issues"
   defp section_title(:sandboxes), do: "Sandboxes"
   defp section_title(:triage), do: "Triage"
+  defp section_title(:learnings), do: "Learnings"
 
   defp section_title(section)
        when section in [

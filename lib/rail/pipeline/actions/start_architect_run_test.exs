@@ -128,4 +128,20 @@ defmodule Rail.Pipeline.Actions.StartArchitectRunTest do
 
     assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_architect_run(run)
   end
+
+  test "the brief carries the rules retrieved with the ticket", %{project: project, run: run} do
+    stub_vertex(%{"Filter invoices" => vector([1.0])})
+
+    learning(project, %{rule: "Amber only means a person is waited on", kind: :design, roles: [:architect]},
+      embedding: [1.0]
+    )
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "- Design: Amber only means a person is waited on"
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_architect_run(run)
+    assert_received {:embedded, "Invoice filters\n\nFilter invoices by vendor.", "RETRIEVAL_QUERY"}
+  end
 end

@@ -18,6 +18,8 @@ defmodule Rail.Triage.Actions.TriageThread do
   import Rail.Triage.Utils.UpsertSlackMessage
 
   alias Rail.Git
+  alias Rail.Learnings
+  alias Rail.Learnings.Schemas.Learning
   alias Rail.Mcp
   alias Rail.Mcp.RunContext
   alias Rail.Pipeline
@@ -196,7 +198,11 @@ defmodule Rail.Triage.Actions.TriageThread do
 
   defp agent(%Thread{} = thread, role, worktree, token) do
     prompt =
-      Pipeline.build_prompt(backend: role.backend, role_instructions: role.system_prompt, context_snippet: brief(thread))
+      Pipeline.build_prompt(
+        backend: role.backend,
+        role_instructions: role.system_prompt,
+        context_snippet: brief(thread, role)
+      )
 
     args =
       Tools.build_args(
@@ -276,7 +282,7 @@ defmodule Rail.Triage.Actions.TriageThread do
     "# Slack thread in ##{thread.slack_channel.name}\n\n" <> Enum.join(lines, "\n")
   end
 
-  defp brief(%Thread{} = thread) do
+  defp brief(%Thread{} = thread, role) do
     dir = Thread.scratch_path(thread)
     file = Path.join(dir, "result.json")
 
@@ -290,7 +296,7 @@ defmodule Rail.Triage.Actions.TriageThread do
     You have the code and nothing else: no production data, logs or application state. Where a bug turns on something you cannot see, reason from the code and state what you could not check as an assumption.
 
     Before you draft any issue, search Linear for one that already covers the item, with the Linear tools you were offered, on the #{thread.project.linear_team_key} team. Include finished issues, and try at least two phrasings, the thread's own words and the names you found in the code, before you decide none does. Open a likely match and read it before you cite it.
-    #{forced(thread)}
+    #{rules(thread, role)}#{forced(thread)}
     #{items(thread)}
     #{notes(thread)}
     Writing #{file} is how you report, and it is the last thing you do. Write it with a heredoc, the body and its closing JSON line at column zero:
@@ -334,10 +340,48 @@ defmodule Rail.Triage.Actions.TriageThread do
     - `change` is `raised` for the message that first brought an item up, `widened` or `narrowed` when a later message changes its scope, and `added` for a new item raised later in the thread. `passage` is quoted verbatim from the message.
     - `kind` is `bug` or `feature_request`. A bug's `verdict` is `confirmed`, `not_reproduced` or `already_fixed`; a request's is `built`, `partly_built` or `not_built`.
     - Never propose a fix, a design or a plan, anywhere. There is no field for one.
-    - `existing_issue` is the identifier of the Linear issue that already covers the item, such as `TRI-23`, or null. When one does, leave `issue` null, and the reply says the item is already tracked in that issue, giving its identifier and its state in Linear.
+    - `existing_issue` is the identifier of the Linear issue that already covers the item, such as `TRI-23`, or null. When one does, leave `issue` null, and #{tracked(thread)}
     - `priority` is `urgent`, `high`, `medium` or `low`.
-    - A reply is posted by the teammate who accepts it, under their name. Write it in their voice. Where the issue should be linked, write `{issue link}`: Rail fills in the existing issue that tracks the item, or the one you draft once it exists. Leave `reply` null where only a bot would read it.
+    - A reply is posted by the teammate who accepts it, under their name. Write it in their voice. #{issue_link(thread)} Leave `reply` null where only a bot would read it.
     """)
+  end
+
+  # People outside the team read an external channel's replies, so they never point into Linear.
+  defp tracked(%Thread{slack_channel: %{external: true}}),
+    do:
+      "the reply says the item is already tracked, without naming the issue or its identifier. Still fill in `existing_issue`: only teammates see it."
+
+  defp tracked(%Thread{}),
+    do: "the reply says the item is already tracked in that issue, giving its identifier and its state in Linear."
+
+  defp issue_link(%Thread{slack_channel: %{external: true}}),
+    do:
+      "This thread's channel is external, shared with people outside the team: never write `{issue link}` and never name a Linear issue or its identifier in a reply. Rail refuses a reply that links the issue here."
+
+  defp issue_link(%Thread{}),
+    do:
+      "Where the issue should be linked, write `{issue link}`: Rail fills in the existing issue that tracks the item, or the one you draft once it exists."
+
+  # A pass is not a run, so what it was given is not logged.
+  defp rules(%Thread{messages: messages}, role) do
+    case Learnings.retrieve_learnings(role, [Enum.map_join(messages, "\n\n", & &1.text)]) do
+      [] ->
+        ""
+
+      rules ->
+        lines =
+          Enum.map_join(rules, "\n", fn %Learning{} = rule ->
+            why = if rule.why, do: " Why: #{String.replace(rule.why, "\n", " ")}", else: ""
+            "- #{Learning.kind_label(rule.kind)}: #{rule.rule}#{why}"
+          end)
+
+        """
+
+        What this project has learned, from people's corrections and decisions: duplicates, behavior that is expected, rulings already made. Read a report against these before you call it a bug.
+
+        #{lines}
+        """
+    end
   end
 
   defp forced(%Thread{forced: true, no_response_reason: reason}) when is_binary(reason),

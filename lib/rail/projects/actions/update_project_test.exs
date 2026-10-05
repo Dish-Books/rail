@@ -5,6 +5,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Projects.Schemas.SlackChannel
+  alias Rail.Projects.Schemas.SlackWorkspace
   alias Rail.Scope
 
   test "admin updates project successfully" do
@@ -223,6 +224,128 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
 
       assert [%SlackChannel{external_id: ^posthog_id}, %SlackChannel{id: ^channel_id}] =
                Projects.list_slack_channels(project)
+    end
+
+    test "sets the learnings channel, returns its workspace, and announces the project on projects", %{
+      project: %{id: project_id} = project,
+      workspace: %{id: workspace_id}
+    } do
+      Phoenix.PubSub.subscribe(Rail.PubSub, "projects")
+
+      assert {:ok,
+              %Project{
+                learnings_slack_workspace: %SlackWorkspace{id: ^workspace_id, name: "Acme"},
+                learnings_channel_external_id: "C_LEARN"
+              } = updated} =
+               Projects.update_project(system_scope(), project, %{
+                 "learnings_slack_workspace_id" => workspace_id,
+                 "learnings_channel_external_id" => "C_LEARN"
+               })
+
+      assert_received {:project_changed, ^project_id}
+
+      assert {:ok, %Project{learnings_slack_workspace_id: nil, learnings_channel_external_id: nil}} =
+               Projects.update_project(system_scope(), updated, %{
+                 "learnings_slack_workspace_id" => "",
+                 "learnings_channel_external_id" => ""
+               })
+    end
+
+    test "a learnings channel needs the workspace that posts there", %{project: project} do
+      assert {:error, changeset} =
+               Projects.update_project(system_scope(), project, %{"learnings_channel_external_id" => "C_LEARN"})
+
+      assert %{learnings_slack_workspace_id: ["can't be blank"]} = errors_on(changeset)
+
+      assert {:error, changeset} =
+               Projects.update_project(system_scope(), project, %{
+                 "learnings_slack_workspace_id" => "sw_missing",
+                 "learnings_channel_external_id" => "C_LEARN"
+               })
+
+      assert %{learnings_slack_workspace_id: ["does not exist"]} = errors_on(changeset)
+    end
+
+    test "one project's learnings channel leaves another's alone", %{project: project, workspace: workspace} do
+      {:ok, %Project{id: other_id}} =
+        Projects.create_project(system_scope(), %{
+          name: "Other",
+          github_repo: "example/other-#{System.unique_integer([:positive])}",
+          github_installation_id: 2,
+          linear_team_key: "OTH",
+          default_branch: "main",
+          clone_path: "/tmp/other"
+        })
+
+      {:ok, other} = Projects.get_project(other_id)
+
+      {:ok, _other} =
+        Projects.update_project(system_scope(), other, %{
+          "learnings_slack_workspace_id" => workspace.id,
+          "learnings_channel_external_id" => "C_OTHER"
+        })
+
+      {:ok, _project} =
+        Projects.update_project(system_scope(), project, %{
+          "learnings_slack_workspace_id" => workspace.id,
+          "learnings_channel_external_id" => "C_MINE"
+        })
+
+      assert {:ok, %Project{learnings_channel_external_id: "C_OTHER"}} = Projects.get_project(other_id)
+    end
+
+    test "saving triage channels without the learnings channel keeps it", %{
+      project: project,
+      workspace: %{id: workspace_id},
+      feedback: %{"external_id" => feedback_id} = feedback,
+      posthog: posthog
+    } do
+      {:ok, project} = Projects.update_project(system_scope(), project, %{"slack_channels" => [feedback]})
+
+      {:ok, project} =
+        Projects.update_project(system_scope(), project, %{
+          "learnings_slack_workspace_id" => workspace_id,
+          "learnings_channel_external_id" => feedback_id
+        })
+
+      assert {:ok,
+              %Project{
+                slack_channels: [%SlackChannel{name: "posthog-index"}],
+                learnings_slack_workspace_id: ^workspace_id,
+                learnings_channel_external_id: ^feedback_id
+              }} = Projects.update_project(system_scope(), project, %{"slack_channels" => [posthog]})
+    end
+
+    test "marks a channel external, leaves the others and any sent without the switch unmarked, and unmarks it", %{
+      project: %{id: project_id} = project,
+      feedback: %{"external_id" => feedback_id} = feedback,
+      posthog: %{"external_id" => posthog_id} = posthog
+    } do
+      Phoenix.PubSub.subscribe(Rail.PubSub, "projects")
+
+      assert {:ok,
+              %Project{
+                slack_channels: [
+                  %SlackChannel{external_id: ^feedback_id, external: true},
+                  %SlackChannel{external_id: ^posthog_id, external: false}
+                ]
+              } = project} =
+               Projects.update_project(system_scope(), project, %{
+                 "slack_channels" => [Map.put(feedback, "external", "true"), posthog]
+               })
+
+      assert_received {:project_changed, ^project_id}
+
+      assert [%SlackChannel{external_id: ^posthog_id, external: false}, %SlackChannel{external: true} = channel] =
+               Projects.list_slack_channels(project)
+
+      # The describe's one Slack answer is spent, so unmarking that reached Slack would crash.
+      unmarked = Map.merge(feedback, %{"id" => channel.id, "external" => "false"})
+
+      assert {:ok, %Project{slack_channels: [%SlackChannel{external_id: ^feedback_id, external: false}]}} =
+               Projects.update_project(system_scope(), project, %{"slack_channels" => [unmarked]})
+
+      assert_received {:project_changed, ^project_id}
     end
 
     test "refuses a channel another project holds, or a workspace Rail does not have", %{

@@ -8,6 +8,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.DetectedQuestion
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.RunEvent
   alias Rail.Pipeline.Schemas.Task
@@ -1330,5 +1331,85 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert [%{prompt: "Keep both migrations?"}] = pending_questions(task.id)
+  end
+
+  describe "a round Rail answered from past answers" do
+    setup %{project: project} do
+      earlier = learnings_task(project, "RFG-1")
+      past = %Question{id: "qst_rfg_past", prompt: "Postgres or SQLite?", answer: "Postgres.", status: :answered}
+      {:ok, [rule]} = Rail.Learnings.record_corrections(earlier, [past])
+
+      Repo.update_all(from(l in Rail.Learnings.Schemas.Learning, where: l.id == ^rule.id),
+        set: [embedding: Pgvector.new(vector([1.0])), embedding_model: "gemini-embedding-001"]
+      )
+
+      stub_vertex(%{"Which database" => vector([1.0, 0.1])})
+
+      asked = fn run, os_process, prompts ->
+        now = DateTime.utc_now()
+
+        Repo.insert_all(
+          RunEvent,
+          for prompt <- prompts do
+            %{
+              id: UXID.generate!(),
+              run_id: run.id,
+              os_process_id: os_process.id,
+              line: "[QUESTION: #{prompt}]",
+              inserted_at: now,
+              updated_at: now
+            }
+          end
+        )
+      end
+
+      %{asked: asked}
+    end
+
+    test "is sent at once and the run carries on without a person", %{task: task, exited: exited, asked: asked} do
+      {run, os_process} = exited.(:product, %{})
+      asked.(run, os_process, ["Which database?"])
+
+      assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+
+      assert [%Question{answered_by_rail: true, delivered_at: %DateTime{}}] =
+               Repo.all(from q in Question, where: q.task_id == ^task.id)
+
+      lines = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
+      assert "[answered from past answers] You asked: Which database?" in lines
+
+      assert Enum.any?(
+               lines,
+               &(&1 =~ ~s([answered from past answers] Answered by Rail from Rail's answer on RFG-1, ) and
+                   String.ends_with?(&1, ": Postgres."))
+             )
+
+      refute Enum.any?(lines, &String.starts_with?(&1, "[human]"))
+      refute Enum.any?(lines, &(&1 =~ "When asked"))
+    end
+
+    test "waits while a person still has a question to answer", %{task: task, exited: exited, asked: asked} do
+      {run, os_process} = exited.(:product, %{})
+      asked.(run, os_process, ["Which database?", "Ship behind a flag?"])
+
+      assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+
+      assert %Run{status: :blocked_on_input} = Repo.reload!(run)
+
+      assert [%Question{answered_by_rail: true, delivered_at: nil}, %Question{status: :pending}] =
+               Repo.all(from q in Question, where: q.task_id == ^task.id, order_by: [asc: q.inserted_at, asc: q.id])
+    end
+
+    test "waits on a turn a person stopped, rather than resuming it", %{task: task, exited: exited, asked: asked} do
+      {run, os_process} = exited.(:product, %{})
+      asked.(run, os_process, ["Which database?"])
+      {:ok, os_process} = os_process |> Ecto.Changeset.change(ended_reason: :stopped) |> Repo.update()
+      reject(&Tools.start_os_process/2)
+
+      assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+
+      assert [%Question{answered_by_rail: true, delivered_at: nil}] =
+               Repo.all(from q in Question, where: q.task_id == ^task.id)
+    end
   end
 end

@@ -17,10 +17,15 @@ defmodule Rail.Pipeline.Schemas.ReviewFinding do
 
   `key` is the reviewer's own stable name for the finding, which is what lets a
   second pass update the same row rather than raising the problem twice.
+
+  `rule` is the checklist rule it came from; one a calibration rule says not to raise
+  is kept, `suppressed_by` that rule, and sits apart until a person decides Fix anyway.
   """
   use Rail.Schema
 
+  alias Rail.Learnings.Schemas.Learning
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Users.Schemas.User
 
   @severities [:blocker, :major, :minor, :nit]
   @recommendations [:fix, :skip]
@@ -41,6 +46,9 @@ defmodule Rail.Pipeline.Schemas.ReviewFinding do
     field :decision, Ecto.Enum, values: @recommendations
 
     belongs_to :task, Task
+    belongs_to :rule, Learning
+    belongs_to :suppressed_by, Learning
+    belongs_to :decided_by, User
 
     timestamps()
   end
@@ -57,7 +65,9 @@ defmodule Rail.Pipeline.Schemas.ReviewFinding do
     :line,
     :severity,
     :recommendation,
-    :status
+    :status,
+    :rule_id,
+    :suppressed_by_id
   ]
 
   @required_fields [
@@ -83,11 +93,18 @@ defmodule Rail.Pipeline.Schemas.ReviewFinding do
   end
 
   @doc """
-  Builds a changeset for the human's call on a finding.
+  Builds a changeset for the human's call on a finding, and who made it.
   """
-  def decision_changeset(review_finding, decision) when decision in @recommendations do
-    change(review_finding, decision: decision)
+  def decision_changeset(review_finding, decision, decided_by_id) when decision in @recommendations do
+    change(review_finding, decision: decision, decided_by_id: decided_by_id)
   end
+
+  @doc """
+  True when a calibration rule suppressed this finding and nobody has decided to fix it anyway.
+  """
+  def suppressed?(%__MODULE__{status: :fixed}), do: false
+  def suppressed?(%__MODULE__{suppressed_by_id: rule_id, decision: nil}), do: is_binary(rule_id)
+  def suppressed?(%__MODULE__{}), do: false
 
   @doc """
   True when this finding is one the engineer is being asked to fix.
@@ -100,10 +117,11 @@ defmodule Rail.Pipeline.Schemas.ReviewFinding do
   def outstanding?(%__MODULE__{}), do: false
 
   @doc """
-  True when this finding is still waiting on a human to rule on it.
+  True when this finding is still waiting on a human to rule on it. A suppressed
+  one is not: the rule has ruled, and it never holds up a send.
   """
   def undecided?(%__MODULE__{status: :fixed}), do: false
-  def undecided?(%__MODULE__{decision: nil}), do: true
+  def undecided?(%__MODULE__{decision: nil} = finding), do: not suppressed?(finding)
   def undecided?(%__MODULE__{}), do: false
 
   @doc """
@@ -111,6 +129,7 @@ defmodule Rail.Pipeline.Schemas.ReviewFinding do
   """
   def state(%__MODULE__{status: :fixed}), do: :fixed
   def state(%__MODULE__{decision: :skip}), do: :dismissed
+  def state(%__MODULE__{decision: nil, suppressed_by_id: rule_id}) when is_binary(rule_id), do: :suppressed
   def state(%__MODULE__{decision: nil}), do: :undecided
   def state(%__MODULE__{status: :not_fixed}), do: :not_fixed
   def state(%__MODULE__{}), do: :to_fix

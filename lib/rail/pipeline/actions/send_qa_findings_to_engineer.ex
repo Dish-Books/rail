@@ -14,11 +14,12 @@ defmodule Rail.Pipeline.Actions.SendQaFindingsToEngineer do
 
   This is a one-way door: the task leaves QA, and a task no longer there has
   nothing left to send. What the engineer fixes goes back through the reviewer
-  before it reaches QA again.
+  before it reaches QA again. Each Fix sent is learned from as a correction.
   """
 
   import Rail.Pipeline.Utils.SendBack
 
+  alias Rail.Learnings
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.QaEvidence
   alias Rail.Pipeline.Schemas.QaFinding
@@ -40,7 +41,9 @@ defmodule Rail.Pipeline.Actions.SendQaFindingsToEngineer do
          {:ok, findings} <- outstanding(run.task) do
       {:ok, %Role{} = role} = Roles.get_role(project_id: run.task.project_id, stage: :engineer)
       brief_engineer(run.task, role, findings)
-      enter_next(run)
+      sent = enter_next(run)
+      {:ok, _learned} = Learnings.record_corrections(run.task, findings)
+      sent
     end
   end
 

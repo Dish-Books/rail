@@ -25,13 +25,15 @@ config :posthog,
 
 config :rail, Oban,
   repo: Rail.Repo,
-  queues: [issues: 5, tools: 1, git: 1],
+  queues: [issues: 5, tools: 1, git: 1, learnings: 2, learnings_embed: 5],
   plugins: [
     {Oban.Plugins.Cron,
      crontab: [
        {"* * * * *", Rail.Tools.Workers.ReconcileOsProcesses},
        {"*/5 * * * *", Rail.Tools.Workers.RefreshUsage},
-       {"*/15 * * * *", Rail.Git.Workers.FetchDefaultBranches}
+       {"*/15 * * * *", Rail.Git.Workers.FetchDefaultBranches},
+       {"0 6 * * *", Rail.Learnings.Workers.ScheduleCurators},
+       {"15 * * * *", Rail.Learnings.Workers.EmbedPending}
      ]}
   ]
 
@@ -42,6 +44,7 @@ config :rail, Rail.Cache,
   gc_memory_check_interval: to_timeout(second: 30)
 
 config :rail, Rail.Repo,
+  types: Rail.PostgrexTypes,
   migration_primary_key: [type: :text],
   migration_timestamps: [type: :utc_datetime_usec]
 

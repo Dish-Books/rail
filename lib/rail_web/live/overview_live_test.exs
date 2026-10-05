@@ -797,7 +797,7 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, question} =
         Pipeline.register_question(Repo.preload(run, task: :issue), %DetectedQuestion{prompt: "Which one?"})
 
-      {:ok, _answered} = Pipeline.answer_question(question, "That one")
+      {:ok, _answered} = Pipeline.answer_question(system_scope(), question, "That one")
 
       assert {:ok, view, _html} = live(conn, ~p"/")
 

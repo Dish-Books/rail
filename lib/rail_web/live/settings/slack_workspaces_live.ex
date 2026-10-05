@@ -48,7 +48,7 @@ defmodule RailWeb.Settings.SlackWorkspacesLive do
             The Slack app triage reads threads with. Projects pick their channels in Projects.
           </p>
           <p id="slack-setup-note" class="mt-2 text-xs text-slate-500 dark:text-slate-400">
-            Turn on Socket Mode. App-level token: <span class="font-mono">connections:write</span>. Bot scopes: <span class="font-mono">channels:history, groups:history, channels:read, groups:read, users:read, files:read</span>. User scope: <span class="font-mono">chat:write</span>. Events: <span class="font-mono">message.channels, message.groups</span>.
+            Turn on Socket Mode. App-level token: <span class="font-mono">connections:write</span>. Bot scopes: <span class="font-mono">channels:history, groups:history, channels:read, groups:read, users:read, files:read, chat:write</span>. User scope: <span class="font-mono">chat:write</span>. Events: <span class="font-mono">message.channels, message.groups</span>.
           </p>
         </div>
 

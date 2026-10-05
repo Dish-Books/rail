@@ -43,6 +43,12 @@ defmodule Rail do
   @doc "Whether Rail adopts in-flight processes as it boots."
   def adopt_on_boot?, do: Application.get_env(:rail, :adopt_on_boot, true)
 
+  @doc "Where scratch directories live, outside any repository."
+  def scratch_root, do: Application.get_env(:rail, :scratch_root) || Path.join(File.cwd!(), "output")
+
+  @doc "Whether Goth runs, so Rail can reach Google for embeddings."
+  def goth_enabled?, do: Application.get_env(:rail, :goth_enabled, false)
+
   defp browser(key, default), do: :rail |> Application.get_env(:browser, []) |> Keyword.get(key, default)
 
   defp sandbox(key, default), do: :rail |> Application.get_env(:sandbox, []) |> Keyword.get(key, default)

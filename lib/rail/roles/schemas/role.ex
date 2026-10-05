@@ -18,7 +18,9 @@ defmodule Rail.Roles.Schemas.Role do
     :demo,
     :debugger,
     # Reads Slack threads rather than working a task, so no task ever enters it.
-    :triage
+    :triage,
+    # Distills what finished tasks taught and curates the rules daily; no task enters it either.
+    :curator
   ]
 
   # Phosphor classes are emitted by the Tailwind plugin only for names it finds as

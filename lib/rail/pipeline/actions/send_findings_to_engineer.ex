@@ -10,10 +10,14 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineer do
 
   This is a one-way door: the task leaves review, and a task no longer there has
   nothing left to send.
+
+  What was sent is learned from, since a ruling can change until then: a Fix on a
+  suppressed finding overrides its rule, and every other Fix is a correction.
   """
 
   import Rail.Pipeline.Utils.SendBack
 
+  alias Rail.Learnings
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ReviewFinding
   alias Rail.Pipeline.Schemas.Run
@@ -34,7 +38,13 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineer do
          {:ok, findings} <- outstanding(run.task) do
       {:ok, %Role{} = role} = Roles.get_role(project_id: run.task.project_id, stage: :engineer)
       brief_engineer(run.task, role, findings)
-      enter_next(run)
+      sent = enter_next(run)
+
+      {overrides, corrections} = Enum.split_with(findings, &is_binary(&1.suppressed_by_id))
+      {:ok, _flagged} = Learnings.record_overrides(run.task, overrides)
+      {:ok, _learned} = Learnings.record_corrections(run.task, corrections)
+
+      sent
     end
   end
 

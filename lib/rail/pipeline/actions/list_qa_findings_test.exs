@@ -78,8 +78,8 @@ defmodule Rail.Pipeline.Actions.ListQaFindingsTest do
         saved
       end
 
-    {:ok, _dismissed} = Pipeline.decide_qa_finding(blocker, :skip)
-    {:ok, _decided} = Pipeline.decide_qa_finding(major, :fix)
+    {:ok, _dismissed} = Pipeline.decide_qa_finding(system_scope(), blocker, :skip)
+    {:ok, _decided} = Pipeline.decide_qa_finding(system_scope(), major, :fix)
 
     assert Enum.map(Pipeline.list_qa_findings(task), & &1.key) == ["a-blocker", "a-major", "a-nit"]
   end

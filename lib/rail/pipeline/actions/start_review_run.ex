@@ -14,7 +14,9 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
 
   import Rail.Pipeline.Utils.FormatComments
   import Rail.Pipeline.Utils.FormatTicket
+  import Rail.Pipeline.Utils.LearningsBrief
 
+  alias Rail.Git
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ImplementationPlan
@@ -24,7 +26,12 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
+  alias Rail.Scope
   alias Rail.Tools
+
+  # Enough of a large change to find the rules it touches without embedding all of it.
+  @files 40
+  @file_chars 6_000
 
   @doc """
   Spawns `run`'s role to review its task.
@@ -41,7 +48,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
         task: task,
         backend: role.backend,
         role_instructions: role.system_prompt,
-        context_snippet: brief(task),
+        context_snippet: brief(task, run),
         pending_answer: run.pending_answer,
         conversation_id: run.conversation_id
       )
@@ -60,7 +67,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     Tools.start_os_process(run, args)
   end
 
-  defp brief(%Task{scratch_path: scratch_path, issue: %Issue{} = issue} = task) do
+  defp brief(%Task{scratch_path: scratch_path, issue: %Issue{} = issue} = task, %Run{} = run) do
     String.trim("""
     Review the change described below. #{workspace(task)}
 
@@ -72,7 +79,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
 
     You report with two tools. `save_finding` saves one finding, as soon as you have confirmed it rather than at the end: the human watching sees each one while you keep reading, though nobody rules on any until you have finished. `save_review` says the pass is finished, and it is the last thing you do, including when you found nothing.
 
-    - A finding's fields are `key`, `title`, `detail`, `suggestion`, `file`, `line`, `severity`, `recommendation` and `status`. A save in the wrong shape is refused naming each field and what is wrong with it: fix it and save again. Saving a key again replaces what you said about it.
+    - A finding's fields are `key`, `title`, `detail`, `suggestion`, `file`, `line`, `severity`, `recommendation`, `status` and `rule`. A save in the wrong shape is refused naming each field and what is wrong with it: fix it and save again. Saving a key again replaces what you said about it.
     - One finding per problem. Two symptoms of one cause are one finding; one file with three unrelated problems is three.
     - `key` is your own name for the problem, lowercase with hyphens, and it must stay the same for the same problem across passes. That is what lets a later pass update a finding rather than raise it twice.
     - `severity` is `blocker`, `major`, `minor` or `nit`, and says how much the problem matters. `recommendation` is `fix` or `skip`, and says whether you would act on it. They are separate axes: a nit worth the thirty seconds it costs is `fix`, and a blocker is never `skip`. Most changes have some of each.
@@ -82,13 +89,14 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     - Nothing in `suggestion` restates or reconsiders `recommendation`. "Leave it", "only if you think it matters", or a fix offered as one branch of a choice hands the engineer a decision the human has already taken, and it will be built as the hedge rather than the fix. Recommend `skip` in the field for recommending it; still write the fix you would apply if told to.
     - `status` is `open` for a problem that still stands. Leave findings out entirely rather than inventing them: no findings and then `save_review` is a clean review, and is the right answer when the change is good.
     - A finding with no file is fine. Give `file` and `line` whenever you can point at one; `line` is one positive whole number.
+    - `rule` is the id of the checklist rule a finding comes from; leave it out when it comes from none. A finding a calibration rule says not to raise is still saved, with that rule's id.
     - Report only what you checked. You have the worktree: open the callers, read the test, run it. A finding you could have confirmed and did not is a guess, and a guess costs the engineer a whole round.
     - Confirm a finding against the rest of the change before you save it. A finding against one file that the next file already answers is noise. If you stop part way, for a question or anything else, do not call `save_review`, and the task waits for you.
     - `save_finding` and `save_review` are the only way to report. Write no report file.
     - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or the plan is not a question.
 
     #{outstanding(task)}
-    #{plan(task)}
+    #{plan(task)}#{learnings_brief(run, fn -> file_queries(task) end)}
     The ticket the change was built from:
 
     #{format_ticket(issue)}
@@ -96,6 +104,20 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
 
     #{format_comments(issue.comments)}
     """)
+  end
+
+  # One query per changed file, its changed lines, so each finds the rules about that kind of code.
+  defp file_queries(%Task{} = task) do
+    case Git.load_diff(Scope.for_system(), task, :branch) do
+      {:ok, files} ->
+        for file <- Enum.take(files, @files) do
+          changed = for %{kind: :line, line_kind: kind, text: text} <- file.rows, kind != :context, do: text
+          {file.path, changed |> Enum.join("\n") |> String.slice(0, @file_chars)}
+        end
+
+      {:error, :no_worktree} ->
+        []
+    end
   end
 
   defp workspace(%Task{worktree_path: worktree_path, worktree_name: branch, project: %Project{} = project}) do

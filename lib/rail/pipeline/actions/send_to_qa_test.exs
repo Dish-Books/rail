@@ -69,7 +69,7 @@ defmodule Rail.Pipeline.Actions.SendToQaTest do
         saved
       end
 
-    {:ok, _dismissed} = Pipeline.decide_review_finding(finding, :skip)
+    {:ok, _dismissed} = Pipeline.decide_review_finding(system_scope(), finding, :skip)
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.send_to_qa(run)
     assert %Task{stage: :qa} = Repo.reload!(task)
@@ -82,7 +82,7 @@ defmodule Rail.Pipeline.Actions.SendToQaTest do
         saved
       end
 
-    {:ok, _to_fix} = Pipeline.decide_review_finding(finding, :fix)
+    {:ok, _to_fix} = Pipeline.decide_review_finding(system_scope(), finding, :fix)
 
     assert {:error, :findings_outstanding} = Pipeline.send_to_qa(run)
     assert %Task{stage: :review} = Repo.reload!(task)

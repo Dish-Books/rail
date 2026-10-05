@@ -24,6 +24,7 @@ defmodule Rail.Pipeline.Schemas.QaFinding do
 
   alias Rail.Pipeline.Schemas.QaEvidence
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Users.Schemas.User
 
   @severities [:blocker, :major, :minor, :nit]
   @recommendations [:fix, :skip]
@@ -51,6 +52,7 @@ defmodule Rail.Pipeline.Schemas.QaFinding do
     embeds_many :evidence, QaEvidence, on_replace: :delete
 
     belongs_to :task, Task
+    belongs_to :decided_by, User
 
     timestamps()
   end
@@ -100,10 +102,10 @@ defmodule Rail.Pipeline.Schemas.QaFinding do
   end
 
   @doc """
-  Builds a changeset for the human's call on a finding.
+  Builds a changeset for the human's call on a finding, and who made it.
   """
-  def decision_changeset(qa_finding, decision) when decision in @recommendations do
-    change(qa_finding, decision: decision)
+  def decision_changeset(qa_finding, decision, decided_by_id) when decision in @recommendations do
+    change(qa_finding, decision: decision, decided_by_id: decided_by_id)
   end
 
   @doc """

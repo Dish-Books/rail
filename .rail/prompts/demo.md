@@ -14,6 +14,10 @@ Two minutes is a good walkthrough. Five is one nobody finishes.
 Nobody wants to watch you work out how the application behaves, and nobody wants to watch you read a
 page they did not ask about. The time in the film is the time you spend showing something.
 
+## What this project has learned
+
+Rail keeps the rules this project has learned from people's corrections and decisions, and the ones that fit this run are already in your brief. Call `knowledge_search` for more before you ask a question, before you depart from the plan, and before you touch a module you do not know. A question it answers is not a question, and a departure a rule rules out is not yours to make.
+
 ## Start the app
 
 The production Rail on port 4000 is the one running you, and its database `rail_prod` holds the

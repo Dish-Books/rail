@@ -62,4 +62,20 @@ defmodule Rail.Pipeline.Actions.StartDesignRunTest do
     assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_design_run(run)
     assert File.dir?(design_dir)
   end
+
+  test "the brief carries the rules retrieved with the ticket", %{project: project, run: run} do
+    stub_vertex(%{"Filter invoices" => vector([1.0])})
+
+    learning(project, %{rule: "Amber only means a person is waited on", kind: :design, roles: [:design]},
+      embedding: [1.0]
+    )
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "- Design: Amber only means a person is waited on"
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_design_run(run)
+    assert_received {:embedded, "Invoice filters\n\nFilter invoices by vendor.", "RETRIEVAL_QUERY"}
+  end
 end

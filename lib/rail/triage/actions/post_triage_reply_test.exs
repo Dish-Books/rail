@@ -1,6 +1,7 @@
 defmodule Rail.Triage.Actions.PostTriageReplyTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Projects
   alias Rail.Scope
   alias Rail.Tools
   alias Rail.Triage
@@ -8,9 +9,9 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
   alias Rail.Triage.Schemas.Message
   alias Rail.Triage.Schemas.Thread
 
-  setup do
+  setup context do
     %{project: project} = triage_project()
-    %{workspace: workspace, channel: channel} = connect_slack_channel(project)
+    %{workspace: workspace, channel: channel} = connect_slack_channel(project, external: context[:external] == true)
     {:ok, thread} = Triage.handle_slack_event(workspace, slack_message_event(channel, %{}))
     user = slack_user(workspace.external_id)
 
@@ -216,5 +217,83 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
     end)
 
     assert {:ok, %Item{reply_posted_at: %DateTime{}}} = Triage.post_triage_reply(scope, item, %{})
+  end
+
+  describe "in an external channel" do
+    @describetag :external
+
+    setup %{project: project, thread: thread} do
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{
+                "id" => "lin_12",
+                "identifier" => "TRI-12",
+                "title" => "Sidebar",
+                "url" => "https://linear.app/acme/issue/TRI-12",
+                "state" => %{"type" => "started"}
+              }
+            }
+          }
+        })
+      end)
+
+      {:ok, _issue} = Rail.Issues.create_issue(system_scope(), project, %{title: "Sidebar"})
+      tracked = triage_bug(%{"existing_issue" => "TRI-12", "reply" => "Already tracked in {issue link}."})
+      %Thread{items: [item]} = triage_with(thread, %{"items" => [tracked]})
+
+      %{item: item}
+    end
+
+    test "a reply that links the issue is refused even though the issue exists, until the placeholder is out", %{
+      item: item,
+      scope: scope
+    } do
+      assert {:error, :external_issue_link} = Triage.post_triage_reply(scope, item, %{})
+      assert %Item{reply_posted_by_id: nil, reply_posted_at: nil} = Repo.get!(Item, item.id)
+
+      Req.Test.expect(Rail.Slack, fn conn ->
+        assert %{"text" => "This is already tracked, and we'll post here when it ships."} =
+                 conn |> Req.Test.raw_body() |> Jason.decode!()
+
+        Req.Test.json(conn, %{"ok" => true, "ts" => "1790003300.000100"})
+      end)
+
+      assert {:ok, %Item{reply_posted_at: %DateTime{}}} =
+               Triage.post_triage_reply(scope, item, %{
+                 "reply_text" => "This is already tracked, and we'll post here when it ships."
+               })
+    end
+
+    test "once the channel is unmarked, the placeholder links the issue again", %{
+      project: project,
+      channel: channel,
+      item: item,
+      scope: scope
+    } do
+      {:ok, _project} =
+        Projects.update_project(system_scope(), project, %{
+          "slack_channels" => [
+            %{
+              "id" => channel.id,
+              "external_id" => channel.external_id,
+              "name" => channel.name,
+              "slack_workspace_id" => channel.slack_workspace_id,
+              "external" => "false"
+            }
+          ]
+        })
+
+      Req.Test.expect(Rail.Slack, fn conn ->
+        assert %{"text" => "Already tracked in <https://linear.app/acme/issue/TRI-12|TRI-12>."} =
+                 conn |> Req.Test.raw_body() |> Jason.decode!()
+
+        Req.Test.json(conn, %{"ok" => true, "ts" => "1790003400.000100"})
+      end)
+
+      assert {:ok, %Item{reply_posted_at: %DateTime{}}} = Triage.post_triage_reply(scope, item, %{})
+    end
   end
 end

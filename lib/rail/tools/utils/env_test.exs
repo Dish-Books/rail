@@ -42,4 +42,31 @@ defmodule Rail.Tools.Utils.EnvTest do
       assert {"[unset]\n", 0} = System.cmd("sh", ["-c", ~s(echo "[${#{@var}-unset}]")], env: env_list(%{}, nil))
     end
   end
+
+  describe "the Google credentials Goth reads" do
+    setup do
+      vars = ["GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_APPLICATION_CREDENTIALS_JSON", "ENABLE_GOTH"]
+      previous = Map.new(vars, &{&1, System.get_env(&1)})
+      Enum.each(vars, &System.put_env(&1, "secret"))
+
+      on_exit(fn ->
+        Enum.each(previous, fn
+          {var, nil} -> System.delete_env(var)
+          {var, value} -> System.put_env(var, value)
+        end)
+      end)
+
+      %{vars: vars}
+    end
+
+    test "are never passed to a tool", %{vars: vars} do
+      child = env()
+      list = env_list(%{}, false)
+
+      for var <- vars do
+        refute Map.has_key?(child, var)
+        assert {var, false} in list
+      end
+    end
+  end
 end

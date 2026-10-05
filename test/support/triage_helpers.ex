@@ -14,7 +14,7 @@ defmodule RailTest.TriageHelpers do
   Answers Slack's read endpoints for the calling test. `chat.postMessage` is
   deliberately absent, so a post the test did not expect crashes it.
 
-  Takes `:team_id`, `:channels` (`[{id, name}]`), `:users` (`%{id => name}`),
+  Takes `:team_id`, `:channels` (`[{id, name}]`, also what `conversations.info` names), `:users` (`%{id => name}`),
   `:replies` (the messages `conversations.replies` returns) and `:files`
   (`%{path => {content_type, body}}`). A file path not in `:files` gets the HTML
   sign-in page Slack serves an app without `files:read`.
@@ -30,6 +30,14 @@ defmodule RailTest.TriageHelpers do
       %{request_path: "/files-pri/" <> _file} = conn ->
         {content_type, body} = Map.get(files, conn.request_path, {"text/html", "<html>Sign in to Slack</html>"})
         conn |> Plug.Conn.put_resp_content_type(content_type, nil) |> Plug.Conn.send_resp(200, body)
+
+      %{request_path: "/api/conversations.info"} = conn ->
+        conn = Plug.Conn.fetch_query_params(conn)
+
+        case List.keyfind(channels, conn.query_params["channel"], 0) do
+          {id, name} -> Req.Test.json(conn, %{"ok" => true, "channel" => %{"id" => id, "name" => name}})
+          nil -> Req.Test.json(conn, %{"ok" => false, "error" => "channel_not_found"})
+        end
 
       conn ->
         conn = Plug.Conn.fetch_query_params(conn)
@@ -62,7 +70,7 @@ defmodule RailTest.TriageHelpers do
   @doc """
   Adds a Slack workspace and connects one channel of it to `project`. Returns
   `%{workspace: workspace, channel: channel}`. Takes `:bot_triage_enabled` for the
-  channel's option to triage bot posts.
+  channel's option to triage bot posts, and `:external` for one shared outside the team.
   """
   def connect_slack_channel(project, opts \\ []) do
     unique = System.unique_integer([:positive])
@@ -84,7 +92,8 @@ defmodule RailTest.TriageHelpers do
             "external_id" => channel_id,
             "name" => "rail-feedback",
             "slack_workspace_id" => workspace.id,
-            "bot_triage_enabled" => Keyword.get(opts, :bot_triage_enabled, false)
+            "bot_triage_enabled" => Keyword.get(opts, :bot_triage_enabled, false),
+            "external" => Keyword.get(opts, :external, false)
           }
         ]
       })

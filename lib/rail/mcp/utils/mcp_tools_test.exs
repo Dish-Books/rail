@@ -11,11 +11,11 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
   end
 
   test "each stage that writes something is offered exactly its own save tool", %{names: names} do
-    assert names[:product] == ["save_ticket"]
-    assert names[:design] == ["save_design_option"]
-    assert names[:architect] == ["save_plan"]
-    assert names[:engineer] == ["commit", "request_merge"]
-    assert names[:review] == ["save_finding", "save_review"]
+    assert names[:product] == ["save_ticket", "knowledge_search"]
+    assert names[:design] == ["save_design_option", "knowledge_search"]
+    assert names[:architect] == ["save_plan", "knowledge_search"]
+    assert names[:engineer] == ["commit", "request_merge", "knowledge_search"]
+    assert names[:review] == ["save_finding", "save_review", "knowledge_search"]
   end
 
   test "QA is offered the browser, the checklist, and the tools it reports with", %{names: names} do
@@ -27,12 +27,20 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
              "qa_shot",
              "qa_file",
              "save_finding",
-             "save_verdict"
+             "save_verdict",
+             "knowledge_search"
            ]
   end
 
   test "demo is offered the same browser, narrates, and saves its write-up", %{names: names} do
-    assert names[:demo] == ["browser_connect", "browser_problems", "demo_start", "demo_say", "save_demo"]
+    assert names[:demo] == [
+             "browser_connect",
+             "browser_problems",
+             "demo_start",
+             "demo_say",
+             "save_demo",
+             "knowledge_search"
+           ]
   end
 
   # Both are called save_finding, and each takes the fields its own stage raises.
@@ -50,7 +58,13 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
     refute Map.has_key?(fields.(:qa), "file")
   end
 
-  test "a stage with no output of its own is offered nothing", %{names: names} do
-    assert names[:triage] == []
+  test "a stage with no output of its own is offered only the knowledge base", %{names: names} do
+    assert names[:triage] == ["knowledge_search"]
+  end
+
+  test "every role stage is offered knowledge_search" do
+    for stage <- Role.canonical_stages() do
+      assert Enum.any?(mcp_tools(%Role{stage: stage}), &(&1["name"] == "knowledge_search"))
+    end
   end
 end

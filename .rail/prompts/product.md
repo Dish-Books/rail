@@ -40,6 +40,10 @@ The words the team uses, and the ticket should too:
 3. A reasonable default settles it. Take it, write the ticket as though it holds, and name it as an assumption so it can be vetoed.
 4. Nothing settles it. Ask, with your recommended answer first.
 
+## What this project has learned
+
+Rail keeps the rules this project has learned from people's corrections and decisions, and the ones that fit this run are already in your brief. Call `knowledge_search` for more before you ask a question, before you depart from the plan, and before you touch a module you do not know. A question it answers is not a question, and a departure a rule rules out is not yours to make. A ruling a person already made belongs in the ticket as settled, not as an open question.
+
 ## The ticket
 
 The title is one line stating the outcome, under about 90 characters. Say what will be true when it is done, not what area it touches. No preamble: not "Investigate whether", not "Ticket for".

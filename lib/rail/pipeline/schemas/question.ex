@@ -1,11 +1,16 @@
 defmodule Rail.Pipeline.Schemas.Question do
   @moduledoc """
   Schema for an agent question that pauses a task pending human answer or dismissal.
+
+  Rail answers one itself when a person already answered one like it, with
+  `answered_by_rail` set, and suggests a likely past answer where it is less sure.
   """
   use Rail.Schema
 
+  alias Rail.Learnings.Schemas.Learning
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Users.Schemas.User
 
   @statuses [:pending, :unanswered, :answered, :dismissed]
 
@@ -21,6 +26,10 @@ defmodule Rail.Pipeline.Schemas.Question do
     field :status, Ecto.Enum, values: @statuses, default: :pending
     field :answered_at, :utc_datetime_usec
     field :delivered_at, :utc_datetime_usec
+    field :answered_by_rail, :boolean, default: false
+
+    belongs_to :answered_by, User
+    belongs_to :suggested_learning, Learning
 
     timestamps()
   end
@@ -34,7 +43,10 @@ defmodule Rail.Pipeline.Schemas.Question do
     :answer,
     :status,
     :answered_at,
-    :delivered_at
+    :delivered_at,
+    :answered_by_id,
+    :answered_by_rail,
+    :suggested_learning_id
   ]
 
   @required_fields [
@@ -52,6 +64,7 @@ defmodule Rail.Pipeline.Schemas.Question do
     |> cast(attrs, @cast_fields)
     |> maybe_put_task_id(task_id)
     |> clear_answer_on_dismiss()
+    |> clear_rail_on_person()
     |> validate_required(@required_fields)
     |> foreign_key_constraint(:task_id)
     |> foreign_key_constraint(:run_id)
@@ -70,6 +83,14 @@ defmodule Rail.Pipeline.Schemas.Question do
     case get_change(changeset, :status) do
       :dismissed -> change(changeset, answer: nil, answered_at: nil)
       _other -> changeset
+    end
+  end
+
+  # Once a person answers, the answer is theirs and no longer Rail's.
+  defp clear_rail_on_person(changeset) do
+    case get_change(changeset, :answered_by_id) do
+      user_id when is_binary(user_id) -> put_change(changeset, :answered_by_rail, false)
+      nil -> changeset
     end
   end
 

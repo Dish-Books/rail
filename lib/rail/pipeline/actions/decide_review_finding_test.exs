@@ -40,19 +40,19 @@ defmodule Rail.Pipeline.Actions.DecideReviewFindingTest do
 
   test "the human overrules the reviewer", %{finding: finding} do
     assert {:ok, %ReviewFinding{recommendation: :fix, decision: :skip}} =
-             Pipeline.decide_review_finding(finding, :skip)
+             Pipeline.decide_review_finding(system_scope(), finding, :skip)
   end
 
   test "and can put it back", %{finding: finding} do
-    {:ok, dismissed} = Pipeline.decide_review_finding(finding, :skip)
+    {:ok, dismissed} = Pipeline.decide_review_finding(system_scope(), finding, :skip)
 
-    assert {:ok, %ReviewFinding{decision: :fix}} = Pipeline.decide_review_finding(dismissed, :fix)
+    assert {:ok, %ReviewFinding{decision: :fix}} = Pipeline.decide_review_finding(system_scope(), dismissed, :fix)
   end
 
   test "a task that has left review has nothing left to decide", %{task: task, finding: finding} do
     {:ok, _moved} = Pipeline.update_task(task, %{stage: :qa})
 
-    assert {:error, {:invalid_stage, :qa}} = Pipeline.decide_review_finding(finding, :skip)
+    assert {:error, {:invalid_stage, :qa}} = Pipeline.decide_review_finding(system_scope(), finding, :skip)
   end
 
   test "a finding is not ruled on while the run that raised it is still going", %{
@@ -68,6 +68,40 @@ defmodule Rail.Pipeline.Actions.DecideReviewFindingTest do
         started_at: DateTime.utc_now()
       })
 
-    assert {:error, :stage_running} = Pipeline.decide_review_finding(finding, :skip)
+    assert {:error, :stage_running} = Pipeline.decide_review_finding(system_scope(), finding, :skip)
+  end
+
+  test "records who decided, and learns nothing until the findings are sent", %{
+    project: project,
+    task: task,
+    finding: finding
+  } do
+    {:ok, %{id: user_id} = user} =
+      Rail.Users.register_oauth_user(%{github_id: "dcf-u", login: "dana", name: "Dana", email: "dana@dcf.example"})
+
+    calibration = learning(project, %{rule: "Don't flag this", kind: :calibration})
+
+    [_finding] =
+      for finding <- [
+            %{
+              key: "unhandled-nil",
+              title: "Nil is not handled",
+              severity: :major,
+              recommendation: :fix,
+              status: :open,
+              rule: calibration.id
+            }
+          ] do
+        {:ok, saved} = Pipeline.save_review_finding(task, finding)
+
+        saved
+      end
+
+    assert {:ok, %ReviewFinding{decision: :fix, decided_by_id: ^user_id}} =
+             Pipeline.decide_review_finding(Rail.Scope.for_user(user), Repo.reload!(finding), :fix)
+
+    assert [] = Repo.all(from o in Rail.Learnings.Schemas.Observation, where: o.task_id == ^task.id)
+    assert [] = Repo.all(from p in Rail.Learnings.Schemas.LearningProposal, where: p.project_id == ^project.id)
+    assert {:ok, [%{status: :active, flagged: false}]} = Rail.Learnings.list_learnings(ids: [calibration.id])
   end
 end

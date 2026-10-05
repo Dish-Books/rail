@@ -70,7 +70,7 @@ defmodule Rail.Pipeline.Actions.SaveQaFindingTest do
 
   test "saving a key again keeps the human's decision", %{task: task, attrs: attrs} do
     {:ok, %QaFinding{id: id} = first} = Pipeline.save_qa_finding(task, attrs)
-    {:ok, _to_fix} = Pipeline.decide_qa_finding(first, :fix)
+    {:ok, _to_fix} = Pipeline.decide_qa_finding(system_scope(), first, :fix)
 
     assert {:ok, %QaFinding{id: ^id, decision: :fix, status: :fixed}} =
              Pipeline.save_qa_finding(task, Map.put(attrs, "status", "fixed"))

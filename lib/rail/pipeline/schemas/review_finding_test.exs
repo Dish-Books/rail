@@ -80,7 +80,7 @@ defmodule Rail.Pipeline.Schemas.ReviewFindingTest do
     finding = %ReviewFinding{} |> ReviewFinding.changeset(attrs) |> Repo.insert!()
     assert finding.decision == nil
 
-    assert %{decision: :skip} = finding |> ReviewFinding.decision_changeset(:skip) |> Repo.update!()
+    assert %{decision: :skip} = finding |> ReviewFinding.decision_changeset(:skip, nil) |> Repo.update!()
   end
 
   test "outstanding is only what a human said to fix", %{attrs: attrs} do
@@ -118,5 +118,28 @@ defmodule Rail.Pipeline.Schemas.ReviewFindingTest do
   test "a reviewer recommends one of two things and says one of three about a finding" do
     assert ReviewFinding.recommendations() == [:fix, :skip]
     assert ReviewFinding.statuses() == [:open, :fixed, :not_fixed]
+  end
+
+  test "a suppressed finding nobody decided is neither undecided nor outstanding, and Fix makes it one to fix", %{
+    attrs: attrs
+  } do
+    finding =
+      %ReviewFinding{}
+      |> ReviewFinding.changeset(Map.put(attrs, :suppressed_by_id, nil))
+      |> Ecto.Changeset.apply_changes()
+
+    suppressed = %{finding | suppressed_by_id: "lrn_calibration"}
+
+    assert ReviewFinding.suppressed?(suppressed)
+    assert ReviewFinding.state(suppressed) == :suppressed
+    refute ReviewFinding.undecided?(suppressed)
+    refute ReviewFinding.outstanding?(suppressed)
+
+    fixed = %{suppressed | decision: :fix}
+    refute ReviewFinding.suppressed?(fixed)
+    assert ReviewFinding.state(fixed) == :to_fix
+    assert ReviewFinding.outstanding?(fixed)
+    refute ReviewFinding.suppressed?(%{suppressed | status: :fixed})
+    refute ReviewFinding.suppressed?(finding)
   end
 end

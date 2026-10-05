@@ -7,8 +7,11 @@ defmodule RailWeb.Settings.ProjectsLive do
   alias Rail.Slack
   alias Rail.Triage
   alias Rail.Users
+  alias RailWeb.Components.LearningsChannelPicker
 
   def mount(_params, _session, socket) do
+    if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "projects")
+
     projects = Projects.list_projects(socket.assigns.current_scope)
     linear_workspaces = Projects.list_linear_workspaces()
     {:ok, users} = Users.list_users(socket.assigns.current_scope)
@@ -26,6 +29,7 @@ defmodule RailWeb.Settings.ProjectsLive do
       |> assign(:channels_confirm, nil)
       |> assign(:channels_saved, false)
       |> assign(:channels_error, nil)
+      |> assign(:learnings_channel_name, nil)
       |> assign(:show_modal, nil)
       |> assign(:modal_title, nil)
       |> assign(:selected_project, nil)
@@ -510,7 +514,10 @@ defmodule RailWeb.Settings.ProjectsLive do
                 and invite its app to the channels triage should read.
               </p>
               <ul :if={@slack_channel_options != []} class="max-h-56 overflow-y-auto space-y-1.5">
-                <li :for={channel <- @slack_channel_options} class="flex items-center gap-3 text-sm">
+                <li
+                  :for={channel <- @slack_channel_options}
+                  class="flex items-center gap-3 text-sm min-w-0"
+                >
                   <input type="hidden" name={"channels[#{channel.id}][included]"} value="false" />
                   <input type="hidden" name={"channels[#{channel.id}][name]"} value={channel.name} />
                   <input
@@ -534,7 +541,7 @@ defmodule RailWeb.Settings.ProjectsLive do
                   />
                   <label
                     for={"slack-channel-#{channel.id}"}
-                    class="font-mono text-slate-900 dark:text-slate-100"
+                    class="font-mono text-slate-900 dark:text-slate-100 truncate min-w-0"
                   >
                     #{channel.name}
                   </label>
@@ -545,34 +552,50 @@ defmodule RailWeb.Settings.ProjectsLive do
                   >
                     Not listed by Slack
                   </span>
-                  <label
+                  <span
                     :if={Map.has_key?(@channel_selection, channel.id)}
-                    class="ml-auto inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer"
+                    class="ml-auto flex items-center gap-4 shrink-0"
                   >
-                    <input
-                      type="hidden"
-                      name={"channels[#{channel.id}][bot_triage_enabled]"}
-                      value="false"
-                    />
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      name={"channels[#{channel.id}][bot_triage_enabled]"}
-                      id={"slack-channel-bots-#{channel.id}"}
-                      value="true"
-                      checked={Map.get(@channel_selection, channel.id) == true}
-                      class="peer sr-only"
-                    />
-                    <span class="relative h-5 w-9 shrink-0 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-indigo-600 after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
-                    Triage bot messages
-                  </label>
+                    <label class="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer whitespace-nowrap">
+                      <input
+                        type="hidden"
+                        name={"channels[#{channel.id}][bot_triage_enabled]"}
+                        value="false"
+                      />
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        name={"channels[#{channel.id}][bot_triage_enabled]"}
+                        id={"slack-channel-bots-#{channel.id}"}
+                        value="true"
+                        checked={@channel_selection[channel.id].bot_triage_enabled}
+                        class="peer sr-only"
+                      />
+                      <span class="relative h-5 w-9 shrink-0 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-indigo-600 after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
+                      Triage bot messages
+                    </label>
+                    <label class="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer whitespace-nowrap">
+                      <input type="hidden" name={"channels[#{channel.id}][external]"} value="false" />
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        name={"channels[#{channel.id}][external]"}
+                        id={"slack-channel-external-#{channel.id}"}
+                        value="true"
+                        checked={@channel_selection[channel.id].external}
+                        class="peer sr-only"
+                      />
+                      <span class="relative h-5 w-9 shrink-0 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-indigo-600 after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
+                      External
+                    </label>
+                  </span>
                 </li>
               </ul>
               <p
                 :if={map_size(@channel_selection) > 0}
                 class="text-xs text-slate-500 dark:text-slate-400"
               >
-                For channels where tools such as PostHog report issues.
+                Triage bot messages is for channels where tools such as PostHog report issues. External is for channels shared with people outside the team: Rail never posts an issue link there.
               </p>
               <div
                 :if={@channels_confirm}
@@ -612,6 +635,16 @@ defmodule RailWeb.Settings.ProjectsLive do
                 <.button type="submit" id="save-slack-channels-button">Save channels</.button>
               </div>
             </.form>
+
+            <.live_component
+              :if={@show_modal == :edit}
+              module={LearningsChannelPicker}
+              id="learnings-channel-picker"
+              variant={:settings}
+              current_scope={@current_scope}
+              project={@selected_project}
+              channel_name={@learnings_channel_name}
+            />
           </div>
         </div>
       </div>
@@ -641,11 +674,15 @@ defmodule RailWeb.Settings.ProjectsLive do
         socket =
           socket
           |> assign(:slack_channel_options, slack_channel_options(channels))
-          |> assign(:channel_selection, Map.new(channels, &{&1.external_id, &1.bot_triage_enabled}))
+          |> assign(
+            :channel_selection,
+            Map.new(channels, &{&1.external_id, %{bot_triage_enabled: &1.bot_triage_enabled, external: &1.external}})
+          )
           |> assign(:channel_ids, Map.new(channels, &{&1.external_id, &1.id}))
           |> assign(:channels_confirm, nil)
           |> assign(:channels_saved, false)
           |> assign(:channels_error, nil)
+          |> assign(:learnings_channel_name, LearningsChannelPicker.channel_name(project))
           |> assign(:show_modal, :edit)
           |> assign(:modal_title, "Edit Project")
           |> assign(:selected_project, project)
@@ -677,7 +714,8 @@ defmodule RailWeb.Settings.ProjectsLive do
           "external_id" => id,
           "name" => channel["name"],
           "slack_workspace_id" => channel["slack_workspace_id"],
-          "bot_triage_enabled" => channel["bot_triage_enabled"] == "true"
+          "bot_triage_enabled" => channel["bot_triage_enabled"] == "true",
+          "external" => channel["external"] == "true"
         }
       end
 
@@ -774,6 +812,33 @@ defmodule RailWeb.Settings.ProjectsLive do
     end
   end
 
+  # An edit from anywhere, such as a learnings channel picked on the Learnings page, shows here too.
+  def handle_info({:project_changed, project_id}, socket) do
+    if Enum.any?(socket.assigns.projects, &(&1.id == project_id)),
+      do: {:noreply, refresh_project(socket, project_id)},
+      else: {:noreply, socket}
+  end
+
+  # The navigation hook subscribes this view to pipeline events it does not use.
+  def handle_info(_message, socket), do: {:noreply, socket}
+
+  defp refresh_project(socket, project_id) do
+    {:ok, project} = Projects.get_project(project_id)
+    socket = assign(socket, :projects, update_list_item(socket.assigns.projects, project))
+
+    case socket.assigns.selected_project do
+      %Project{id: ^project_id} = current ->
+        channel_name = LearningsChannelPicker.channel_name(project, current, socket.assigns.learnings_channel_name)
+
+        socket
+        |> assign(:selected_project, project)
+        |> assign(:learnings_channel_name, channel_name)
+
+      _other_or_none ->
+        socket
+    end
+  end
+
   # Each workspace is asked for its channels; one Slack cannot answer for adds nothing to pick.
   # A channel the project has that Slack did not list stays on the form, checked, so saving
   # never removes it, or its threads, without an admin unchecking it.
@@ -831,7 +896,7 @@ defmodule RailWeb.Settings.ProjectsLive do
 
   defp channel_selection(params) do
     for {id, %{"included" => "true"} = channel} <- Map.get(params, "channels", %{}), into: %{} do
-      {id, channel["bot_triage_enabled"] == "true"}
+      {id, %{bot_triage_enabled: channel["bot_triage_enabled"] == "true", external: channel["external"] == "true"}}
     end
   end
 

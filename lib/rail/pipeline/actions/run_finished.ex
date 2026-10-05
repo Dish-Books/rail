@@ -38,12 +38,15 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   import Rail.Pipeline.Utils.ReviewRunFinished
   import Rail.Pipeline.Utils.SetupRunFinished
   import Rail.Pipeline.Utils.TurnStamp
+  import Rail.Pipeline.Utils.UnsentRound
   import Rail.Pipeline.Utils.UpdateBranchRunFinished
 
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
+  alias Rail.Scope
   alias Rail.Tools.Schemas.OsProcess
 
   @doc """
@@ -57,6 +60,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
           |> settle_run(outcome)
           |> finish(os_process, opts)
           |> drain_queued_message(opts)
+          |> send_rail_answers(os_process)
           |> broadcast_pipeline_changed()
 
         {:ok, run}
@@ -219,6 +223,21 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp latch_done(%Run{} = run) do
     {:ok, latched} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
     %{latched | task: run.task, role: run.role}
+  end
+
+  # A round Rail answered whole from past answers waits on nobody, so it goes back at
+  # once; one a person still has to answer waits, as does one whose turn was stopped.
+  defp send_rail_answers(%Run{} = run, %OsProcess{ended_reason: :stopped}), do: run
+
+  defp send_rail_answers(%Run{} = run, %OsProcess{}) do
+    round = unsent_round(run)
+
+    if round != [] and Enum.all?(round, &(&1.status == :answered and &1.answered_by_rail)) do
+      _sent = Pipeline.send_answers(Scope.for_system(), run)
+      %{Repo.get!(Run, run.id) | task: run.task, role: run.role}
+    else
+      run
+    end
   end
 
   # This run is idle now, so whatever the human queued on it while it worked goes

@@ -2,6 +2,7 @@ defmodule Rail.Pipeline.Actions.SendQaFindingsToEngineerTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues
+  alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.QaFinding
   alias Rail.Pipeline.Schemas.Run
@@ -99,7 +100,7 @@ defmodule Rail.Pipeline.Actions.SendQaFindingsToEngineerTest do
     # QA advised and each test changes only what it is about.
     findings =
       Enum.map(raised, fn finding ->
-        {:ok, decided} = Pipeline.decide_qa_finding(finding, finding.recommendation)
+        {:ok, decided} = Pipeline.decide_qa_finding(system_scope(), finding, finding.recommendation)
         decided
       end)
 
@@ -160,7 +161,7 @@ defmodule Rail.Pipeline.Actions.SendQaFindingsToEngineerTest do
         status: :open
       })
 
-    {:ok, _fix} = Pipeline.decide_qa_finding(finding, :fix)
+    {:ok, _fix} = Pipeline.decide_qa_finding(system_scope(), finding, :fix)
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
       assert ["-p", prompt | _rest] = argv
@@ -187,7 +188,7 @@ defmodule Rail.Pipeline.Actions.SendQaFindingsToEngineerTest do
 
   test "a finding the human put back is sent too", %{qa_run: run, findings: findings} do
     nit = Enum.find(findings, &(&1.key == "spacing-nit"))
-    {:ok, _kept} = Pipeline.decide_qa_finding(nit, :fix)
+    {:ok, _kept} = Pipeline.decide_qa_finding(system_scope(), nit, :fix)
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
       assert ["-p", prompt | _rest] = argv
@@ -220,7 +221,7 @@ defmodule Rail.Pipeline.Actions.SendQaFindingsToEngineerTest do
   end
 
   test "there is nothing to send when everything was dismissed", %{task: task, qa_run: run, findings: findings} do
-    for finding <- findings, do: {:ok, _dismissed} = Pipeline.decide_qa_finding(finding, :skip)
+    for finding <- findings, do: {:ok, _dismissed} = Pipeline.decide_qa_finding(system_scope(), finding, :skip)
 
     assert {:error, :nothing_outstanding} = Pipeline.send_qa_findings_to_engineer(run)
     assert %Task{stage: :qa} = Repo.reload!(task)
@@ -252,5 +253,12 @@ defmodule Rail.Pipeline.Actions.SendQaFindingsToEngineerTest do
 
     assert {:ok, %Run{}} = Pipeline.send_qa_findings_to_engineer(run)
     assert %Task{stage: :engineer} = Repo.reload!(task)
+  end
+
+  test "each Fix sent becomes a provisional rule for the engineer and QA", %{task: task, qa_run: run} do
+    assert {:ok, _sent} = Pipeline.send_qa_findings_to_engineer(run)
+
+    assert [%Observation{source_kind: :qa_finding, learning: %{status: :provisional, roles: [:engineer, :qa]}} | _rest] =
+             Repo.all(from o in Observation, where: o.task_id == ^task.id, preload: :learning)
   end
 end

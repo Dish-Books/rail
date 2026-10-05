@@ -166,7 +166,7 @@ defmodule Rail.Pipeline.Actions.StartDemoRunTest do
         saved
       end
 
-    {:ok, _dismissed} = Pipeline.decide_qa_finding(finding, :skip)
+    {:ok, _dismissed} = Pipeline.decide_qa_finding(system_scope(), finding, :skip)
     {:ok, _filming} = Pipeline.update_task(at_qa, %{stage: :demo})
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
