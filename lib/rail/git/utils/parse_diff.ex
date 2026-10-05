@@ -102,6 +102,7 @@ defmodule Rail.Git.Utils.ParseDiff do
 
     file(%{
       path: path,
+      old_path: if(status == :added, do: nil, else: old_path),
       display_path: if(renamed?, do: "#{old_path} \u2192 #{new_path}", else: path),
       status: status,
       digest: digest,
@@ -116,7 +117,17 @@ defmodule Rail.Git.Utils.ParseDiff do
   # has to ask which it was.
   defp file(attrs) do
     Map.merge(
-      %{path: "", display_path: "", status: :modified, digest: nil, binary?: false, additions: 0, deletions: 0, rows: []},
+      %{
+        path: "",
+        old_path: nil,
+        display_path: "",
+        status: :modified,
+        digest: nil,
+        binary?: false,
+        additions: 0,
+        deletions: 0,
+        rows: []
+      },
       attrs
     )
   end
