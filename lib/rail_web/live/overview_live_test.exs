@@ -1620,31 +1620,6 @@ defmodule RailWeb.OverviewLiveTest do
       refute_redirected(view)
       refute_patched(view)
     end
-
-    test "a new issue or a comment on one moves no task, so the page is left as it was", %{
-      conn: conn,
-      roles: roles,
-      task_for: task_for
-    } do
-      task = task_for.("Queued work", %{stage: :engineer})
-
-      assert {:ok, view, _html} = live(conn, ~p"/")
-
-      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='queued']")
-
-      {:ok, _run} =
-        Pipeline.create_run(%{
-          task_id: task.id,
-          role_id: roles[:engineer].id,
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-
-      Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_created, task.issue.id})
-      Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_comments_changed, task.issue.id})
-
-      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='queued']")
-    end
   end
 end
 
@@ -1671,5 +1646,63 @@ defmodule RailWeb.OverviewLiveDispatchTest do
 
     assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/")
     assert render(view) =~ "RAIL_NO_DISPATCH=1 is set"
+  end
+end
+
+defmodule RailWeb.OverviewLiveIssueEventsTest do
+  # Serial: the page reloads on any task's pipeline event, which async tests send all the time, and
+  # one landing here would reload it for a reason of its own. What is checked is that issue events
+  # alone leave it as it was.
+  use RailWeb.ConnCase, async: false
+
+  import Phoenix.LiveViewTest
+
+  alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline
+  alias Rail.Repo
+  alias Rail.Roles
+  alias Rail.Users
+
+  test "a new issue or a comment on one moves no task, so the page is left as it was", %{
+    conn: conn,
+    project: project
+  } do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_overview_issue_events",
+        login: "overview_issue_events_user",
+        email: "overview_issue_events_user@example.com",
+        admin: true
+      })
+
+    {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_issue_events", "identifier" => "QUE-1", "title" => "Queued work"}
+          }
+        }
+      })
+    end)
+
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Queued work"})
+    issue = issue |> Issue.linear_changeset(%{owner_user_id: user.id}) |> Repo.update!()
+    {:ok, task} = Pipeline.create_task(issue, :engineer)
+
+    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/")
+
+    assert has_element?(view, "#in-progress-task-#{task.id}[data-state='queued']")
+
+    {:ok, _run} =
+      Pipeline.create_run(%{task_id: task.id, role_id: engineer.id, status: :running, started_at: DateTime.utc_now()})
+
+    Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_created, issue.id})
+    Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_comments_changed, issue.id})
+
+    assert has_element?(view, "#in-progress-task-#{task.id}[data-state='queued']")
   end
 end

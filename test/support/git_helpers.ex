@@ -3,6 +3,9 @@ defmodule RailTest.GitHelpers do
 
   alias Rail.Tools
 
+  # Under the 60s a test gets, so a git that never returns says what it was rather than timing out.
+  @git_timeout_ms 30_000
+
   @doc """
   Creates a real temporary git repository on disk with initial commits.
   Registers an on_exit callback to clean up the directory when the test finishes.
@@ -42,12 +45,28 @@ defmodule RailTest.GitHelpers do
   Executes a git command in the given directory and raises if it fails.
   """
   def git!(dir, args) do
-    case Tools.run("git", args, cd: dir, stderr_to_stdout: true) do
-      {out, 0} ->
+    command = Task.async(fn -> Tools.run("git", args, cd: dir, stderr_to_stdout: true) end)
+
+    case Task.yield(command, @git_timeout_ms) || Task.shutdown(command, :brutal_kill) do
+      {:ok, {out, 0}} ->
         out
 
-      {err, code} ->
+      {:ok, {err, code}} ->
         raise "git #{Enum.join(args, " ")} in #{dir} failed (exit #{code}): #{err}"
+
+      # coveralls-ignore-start (a git that never returns; CI has seen a plain init and commit do it)
+      # Whatever holds the hung command's output open is likely among what started last.
+      nil ->
+        {processes, _code} =
+          System.cmd("ps", ["-eo", "pid,ppid,stat,etime,args", "--sort=start_time"], stderr_to_stdout: true, env: [])
+
+        raise """
+        git #{Enum.join(args, " ")} in #{dir} was still running after #{div(@git_timeout_ms, 1000)}s.
+        The newest processes on this machine:
+        #{processes |> String.split("\n", trim: true) |> Enum.take(-40) |> Enum.join("\n")}
+        """
+
+        # coveralls-ignore-stop
     end
   end
 end

@@ -15,6 +15,13 @@ defmodule Rail.Tools.BrowserSessionTest do
   # once measures contention rather than the browser.
   @moduletag :browser
 
+  # A fresh machine's first Chrome builds its font cache and profile, which can outlast what a
+  # session waits for one to answer. Started here once, so no test pays for it.
+  setup_all do
+    {:ok, _host} = ensure_browser_host(ready_timeout_ms: 60_000)
+    :ok
+  end
+
   setup %{project: project} do
     scope = system_scope()
 

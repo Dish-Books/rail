@@ -580,6 +580,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     Repo.update!(Backend.usage_changeset(claude, %{status: :ready, usage: []}))
     expect(Tools, :refresh_usage, fn -> {:ok, []} end)
     view |> element("#refresh-quotas-button") |> render_click()
+    _done = render_async(view)
 
     assert has_element?(view, "#no-quota-windows-#{claude.id}", "No quota windows reported")
   end
@@ -595,12 +596,28 @@ defmodule RailWeb.Settings.BackendsLiveTest do
 
     authed_conn = log_in_user(conn, user)
     now = DateTime.utc_now()
-    stub(Tools, :refresh_usage, fn -> {:ok, []} end)
+    test = self()
+
+    # Held until the test lets it go, so the second press lands while the first is still reading.
+    expect(Tools, :refresh_usage, fn ->
+      send(test, {:refreshing, self()})
+
+      receive do
+        :go -> {:ok, []}
+      end
+    end)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
 
     view |> element("#refresh-quotas-button") |> render_click()
-    render_click(element(view, "#refresh-quotas-button"))
+    assert_receive {:refreshing, refresh}
+    assert has_element?(view, "#refresh-quotas-button[disabled]")
+
+    # The button is disabled by then, so the press is sent as the event itself; it starts no second read.
+    render_click(view, "refresh_quotas", %{})
+    send(refresh, :go)
+    _done = render_async(view)
+    refute_received {:refreshing, _again}
 
     claude =
       Repo.insert!(
@@ -630,6 +647,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     # Refreshing is what pulls new usage; the tick only moves the clock.
     expect(Tools, :refresh_usage, fn -> {:ok, []} end)
     view |> element("#refresh-quotas-button") |> render_click()
+    _done = render_async(view)
 
     assert has_element?(view, "#account-label-#{claude.id}", "pubsub@example.com")
     assert has_element?(view, "#window-remaining-#{claude.id}-0-0", "75%")
@@ -640,7 +658,8 @@ defmodule RailWeb.Settings.BackendsLiveTest do
 
     expect(Tools, :refresh_usage, fn -> {:error, :timeout} end)
     view |> element("#refresh-quotas-button") |> render_click()
-    assert has_element?(view, "#refresh-quotas-button")
+    _done = render_async(view)
+    refute has_element?(view, "#refresh-quotas-button[disabled]")
   end
 
   test "keeps drafts on change, surfaces authorization failures, and ignores unrelated messages", %{conn: conn} do
@@ -757,6 +776,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
 
     expect(Tools, :refresh_usage, fn -> {:ok, []} end)
     view |> element("#refresh-quotas-button") |> render_click()
+    _done = render_async(view)
 
     # The most recent read is the one the page reports.
     assert has_element?(view, "#quotas-read-at", "quotas read 2h")
@@ -791,6 +811,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     Repo.update!(Backend.usage_changeset(claude, formats))
     expect(Tools, :refresh_usage, fn -> {:ok, []} end)
     view |> element("#refresh-quotas-button") |> render_click()
+    _done = render_async(view)
 
     assert has_element?(view, "#window-reset-#{claude.id}-0-0", "resets today")
     assert has_element?(view, "#window-label-#{claude.id}-0-1", "Float")
