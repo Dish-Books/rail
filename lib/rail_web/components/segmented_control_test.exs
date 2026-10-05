@@ -60,11 +60,11 @@ defmodule RailWeb.Components.SegmentedControlTest do
 
     assert Floki.attribute(html, "#picker-wrap", "title") == ["Wrap"]
     assert Floki.attribute(html, "#picker-wrap", "aria-label") == ["Wrap"]
-    assert Floki.text(Floki.find(html, "#picker-wrap")) =~ "Wrap"
+    assert html |> Floki.find("#picker-wrap") |> Floki.text() |> String.trim() == "Wrap"
 
     assert Floki.attribute(html, "#picker-scroll", "title") == []
     assert Floki.attribute(html, "#picker-scroll", "aria-label") == []
     assert Floki.find(html, "#picker-scroll span") == []
-    assert Floki.text(Floki.find(html, "#picker-scroll")) =~ "Scroll"
+    assert html |> Floki.find("#picker-scroll") |> Floki.text() |> String.trim() == "Scroll"
   end
 end

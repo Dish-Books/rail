@@ -2,11 +2,14 @@ const SETTLE_FRAMES = 3;
 const SETTLE_CAP = 30;
 const READER_SCROLLS = ["wheel", "touchstart", "keydown"];
 
-// A line goes by its kind and numbers, which no other line of its file shares.
+// A line goes by what an edit above it does not renumber: its old number, or for an
+// added line, which has none, its text.
 const keyOf = (row) => {
-  const [oldLine, newLine] = row.querySelectorAll(".diff-num");
+  const { kind } = row.dataset;
 
-  return `${row.dataset.kind}:${oldLine.textContent}:${newLine.textContent}`;
+  return kind === "added"
+    ? `added:${row.querySelector(".diff-text")?.textContent}`
+    : `${kind}:${row.querySelector(".diff-num").textContent}`;
 };
 
 // Keeps a reader where they were while the diff underneath them changes, and
@@ -121,12 +124,20 @@ export const DiffScroller = {
     this.anchor = null;
   },
 
-  // The row is usually the same element, patched in place; a line the patch moved
-  // is looked for by its key, and one that is gone leaves only its file.
-  rowFor(section, { row, key }) {
-    if (row.isConnected && section.contains(row) && keyOf(row) === key) return row;
+  // A patch reuses row elements for whatever line now sits there, so the line is
+  // looked for by its key; of repeated added text, the one nearest its old place.
+  rowFor(section, { key, rowOffset }) {
+    let found = null;
+    let distance = Infinity;
 
-    return Array.from(section.querySelectorAll(".diff-line")).find((candidate) => keyOf(candidate) === key) || null;
+    for (const candidate of section.querySelectorAll(".diff-line")) {
+      if (keyOf(candidate) !== key) continue;
+
+      const away = Math.abs(this.offsetOf(candidate) - rowOffset);
+      if (away < distance) [found, distance] = [candidate, away];
+    }
+
+    return found;
   },
 
   // Honored once per file asked for, so a later patch does not drag the reader
@@ -230,7 +241,7 @@ export const DiffScroller = {
     const row = this.rowAtTop(section);
     const anchor = { id: section.id, offset: this.offsetOf(section) };
 
-    return row ? { ...anchor, row, key: keyOf(row), rowOffset: this.offsetOf(row) } : anchor;
+    return row ? { ...anchor, key: keyOf(row), rowOffset: this.offsetOf(row) } : anchor;
   },
 
   // Rows run top to bottom, so the first one not wholly above the viewport is

@@ -52,7 +52,7 @@ defmodule RailWeb.Components.SegmentedControl do
         {[{"phx-value-#{@value_name}", value}]}
       >
         <.icon :if={icon} name={icon} class="size-3.5 align-[-2px] @3xl:hidden" />
-        <span :if={icon} class="hidden @3xl:inline">{label}</span>{is_nil(icon) && label}
+        <span :if={icon} class="hidden @3xl:inline">{label}</span>{if(is_nil(icon), do: label)}
       </button>
     </div>
     """
