@@ -926,14 +926,71 @@ defmodule RailWeb.Live.RunConversationTest do
     assert html =~
              ~r/id="subagent-[^"]+" data-qa="subagent-block" data-status="done".*product role.*wrote the ticket.*ticket saved/s
 
-    assert html =~ ~r/data-status="skipped".*design role.*no screen changes in this task.*skipped/s
+    # Plan is still working, so the Designer may yet be handed its part: nothing reads as skipped.
+    refute html =~ ~s(data-status="skipped")
     assert html =~ ~r/data-status="running".*architect role.*plan from the ticket/s
 
     # The finished Product line is closed; the Architect still working is open on its own transcript.
     refute html =~ "Reading the issue."
     assert html =~ ~s(data-qa="subagent-transcript")
-    assert html =~ ~r/id="activity-tile-2-0".*save_plan.*pi-warning-circle/s
+    assert html =~ ~r/id="activity-tile-1-0".*save_plan.*pi-warning-circle/s
     assert html =~ "The ticket is saved."
+  end
+
+  test "a stopped Plan run with no options saved says the Designer was skipped, before the Architect's line", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:plan].id,
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
+    Pipeline.append_run_events(run.id, nil, [
+      "[subagent toolu_p] product · write the ticket",
+      "[subagent end toolu_p]",
+      "[subagent toolu_a] architect · plan from the ticket",
+      "[subagent end toolu_a]"
+    ])
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], stage_run: run, roles_map: roles_map)
+
+    assert html =~ ~r/product role.*data-status="skipped".*design role.*no screen changes in this task.*architect role/s
+  end
+
+  test "an Architect handed its part before the Designer does not make the design read as skipped", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    design_dir = Path.join(task.scratch_path, "design")
+    File.mkdir_p!(design_dir)
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    File.write!(Path.join(design_dir, "manifest.json"), ~s({"options": [{"key": "rows", "title": "Rows"}]}))
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:plan].id,
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
+    Pipeline.append_run_events(run.id, nil, [
+      "[subagent toolu_a] architect · plan from the ticket",
+      "[subagent toolu_d] designer · three options",
+      "[subagent end toolu_a]",
+      "[subagent end toolu_d]"
+    ])
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], stage_run: run, roles_map: roles_map)
+
+    assert html =~ ~r/architect role.*design role.*three options/s
+    refute html =~ ~s(data-status="skipped")
   end
 
   test "a subagent with a type Rail does not know reads by its type", %{task: task, roles: roles, roles_map: roles_map} do

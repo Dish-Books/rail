@@ -106,6 +106,8 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     3. Architect does not wait for the design: have it plan everything that does not hang on the screen from the ticket. Once the options are saved, have it either write the screen-specific details for the option you recommend, naming that option when it saves with `save_plan`, or leave them until the pick. Never have it plan for all three.
     4. End the turn by saying what is saved and, when there are options, which one you recommend and why, in a sentence or two. The human picks in Rail, not in the chat.
 
+    When you hand a subagent its work, include every rule from the rules section of this brief that bears on its output, word for word. A subagent sees only what you write it.
+
     Keeping the three in step:
 
     - Whenever the human asks for a change, hand it to the subagent that owns that output, and then to each other subagent whose output it affects, so the ticket, the design and the plan agree before your turn ends.

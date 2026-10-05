@@ -1224,7 +1224,7 @@ defmodule RailWeb.Live.RunConversation do
         end
       end)
 
-    turns = if plan_run?(socket.assigns), do: mark_skipped_design(turns), else: turns
+    turns = if no_screen?(socket.assigns), do: mark_skipped_design(turns), else: turns
 
     socket
     |> assign_senders(turns)
@@ -1239,28 +1239,29 @@ defmodule RailWeb.Live.RunConversation do
 
   defp plan_run?(_assigns), do: false
 
-  # A plan written with no Designer turn before it was a change with no screen, and the line says so.
+  # Only a Plan run that has stopped with no options saved had no screen; while it works the
+  # Designer may still be on its way, so order of hand-offs proves nothing.
+  defp no_screen?(%{selected_run: %Run{} = run, task: task} = assigns) do
+    plan_run?(assigns) and not Run.running?(run) and
+      not match?(%{options: [_first | _rest]}, Pipeline.read_design(task, pages: false))
+  end
+
+  defp no_screen?(_assigns), do: false
+
+  # The line sits before the Architect's, unless a Designer line already says what happened.
   defp mark_skipped_design(turns) do
-    {marked, _designed?} =
-      Enum.flat_map_reduce(turns, false, fn
-        %Turn{author: :subagent, label: "designer"} = turn, _designed? ->
-          {[turn], true}
+    skipped = %Turn{author: :subagent, label: "designer", content: "no screen changes in this task", status: :skipped}
 
-        %Turn{author: :subagent, label: "architect"} = turn, false ->
-          skipped = %Turn{
-            author: :subagent,
-            label: "designer",
-            content: "no screen changes in this task",
-            status: :skipped
-          }
+    cond do
+      Enum.any?(turns, &match?(%Turn{author: :subagent, label: "designer"}, &1)) ->
+        turns
 
-          {[skipped, turn], true}
+      index = Enum.find_index(turns, &match?(%Turn{author: :subagent, label: "architect"}, &1)) ->
+        List.insert_at(turns, index, skipped)
 
-        turn, designed? ->
-          {[turn], designed?}
-      end)
-
-    marked
+      true ->
+        turns
+    end
   end
 
   # The runs a Plan run took over are finished, so they are read once, in one query, for as long as

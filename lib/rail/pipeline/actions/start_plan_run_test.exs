@@ -102,6 +102,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
       assert prompt =~ "1. Product first."
       assert prompt =~ "hand it to Designer and Architect at once rather than one after the other"
       assert prompt =~ "Architect does not wait for the design"
+      assert prompt =~ "include every rule from the rules section of this brief that bears on its output, word for word"
       assert prompt =~ "skip Designer and say so in one line"
       assert prompt =~ "which one you recommend and why"
       assert prompt =~ "then to each other subagent whose output it affects"

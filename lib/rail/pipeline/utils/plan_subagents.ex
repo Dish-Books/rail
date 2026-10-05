@@ -11,7 +11,7 @@ defmodule Rail.Pipeline.Utils.PlanSubagents do
   @subagents [product: "product", design: "designer", architect: "architect"]
 
   @doc """
-  Returns `task`'s subagents as `%{name:, stage:, role_name:, description:, prompt:, model:}` maps, in the
+  Returns `task`'s subagents as `%{name:, description:, prompt:, model:}` maps, in the
   order Plan hands them work.
   """
   def plan_subagents(%Task{project_id: project_id, scratch_path: scratch_path}) do
@@ -19,8 +19,6 @@ defmodule Rail.Pipeline.Utils.PlanSubagents do
         {:ok, %Role{} = role} <- [Roles.get_role(project_id: project_id, stage: stage)] do
       %{
         name: name,
-        stage: stage,
-        role_name: role.name,
         description: role.description || role.name,
         prompt: String.trim(role.system_prompt) <> "\n\n" <> rules(stage, scratch_path),
         model: role.model
@@ -38,6 +36,7 @@ defmodule Rail.Pipeline.Utils.PlanSubagents do
     - `title` and `description` are required, the description being the ticket body in markdown, verbatim. `priority` and `estimate` keep whatever they are already set to when left out.
     - `save_ticket` is the only way to publish a ticket. Write no ticket file.
     - When Plan passes on a change to the design or the plan, or a pick, that changes what the ticket says, update the ticket and save it again before you finish.
+    - The rules this project has learned that bear on your output come in Plan's message; call knowledge_search for more.
     - End with what you saved. Put every question you could not close in that last message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, for Plan to ask the human.
     """)
   end
@@ -68,6 +67,7 @@ defmodule Rail.Pipeline.Utils.PlanSubagents do
     - Keep working files under #{dir} too. It survives between turns; `/tmp` does not.
     - The human picks one option. Rail records the pick in #{dir}/picked and deletes the options not picked; never write that file. After the pick only the picked option can be saved.
     - When Plan passes on a change to the ticket or the plan that changes a screen, update the options it affects, retake their screenshots and save them again before you finish.
+    - The rules this project has learned that bear on your output come in Plan's message; call knowledge_search for more.
     - End with what you saved and which option you would pick, and why. Put every question you could not close in that last message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, for Plan to ask the human.
     """)
   end
@@ -87,6 +87,7 @@ defmodule Rail.Pipeline.Utils.PlanSubagents do
     - The option's page is #{dir}/<key>.html and its screenshot #{dir}/<key>.png. Read the page: its markup carries the layout, states and copy the ticket only describes. Plan every state it shows. The page can carry large inline images, so strip `data:` URIs with `sed` before reading it whole.
     - When Plan passes on a change to the ticket or the design, save the plan again with the change carried everywhere it reaches: "do not store it" removes the column, the migration, the schema field and their tests, not only the sentence.
     - `save_plan` is the only way to hand over the plan. Write no plan file.
+    - The rules this project has learned that bear on your output come in Plan's message; call knowledge_search for more.
     - End with what you saved and the option it is written for. Put every question you could not close in that last message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, for Plan to ask the human.
     """)
   end

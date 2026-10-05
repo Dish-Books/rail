@@ -14,18 +14,23 @@ defmodule Rail.Pipeline.Utils.PlanSubagentsTest do
     task: task
   } do
     assert [
-             %{name: "product", stage: :product, role_name: "product role", model: "claude-opus-5-5", prompt: product},
-             %{name: "designer", stage: :design, role_name: "design role", prompt: designer},
-             %{name: "architect", stage: :architect, role_name: "architect role", prompt: architect}
+             %{name: "product", model: "claude-opus-5-5", prompt: product},
+             %{name: "designer", prompt: designer},
+             %{name: "architect", prompt: architect}
            ] = subagents = plan_subagents(task)
 
-    refute Enum.any?(subagents, &Map.has_key?(&1, :tools))
+    for subagent <- subagents, do: assert(Enum.sort(Map.keys(subagent)) == [:description, :model, :name, :prompt])
 
     assert product =~ ~r/\AYou are the product agent.\n\n## Working inside Plan/
     assert product =~ "You are performing the Product role inside Rail's Plan step."
     assert designer =~ "You are performing the Designer role inside Rail's Plan step."
     assert architect =~ "You are performing the Architect role inside Rail's Plan step."
     refute Enum.any?([product, designer, architect], &(&1 =~ "is refused"))
+
+    for prompt <- [product, designer, architect] do
+      assert prompt =~ "come in Plan's message; call knowledge_search for more."
+    end
+
     assert product =~ "save it with the `save_ticket` tool"
     assert product =~ "update the ticket and save it again"
 

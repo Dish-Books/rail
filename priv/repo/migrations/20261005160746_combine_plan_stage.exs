@@ -7,8 +7,26 @@ defmodule Rail.Repo.Migrations.CombinePlanStage do
   #
   # A task at any of the three moves to Plan with a Plan run copied from its latest
   # run there, so the conversation carries on where the backend can resume it. A run
-  # caught mid-turn is settled as stopped; its tokens stay on the old run.
+  # still going would keep its old brief, so the deploy waits until none is.
   def up do
+    %{rows: in_flight} =
+      repo().query!("""
+      SELECT DISTINCT t.id
+      FROM tasks t
+      JOIN runs r ON r.task_id = t.id
+      JOIN roles old_role ON old_role.id = r.role_id AND old_role.stage IN ('product', 'design', 'architect')
+      WHERE t.stage IN ('product', 'design', 'architect')
+        AND r.status IN ('starting', 'running', 'waiting_for_resources')
+      ORDER BY t.id
+      """)
+
+    if in_flight != [] do
+      raise Ecto.MigrationError,
+        message:
+          "Stop the product, design and architect runs still going on these tasks before deploying: " <>
+            Enum.map_join(in_flight, ", ", &hd/1)
+    end
+
     %{rows: architects} =
       repo().query!("""
       SELECT a.project_id, a.backend_id, a.model, a.reasoning_effort, a.max_concurrent, a.position,
@@ -64,7 +82,6 @@ defmodule Rail.Repo.Migrations.CombinePlanStage do
     for [task_id, old_run_id, status, outcome, error, exit_code, started_at, completed_at, conversation_id, role_id] <-
           latest do
       run_id = UXID.generate!(prefix: "run")
-      status = if status in ["starting", "running", "waiting_for_resources"], do: "finished", else: status
 
       repo().query!(
         """
