@@ -72,6 +72,8 @@ defmodule Rail.Roles.Schemas.Role do
     field :description, :string
     field :icon_name, :string, default: @default_icon_name
     field :model, :string
+    # The CLI the model runs on; the account is picked per conversation, never fixed on the role.
+    field :cli, Ecto.Enum, values: Backend.names()
     field :reasoning_effort, Ecto.Enum, values: @reasoning_efforts
     field :system_prompt, :string
     # Set by Roles.get_role/1 and Roles.list_roles/1: the repo file the prompt was read from.
@@ -83,14 +85,13 @@ defmodule Rail.Roles.Schemas.Role do
     field :reserved_cpus, :integer, default: 1
     field :reserved_memory_gb, :integer, default: 2
 
-    belongs_to :backend, Backend
     belongs_to :project, Project
 
     timestamps()
   end
 
   @cast_fields [
-    :backend_id,
+    :cli,
     :description,
     :icon_name,
     :max_concurrent,
@@ -111,7 +112,7 @@ defmodule Rail.Roles.Schemas.Role do
     :name,
     :model,
     :system_prompt,
-    :backend_id,
+    :cli,
     :icon_name,
     :max_concurrent,
     :position,
@@ -140,7 +141,6 @@ defmodule Rail.Roles.Schemas.Role do
     |> validate_capacity()
     |> unique_constraint(:stage, name: :roles_project_id_stage_index)
     |> foreign_key_constraint(:project_id)
-    |> foreign_key_constraint(:backend_id)
   end
 
   @doc """

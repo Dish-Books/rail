@@ -8,7 +8,8 @@ defmodule Rail.Tools.Actions.GetActiveOsProcess do
   alias Rail.Tools.Schemas.OsProcess
 
   @doc """
-  Fetches the live OS process carrying `run`, or the one it waits in line for.
+  Fetches the live OS process carrying `run`, or the one waiting for its sandbox
+  or for usage.
 
   Returns `{:error, :os_process_not_active}` when the run is not executing, which
   is an ordinary answer rather than a failure — a run spends most of its life that
@@ -17,7 +18,7 @@ defmodule Rail.Tools.Actions.GetActiveOsProcess do
   def get_active_os_process(%Run{id: run_id}) do
     query =
       from p in OsProcess,
-        where: p.run_id == ^run_id and p.status in [:waiting_for_resources, :starting, :running],
+        where: p.run_id == ^run_id and p.status in [:waiting_for_resources, :waiting_for_usage, :starting, :running],
         order_by: [desc: p.inserted_at],
         limit: 1
 

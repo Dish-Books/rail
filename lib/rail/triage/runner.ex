@@ -69,6 +69,7 @@ defmodule Rail.Triage.Runner do
 
     case result do
       {:snooze, _seconds} -> {:noreply, schedule(state, thread_id, state.retry_after)}
+      {:waiting_for_usage, resets_at} -> {:noreply, schedule(state, thread_id, until(resets_at))}
       :ok -> {:noreply, again(state, thread_id)}
     end
   end
@@ -105,6 +106,8 @@ defmodule Rail.Triage.Runner do
         %{state | timers: Map.put(state.timers, thread_id, Process.send_after(self(), {:run, thread_id}, delay))}
     end
   end
+
+  defp until(resets_at), do: max(DateTime.diff(resets_at, DateTime.utc_now(), :millisecond), 0)
 
   defp finish(state, ref) do
     {thread_id, running} = Map.pop!(state.running, ref)

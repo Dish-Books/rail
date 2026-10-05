@@ -13,7 +13,7 @@ defmodule RailWeb.Components.TaskLayout do
   attr :run, :any, default: nil
   # The status reads the task's stage, whichever tab is open; nil when that stage has no run yet.
   attr :stage_run, :any, required: true
-  # Where that run stands in the line for a sandbox, while it waits in it.
+  # What that run waits on: its place in the line for a sandbox, or `Rail.Tools.get_usage_wait/1`.
   attr :line, :map, default: nil
   attr :title, :string, default: nil
   attr :flush, :boolean, default: false
@@ -26,6 +26,11 @@ defmodule RailWeb.Components.TaskLayout do
   slot :sidebar
 
   def task_layout(assigns) do
+    assigns =
+      assigns
+      |> assign(:sandbox_line, if(is_map_key(assigns.line || %{}, :position), do: assigns.line))
+      |> assign(:starts_at, if(is_map_key(assigns.line || %{}, :accounts), do: assigns.line.resets_at))
+
     ~H"""
     <div class="-m-6 h-[calc(100%+3rem)] flex flex-col min-h-0">
       <div
@@ -59,6 +64,9 @@ defmodule RailWeb.Components.TaskLayout do
           >
             <.icon :if={@line} name={run_state_style(@stage_run).icon} class="h-4 w-4" />
             {stage_label(@task, @stage_run)}
+            <span :if={@starts_at} id="task-usage-starts" data-qa="task_usage_starts">
+              · starts <.local_time id="task-usage-starts-at" at={@starts_at} />
+            </span>
           </span>
 
           <span data-qa="task_issue_identifier" class="font-mono">
@@ -78,14 +86,16 @@ defmodule RailWeb.Components.TaskLayout do
           </a>
 
           <.link
-            :if={@line}
+            :if={@sandbox_line}
             navigate={~p"/sandboxes"}
             id="task-line"
             data-qa="task_line"
             class="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline"
           >
             <.icon name="pi-cube" class="size-4" />
-            {format_ordinal(@line.position)} in line for {format_reservation(@line.os_process)}
+            {format_ordinal(@sandbox_line.position)} in line for {format_reservation(
+              @sandbox_line.os_process
+            )}
           </.link>
 
           {render_slot(@meta)}

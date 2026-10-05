@@ -3,6 +3,7 @@ defmodule Rail.Tools.Actions.RunAgentTest do
   use Rail.DataCase, async: false
 
   alias Rail.Repo
+  alias Rail.Roles.Schemas.Role
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
 
@@ -25,70 +26,148 @@ defmodule Rail.Tools.Actions.RunAgentTest do
 
     File.chmod!(script, 0o755)
 
-    %{backend: %Backend{id: "bkd_run_agent", name: :claude, executable_path: script}, dir: dir}
+    model = "claude-run-agent-#{System.unique_integer([:positive])}"
+    role = %Role{name: "Triage", cli: :claude, model: model}
+
+    # A signed-in account running the script, offering `offered`, its windows `{label, percent left, resets_at}`.
+    account = fn offered, windows, attrs ->
+      {:ok, backend} =
+        Tools.create_backend(system_scope(), %{
+          name: :claude,
+          label: attrs[:label],
+          executable_path: script,
+          models: [%{id: offered}]
+        })
+
+      reported =
+        for {label, left, at} <- windows do
+          %{
+            name: label,
+            details: %{
+              "windows" => [
+                %{"label" => label, "remaining_percent" => left, "resets_at" => at && DateTime.to_iso8601(at)}
+              ]
+            }
+          }
+        end
+
+      Repo.update!(Backend.usage_changeset(backend, %{name: :claude, status: attrs[:status] || :ready, usage: reported}))
+    end
+
+    %{account: account, backend: account.(model, [], %{}), dir: dir, role: role}
   end
 
-  test "runs the agent in the directory given, with the caller's env over the backend's", %{
+  test "runs the agent in the directory given, with the caller's env over the account's", %{
     backend: backend,
-    dir: dir
+    dir: dir,
+    role: role
   } do
     config_dir = Backend.config_dir(backend)
 
-    assert {:ok, output} = Tools.run_agent(backend, [], env: %{"RAIL_MCP_TOKEN" => "tok"}, cd: dir, timeout: 5_000)
+    assert {:ok, output} = Tools.run_agent(role, [], env: %{"RAIL_MCP_TOKEN" => "tok"}, cd: dir, timeout: 5_000)
     # `pwd` prints the physical path, which on macOS puts /private ahead of $TMPDIR.
     {physical_dir, 0} = System.cmd("pwd", ["-P"], cd: dir, env: %{})
     assert String.trim(output) == "#{config_dir}|tok|#{String.trim(physical_dir)}"
 
     assert {:ok, overridden} =
-             Tools.run_agent(backend, [], env: %{"CLAUDE_CONFIG_DIR" => "mine"}, cd: dir, timeout: 5_000)
+             Tools.run_agent(role, [], env: %{"CLAUDE_CONFIG_DIR" => "mine"}, cd: dir, timeout: 5_000)
 
     assert overridden =~ "mine|"
   end
 
-  test "a non-zero exit, or no agent to run, is an error", %{backend: backend, dir: dir} do
-    assert {:error, {:exit, 3, "broke\n"}} = Tools.run_agent(backend, ["fail"], cd: dir, timeout: 5_000)
+  test "a non-zero exit, or no agent to run, is an error", %{backend: backend, dir: dir, role: role} do
+    assert {:error, {:exit, 3, "broke\n"}} = Tools.run_agent(role, ["fail"], cd: dir, timeout: 5_000)
 
-    missing = %{backend | executable_path: Path.join(dir, "no-such-agent")}
-    assert {:error, %ErlangError{original: :enoent}} = Tools.run_agent(missing, [], cd: dir, timeout: 5_000)
+    {:ok, _missing} = Tools.update_backend(system_scope(), backend, %{executable_path: Path.join(dir, "no-such-agent")})
+    assert {:error, %ErlangError{original: :enoent}} = Tools.run_agent(role, [], cd: dir, timeout: 5_000)
   end
 
-  test "runs nothing on a backend that is signed out", %{backend: backend, dir: dir} do
+  test "runs nothing when the only account offering the model is signed out", %{backend: backend, dir: dir, role: role} do
+    backend |> Backend.usage_changeset(%{name: :claude, status: :signed_out}) |> Repo.update!()
     reject(&Tools.run/3)
 
-    assert {:error, :backend_signed_out} =
-             Tools.run_agent(%{backend | status: :signed_out}, [], cd: dir, timeout: 5_000)
+    assert {:error, :backend_signed_out} = Tools.run_agent(role, [], cd: dir, timeout: 5_000)
   end
 
-  test "a token Claude refuses signs the backend out once, so nothing more is started on it", %{
-    backend: %Backend{executable_path: script},
-    dir: dir
+  test "a sign-in Claude refuses signs the account out once, so nothing more is started on it", %{
+    backend: backend,
+    dir: dir,
+    role: role
   } do
-    scope = system_scope()
-    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: script})
-    {:ok, backend} = Tools.set_backend_token(scope, backend, "tok")
-
-    assert {:error, {:exit, 1, output}} = Tools.run_agent(backend, ["refused"], cd: dir, timeout: 5_000)
+    assert {:error, {:exit, 1, output}} = Tools.run_agent(role, ["refused"], cd: dir, timeout: 5_000)
     assert Tools.agent_failure_reason(output) =~ "Invalid bearer token. Sign the backend in again"
 
     assert %Backend{status: :signed_out, session_lost_at: %DateTime{} = lost_at, unavailable_reason: reason} =
              Repo.get!(Backend, backend.id)
 
-    assert reason =~ "Claude rejected the token."
+    assert reason =~ "Claude refused this backend's sign-in."
 
     # A pass that started before the refusal was recorded changes nothing when it is refused too.
-    assert {:error, {:exit, 1, _output}} = Tools.run_agent(backend, ["refused"], cd: dir, timeout: 5_000)
+    Backend |> Repo.get!(backend.id) |> Backend.usage_changeset(%{name: :claude, status: :ready}) |> Repo.update!()
+    assert {:error, {:exit, 1, _output}} = Tools.run_agent(role, ["refused"], cd: dir, timeout: 5_000)
     assert %Backend{session_lost_at: ^lost_at} = Repo.get!(Backend, backend.id)
   end
 
-  test "an agent still running at the timeout is stopped", %{backend: backend, dir: dir} do
-    assert {:error, :timeout} = Tools.run_agent(backend, ["hang"], cd: dir, timeout: 100)
+  test "an agent still running at the timeout is stopped", %{dir: dir, role: role} do
+    assert {:error, :timeout} = Tools.run_agent(role, ["hang"], cd: dir, timeout: 100)
   end
 
-  test "runs nothing while dispatch is off", %{backend: backend, dir: dir} do
+  test "runs on the account a new conversation would, skipping one used up", %{
+    account: account,
+    backend: backend,
+    dir: dir,
+    role: role
+  } do
+    Repo.delete!(backend)
+    in_a_day = DateTime.shift(DateTime.utc_now(), day: 1)
+    _used_up = account.(role.model, [{"Weekly", 0.0, in_a_day}], %{label: "work"})
+    roomy = account.(role.model, [{"Weekly", 80.0, in_a_day}], %{label: "personal"})
+
+    assert {:ok, output} = Tools.run_agent(role, [], cd: dir, timeout: 5_000)
+    assert output =~ Backend.config_dir(roomy)
+  end
+
+  test "waits for the earliest reset when every account is used up, and runs nothing", %{
+    account: account,
+    backend: backend,
+    dir: dir,
+    role: role
+  } do
+    soon = DateTime.utc_now() |> DateTime.shift(hour: 2) |> DateTime.truncate(:second)
+    later = DateTime.utc_now() |> DateTime.shift(day: 3) |> DateTime.truncate(:second)
+    Repo.delete!(backend)
+    _first = account.(role.model, [{"Weekly", 0.0, later}], %{})
+    _second = account.(role.model, [{"Session", 0.0, soon}], %{})
+
+    reject(&Tools.run/3)
+    assert {:error, {:waiting_for_usage, ^soon}} = Tools.run_agent(role, [], cd: dir, timeout: 5_000)
+  end
+
+  test "an account used up with no reset reported is looked at again after the next usage refresh", %{
+    account: account,
+    backend: backend,
+    dir: dir,
+    role: role
+  } do
+    Repo.delete!(backend)
+    _spent = account.(role.model, [{"Weekly", 0.0, nil}], %{})
+
+    assert {:error, {:waiting_for_usage, at}} = Tools.run_agent(role, [], cd: dir, timeout: 5_000)
+    assert_in_delta DateTime.diff(at, DateTime.utc_now()), 5 * 60, 5
+  end
+
+  test "names the model when no account that can run it offers it", %{account: account, dir: dir, role: role} do
+    _unconfigured = account.("claude-elsewhere", [], %{status: :not_configured})
+
+    assert {:error, "No signed-in account offers claude-elsewhere. " <> _how} =
+             Tools.run_agent(%{role | model: "claude-elsewhere"}, [], cd: dir, timeout: 5_000)
+  end
+
+  test "runs nothing while dispatch is off", %{dir: dir, role: role} do
     previous = Application.get_env(:rail, :no_dispatch)
     Application.put_env(:rail, :no_dispatch, true)
     on_exit(fn -> Application.put_env(:rail, :no_dispatch, previous) end)
 
-    assert {:error, :dispatch_disabled} = Tools.run_agent(backend, [], cd: dir, timeout: 5_000)
+    assert {:error, :dispatch_disabled} = Tools.run_agent(role, [], cd: dir, timeout: 5_000)
   end
 end

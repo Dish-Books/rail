@@ -7,7 +7,6 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Repo
-  alias Rail.Roles.Schemas.Role
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
@@ -17,9 +16,9 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
   @doc """
   Starts waiting sandboxes, oldest first, for as long as the one at the front of
   the line fits in what is unreserved. A younger one never starts ahead of an
-  older one, even when it would fit. An agent whose backend is signed out is
-  passed over and keeps its place: it would only start to fail, so it waits for
-  someone to sign the backend in, and holds nobody behind it up meanwhile.
+  older one, even when it would fit. An agent turn on an account that is signed
+  out is passed over and keeps its place: it would only start to fail, so it
+  waits for someone to sign the account in, and holds nobody behind it up meanwhile.
 
   One pass at a time on this machine, so two never hand out the same CPU. It must
   run outside any transaction, so it sees only committed rows. `:own` names a row
@@ -48,7 +47,7 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
             from p in OsProcess,
               where: p.status == :waiting_for_resources,
               order_by: [asc: p.queued_at, asc: p.id],
-              preload: [run: [role: :backend]]
+              preload: [:backend, run: :role]
           )
 
         {_free, results} = Enum.reduce_while(waiting, {free, %{}}, &admit_next(&1, &2, capacity, own))
@@ -79,7 +78,7 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
     end
   end
 
-  defp held?(%OsProcess{kind: :agent, run: %Run{role: %Role{backend: %Backend{status: :signed_out}}}}), do: true
+  defp held?(%OsProcess{kind: :agent, backend: %Backend{status: :signed_out}}), do: true
   defp held?(_os_process), do: false
 
   defp mark_waiting(%OsProcess{id: id, status: :waiting_for_resources, run: %Run{} = run}, results)

@@ -38,5 +38,13 @@ defmodule RailWeb.Utils.RunStateStyleTest do
     assert run_state_style(%Run{status: :finished}).pill_label == "Stopped"
     assert run_state_style(nil).pill_label == "Queued"
     assert run_state_style(%Run{status: :waiting_for_resources}).pill_label == "Waiting for resources"
+
+    assert %{
+             icon: "pi-gauge",
+             pill_label: "Waiting for usage",
+             text_class: "text-violet" <> _text,
+             chip_class: "bg-violet" <> _chip
+           } =
+             run_state_style(%Run{status: :waiting_for_usage})
   end
 end

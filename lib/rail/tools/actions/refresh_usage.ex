@@ -28,10 +28,12 @@ defmodule Rail.Tools.Actions.RefreshUsage do
   end
 
   # Signing out on purpose writes the row itself, so a probe that finds a ready
-  # backend signed out is one nobody signed out. Nothing here clears the mark:
-  # a backend is only ready again once its token is replaced, which clears it.
+  # backend signed out is one nobody signed out. One found signed in again has
+  # been signed in again, so its runs go on.
   defp track_session(%{status: :signed_out} = attrs, %Backend{status: :ready}),
     do: Map.put(attrs, :session_lost_at, DateTime.utc_now())
+
+  defp track_session(%{status: :ready} = attrs, %Backend{}), do: Map.put(attrs, :session_lost_at, nil)
 
   defp track_session(attrs, _backend), do: attrs
 end

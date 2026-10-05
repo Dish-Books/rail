@@ -152,7 +152,7 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
         })
       )
 
-    expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
       read = thread |> Thread.scratch_path() |> Path.join("thread.md") |> File.read!()
       assert read =~ "Michael (teammate, posted through Rail)"
       thread |> Thread.scratch_path() |> Path.join("result.json") |> File.write!(Jason.encode!(%{"items" => []}))

@@ -45,7 +45,7 @@ defmodule Rail.Triage.Actions.AddTriageNoteTest do
     assert %Thread{status: :triaging} = Repo.get!(Thread, thread_id)
     assert_receive {:triage_scheduled, ^thread_id, 0}
 
-    expect(Tools, :run_agent, fn _backend, argv, _opts ->
+    expect(Tools, :run_agent, fn _role, argv, _opts ->
       brief = Enum.find(argv, &(&1 =~ "People left notes on these items"))
       assert brief =~ ~s(On `stuck-at-design`, a person noted: "Billing has its Design role turned off.")
       assert brief =~ ~s(It answers your assumption: "Billing has a Design role.")

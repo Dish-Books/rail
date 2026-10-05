@@ -3,10 +3,13 @@ defmodule RailWeb.Live.EngineerStageTest do
 
   import Phoenix.LiveViewTest
 
+  alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Repo
   alias Rail.Roles
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
   setup %{conn: conn, project: project} do
@@ -91,6 +94,46 @@ defmodule RailWeb.Live.EngineerStageTest do
     assert %DiffComment{filter: :uncommitted, context_text: uncommitted} = Repo.get_by!(DiffComment, body: "Why another?")
     assert uncommitted =~ "> + line 11"
     assert uncommitted =~ "    line 10"
+  end
+
+  # The path comes from the page, so one the pane never drew is not read at all.
+  test "a gap asked for in a file the diff does not show reads nothing", %{conn: conn, task: task} do
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    reject(&Git.expand_diff_gap/5)
+
+    render_click(with_target(view, "#engineer-stage"), "expand_gap", %{
+      "path" => "../../../../etc/passwd",
+      "gap_index" => "0",
+      "start_line" => "1",
+      "end_line" => "1000"
+    })
+
+    refute render(view) =~ "root:"
+  end
+
+  test "opening, saving and sending a comment recolors no line", %{conn: conn, task: task} do
+    {:ok, view, html} = live(conn, ~p"/tasks/#{task.id}")
+    code = html |> Floki.parse_document!() |> Floki.find(".diff-body .diff-code")
+    assert [_first | _rest] = code
+
+    render_click(with_target(view, "#engineer-stage"), "open_diff_comment", %{
+      "path" => "rows.ex",
+      "kind" => "added",
+      "old_line" => "",
+      "new_line" => "8"
+    })
+
+    assert view |> render() |> Floki.parse_document!() |> Floki.find(".diff-body .diff-code") == code
+
+    view |> form("[data-qa='diff_comment_form']", %{"body" => "Name the eighth."}) |> render_submit()
+
+    assert view |> render() |> Floki.parse_document!() |> Floki.find(".diff-body .diff-code") == code
+
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    view |> element("#send-diff-comments") |> render_click()
+
+    assert has_element?(view, "[data-qa='diff_comment']", "Sent")
+    assert view |> render() |> Floki.parse_document!() |> Floki.find(".diff-body .diff-code") == code
   end
 
   describe "long lines" do

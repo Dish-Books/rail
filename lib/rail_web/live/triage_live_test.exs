@@ -151,7 +151,7 @@ defmodule RailWeb.TriageLiveTest do
         name: "Product",
         model: "claude-opus-5-5",
         system_prompt: "You write tickets.",
-        backend_id: "bkd_test_seed"
+        cli: :claude
       })
 
     {:ok, view, _html} = live(conn, ~p"/triage")

@@ -1,5 +1,6 @@
 defmodule Rail.Tools.Actions.StartOsProcessTest do
   use Rail.DataCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
   import Rail.Tools.Utils.AdmitSandboxes
 
@@ -13,11 +14,42 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
   alias Rail.Tools.FollowerSupervisor
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
+  alias Rail.Tools.Workers.StartAfterUsageReset
 
   # These tests are about the spawn itself, so they run real children.
   @moduletag :real_spawn
 
-  setup %{project: project} do
+  # A signed-in account offering `models`, with its usage windows as a probe stores them,
+  # each `{label, percent left, resets_at}`; `attrs` may label it, repoint it or sign it out.
+  setup do
+    ready_backend = fn models, windows, attrs ->
+      {:ok, backend} =
+        Tools.create_backend(
+          system_scope(),
+          Map.merge(
+            %{name: :claude, executable_path: "/usr/bin/true", models: Enum.map(List.wrap(models), &%{id: &1})},
+            Map.take(attrs, [:label, :executable_path])
+          )
+        )
+
+      usage =
+        for {label, left, at} <- windows,
+            do: %{
+              name: label,
+              details: %{
+                "windows" => [%{"label" => label, "remaining_percent" => left, "resets_at" => DateTime.to_iso8601(at)}]
+              }
+            }
+
+      backend
+      |> Backend.usage_changeset(%{name: :claude, status: Map.get(attrs, :status, :ready), usage: usage})
+      |> Repo.update!()
+    end
+
+    %{ready_backend: ready_backend}
+  end
+
+  setup %{ready_backend: ready_backend, project: project} do
     scope = system_scope()
     unique = System.unique_integer([:positive])
 
@@ -28,12 +60,14 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
     File.mkdir_p!(scratch_path)
     on_exit(fn -> File.rm_rf(tmp_dir) end)
 
-    # The executable is whatever the role's backend points at, so a test that
-    # wants to spawn something else repoints this row before calling start_os_process.
-    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/bin/sleep"})
+    # The executable is whatever the account the turn is placed on points at, and
+    # only this one offers the role's model, so a test that wants to spawn
+    # something else repoints this row before calling start_os_process.
+    model = "claude-start-#{unique}"
+    backend = ready_backend.(model, [], %{executable_path: "/bin/sleep"})
 
     {:ok, seeded_role} = Roles.get_role(project_id: project.id, stage: :engineer)
-    {:ok, role} = Roles.update_role(scope, seeded_role, %{backend_id: backend.id})
+    {:ok, role} = Roles.update_role(scope, seeded_role, %{model: model})
 
     issue =
       %Issue{}
@@ -70,6 +104,8 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
 
     %{
       backend: backend,
+      model: model,
+      role: role,
       run: run,
       scratch_path: scratch_path,
       scope: scope,
@@ -360,7 +396,7 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
     assert followed.stream_path == os_process.stream_path
     assert followed.os_pid == os_process.os_pid
     assert followed.run.id == run.id
-    assert followed.run.role.backend.id == backend_id
+    assert followed.backend_id == backend_id
     assert is_port(opts[:port])
 
     Tools.terminate_os_process(os_process.os_pid, grace_period: 100)
@@ -600,6 +636,280 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
 
       assert Run.state(failed) == :failed
       assert_receive {:run_changed, _run_id}
+    end
+  end
+
+  describe "across accounts" do
+    # Each test sets up the accounts it ranks, so the one from the file's setup is gone.
+    setup %{backend: backend} do
+      Repo.delete!(backend)
+      stub(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:ok, nil, 4242} end)
+      stub(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
+
+      # `hours` from now, so a window's reset reads the way a probe stores it.
+      %{
+        at: fn hours ->
+          DateTime.utc_now() |> DateTime.shift(second: round(hours * 3600)) |> DateTime.truncate(:second)
+        end
+      }
+    end
+
+    test "a new turn goes to the account whose weekly usage resets soonest, and is stamped with it", %{
+      ready_backend: ready_backend,
+      at: at,
+      model: model,
+      run: run
+    } do
+      later = ready_backend.(model, [{"Session", 90.0, at.(2)}, {"Weekly", 60.0, at.(120)}], %{label: "later"})
+      %{id: soon_id} = ready_backend.(model, [{"Session", 90.0, at.(2)}, {"Weekly", 30.0, at.(6)}], %{label: "soon"})
+
+      assert {:ok, %OsProcess{backend_id: ^soon_id, status: :running}} = Tools.start_os_process(run, ["2"])
+      refute later.id == soon_id
+    end
+
+    test "an account nearly out of its 5-hour window gets no new turn while another has room in both", %{
+      ready_backend: ready_backend,
+      at: at,
+      model: model,
+      run: run
+    } do
+      _tight = ready_backend.(model, [{"Session", 10.0, at.(4)}, {"Weekly", 95.0, at.(100)}], %{})
+      %{id: roomy_id} = ready_backend.(model, [{"Session", 70.0, at.(3)}, {"Weekly", 50.0, at.(72)}], %{})
+
+      assert {:ok, %OsProcess{backend_id: ^roomy_id}} = Tools.start_os_process(run, ["2"])
+    end
+
+    test "four turns started together on two identical accounts split two and two", %{
+      ready_backend: ready_backend,
+      at: at,
+      model: model,
+      run: run
+    } do
+      windows = [{"Session", 80.0, at.(3)}, {"Weekly", 80.0, at.(48)}]
+      %{id: first_id} = ready_backend.(model, windows, %{})
+      %{id: second_id} = ready_backend.(model, windows, %{})
+
+      runs =
+        for _turn <- 1..3 do
+          {:ok, other} =
+            Pipeline.create_run(%{
+              task_id: run.task_id,
+              role_id: run.role_id,
+              status: :starting,
+              started_at: DateTime.utc_now()
+            })
+
+          other
+        end
+
+      placed =
+        [run | runs]
+        |> Elixir.Task.async_stream(&Tools.start_os_process(&1, ["2"]), max_concurrency: 4)
+        |> Enum.map(fn {:ok, {:ok, %OsProcess{backend_id: backend_id}}} -> backend_id end)
+
+      assert %{^first_id => 2, ^second_id => 2} = Enum.frequencies(placed)
+    end
+
+    test "an account with a window used up is skipped, and picked again once that window's reset has passed", %{
+      ready_backend: ready_backend,
+      at: at,
+      model: model,
+      run: run
+    } do
+      used_up = ready_backend.(model, [{"Weekly", 0.0, at.(10)}], %{})
+      %{id: other_id} = ready_backend.(model, [{"Weekly", 20.0, at.(100)}], %{})
+
+      assert {:ok, %OsProcess{backend_id: ^other_id}} = Tools.start_os_process(run, ["2"])
+
+      %{id: used_up_id} =
+        used_up
+        |> Backend.usage_changeset(%{
+          name: :claude,
+          status: :ready,
+          usage: [
+            %{
+              name: "Weekly",
+              details: %{
+                "windows" => [
+                  %{"label" => "Weekly", "remaining_percent" => 0.0, "resets_at" => DateTime.to_iso8601(at.(-1))}
+                ]
+              }
+            }
+          ]
+        })
+        |> Repo.update!()
+
+      {:ok, again} =
+        Pipeline.create_run(%{
+          task_id: run.task_id,
+          role_id: run.role_id,
+          status: :starting,
+          started_at: DateTime.utc_now()
+        })
+
+      assert {:ok, %OsProcess{backend_id: ^used_up_id}} = Tools.start_os_process(again, ["2"])
+    end
+
+    test "signed-out and unavailable accounts are never picked, however much they have left", %{
+      ready_backend: ready_backend,
+      at: at,
+      model: model,
+      run: run
+    } do
+      _signed_out = ready_backend.(model, [], %{status: :signed_out})
+      _unavailable = ready_backend.(model, [], %{status: :unavailable})
+      %{id: ready_id} = ready_backend.(model, [{"Weekly", 5.0, at.(150)}], %{})
+
+      assert {:ok, %OsProcess{backend_id: ^ready_id}} = Tools.start_os_process(run, ["2"])
+    end
+
+    test "with every account used up the turn waits for usage, holding nothing, until the earliest reset", %{
+      ready_backend: ready_backend,
+      at: at,
+      model: model,
+      run: run
+    } do
+      soonest = at.(2)
+      _weekly = ready_backend.(model, [{"Weekly", 0.0, at.(30)}], %{})
+      _session = ready_backend.(model, [{"Session", 0.0, soonest}], %{})
+      _signed_out = ready_backend.(model, [], %{status: :signed_out})
+      reject(Tools, :spawn_os_process, 3)
+
+      assert {:ok,
+              %OsProcess{
+                id: os_process_id,
+                status: :waiting_for_usage,
+                backend_id: nil,
+                reserved_cpus: nil,
+                os_pid: nil,
+                run: %Run{status: :waiting_for_usage}
+              }} = Tools.start_os_process(run, ["2"])
+
+      assert %Run{status: :waiting_for_usage} = waiting = Repo.get!(Run, run.id)
+      assert Run.state(waiting) == :waiting
+      assert [line] = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
+      assert line =~ "Every signed-in account offering #{model} has used up its usage"
+      assert line =~ Calendar.strftime(soonest, "%-I:%M %p UTC on %b %-d")
+
+      assert_enqueued(worker: StartAfterUsageReset, args: %{os_process_id: os_process_id}, scheduled_at: soonest)
+      assert %{"argv" => ["2"], "token" => "" <> _token} = OsProcess.launch_spec(Repo.get!(OsProcess, os_process_id))
+    end
+
+    test "a resumed conversation stays on its account, and waits for that account's reset rather than moving", %{
+      ready_backend: ready_backend,
+      at: at,
+      model: model,
+      run: run
+    } do
+      %{id: home_id} = home = ready_backend.(model, [{"Weekly", 90.0, at.(10)}], %{label: "home"})
+      _elsewhere = ready_backend.(model, [{"Weekly", 10.0, at.(150)}], %{label: "elsewhere"})
+
+      assert {:ok, %OsProcess{id: first_id, backend_id: ^home_id}} = Tools.start_os_process(run, ["2"])
+      OsProcess |> Repo.get!(first_id) |> OsProcess.changeset(%{status: :finished}) |> Repo.update!()
+      {:ok, run} = Pipeline.update_run(Repo.get!(Run, run.id), %{conversation_id: "sess-home", status: :finished})
+
+      # The other account now stands far higher, and the conversation still goes home.
+      _higher = ready_backend.(model, [], %{label: "fresh"})
+      reset = at.(5)
+
+      home
+      |> Backend.usage_changeset(%{
+        name: :claude,
+        status: :ready,
+        usage: [
+          %{
+            name: "Weekly",
+            details: %{
+              "windows" => [%{"label" => "Weekly", "remaining_percent" => 1.0, "resets_at" => DateTime.to_iso8601(reset)}]
+            }
+          }
+        ]
+      })
+      |> Repo.update!()
+
+      assert {:ok, %OsProcess{id: second_id, backend_id: ^home_id, status: :running}} = Tools.start_os_process(run, ["2"])
+      OsProcess |> Repo.get!(second_id) |> OsProcess.changeset(%{status: :finished}) |> Repo.update!()
+
+      Backend
+      |> Repo.get!(home_id)
+      |> Backend.usage_changeset(%{
+        name: :claude,
+        status: :ready,
+        usage: [
+          %{
+            name: "Weekly",
+            details: %{
+              "windows" => [%{"label" => "Weekly", "remaining_percent" => 0.0, "resets_at" => DateTime.to_iso8601(reset)}]
+            }
+          }
+        ]
+      })
+      |> Repo.update!()
+
+      assert {:ok, %OsProcess{id: waiting_id, status: :waiting_for_usage, backend_id: ^home_id}} =
+               Tools.start_os_process(run, ["2"])
+
+      assert_enqueued(worker: StartAfterUsageReset, args: %{os_process_id: waiting_id}, scheduled_at: reset)
+
+      assert run |> Pipeline.list_run_events() |> List.last() |> Map.fetch!(:line) =~
+               "This conversation lives on Claude Code · home"
+    end
+
+    test "a resumed conversation whose account is signed out is held there, not moved", %{
+      ready_backend: ready_backend,
+      model: model,
+      run: run
+    } do
+      %{id: home_id} = home = ready_backend.(model, [], %{label: "home"})
+      assert {:ok, %OsProcess{id: first_id}} = Tools.start_os_process(run, ["2"])
+      OsProcess |> Repo.get!(first_id) |> OsProcess.changeset(%{status: :finished}) |> Repo.update!()
+      {:ok, run} = Pipeline.update_run(Repo.get!(Run, run.id), %{conversation_id: "sess-home", status: :finished})
+      home |> Backend.usage_changeset(%{name: :claude, status: :signed_out}) |> Repo.update!()
+      _other = ready_backend.(model, [], %{})
+      reject(Tools, :spawn_os_process, 3)
+
+      assert {:ok, %OsProcess{status: :waiting_for_resources, backend_id: ^home_id}} = Tools.start_os_process(run, ["2"])
+
+      assert run |> Pipeline.list_run_events() |> List.last() |> Map.fetch!(:line) =~
+               "is held, because the home backend is signed out"
+    end
+
+    test "a resumed conversation whose account Rail cannot run fails, naming that account", %{
+      ready_backend: ready_backend,
+      model: model,
+      run: run
+    } do
+      home = ready_backend.(model, [], %{label: "home"})
+      assert {:ok, %OsProcess{id: first_id}} = Tools.start_os_process(run, ["2"])
+      OsProcess |> Repo.get!(first_id) |> OsProcess.changeset(%{status: :finished}) |> Repo.update!()
+      {:ok, run} = Pipeline.update_run(Repo.get!(Run, run.id), %{conversation_id: "sess-home", status: :finished})
+      home |> Backend.usage_changeset(%{name: :claude, status: :not_configured}) |> Repo.update!()
+
+      assert {:error,
+              {:spawn_failed, "This conversation lives on Claude Code · home, which Rail cannot run." <> _how, %Run{}}} =
+               Tools.start_os_process(run, ["2"])
+
+      assert %Run{error: "This conversation lives on Claude Code · home" <> _rest} = Repo.get!(Run, run.id)
+    end
+
+    test "with no account that can run the model the run fails at once, naming it", %{
+      ready_backend: ready_backend,
+      model: model,
+      role: role,
+      run: run
+    } do
+      # One that cannot run is no more use than none.
+      _unconfigured = ready_backend.(model, [], %{status: :not_configured})
+
+      error =
+        "No signed-in account offers #{model}. Sign one in on Settings › Backends, or pick another model for #{role.name}."
+
+      assert {:error, {:spawn_failed, ^error, %Run{error: ^error}}} = Tools.start_os_process(run, ["2"])
+      assert %Run{error: ^error, status: :finished} = settled = Repo.get!(Run, run.id)
+      assert Run.state(settled) == :failed
+
+      assert [%OsProcess{status: :finished, ended_reason: :failed_to_start}] =
+               Repo.all(from p in OsProcess, where: p.run_id == ^run.id)
     end
   end
 end

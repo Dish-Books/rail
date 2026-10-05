@@ -19,8 +19,6 @@ defmodule Rail.Tools.FollowerSupervisorTest do
 
     # The Follower reads the stream in its backend's format, and the backend comes
     # off the run's role.
-    {:ok, backend} =
-      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
     project =
       %Project{}
@@ -36,7 +34,7 @@ defmodule Rail.Tools.FollowerSupervisorTest do
 
     {:ok, role} =
       Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
+        cli: :claude,
         stage: :engineer,
         name: "supervisor role",
         model: "claude-opus-5-5",
@@ -52,7 +50,7 @@ defmodule Rail.Tools.FollowerSupervisorTest do
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
-      |> Repo.preload(role: :backend)
+      |> Repo.preload(:role)
 
     stream_path = Path.join(tmp_dir, "sup_test.ndjson")
     File.write!(stream_path, "")

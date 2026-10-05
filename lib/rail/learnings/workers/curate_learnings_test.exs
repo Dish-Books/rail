@@ -23,11 +23,29 @@ defmodule Rail.Learnings.Workers.CurateLearningsTest do
       end
     end)
 
-    expect(Rail.Tools, :run_agent, fn _backend, _argv, opts ->
+    expect(Rail.Tools, :run_agent, fn _role, _argv, opts ->
       File.write!(Path.join(opts[:cd], "result.json"), ~s({}))
       {:ok, ""}
     end)
 
     assert :ok = perform_job(CurateLearnings, %{project_id: project.id})
+  end
+
+  test "a pass that waits for usage runs again once the account resets", %{project: project} do
+    stub(Rail.Git, :checkout_detached_worktree, fn _project, path -> {:ok, path} end)
+    stub(Rail.Git, :remove_worktree, fn _repo, _path -> :ok end)
+
+    Req.Test.stub(Client, fn conn ->
+      case conn.request_path do
+        "/app/installations/" <> _rest -> Req.Test.json(conn, %{"token" => "ghs_token"})
+        _pulls -> Req.Test.json(conn, [])
+      end
+    end)
+
+    reset = DateTime.shift(DateTime.utc_now(), hour: 3)
+    expect(Rail.Tools, :run_agent, fn _role, _argv, _opts -> {:error, {:waiting_for_usage, reset}} end)
+
+    assert {:snooze, seconds} = perform_job(CurateLearnings, %{project_id: project.id})
+    assert_in_delta seconds, 3 * 3600, 5
   end
 end

@@ -20,8 +20,6 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
 
   # Its own project, because starting a run adds a worktree to a real clone.
   setup %{project: %{linear_workspace_id: workspace_id}} do
-    {:ok, backend} = Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
-
     scope = system_scope()
     clone_path = create_temp_git_repo()
     git!(clone_path, ["remote", "add", "origin", create_temp_git_repo(prefix: "rail_start_plan_remote")])
@@ -53,7 +51,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
           into: %{} do
         {:ok, role} =
           Roles.create_role(scope, project, %{
-            backend_id: backend.id,
+            cli: :claude,
             stage: stage,
             name: "#{stage} role",
             model: model,
@@ -81,7 +79,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     {:ok, issue} =
       Issues.create_issue(system_scope(), project, %{description: "Attachments follow their source document"})
 
-    %{project: project, roles: roles, issue: issue, backend: backend}
+    %{project: project, roles: roles, issue: issue}
   end
 
   test "creates the task at Plan, queues the Linear advance and spawns one process with the three subagents", %{

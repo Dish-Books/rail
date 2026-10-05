@@ -8,49 +8,104 @@ defmodule Rail.Tools.Actions.RefreshUsageTest do
 
   alias Rail.Projects
   alias Rail.Repo
-  alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
 
-  test "probes each backend off its own row and upserts what it reports" do
+  test "probes each backend at its configured path and upserts what it reports" do
+    # The path the probe runs comes off the backend row, so it must exist.
     claude = System.find_executable("sh")
+    Repo.insert!(Backend.changeset(%Backend{}, %{name: :claude, executable_path: claude}))
 
-    tokened = Repo.insert!(Backend.changeset(%Backend{}, %{name: :claude, executable_path: claude}))
-    Repo.update!(Backend.token_changeset(tokened, "tok"))
-    Repo.insert!(Backend.changeset(%Backend{}, %{name: :claude, executable_path: claude, label: "no token"}))
-    Repo.insert!(Backend.changeset(%Backend{}, %{name: :claude, executable_path: "/missing/claude", label: "no cli"}))
+    stub(Tools, :run, fn
+      ^claude, _args, _opts -> {~s({"loggedIn":true,"email":"claude@example.com","subscriptionType":"Pro"}), 0}
+      _seeded, _args, _opts -> {~s({"loggedIn":false}), 0}
+    end)
 
-    # A backend is read off its row, so no CLI is ever run.
-    reject(&Tools.run/3)
+    claude_config =
+      ~s({"cachedUsageUtilization":{"fetchedAtMs":1725894000000,"utilization":{"limits":[) <>
+        ~s({"group":"session","kind":"session","percent":20.0,"resets_at":"2026-09-10T12:00:00Z"}) <>
+        ~s(]}}})
+
+    stub(File, :read, fn _path -> {:ok, claude_config} end)
 
     assert {:ok,
             [
               _seeded,
-              %Backend{id: claude_id, name: :claude, account_label: "Long-lived token", status: :ready},
-              %Backend{id: no_token_id, label: "no token", status: :signed_out},
-              %Backend{label: "no cli", status: :not_configured, session_lost_at: nil}
+              %Backend{
+                id: claude_id,
+                name: :claude,
+                account_label: "claude@example.com",
+                status: :ready,
+                usage: [_session]
+              }
             ]} = Tools.refresh_usage()
 
-    # Refreshing again updates the same rows rather than inserting new ones.
-    assert {:ok, [_seeded, %Backend{id: ^claude_id}, %Backend{id: ^no_token_id}, _no_cli]} = Tools.refresh_usage()
+    # Refreshing again updates the same row rather than inserting a new one.
+    assert {:ok, [_seeded, %Backend{id: ^claude_id}]} = Tools.refresh_usage()
 
-    # The config the user owns survives a refresh, and a backend that was never
-    # ready has lost nothing.
-    assert %Backend{executable_path: ^claude, status: :ready, oauth_token: "tok"} = Repo.get!(Backend, claude_id)
-    assert %Backend{session_lost_at: nil} = Repo.get!(Backend, no_token_id)
+    # The config the user owns survives a refresh.
+    assert %Backend{executable_path: ^claude, status: :ready} = Repo.get!(Backend, claude_id)
   end
 
-  test "a ready backend found signed out is marked and its projects told once, until it has a token again", %{
+  test "probes every account as the account in its own config directory" do
+    claude = System.find_executable("sh")
+
+    %Backend{id: home_id} = Repo.insert!(Backend.changeset(%Backend{}, %{name: :claude, executable_path: claude}))
+
+    %Backend{id: work_id} =
+      work = Repo.insert!(Backend.changeset(%Backend{}, %{name: :claude, executable_path: claude, label: "work"}))
+
+    work_dir = Backend.config_dir(work)
+
+    # Each CLI call answers as whichever account its environment points at.
+    stub(Tools, :run, fn _exe, _args, opts ->
+      email = if opts[:env]["CLAUDE_CONFIG_DIR"] == work_dir, do: "work@example.com", else: "home@example.com"
+      {~s({"loggedIn":true,"email":"#{email}"}), 0}
+    end)
+
+    stub(File, :read, fn _path -> {:ok, ~s({"cachedUsageUtilization":{}})} end)
+
+    assert {:ok,
+            [
+              _seeded,
+              %Backend{id: ^home_id, account_label: "home@example.com"},
+              %Backend{id: ^work_id, account_label: "work@example.com"}
+            ]} = Tools.refresh_usage()
+  end
+
+  test "records that a configured backend's binary has gone missing" do
+    Repo.insert!(Backend.changeset(%Backend{}, %{name: :claude, executable_path: "/non/existent/claude"}))
+    reason = "Executable not found at '/non/existent/claude'"
+
+    assert {:ok, [_seeded, %Backend{status: :not_configured, unavailable_reason: ^reason, session_lost_at: nil}]} =
+             Tools.refresh_usage()
+  end
+
+  test "a ready backend found signed out is marked and its projects told once, until it is signed in again", %{
     project: project
   } do
     scope = system_scope()
     claude = System.find_executable("sh")
-    backend = Repo.insert!(Backend.changeset(%Backend{}, %{name: :claude, executable_path: claude, label: "work"}))
-    # Ready on its row, yet with no token to run on: nobody signed it out.
-    backend = Repo.update!(Backend.usage_changeset(backend, %{status: :ready, account_label: "Long-lived token"}))
 
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
-    {:ok, _role} = Roles.update_role(scope, role, %{backend_id: backend.id})
+    # It offers the model the project's roles run, which is how the project is told.
+    backend =
+      Repo.insert!(
+        Backend.changeset(%Backend{}, %{
+          name: :claude,
+          executable_path: claude,
+          label: "work",
+          models: [%{id: "claude-opus-5-5"}]
+        })
+      )
+
+    # Ready on its row, yet signed out when the CLI is asked: nobody signed it out.
+    backend = Repo.update!(Backend.usage_changeset(backend, %{status: :ready, account_label: "me@example.com"}))
+    # The seeded account answers as unreadable, which loses it nothing.
+    stub(Tools, :run, fn
+      ^claude, ["auth" | _rest], _opts -> {~s({"loggedIn":false}), 0}
+      _seeded, _args, _opts -> {"", 1}
+    end)
+
     %{workspace: workspace} = connect_slack_channel(project)
 
     {:ok, _project} =
@@ -69,8 +124,7 @@ defmodule Rail.Tools.Actions.RefreshUsageTest do
 
     assert {:ok, _refreshed} = Tools.refresh_usage()
 
-    assert %Backend{status: :signed_out, session_lost_at: %DateTime{} = lost_at} =
-             lost = Repo.get!(Backend, backend.id)
+    assert %Backend{status: :signed_out, session_lost_at: %DateTime{} = lost_at} = Repo.get!(Backend, backend.id)
 
     assert_received {:posted, %{"channel" => "C_LEARN", "text" => text}}
     assert text =~ "Rail's work backend lost its sign-in."
@@ -81,15 +135,24 @@ defmodule Rail.Tools.Actions.RefreshUsageTest do
     assert %Backend{session_lost_at: ^lost_at} = Repo.get!(Backend, backend.id)
     refute_received {:posted, _again}
 
-    # A new token forgets the loss, and the next probe finds the backend ready.
-    Repo.update!(Backend.token_changeset(lost, "tok"))
+    # Signed in again, the next probe finds it ready and forgets the loss.
+    stub(Tools, :run, fn
+      ^claude, ["auth" | _rest], _opts -> {~s({"loggedIn":true,"email":"me@example.com"}), 0}
+      _usage_or_seeded, _args, _opts -> {"", 1}
+    end)
+
+    stub(File, :read, fn _path -> {:ok, ~s({"cachedUsageUtilization":{}})} end)
     assert {:ok, _refreshed} = Tools.refresh_usage()
-    assert %Backend{status: :ready, session_lost_at: nil} = tokened = Repo.get!(Backend, backend.id)
+    assert %Backend{status: :ready, session_lost_at: nil} = Repo.get!(Backend, backend.id)
     refute_received {:posted, _again}
 
     # A channel that cannot be posted to does not stop the refresh.
     Req.Test.stub(Rail.Slack, &Req.Test.json(&1, %{"ok" => false, "error" => "channel_not_found"}))
-    Repo.update!(Backend.token_changeset(tokened, nil))
+
+    stub(Tools, :run, fn
+      ^claude, ["auth" | _rest], _opts -> {~s({"loggedIn":false}), 0}
+      _seeded, _args, _opts -> {"", 1}
+    end)
 
     assert capture_log(fn -> assert {:ok, _refreshed} = Tools.refresh_usage() end) =~
              "Could not tell C_LEARN that a backend lost its sign-in"

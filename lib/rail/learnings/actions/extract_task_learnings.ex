@@ -99,7 +99,7 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearnings do
     write_rules_file(task.project, Path.join(dir, "rules.md"))
     File.write!(Path.join(dir, "observations.md"), observations_file(task))
 
-    runs = Pipeline.list_runs(task_id: task.id, include_cleaned_up: true, preload: [role: :backend])
+    runs = Pipeline.list_runs(task_id: task.id, include_cleaned_up: true, preload: :role)
     Enum.each(runs, &write_transcript(&1, dir))
     write_compare(task, runs, dir)
   end
@@ -160,9 +160,9 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearnings do
     "# Already recorded for this task\n\n" <> Enum.join(entries, "\n") <> "\n"
   end
 
-  defp write_transcript(%Run{role: %{stage: stage, backend: backend}} = run, dir) do
+  defp write_transcript(%Run{role: %{stage: stage, cli: cli}} = run, dir) do
     lines = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
-    logs = backend |> Tools.parse_stream(lines) |> Map.fetch!(:logs)
+    logs = cli |> Tools.parse_stream(lines) |> Map.fetch!(:logs)
 
     File.write!(Path.join([dir, "transcripts", "#{stage}-#{run.id}.md"]), Enum.join(logs, "\n"))
   end

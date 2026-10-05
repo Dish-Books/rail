@@ -19,20 +19,16 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
       })
       |> Repo.insert!()
 
-    {:ok, backend} =
-      Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
-
-    %{project: project, backend: backend}
+    %{project: project}
   end
 
   test "creates role for project struct with admin scope", %{
-    project: %Project{id: project_id} = project,
-    backend: backend
+    project: %Project{id: project_id} = project
   } do
     scope = Scope.for_user(%{admin: true})
 
     attrs = %{
-      backend_id: backend.id,
+      cli: :claude,
       name: "Product Agent",
       stage: :product,
       model: "claude-opus-5-5",
@@ -43,11 +39,11 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
              Roles.create_role(scope, project, attrs)
   end
 
-  test "creates role with system scope", %{project: %Project{id: project_id} = project, backend: backend} do
+  test "creates role with system scope", %{project: %Project{id: project_id} = project} do
     scope = Scope.for_system()
 
     attrs = %{
-      backend_id: backend.id,
+      cli: :claude,
       name: "QA Agent",
       stage: :qa,
       model: "claude-opus-5-5",
@@ -59,10 +55,9 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
   end
 
   test "reserves 1 CPU and 2 GB unless told otherwise, and refuses more than the machine has", %{
-    project: project,
-    backend: backend
+    project: project
   } do
-    attrs = %{backend_id: backend.id, name: "Engineer", model: "claude-opus-5-5", system_prompt: "Build."}
+    attrs = %{cli: :claude, name: "Engineer", model: "claude-opus-5-5", system_prompt: "Build."}
 
     assert {:ok, %Role{reserved_cpus: 1, reserved_memory_gb: 2}} = Roles.create_role(system_scope(), project, attrs)
 
@@ -81,15 +76,15 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
              name: ["can't be blank"],
              model: ["can't be blank"],
              system_prompt: ["can't be blank"],
-             backend_id: ["can't be blank"]
+             cli: ["can't be blank"]
            } = errors_on(changeset)
   end
 
-  test "returns validation error when project does not exist", %{backend: backend} do
+  test "returns validation error when project does not exist" do
     scope = Scope.for_user(%{admin: true})
 
     attrs = %{
-      backend_id: backend.id,
+      cli: :claude,
       name: "Ghost Role",
       model: "claude",
       system_prompt: "Ghost prompt"

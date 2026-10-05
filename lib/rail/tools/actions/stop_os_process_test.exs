@@ -94,4 +94,28 @@ defmodule Rail.Tools.Actions.StopOsProcessTest do
                Tools.stop_os_process(system_scope(), waiting)
     end
   end
+
+  test "a turn stopped while it waits for usage ends as stopped, and can no longer start", %{run: run} do
+    %OsProcess{id: waiting_id} =
+      waiting =
+      Repo.insert!(%OsProcess{
+        run_id: run.id,
+        task_id: run.task_id,
+        stream_path: "/dev/null",
+        status: :waiting_for_usage,
+        started_at: DateTime.utc_now(),
+        queued_at: DateTime.utc_now(),
+        launch: Jason.encode!(%{"argv" => ["2"], "token" => "tok"})
+      })
+
+    reject(Tools, :terminate_os_process, 2)
+    reject(Tools, :spawn_os_process, 3)
+
+    assert {:ok, %OsProcess{id: ^waiting_id}} = Tools.get_active_os_process(run)
+
+    assert {:ok, %OsProcess{status: :finished, ended_reason: :stopped, launch: nil}} =
+             Tools.stop_os_process(system_scope(), waiting)
+
+    assert {:error, :not_waiting} = Tools.start_after_usage_reset(waiting.id)
+  end
 end

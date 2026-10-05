@@ -76,7 +76,10 @@ The worktree's database starts with little or nothing in it. Build what each che
   keep `app_id` and `private_key: "test/support/fixtures/github_app.pem"` in the list, since
   `put_env` replaces it whole. Linear webhooks are POSTed to `/webhooks/linear` signed with
   `openssl dgst -sha256 -hmac <webhook_secret>`.
-- **Agents**: a bash script as the role's backend. It answers `auth status --json` with
+- **Agents**: a bash script as the executable of a backend that offers the role's model and is
+  marked ready, since a role names only a model and its turns go to an account with room. A
+  `.claude.json` with `cachedUsageUtilization` in its config directory keeps the five-minute usage
+  probe from marking it unavailable. The script answers `auth status --json` with
   `{"loggedIn":true}` at once, reads the prompt on stdin, prints init, assistant and result lines,
   and never writes into `$PWD`. Key its behavior on `basename $PWD` and a control file so you can
   make it finish, ask a `[QUESTION: ...]`, fail or hang on cue.

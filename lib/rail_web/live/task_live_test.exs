@@ -22,6 +22,7 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.Roles
   alias Rail.Scope
   alias Rail.Tools
+  alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
@@ -142,6 +143,196 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "#task-line[href='/sandboxes']", "1st in line for 2 CPUs · 4 GB")
     assert has_element?(view, "#task-tab-#{engineer.id}", "waiting for resources")
     assert has_element?(view, "#task-tab-#{engineer.id} [data-qa='task-tab-dot'][data-tone='waiting']")
+  end
+
+  test "a stage waiting for usage says when it starts, reads apart from a sandbox wait, and starts on its own", %{
+    conn: conn,
+    task: task,
+    project: project
+  } do
+    model = "claude-task-usage-#{System.unique_integer([:positive])}"
+    {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
+    {:ok, engineer} = Roles.update_role(system_scope(), engineer, %{model: model})
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+    reset = DateTime.utc_now() |> DateTime.shift(hour: 2) |> DateTime.truncate(:second)
+
+    {:ok, account} =
+      Tools.create_backend(system_scope(), %{
+        name: :claude,
+        label: "work",
+        executable_path: "/usr/bin/true",
+        models: [%{id: model}]
+      })
+
+    # Its 5-hour window is spent until `reset`.
+    session = %{"label" => "Session", "remaining_percent" => 0.0, "resets_at" => DateTime.to_iso8601(reset)}
+
+    account =
+      account
+      |> Backend.usage_changeset(%{
+        name: :claude,
+        status: :ready,
+        usage: [%{name: "Session", details: %{"windows" => [session]}}]
+      })
+      |> Repo.update!()
+
+    {:ok, run} =
+      Pipeline.create_run(%{task_id: task.id, role_id: engineer.id, status: :starting, started_at: DateTime.utc_now()})
+
+    assert {:ok, %OsProcess{id: waiting_id, status: :waiting_for_usage}} = Tools.start_os_process(run, ["2"])
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{engineer.id}")
+
+    assert has_element?(view, "[data-qa='task_status_chip']", "Engineer waiting for usage")
+    assert has_element?(view, "#task-usage-starts", "· starts")
+    assert has_element?(view, "#task-usage-starts-at[data-at='#{DateTime.to_iso8601(reset)}']")
+    refute has_element?(view, "#task-line")
+    assert has_element?(view, "#task-tab-#{engineer.id}", "waiting for usage")
+    assert has_element?(view, "#task-tab-#{engineer.id} [data-qa='task-tab-dot'][data-tone='waiting_for_usage']")
+    assert has_element?(view, "#usage-banner", "is waiting for usage")
+
+    # The reset passes, and the job starts the turn with nobody on the page doing anything.
+    account
+    |> Backend.usage_changeset(%{name: :claude, status: :ready, usage: []})
+    |> Repo.update!()
+
+    stub(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:ok, nil, 4270} end)
+    stub(Rail.Tools.FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
+    assert {:ok, %OsProcess{status: :running}} = Tools.start_after_usage_reset(waiting_id)
+
+    eventually(fn ->
+      assert has_element?(view, "[data-qa='task_status_chip']", "Engineer running")
+      refute has_element?(view, "#usage-banner")
+    end)
+  end
+
+  test "stopping a stage waiting for usage clears its header and tab without a reload", %{
+    conn: conn,
+    task: task,
+    project: project
+  } do
+    model = "claude-task-usage-stop-#{System.unique_integer([:positive])}"
+    {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
+    {:ok, engineer} = Roles.update_role(system_scope(), engineer, %{model: model})
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+    reset = DateTime.utc_now() |> DateTime.shift(hour: 2) |> DateTime.truncate(:second)
+
+    {:ok, account} =
+      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true", models: [%{id: model}]})
+
+    session = %{"label" => "Session", "remaining_percent" => 0.0, "resets_at" => DateTime.to_iso8601(reset)}
+
+    account
+    |> Backend.usage_changeset(%{
+      name: :claude,
+      status: :ready,
+      usage: [%{name: "Session", details: %{"windows" => [session]}}]
+    })
+    |> Repo.update!()
+
+    {:ok, run} =
+      Pipeline.create_run(%{task_id: task.id, role_id: engineer.id, status: :starting, started_at: DateTime.utc_now()})
+
+    assert {:ok, %OsProcess{status: :waiting_for_usage}} = Tools.start_os_process(run, ["2"])
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{engineer.id}")
+    assert has_element?(view, "[data-qa='task_status_chip']", "Engineer waiting for usage")
+
+    view |> element("#usage-banner [data-qa='stop-run']") |> render_click()
+
+    refute has_element?(view, "[data-qa='task_status_chip']", "waiting for usage")
+    refute has_element?(view, "#task-usage-starts")
+    refute has_element?(view, "#task-tab-#{engineer.id}", "waiting for usage")
+  end
+
+  test "a stage whose turn has just stopped waiting for usage names no start time", %{
+    conn: conn,
+    task: task,
+    project: project
+  } do
+    {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+
+    {:ok, _run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: engineer.id,
+        status: :waiting_for_usage,
+        started_at: DateTime.utc_now()
+      })
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    assert has_element?(view, "[data-qa='task_status_chip']", "Engineer waiting for usage")
+    refute has_element?(view, "#task-usage-starts")
+  end
+
+  test "a resumed conversation waiting on its own account can be stopped from its card, and never starts", %{
+    conn: conn,
+    task: task,
+    project: project
+  } do
+    model = "claude-task-pinned-#{System.unique_integer([:positive])}"
+    {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
+    {:ok, engineer} = Roles.update_role(system_scope(), engineer, %{model: model})
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+
+    {:ok, work} =
+      Tools.create_backend(system_scope(), %{
+        name: :claude,
+        label: "work",
+        executable_path: "/usr/bin/true",
+        models: [%{id: model}]
+      })
+
+    weekly = %{
+      "label" => "Weekly",
+      "remaining_percent" => 0.0,
+      "resets_at" => DateTime.to_iso8601(DateTime.shift(DateTime.utc_now(), day: 1))
+    }
+
+    work
+    |> Backend.usage_changeset(%{
+      name: :claude,
+      status: :ready,
+      usage: [%{name: "Weekly", details: %{"windows" => [weekly]}}]
+    })
+    |> Repo.update!()
+
+    now = DateTime.utc_now()
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: engineer.id,
+        status: :waiting_for_usage,
+        conversation_id: "conv_pinned",
+        started_at: now
+      })
+
+    waiting =
+      Repo.insert!(%OsProcess{
+        run_id: run.id,
+        task_id: task.id,
+        backend_id: work.id,
+        stream_path: "/dev/null",
+        status: :waiting_for_usage,
+        started_at: now,
+        queued_at: now,
+        launch: Jason.encode!(%{"argv" => ["2"], "token" => "tok"})
+      })
+
+    Pipeline.append_run_events(run.id, waiting.id, ["[rail] This conversation lives on Claude Code · work."])
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{engineer.id}")
+    assert has_element?(view, "#usage-wait-card", "This conversation lives on the work account")
+
+    view |> element("#usage-wait-stop") |> render_click()
+
+    assert %OsProcess{status: :finished, ended_reason: :stopped} = Repo.get!(OsProcess, waiting.id)
+    assert %Run{status: :finished} = Repo.get!(Run, run.id)
+    refute has_element?(view, "#usage-wait-card")
+    assert {:error, :not_waiting} = Tools.start_after_usage_reset(waiting.id)
   end
 
   test "the header of a merged task says it merged", %{conn: conn, task: task} do

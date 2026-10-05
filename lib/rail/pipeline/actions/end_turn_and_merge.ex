@@ -5,6 +5,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndMerge do
   """
 
   import Rail.Pipeline.Utils.EndEngineerTurn
+  import Rail.Pipeline.Utils.WithLiveTurn
 
   alias Rail.Git
   alias Rail.Pipeline
@@ -12,13 +13,21 @@ defmodule Rail.Pipeline.Actions.EndTurnAndMerge do
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Scope
+  alias Rail.Tools.Schemas.OsProcess
 
   @doc """
-  Ends `task`'s engineer turn and merges the default branch in: `{:ok, :merging}`,
-  `{:refused, text}` with the turn still going, or `{:error, reason}` from the fetch.
+  Ends `task`'s engineer turn, carried by `os_process`, and merges the default
+  branch in: `{:ok, :merging}`, `{:refused, text}` with the turn still going or
+  already ended, or `{:error, reason}` from the fetch.
   """
-  def end_turn_and_merge(%Task{} = task) do
-    %Task{project: %Project{} = project} = task = task |> Repo.reload!() |> Repo.preload(:project)
+  def end_turn_and_merge(%Task{} = task, %OsProcess{} = os_process) do
+    case with_live_turn(os_process, fn -> task |> Repo.reload!() |> Repo.preload(:project) |> accept() end) do
+      :ended -> {:refused, "Refused, nothing merged again. This turn has already ended and handed the merge to Rail."}
+      result -> result
+    end
+  end
+
+  defp accept(%Task{project: %Project{} = project} = task) do
     base = project.default_branch
 
     cond do

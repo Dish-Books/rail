@@ -92,23 +92,35 @@ defmodule RailWeb.Live.RunConversation do
           >
             <% role = selected_role(@selected_run, @roles_map) %>
             <% state = Run.state(@selected_run) %>
+            <% usage? = @selected_run.status == :waiting_for_usage %>
             <span
               data-qa="conversation-state-dot"
-              data-state={state}
+              data-state={if usage?, do: :waiting_for_usage, else: state}
               class={[
                 "h-2 w-2 rounded-full shrink-0",
                 state == :running && "bg-green-500",
-                state == :waiting && "ring-2 ring-inset ring-violet-400",
+                (state == :waiting and not usage?) && "ring-2 ring-inset ring-violet-400",
+                usage? && "border-2 border-dashed border-violet-400",
                 state not in [:running, :waiting] && "bg-slate-400 dark:bg-slate-500"
               ]}
             />
             <span
               id={"conversation-role-#{role.id}"}
               data-qa="conversation-role"
-              class="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate"
+              class="shrink-0 max-w-[40%] text-sm font-semibold text-slate-900 dark:text-slate-100 truncate"
             >
               {role.name}
             </span>
+            <span
+              :if={role.model}
+              id="conversation-model"
+              data-qa="conversation-model"
+              class="min-w-0 shrink-[4] font-mono text-[11px] text-slate-500 dark:text-slate-400 truncate"
+            >
+              {role.model}
+            </span>
+
+            <.account_chip account={@account} model={role.model} />
 
             <!-- Every turn the agent has taken on this run, added up: the run's own
             started_at is reset by each one and says nothing about the rest. -->
@@ -119,7 +131,7 @@ defmodule RailWeb.Live.RunConversation do
               data-elapsed-seconds={@settled_seconds}
               data-qa="elapsed-text"
               title="Total time the agent has spent on this run"
-              class="ml-auto font-mono text-xs text-slate-500 dark:text-slate-400"
+              class="shrink-0 font-mono text-xs text-slate-500 dark:text-slate-400"
             >
               {format_duration(@elapsed_seconds)}
             </span>
@@ -148,6 +160,7 @@ defmodule RailWeb.Live.RunConversation do
                 expanded_activities={@expanded_activities}
                 runs={@runs}
                 roles_map={@roles_map}
+                usage_wait={@usage_wait}
                 target={@myself}
               />
             <% end %>
@@ -197,6 +210,7 @@ defmodule RailWeb.Live.RunConversation do
             chat_sending={@chat_sending}
             can_retry={retryable?(@selected_run, @task, @roles_map)}
             line={@line}
+            usage_wait={@usage_wait}
             target={@myself}
           />
         </div>
@@ -216,6 +230,7 @@ defmodule RailWeb.Live.RunConversation do
   attr :expanded_activities, MapSet, required: true
   attr :runs, :list, default: []
   attr :roles_map, :map, default: %{}
+  attr :usage_wait, :map, default: nil
   attr :target, :any, required: true
 
   def chat_pane(assigns) do
@@ -256,6 +271,7 @@ defmodule RailWeb.Live.RunConversation do
               roles_map={@roles_map}
               expanded_activities={@expanded_activities}
               worktree_path={@task.worktree_path}
+              usage_wait={@usage_wait}
               target={@target}
             />
           <% end %>
@@ -275,16 +291,22 @@ defmodule RailWeb.Live.RunConversation do
   attr :roles_map, :map, default: %{}
   attr :expanded_activities, MapSet, required: true
   attr :worktree_path, :string, required: true
+  attr :usage_wait, :map, default: nil
   attr :target, :any, required: true
 
   def message_item(assigns) do
     msg = assigns.msg
+    usage_waiting? = match?(%OsProcess{status: :waiting_for_usage}, msg.process)
+    process_id = msg.process && msg.process.id
 
     assigns =
       assigns
       |> assign(:author, msg.author)
       |> assign(:text, msg.content || "")
       |> assign(:waiting?, match?(%OsProcess{status: :waiting_for_resources}, msg.process))
+      |> assign(:usage_waiting?, usage_waiting?)
+      |> assign(:account, if(not usage_waiting?, do: turn_account(msg.process)))
+      |> assign(:show_usage_card, usage_waiting? and match?(%{os_process: %{id: ^process_id}}, assigns.usage_wait))
 
     ~H"""
     <%= case @author do %>
@@ -297,12 +319,19 @@ defmodule RailWeb.Live.RunConversation do
           class="flex items-center gap-3 pt-2 first:pt-0 text-[11px] text-slate-400 dark:text-slate-500"
         >
           <span class="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
-          <span class="font-mono shrink-0 flex items-center gap-1.5" data-qa="turn-start-label">
-            <span>{@text}</span>
+          <span class="font-mono min-w-0 flex items-center gap-1.5" data-qa="turn-start-label">
+            <span class="shrink-0">{@text}</span>
+            <span :if={@account}>·</span>
+            <span :if={@account} class="truncate" data-qa="turn-account">{Backend.display_name(
+              @account
+            )}</span>
             <%!-- The hook owns this element's whole text, so the separator sits outside it. --%>
             <span :if={@msg.at}>·</span>
             <span :if={@waiting?} class="text-violet-500 dark:text-violet-400">
               waiting for resources since
+            </span>
+            <span :if={@usage_waiting?} class="shrink-0 text-violet-500 dark:text-violet-400">
+              waiting for usage since
             </span>
             <span
               :if={@msg.at}
@@ -310,7 +339,10 @@ defmodule RailWeb.Live.RunConversation do
               phx-hook="LocalTime"
               data-at={DateTime.to_iso8601(@msg.at)}
               data-qa="turn-time"
-              class={@waiting? && "text-violet-500 dark:text-violet-400"}
+              class={[
+                "shrink-0",
+                (@waiting? or @usage_waiting?) && "text-violet-500 dark:text-violet-400"
+              ]}
             >
               {Calendar.strftime(@msg.at, "%H:%M")}
             </span>
@@ -321,6 +353,7 @@ defmodule RailWeb.Live.RunConversation do
           </span>
           <span class="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
         </div>
+        <.usage_card :if={@show_usage_card} wait={@usage_wait} target={@target} />
       <% :human -> %>
         <!-- 4.8 _HumanBubble (right-aligned, plain selectable text, NOT markdown) -->
         <div
@@ -755,6 +788,7 @@ defmodule RailWeb.Live.RunConversation do
   attr :chat_sending, :boolean, default: false
   attr :can_retry, :boolean, default: false
   attr :line, :map, default: nil, doc: "where a waiting run stands in the line for its sandbox"
+  attr :usage_wait, :map, default: nil, doc: "what a run waiting for usage waits on"
   attr :target, :any, required: true
 
   def composer(assigns) do
@@ -846,6 +880,36 @@ defmodule RailWeb.Live.RunConversation do
           phx-click="stop_run"
           phx-target={@target}
           class="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold text-red-600 dark:text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors cursor-pointer"
+        >
+          <.icon name="pi-stop-fill" class="h-3.5 w-3.5 shrink-0" />
+          <span>Stop</span>
+        </button>
+      </div>
+
+      <!-- Waiting for an account with usage left: it holds no sandbox, and starts on its own at the reset. -->
+      <div
+        :if={@usage_wait}
+        id="usage-banner"
+        data-qa="usage-banner"
+        class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-violet-100 dark:bg-violet-950/40 border border-violet-600 dark:border-violet-500/30 mb-3"
+      >
+        <div class="flex items-center gap-2 text-xs font-bold text-violet-700 dark:text-violet-300 min-w-0">
+          <.icon name="pi-gauge" class="h-4 w-4 shrink-0" />
+          <span class="min-w-0">
+            {@role_name} is waiting for usage<span :if={@usage_wait.resets_at}> · starts <.local_time
+              id="usage-banner-starts-at"
+              at={@usage_wait.resets_at}
+            /></span>
+          </span>
+        </div>
+
+        <button
+          type="button"
+          id="stop-run"
+          data-qa="stop-run"
+          phx-click="stop_run"
+          phx-target={@target}
+          class="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold text-red-600 dark:text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors cursor-pointer shrink-0"
         >
           <.icon name="pi-stop-fill" class="h-3.5 w-3.5 shrink-0" />
           <span>Stop</span>
@@ -1136,6 +1200,7 @@ defmodule RailWeb.Live.RunConversation do
     |> assign_new(:current_scope, fn -> nil end)
     |> assign_new(:senders, fn -> %{} end)
     |> assign_new(:line, fn -> nil end)
+    |> assign_new(:usage_wait, fn -> nil end)
   end
 
   # The log the component holds; the rendered lines and the turns read out of it
@@ -1166,6 +1231,7 @@ defmodule RailWeb.Live.RunConversation do
 
     socket
     |> assign_senders(turns)
+    |> assign(:account, latest_account(processes))
     |> assign(:run_events, run_events)
     |> assign(:log_lines, lines)
     |> assign(:turns, turns)
@@ -1259,16 +1325,56 @@ defmodule RailWeb.Live.RunConversation do
     events |> Enum.map(& &1.line) |> readable_lines(socket.assigns) |> Pipeline.parse_transcript()
   end
 
-  # Where a waiting run stands in the line, read for the run being read rather
-  # than for every line appended to it.
+  # What a waiting run waits on, its place in the line or the accounts it waits
+  # for, read for the run being read rather than for every line appended to it.
+  defp assign_line(socket, %Run{status: :waiting_for_usage} = run) do
+    wait =
+      case Tools.get_usage_wait(run) do
+        {:ok, wait} -> wait
+        {:error, :not_waiting} -> nil
+      end
+
+    socket
+    |> assign(:line, nil)
+    |> assign(:usage_wait, wait)
+  end
+
   defp assign_line(socket, %Run{} = run) do
     line =
       with :waiting <- Run.state(run), {:ok, line} <- Tools.get_queue_position(run), do: line, else: (_not_in_line -> nil)
 
-    assign(socket, :line, line)
+    socket
+    |> assign(:line, line)
+    |> assign(:usage_wait, nil)
   end
 
-  defp assign_line(socket, nil), do: assign(socket, :line, nil)
+  defp assign_line(socket, nil) do
+    socket
+    |> assign(:line, nil)
+    |> assign(:usage_wait, nil)
+  end
+
+  # The conversation is on the account its latest placed turn ran on.
+  defp latest_account(processes) do
+    processes
+    |> Map.values()
+    |> Enum.filter(&match?(%OsProcess{kind: :agent, backend: %Backend{}}, &1))
+    |> Enum.max_by(&{DateTime.to_unix(&1.inserted_at, :microsecond), &1.id}, fn -> nil end)
+    |> then(&(&1 && &1.backend))
+  end
+
+  defp turn_account(%OsProcess{backend: %Backend{} = backend}), do: backend
+  defp turn_account(_unplaced), do: nil
+
+  defp format_window(%{label: label, remaining_percent: percent}), do: "#{label} #{round(percent)}%"
+
+  defp window_tone(%{remaining_percent: percent}) do
+    cond do
+      percent >= 30 -> "text-emerald-600 dark:text-emerald-400"
+      percent >= 10 -> "text-amber-600 dark:text-amber-400"
+      true -> "text-red-600 dark:text-red-400"
+    end
+  end
 
   # A command's output is read as it was written. Lines Rail wrote while it ran
   # are not its output, so they follow it as themselves.
@@ -1316,7 +1422,8 @@ defmodule RailWeb.Live.RunConversation do
   # assumed onto it.
   defp turn_id(event), do: Map.get(event, :os_process_id)
 
-  defp turn_start(%OsProcess{status: :waiting_for_resources} = os_process, number) do
+  defp turn_start(%OsProcess{status: status} = os_process, number)
+       when status in [:waiting_for_resources, :waiting_for_usage] do
     %Turn{author: :turn_start, content: "Turn #{number}", at: os_process.queued_at, process: os_process}
   end
 
@@ -1325,7 +1432,8 @@ defmodule RailWeb.Live.RunConversation do
       author: :turn_start,
       content: "Turn #{number}",
       at: os_process.started_at,
-      duration_seconds: OsProcess.duration_seconds(os_process)
+      duration_seconds: OsProcess.duration_seconds(os_process),
+      process: os_process
     }
   end
 
@@ -1342,14 +1450,18 @@ defmodule RailWeb.Live.RunConversation do
     end
   end
 
-  # A turn still going has no duration yet, so its row is re-read rather than
-  # trusted to still say what it said.
+  # A turn still going or waiting has no duration yet, so its row is re-read
+  # rather than trusted to still say what it said.
   defp stale?(processes) do
-    Enum.any?(Map.values(processes), &(&1.status in [:starting, :running]))
+    Enum.any?(
+      Map.values(processes),
+      &(&1.status in [:waiting_for_resources, :waiting_for_usage, :starting, :running])
+    )
   end
 
+  # With their accounts, which every turn line names.
   defp read_os_processes(%Run{id: run_id}) do
-    [run_id: run_id] |> Tools.list_os_processes() |> Map.new(&{&1.id, &1})
+    [run_id: run_id, preload: [:backend]] |> Tools.list_os_processes() |> Map.new(&{&1.id, &1})
   end
 
   defp read_os_processes(_no_run), do: %{}
@@ -1370,8 +1482,8 @@ defmodule RailWeb.Live.RunConversation do
 
   defp readable_lines(lines, %{selected_run: %Run{role_id: role_id}, roles_map: %{} = roles_map}) do
     case roles_map do
-      %{^role_id => %{backend: %Backend{} = backend}} -> Tools.parse_stream(backend, lines).logs
-      _unknown_backend -> lines
+      %{^role_id => %{cli: cli}} -> Tools.parse_stream(cli, lines).logs
+      _unknown_role -> lines
     end
   end
 
@@ -1402,9 +1514,15 @@ defmodule RailWeb.Live.RunConversation do
   defp resolve_role(role_id, roles_map) do
     if is_map(roles_map) and Map.has_key?(roles_map, role_id) do
       role = Map.get(roles_map, role_id)
-      %{id: role_id, name: role.name, icon_name: Map.get(role, :icon_name, "pi-terminal-window")}
+
+      %{
+        id: role_id,
+        name: role.name,
+        icon_name: Map.get(role, :icon_name, "pi-terminal-window"),
+        model: Map.get(role, :model)
+      }
     else
-      %{id: role_id, name: format_role_id(role_id), icon_name: "pi-terminal-window"}
+      %{id: role_id, name: format_role_id(role_id), icon_name: "pi-terminal-window", model: nil}
     end
   end
 
@@ -1522,4 +1640,163 @@ defmodule RailWeb.Live.RunConversation do
   defp command_status(%OsProcess{exit_code: 124}, false), do: "Timed out"
   defp command_status(%OsProcess{exit_code: code}, false) when is_integer(code) and code > 0, do: "Failed · exit #{code}"
   defp command_status(%OsProcess{}, false), do: "Stopped"
+
+  # --- Account Chip Subcomponent ---
+
+  attr :account, :any, required: true, doc: "the account the conversation is on, or nil before it has one"
+  attr :model, :string, default: nil
+
+  defp account_chip(%{account: %Backend{} = account} = assigns) do
+    assigns = assign(assigns, :window, Backend.calculate_standing(account, assigns.model).tightest)
+
+    ~H"""
+    <span
+      id="conversation-account"
+      data-qa="conversation-account"
+      title={Backend.display_name(@account)}
+      class="ml-auto min-w-0 inline-flex items-center gap-1.5 rounded-md bg-slate-100 dark:bg-slate-800 ring-1 ring-inset ring-slate-200 dark:ring-slate-700 px-1.5 py-0.5 text-[11px] text-slate-700 dark:text-slate-200"
+    >
+      <.icon name="pi-terminal-window" class="h-3.5 w-3.5 shrink-0 text-slate-400" />
+      <span class="truncate">{account_name(@account)}</span>
+      <span
+        :if={@window}
+        data-qa="conversation-account-window"
+        class={["shrink-0 tabular-nums", window_tone(@window)]}
+      >
+        {format_window(@window)}
+      </span>
+    </span>
+    """
+  end
+
+  defp account_chip(assigns) do
+    ~H"""
+    <span
+      id="conversation-account"
+      data-qa="conversation-account"
+      class="ml-auto shrink-0 inline-flex items-center gap-1 rounded-md border border-dashed border-slate-300 dark:border-slate-600 px-1.5 py-0.5 text-[11px] text-slate-500 dark:text-slate-400"
+    >
+      <.icon name="pi-terminal-window" class="h-3.5 w-3.5" />no account yet
+    </span>
+    """
+  end
+
+  # The conversation header has room for little beside the role and its model, so
+  # an account goes by what tells it apart, with its CLI in the title.
+  defp account_name(%Backend{} = account), do: Backend.short_name(account) || Backend.cli_name(account.name)
+
+  # --- Usage Card Subcomponent ---
+
+  attr :wait, :map, required: true
+  attr :target, :any, required: true
+
+  # A conversation already on an account waits for that one alone; a new one waits
+  # for whichever offering its model resets first.
+  defp usage_card(%{wait: %{pinned: %Backend{} = pinned}} = assigns) do
+    assigns = assign(assigns, :pinned, pinned)
+
+    ~H"""
+    <div
+      id="usage-wait-card"
+      data-qa="usage-wait-card"
+      class="rounded-lg border border-violet-300 dark:border-violet-500/30 bg-violet-50 dark:bg-violet-950/20 text-xs"
+    >
+      <p class="flex items-center gap-2 px-3 pt-2 pb-1.5 font-semibold text-violet-700 dark:text-violet-300">
+        <.icon name="pi-gauge" class="h-4 w-4 shrink-0" />
+        <span class="min-w-0 truncate" title={Backend.display_name(@pinned)}>
+          This conversation lives on the {account_name(@pinned)} account
+        </span>
+        <button
+          type="button"
+          id="usage-wait-stop"
+          data-qa="usage-wait-stop"
+          phx-click="stop_run"
+          phx-target={@target}
+          class="ml-auto inline-flex items-center gap-1 shrink-0 font-semibold text-red-600 dark:text-red-500 hover:underline cursor-pointer"
+        >
+          <.icon name="pi-stop-fill" class="h-3.5 w-3.5" />Stop
+        </button>
+      </p>
+      <ul class="border-t border-violet-200 dark:border-violet-500/20">
+        <.usage_account :for={account <- @wait.accounts} account={account} earliest={@wait.resets_at} />
+      </ul>
+    </div>
+    """
+  end
+
+  defp usage_card(assigns) do
+    ~H"""
+    <div
+      id="usage-wait-card"
+      data-qa="usage-wait-card"
+      class="rounded-lg border border-violet-300 dark:border-violet-500/30 bg-violet-50 dark:bg-violet-950/20"
+    >
+      <p class="flex items-center gap-2 px-3 pt-2.5 pb-2 text-xs font-semibold text-violet-700 dark:text-violet-300">
+        <.icon name="pi-gauge" class="h-4 w-4 shrink-0" />
+        <span class="min-w-0">{@wait.model} is used up on every signed-in account</span>
+      </p>
+      <ul class="border-t border-violet-200 dark:border-violet-500/20 divide-y divide-slate-200 dark:divide-slate-700/60 text-xs">
+        <.usage_account :for={account <- @wait.accounts} account={account} earliest={@wait.resets_at} />
+      </ul>
+    </div>
+    """
+  end
+
+  attr :account, :map, required: true
+  attr :earliest, :any, default: nil
+
+  defp usage_account(%{account: %{waited_on?: false}} = assigns) do
+    ~H"""
+    <li
+      data-qa="usage-wait-account"
+      data-waited-on="false"
+      class="grid grid-cols-[1fr_auto_auto] items-center gap-x-3 px-3 py-2 text-slate-400 dark:text-slate-500"
+    >
+      <span class="min-w-0 truncate">{Backend.display_name(@account.backend)}</span>
+      <span>{if @account.backend.status == :unavailable, do: "unavailable", else: "signed out"}</span>
+      <span class="whitespace-nowrap">not waited on</span>
+    </li>
+    """
+  end
+
+  defp usage_account(assigns) do
+    assigns =
+      assign(assigns, :earliest?, assigns.account.resets_at != nil and assigns.account.resets_at == assigns.earliest)
+
+    ~H"""
+    <li
+      data-qa="usage-wait-account"
+      data-waited-on="true"
+      class="grid grid-cols-[1fr_auto_auto] items-center gap-x-3 px-3 py-2"
+    >
+      <span class="min-w-0 truncate font-medium text-slate-900 dark:text-slate-100">
+        {Backend.display_name(@account.backend)}
+      </span>
+      <span class={["tabular-nums", @account.window && window_tone(@account.window)]}>
+        {@account.window && format_window(@account.window)}
+      </span>
+      <span
+        :if={@account.resets_at}
+        id={"usage-reset-#{@account.backend.id}"}
+        data-qa="usage-wait-reset"
+        data-earliest={to_string(@earliest?)}
+        phx-hook="LocalResetTime"
+        data-at={DateTime.to_iso8601(@account.resets_at)}
+        class={[
+          "whitespace-nowrap",
+          @earliest? && "font-semibold text-violet-700 dark:text-violet-300",
+          not @earliest? && "text-slate-500 dark:text-slate-400"
+        ]}
+      >
+        resets {Calendar.strftime(@account.resets_at, "%a %-d, %-I:%M %p")}
+      </span>
+      <span
+        :if={is_nil(@account.resets_at)}
+        class="whitespace-nowrap text-slate-500 dark:text-slate-400"
+      >
+        has room again
+      </span>
+    </li>
+    """
+  end
 end

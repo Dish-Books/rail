@@ -76,7 +76,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndMergeTest do
     expect(Git, :merge_default_branch, fn _scope, %Task{} -> :ok end)
     expect(Git, :push_branch, fn _scope, _task -> :ok end)
 
-    assert {:ok, :merging} = Pipeline.end_turn_and_merge(task)
+    assert {:ok, :merging} = Pipeline.end_turn_and_merge(task, os_process)
     assert_received :stopped
     assert_receive {:run_changed, ^run_id}, 5_000
 
@@ -99,13 +99,36 @@ defmodule Rail.Pipeline.Actions.EndTurnAndMergeTest do
       {:ok, %OsProcess{run: spawned}}
     end)
 
-    assert {:ok, :merging} = Pipeline.end_turn_and_merge(task)
+    assert {:ok, :merging} = Pipeline.end_turn_and_merge(task, os_process)
     assert_receive {:run_changed, ^run_id}, 5_000
 
     assert_received {:resolving, argv}
     assert Enum.any?(argv, &(&1 =~ "lib/a.ex"))
     assert %Task{is_updating_branch: true} = Repo.reload!(task)
     assert %Run{status: :running} = Repo.get!(Run, run_id)
+  end
+
+  test "a conflict turn waiting for usage keeps the run in progress and the queued message behind it", %{
+    task: task,
+    run: %Run{id: run_id} = run,
+    os_process: os_process
+  } do
+    {:ok, _queued} = Pipeline.update_run(run, %{pending_chat: "Also rename the module"})
+    stub(Tools, :stop_os_process, fn _scope, _os_process, _opts -> {:ok, os_process} end)
+    stub(Git, :fetch_default_branch, fn _project, _path -> :ok end)
+    stub(Git, :up_to_date_with?, fn _path, _base -> false end)
+    expect(Git, :merge_default_branch, fn _scope, _task -> {:conflicts, ["lib/a.ex"]} end)
+
+    expect(Tools, :start_os_process, fn spawned, _argv ->
+      {:ok, waiting} = Pipeline.update_run(spawned, %{status: :waiting_for_usage})
+      {:ok, %OsProcess{run: waiting}}
+    end)
+
+    assert {:ok, :merging} = Pipeline.end_turn_and_merge(task, os_process)
+    assert_receive {:run_changed, ^run_id}, 5_000
+
+    assert %Run{status: :waiting_for_usage, stage_outcome: :in_progress, pending_chat: "Also rename the module"} =
+             Repo.get!(Run, run_id)
   end
 
   test "a merge Rail could not make is recorded on the run", %{
@@ -118,7 +141,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndMergeTest do
     stub(Git, :up_to_date_with?, fn _path, _base -> false end)
     expect(Git, :merge_default_branch, fn _scope, _task -> {:error, "merge refused"} end)
 
-    assert {:ok, :merging} = Pipeline.end_turn_and_merge(task)
+    assert {:ok, :merging} = Pipeline.end_turn_and_merge(task, os_process)
     assert_receive {:run_changed, ^run_id}, 5_000
 
     assert %Run{error: "Could not merge the default branch in: merge refused"} = Repo.get!(Run, run_id)
@@ -134,49 +157,61 @@ defmodule Rail.Pipeline.Actions.EndTurnAndMergeTest do
     stub(Git, :up_to_date_with?, fn _path, _base -> false end)
     expect(Git, :merge_default_branch, fn _scope, _task -> {:error, :locked} end)
 
-    assert {:ok, :merging} = Pipeline.end_turn_and_merge(task)
+    assert {:ok, :merging} = Pipeline.end_turn_and_merge(task, os_process)
     assert_receive {:run_changed, ^run_id}, 5_000
 
     assert %Run{error: "Could not merge the default branch in: :locked"} = Repo.get!(Run, run_id)
   end
 
-  test "a task past Engineer is refused with the turn still going", %{task: task} do
+  test "a request from a turn that has already ended is refused, merging nothing", %{
+    task: task,
+    os_process: os_process
+  } do
+    os_process |> OsProcess.changeset(%{status: :finished}) |> Repo.update!()
+    reject(Tools, :stop_os_process, 3)
+    reject(Git, :fetch_default_branch, 2)
+
+    assert {:refused, "Refused, nothing merged again. This turn has already ended" <> _rest} =
+             Pipeline.end_turn_and_merge(task, os_process)
+  end
+
+  test "a task past Engineer is refused with the turn still going", %{task: task, os_process: os_process} do
     {:ok, task} = Pipeline.update_task(task, %{stage: :review})
     reject(Tools, :stop_os_process, 3)
 
     assert {:refused, "Refused, nothing merged. The task is at Review, not Engineer" <> _rest} =
-             Pipeline.end_turn_and_merge(task)
+             Pipeline.end_turn_and_merge(task, os_process)
   end
 
-  test "a merge already under way is refused", %{task: task} do
+  test "a merge already under way is refused", %{task: task, os_process: os_process} do
     {:ok, task} = Pipeline.update_task(task, %{is_updating_branch: true})
     reject(Tools, :stop_os_process, 3)
 
     assert {:refused, "Refused, nothing merged. A merge is already under way on this branch."} =
-             Pipeline.end_turn_and_merge(task)
+             Pipeline.end_turn_and_merge(task, os_process)
   end
 
-  test "uncommitted changes are refused", %{task: task, repo: repo} do
+  test "uncommitted changes are refused", %{task: task, repo: repo, os_process: os_process} do
     File.write!(Path.join(repo, "feature.ex"), "one\n")
     reject(Tools, :stop_os_process, 3)
 
     assert {:refused, "Refused, nothing merged. The worktree has uncommitted changes." <> _rest} =
-             Pipeline.end_turn_and_merge(task)
+             Pipeline.end_turn_and_merge(task, os_process)
   end
 
-  test "a branch already up to date is refused", %{task: task} do
+  test "a branch already up to date is refused", %{task: task, os_process: os_process} do
     stub(Git, :fetch_default_branch, fn _project, _path -> :ok end)
     expect(Git, :up_to_date_with?, fn _path, "main" -> true end)
     reject(Tools, :stop_os_process, 3)
 
     assert {:refused, "Refused, nothing merged. This branch already has everything on origin/main."} =
-             Pipeline.end_turn_and_merge(task)
+             Pipeline.end_turn_and_merge(task, os_process)
   end
 
-  test "a fetch that fails is Rail's failure, with the turn still going", %{task: task} do
+  test "a fetch that fails is Rail's failure, with the turn still going", %{task: task, os_process: os_process} do
     expect(Git, :fetch_default_branch, fn _project, _path -> {:error, "no network"} end)
     reject(Tools, :stop_os_process, 3)
 
-    assert {:error, "no network"} = Pipeline.end_turn_and_merge(task)
+    assert {:error, "no network"} = Pipeline.end_turn_and_merge(task, os_process)
   end
 end

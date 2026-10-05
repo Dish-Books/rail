@@ -256,21 +256,28 @@ defmodule RailWeb.Live.EngineerStage do
     {:noreply, sync_pane(socket)}
   end
 
+  # Only a file this pane drew is read, since the path comes from the page.
   def handle_event("expand_gap", params, socket) do
     %{"path" => path, "gap_index" => index, "start_line" => start_line, "end_line" => end_line} = params
 
-    {key, lines} =
-      Git.expand_diff_gap(
-        socket.assigns.task,
-        path,
-        String.to_integer(index),
-        String.to_integer(start_line),
-        String.to_integer(end_line)
-      )
+    case Enum.find(socket.assigns.files, &(&1.path == path)) do
+      %{} ->
+        {key, lines} =
+          Git.expand_diff_gap(
+            socket.assigns.task,
+            path,
+            String.to_integer(index),
+            String.to_integer(start_line),
+            String.to_integer(end_line)
+          )
 
-    socket = socket |> assign(:expanded_gaps, Map.put(socket.assigns.expanded_gaps, key, lines)) |> sync_pane()
+        socket = socket |> assign(:expanded_gaps, Map.put(socket.assigns.expanded_gaps, key, lines)) |> sync_pane()
 
-    {:noreply, socket}
+        {:noreply, socket}
+
+      nil ->
+        {:noreply, socket}
+    end
   end
 
   # The line and its code are read off the diff this pane drew, so the comment quotes

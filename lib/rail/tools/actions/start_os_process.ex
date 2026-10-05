@@ -1,33 +1,29 @@
 defmodule Rail.Tools.Actions.StartOsProcess do
   @moduledoc false
 
-  import Rail.Tools.Utils.BackendEnv
-  import Rail.Tools.Utils.EnqueueSandbox
-  import Rail.Tools.Utils.EnsureExecutable
-  import Rail.Tools.Utils.TrustWorkspace
-  import Rail.Tools.Utils.WorktreeEnv
+  import Rail.Tools.Utils.PlaceOnAccount
 
   alias Rail.Mcp
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
-  alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
 
   @doc """
   Starts a detached CLI runner for a run in a sandbox of its own, records the
   row, starts its Follower, and settles the dispatch either way.
 
-  A sandbox holds what the run's role reserves. When the machine lacks that, the
-  row waits in line, the run reads as waiting, and it starts on its own once
-  enough is free.
+  The turn runs on the account its conversation lives on, or the one with the
+  most usage to spare. When every account it could go to is used up, it waits
+  for usage. A sandbox holds what the run's role reserves; when the machine lacks
+  that, the row waits in line. Either way the run reads as waiting and starts on
+  its own.
 
-  Everything the spawn needs is derived from the run: the executable and the
-  account's config directory from its role's backend, and the working directory and
-  stream path from its task. `argv` is arguments only. Nothing is wired in for
+  Everything the spawn needs is derived from the run: the CLI and model from its
+  role, the executable and config directory from the account it is placed on,
+  and the working directory and stream path from its task. `argv` is arguments only. Nothing is wired in for
   the exit: `run_finished/3` works from the row the spawn writes.
 
   A spawn is a spawn whether it carries a stage's work or a message the human
@@ -52,21 +48,17 @@ defmodule Rail.Tools.Actions.StartOsProcess do
   defp dispatch_disabled?, do: Application.get_env(:rail, :no_dispatch, false)
 
   defp spawn_os_process(%Run{} = run, argv) do
-    run = Repo.preload(run, task: :project, role: :backend)
-    %Run{task: %Task{} = task, role: %Role{backend: %Backend{} = backend}} = run
+    run = Repo.preload(run, [:role, task: :project])
+    %Run{task: %Task{} = task, role: %Role{}} = run
 
     stream_path = prepare_stream_files(task, run)
     {token, token_hash} = Mcp.issue_run_token()
     os_process = insert_os_process(run, stream_path, token_hash)
 
-    result =
-      with :ok <- ensure_executable(backend.executable_path, os_process, run) do
-        enqueue_sandbox(os_process, run, launch_spec(backend, argv, stream_path, task, token))
-      end
-
-    case result do
+    case place_on_account(os_process, run, argv, token) do
       {:ok, os_process} -> finalize(task, run, os_process)
       {:waiting, os_process} -> finalize(task, %{run | status: :waiting_for_resources}, os_process)
+      {:waiting_for_usage, os_process, _resets_at} -> finalize(task, %{run | status: :waiting_for_usage}, os_process)
       {:error, reason} -> fail(run, reason, Repo.get!(OsProcess, os_process.id))
     end
   end
@@ -124,55 +116,5 @@ defmodule Rail.Tools.Actions.StartOsProcess do
     File.write!(stream_path, "")
     File.write!("#{stream_path}.err", "")
     stream_path
-  end
-
-  # The clone is trusted along with the worktree: Claude Code keys a worktree's
-  # trust to the repository it belongs to.
-  defp launch_spec(backend, argv, stream_path, %Task{project: %Project{} = project} = task, token) do
-    trust_workspace(backend, [project.clone_path, task.worktree_path])
-    {args, stdin_path} = prompt_on_stdin(argv, stream_path)
-    args = system_prompt_in_file(args, stream_path)
-
-    %{
-      "executable" => backend.executable_path,
-      "args" => args,
-      "env" => task |> worktree_env() |> Map.merge(backend_env(backend)) |> Map.put("RAIL_MCP_TOKEN", token),
-      "cwd" => task.worktree_path,
-      "stdout_path" => stream_path,
-      "stderr_path" => "#{stream_path}.err",
-      "stdin_path" => stdin_path
-    }
-  end
-
-  # Claude's prompt goes in on stdin rather than in argv. Linux refuses to exec
-  # with any one argument over 128KB (E2BIG), and a brief carrying an approved
-  # design's whole page runs past that, so the CLI never started and the run
-  # ended "Exited with code 7" with nothing in either stream. `-p` is Claude's
-  # --print flag, and with no prompt argument it reads the prompt from stdin.
-  # The file sits beside the run's stream, so what the agent was sent can be read
-  # back later.
-  defp prompt_on_stdin(["-p", prompt | rest], stream_path) when is_binary(prompt) do
-    prompt_path = "#{stream_path}.prompt"
-    File.write!(prompt_path, prompt)
-    {["-p" | rest], prompt_path}
-  end
-
-  defp prompt_on_stdin(argv, _stream_path), do: {argv, nil}
-
-  # The role's prompt goes in a file for the same reason, and for one more: in
-  # argv it is in the agent's command line, where `pgrep -f` reads it. A demo
-  # prompt that says `mix phx.server` made the agent's own process match the
-  # `pgrep -f "mix phx.server"` it ran to stop its server in the worktree, so it
-  # killed itself and the run ended "Exited with code 143".
-  defp system_prompt_in_file(args, stream_path) do
-    case Enum.split_while(args, &(&1 != "--append-system-prompt")) do
-      {before, ["--append-system-prompt", system_prompt | rest]} ->
-        system_prompt_path = "#{stream_path}.system-prompt"
-        File.write!(system_prompt_path, system_prompt)
-        before ++ ["--append-system-prompt-file", system_prompt_path | rest]
-
-      {_all, []} ->
-        args
-    end
   end
 end

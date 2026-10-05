@@ -13,7 +13,7 @@ defmodule Rail.Roles.Actions.ListRoles do
         from(r in Role,
           where: r.project_id == ^project_id,
           order_by: [asc: r.position, asc: r.inserted_at],
-          preload: [:backend, :project]
+          preload: :project
         )
       )
 

@@ -14,7 +14,7 @@ defmodule Rail.Tools.Utils.LaunchSandbox do
 
   @doc """
   Starts a waiting process from its launch spec, marks it running and hands it to
-  a Follower. `os_process` must carry its run, preloaded down to `role: :backend`.
+  a Follower. `os_process` must carry its run, preloaded down to its `role`.
 
   `:local` spawns beside Rail. `:docker` runs it in a container of its own, which
   outlives Rail and holds the memory the row reserves. Its CPUs are the row's

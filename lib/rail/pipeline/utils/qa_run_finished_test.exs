@@ -45,7 +45,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
 
     %{
       task: task,
-      run: Repo.preload(run, [:task, role: :backend]),
+      run: Repo.preload(run, [:task, :role]),
       report_path: Path.join(qa_dir, "QFN-1.json"),
       finding: %{
         key: "total-unrounded",

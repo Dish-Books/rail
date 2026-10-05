@@ -32,7 +32,6 @@ defmodule Rail.Tools.Boot do
   alias Rail.Tools
   alias Rail.Tools.Clients.Docker
   alias Rail.Tools.FollowerSupervisor
-  alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
 
   @default_starting_timeout_seconds 60
@@ -77,7 +76,7 @@ defmodule Rail.Tools.Boot do
       Repo.all(
         from r in OsProcess,
           where: r.status in [:starting, :running],
-          preload: [run: [role: :backend]],
+          preload: [run: :role],
           order_by: [asc: r.started_at]
       )
 
@@ -184,12 +183,12 @@ defmodule Rail.Tools.Boot do
   end
 
   defp handle_dead_os_process(os_process, exited, now) do
-    # A stream is parsed by the backend that wrote it, and the row arrives
+    # A stream is parsed by the CLI that wrote it, and the row arrives
     # preloaded down to the role that produced the run.
-    %Run{role: %Role{backend: %Backend{} = backend}} = run = os_process.run
+    %Run{role: %Role{cli: cli}} = run = os_process.run
 
     event_state =
-      new_event_state(if(OsProcess.command?(os_process), do: :command, else: backend),
+      new_event_state(if(OsProcess.command?(os_process), do: :command, else: cli),
         conversation_id: run.conversation_id
       )
 

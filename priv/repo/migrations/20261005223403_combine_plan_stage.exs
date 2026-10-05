@@ -3,7 +3,7 @@ defmodule Rail.Repo.Migrations.CombinePlanStage do
 
   # Product, design and architect become one Plan step, and every task is brought to
   # it here so no code has to know the old flow. Their roles stay, as Plan's
-  # subagents, and each project gets a Plan role on its architect's backend and
+  # subagents, and each project gets a Plan role on its architect's CLI and
   # model, allowed every MCP tool any of the three was.
   #
   # Every task that ran any of the three gets one Plan run in their place, with no
@@ -51,7 +51,7 @@ defmodule Rail.Repo.Migrations.CombinePlanStage do
   defp insert_plan_roles do
     %{rows: architects} =
       repo().query!("""
-      SELECT a.project_id, a.backend_id, a.model, a.reasoning_effort, a.max_concurrent, a.position,
+      SELECT a.project_id, a.cli, a.model, a.reasoning_effort, a.max_concurrent, a.position,
              a.reserved_cpus, a.reserved_memory_gb,
              ARRAY(
                SELECT DISTINCT tool FROM roles r, unnest(r.mcp_tools) AS tool
@@ -63,10 +63,10 @@ defmodule Rail.Repo.Migrations.CombinePlanStage do
         AND NOT EXISTS (SELECT 1 FROM roles p WHERE p.project_id = a.project_id AND p.stage = 'plan')
       """)
 
-    for [project_id, backend_id, model, effort, max_concurrent, position, cpus, memory_gb, mcp_tools] <- architects do
+    for [project_id, cli, model, effort, max_concurrent, position, cpus, memory_gb, mcp_tools] <- architects do
       repo().query!(
         """
-        INSERT INTO roles (id, project_id, backend_id, stage, name, description, icon_name, model, reasoning_effort,
+        INSERT INTO roles (id, project_id, cli, stage, name, description, icon_name, model, reasoning_effort,
                            system_prompt, max_concurrent, position, mcp_tools, reserved_cpus, reserved_memory_gb,
                            inserted_at, updated_at)
         VALUES ($1, $2, $3, 'plan', 'Plan', $4, 'pi-compass-tool', $5, $6, $7, $8, $9, $10, $11, $12,
@@ -75,7 +75,7 @@ defmodule Rail.Repo.Migrations.CombinePlanStage do
         [
           UXID.generate!(prefix: "rol"),
           project_id,
-          backend_id,
+          cli,
           "Leads Product, Designer and Architect to the ticket, the design and the plan",
           model,
           effort,

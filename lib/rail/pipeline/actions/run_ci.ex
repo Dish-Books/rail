@@ -19,7 +19,7 @@ defmodule Rail.Pipeline.Actions.RunCi do
   Starts CI on `run`, the engineer's. Returns `{:ok, run}` with CI running.
   """
   def run_ci(%Scope{}, %Run{} = run) do
-    run = Repo.preload(run, [task: :project, role: :backend], force: true)
+    run = Repo.preload(run, [:role, task: :project], force: true)
 
     with :ok <- runnable(run) do
       {:ok, reset} = run |> Run.changeset(%{ci_failure_streak: 0, review_on_ci_pass: true}) |> Repo.update()

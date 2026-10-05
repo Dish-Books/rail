@@ -72,6 +72,7 @@ defmodule RailWeb.Components.TaskTabs do
         @tone == :issue && "bg-violet-500",
         @tone == :running && "bg-blue-500 animate-pulse",
         @tone == :waiting && "ring-2 ring-inset ring-violet-400",
+        @tone == :waiting_for_usage && "border-2 border-dashed border-violet-400",
         @tone == :blocked && "bg-amber-500",
         @tone == :done && "bg-emerald-500",
         @tone == :failed && "bg-red-500",

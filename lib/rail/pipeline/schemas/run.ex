@@ -19,6 +19,7 @@ defmodule Rail.Pipeline.Schemas.Run do
 
   @statuses [
     :waiting_for_resources,
+    :waiting_for_usage,
     :starting,
     :running,
     :finished,
@@ -128,14 +129,14 @@ defmodule Rail.Pipeline.Schemas.Run do
   done — a run the user stopped, and a run that ended without stating a verdict,
   are the same situation and are resolved the same way, by sending a message.
 
-  `:waiting` is a run in line for the CPU and memory its role reserves, which
-  starts on its own once they are free.
+  `:waiting` is a run in line for the CPU and memory its role reserves, or for
+  an account with usage left, which starts on its own once there is.
 
   `nil` reads as `:queued`: a stage with no run has not started. With its questions
   loaded, a run that stopped while one of its own is still unsent reads as `:blocked`.
   """
   def state(%__MODULE__{status: status}) when status in [:starting, :running], do: :running
-  def state(%__MODULE__{status: :waiting_for_resources}), do: :waiting
+  def state(%__MODULE__{status: status}) when status in [:waiting_for_resources, :waiting_for_usage], do: :waiting
   def state(%__MODULE__{status: :blocked_on_input}), do: :blocked
   def state(%__MODULE__{stage_outcome: :done}), do: :done
   def state(%__MODULE__{error: error}) when is_binary(error), do: :failed
@@ -150,8 +151,8 @@ defmodule Rail.Pipeline.Schemas.Run do
   def state(_nothing_yet), do: :queued
 
   @doc """
-  Returns true if this run is in flight: executing, or waiting in line for the
-  sandbox it will execute in.
+  Returns true if this run is in flight: executing, or waiting for the sandbox
+  or the account it will execute on.
   """
   def running?(%__MODULE__{} = run), do: state(run) in [:running, :waiting]
   def running?(_other), do: false

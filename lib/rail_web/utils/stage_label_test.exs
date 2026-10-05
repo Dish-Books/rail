@@ -22,6 +22,7 @@ defmodule RailWeb.Utils.StageLabelTest do
   test "a working stage says so" do
     assert stage_label(%Task{stage: :plan}, %Run{status: :running}) == "Plan running"
     assert stage_label(%Task{stage: :engineer}, %Run{status: :waiting_for_resources}) == "Engineer waiting for resources"
+    assert stage_label(%Task{stage: :engineer}, %Run{status: :waiting_for_usage}) == "Engineer waiting for usage"
   end
 
   test "a stage parked on a question asks for the answer" do

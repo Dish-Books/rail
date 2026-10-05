@@ -80,7 +80,9 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
 
     expect(Git, :push_branch, fn _scope, _task -> :ok end)
 
-    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, "ETC-1: add the feature\n\nWhy it changed.")
+    assert {:ok, :committing} =
+             Pipeline.end_turn_and_commit(task, os_process, "ETC-1: add the feature\n\nWhy it changed.")
+
     assert_received :stopped
     assert_receive {:run_changed, ^run_id}, 5_000
 
@@ -89,28 +91,63 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
     refute File.exists?(Path.join(task.scratch_path, "commits"))
   end
 
-  test "a blank message is refused while the turn is still going", %{task: task, repo: repo} do
+  # The agent's CLI can send one call twice, the second while the first is still
+  # ending the turn; the stop marks the row finished, as the real one does.
+  test "the same call twice at once commits once, and the repeat is refused", %{
+    task: task,
+    run: %Run{id: run_id},
+    repo: repo,
+    os_process: os_process
+  } do
+    File.write!(Path.join(repo, "feature.ex"), "one\n")
+
+    expect(Tools, :stop_os_process, fn _scope, %OsProcess{} = stopping, _opts ->
+      stopped = stopping |> OsProcess.changeset(%{status: :finished}) |> Repo.update!()
+      {:ok, stopped}
+    end)
+
+    expect(Git, :push_branch, fn _scope, _task -> :ok end)
+
+    calls =
+      for _n <- 1..2, do: Elixir.Task.async(fn -> Pipeline.end_turn_and_commit(task, os_process, "ETC-1: add it") end)
+
+    results = Elixir.Task.await_many(calls)
+
+    assert [{:ok, :committing}, {:refused, "Refused, nothing committed again. This turn has already ended" <> _rest}] =
+             Enum.sort_by(results, &(elem(&1, 0) != :ok))
+
+    assert_receive {:run_changed, ^run_id}, 5_000
+
+    assert repo |> git!(["log", "--pretty=%s"]) |> String.split("\n") |> Enum.count(&(&1 == "ETC-1: add it")) == 1
+    assert %Run{status: :finished, stage_outcome: :done, error: nil} = Repo.get!(Run, run_id)
+  end
+
+  test "a blank message is refused while the turn is still going", %{task: task, repo: repo, os_process: os_process} do
     File.write!(Path.join(repo, "feature.ex"), "one\n")
     reject(Tools, :stop_os_process, 3)
 
     assert {:refused, "Refused, nothing committed. message: is required" <> _rest} =
-             Pipeline.end_turn_and_commit(task, "  ")
+             Pipeline.end_turn_and_commit(task, os_process, "  ")
   end
 
-  test "a worktree with nothing changed is refused", %{task: task} do
+  test "a worktree with nothing changed is refused", %{task: task, os_process: os_process} do
     reject(Tools, :stop_os_process, 3)
 
     assert {:refused, "Refused, nothing committed. Nothing in the worktree has changed." <> _rest} =
-             Pipeline.end_turn_and_commit(task, "ETC-1: nothing")
+             Pipeline.end_turn_and_commit(task, os_process, "ETC-1: nothing")
   end
 
-  test "a turn resolving a merge is refused, since that commit is Rail's", %{task: task, repo: repo} do
+  test "a turn resolving a merge is refused, since that commit is Rail's", %{
+    task: task,
+    repo: repo,
+    os_process: os_process
+  } do
     File.write!(Path.join(repo, "feature.ex"), "one\n")
     {:ok, task} = Pipeline.update_task(task, %{is_updating_branch: true})
     reject(Tools, :stop_os_process, 3)
 
     assert {:refused, "Refused, nothing committed. This turn is resolving a merge" <> _rest} =
-             Pipeline.end_turn_and_commit(task, "ETC-1: resolve")
+             Pipeline.end_turn_and_commit(task, os_process, "ETC-1: resolve")
   end
 
   test "after a CI failure, nothing changed runs CI again on the same commit", %{
@@ -132,7 +169,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
       {:ok, %OsProcess{kind: :ci, run: spawned}}
     end)
 
-    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, "ETC-1: rerun CI past a flaky test")
+    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, os_process, "ETC-1: rerun CI past a flaky test")
     assert_receive {:run_changed, ^run_id}, 5_000
 
     assert git!(repo, ["log", "-1", "--pretty=%s"]) =~ "initial commit"
@@ -160,7 +197,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
       {:ok, %OsProcess{kind: :ci, run: spawned}}
     end)
 
-    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, "ETC-1: add the feature")
+    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, os_process, "ETC-1: add the feature")
     assert_receive {:run_changed, ^run_id}, 5_000
 
     assert %Run{status: :running, stage_outcome: :in_progress, error: nil} = Repo.get!(Run, run_id)
@@ -180,7 +217,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
     stub(Git, :credential_env, fn _project -> {:error, {:github_api_error, 404, %{}}} end)
     reject(Tools, :start_command_process, 4)
 
-    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, "ETC-1: add the feature")
+    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, os_process, "ETC-1: add the feature")
     assert_receive {:run_changed, ^run_id}, 5_000
 
     assert %Run{error: "Could not commit the engineer's work: Could not start CI: " <> _reason} = Repo.get!(Run, run_id)
@@ -216,7 +253,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
     stub(Git, :credential_env, fn _project -> {:ok, %{"RAIL_GIT_TOKEN" => "ghs_token"}} end)
     reject(Tools, :start_os_process, 2)
 
-    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, "ETC-1: add the feature")
+    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, os_process, "ETC-1: add the feature")
 
     # Joining the line says so on the run's topic too, so the settle is waited for.
     eventually(fn ->
@@ -235,7 +272,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
     stub(Tools, :stop_os_process, fn _scope, _os_process, _opts -> {:ok, os_process} end)
     stub(Git, :push_branch, fn _scope, _task -> {:error, "remote rejected"} end)
 
-    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, "ETC-1: add the feature")
+    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, os_process, "ETC-1: add the feature")
     assert_receive {:run_changed, ^run_id}, 5_000
 
     assert %Run{error: "Could not commit the engineer's work: remote rejected", stage_outcome: :in_progress} =
@@ -254,7 +291,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
     stub(Tools, :stop_os_process, fn _scope, _os_process, _opts -> {:ok, os_process} end)
     stub(Git, :push_branch, fn _scope, _task -> raise "the remote hung up" end)
 
-    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, "ETC-1: add the feature")
+    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, os_process, "ETC-1: add the feature")
     assert_receive {:run_changed, ^run_id}, 5_000
 
     assert %Run{error: "Could not finish the engineer's turn: the remote hung up", stage_outcome: :in_progress} =
@@ -284,7 +321,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
       {:ok, %OsProcess{run: spawned}}
     end)
 
-    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, "ETC-1: add the feature")
+    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, os_process, "ETC-1: add the feature")
     assert_receive {:dispatched, argv}, 5_000
     assert Enum.any?(argv, &(&1 =~ "Also rename the filter"))
 
@@ -306,7 +343,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
     stub(Tools, :stop_os_process, fn _scope, _os_process, _opts -> {:ok, os_process} end)
     stub(Git, :push_branch, fn _scope, _task -> {:error, "remote: GH006: Protected branch\nTo origin.git\n"} end)
 
-    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, "ETC-1: add the feature")
+    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, os_process, "ETC-1: add the feature")
     assert_receive {:run_changed, ^run_id}, 5_000
 
     assert ["[rail] Could not commit the engineer's work: remote: GH006: Protected branch To origin.git"] =
@@ -323,7 +360,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
     stub(Tools, :stop_os_process, fn _scope, _os_process, _opts -> {:ok, os_process} end)
     stub(Git, :commit_worktree, fn _scope, _task, _message -> {:error, :index_locked} end)
 
-    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, "ETC-1: add the feature")
+    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, os_process, "ETC-1: add the feature")
     assert_receive {:run_changed, ^run_id}, 5_000
 
     assert %Run{error: "Could not commit the engineer's work: :index_locked"} = Repo.get!(Run, run_id)
@@ -353,7 +390,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
       {:ok, %OsProcess{run: spawned}}
     end)
 
-    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, "ETC-1: add the feature")
+    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, os_process, "ETC-1: add the feature")
     assert_receive {:dispatched, argv}, 5_000
     assert Enum.any?(argv, &(&1 =~ "Also rename the filter"))
   end

@@ -768,7 +768,14 @@ defmodule RailWeb.TaskLive do
     Enum.find_value(started, fn {role, run} -> role.stage == stage and run end)
   end
 
-  # Where the stage's run stands in the line for a sandbox, while it waits in it.
+  # What the stage's run waits on: its account's usage, or its place in the line for a sandbox.
+  defp line(%Run{status: :waiting_for_usage} = run) do
+    case Tools.get_usage_wait(run) do
+      {:ok, wait} -> wait
+      {:error, :not_waiting} -> nil
+    end
+  end
+
   defp line(%Run{} = run) do
     with :waiting <- Run.state(run),
          {:ok, line} <- Tools.get_queue_position(run) do
@@ -838,6 +845,8 @@ defmodule RailWeb.TaskLive do
     [issue_tab | role_tabs]
   end
 
+  # A run waiting for usage reads apart from one waiting for a sandbox.
+  defp tab_tone(%Run{status: :waiting_for_usage}), do: :waiting_for_usage
   defp tab_tone(run), do: Run.state(run)
 
   # A run can ask several things at once, so its whole unsent round shows as tabs, in

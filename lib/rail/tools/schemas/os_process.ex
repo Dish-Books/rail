@@ -10,11 +10,13 @@ defmodule Rail.Tools.Schemas.OsProcess do
 
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Tools.Schemas.Backend
   alias Rail.Types.EncryptedBinary
   alias Rail.Users.Schemas.User
 
   @statuses [
     :waiting_for_resources,
+    :waiting_for_usage,
     :starting,
     :running,
     :finished,
@@ -62,6 +64,8 @@ defmodule Rail.Tools.Schemas.OsProcess do
     field :ended_at, :utc_datetime_usec
     field :ended_reason, Ecto.Enum, values: @ended_reasons
     belongs_to :stopped_by, User
+    # The account an agent turn runs on, stamped when it is placed, so its conversation stays there.
+    belongs_to :backend, Backend
 
     belongs_to :task, Task
     belongs_to :run, Run
@@ -91,7 +95,8 @@ defmodule Rail.Tools.Schemas.OsProcess do
     :launch,
     :ended_at,
     :ended_reason,
-    :stopped_by_id
+    :stopped_by_id,
+    :backend_id
   ]
 
   @required_fields [
@@ -121,7 +126,10 @@ defmodule Rail.Tools.Schemas.OsProcess do
   @doc "Where a command process records the status it exited with."
   def exit_path(%__MODULE__{stream_path: stream_path}), do: "#{stream_path}.exit"
 
-  @doc "How a waiting process is to be started, as it was written when it joined the line."
+  @doc """
+  How a waiting process is to be started, as it was written when it joined the
+  line, or the arguments and token a turn waiting for usage keeps.
+  """
   def launch_spec(%__MODULE__{launch: launch}) when is_binary(launch), do: Jason.decode!(launch)
 
   @doc "True for a process that holds a reservation while it runs."
@@ -149,7 +157,8 @@ defmodule Rail.Tools.Schemas.OsProcess do
   """
   def duration_seconds(os_process, now \\ DateTime.utc_now())
 
-  def duration_seconds(%__MODULE__{status: :waiting_for_resources}, _now), do: 0
+  def duration_seconds(%__MODULE__{status: status}, _now) when status in [:waiting_for_resources, :waiting_for_usage],
+    do: 0
 
   def duration_seconds(%__MODULE__{started_at: %DateTime{} = started, status: status}, now)
       when status in [:starting, :running] do

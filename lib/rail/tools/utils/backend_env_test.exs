@@ -13,10 +13,4 @@ defmodule Rail.Tools.Utils.BackendEnvTest do
              "CLAUDE_CODE_DISABLE_AUTO_MEMORY" => "1"
            }
   end
-
-  test "Claude is signed in by the backend's token, when it has one" do
-    claude = %Backend{id: "bkd_claude", name: :claude, oauth_token: "sk-ant-oat01-abc"}
-
-    assert %{"CLAUDE_CODE_OAUTH_TOKEN" => "sk-ant-oat01-abc", "CLAUDE_CONFIG_DIR" => _dir} = backend_env(claude)
-  end
 end

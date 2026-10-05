@@ -4,10 +4,8 @@ defmodule Rail.Tools.Utils.ParseLineTest do
   import Rail.Tools.Utils.NewEventState
   import Rail.Tools.Utils.ParseLine
 
-  alias Rail.Tools.Schemas.Backend
-
   test "dispatches on the state struct" do
-    claude = new_event_state(%Backend{name: :claude})
+    claude = new_event_state(:claude)
     assert parse_line(claude, "banner message").logs == ["banner message"]
 
     command = new_event_state(:command)

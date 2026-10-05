@@ -23,6 +23,10 @@ defmodule RailWeb.Utils.StageLabel do
   # No role runs at merged, so there is no run to say anything; the task is done.
   def stage_label(%Task{stage: :merged}, _run), do: "Merged"
 
+  # Read off its status before the state it shares with a run waiting for a sandbox.
+  def stage_label(%Task{stage: stage}, %Run{status: :waiting_for_usage}),
+    do: "#{Task.stage_label(stage)} waiting for usage"
+
   def stage_label(%Task{stage: stage} = task, run) do
     case Run.state(run) do
       :queued -> "Queued for #{Task.stage_label(stage)}"

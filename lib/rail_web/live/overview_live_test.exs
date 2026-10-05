@@ -1259,7 +1259,7 @@ defmodule RailWeb.OverviewLiveTest do
           name: "Other Product",
           model: "claude-opus-5-5",
           system_prompt: "You write tickets.",
-          backend_id: "bkd_test_seed"
+          cli: :claude
         })
 
       {:ok, rival} = Users.update_user(system_scope(), rival, %{project_ids: [project.id]})

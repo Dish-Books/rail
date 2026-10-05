@@ -318,8 +318,10 @@ defmodule Rail.Mcp.Utils.McpTools do
       "name" => "commit",
       "description" =>
         "Hand over finished work. Call it once the work is finished and its tests pass: it ends your turn " <>
-          "on the spot, and Rail commits the worktree under your message and pushes it or runs CI. After a CI " <>
-          "failure that was not your change's to fix, call it with nothing changed and CI runs again.",
+          "on the spot, and Rail commits the worktree under your message and pushes it or runs CI. Nothing " <>
+          "you write after it is read, so write your summary for the human (what you changed, how you " <>
+          "checked it, what you could not do) in the same message, before the call. After a CI failure that " <>
+          "was not your change's to fix, call it with nothing changed and CI runs again.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{
@@ -336,7 +338,7 @@ defmodule Rail.Mcp.Utils.McpTools do
       "name" => "request_merge",
       "description" =>
         "Ask Rail to merge the default branch into a clean worktree, for example when CI failed on a change " <>
-          "that landed there. It ends your turn on the spot. A clean merge is sent on, and conflicts come back " <>
+          "that landed there. It ends your turn on the spot, so say why in the same message, before the call. A clean merge is sent on, and conflicts come back " <>
           "to you as a new turn.",
       "inputSchema" => %{"type" => "object", "properties" => %{}}
     }

@@ -249,8 +249,13 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
       assert {:ok, %{"content" => [%{"text" => "Write-up saved: One round."}]}} =
                Mcp.call_run_tool(context.(:demo), "save_demo", %{"title" => "One round", "summary" => "Shown."})
 
-      expect(Pipeline, :end_turn_and_commit, fn _task, "CRS-1: the change" -> {:ok, :committing} end)
-      expect(Pipeline, :end_turn_and_merge, fn _task -> {:refused, "Refused, nothing merged."} end)
+      # Each is handed the turn that called it, which it ends.
+      expect(Pipeline, :end_turn_and_commit, fn _task, %OsProcess{task_id: task_id}, "CRS-1: the change" ->
+        assert task_id == task.id
+        {:ok, :committing}
+      end)
+
+      expect(Pipeline, :end_turn_and_merge, fn _task, %OsProcess{} -> {:refused, "Refused, nothing merged."} end)
 
       assert {:ok, %{"content" => [%{"text" => "Your turn is over." <> _rest}]}} =
                Mcp.call_run_tool(context.(:engineer), "commit", %{"message" => "CRS-1: the change"})

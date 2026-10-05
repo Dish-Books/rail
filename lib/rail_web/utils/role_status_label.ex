@@ -21,6 +21,7 @@ defmodule RailWeb.Utils.RoleStatusLabel do
   def role_status_label(role, run, task)
 
   def role_status_label(%Role{}, nil, %Task{}), do: "not started"
+  def role_status_label(%Role{}, %Run{status: :waiting_for_usage}, %Task{}), do: "waiting for usage"
 
   def role_status_label(%Role{stage: stage}, %Run{} = run, %Task{stage: stage} = task) do
     case Run.state(run) do

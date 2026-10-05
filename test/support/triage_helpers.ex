@@ -161,7 +161,7 @@ defmodule RailTest.TriageHelpers do
         name: "Triage",
         model: "claude-opus-5-5",
         system_prompt: "You triage.",
-        backend_id: "bkd_test_seed"
+        cli: :claude
       })
 
     %{project: project, role: role, remote: remote}
@@ -172,7 +172,7 @@ defmodule RailTest.TriageHelpers do
   the thread as `Rail.Triage.get_triage_thread/2` loads it.
   """
   def triage_with(thread, result) do
-    Mimic.expect(Rail.Tools, :run_agent, fn _backend, _argv, _opts ->
+    Mimic.expect(Rail.Tools, :run_agent, fn _role, _argv, _opts ->
       thread
       |> Rail.Triage.Schemas.Thread.scratch_path()
       |> Path.join("result.json")

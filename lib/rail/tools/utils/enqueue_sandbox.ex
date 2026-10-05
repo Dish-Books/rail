@@ -34,7 +34,7 @@ defmodule Rail.Tools.Utils.EnqueueSandbox do
       |> Repo.update!()
 
     results = admit_sandboxes(own: queued.id)
-    current = Repo.get!(OsProcess, queued.id)
+    current = OsProcess |> Repo.get!(queued.id) |> Repo.preload(:backend)
 
     cond do
       Map.has_key?(results, queued.id) -> results[queued.id]
@@ -44,10 +44,7 @@ defmodule Rail.Tools.Utils.EnqueueSandbox do
     end
   end
 
-  defp announce(
-         %OsProcess{kind: :agent} = os_process,
-         %Run{role: %Role{backend: %Backend{status: :signed_out} = backend}} = run
-       ) do
+  defp announce(%OsProcess{kind: :agent, backend: %Backend{status: :signed_out} = backend} = os_process, %Run{} = run) do
     line =
       "[rail] #{label(os_process)} is held, because the #{backend.label || backend.name} backend is signed out. " <>
         "It starts on its own once someone signs it in under Settings → Backends."

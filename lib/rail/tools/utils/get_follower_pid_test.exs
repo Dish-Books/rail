@@ -26,8 +26,6 @@ defmodule Rail.Tools.Utils.GetFollowerPidTest do
 
     # The Follower reads the stream format off the run's role, so the run needs a
     # real role behind it.
-    {:ok, backend} =
-      Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
     project =
       %Project{}
@@ -43,7 +41,7 @@ defmodule Rail.Tools.Utils.GetFollowerPidTest do
 
     {:ok, role} =
       Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
+        cli: :claude,
         stage: :engineer,
         name: "follower pid role",
         model: "claude-opus-5-5",
@@ -58,7 +56,7 @@ defmodule Rail.Tools.Utils.GetFollowerPidTest do
         started_at: DateTime.utc_now()
       })
 
-    run = Repo.preload(run, role: :backend)
+    run = Repo.preload(run, :role)
 
     os_process =
       %OsProcess{}
