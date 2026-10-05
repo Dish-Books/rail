@@ -54,6 +54,7 @@ defmodule RailWeb.OverviewLive do
       projects={@projects}
       theme={@theme}
       show_project_switcher={@show_project_switcher}
+      lost_backends={@lost_backends}
     >
       <div
         id="overview-view"

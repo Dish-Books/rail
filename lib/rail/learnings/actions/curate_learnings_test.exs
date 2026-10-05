@@ -134,12 +134,22 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     sighting: sighting
   } do
     observation = sighting.(one, %{})
-    expect(Tools, :run_agent, fn _backend, _argv, _opts -> {:error, {:exit, 2}} end)
+    expect(Tools, :run_agent, fn _backend, _argv, _opts -> {:error, {:exit, 2, "broke\n"}} end)
 
-    assert {:error, {{:exit, 2}, %CuratorPass{finished_at: nil, error: "{:exit, 2}"}}} =
+    assert {:error, {{:exit, 2, nil}, %CuratorPass{finished_at: nil, error: "Curator exited with code 2."}}} =
              Learnings.curate_learnings(project)
 
     assert %Observation{curator_pass_id: nil} = Repo.reload!(observation)
+
+    expired =
+      ~s({"type":"result","is_error":true,"error":"authentication_failed","result":"OAuth session expired"}\n)
+
+    expect(Tools, :run_agent, fn _backend, _argv, _opts -> {:error, {:exit, 1, expired}} end)
+
+    error =
+      "Curator exited with code 1: OAuth session expired. Sign the backend in again under Settings → Backends."
+
+    assert {:error, {{:exit, 1, _reason}, %CuratorPass{error: ^error}}} = Learnings.curate_learnings(project)
   end
 
   test "an add backed by three tasks that were not abandoned is activated as auto", %{
@@ -666,7 +676,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
 
     expect(Tools, :run_agent, fn _backend, _argv, opts ->
       send(test, {:dir, opts[:cd]})
-      {:error, {:exit, 1}}
+      {:error, {:exit, 1, ""}}
     end)
 
     assert {:error, _failed} = Learnings.curate_learnings(project)

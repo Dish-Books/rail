@@ -22,6 +22,7 @@ defmodule Rail.Tools.FollowerTest do
   alias Rail.Tools.Clients.Docker
   alias Rail.Tools.Follower
   alias Rail.Tools.FollowerSupervisor
+  alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
 
   # The Follower watches a real OS process.
@@ -289,6 +290,39 @@ defmodule Rail.Tools.FollowerTest do
     # Follower GenServer should have stopped normally
     assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 5_000
     refute Process.alive?(follower_pid)
+  end
+
+  test "a turn whose token Claude refused signs its backend out", %{
+    backend: backend,
+    run: run,
+    os_process: os_process,
+    stream_path: stream_path
+  } do
+    Repo.update!(Backend.token_changeset(backend, "tok"))
+    port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["0.1"]])
+    {:os_pid, pid} = Port.info(port, :os_pid)
+
+    File.write!(
+      stream_path,
+      ~s({"type":"result","subtype":"success","is_error":true,"error":"authentication_failed","result":"Invalid bearer token"}\n)
+    )
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+    {:ok, follower_pid} =
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run},
+        tail_interval_ms: 20,
+        batch_interval_ms: 50
+      )
+
+    Sandbox.allow(Repo, self(), follower_pid)
+    follower_ref = Process.monitor(follower_pid)
+
+    assert_receive {:os_process_finished, _finished, %{error: error}}, 5_000
+    assert error =~ "Invalid bearer token"
+    assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 5_000
+
+    assert %{status: :signed_out, session_lost_at: %DateTime{}} = Repo.get!(Backend, backend.id)
   end
 
   test "stop_os_process/2 terminates live process and settles run", %{

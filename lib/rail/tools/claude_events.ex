@@ -21,7 +21,8 @@ defmodule Rail.Tools.ClaudeEvents do
     tool_names: %{},
     num_turns: 0,
     thinking_tokens: 0,
-    saw_result: false
+    saw_result: false,
+    authentication_failed: false
   ]
 
   @doc """
@@ -153,6 +154,7 @@ defmodule Rail.Tools.ClaudeEvents do
     %{
       state
       | saw_result: true,
+        authentication_failed: event["error"] == "authentication_failed",
         final_text: final_text,
         usage: usage,
         thinking_tokens: thinking_tokens,

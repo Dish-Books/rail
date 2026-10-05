@@ -1,20 +1,18 @@
 defmodule Rail.Tools.Actions.RefreshUsage do
   @moduledoc false
 
+  import Rail.Tools.Utils.AnnounceLostSession
+
   alias Rail.Repo
   alias Rail.Tools
-  alias Rail.Tools.Agy
   alias Rail.Tools.Claude
   alias Rail.Tools.Schemas.Backend
 
-  @probes %{claude: &Claude.probe/1, agy: &Agy.probe/1}
-
-  # Every configured backend is probed, one per account, and a kind nothing
-  # knows how to probe is left out.
+  # Every configured backend is probed, one per account.
   def refresh_usage do
     tasks =
-      for %Backend{name: name} = backend <- Tools.list_backends(), probe = @probes[name] do
-        {backend, Task.async(fn -> probe.(backend) end)}
+      for %Backend{} = backend <- Tools.list_backends() do
+        {backend, Task.async(fn -> Claude.probe(backend) end)}
       end
 
     {:ok, Enum.map(tasks, &await_usage/1)}
@@ -23,8 +21,17 @@ defmodule Rail.Tools.Actions.RefreshUsage do
   # The probes run in tasks, but the write stays here: the caller owns the
   # database connection. `usage_changeset/2` leaves the user's config alone.
   defp await_usage({backend, task}) do
-    backend
-    |> Backend.usage_changeset(Task.await(task, 35_000))
-    |> Repo.update!()
+    attrs = task |> Task.await(35_000) |> track_session(backend)
+    refreshed = backend |> Backend.usage_changeset(attrs) |> Repo.update!()
+    if is_nil(backend.session_lost_at) and refreshed.session_lost_at, do: announce_lost_session(refreshed)
+    refreshed
   end
+
+  # Signing out on purpose writes the row itself, so a probe that finds a ready
+  # backend signed out is one nobody signed out. Nothing here clears the mark:
+  # a backend is only ready again once its token is replaced, which clears it.
+  defp track_session(%{status: :signed_out} = attrs, %Backend{status: :ready}),
+    do: Map.put(attrs, :session_lost_at, DateTime.utc_now())
+
+  defp track_session(attrs, _backend), do: attrs
 end

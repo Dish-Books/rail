@@ -5,13 +5,7 @@ defmodule Rail.Tools.Utils.BackendEnvTest do
 
   alias Rail.Tools.Schemas.Backend
 
-  test "points each CLI at the backend's own config directory through its own variable" do
-    codex = %Backend{id: "bkd_codex", name: :codex}
-
-    assert backend_env(codex) == %{"CODEX_HOME" => Backend.config_dir(codex)}
-  end
-
-  test "Claude also has its auto-memory off, so nothing it learns is kept out of sight" do
+  test "points Claude at the backend's own config directory, with its auto-memory off" do
     claude = %Backend{id: "bkd_claude", name: :claude}
 
     assert backend_env(claude) == %{
@@ -20,7 +14,9 @@ defmodule Rail.Tools.Utils.BackendEnvTest do
            }
   end
 
-  test "leaves the environment alone for a CLI without a config directory variable" do
-    assert backend_env(%Backend{id: "bkd_agy", name: :agy}) == %{}
+  test "Claude is signed in by the backend's token, when it has one" do
+    claude = %Backend{id: "bkd_claude", name: :claude, oauth_token: "sk-ant-oat01-abc"}
+
+    assert %{"CLAUDE_CODE_OAUTH_TOKEN" => "sk-ant-oat01-abc", "CLAUDE_CONFIG_DIR" => _dir} = backend_env(claude)
   end
 end

@@ -121,7 +121,6 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
 
     argv =
       Tools.build_args(
-        backend: role.backend,
         prompt: message,
         model: role.model,
         reasoning_effort: role.reasoning_effort || "high",

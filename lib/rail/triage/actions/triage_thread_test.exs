@@ -557,9 +557,18 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
 
     test "when the agent fails, times out or is not dispatched", %{thread: %{id: thread_id} = thread} do
       for {outcome, error} <- [
-            {{:error, {:exit, 2}}, "Triage exited with code 2."},
+            {{:error, {:exit, 2, "broke\n"}}, "Triage exited with code 2."},
+            {{:error,
+              {:exit, 1,
+               ~s({"type":"result","is_error":true,"error":"authentication_failed",) <>
+                 ~s("result":"Failed to authenticate: OAuth session expired and could not be refreshed"}\n)}},
+             "Triage exited with code 1: Failed to authenticate: OAuth session expired and could not be refreshed. " <>
+               "Sign the backend in again under Settings → Backends."},
             {{:error, :timeout}, "Triage was still running after 30 minutes, so it was stopped."},
-            {{:error, :dispatch_disabled}, "Dispatch is switched off, so triage did not run."}
+            {{:error, :dispatch_disabled}, "Dispatch is switched off, so triage did not run."},
+            {{:error, :backend_signed_out},
+             "The Triage role's backend is signed out, so triage did not run. " <>
+               "Sign it in under Settings → Backends, then retry."}
           ] do
         expect(Tools, :run_agent, fn _backend, _argv, _opts -> outcome end)
 
