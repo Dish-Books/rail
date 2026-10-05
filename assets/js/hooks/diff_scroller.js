@@ -1,11 +1,21 @@
+const SETTLE_FRAMES = 3;
+const SETTLE_CAP = 30;
+
+// A line goes by its kind and numbers, which no other line of its file shares.
+const keyOf = (row) => {
+  const [oldLine, newLine] = row.querySelectorAll(".diff-num");
+
+  return `${row.dataset.kind}:${oldLine.textContent}:${newLine.textContent}`;
+};
+
 // Keeps a reader where they were while the diff underneath them changes, and
 // takes them to one file or comment when they ask for it.
 //
 // The engineer writes files as it works, so the pane re-reads and LiveView
 // patches the rows. Anything that grows above the viewport would otherwise carry
-// the reader down the page mid-sentence. Before a patch this records which file
-// section the viewport is sitting in and how far into it; after, it puts that
-// section back where it was.
+// the reader down the page mid-sentence. Before a patch this records the line at
+// the top of the viewport, or its file when there is none; after, it puts that
+// line back where it was. A wrapped line above it may now take more rows.
 export const DiffScroller = {
   mounted() {
     this.anchor = null;
@@ -46,11 +56,20 @@ export const DiffScroller = {
       this.restoreAnchor();
     });
 
+    // Turning wrap on or off re-flows every line without a patch, so the toolbar
+    // says when, and the line the reader is on stays put.
+    this.holdForWrap = () => (this.anchor = this.currentAnchor());
+    this.restoreForWrap = () => this.restoreAnchor();
+    window.addEventListener("diff:wrap-before", this.holdForWrap);
+    window.addEventListener("diff:wrap-after", this.restoreForWrap);
+
     this.watchHeaders();
   },
 
   destroyed() {
     this.stuck.disconnect();
+    window.removeEventListener("diff:wrap-before", this.holdForWrap);
+    window.removeEventListener("diff:wrap-after", this.restoreForWrap);
   },
 
   watchHeaders() {
@@ -82,12 +101,23 @@ export const DiffScroller = {
     if (!this.anchor) return;
 
     const section = this.el.querySelector(`#${CSS.escape(this.anchor.id)}`);
+    const row = section && this.anchor.key ? this.rowFor(section, this.anchor) : null;
 
-    if (section) {
+    if (row) {
+      this.el.scrollTop += this.offsetOf(row) - this.anchor.rowOffset;
+    } else if (section) {
       this.el.scrollTop += this.offsetOf(section) - this.anchor.offset;
     }
 
     this.anchor = null;
+  },
+
+  // The row is usually the same element, patched in place; a line the patch moved
+  // is looked for by its key, and one that is gone leaves only its file.
+  rowFor(section, { row, key }) {
+    if (row.isConnected && section.contains(row) && keyOf(row) === key) return row;
+
+    return Array.from(section.querySelectorAll(".diff-line")).find((candidate) => keyOf(candidate) === key) || null;
   },
 
   // Honored once per file asked for, so a later patch does not drag the reader
@@ -133,25 +163,24 @@ export const DiffScroller = {
     if (!target) return false;
 
     this.el.scrollTop += this.offsetOf(target) - under(target);
-    this.settle(find, under, 3);
+    this.settle(find, under, 0);
 
     return true;
   },
 
   // A section is only laid out once it is scrolled near, so the first jump lands
-  // against `contain-intrinsic-size` rather than the real thing. Re-measuring
-  // over the next few frames closes the gap the real layout opened.
-  settle(find, under, frames) {
-    if (frames <= 0) return;
-
+  // against `contain-intrinsic-size` rather than the real thing, which wrapped lines
+  // make far taller. Re-measuring until the target holds still closes that gap.
+  settle(find, under, frame) {
     requestAnimationFrame(() => {
       const target = find();
       if (!target) return;
 
       const offset = this.offsetOf(target) - under(target);
-      if (Math.abs(offset) > 1) this.el.scrollTop += offset;
+      const moved = Math.abs(offset) > 1;
+      if (moved) this.el.scrollTop += offset;
 
-      this.settle(find, under, frames - 1);
+      if ((moved || frame + 1 < SETTLE_FRAMES) && frame + 1 < SETTLE_CAP) this.settle(find, under, frame + 1);
     });
   },
 
@@ -163,21 +192,45 @@ export const DiffScroller = {
     return null;
   },
 
-  // The section the viewport is inside: the last one starting at or above it.
+  // The section the viewport is inside, the last one starting at or above it, and
+  // the first of its lines still showing at the top.
   currentAnchor() {
-    let anchor = null;
+    let section = null;
 
-    for (const section of this.sections()) {
-      const offset = this.offsetOf(section);
+    for (const candidate of this.sections()) {
+      const offset = this.offsetOf(candidate);
 
-      if (offset <= 0 || anchor === null) {
-        anchor = { id: section.id, offset };
-      }
-
+      if (offset <= 0 || section === null) section = candidate;
       if (offset > 0) break;
     }
 
-    return anchor;
+    if (!section) return null;
+
+    const row = this.rowAtTop(section);
+    const anchor = { id: section.id, offset: this.offsetOf(section) };
+
+    return row ? { ...anchor, row, key: keyOf(row), rowOffset: this.offsetOf(row) } : anchor;
+  },
+
+  // Rows run top to bottom, so the first one not wholly above the viewport is
+  // found by halving rather than measuring thousands.
+  rowAtTop(section) {
+    const rows = section.querySelectorAll(".diff-line");
+    const top = this.el.getBoundingClientRect().top;
+    let low = 0;
+    let high = rows.length;
+
+    while (low < high) {
+      const middle = (low + high) >> 1;
+
+      if (rows[middle].getBoundingClientRect().bottom <= top) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+
+    return rows[low] || null;
   },
 
   sections() {

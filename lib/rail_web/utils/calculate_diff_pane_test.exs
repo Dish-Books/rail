@@ -27,6 +27,7 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
         expanded_gaps: %{},
         show_file_tree: true,
         filter: :branch,
+        wrap: :scroll,
         selected_file: nil,
         empty_message: "Nothing yet.",
         scroll_to: nil,
@@ -86,6 +87,14 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
 
   test "marks the file the reader selected in the list", %{assigns: assigns, diff: diff} do
     assert %{tree: %{rows: [%{selected?: true}]}} = calculate_diff_pane(%{assigns | selected_file: diff.path})
+  end
+
+  # The browser wraps the lines itself, so wrapping must never re-send them.
+  test "the reader's wrap goes to the toolbar alone", %{assigns: assigns} do
+    %{frame: frame, sections: sections, tree: tree} = calculate_diff_pane(assigns)
+
+    assert %{toolbar: %{wrap: :wrap}, frame: ^frame, sections: ^sections, tree: ^tree} =
+             calculate_diff_pane(%{assigns | wrap: :wrap})
   end
 
   describe "comments" do

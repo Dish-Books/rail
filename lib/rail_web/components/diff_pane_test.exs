@@ -55,7 +55,7 @@ defmodule RailWeb.Components.DiffPaneTest do
 
     html = render_component(&DiffPane.diff_pane/1, files: [Map.put(file, :viewed?, false)])
 
-    assert div(byte_size(html), 200) < 390
+    assert div(byte_size(html), 200) < 395
   end
 
   # A block that would not parse has no path, so two of them must still be two files.

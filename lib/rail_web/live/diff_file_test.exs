@@ -48,6 +48,13 @@ defmodule RailWeb.Live.DiffFileTest do
     assert html =~ ~s(data-kind="added")
   end
 
+  # Wrap is keyed off these classes, so a utility on the markup would beat it.
+  test "its lines sit in the body wrap reaches", %{section: section} do
+    html = DiffFile |> render_component(section) |> Floki.parse_fragment!()
+
+    assert [_lines] = Floki.find(html, ".diff-body > .diff-rows .diff-line[data-kind='added']")
+  end
+
   test "names both sides of a renamed file", %{section: section} do
     [renamed] =
       parse_diff("diff --git a/lib/old_name.ex b/lib/new_name.ex\n--- a/lib/old_name.ex\n+++ b/lib/new_name.ex\n")

@@ -81,4 +81,52 @@ defmodule RailWeb.Components.DiffRowTest do
            ) =~
              "diff_comment_add"
   end
+
+  # A wrapped line's further rows hang past its own indent, counted the way the
+  # browser draws it: a tab runs to the next stop of eight.
+  test "a line carries its indent in columns, and an unindented one carries none" do
+    for {text, indent} <- [
+          {"    x = 1", ["--ind: 4ch"]},
+          {"\tx = 1", ["--ind: 8ch"]},
+          {"  \t  x", ["--ind: 10ch"]},
+          {"x = 1", []}
+        ] do
+      html =
+        (&DiffRow.diff_row/1)
+        |> render_component(row: %{kind: :line, line_kind: :added, old_line: nil, new_line: 1, text: text})
+        |> Floki.parse_fragment!()
+
+      assert Floki.attribute(html, ".diff-code", "style") == indent
+    end
+  end
+
+  test "a line that is not UTF-8 still measures its indent" do
+    row = %{kind: :line, line_kind: :added, old_line: nil, new_line: 1, text: <<"  ", 0xFF, 0xFE>>}
+
+    assert render_component(&DiffRow.diff_row/1, row: row) =~ "--ind: 2ch"
+  end
+
+  # Wrapping is drawn by the browser, so a copied line is the line and its
+  # numbers and glyph are drawn once.
+  test "a long line is drawn whole, with one pair of numbers and one glyph" do
+    text = "  " <> String.duplicate("a long line of prose ", 40)
+    row = %{kind: :line, line_kind: :context, old_line: 7, new_line: 9, text: text}
+
+    html = (&DiffRow.diff_row/1) |> render_component(row: row) |> Floki.parse_fragment!()
+
+    assert [{"span", [{"class", "diff-text"}], [^text]}] = Floki.find(html, ".diff-text")
+    assert ["7", "9"] = html |> Floki.find(".diff-num") |> Enum.map(&Floki.text/1)
+    assert [_glyph] = Floki.find(html, ".diff-glyph")
+  end
+
+  test "a hunk header, a gap and a binary notice carry nothing wrap reads" do
+    gap = %{kind: :gap, path: "lib/filter.ex", gap_index: 0, start_line: 4, end_line: 39, old_start_line: 4, count: 36}
+
+    for row <- [%{kind: :hunk_header, text: "@@ -1,3 +1,4 @@ def filter/2"}, gap, %{kind: :binary}] do
+      html = render_component(&DiffRow.diff_row/1, row: row)
+
+      refute html =~ "diff-text"
+      refute html =~ "--ind"
+    end
+  end
 end

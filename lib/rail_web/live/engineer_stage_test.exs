@@ -92,4 +92,70 @@ defmodule RailWeb.Live.EngineerStageTest do
     assert uncommitted =~ "> + line 11"
     assert uncommitted =~ "    line 10"
   end
+
+  describe "long lines" do
+    test "scroll until the reader picks Wrap, which redraws no line", %{conn: conn, task: task} do
+      {:ok, view, html} = live(conn, ~p"/tasks/#{task.id}")
+      lines = html |> Floki.parse_document!() |> Floki.find(".diff-body")
+
+      assert html |> Floki.parse_document!() |> Floki.attribute("#diff-wrap-scroll", "aria-pressed") == ["true"]
+
+      view |> element("#diff-wrap-wrap") |> render_click()
+      html = view |> render() |> Floki.parse_document!()
+
+      assert Floki.attribute(html, "#diff-wrap-wrap", "aria-pressed") == ["true"]
+      assert Floki.attribute(html, "#diff-wrap-scroll", "aria-pressed") == ["false"]
+      assert Floki.find(html, ".diff-body") == lines
+
+      view |> element("#diff-wrap-scroll") |> render_click()
+
+      assert view |> render() |> Floki.parse_document!() |> Floki.attribute("#diff-wrap-scroll", "aria-pressed") ==
+               ["true"]
+    end
+
+    # The browser holds the choice, so its hook says so as the tab mounts.
+    test "the choice this browser remembers is pressed once its hook says so", %{conn: conn, task: task} do
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> with_target("#engineer-stage") |> render_click("select_diff_wrap", %{"wrap" => "wrap"})
+
+      assert view |> render() |> Floki.parse_document!() |> Floki.attribute("#diff-wrap-wrap", "aria-pressed") == ["true"]
+    end
+
+    test "one reader's choice does not reach another reading the same task", %{conn: conn, task: task} do
+      {:ok, first, _html} = live(conn, ~p"/tasks/#{task.id}")
+      {:ok, second, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      first |> element("#diff-wrap-wrap") |> render_click()
+
+      assert first |> render() |> Floki.parse_document!() |> Floki.attribute("#diff-wrap-wrap", "aria-pressed") == [
+               "true"
+             ]
+
+      assert second |> render() |> Floki.parse_document!() |> Floki.attribute("#diff-wrap-scroll", "aria-pressed") ==
+               ["true"]
+    end
+
+    test "a wrapped line still opens a comment under it", %{conn: conn, task: task} do
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#diff-wrap-wrap") |> render_click()
+
+      render_click(with_target(view, "#engineer-stage"), "open_diff_comment", %{
+        "path" => "rows.ex",
+        "kind" => "added",
+        "old_line" => "",
+        "new_line" => "8"
+      })
+
+      html = view |> render() |> Floki.parse_document!()
+
+      assert [segment] =
+               html
+               |> Floki.find(".diff-rows > .contents")
+               |> Enum.filter(&(Floki.find(&1, "[data-qa='diff_comment_form']") != []))
+
+      assert segment |> Floki.find(".diff-line") |> List.last() |> Floki.find(".diff-num") |> Enum.map(&Floki.text/1) ==
+               ["", "8"]
+    end
+  end
 end

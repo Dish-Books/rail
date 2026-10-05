@@ -38,6 +38,7 @@ defmodule RailWeb.Utils.CalculateDiffPane do
         target: target,
         show_file_tree: assigns.show_file_tree,
         filter: assigns.filter,
+        wrap: assigns.wrap,
         query: query,
         additions: Enum.sum_by(files, & &1.additions),
         deletions: Enum.sum_by(files, & &1.deletions),

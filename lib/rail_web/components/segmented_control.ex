@@ -5,7 +5,11 @@ defmodule RailWeb.Components.SegmentedControl do
   use RailWeb, :html
 
   attr :id, :string, required: true
-  attr :options, :list, required: true, doc: "`{value, label}` pairs, in the order they are drawn"
+
+  attr :options, :list,
+    required: true,
+    doc: "`{value, label}` or `{value, label, icon}`, in the order they are drawn"
+
   attr :selected, :any, required: true
   attr :event, :string, required: true
   attr :value_name, :string, required: true, doc: "the `phx-value-*` the chosen value is sent as"
@@ -15,7 +19,11 @@ defmodule RailWeb.Components.SegmentedControl do
   attr :class, :any, default: nil
   attr :rest, :global
 
+  # An icon stands in for its label in a container narrower than the toolbar's
+  # `@3xl`, and the label stays the option's name.
   def segmented_control(assigns) do
+    assigns = assign(assigns, :options, Enum.map(assigns.options, &with_icon/1))
+
     ~H"""
     <div
       id={@id}
@@ -23,15 +31,19 @@ defmodule RailWeb.Components.SegmentedControl do
       {@rest}
     >
       <button
-        :for={{value, label} <- @options}
+        :for={{value, label, icon} <- @options}
         type="button"
         id={"#{@option_id || @id}-#{value}"}
         data-qa={@option_qa}
         phx-click={@event}
         phx-target={@target}
         aria-pressed={to_string(@selected == value)}
+        aria-label={icon && label}
+        title={icon && label}
         class={[
-          "px-3 py-1 rounded-md text-xs font-semibold cursor-pointer",
+          "py-1 rounded-md text-xs font-semibold cursor-pointer",
+          icon && "px-2 @3xl:px-3",
+          is_nil(icon) && "px-3",
           @selected == value &&
             "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-xs",
           @selected != value &&
@@ -39,9 +51,13 @@ defmodule RailWeb.Components.SegmentedControl do
         ]}
         {[{"phx-value-#{@value_name}", value}]}
       >
-        {label}
+        <.icon :if={icon} name={icon} class="size-3.5 align-[-2px] @3xl:hidden" />
+        <span :if={icon} class="hidden @3xl:inline">{label}</span>{is_nil(icon) && label}
       </button>
     </div>
     """
   end
+
+  defp with_icon({value, label}), do: {value, label, nil}
+  defp with_icon({value, label, icon}), do: {value, label, icon}
 end

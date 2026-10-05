@@ -11,8 +11,8 @@ defmodule RailWeb.Components.DiffHunk do
 
   def diff_hunk(assigns) do
     ~H"""
-    <div data-qa="diff_hunk" class="overflow-x-auto">
-      <div class="min-w-max">
+    <div data-qa="diff_hunk" class="diff-body">
+      <div class="diff-rows">
         <.diff_row :for={row <- @rows} row={row} />
       </div>
     </div>

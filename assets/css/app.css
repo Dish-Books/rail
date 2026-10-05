@@ -17,6 +17,9 @@
 /* Theme is an explicit attribute on <html>, set server-side and by assets/js/hooks/theme.js. */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/* Long diff lines wrap on an explicit attribute on <html>, set before paint and by assets/js/hooks/diff_wrap.js. */
+@custom-variant diff-wrap (&:where([data-diff-wrap] *));
+
 /* Lets native controls (form fields, scrollbars) follow the chosen theme. */
 :root {
   color-scheme: light;
