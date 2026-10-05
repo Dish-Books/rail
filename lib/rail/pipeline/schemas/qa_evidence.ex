@@ -43,8 +43,6 @@ defmodule Rail.Pipeline.Schemas.QaEvidence do
     |> validate_shown()
   end
 
-  def kinds, do: @kinds
-
   @doc """
   True when `path` is relative to the task's `<scratch>/qa` and never climbs out
   of it, which is the one test for a path a finding cites or `qa_file` files.
