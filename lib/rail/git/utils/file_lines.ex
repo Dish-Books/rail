@@ -11,11 +11,14 @@ defmodule Rail.Git.Utils.FileLines do
   """
   def file_lines(worktree_path, path, revision \\ :worktree)
 
-  # A path that climbs out of the worktree names nothing in it, whoever sent it.
+  # A path that climbs out of the worktree, or follows a link an agent could point
+  # anywhere, names nothing in it, whoever sent it.
   def file_lines(worktree_path, path, :worktree) do
-    full_path = worktree_path |> Path.join(path) |> Path.expand()
+    root = Path.expand(worktree_path)
+    full_path = root |> Path.join(path) |> Path.expand()
 
-    with true <- String.starts_with?(full_path, Path.expand(worktree_path) <> "/"),
+    with true <- String.starts_with?(full_path, root <> "/"),
+         false <- linked?(root, full_path),
          false <- File.dir?(full_path),
          {:ok, content} <- File.read(full_path) do
       lines(content)
@@ -30,6 +33,14 @@ defmodule Rail.Git.Utils.FileLines do
       {content, 0} -> lines(content)
       _absent -> nil
     end
+  end
+
+  defp linked?(root, full_path) do
+    full_path
+    |> Path.relative_to(root)
+    |> Path.split()
+    |> Enum.scan(root, &Path.join(&2, &1))
+    |> Enum.any?(&match?({:ok, %File.Stat{type: :symlink}}, File.lstat(&1)))
   end
 
   defp lines(content) do

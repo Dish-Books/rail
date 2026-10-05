@@ -412,13 +412,35 @@ defmodule Rail.Git.Actions.LoadDiffTest do
     assert {:ok, []} = Git.load_diff(scope, task, :branch)
   end
 
-  # git lists a dangling symlink as untracked, and then there is nothing to read.
   test "an untracked file that cannot be read contributes nothing", %{scope: scope, task: task, repo: repo} do
+    File.write!(Path.join(repo, "locked.ex"), "secret\n")
+    File.chmod!(Path.join(repo, "locked.ex"), 0o000)
+
+    assert {:ok, files} = Git.load_diff(scope, task, :branch)
+
+    refute Enum.any?(files, &(&1.path == "locked.ex"))
+  end
+
+  # A link is drawn by where it points, as git draws a tracked one, so one an agent
+  # aims outside the worktree never shows what it reaches.
+  test "an untracked link is drawn as its target, never what the target holds", %{
+    scope: scope,
+    task: task,
+    repo: repo
+  } do
+    outside = repo <> "_outside.txt"
+    File.write!(outside, "secret\n")
+    on_exit(fn -> File.rm(outside) end)
+    File.ln_s!(outside, Path.join(repo, "notes.txt"))
     File.ln_s!("nowhere", Path.join(repo, "dangling.ex"))
 
     assert {:ok, files} = Git.load_diff(scope, task, :branch)
 
-    refute Enum.any?(files, &(&1.path == "dangling.ex"))
+    assert %{status: :added, rows: [%{kind: :hunk_header}, %{line_kind: :added, text: ^outside}]} =
+             Enum.find(files, &(&1.path == "notes.txt"))
+
+    assert %{rows: [%{kind: :hunk_header}, %{line_kind: :added, text: "nowhere"}]} =
+             Enum.find(files, &(&1.path == "dangling.ex"))
   end
 
   test "a task whose worktree is gone has no diff to read", %{scope: scope, task: task} do

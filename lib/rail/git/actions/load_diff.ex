@@ -132,10 +132,14 @@ defmodule Rail.Git.Actions.LoadDiff do
     end
   end
 
-  # The patch git will not write: a file it has never seen, added whole.
+  # The patch git will not write: a file it has never seen, added whole. A link is
+  # drawn as git draws a tracked one, by where it points, never by what it reaches.
   defp synthesize(worktree_path, path) do
-    case file_lines(worktree_path, path) do
-      lines when is_list(lines) -> patch(path, lines)
+    with {:error, _not_a_link} <- worktree_path |> Path.join(path) |> File.read_link(),
+         lines when is_list(lines) <- file_lines(worktree_path, path) do
+      patch(path, lines)
+    else
+      {:ok, target} -> patch(path, [target])
       nil -> ""
     end
   end
