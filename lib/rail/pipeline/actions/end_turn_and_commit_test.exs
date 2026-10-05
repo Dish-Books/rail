@@ -241,6 +241,58 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
              Repo.get!(Run, run_id)
   end
 
+  # The agent is already stopped, so a crash must still reach the human, and the
+  # message they queued must still go out.
+  test "a commit that raises is recorded on the run and in the conversation", %{
+    task: task,
+    run: %Run{id: run_id} = run,
+    repo: repo,
+    os_process: os_process
+  } do
+    File.write!(Path.join(repo, "feature.ex"), "one\n")
+    stub(Tools, :stop_os_process, fn _scope, _os_process, _opts -> {:ok, os_process} end)
+    stub(Git, :push_branch, fn _scope, _task -> raise "the remote hung up" end)
+
+    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, "ETC-1: add the feature")
+    assert_receive {:run_changed, ^run_id}, 5_000
+
+    assert %Run{error: "Could not finish the engineer's turn: the remote hung up", stage_outcome: :in_progress} =
+             Repo.get!(Run, run_id)
+
+    assert "[rail] Could not finish the engineer's turn: the remote hung up" in Enum.map(
+             Pipeline.list_run_events(run),
+             & &1.line
+           )
+  end
+
+  test "a commit that raises still sends a queued message, and the conversation keeps why", %{
+    task: task,
+    run: run,
+    repo: repo,
+    os_process: os_process
+  } do
+    File.write!(Path.join(repo, "feature.ex"), "one\n")
+    {:ok, _queued} = Pipeline.update_run(run, %{pending_chat: "Also rename the filter"})
+    test_pid = self()
+
+    stub(Tools, :stop_os_process, fn _scope, _os_process, _opts -> {:ok, os_process} end)
+    stub(Git, :push_branch, fn _scope, _task -> raise "the remote hung up" end)
+
+    expect(Tools, :start_os_process, fn spawned, argv ->
+      send(test_pid, {:dispatched, argv})
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, "ETC-1: add the feature")
+    assert_receive {:dispatched, argv}, 5_000
+    assert Enum.any?(argv, &(&1 =~ "Also rename the filter"))
+
+    assert "[rail] Could not finish the engineer's turn: the remote hung up" in Enum.map(
+             Pipeline.list_run_events(run),
+             & &1.line
+           )
+  end
+
   test "a failure git gives no words for is spelled out on the run", %{
     task: task,
     run: %Run{id: run_id},

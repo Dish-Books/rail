@@ -16,6 +16,8 @@ defmodule Rail.Tools.ClaudeEvents do
     final_text: "",
     assistant_text: "",
     usage: %Run.Usage{},
+    base_usage: %Run.Usage{},
+    message_usage: %{},
     tool_names: %{},
     num_turns: 0,
     thinking_tokens: 0,
@@ -35,6 +37,7 @@ defmodule Rail.Tools.ClaudeEvents do
     %__MODULE__{
       conversation_id: opts[:conversation_id],
       usage: opts[:usage] || %Run.Usage{},
+      base_usage: opts[:usage] || %Run.Usage{},
       num_turns: opts[:num_turns] || 0,
       thinking_tokens: opts[:thinking_tokens] || 0
     }
@@ -87,6 +90,7 @@ defmodule Rail.Tools.ClaudeEvents do
 
   def handle_event(%__MODULE__{} = state, %{"type" => "assistant"} = event) do
     content = get_in(event, ["message", "content"])
+    state = stream_usage(state, event["message"])
 
     if is_list(content) do
       Enum.reduce(content, state, &process_assistant_block/2)
@@ -247,17 +251,27 @@ defmodule Rail.Tools.ClaudeEvents do
 
   defp extract_usage(event, current_usage) do
     case event["usage"] do
-      %{} = u ->
-        %Run.Usage{
-          input_tokens: to_int(u["input_tokens"]),
-          output_tokens: to_int(u["output_tokens"]),
-          cache_read_input_tokens: to_int(u["cache_read_input_tokens"]),
-          cache_creation_input_tokens: to_int(u["cache_creation_input_tokens"])
-        }
-
-      _missing_usage ->
-        current_usage
+      %{} = u -> usage_from(u)
+      _missing_usage -> current_usage
     end
+  end
+
+  # The result carries the turn's total, but a turn stopped before it, as `commit`
+  # stops one, says nothing; so each message is counted once as it streams.
+  defp stream_usage(state, %{"id" => id, "usage" => %{} = usage}) when is_binary(id) do
+    messages = Map.put(state.message_usage, id, usage_from(usage))
+    %{state | message_usage: messages, usage: Enum.reduce(Map.values(messages), state.base_usage, &Run.add_usage(&2, &1))}
+  end
+
+  defp stream_usage(state, _message), do: state
+
+  defp usage_from(u) do
+    %Run.Usage{
+      input_tokens: to_int(u["input_tokens"]),
+      output_tokens: to_int(u["output_tokens"]),
+      cache_read_input_tokens: to_int(u["cache_read_input_tokens"]),
+      cache_creation_input_tokens: to_int(u["cache_creation_input_tokens"])
+    }
   end
 
   defp extract_thinking_tokens(event, current_tokens) do

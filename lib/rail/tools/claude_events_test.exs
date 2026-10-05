@@ -151,6 +151,38 @@ defmodule Rail.Tools.ClaudeEventsTest do
            ]
   end
 
+  # A turn `commit` stops never writes its result event, so what it spent is
+  # counted from each message as it streams, one message arriving in several events.
+  test "usage is counted per message as it streams, and the result's own total wins when it comes" do
+    said = fn id, input, output ->
+      %{
+        "type" => "assistant",
+        "message" => %{
+          "id" => id,
+          "content" => [%{"type" => "text", "text" => "Working."}],
+          "usage" => %{"input_tokens" => input, "output_tokens" => output, "cache_read_input_tokens" => 10}
+        }
+      }
+    end
+
+    streamed =
+      Enum.reduce([said.("msg_1", 100, 5), said.("msg_1", 100, 20), said.("msg_2", 40, 7)], ClaudeEvents.new(), fn event,
+                                                                                                                   state ->
+        ClaudeEvents.handle_event(state, event)
+      end)
+
+    assert %Run.Usage{input_tokens: 140, output_tokens: 27, cache_read_input_tokens: 20} = streamed.usage
+
+    finished =
+      ClaudeEvents.handle_event(streamed, %{
+        "type" => "result",
+        "subtype" => "success",
+        "usage" => %{"input_tokens" => 150, "output_tokens" => 30}
+      })
+
+    assert %Run.Usage{input_tokens: 150, output_tokens: 30, cache_read_input_tokens: 0} = finished.usage
+  end
+
   test "rate_limit_event logs when status is not allowed" do
     state = ClaudeEvents.new()
 

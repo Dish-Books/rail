@@ -10,6 +10,7 @@ defmodule Rail.Pipeline.Utils.EndEngineerTurn do
   import Rail.Pipeline.Utils.StopLiveProcess
 
   alias Ecto.Adapters.SQL.Sandbox
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -42,13 +43,13 @@ defmodule Rail.Pipeline.Utils.EndEngineerTurn do
   end
 
   defp act_and_settle(%Run{} = run, act, queued) do
-    result = act.()
+    result = attempt(act)
     run = Run |> Repo.get!(run.id) |> Repo.preload([:task, role: :backend])
 
     settled =
       case result do
         :ok -> latch_done(run)
-        {:error, text} when is_binary(text) -> update(run, %{error: text})
+        {:error, text} when is_binary(text) -> fail(run, text)
       end
 
     broadcast_pipeline_changed(settled)
@@ -56,10 +57,25 @@ defmodule Rail.Pipeline.Utils.EndEngineerTurn do
     requeue(settled, queued)
   end
 
+  # The agent that asked is already stopped, so a crash here is said on the run,
+  # where the human sees it, and the queued message still goes back.
+  defp attempt(act) do
+    act.()
+  rescue
+    exception -> {:error, "Could not finish the engineer's turn: " <> Exception.message(exception)}
+  end
+
   # Starting CI, or a turn to resolve a merge, moved the run on, and what that
   # concludes is still to come.
   defp latch_done(%Run{status: status} = run) when status in [:running, :waiting_for_resources], do: run
   defp latch_done(%Run{} = run), do: update(run, %{stage_outcome: :done, error: nil})
+
+  # Said in the conversation too, since a queued message starting the next turn
+  # takes the run's error with it.
+  defp fail(%Run{} = run, text) do
+    Pipeline.append_run_events(run.id, nil, ["[rail] #{text}"])
+    update(run, %{error: text})
+  end
 
   defp requeue(%Run{}, nil), do: :ok
 
