@@ -250,7 +250,7 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
     end)
 
     File.write!(Path.join(worktree_path, "asked_for_at_qa.ex"), "the change\n")
-    assert :ok = Pipeline.commit_engineer_work(system_scope(), task)
+    assert :ok = Pipeline.commit_engineer_work(system_scope(), task, nil)
 
     assert {:error, {:invalid_stage, :engineer}} = Pipeline.send_to_demo(qa_run)
     assert {:error, {:invalid_stage, :engineer}} = Pipeline.send_to_qa(review_run)

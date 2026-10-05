@@ -49,26 +49,26 @@ defmodule Rail.Mcp.Utils.RunToolQaFileTest do
              )
   end
 
-  # Nothing an agent can get wrong is an error: it reads the answer and puts it
-  # right on the next call.
-  test "every way of getting it wrong answers in words", %{task: task} do
-    assert {:ok, refused} =
+  # Every refusal is one, in words the agent can act on the next call.
+  test "every way of getting it wrong is refused in words", %{task: task} do
+    assert {:refused, refused} =
              run_tool_qa_file(task, %{"check" => "totals", "name" => "Stolen", "path" => "/etc/passwd"}, [])
 
     assert refused =~ "never absolute and never climbing out with `..`. Nothing was filed."
 
-    assert {:ok, "No file at evidence/gone.log. Nothing was filed."} =
+    assert {:refused, "No file at evidence/gone.log. Nothing was filed."} =
              run_tool_qa_file(task, %{"check" => "totals", "name" => "Gone", "path" => "evidence/gone.log"}, [])
 
     File.write!(Path.join([task.scratch_path, "qa", "statement (1).pdf"]), "%PDF-1.7")
 
-    assert {:ok, "Rename it to letters, digits, `.`, `_`, `-`, `~` and `/` only, then file it again. Nothing was filed."} =
+    assert {:refused,
+            "Rename it to letters, digits, `.`, `_`, `-`, `~` and `/` only, then file it again. Nothing was filed."} =
              run_tool_qa_file(task, %{"check" => "totals", "name" => "Statement", "path" => "statement (1).pdf"}, [])
 
-    assert {:ok, "qa_file needs a `check`, a `name` and a `path`. Nothing was filed."} =
+    assert {:refused, "qa_file needs a `check`, a `name` and a `path`. Nothing was filed."} =
              run_tool_qa_file(task, %{"check" => "totals", "name" => "No path"}, [])
 
-    assert {:ok, "qa_file needs a `check`, a `name` and a `path`. Nothing was filed."} =
+    assert {:refused, "qa_file needs a `check`, a `name` and a `path`. Nothing was filed."} =
              run_tool_qa_file(task, %{"check" => "totals", "name" => "A number", "path" => 12}, [])
   end
 
@@ -77,12 +77,12 @@ defmodule Rail.Mcp.Utils.RunToolQaFileTest do
   test "a check that is not on the checklist files nothing", %{task: task} do
     File.write!(Path.join([task.scratch_path, "qa", "evidence", "run.log"]), "wrote 3 rows")
 
-    assert {:ok, ~s(No check called "no-such-row" is on the checklist. Nothing was filed.)} =
+    assert {:refused, ~s(No check called "no-such-row" is on the checklist. Nothing was filed.)} =
              run_tool_qa_file(task, %{"check" => "no-such-row", "name" => "The log", "path" => "evidence/run.log"}, [])
 
     File.rm!(Path.join([task.scratch_path, "qa", "checklist.json"]))
 
-    assert {:ok, "There is no checklist yet. Call qa_plan first. Nothing was filed."} =
+    assert {:refused, "There is no checklist yet. Call qa_plan first. Nothing was filed."} =
              run_tool_qa_file(task, %{"check" => "totals", "name" => "The log", "path" => "evidence/run.log"}, [])
 
     assert ["run.log"] = File.ls!(Path.join([task.scratch_path, "qa", "evidence"]))

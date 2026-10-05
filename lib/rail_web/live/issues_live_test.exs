@@ -698,7 +698,7 @@ defmodule RailWeb.IssuesLiveTest do
 
     stub(Git, :push_branch, fn _scope, _task -> :ok end)
     File.write!(Path.join(task.worktree_path, "asked_for_at_qa.ex"), "changed\n")
-    assert :ok = Pipeline.commit_engineer_work(system_scope(), task)
+    assert :ok = Pipeline.commit_engineer_work(system_scope(), task, nil)
 
     assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/issues")
 

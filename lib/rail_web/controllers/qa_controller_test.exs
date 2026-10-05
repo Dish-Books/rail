@@ -41,9 +41,12 @@ defmodule RailWeb.QaControllerTest do
     File.write!(Path.join(evidence_dir, "page~the-page.html"), "<script>alert(1)</script>")
     File.write!(Path.join(evidence_dir, "bill.jpg"), "jpeg bytes")
     File.write!(Path.join(evidence_dir, "page.html"), "<script>alert(1)</script>")
+    # Saved while there, then deleted: a finding cannot cite a file that is not.
+    File.write!(Path.join(evidence_dir, "gone.png"), "png bytes")
+    File.write!(Path.join(evidence_dir, "gone.log"), "a log")
 
     {:ok, _raised} =
-      Pipeline.sync_qa_findings(task, [
+      save_qa_findings(task, [
         %{
           key: "total-unrounded",
           title: "The total renders as $1234.5",
@@ -62,6 +65,9 @@ defmodule RailWeb.QaControllerTest do
           ]
         }
       ])
+
+    File.rm!(Path.join(evidence_dir, "gone.png"))
+    File.rm!(Path.join(evidence_dir, "gone.log"))
 
     %{conn: log_in_user(conn, user), task: task}
   end
@@ -92,7 +98,7 @@ defmodule RailWeb.QaControllerTest do
   # The name `qa_file` handed back is the name the agent was told to cite.
   test "serves a filed log a finding cites by the name Rail gave it", %{conn: conn, task: task} do
     {:ok, _raised} =
-      Pipeline.sync_qa_findings(task, [
+      save_qa_findings(task, [
         %{
           key: "cites-filed",
           title: "The script reports a failure",

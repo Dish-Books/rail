@@ -42,7 +42,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     %{project: project, task: task, run: run}
   end
 
-  test "briefs the engineer on the plan it builds and the file that says it is done", %{task: task, run: run} do
+  test "briefs the engineer on the plan it builds and the commit that says it is done", %{task: task, run: run} do
     %ImplementationPlan{}
     |> ImplementationPlan.changeset(%{
       task_id: task.id,
@@ -60,7 +60,11 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
       assert prompt =~ "Extend the invoices module."
       assert prompt =~ ~s(```mermaid\nflowchart LR\n  A["InvoicesLive"] --> B["Invoices"]\n```)
       assert prompt =~ "```elixir\ndef list_invoices(scope, filters)\n```"
-      assert prompt =~ "cat > #{commits_dir}/SEN-1.md <<'MSG'"
+      assert prompt =~ "Calling the `commit` tool is how you say the work is finished"
+      assert prompt =~ "the call ends your turn on the spot"
+      assert prompt =~ "`request_merge` asks Rail to merge main into a clean worktree"
+      refute prompt =~ "<<'MSG'"
+      refute prompt =~ commits_dir
       assert prompt =~ "Never run git."
       assert prompt =~ "Your worktree is #{task.worktree_path}"
       assert prompt =~ "The branch #{task.worktree_name} is already checked out"
@@ -72,7 +76,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     end)
 
     assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_engineer_run(run)
-    assert File.dir?(commits_dir)
+    refute File.exists?(commits_dir)
   end
 
   # Product can approve straight past design and architect, which leaves no plan.

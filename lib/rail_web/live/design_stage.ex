@@ -6,7 +6,8 @@ defmodule RailWeb.Live.DesignStage do
   The options are compared one at a time: a tab per option across the top, the
   selected option's live page at full width below them, and under it what the
   option is good at, what it costs and what it assumed. The page is what the
-  designer wrote, updated as the conversation changes it. Once an option is
+  designer saved, updated as the conversation changes it. Options show as each
+  is saved, beside a dashed tab for each still being built. Once an option is
   picked the tabs go, what is left is the pick alone, and approving it moves to
   the header alongside every other action on the task.
   """
@@ -135,6 +136,22 @@ defmodule RailWeb.Live.DesignStage do
                 </span>
               </span>
             </button>
+
+            <div
+              :for={number <- building(@design, Run.running?(@run))}
+              id={"design-tab-building-#{number}"}
+              data-qa="design_tab_building"
+              class="flex items-center gap-3 min-w-0 p-2 @2xl:p-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 text-slate-500"
+            >
+              <span class="hidden @2xl:block w-20 shrink-0 aspect-video rounded-md border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 motion-safe:animate-pulse" />
+              <span class="min-w-0">
+                <span class="flex items-center gap-1.5 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                  <span class="size-3 shrink-0 rounded-full border-2 border-slate-300 dark:border-slate-600 border-t-blue-500 motion-safe:animate-spin" />
+                  Option {number}
+                </span>
+                <span class="block text-xs text-slate-500 truncate">Being built</span>
+              </span>
+            </div>
           </div>
 
           <div
@@ -276,11 +293,11 @@ defmodule RailWeb.Live.DesignStage do
 
         <p :if={@running} class="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
           The designer is reading the ticket and the screens it touches, then mocking up
-          three different directions. They appear here once all three are ready.
+          three different directions. Each appears here as soon as it is saved.
         </p>
 
         <p :if={not @running} class="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-          The designer stopped before writing its options. Send it a message in the
+          The designer stopped before saving its options. Send it a message in the
           conversation to pick up where it left off.
         </p>
       </div>
@@ -368,6 +385,12 @@ defmodule RailWeb.Live.DesignStage do
     end
   end
 
+  # The options a running designer has still to save, numbered after the ones it has.
+  defp building(%{picked: nil, options: options}, true) when length(options) < 3,
+    do: Enum.to_list((length(options) + 1)..3)
+
+  defp building(_design, _running), do: []
+
   defp shown_option(nil, _key), do: nil
   defp shown_option(%{options: options}, key), do: Enum.find(options, &(&1.key == key))
 
@@ -381,7 +404,7 @@ defmodule RailWeb.Live.DesignStage do
   defp message_for(:stage_running), do: "Something is still running on this task."
   defp message_for({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not design."
   defp message_for(:already_picked), do: "A design has already been picked."
-  defp message_for(:design_not_found), do: "The designer has not written any options yet."
+  defp message_for(:design_not_found), do: "The designer has not saved any options yet."
   defp message_for(:option_not_found), do: "That design option no longer exists."
   defp message_for(:chat_unavailable), do: "The designer cannot be messaged yet."
   defp message_for(:nothing_picked), do: "Pick a design before approving it."

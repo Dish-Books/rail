@@ -27,7 +27,7 @@ defmodule Rail.Pipeline.Actions.DecideQaFindingTest do
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     {:ok, [finding]} =
-      Pipeline.sync_qa_findings(task, [
+      save_qa_findings(task, [
         %{
           key: "total-unrounded",
           title: "The total renders as $1234.5",

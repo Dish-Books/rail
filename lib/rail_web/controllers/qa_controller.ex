@@ -9,9 +9,8 @@ defmodule RailWeb.QaController do
   name is matched against the directory rather than joined onto it, and the worst
   a caller can do with a made-up one is get a 404.
 
-  There are two because a finding's evidence only exists once the pass has
-  written its report, and the point of watching a pass is seeing what it saw
-  while it is still going.
+  There are two because evidence is filed before any finding cites it, and the
+  point of watching a pass is seeing what it saw while it is still going.
 
   An agent wrote every one of these, so none is served as what its name claims:
   what the file holds picks the type, and nothing is ever rendered as a page.

@@ -1233,8 +1233,8 @@ defmodule RailWeb.Live.RunConversation do
   defp format_started_at(_not_running), do: nil
 
   # An activity turn is `[tool] Name summary` lines, as the backends write them,
-  # with `[tool error] detail` where a call failed. Older logs name the tool in
-  # the bracket instead: `[tool read_file] summary`.
+  # with `[tool error name] detail` where a call failed. Older logs name the tool
+  # in the bracket for a call too, `[tool read_file] summary`, or not at all.
   defp tool_steps(text, worktree_path) do
     text
     |> to_string()
@@ -1258,8 +1258,9 @@ defmodule RailWeb.Live.RunConversation do
     end
   end
 
+  # Rail's own tools read by their names, without the server they came through.
   defp step({name, detail}, error?, worktree_path) do
-    %{name: name, detail: relative_to(detail, worktree_path), error?: error?}
+    %{name: String.replace_prefix(name, "mcp__rail__", ""), detail: relative_to(detail, worktree_path), error?: error?}
   end
 
   # Paths inside the task's worktree read shorter from its root.

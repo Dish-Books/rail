@@ -25,6 +25,7 @@ defmodule Rail.Pipeline.Schemas.ReviewFinding do
   @severities [:blocker, :major, :minor, :nit]
   @recommendations [:fix, :skip]
   @statuses [:open, :fixed, :not_fixed]
+  @key ~r/\A[a-z0-9][a-z0-9-]*\z/
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "rvf"}
   schema "review_findings" do
@@ -75,6 +76,8 @@ defmodule Rail.Pipeline.Schemas.ReviewFinding do
     review_finding
     |> cast(attrs, @cast_fields)
     |> validate_required(@required_fields)
+    |> validate_format(:key, @key, message: "must be lowercase letters, digits and hyphens")
+    |> validate_number(:line, greater_than: 0, message: "must be a positive whole number")
     |> foreign_key_constraint(:task_id)
     |> unique_constraint([:task_id, :key])
   end

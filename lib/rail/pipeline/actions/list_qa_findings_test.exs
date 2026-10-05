@@ -45,7 +45,7 @@ defmodule Rail.Pipeline.Actions.ListQaFindingsTest do
         }
       end
 
-    {:ok, _synced} = Pipeline.sync_qa_findings(task, findings)
+    {:ok, _synced} = save_qa_findings(task, findings)
 
     assert Enum.map(Pipeline.list_qa_findings(task), & &1.key) == [
              "new-blocker",
@@ -62,7 +62,7 @@ defmodule Rail.Pipeline.Actions.ListQaFindingsTest do
         %{key: key, title: key, check: "A check", severity: severity, recommendation: :fix, status: :open}
       end
 
-    {:ok, [blocker, major, _nit]} = Pipeline.sync_qa_findings(task, findings)
+    {:ok, [blocker, major, _nit]} = save_qa_findings(task, findings)
     {:ok, _dismissed} = Pipeline.decide_qa_finding(blocker, :skip)
     {:ok, _decided} = Pipeline.decide_qa_finding(major, :fix)
 
@@ -71,7 +71,7 @@ defmodule Rail.Pipeline.Actions.ListQaFindingsTest do
 
   test "a fixed finding stays where its severity puts it", %{task: task} do
     {:ok, _synced} =
-      Pipeline.sync_qa_findings(task, [
+      save_qa_findings(task, [
         %{
           key: "a-blocker",
           title: "A blocker",
@@ -94,18 +94,18 @@ defmodule Rail.Pipeline.Actions.ListQaFindingsTest do
         %{key: key, title: key, check: "A check", severity: :nit, recommendation: :fix, status: :open}
       end
 
-    {:ok, _first_pass} = Pipeline.sync_qa_findings(task, raised)
+    {:ok, _first_pass} = save_qa_findings(task, raised)
 
     assert Enum.map(Pipeline.list_qa_findings(task), & &1.key) == ["a", "b", "c"]
 
-    {:ok, _second_pass} = Pipeline.sync_qa_findings(task, Enum.reverse(raised))
+    {:ok, _second_pass} = save_qa_findings(task, Enum.reverse(raised))
 
     assert Enum.map(Pipeline.list_qa_findings(task), & &1.key) == ["a", "b", "c"]
   end
 
   test "a tie on when they were raised is broken the same way every time", %{task: task} do
     {:ok, synced} =
-      Pipeline.sync_qa_findings(task, [
+      save_qa_findings(task, [
         %{key: "a", title: "a", check: "A check", severity: :nit, recommendation: :fix, status: :open},
         %{key: "b", title: "b", check: "A check", severity: :nit, recommendation: :fix, status: :open}
       ])

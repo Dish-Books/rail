@@ -1,10 +1,12 @@
 defmodule Rail.Pipeline.Actions.ReadDesign do
   @moduledoc """
-  Reads the design options a design run wrote into its task's scratch directory.
+  Reads the design options a design run saved into its task's scratch directory.
 
-  The designer owns `<scratch>/design/manifest.json` and each option's
-  `<key>.html` and `<key>.png`; Rail owns `<scratch>/design/picked`, which holds
-  the key of the option the human chose, and deletes the other options when it writes it.
+  The designer owns each option's `<key>.html` and `<key>.png`. Rail writes
+  `<scratch>/design/manifest.json` from the options it saves, and owns
+  `<scratch>/design/picked`, which holds the key of the option the human chose,
+  and deletes the other options when it writes it. A manifest the designer wrote
+  itself before that is still read the same way.
   """
 
   alias Rail.Pipeline.Schemas.Task

@@ -45,23 +45,22 @@ defmodule Rail.Mcp.Utils.RunToolQaCheckTest do
              Pipeline.read_qa_checklist(task)
   end
 
-  # Nothing an agent can get wrong is an error: it reads the answer and puts it
-  # right on the next call.
-  test "every way of getting it wrong answers in words", %{task: task} do
-    assert {:ok, unknown} = run_tool_qa_check(task, %{"key" => "invented", "outcome" => "pass"}, [])
+  # Every refusal is one, in words the agent can act on the next call.
+  test "every way of getting it wrong is refused in words", %{task: task} do
+    assert {:refused, unknown} = run_tool_qa_check(task, %{"key" => "invented", "outcome" => "pass"}, [])
     assert unknown =~ ~s(No check called "invented")
 
-    assert {:ok, outcome} = run_tool_qa_check(task, %{"key" => "totals", "outcome" => "probably"}, [])
+    assert {:refused, outcome} = run_tool_qa_check(task, %{"key" => "totals", "outcome" => "probably"}, [])
     assert outcome =~ "`pass`, `fail` or `skipped`"
 
-    assert {:ok, "qa_check needs a `key` and an `outcome`. Nothing was recorded."} =
+    assert {:refused, "qa_check needs a `key` and an `outcome`. Nothing was recorded."} =
              run_tool_qa_check(task, %{"key" => "totals"}, [])
   end
 
   test "there is nothing to mark before a checklist is written", %{task: task} do
     File.rm!(Path.join([task.scratch_path, "qa", "checklist.json"]))
 
-    assert {:ok, none} = run_tool_qa_check(task, %{"key" => "totals", "outcome" => "pass"}, [])
+    assert {:refused, none} = run_tool_qa_check(task, %{"key" => "totals", "outcome" => "pass"}, [])
     assert none =~ "no checklist yet"
   end
 end

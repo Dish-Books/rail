@@ -149,6 +149,10 @@ with the app already in a state the change created.
   Sandboxes page and in the database. Disagreement between screens is the highest-value bug here.
 - Poke at whatever looks fragile, and at anything that made you double-take.
 
+## Reporting
+
+Save each finding with `save_finding`, its evidence filed first through `qa_shot` or `qa_file`, and call `save_verdict` last. Those tools are the only way to hand over a pass: write no report file.
+
 ## What the grades mean here
 
 **blocker**: loses a person's input or an agent's work (answers, a commit, a push, a run); moves a

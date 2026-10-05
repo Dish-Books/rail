@@ -57,7 +57,7 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
       })
 
     {:ok, raised} =
-      Pipeline.sync_review_findings(task, [
+      save_review_findings(task, [
         %{
           key: "unhandled-nil",
           title: "Nil is not handled",
@@ -100,6 +100,8 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
       assert prompt =~ "The clause assumes a map."
       assert prompt =~ "</finding>"
       assert prompt =~ "Continue from where you stopped."
+      assert prompt =~ "call `commit` when the round is done"
+      refute prompt =~ "commit message file"
       refute prompt =~ "Poor variable name"
 
       {:ok, %OsProcess{run: spawned}}
@@ -113,7 +115,7 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
   # reviewer that left the field blank has not written one.
   test "a remedy the reviewer wrote goes over labelled", %{task: task, review_run: run} do
     {:ok, findings} =
-      Pipeline.sync_review_findings(task, [
+      save_review_findings(task, [
         %{
           key: "unhandled-nil",
           title: "Nil is not handled",
@@ -183,7 +185,7 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
     review_run: run
   } do
     {:ok, _synced} =
-      Pipeline.sync_review_findings(task, [
+      save_review_findings(task, [
         %{key: "unhandled-nil", title: "Nil is not handled", severity: :major, recommendation: :fix, status: :fixed}
       ])
 
@@ -201,7 +203,7 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
   # having said to.
   test "nothing is sent while a finding has no decision", %{task: task, review_run: run} do
     {:ok, _raised} =
-      Pipeline.sync_review_findings(task, [
+      save_review_findings(task, [
         %{key: "brand-new", title: "Raised on the latest pass", severity: :major, recommendation: :fix, status: :open}
       ])
 

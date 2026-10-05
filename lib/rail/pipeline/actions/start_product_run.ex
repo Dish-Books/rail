@@ -3,8 +3,8 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
   Starts the product stage for an issue, end to end.
 
   Everything the product stage needs lives here: the task, the worktree, the
-  scratch ticket file the agent reads and writes, the brief describing that file,
-  and the spawned run. Starting it also queues the ticket's move to In Progress.
+  brief carrying the ticket as it stands and how to save it, and the spawned run.
+  Starting it also queues the ticket's move to In Progress.
   """
 
   import Rail.Pipeline.Utils.FormatComments
@@ -36,7 +36,6 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
     {:ok, %Role{} = role} = Roles.get_role(project_id: project.id, stage: :product)
 
     with {:ok, {task, run, worktree_path}} <- record_run(issue, project, role) do
-      write_scratch(task)
       spawn_os_process(task, role, run, worktree_path)
     end
   end
@@ -64,13 +63,6 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
     end
   end
 
-  defp write_scratch(%Task{issue: issue, scratch_path: scratch_path}) do
-    tickets_dir = Path.join(scratch_path, "tickets")
-    File.mkdir_p!(tickets_dir)
-
-    tickets_dir |> Path.join("#{issue.identifier}.md") |> File.write!(format_ticket(issue))
-  end
-
   defp spawn_os_process(task, role, run, worktree_path) do
     prompt =
       Pipeline.build_prompt(
@@ -96,29 +88,20 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
     Tools.start_os_process(run, args)
   end
 
-  defp brief(%Task{scratch_path: scratch_path, issue: %Issue{} = issue}) do
-    file = "#{scratch_path}/tickets/#{issue.identifier}.md"
+  defp brief(%Task{issue: %Issue{} = issue}) do
     %Issue{comments: comments} = Repo.preload(issue, comments: :replies)
 
     String.trim("""
-    The ticket is the file #{file}. Rail publishes that file when your run completes cleanly.
+    The ticket as it stands, its title, priority and estimate above its description:
 
-    Write it from your worktree with a heredoc, the body and its closing TICKET line at column zero:
+    #{format_ticket(issue)}
+    Save the ticket with the `save_ticket` tool. The human watching sees each save at once, and Rail publishes the last one when a human approves it.
 
-    cat > #{file} <<'TICKET'
-    ---
-    title: <the ticket title>
-    priority: urgent | high | medium | low
-    estimate: <points>
-    ---
-    <the ticket body>
-    TICKET
-
-    - A heredoc into #{file}, never an inline string.
-    - The `---` front matter block starts on the first line of the file. `title` is required; `priority` and `estimate` keep whatever they are already set to when left out.
-    - Everything below the closing `---` becomes the ticket body verbatim, and the file replaces the ticket in full.
-    - This file is the only way to publish a ticket.
-    - A human's answers and corrections come back as further turns of this same conversation. Each one that changes the ticket means writing the file again: the next stage reads the file, never the chat.
+    - Save a first draft as soon as you have one, and save again after every change. Each save replaces the ticket in full, so save the whole of it every time.
+    - `title` and `description` are required, the description being the ticket body in markdown, verbatim. `priority` and `estimate` keep whatever they are already set to when left out.
+    - A save in the wrong shape is refused naming each field and what is wrong with it, and the last good save stays. Fix it and save again.
+    - `save_ticket` is the only way to publish a ticket. Write no ticket file.
+    - A human's answers and corrections come back as further turns of this same conversation. Each one that changes the ticket means saving it again: the next stage reads the save, never the chat.
     - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question left in prose is one nobody answers. A question you can settle from the docs, the code or a named assumption is not a question.
 
     Every comment on the issue, oldest first. This is the whole discussion; do not look for more.

@@ -1,6 +1,13 @@
 defmodule RailTest.Helpers do
   @moduledoc false
 
+  import Ecto.Query
+
+  alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.QaFinding
+  alias Rail.Pipeline.Schemas.ReviewFinding
+  alias Rail.Repo
+
   defdelegate create_temp_git_repo(opts \\ []), to: RailTest.GitHelpers
   defdelegate git!(dir, args), to: RailTest.GitHelpers
 
@@ -29,6 +36,34 @@ defmodule RailTest.Helpers do
   both diagrams and a Program design.
   """
   def sheet_plan, do: File.read!("test/support/fixtures/sheet_plan.md")
+
+  @doc """
+  Saves each of `findings` on `task` as a reviewer would, one call each, and
+  returns every finding the task now has, oldest first.
+  """
+  def save_review_findings(task, findings) do
+    for finding <- findings, do: {:ok, %ReviewFinding{}} = Pipeline.save_review_finding(task, finding)
+
+    {:ok, Repo.all(from f in ReviewFinding, where: f.task_id == ^task.id, order_by: [asc: f.inserted_at, asc: f.id])}
+  end
+
+  @doc """
+  Saves each of `findings` on `task` as QA would, and returns every finding the
+  task now has, oldest first. A finding arranged without evidence is given a note,
+  since QA cannot save one without.
+  """
+  def save_qa_findings(task, findings) do
+    for finding <- findings do
+      evidenced =
+        if Map.has_key?(finding, "key"),
+          do: Map.put_new(finding, "evidence", [%{"name" => "what QA saw", "kind" => "note", "text" => "Seen."}]),
+          else: Map.put_new(finding, :evidence, [%{name: "what QA saw", kind: :note, text: "Seen."}])
+
+      {:ok, %QaFinding{}} = Pipeline.save_qa_finding(task, evidenced)
+    end
+
+    {:ok, Repo.all(from f in QaFinding, where: f.task_id == ^task.id, order_by: [asc: f.inserted_at, asc: f.id])}
+  end
 
   @doc """
   Puts a session token for `user` on `conn` so requests are authenticated.

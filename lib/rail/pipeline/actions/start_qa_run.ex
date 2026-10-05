@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.StartQaRun do
   @moduledoc """
-  Spawns the QA stage's run: the brief naming the change to exercise and the one
-  file the findings go in, and the process that writes it.
+  Spawns the QA stage's run: the brief naming the change to exercise and the
+  tools its findings and verdict are saved with, and the process that drives it.
 
   `enter_stage/3` has already claimed the stage, started the run and made the
   worktree; this is the part only QA knows about.
@@ -63,7 +63,6 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
 
   defp brief(%Task{scratch_path: scratch_path, issue: %Issue{} = issue} = task) do
     dir = Path.join(scratch_path, "qa")
-    file = Path.join(dir, "#{issue.identifier}.json")
     evidence = Path.join(dir, "evidence")
 
     String.trim("""
@@ -85,39 +84,9 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
 
     Every check gets evidence filed against it, and the human reads the checklist a row at a time with what was filed for each. A check that asserts something on screen gets a `qa_shot` at that moment, which takes the row's key as well as a caption. A check proved by output gets its file: write or copy the file under #{evidence}, then call `qa_file` with the row's key, a caption and the path relative to #{dir}. A check can carry both. A row with nothing filed is one the human has only your word for.
 
-    Writing #{file} is how you report, and it is the last thing you do. Write it from your worktree with a heredoc, the body and its closing JSON line at column zero:
+    You report with two more tools. `save_finding` saves one finding, as soon as you have reproduced it and filed its evidence rather than at the end: the human watching sees each one while you keep driving, though nobody rules on any until you have finished. `save_verdict` saves your `verdict`, `summary` and `not_checked`, and it is the last thing you do.
 
-    mkdir -p #{dir}
-    cat > #{file} <<'JSON'
-    {
-      "verdict": "fail",
-      "summary": "one or two sentences: whether the change works, and the one thing most in the way if it does not",
-      "not_checked": "what you could not check, and why, including anything you faked or stood in for",
-      "findings": [
-        {
-          "key": "short-stable-slug",
-          "title": "one line naming the defect",
-          "check": "the key of the checklist row this came out of",
-          "criterion": "the acceptance criterion it fails, quoted",
-          "screen": "/bills/new",
-          "steps": "1. ...\\n2. ...",
-          "expected": "what should have happened",
-          "observed": "what happened",
-          "detail": "what it costs and who it costs it",
-          "suggestion": "the change that settles it",
-          "severity": "major",
-          "recommendation": "fix",
-          "caused_by_change": true,
-          "status": "open",
-          "evidence": [
-            {"name": "the error rendering white", "kind": "screenshot", "path": "evidence/bill-new-error.png"}
-          ]
-        }
-      ]
-    }
-    JSON
-
-    - A heredoc into #{file}, never an inline string. Write the whole file every pass; it is the complete report, not a list of what is new.
+    - A finding's fields are `key`, `title`, `check`, `criterion`, `screen`, `steps`, `expected`, `observed`, `detail`, `suggestion`, `severity`, `recommendation`, `caused_by_change`, `status` and `evidence`. A save in the wrong shape is refused naming each field and what is wrong with it: fix it and save again. Saving a key again replaces what you said about it.
     - `summary` is one or two sentences and sits above everything else a human reads, so it is the headline and not the report. Whether the change works, and the single thing most in the way if it does not. No list of the findings - they are listed underneath it - and no recap of what you drove.
     - `verdict` is `pass`, `concerns` or `fail`, and it is your judgement rather than a tally of what is below it. Three majors that were all broken before this change is a `pass`. One minor that makes the feature unusable is a `fail`. A human reads it beside the findings and decides what to do, so it gates nothing - say what you actually think.
     - One finding per defect. Two symptoms of one cause are one finding; one screen with three unrelated defects is three.
@@ -127,11 +96,12 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
     - `caused_by_change` is `false` for something that was already broken before this branch. Report those - finding them is half the job - but they are rarely this branch's to fix, and saying so is what stops the engineer chasing them.
     - `suggestion` is written as though the finding will be fixed, because by the time an engineer reads it a human has decided it will be. It is one change, named concretely enough to apply. Nothing in it restates or reconsiders `recommendation`: "leave it", or a fix offered as one branch of a choice, hands the engineer a decision the human has already taken.
     - `steps`, `expected` and `observed` are what the engineer reproduces from. A defect it cannot see is a defect it will argue with rather than fix.
-    - Evidence is how a reader knows you saw it rather than reasoned it. Anything visible gets a picture: take it while you are looking at the defect, and name the same check on the finding. A screenshot comes from `qa_shot`, which files it under the check you named and hands back the name to put in `path` - do not invent one, and do not write a picture yourself. `qa_shot` gives you the name and not the picture: read one with the Read tool when a check turns on how something looks, and cite the name without reading it when it does not. A picture you read is in your context for the rest of the pass, and the human opens it from the finding either way. A file you filed with `qa_file` is cited the same way, by the name it handed back, since a finding shows only its own `evidence` and not what was filed against its check. Anything else you captured goes into #{evidence} with a `path` relative to #{dir}, never absolute and never climbing out with `..`, or Rail drops it and nobody sees it. `kind` is `screenshot`, `log`, `query` or `note`; something small enough to read inline goes in `text` instead of a file.
-    - Every finding must carry at least one piece of usable evidence. A finding with none, or whose only evidence names a file outside #{dir} or one that is not there, makes the whole report invalid, and Rail sends it back to you naming the finding before anyone sees any of it.
-    - `status` is `open` for a defect that still stands. Leave findings out entirely rather than inventing them: `{"findings": []}` with a `pass` verdict is a clean QA pass and is the right answer when the change works.
+    - Evidence is how a reader knows you saw it rather than reasoned it, and `evidence` is a list of entries, each with a `name`, a `kind` and a `path` or a `text`. Anything visible gets a picture: take it while you are looking at the defect, and name the same check on the finding. A screenshot comes from `qa_shot`, which files it under the check you named and hands back the name to put in `path` - do not invent one, and do not write a picture yourself. `qa_shot` gives you the name and not the picture: read one with the Read tool when a check turns on how something looks, and cite the name without reading it when it does not. A picture you read is in your context for the rest of the pass, and the human opens it from the finding either way. A file you filed with `qa_file` is cited the same way, by the name it handed back, since a finding shows only its own `evidence` and not what was filed against its check. Anything else you captured goes into #{evidence} with a `path` relative to #{dir}, never absolute and never climbing out with `..`. `kind` is `screenshot`, `log`, `query` or `note`; something small enough to read inline goes in `text` instead of a file.
+    - Every finding must carry at least one piece of usable evidence. A finding saved with none, or citing a file outside #{dir} or one that is not there, is refused at that call, so file the evidence first and then save the finding.
+    - `status` is `open` for a defect that still stands. Leave findings out entirely rather than inventing them: no findings and a `pass` verdict is a clean QA pass, and is the right answer when the change works.
     - Report only what you exercised. A finding you could have reproduced and did not is a guess, and a guess costs the engineer a whole round.
-    - Write the file only once the pass is finished. If you stop part way, for a question or anything else, leave the file unwritten and the task waits for you.
+    - Save the verdict only once the pass is finished. If you stop part way, for a question or anything else, do not call `save_verdict`, and the task waits for you.
+    - `save_finding` and `save_verdict` are the only way to report. Write no report file.
     - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the app, the ticket or the plan is not a question.
 
     #{outstanding(task)}
@@ -167,7 +137,7 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
 
         Plan this pass with `qa_plan` as usual and give every check the key it had before. Rail keeps the outcome of any row you do not run again, marked as carried, so the list stays the account of the whole change rather than of this hour: re-run the checks the new commits could have touched - read the diff since your last pass and work out which those are; when main has been merged in since, read the branch's own commits (`git log --first-parent --no-merges`) rather than reading main's changes as the branch's - along with the check behind every finding above, and leave the rest to stand.
 
-        Re-run the check each finding came from and restate its key in the file you write, with `status` set to `fixed` where the application now behaves and `not_fixed` where it does not, and say in `detail` what you actually drove. Keep a dismissed finding listed with the `status` it has and never argue it again - the human has ruled on it. A finding you restate keeps its `evidence` entries, since the files are still in `evidence/`; add what you saw this time beside them. Anything new you find in the application as it now stands is a new finding with a new key, and is welcome.
+        Re-run the check each finding came from and save its key again with `save_finding`, with `status` set to `fixed` where the application now behaves and `not_fixed` where it does not, and say in `detail` what you actually drove. Save a dismissed finding again with the `status` it has and never argue it again - the human has ruled on it. A finding you save again keeps the `evidence` entries you list, and the files are still in `evidence/`, so list the earlier ones and add what you saw this time beside them. Anything new you find in the application as it now stands is a new finding with a new key, and is welcome.
         """
     end
   end

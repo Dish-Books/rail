@@ -41,6 +41,17 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidenceTest do
              "jpeg bytes"
   end
 
+  # The panel shows a picture the moment it is filed, and never half of one.
+  test "every page open on the task hears a picture filed, and no temporary file is left", %{task: %{id: task_id} = task} do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task_id}")
+    stub(BrowserSession, :call, fn _session, _method, _params -> {:ok, %{"data" => Base.encode64("jpeg")}} end)
+
+    assert {:ok, _file} = Tools.capture_browser_evidence(:session, task, "The saved bill", "bill-saves")
+
+    assert_received {:output_saved, ^task_id}
+    assert Path.wildcard(Path.join([task.scratch_path, "qa", ".*"]), match_dot: true) == []
+  end
+
   # The row it belongs to leads the name, which is how the panel shows a picture
   # against the check it was taken for.
   test "the check it was taken for leads the filename", %{task: task} do

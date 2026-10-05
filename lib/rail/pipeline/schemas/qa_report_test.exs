@@ -1,5 +1,5 @@
 defmodule Rail.Pipeline.Schemas.QaReportTest do
-  use ExUnit.Case, async: true
+  use Rail.DataCase, async: true
 
   alias Rail.Pipeline.Schemas.QaReport
 
@@ -13,32 +13,10 @@ defmodule Rail.Pipeline.Schemas.QaReportTest do
            ]
   end
 
-  test "a report with nothing found, or with evidence on every finding, proves itself" do
-    shown = %{name: "the total", kind: :screenshot, path: "evidence/total.png", text: nil}
+  test "a saved verdict needs a verdict Rail knows and a summary" do
+    assert QaReport.changeset(%QaReport{}, %{"verdict" => "pass", "summary" => "It works."}).valid?
 
-    assert QaReport.unproven(%QaReport{findings: []}) == []
-
-    assert QaReport.unproven(%QaReport{
-             findings: [%{key: "one", title: "One", evidence: [shown], refused: ["../x is outside the QA folder"]}]
-           }) == []
-  end
-
-  test "a finding with no evidence left is named, with whatever Rail refused, in report order" do
-    shown = %{name: "the total", kind: :screenshot, path: "evidence/total.png", text: nil}
-
-    report = %QaReport{
-      findings: [
-        %{key: "bare", title: "Bare", evidence: [], refused: []},
-        %{key: "proven", title: "Proven", evidence: [shown], refused: []},
-        %{key: "climbs", title: "Climbs", evidence: [], refused: ["../../tmp/x.csv is outside the QA folder"]}
-      ]
-    }
-
-    assert QaReport.unproven(report) == [
-             %{key: "bare", title: "Bare", refused: []},
-             %{key: "climbs", title: "Climbs", refused: ["../../tmp/x.csv is outside the QA folder"]}
-           ]
-
-    assert QaReport.evidence_reminder_limit() == 2
+    assert %{verdict: ["is invalid"], summary: ["can't be blank"]} =
+             errors_on(QaReport.changeset(%QaReport{}, %{"verdict" => "great"}))
   end
 end

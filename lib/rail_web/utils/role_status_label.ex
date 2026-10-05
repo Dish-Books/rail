@@ -20,22 +20,14 @@ defmodule RailWeb.Utils.RoleStatusLabel do
 
   def role_status_label(%Role{}, nil, %Task{}), do: "not started"
 
-  def role_status_label(%Role{stage: stage} = role, %Run{} = run, %Task{stage: stage}) do
+  def role_status_label(%Role{stage: stage}, %Run{} = run, %Task{stage: stage}) do
     case Run.state(run) do
       :done -> waiting_label(stage)
-      state -> label(state, role, run)
+      state -> label(state)
     end
   end
 
-  def role_status_label(%Role{} = role, %Run{} = run, %Task{}), do: run |> Run.state() |> label(role, run)
-
-  # QA's report was sent back for evidence, which is a different thing from QA
-  # working or failing on its own.
-  defp label(:running, %Role{stage: :qa}, %Run{evidence_reminders: reminders}) when reminders > 0, do: "fixing its report"
-
-  defp label(:failed, %Role{stage: :qa}, %Run{evidence_reminders: reminders}) when reminders > 0, do: "report not valid"
-
-  defp label(state, %Role{}, %Run{}), do: label(state)
+  def role_status_label(%Role{}, %Run{} = run, %Task{}), do: run |> Run.state() |> label()
 
   defp label(:running), do: "in progress"
   defp label(:waiting), do: "waiting for resources"

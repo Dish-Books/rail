@@ -115,6 +115,42 @@ defmodule Rail.Tools.ClaudeEventsTest do
     assert state.logs == ["[tool error] File not found: /repo/missing.dart"]
   end
 
+  # A refusal comes back answering the call only by its id, so the name the call
+  # was made under is what files it, whether the text came as a string or blocks.
+  test "a failed result is logged under the name of the tool that failed" do
+    call = %{
+      "type" => "assistant",
+      "message" => %{
+        "content" => [
+          %{"type" => "tool_use", "id" => "toolu_1", "name" => "mcp__rail__save_finding", "input" => %{"key" => "k"}},
+          %{"type" => "tool_use", "id" => "toolu_2", "name" => "Read", "input" => %{"file_path" => "/repo/a.ex"}}
+        ]
+      }
+    }
+
+    refused = %{
+      "type" => "user",
+      "message" => %{
+        "content" => [
+          %{
+            "type" => "tool_result",
+            "tool_use_id" => "toolu_1",
+            "is_error" => true,
+            "content" => [%{"type" => "text", "text" => "Refused, nothing saved."}, %{"type" => "image"}]
+          },
+          %{"type" => "tool_result", "tool_use_id" => "toolu_2", "is_error" => true, "content" => %{"odd" => true}}
+        ]
+      }
+    }
+
+    state = ClaudeEvents.new() |> ClaudeEvents.handle_event(call) |> ClaudeEvents.handle_event(refused)
+
+    assert Enum.take(state.logs, -2) == [
+             "[tool error mcp__rail__save_finding] Refused, nothing saved.",
+             ~s([tool error Read] %{"odd" => true})
+           ]
+  end
+
   test "rate_limit_event logs when status is not allowed" do
     state = ClaudeEvents.new()
 

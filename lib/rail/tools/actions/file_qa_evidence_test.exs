@@ -53,6 +53,19 @@ defmodule Rail.Tools.Actions.FileQaEvidenceTest do
              |> Enum.map(&Jason.decode!/1)
   end
 
+  test "every page open on the task hears a file filed, and no temporary file is left", %{
+    task: %{id: task_id} = task,
+    qa: qa
+  } do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task_id}")
+    File.write!(Path.join([qa, "evidence", "run.log"]), "wrote 3 rows")
+
+    assert {:ok, _file} = Tools.file_qa_evidence(task, "evidence/run.log", "The log", "script-runs")
+
+    assert_received {:output_saved, ^task_id}
+    assert Path.wildcard(Path.join(qa, ".*"), match_dot: true) == []
+  end
+
   test "the extension is kept, lowercased", %{task: task, qa: qa} do
     File.write!(Path.join(qa, "Invoice.PDF"), "%PDF-1.7")
 

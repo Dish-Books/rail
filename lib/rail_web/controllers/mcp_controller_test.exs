@@ -117,6 +117,32 @@ defmodule RailWeb.McpControllerTest do
              call.("open__down")
   end
 
+  test "a refused save is an error result carrying its sentence", %{authed: conn, context: context} do
+    sentence = ~s(Refused, nothing saved. severity: "high" is not one of blocker, major, minor, nit.)
+    stub(Mcp, :call_run_tool, fn ^context, "save_finding", _arguments -> {:error, {:refused, sentence}} end)
+
+    message = %{"jsonrpc" => "2.0", "id" => 7, "method" => "tools/call", "params" => %{"name" => "save_finding"}}
+
+    assert %{"result" => %{"isError" => true, "content" => [%{"type" => "text", "text" => ^sentence}]}} =
+             conn |> post(~p"/mcp", Jason.encode!(message)) |> json_response(200)
+  end
+
+  # Only a proxied server's failure is the server's; Rail's own tools fail as Rail.
+  test "a Rail tool that fails says Rail could not run it", %{authed: conn, context: context} do
+    stub(Mcp, :call_run_tool, fn ^context, "qa_shot", _arguments ->
+      {:error, {:rail_failed, {:browser_unavailable, :chrome_not_found}}}
+    end)
+
+    message = %{"jsonrpc" => "2.0", "id" => 8, "method" => "tools/call", "params" => %{"name" => "qa_shot"}}
+
+    said = "Rail could not run qa_shot: {:browser_unavailable, :chrome_not_found}"
+
+    assert %{"result" => %{"isError" => true, "content" => [%{"text" => ^said}]}} =
+             conn |> post(~p"/mcp", Jason.encode!(message)) |> json_response(200)
+
+    refute said =~ "MCP server request failed"
+  end
+
   test "GET offers no event stream", %{authed: conn} do
     conn = get(conn, ~p"/mcp")
 

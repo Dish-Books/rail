@@ -40,7 +40,7 @@ defmodule Rail.Pipeline.Actions.StartArchitectRunTest do
     %{task: task, run: run}
   end
 
-  test "briefs the architect on the one plan file it writes into scratch", %{
+  test "briefs the architect on the plan it saves with save_plan", %{
     task: task,
     run: run
   } do
@@ -49,8 +49,11 @@ defmodule Rail.Pipeline.Actions.StartArchitectRunTest do
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
       assert ["-p", prompt | _rest] = argv
       assert prompt =~ "You are planning it, not building it"
-      assert prompt =~ "cat > #{plans_dir}/SAR-1.md <<'PLAN'"
-      assert prompt =~ "Keep the `## Implementation plan` heading on the first line."
+      assert prompt =~ "you save it with the `save_plan` tool"
+      assert prompt =~ "Save from the first draft"
+      assert prompt =~ "The plan opens with the `## Implementation plan` heading on its first line."
+      refute prompt =~ "<<'PLAN'"
+      refute prompt =~ plans_dir
       assert prompt =~ "The ticket itself is not yours to write."
       assert prompt =~ "Ask everything at once."
       assert prompt =~ ~s(<ticket title="Invoice filters">\nFilter invoices by vendor.\n</ticket>)
@@ -59,7 +62,7 @@ defmodule Rail.Pipeline.Actions.StartArchitectRunTest do
     end)
 
     assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_architect_run(run)
-    assert File.dir?(plans_dir)
+    refute File.exists?(plans_dir)
   end
 
   test "points the architect at the page the human approved, not just its screenshot", %{

@@ -8,10 +8,7 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects
   alias Rail.Roles
-  alias Rail.Tools
-  alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
     scope = system_scope()
@@ -33,7 +30,6 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
     {:ok, task} = Pipeline.create_task(issue, :engineer)
     worktree_path = create_temp_git_repo()
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
-    File.mkdir_p!(Path.join(task.scratch_path, "commits"))
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     {:ok, run} =
@@ -45,101 +41,25 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
         started_at: DateTime.utc_now()
       })
 
-    stub(Git, :push_branch, fn _scope, _task -> :ok end)
-
-    Req.Test.stub(Rail.GitHub.Client, fn conn ->
-      Req.Test.json(conn, %{"token" => "ghs_installation_token"})
-    end)
-
     %{
       task: task,
       run: Repo.preload(run, [:task, :role]),
-      worktree_path: worktree_path,
-      message_path: Path.join(task.scratch_path, "commits/EFN-1.md")
+      worktree_path: worktree_path
     }
   end
 
-  test "commits and pushes what the engineer left, and moves nothing", %{
-    task: task,
-    run: run,
-    worktree_path: repo,
-    message_path: message_path
-  } do
-    File.write!(Path.join(repo, "feature.ex"), "one\n")
-    File.write!(message_path, "EFN-1: add the feature\n")
-
-    assert %Run{error: nil} = engineer_run_finished(run, [])
-    assert git!(repo, ["log", "-1", "--pretty=%s"]) =~ "EFN-1: add the feature"
-    assert %Task{stage: :engineer} = Repo.reload!(task)
-  end
-
-  test "a run that stopped without saying it was finished records that and waits", %{
+  # A turn that called `commit` was stopped and never reaches here, so one that
+  # does ended on its own with the work still in the worktree.
+  test "a turn that ended without calling commit records that and commits nothing", %{
     task: task,
     run: run,
     worktree_path: repo
   } do
     File.write!(Path.join(repo, "feature.ex"), "one\n")
+    reject(&Git.commit_worktree/3)
 
-    assert %Run{error: "The engineer did not write commits/EFN-1.md."} = engineer_run_finished(run, [])
+    assert %Run{error: "The engineer did not commit its work."} = engineer_run_finished(run, [])
     assert %Task{stage: :engineer} = Repo.reload!(task)
     assert git!(repo, ["log", "-1", "--pretty=%s"]) =~ "initial commit"
-  end
-
-  test "a run that said it was finished but changed nothing records that", %{
-    run: run,
-    message_path: message_path
-  } do
-    File.write!(message_path, "EFN-1: add the feature\n")
-
-    assert %Run{error: "The engineer said it was done but changed nothing in the worktree."} =
-             engineer_run_finished(run, [])
-  end
-
-  test "after a CI failure, a message with nothing changed runs CI again on the same commit", %{
-    project: project,
-    task: task,
-    run: run,
-    worktree_path: repo,
-    message_path: message_path
-  } do
-    {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
-    {:ok, run} = Pipeline.update_run(run, %{ci_failure_streak: 1})
-    File.write!(message_path, "EFN-1: rerun CI past a flaky test\n")
-
-    reject(&Git.push_branch/2)
-    stub(Git, :credential_env, fn _project -> {:ok, %{}} end)
-
-    expect(Tools, :start_command_process, fn spawned, :ci, "mise run ci", _opts ->
-      {:ok, %OsProcess{kind: :ci, run: spawned}}
-    end)
-
-    assert %Run{error: nil, status: :running} = engineer_run_finished(%{run | task: task}, [])
-    assert git!(repo, ["log", "-1", "--pretty=%s"]) =~ "initial commit"
-  end
-
-  test "a commit git refused is recorded on the run", %{
-    run: run,
-    worktree_path: repo,
-    message_path: message_path
-  } do
-    File.write!(Path.join(repo, "feature.ex"), "one\n")
-    File.write!(message_path, "EFN-1: add the feature\n")
-
-    stub(Git, :push_branch, fn _scope, _task -> {:error, "remote rejected"} end)
-
-    assert %Run{error: "Could not commit the engineer's work: remote rejected"} = engineer_run_finished(run, [])
-  end
-
-  test "a commit git refused for a reason of its own is spelled out on the run", %{
-    run: run,
-    worktree_path: repo,
-    message_path: message_path
-  } do
-    File.write!(Path.join(repo, "feature.ex"), "one\n")
-    File.write!(message_path, "EFN-1: add the feature\n")
-
-    stub(Git, :commit_worktree, fn _scope, _task, _message -> {:error, :nothing_to_commit} end)
-
-    assert %Run{error: "Could not commit the engineer's work: :nothing_to_commit"} = engineer_run_finished(run, [])
   end
 end

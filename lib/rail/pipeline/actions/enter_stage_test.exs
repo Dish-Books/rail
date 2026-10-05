@@ -91,7 +91,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     %{id: design_role_id} = roles[:design]
 
     expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
-      assert prompt =~ "#{task.scratch_path}/design/manifest.json"
+      assert prompt =~ "`save_design_option`"
       {:ok, %OsProcess{run: spawned, task: task}}
     end)
 
@@ -102,7 +102,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     %{id: review_role_id} = roles[:review]
 
     expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
-      assert prompt =~ "#{task.scratch_path}/reviews/ENT-1.json"
+      assert prompt =~ "`save_finding`"
       {:ok, %OsProcess{run: spawned, task: task}}
     end)
 

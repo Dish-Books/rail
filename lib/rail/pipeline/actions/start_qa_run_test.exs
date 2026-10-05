@@ -41,7 +41,7 @@ defmodule Rail.Pipeline.Actions.StartQaRunTest do
     %{task: task, run: run}
   end
 
-  test "briefs QA on the change, the report it writes and where evidence goes", %{task: task, run: run} do
+  test "briefs QA on the change, the tools it reports with and where evidence goes", %{task: task, run: run} do
     qa_dir = Path.join(task.scratch_path, "qa")
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
@@ -50,7 +50,10 @@ defmodule Rail.Pipeline.Actions.StartQaRunTest do
       assert prompt =~ "You are testing it, not changing it"
       assert prompt =~ "git diff origin/main...HEAD"
       assert prompt =~ task.worktree_name
-      assert prompt =~ "cat > #{qa_dir}/SQA-1.json <<'JSON'"
+      assert prompt =~ "`save_finding` saves one finding, as soon as you have reproduced it"
+      assert prompt =~ "`save_verdict` saves your `verdict`, `summary` and `not_checked`, and it is the last thing you do"
+      refute prompt =~ "<<'JSON'"
+      refute prompt =~ "#{qa_dir}/SQA-1.json"
       assert prompt =~ "A screenshot comes from `qa_shot`"
       # Reading a picture is what costs, and Rail cannot take one back out of a
       # context once it is in one.
@@ -136,7 +139,8 @@ defmodule Rail.Pipeline.Actions.StartQaRunTest do
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
       assert ["-p", prompt | _rest] = argv
       assert prompt =~ "Every finding must carry at least one piece of usable evidence"
-      assert prompt =~ "makes the whole report invalid, and Rail sends it back"
+      assert prompt =~ "is refused at that call, so file the evidence first and then save the finding"
+      refute prompt =~ "sends it back"
       assert prompt =~ "A finding shows only its own `evidence`"
       assert prompt =~ "goes in the finding's `evidence`"
       refute prompt =~ "put the pictures you filed for that row next to the finding"
@@ -160,7 +164,7 @@ defmodule Rail.Pipeline.Actions.StartQaRunTest do
 
   test "a later pass is owed a verdict on everything already raised", %{task: task, run: run} do
     {:ok, [outstanding, dismissed]} =
-      Pipeline.sync_qa_findings(task, [
+      save_qa_findings(task, [
         %{
           key: "total-unrounded",
           title: "The total renders as $1234.5",
@@ -192,7 +196,8 @@ defmodule Rail.Pipeline.Actions.StartQaRunTest do
       assert prompt =~ "`spacing-nit` [nit, pre-existing, human decided: dismissed, leave it, status: open]"
       assert prompt =~ "(/bills/new)"
       assert prompt =~ "never argue it again"
-      assert prompt =~ "A finding you restate keeps its `evidence` entries"
+      assert prompt =~ "save its key again with `save_finding`"
+      assert prompt =~ "A finding you save again keeps the `evidence` entries you list"
 
       {:ok, %OsProcess{run: spawned}}
     end)
@@ -202,7 +207,7 @@ defmodule Rail.Pipeline.Actions.StartQaRunTest do
 
   test "a finding nobody has ruled on yet says so", %{task: task, run: run} do
     {:ok, _raised} =
-      Pipeline.sync_qa_findings(task, [
+      save_qa_findings(task, [
         %{key: "one", title: "One", check: "A check", severity: :minor, recommendation: :fix, status: :open}
       ])
 

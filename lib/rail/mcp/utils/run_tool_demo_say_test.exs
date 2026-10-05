@@ -30,7 +30,7 @@ defmodule Rail.Mcp.Utils.RunToolDemoSayTest do
 
   # A caption belongs to a video, so there has to be one being recorded.
   test "a caption before the camera is on belongs to no video", %{task: task} do
-    assert {:ok, said} = run_tool_demo_say(task, %{"text" => "Entering a bill"}, [])
+    assert {:refused, said} = run_tool_demo_say(task, %{"text" => "Entering a bill"}, [])
     assert said =~ "Call demo_start first"
 
     refute File.exists?(Path.join([task.scratch_path, "demo", "captions.jsonl"]))
@@ -70,10 +70,19 @@ defmodule Rail.Mcp.Utils.RunToolDemoSayTest do
     assert [%{"text" => "Opening the bills page"}, %{"text" => "Entering a bill"}] = written.()
   end
 
+  test "every page open on the task hears a caption land", %{task: %{id: task_id} = task} do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task_id}")
+    {:ok, _rolling} = run_tool_demo_start(task, %{}, [])
+
+    {:ok, _said} = run_tool_demo_say(task, %{"text" => "Opening the bills page"}, [])
+
+    assert_received {:output_saved, ^task_id}
+  end
+
   test "a call with no words to say records nothing", %{task: task} do
     {:ok, _rolling} = run_tool_demo_start(task, %{}, [])
 
-    assert {:ok, "demo_say needs a `text`. Nothing was recorded."} = run_tool_demo_say(task, %{}, [])
+    assert {:refused, "demo_say needs a `text`. Nothing was recorded."} = run_tool_demo_say(task, %{}, [])
 
     refute File.exists?(Path.join([task.scratch_path, "demo", "captions.jsonl"]))
   end

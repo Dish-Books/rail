@@ -61,7 +61,7 @@ defmodule Rail.Pipeline.Actions.SendToDemoTest do
 
   test "a pass whose findings were all dismissed goes to demo too", %{task: task, run: run} do
     {:ok, raised} =
-      Pipeline.sync_qa_findings(task, [
+      save_qa_findings(task, [
         %{key: "one", title: "One", check: "A check", severity: :blocker, recommendation: :fix, status: :open}
       ])
 
@@ -73,7 +73,7 @@ defmodule Rail.Pipeline.Actions.SendToDemoTest do
 
   test "nothing moves while a finding has no ruling on it", %{task: task, run: run} do
     {:ok, _raised} =
-      Pipeline.sync_qa_findings(task, [
+      save_qa_findings(task, [
         %{key: "one", title: "One", check: "A check", severity: :nit, recommendation: :skip, status: :open}
       ])
 
@@ -83,7 +83,7 @@ defmodule Rail.Pipeline.Actions.SendToDemoTest do
 
   test "nothing moves while something is still to fix", %{task: task, run: run} do
     {:ok, [finding]} =
-      Pipeline.sync_qa_findings(task, [
+      save_qa_findings(task, [
         %{key: "one", title: "One", check: "A check", severity: :major, recommendation: :fix, status: :open}
       ])
 

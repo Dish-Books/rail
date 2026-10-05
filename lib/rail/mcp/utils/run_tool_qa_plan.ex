@@ -18,23 +18,16 @@ defmodule Rail.Mcp.Utils.RunToolQaPlan do
   @stated ["key", "title", "group", "criterion"]
 
   @doc """
-  Records `arguments["checks"]` as `task`'s checklist and says what was written.
+  Records `arguments["checks"]` as `task`'s checklist and says what was written,
+  or hands back the changeset that refused it, which names the row.
   """
   def run_tool_qa_plan(%Task{} = task, %{"checks" => checks}, _opts) when is_list(checks) do
     listed = checks |> Enum.filter(&is_map/1) |> Enum.map(&Map.take(&1, @stated))
 
-    case Pipeline.write_qa_checklist(task, listed) do
-      {:ok, checklist} ->
-        {:ok, written(checklist)}
-
-      {:error, _refused} ->
-        {:ok,
-         "That checklist was not usable. Every check needs a `key` that is lowercase and hyphenated " <>
-           "and unique in the list, and a `title`. Nothing was written."}
-    end
+    with {:ok, checklist} <- Pipeline.write_qa_checklist(task, listed), do: {:ok, written(checklist)}
   end
 
-  def run_tool_qa_plan(%Task{}, _arguments, _opts), do: {:ok, "qa_plan needs a `checks` list. Nothing was written."}
+  def run_tool_qa_plan(%Task{}, _arguments, _opts), do: {:refused, "qa_plan needs a `checks` list. Nothing was written."}
 
   # A row an earlier pass answered is answered. Saying so here is what stops the
   # whole list being driven a second time: the pass reads this receipt, not the

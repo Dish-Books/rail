@@ -10,7 +10,8 @@ defmodule Rail.Pipeline.Schemas.QaFindingTest do
     check: "A bill's total reads as money on the bill page",
     severity: :major,
     recommendation: :fix,
-    status: :open
+    status: :open,
+    evidence: [%{name: "the total", kind: :query, text: "1234.5"}]
   }
 
   test "a finding arrives with nobody having ruled on it, whatever QA recommended" do
@@ -33,6 +34,14 @@ defmodule Rail.Pipeline.Schemas.QaFindingTest do
              severity: ["can't be blank"],
              recommendation: ["can't be blank"]
            } = errors_on(changeset)
+  end
+
+  test "a finding with no evidence, or a key that is not a slug, is refused" do
+    assert %{evidence: ["needs at least one screenshot, file or note showing the defect"]} =
+             errors_on(QaFinding.changeset(%QaFinding{}, Map.delete(@attrs, :evidence)))
+
+    assert %{key: ["must be lowercase letters, digits and hyphens"]} =
+             errors_on(QaFinding.changeset(%QaFinding{}, %{@attrs | key: "Amount Unrounded"}))
   end
 
   # The one column QA may not write. Casting it would re-open everything the

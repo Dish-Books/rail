@@ -16,6 +16,7 @@ defmodule Rail.Tools.ClaudeEvents do
     final_text: "",
     assistant_text: "",
     usage: %Run.Usage{},
+    tool_names: %{},
     num_turns: 0,
     thinking_tokens: 0,
     saw_result: false
@@ -189,6 +190,9 @@ defmodule Rail.Tools.ClaudeEvents do
     name = block["name"] || "tool"
     summary = ToolSummarizer.summarize_tool_input(name, block["input"])
 
+    state =
+      if is_binary(block["id"]), do: %{state | tool_names: Map.put(state.tool_names, block["id"], name)}, else: state
+
     log_line =
       if summary == "" do
         "[tool] #{name}"
@@ -201,12 +205,28 @@ defmodule Rail.Tools.ClaudeEvents do
 
   defp process_assistant_block(_other_block, state), do: state
 
+  # A failed result names the call it answers only by id, so the name is carried
+  # over from the call: a refusal reads under the tool that refused it.
   defp process_user_block(%{"type" => "tool_result", "is_error" => true} = block, state) do
-    detail = ToolSummarizer.truncate(to_string(block["content"]), 300)
-    append_log(state, "[tool error] #{detail}")
+    detail = ToolSummarizer.truncate(error_text(block["content"]), 300)
+
+    case state.tool_names[block["tool_use_id"]] do
+      name when is_binary(name) -> append_log(state, "[tool error #{name}] #{detail}")
+      nil -> append_log(state, "[tool error] #{detail}")
+    end
   end
 
   defp process_user_block(_other_block, state), do: state
+
+  defp error_text(blocks) when is_list(blocks) do
+    Enum.map_join(blocks, "\n", fn
+      %{"type" => "text", "text" => text} when is_binary(text) -> text
+      _other_block -> ""
+    end)
+  end
+
+  defp error_text(content) when is_binary(content), do: content
+  defp error_text(content), do: inspect(content)
 
   defp maybe_update_conversation_id(state, session_id) when is_binary(session_id) and session_id != "" do
     if String.trim(session_id) == "" do

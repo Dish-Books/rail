@@ -19,19 +19,31 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   panel shows of that is the tab.
 
   A line is filed under the namespace of the tool that wrote it - `[browser]`,
-  `[qa]`, `[demo]` - because the panels read the log back for different reasons
-  and the prefix is what separates driving the page from reporting on it.
+  `[qa]`, `[demo]` - so driving the page reads apart from reporting on it. A
+  save is not logged at all: the transcript already shows the call.
+
+  A refusal is the agent's to fix, so it comes back as one sentence naming each
+  field; any other failure is Rail's own, and is said to be.
   """
 
   import Rail.Mcp.Utils.McpTools
   import Rail.Mcp.Utils.RunToolBrowserConnect
   import Rail.Mcp.Utils.RunToolBrowserProblems
+  import Rail.Mcp.Utils.RunToolCommit
   import Rail.Mcp.Utils.RunToolDemoSay
   import Rail.Mcp.Utils.RunToolDemoStart
   import Rail.Mcp.Utils.RunToolQaCheck
   import Rail.Mcp.Utils.RunToolQaFile
   import Rail.Mcp.Utils.RunToolQaPlan
   import Rail.Mcp.Utils.RunToolQaShot
+  import Rail.Mcp.Utils.RunToolRequestMerge
+  import Rail.Mcp.Utils.RunToolSaveDemo
+  import Rail.Mcp.Utils.RunToolSaveDesignOption
+  import Rail.Mcp.Utils.RunToolSaveFinding
+  import Rail.Mcp.Utils.RunToolSavePlan
+  import Rail.Mcp.Utils.RunToolSaveReview
+  import Rail.Mcp.Utils.RunToolSaveTicket
+  import Rail.Mcp.Utils.RunToolSaveVerdict
   import Rail.Mcp.Utils.ToolAllowed
   import Rail.Mcp.Utils.WithUpstreamToken
 
@@ -42,8 +54,22 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
 
+  @saves [
+    "save_ticket",
+    "save_design_option",
+    "save_plan",
+    "commit",
+    "request_merge",
+    "save_finding",
+    "save_review",
+    "save_verdict",
+    "save_demo"
+  ]
+
   @doc """
-  Runs `name` for `context` and returns what the agent should read.
+  Runs `name` for `context` and returns what the agent should read:
+  `{:error, {:refused, text}}` for a call the agent can fix, and
+  `{:error, {:rail_failed, reason}}` when Rail could not run its own tool.
   """
   def call_run_tool(%RunContext{} = context, name, arguments) when is_binary(name) do
     if Enum.any?(mcp_tools(context.role), &(&1["name"] == name)) do
@@ -59,19 +85,66 @@ defmodule Rail.Mcp.Actions.CallRunTool do
     arguments = arguments || %{}
     line = asked(name, arguments)
 
-    with {:ok, task} <- task(context) do
-      if not answers_itself?(name), do: log(context, name, line)
+    case task(context) do
+      {:ok, task} ->
+        if not answers_itself?(name), do: log(context, name, line)
 
-      result = run(name, task, arguments, [])
+        result = name |> run(task, arguments, stage: context.role.stage) |> refusal()
 
-      if answers_itself?(name), do: log(context, name, said(name, line, result))
+        if answers_itself?(name), do: log(context, name, said(name, line, result))
 
-      case result do
-        {:ok, text} -> {:ok, %{"content" => [%{"type" => "text", "text" => text}]}}
-        {:error, reason} -> {:error, reason}
-      end
+        case result do
+          {:ok, text} -> {:ok, %{"content" => [%{"type" => "text", "text" => text}]}}
+          {:refused, text} -> {:error, {:refused, text}}
+          {:error, reason} -> {:error, {:rail_failed, reason}}
+        end
+
+      {:error, reason} ->
+        {:error, {:rail_failed, reason}}
     end
   end
+
+  defp refusal({:error, %Ecto.Changeset{} = changeset}), do: {:refused, sentence(changeset)}
+  defp refusal(result), do: result
+
+  # One sentence for every refusal: each field, the value given where it says
+  # anything, and what is wrong with it.
+  defp sentence(%Ecto.Changeset{} = changeset) do
+    "Refused, nothing saved. " <> Enum.map_join(errors(changeset, nil), " ", fn {at, message} -> "#{at}: #{message}." end)
+  end
+
+  defp errors(%Ecto.Changeset{} = changeset, prefix) do
+    own =
+      for {field, {message, opts}} <- Enum.reverse(changeset.errors) do
+        {at(prefix, field), describe(message, opts, Map.get(changeset.params || %{}, to_string(field)))}
+      end
+
+    nested =
+      for {field, changes} when is_list(changes) <- changeset.changes,
+          {%Ecto.Changeset{valid?: false} = child, index} <- Enum.with_index(changes, 1),
+          error <- errors(child, at(prefix, "#{field} #{index}")),
+          do: error
+
+    own ++ nested
+  end
+
+  defp at(nil, field), do: to_string(field)
+  defp at(prefix, field), do: "#{prefix} #{field}"
+
+  defp describe(message, opts, value) do
+    case {opts[:enum], opts[:validation], opts[:type]} do
+      {[_first | _rest] = allowed, _validation, _type} -> "#{shown(value)} is not one of #{Enum.join(allowed, ", ")}"
+      {nil, :required, _type} -> "is required"
+      {nil, :cast, :integer} -> "must be a whole number, got #{shown(value)}"
+      {nil, :cast, :boolean} -> "must be true or false, got #{shown(value)}"
+      {nil, :cast, :string} -> "must be text, got #{shown(value)}"
+      {nil, :cast, {:array, _type}} -> "must be a list, got #{shown(value)}"
+      {nil, :embed, {:array, _type}} -> "must be a list of entries, got #{shown(value)}"
+      _other -> Regex.replace(~r/%{(\w+)}/, message, fn _whole, key -> to_string(opts[String.to_existing_atom(key)]) end)
+    end
+  end
+
+  defp shown(value), do: inspect(value, printable_limit: 80, limit: 10)
 
   # Everything says what it is doing before it does it, because a tab that takes
   # ten seconds to open is ten seconds of a person watching nothing happen.
@@ -98,9 +171,8 @@ defmodule Rail.Mcp.Actions.CallRunTool do
 
   # A refusal is a call that filed nothing, and a run log of them should not read
   # as a run of files filed.
-  defp said("qa_file", line, {:ok, text}) do
-    if String.ends_with?(text, "Nothing was filed."), do: line <> " · nothing filed", else: line
-  end
+  defp said("qa_file", line, {:refused, _text}), do: line <> " · nothing filed"
+  defp said(_name, line, {:refused, _text}), do: line <> " · refused"
 
   defp said(_name, line, _result), do: line
 
@@ -124,6 +196,8 @@ defmodule Rail.Mcp.Actions.CallRunTool do
 
   # A run that has not started has nowhere to write, which is every call made
   # while testing this rather than during a pass.
+  defp log(%RunContext{}, name, _line) when name in @saves, do: :ok
+
   defp log(%RunContext{os_process: %{run_id: run_id}}, name, line) when is_binary(run_id) do
     Pipeline.append_run_events(run_id, nil, ["[#{namespace(name)}] " <> line])
 
@@ -147,6 +221,15 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp run("qa_file", task, arguments, opts), do: run_tool_qa_file(task, arguments, opts)
   defp run("demo_start", task, arguments, opts), do: run_tool_demo_start(task, arguments, opts)
   defp run("demo_say", task, arguments, opts), do: run_tool_demo_say(task, arguments, opts)
+  defp run("save_ticket", task, arguments, opts), do: run_tool_save_ticket(task, arguments, opts)
+  defp run("save_design_option", task, arguments, opts), do: run_tool_save_design_option(task, arguments, opts)
+  defp run("save_plan", task, arguments, opts), do: run_tool_save_plan(task, arguments, opts)
+  defp run("commit", task, arguments, opts), do: run_tool_commit(task, arguments, opts)
+  defp run("request_merge", task, arguments, opts), do: run_tool_request_merge(task, arguments, opts)
+  defp run("save_finding", task, arguments, opts), do: run_tool_save_finding(task, arguments, opts)
+  defp run("save_review", task, arguments, opts), do: run_tool_save_review(task, arguments, opts)
+  defp run("save_verdict", task, arguments, opts), do: run_tool_save_verdict(task, arguments, opts)
+  defp run("save_demo", task, arguments, opts), do: run_tool_save_demo(task, arguments, opts)
 
   defp task(%RunContext{os_process: %{task_id: task_id}}) when is_binary(task_id) do
     case Pipeline.get_task(task_id) do

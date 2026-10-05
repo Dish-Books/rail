@@ -16,6 +16,8 @@ defmodule Rail.Pipeline.Actions.WriteQaChecklist do
   as they were answered rather than being driven a second time for no reason.
   """
 
+  import Rail.Pipeline.Utils.WriteScratchFile
+
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.QaCheck
   alias Rail.Pipeline.Schemas.QaChecklist
@@ -32,8 +34,8 @@ defmodule Rail.Pipeline.Actions.WriteQaChecklist do
       checklist = %{checklist | checks: Enum.map(checklist.checks, &carry(&1, answered(task)))}
       path = Path.join([task.scratch_path, "qa", "checklist.json"])
 
-      File.mkdir_p!(Path.dirname(path))
-      File.write!(path, Jason.encode_to_iodata!(%{checks: Enum.map(checklist.checks, &row/1)}))
+      write_scratch_file(path, Jason.encode_to_iodata!(%{checks: Enum.map(checklist.checks, &row/1)}))
+      Pipeline.broadcast_output_saved(task)
 
       {:ok, checklist}
     end

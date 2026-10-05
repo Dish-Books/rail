@@ -30,8 +30,6 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
     {:ok, task} = Pipeline.create_task(issue, :review)
     # Going on to QA starts its run, which works in the worktree.
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
-    reviews_dir = Path.join(task.scratch_path, "reviews")
-    File.mkdir_p!(reviews_dir)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     {:ok, run} =
@@ -44,50 +42,35 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
         started_at: DateTime.utc_now()
       })
 
-    %{task: task, run: Repo.preload(run, [:task, :role]), report_path: Path.join(reviews_dir, "RFN-1.json")}
+    %{
+      task: task,
+      run: Repo.preload(run, [:task, :role]),
+      report_path: Path.join([task.scratch_path, "reviews", "RFN-1.json"]),
+      finding: %{key: "unhandled-nil", title: "Nil is not handled", severity: :major, recommendation: :fix}
+    }
   end
 
-  test "a run that reported records its findings and moves nothing", %{
-    task: task,
-    run: run,
-    report_path: path
-  } do
-    File.write!(path, """
-    {"findings": [
-      {"key": "unhandled-nil", "title": "Nil is not handled", "detail": "The clause assumes a map.",
-       "file": "lib/rail/example.ex", "line": 12, "severity": "blocker", "recommendation": "fix", "status": "open"}
-    ]}
-    """)
+  test "a closed pass with a finding to decide moves nothing", %{task: task, run: run, finding: finding} do
+    {:ok, _saved} = Pipeline.save_review_finding(task, finding)
+    {:ok, _closed} = Pipeline.save_review(task)
 
     assert %Run{error: nil} = review_run_finished(run, [])
     assert %Task{stage: :review} = Repo.reload!(task)
-
-    assert [%ReviewFinding{key: "unhandled-nil", severity: :blocker, decision: nil}] =
-             Pipeline.list_review_findings(task)
+    assert [%ReviewFinding{key: "unhandled-nil", decision: nil}] = Pipeline.list_review_findings(task)
   end
 
-  test "a run that found nothing goes on to QA by itself", %{task: task, run: run, report_path: path} do
-    File.write!(path, ~s({"findings": []}))
+  test "a closed pass that found nothing goes on to QA by itself", %{task: task, run: run} do
+    {:ok, _closed} = Pipeline.save_review(task)
 
     assert %Run{error: nil, stage_outcome: :done} = review_run_finished(run, [])
     assert %Task{stage: :qa} = Repo.reload!(task)
-    assert Pipeline.list_review_findings(task) == []
   end
 
-  test "a re-review that finds everything fixed goes on to QA", %{task: task, run: run, report_path: path} do
-    {:ok, [finding]} =
-      Pipeline.sync_review_findings(task, [
-        %{key: "unhandled-nil", title: "Nil is not handled", severity: :major, recommendation: :fix, status: :open}
-      ])
-
-    {:ok, _to_fix} = Pipeline.decide_review_finding(finding, :fix)
-
-    File.write!(path, """
-    {"findings": [
-      {"key": "unhandled-nil", "title": "Nil is not handled", "severity": "major", "recommendation": "fix",
-       "status": "fixed"}
-    ]}
-    """)
+  test "a re-review that finds everything fixed goes on to QA", %{task: task, run: run, finding: finding} do
+    {:ok, saved} = Pipeline.save_review_finding(task, finding)
+    {:ok, _to_fix} = Pipeline.decide_review_finding(saved, :fix)
+    {:ok, _fixed} = Pipeline.save_review_finding(task, Map.put(finding, :status, :fixed))
+    {:ok, _closed} = Pipeline.save_review(task)
 
     assert %Run{error: nil, stage_outcome: :done} = review_run_finished(run, [])
     assert %Task{stage: :qa} = Repo.reload!(task)
@@ -95,88 +78,51 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
 
   # A finding the human already dismissed is closed however the reviewer restates
   # it, so it does not hold the change at review.
-  test "a re-review that leaves only what the human dismissed goes on to QA", %{
-    task: task,
-    run: run,
-    report_path: path
-  } do
-    {:ok, [finding]} =
-      Pipeline.sync_review_findings(task, [
-        %{key: "long-name", title: "The name is long", severity: :nit, recommendation: :skip, status: :open}
-      ])
-
-    {:ok, _dismissed} = Pipeline.decide_review_finding(finding, :skip)
-
-    File.write!(path, """
-    {"findings": [
-      {"key": "long-name", "title": "The name is long", "severity": "nit", "recommendation": "skip",
-       "status": "not_fixed"}
-    ]}
-    """)
+  test "a re-review that leaves only what the human dismissed goes on to QA", %{task: task, run: run} do
+    long_name = %{key: "long-name", title: "The name is long", severity: :nit, recommendation: :skip}
+    {:ok, saved} = Pipeline.save_review_finding(task, long_name)
+    {:ok, _dismissed} = Pipeline.decide_review_finding(saved, :skip)
+    {:ok, _restated} = Pipeline.save_review_finding(task, Map.put(long_name, :status, :not_fixed))
+    {:ok, _closed} = Pipeline.save_review(task)
 
     assert %Run{error: nil} = review_run_finished(run, [])
     assert %Task{stage: :qa} = Repo.reload!(task)
   end
 
-  test "a re-review that finds a fix still missing stays at review", %{task: task, run: run, report_path: path} do
-    {:ok, [finding]} =
-      Pipeline.sync_review_findings(task, [
-        %{key: "unhandled-nil", title: "Nil is not handled", severity: :major, recommendation: :fix, status: :open}
-      ])
-
-    {:ok, _to_fix} = Pipeline.decide_review_finding(finding, :fix)
-
-    File.write!(path, """
-    {"findings": [
-      {"key": "unhandled-nil", "title": "Nil is not handled", "severity": "major", "recommendation": "fix",
-       "status": "not_fixed"}
-    ]}
-    """)
+  test "a re-review that finds a fix still missing stays at review", %{task: task, run: run, finding: finding} do
+    {:ok, saved} = Pipeline.save_review_finding(task, finding)
+    {:ok, _to_fix} = Pipeline.decide_review_finding(saved, :fix)
+    {:ok, _not_fixed} = Pipeline.save_review_finding(task, Map.put(finding, :status, :not_fixed))
+    {:ok, _closed} = Pipeline.save_review(task)
 
     assert %Run{error: nil, stage_outcome: :in_progress} = review_run_finished(run, [])
     assert %Task{stage: :review} = Repo.reload!(task)
   end
 
-  # The reviewer recommending a finding be let stand is still a finding: whether
-  # to live with it is the human's call, not the reviewer's.
-  test "a run whose only finding it would skip still waits on the human", %{
-    task: task,
-    run: run,
-    report_path: path
-  } do
-    File.write!(path, """
-    {"findings": [
-      {"key": "long-name", "title": "The name is long", "severity": "nit", "recommendation": "skip"}
-    ]}
-    """)
-
-    assert %Run{error: nil} = review_run_finished(run, [])
-    assert %Task{stage: :review} = Repo.reload!(task)
-  end
-
-  test "a message queued for the reviewer holds a clean review at review", %{
-    task: task,
-    run: run,
-    report_path: path
-  } do
-    File.write!(path, ~s({"findings": []}))
+  test "a message queued for the reviewer holds a clean review at review", %{task: task, run: run} do
+    {:ok, _closed} = Pipeline.save_review(task)
     {:ok, queued} = Pipeline.update_run(run, %{pending_chat: "Look at the migration too."})
 
     assert %Run{error: nil} = review_run_finished(%{queued | task: run.task, role: run.role}, [])
     assert %Task{stage: :review} = Repo.reload!(task)
   end
 
-  test "a run that exited without a report records that rather than reading as clean", %{
+  test "a pass that saved findings but never closed records that rather than reading as clean", %{
     task: task,
-    run: run
+    run: run,
+    finding: finding
   } do
-    assert %Run{error: "The reviewer did not write reviews/RFN-1.json."} = review_run_finished(run, [])
+    {:ok, _saved} = Pipeline.save_review_finding(task, finding)
+
+    assert %Run{error: "The reviewer did not save its review."} = review_run_finished(run, [])
     assert %Task{stage: :review} = Repo.reload!(task)
   end
 
-  test "a report Rail cannot read is no report", %{run: run, report_path: path} do
-    File.write!(path, "Looks fine to me.")
+  test "a report written before this change still closes the review", %{task: task, run: run, report_path: path} do
+    File.mkdir_p!(Path.dirname(path))
+    File.write!(path, ~s({"findings": []}))
 
-    assert %Run{error: "The reviewer did not write reviews/RFN-1.json."} = review_run_finished(run, [])
+    assert %Run{error: nil, stage_outcome: :done} = review_run_finished(run, [])
+    assert %Task{stage: :qa} = Repo.reload!(task)
   end
 end

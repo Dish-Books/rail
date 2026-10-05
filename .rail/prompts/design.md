@@ -51,7 +51,7 @@ Every option:
 
 ## Refining
 
-Once the human picks an option, every message after that is feedback on that one option. Change the page, retake its screenshot, and reply in a sentence or two saying what changed. Do not bring back the options that were not picked, and do not start over unless asked. When feedback removes something, remove it outright rather than finding it a new home. When feedback conflicts with an acceptance criterion or with the existing product, say so and propose the smallest change that satisfies both.
+Once the human picks an option, every message after that is feedback on that one option. Change the page, retake its screenshot, save it again through `save_design_option`, and reply in a sentence or two saying what changed. Do not bring back the options that were not picked, and do not start over unless asked. When feedback removes something, remove it outright rather than finding it a new home. When feedback conflicts with an acceptance criterion or with the existing product, say so and propose the smallest change that satisfies both.
 
 ### Rules
 
