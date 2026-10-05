@@ -54,6 +54,43 @@ defmodule Rail.Git.Utils.ParseDiffTest do
     assert [%{path: "lib/new.ex", display_path: "lib/old.ex → lib/new.ex", status: :renamed}] = parse_diff(raw)
   end
 
+  # The old side of a file is read at the name it had before the change.
+  test "every file names the path its old side is read at" do
+    raw = """
+    diff --git a/lib/old.ex b/lib/new.ex
+    similarity index 90%
+    rename from lib/old.ex
+    rename to lib/new.ex
+    --- a/lib/old.ex
+    +++ b/lib/new.ex
+    @@ -1 +1 @@
+    -was
+    +is
+    diff --git a/lib/same.ex b/lib/same.ex
+    --- a/lib/same.ex
+    +++ b/lib/same.ex
+    @@ -1 +1 @@
+    -was
+    +is
+    diff --git a/lib/added.ex b/lib/added.ex
+    new file mode 100644
+    --- /dev/null
+    +++ b/lib/added.ex
+    @@ -0,0 +1 @@
+    +is
+    diff --git a/lib/empty.ex b/lib/empty.ex
+    new file mode 100644
+    index 0000000..e69de29
+    """
+
+    assert [
+             %{path: "lib/new.ex", old_path: "lib/old.ex"},
+             %{path: "lib/same.ex", old_path: "lib/same.ex"},
+             %{path: "lib/added.ex", old_path: nil},
+             %{path: "lib/empty.ex", old_path: nil}
+           ] = parse_diff(raw)
+  end
+
   test "context, additions and deletions carry the line numbers they land on" do
     raw = """
     diff --git a/lib/mixed.ex b/lib/mixed.ex

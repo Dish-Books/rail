@@ -6,6 +6,7 @@ defmodule Rail.Git.Actions.ExpandDiffGap do
   being read runs to the working tree: what sits in the gap is what is there now.
   """
 
+  import Rail.Git.Utils.FileLines
   import Rail.Git.Utils.HighlightLines
 
   alias Rail.Pipeline.Schemas.Task
@@ -27,31 +28,18 @@ defmodule Rail.Git.Actions.ExpandDiffGap do
     end
   end
 
+  # The whole file is highlighted, so a gap inside a comment or heredoc that opens
+  # above it reads the way the file does. A file that is not text cannot be, so the gap alone is.
   defp gap(lines, path, start_line, end_line) do
-    lines = Enum.slice(lines, max(0, start_line - 1), max(0, end_line - start_line + 1))
+    first = max(0, start_line - 1)
+    count = max(0, end_line - start_line + 1)
+    gap = Enum.slice(lines, first, count)
 
-    lines
-    |> highlight_lines(path)
-    |> Enum.zip_with(lines, fn html, text -> %{text: text, html: html} end)
-  end
+    html =
+      if Enum.all?(lines, &String.valid?/1),
+        do: lines |> highlight_lines(path) |> Enum.slice(first, count),
+        else: highlight_lines(gap, path)
 
-  defp file_lines(worktree_path, path) do
-    full_path = Path.join(worktree_path, path)
-
-    if File.dir?(full_path) do
-      nil
-    else
-      case File.read(full_path) do
-        {:ok, content} -> lines(content)
-        {:error, _unreadable} -> nil
-      end
-    end
-  end
-
-  defp lines(content) do
-    case String.split(content, ~r/\r?\n/) do
-      [""] -> []
-      list -> if List.last(list) == "", do: Enum.slice(list, 0..-2//1), else: list
-    end
+    Enum.zip_with(html, gap, fn html, text -> %{text: text, html: html} end)
   end
 end
