@@ -20,6 +20,7 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.Roles
   alias Rail.Scope
   alias Rail.Tools
+  alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
@@ -152,7 +153,26 @@ defmodule RailWeb.TaskLiveTest do
     {:ok, engineer} = Roles.update_role(system_scope(), engineer, %{model: model})
     {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
     reset = DateTime.utc_now() |> DateTime.shift(hour: 2) |> DateTime.truncate(:second)
-    account = ready_backend(model, [{"Session", 0.0, reset}], %{label: "work"})
+
+    {:ok, account} =
+      Tools.create_backend(system_scope(), %{
+        name: :claude,
+        label: "work",
+        executable_path: "/usr/bin/true",
+        models: [%{id: model}]
+      })
+
+    # Its 5-hour window is spent until `reset`.
+    session = %{"label" => "Session", "remaining_percent" => 0.0, "resets_at" => DateTime.to_iso8601(reset)}
+
+    account =
+      account
+      |> Backend.usage_changeset(%{
+        name: :claude,
+        status: :ready,
+        usage: [%{name: "Session", details: %{"windows" => [session]}}]
+      })
+      |> Repo.update!()
 
     {:ok, run} =
       Pipeline.create_run(%{task_id: task.id, role_id: engineer.id, status: :starting, started_at: DateTime.utc_now()})
@@ -171,7 +191,7 @@ defmodule RailWeb.TaskLiveTest do
 
     # The reset passes, and the job starts the turn with nobody on the page doing anything.
     account
-    |> Rail.Tools.Schemas.Backend.usage_changeset(%{name: :claude, status: :ready, usage: []})
+    |> Backend.usage_changeset(%{name: :claude, status: :ready, usage: []})
     |> Repo.update!()
 
     stub(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:ok, nil, 4270} end)
@@ -215,7 +235,29 @@ defmodule RailWeb.TaskLiveTest do
     {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
     {:ok, engineer} = Roles.update_role(system_scope(), engineer, %{model: model})
     {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
-    work = ready_backend(model, [{"Weekly", 0.0, DateTime.shift(DateTime.utc_now(), day: 1)}], %{label: "work"})
+
+    {:ok, work} =
+      Tools.create_backend(system_scope(), %{
+        name: :claude,
+        label: "work",
+        executable_path: "/usr/bin/true",
+        models: [%{id: model}]
+      })
+
+    weekly = %{
+      "label" => "Weekly",
+      "remaining_percent" => 0.0,
+      "resets_at" => DateTime.to_iso8601(DateTime.shift(DateTime.utc_now(), day: 1))
+    }
+
+    work
+    |> Backend.usage_changeset(%{
+      name: :claude,
+      status: :ready,
+      usage: [%{name: "Weekly", details: %{"windows" => [weekly]}}]
+    })
+    |> Repo.update!()
+
     now = DateTime.utc_now()
 
     {:ok, run} =

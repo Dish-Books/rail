@@ -5,9 +5,26 @@ defmodule Rail.Tools.Actions.ListModelsTest do
   alias Rail.Tools.Schemas.Backend
 
   test "lists each CLI's model once with every account offering it, in the order they were added" do
-    %Backend{id: work_id} = ready_backend(["claude-sonnet-5", "claude-fable-5-1"], [], %{label: "work"})
-    %Backend{id: max_id} = ready_backend(["claude-sonnet-5"], [], %{label: "max-2", status: :signed_out})
-    %Backend{id: agy_id} = ready_backend(["claude-sonnet-5"], [], %{name: :agy})
+    scope = system_scope()
+
+    {:ok, %Backend{id: work_id}} =
+      Tools.create_backend(scope, %{
+        name: :claude,
+        label: "work",
+        executable_path: "/usr/bin/true",
+        models: [%{id: "claude-sonnet-5"}, %{id: "claude-fable-5-1"}]
+      })
+
+    {:ok, %Backend{id: max_id}} =
+      Tools.create_backend(scope, %{
+        name: :claude,
+        label: "max-2",
+        executable_path: "/usr/bin/true",
+        models: [%{id: "claude-sonnet-5"}]
+      })
+
+    {:ok, %Backend{id: agy_id}} =
+      Tools.create_backend(scope, %{name: :agy, executable_path: "/usr/bin/agy", models: [%{id: "claude-sonnet-5"}]})
 
     models = Enum.reject(Tools.list_models(), &(&1.id == "claude-opus-5-5"))
 

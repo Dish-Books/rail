@@ -27,7 +27,32 @@ defmodule Rail.Tools.Actions.RunAgentTest do
     model = "claude-run-agent-#{System.unique_integer([:positive])}"
     role = %Role{name: "Triage", cli: :claude, model: model}
 
-    %{backend: ready_backend(model, [], %{executable_path: script}), dir: dir, role: role, script: script}
+    # A signed-in account running the script, offering `offered`, its windows `{label, percent left, resets_at}`.
+    account = fn offered, windows, attrs ->
+      {:ok, backend} =
+        Tools.create_backend(system_scope(), %{
+          name: :claude,
+          label: attrs[:label],
+          executable_path: script,
+          models: [%{id: offered}]
+        })
+
+      reported =
+        for {label, left, at} <- windows do
+          %{
+            name: label,
+            details: %{
+              "windows" => [
+                %{"label" => label, "remaining_percent" => left, "resets_at" => at && DateTime.to_iso8601(at)}
+              ]
+            }
+          }
+        end
+
+      Repo.update!(Backend.usage_changeset(backend, %{name: :claude, status: attrs[:status] || :ready, usage: reported}))
+    end
+
+    %{account: account, backend: account.(model, [], %{}), dir: dir, role: role}
   end
 
   test "runs the agent in the directory given, with the caller's env over the account's", %{
@@ -60,50 +85,51 @@ defmodule Rail.Tools.Actions.RunAgentTest do
   end
 
   test "runs on the account a new conversation would, skipping one used up", %{
+    account: account,
     backend: backend,
     dir: dir,
-    role: role,
-    script: script
+    role: role
   } do
     Repo.delete!(backend)
     in_a_day = DateTime.shift(DateTime.utc_now(), day: 1)
-    _used_up = ready_backend(role.model, [{"Weekly", 0.0, in_a_day}], %{executable_path: script, label: "work"})
-    roomy = ready_backend(role.model, [{"Weekly", 80.0, in_a_day}], %{executable_path: script, label: "personal"})
+    _used_up = account.(role.model, [{"Weekly", 0.0, in_a_day}], %{label: "work"})
+    roomy = account.(role.model, [{"Weekly", 80.0, in_a_day}], %{label: "personal"})
 
     assert {:ok, output} = Tools.run_agent(role, [], cd: dir, timeout: 5_000)
     assert output =~ Backend.config_dir(roomy)
   end
 
   test "waits for the earliest reset when every account is used up, and runs nothing", %{
+    account: account,
     backend: backend,
     dir: dir,
-    role: role,
-    script: script
+    role: role
   } do
     soon = DateTime.utc_now() |> DateTime.shift(hour: 2) |> DateTime.truncate(:second)
     later = DateTime.utc_now() |> DateTime.shift(day: 3) |> DateTime.truncate(:second)
     Repo.delete!(backend)
-    _first = ready_backend(role.model, [{"Weekly", 0.0, later}], %{executable_path: script})
-    _second = ready_backend(role.model, [{"Session", 0.0, soon}], %{executable_path: script})
+    _first = account.(role.model, [{"Weekly", 0.0, later}], %{})
+    _second = account.(role.model, [{"Session", 0.0, soon}], %{})
 
     reject(&Tools.run/3)
     assert {:error, {:waiting_for_usage, ^soon}} = Tools.run_agent(role, [], cd: dir, timeout: 5_000)
   end
 
   test "an account used up with no reset reported is looked at again after the next usage refresh", %{
+    account: account,
     backend: backend,
     dir: dir,
     role: role
   } do
     Repo.delete!(backend)
-    _spent = ready_backend(role.model, [{"Weekly", 0.0, nil}])
+    _spent = account.(role.model, [{"Weekly", 0.0, nil}], %{})
 
     assert {:error, {:waiting_for_usage, at}} = Tools.run_agent(role, [], cd: dir, timeout: 5_000)
     assert_in_delta DateTime.diff(at, DateTime.utc_now()), 5 * 60, 5
   end
 
-  test "names the model when no signed-in account offers it", %{dir: dir, role: role} do
-    _signed_out = ready_backend("claude-elsewhere", [], %{status: :signed_out})
+  test "names the model when no signed-in account offers it", %{account: account, dir: dir, role: role} do
+    _signed_out = account.("claude-elsewhere", [], %{status: :signed_out})
 
     assert {:error, "No signed-in account offers claude-elsewhere. " <> _how} =
              Tools.run_agent(%{role | model: "claude-elsewhere"}, [], cd: dir, timeout: 5_000)

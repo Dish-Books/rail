@@ -39,7 +39,11 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
     on_exit(fn -> File.rm_rf(tmp_dir) end)
 
     model = "claude-launch-#{System.unique_integer([:positive])}"
-    backend = ready_backend(model)
+
+    {:ok, backend} =
+      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true", models: [%{id: model}]})
+
+    backend = Repo.update!(Backend.usage_changeset(backend, %{name: :claude, status: :ready}))
     {:ok, seeded} = Roles.get_role(project_id: project.id, stage: :engineer)
 
     {:ok, role} =

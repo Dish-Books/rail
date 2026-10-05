@@ -6,6 +6,8 @@ defmodule RailWeb.Live.RunConversationTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Roles
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
   alias RailWeb.Live.RunConversation
 
@@ -37,7 +39,29 @@ defmodule RailWeb.Live.RunConversationTest do
 
     roles_map = Map.new(roles, fn {_stage, role} -> {role.id, role} end)
 
-    %{project: project, task: task, roles: roles, roles_map: roles_map}
+    # An account offering `model` that the conversation can name, its windows read as the
+    # probe left them: `{label, percent left, resets_at}`.
+    signed_in = fn model, windows, attrs ->
+      {:ok, backend} =
+        Tools.create_backend(system_scope(), %{
+          name: :claude,
+          label: attrs[:label],
+          executable_path: "/usr/bin/true",
+          models: [%{id: model}]
+        })
+
+      groups =
+        Enum.map(windows, fn {label, left, resets_at} ->
+          window = %{"label" => label, "remaining_percent" => left, "resets_at" => DateTime.to_iso8601(resets_at)}
+          %{name: label, details: %{"windows" => [window]}}
+        end)
+
+      backend
+      |> Backend.usage_changeset(%{name: :claude, status: attrs[:status] || :ready, usage: groups})
+      |> Repo.update!()
+    end
+
+    %{project: project, task: task, roles: roles, roles_map: roles_map, signed_in: signed_in}
   end
 
   test "says so when the role on the tab has not run the task", %{task: task, roles_map: roles_map} do
@@ -676,9 +700,9 @@ defmodule RailWeb.Live.RunConversationTest do
   end
 
   test "the role row names the model and the account the conversation is on, with its tightest window, and each turn names its account",
-       %{task: task, roles: roles, roles_map: roles_map} do
+       %{signed_in: signed_in, task: task, roles: roles, roles_map: roles_map} do
     work =
-      ready_backend(
+      signed_in.(
         "claude-opus-5-5",
         [
           {"Session", 90.0, DateTime.shift(DateTime.utc_now(), hour: 3)},
@@ -740,6 +764,7 @@ defmodule RailWeb.Live.RunConversationTest do
     end
 
     test "lists every account offering the model with its spent window and reset, the earliest first", %{
+      signed_in: signed_in,
       task: task,
       model: model,
       roles_map: roles_map,
@@ -747,12 +772,12 @@ defmodule RailWeb.Live.RunConversationTest do
       soon: soon,
       later: later
     } do
-      max = ready_backend(model, [{"Session", 0.0, soon}], %{label: "max-2"})
-      work = ready_backend(model, [{"Weekly", 0.0, later}], %{label: "work"})
-      ops = ready_backend(model, [], %{label: "ops", status: :signed_out})
+      max = signed_in.(model, [{"Session", 0.0, soon}], %{label: "max-2"})
+      work = signed_in.(model, [{"Weekly", 0.0, later}], %{label: "work"})
+      ops = signed_in.(model, [], %{label: "ops", status: :signed_out})
       # Reset since the turn last tried, and not yet tried again.
-      _roomy = ready_backend(model, [{"Weekly", 15.0, later}], %{label: "roomy"})
-      _down = ready_backend(model, [], %{label: "down", status: :unavailable})
+      _roomy = signed_in.(model, [{"Weekly", 15.0, later}], %{label: "roomy"})
+      _down = signed_in.(model, [], %{label: "down", status: :unavailable})
 
       waiting =
         Repo.insert!(%OsProcess{
@@ -804,14 +829,15 @@ defmodule RailWeb.Live.RunConversationTest do
     end
 
     test "a resumed conversation waits on its own account, and offers to stop", %{
+      signed_in: signed_in,
       task: task,
       model: model,
       roles_map: roles_map,
       run: run,
       later: later
     } do
-      work = ready_backend(model, [{"Weekly", 0.0, later}], %{label: "work"})
-      _elsewhere = ready_backend(model, [], %{label: "max-2"})
+      work = signed_in.(model, [{"Weekly", 0.0, later}], %{label: "work"})
+      _elsewhere = signed_in.(model, [], %{label: "max-2"})
       {:ok, run} = Pipeline.update_run(run, %{conversation_id: "conv_pinned"})
 
       answered =

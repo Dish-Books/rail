@@ -1,18 +1,84 @@
 defmodule Rail.Tools.Actions.StartAfterUsageResetTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.FollowerSupervisor
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
-    model = "claude-reset-#{System.unique_integer([:positive])}"
+    unique = System.unique_integer([:positive])
+    tmp_dir = Path.join(System.tmp_dir!(), "usage_reset_test_#{unique}")
+    File.mkdir_p!(Path.join(tmp_dir, "worktree"))
+    on_exit(fn -> File.rm_rf(tmp_dir) end)
+
+    model = "claude-reset-#{unique}"
     reset = DateTime.utc_now() |> DateTime.shift(hour: 2) |> DateTime.truncate(:second)
-    account = ready_backend(model, [{"Session", 0.0, reset}], %{label: "work"})
-    run = agent_run(project, model)
+
+    {:ok, account} =
+      Tools.create_backend(system_scope(), %{
+        name: :claude,
+        label: "work",
+        executable_path: "/usr/bin/true",
+        models: [%{id: model}]
+      })
+
+    # Its 5-hour window is spent, as the probe stored it.
+    account =
+      account
+      |> Backend.usage_changeset(%{
+        name: :claude,
+        status: :ready,
+        usage: [
+          %{
+            name: "Session",
+            details: %{
+              "windows" => [
+                %{"label" => "Session", "remaining_percent" => 0.0, "resets_at" => DateTime.to_iso8601(reset)}
+              ]
+            }
+          }
+        ]
+      })
+      |> Repo.update!()
+
+    {:ok, seeded} = Roles.get_role(project_id: project.id, stage: :engineer)
+    {:ok, role} = Roles.update_role(system_scope(), seeded, %{model: model})
+
+    issue =
+      %Issue{}
+      |> Issue.changeset(%{
+        project_id: project.id,
+        external_id: "lin_reset_#{unique}",
+        identifier: "RST#{unique}-1",
+        title: "Reset Issue",
+        state: :backlog
+      })
+      |> Repo.insert!()
+
+    task =
+      %Task{}
+      |> Task.changeset(
+        %{
+          issue_id: issue.id,
+          stage: :engineer,
+          worktree_name: "reset-#{unique}",
+          worktree_path: Path.join(tmp_dir, "worktree"),
+          scratch_path: Path.join(tmp_dir, "scratch")
+        },
+        project.id
+      )
+      |> Repo.insert!()
+
+    {:ok, run} =
+      Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :starting, started_at: DateTime.utc_now()})
+
     {:ok, %OsProcess{status: :waiting_for_usage} = waiting} = Tools.start_os_process(run, ["2"])
     Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
 

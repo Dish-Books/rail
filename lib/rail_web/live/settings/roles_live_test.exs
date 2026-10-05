@@ -6,6 +6,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
+  alias Rail.Tools.Schemas.Backend
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
@@ -21,8 +22,22 @@ defmodule RailWeb.Settings.RolesLiveTest do
                admin: true
              })
 
+    # An account offering `models`, signed in unless `attrs` says otherwise.
+    offering = fn models, attrs ->
+      {:ok, backend} =
+        Rail.Tools.create_backend(
+          Rail.Scope.for_system(),
+          Map.merge(
+            %{name: :claude, executable_path: "/usr/local/bin/claude", models: Enum.map(models, &%{id: &1})},
+            Map.delete(attrs, :status)
+          )
+        )
+
+      Rail.Repo.update!(Backend.usage_changeset(backend, %{name: backend.name, status: Map.get(attrs, :status, :ready)}))
+    end
+
     # Every editor lists what the accounts offer: the seeded account's Opus, and this one's Sonnet.
-    _work = ready_backend(["claude-sonnet-5"], [], %{label: "work", executable_path: "/usr/local/bin/claude"})
+    _work = offering.(["claude-sonnet-5"], %{label: "work"})
 
     admin_conn = log_in_user(conn, admin_user)
 
@@ -41,7 +56,8 @@ defmodule RailWeb.Settings.RolesLiveTest do
       conn: conn,
       admin_conn: admin_conn,
       admin_user: admin_user,
-      regular_conn: regular_conn
+      regular_conn: regular_conn,
+      offering: offering
     }
   end
 
@@ -1139,6 +1155,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
   end
 
   test "the editor lists every model with the accounts offering it, and a row saves the model and its CLI", %{
+    offering: offering,
     admin_conn: conn
   } do
     {:ok, project} =
@@ -1151,10 +1168,10 @@ defmodule RailWeb.Settings.RolesLiveTest do
         clone_path: "/tmp/repos/roles-live-13090"
       })
 
-    _max = ready_backend(["claude-sonnet-5"], [], %{label: "max-2"})
-    _ops = ready_backend(["claude-sonnet-5", "claude-fable-5-1"], [], %{label: "ops", status: :signed_out})
-    _down = ready_backend(["claude-sonnet-5"], [], %{label: "down", status: :unavailable})
-    _gemini = ready_backend(["gemini-3.8-flash-high"], [], %{name: :agy})
+    _max = offering.(["claude-sonnet-5"], %{label: "max-2"})
+    _ops = offering.(["claude-sonnet-5", "claude-fable-5-1"], %{label: "ops", status: :signed_out})
+    _down = offering.(["claude-sonnet-5"], %{label: "down", status: :unavailable})
+    _gemini = offering.(["gemini-3.8-flash-high"], %{name: :agy})
 
     assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
     view |> element("#assign-stage-button-design") |> render_click()
@@ -1181,6 +1198,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
   end
 
   test "the roles list names each role's model and how many signed-in accounts offer it", %{
+    offering: offering,
     admin_conn: conn,
     admin_user: admin_user
   } do
@@ -1194,8 +1212,8 @@ defmodule RailWeb.Settings.RolesLiveTest do
         clone_path: "/tmp/repos/roles-live-13091"
       })
 
-    _max = ready_backend(["claude-sonnet-5"], [], %{label: "max-2"})
-    _ops = ready_backend(["claude-fable-5-1"], [], %{label: "ops", status: :signed_out})
+    _max = offering.(["claude-sonnet-5"], %{label: "max-2"})
+    _ops = offering.(["claude-fable-5-1"], %{label: "ops", status: :signed_out})
     scope = Rail.Scope.for_user(admin_user)
 
     for {stage, model} <- [engineer: "claude-sonnet-5", design: "claude-fable-5-1", review: "claude-opus-5-5"] do
