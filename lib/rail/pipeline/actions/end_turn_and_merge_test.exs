@@ -127,8 +127,11 @@ defmodule Rail.Pipeline.Actions.EndTurnAndMergeTest do
     assert {:ok, :merging} = Pipeline.end_turn_and_merge(task, os_process)
     assert_receive {:run_changed, ^run_id}, 5_000
 
-    assert %Run{status: :waiting_for_usage, stage_outcome: :in_progress, pending_chat: "Also rename the module"} =
-             Repo.get!(Run, run_id)
+    # The settle broadcasts before it puts the queued message back, so the row is read until it has.
+    eventually(fn ->
+      assert %Run{status: :waiting_for_usage, stage_outcome: :in_progress, pending_chat: "Also rename the module"} =
+               Repo.get!(Run, run_id)
+    end)
   end
 
   test "a merge Rail could not make is recorded on the run", %{
