@@ -42,4 +42,29 @@ defmodule RailWeb.Components.SegmentedControlTest do
     assert Floki.attribute(html, "#choice-one", "phx-target") == ["#pane"]
     assert Floki.find(html, "#picker-one") == []
   end
+
+  # A narrow toolbar draws the icon alone, so the label is still what names it.
+  test "an option with an icon draws it and keeps its label as its name, one without draws as before" do
+    html =
+      (&SegmentedControl.segmented_control/1)
+      |> render_component(
+        id: "picker",
+        options: [{:wrap, "Wrap", "pi-arrow-u-down-left"}, {:scroll, "Scroll"}],
+        selected: :wrap,
+        event: "pick",
+        value_name: "choice"
+      )
+      |> Floki.parse_fragment!()
+
+    assert [_icon] = Floki.find(html, "#picker-wrap .pi-arrow-u-down-left")
+
+    assert Floki.attribute(html, "#picker-wrap", "title") == ["Wrap"]
+    assert Floki.attribute(html, "#picker-wrap", "aria-label") == ["Wrap"]
+    assert html |> Floki.find("#picker-wrap") |> Floki.text() |> String.trim() == "Wrap"
+
+    assert Floki.attribute(html, "#picker-scroll", "title") == []
+    assert Floki.attribute(html, "#picker-scroll", "aria-label") == []
+    assert Floki.find(html, "#picker-scroll span") == []
+    assert html |> Floki.find("#picker-scroll") |> Floki.text() |> String.trim() == "Scroll"
+  end
 end

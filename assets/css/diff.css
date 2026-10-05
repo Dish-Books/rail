@@ -4,6 +4,7 @@
 
 .diff-line {
   @apply h-[22px] w-full flex items-stretch leading-[22px] font-mono text-xs select-text border-l-2;
+  @apply diff-wrap:h-auto diff-wrap:min-h-[22px];
 }
 
 .diff-num {
@@ -19,7 +20,33 @@
 }
 
 .diff-code {
-  @apply flex-1 pl-1.5 pr-4 flex text-slate-800 dark:text-slate-200;
+  @apply flex-1 pl-1.5 pr-4 flex text-slate-800 dark:text-slate-200 diff-wrap:min-w-0;
+}
+
+/* A wrapped line's further rows hang by `--hang`, which DiffRow sets past its indent,
+ * so they never read as a line of their own. Drawn, not inserted: a copy is the line.
+ * The cap keeps a deep indent readable in a narrow pane, in whole stops of preflight's `tab-size: 4`.
+ */
+.diff-text {
+  @apply whitespace-pre;
+
+  @variant diff-wrap {
+    --wrap-hang: min(var(--hang, 4ch), round(down, 40cqw, 4ch));
+    @apply min-w-0 whitespace-pre-wrap wrap-anywhere;
+    padding-left: var(--wrap-hang);
+    text-indent: calc(-1 * var(--wrap-hang));
+  }
+}
+
+/* A file's lines, or a finding's excerpt of them, and the container the rows inside
+ * measure against. Classes rather than utilities, which would sit in a later layer and beat wrap.
+ */
+.diff-body {
+  @apply @container overflow-x-auto diff-wrap:overflow-x-hidden;
+}
+
+.diff-rows {
+  @apply min-w-max diff-wrap:min-w-0;
 }
 
 /* The gutter is the row's tint again, opaque: a sticky cell with a see-through

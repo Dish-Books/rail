@@ -29,6 +29,7 @@ defmodule RailWeb.Components.DiffPane do
   attr :selected_file, :string, default: nil
   attr :show_file_tree, :boolean, default: true
   attr :filter, :atom, default: :branch
+  attr :wrap, :atom, default: :scroll, doc: "the reader's Scroll or Wrap, which only the toolbar draws"
   attr :query, :string, default: ""
   attr :empty_message, :string, default: "Nothing has been changed on this branch yet."
   attr :scroll_to, :string, default: nil
