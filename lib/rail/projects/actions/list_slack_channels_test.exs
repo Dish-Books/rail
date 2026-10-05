@@ -27,12 +27,30 @@ defmodule Rail.Projects.Actions.ListSlackChannelsTest do
     {:ok, _other} =
       Projects.update_project(system_scope(), other, %{"slack_channels" => [channel.("C#{unique}a", "alpha")]})
 
-    %{other: other}
+    %{other: other, workspace: workspace}
   end
 
   test "lists one project's channels, or several projects' in one query, by name", %{project: project, other: other} do
     assert [%SlackChannel{name: "zebra"}] = Projects.list_slack_channels(project)
     assert [%SlackChannel{name: "alpha"}, %SlackChannel{name: "zebra"}] = Projects.list_slack_channels([project, other])
     assert [] = Projects.list_slack_channels([])
+  end
+
+  test "lists every project's channels marked external", %{other: other, workspace: workspace} do
+    assert [] = Projects.list_slack_channels(external: true)
+
+    {:ok, _other} =
+      Projects.update_project(system_scope(), other, %{
+        "slack_channels" => [
+          %{
+            "external_id" => "C_OUTSIDE",
+            "name" => "customer",
+            "slack_workspace_id" => workspace.id,
+            "external" => "true"
+          }
+        ]
+      })
+
+    assert [%SlackChannel{external_id: "C_OUTSIDE", external: true}] = Projects.list_slack_channels(external: true)
   end
 end

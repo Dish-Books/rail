@@ -468,13 +468,27 @@ defmodule RailWeb.LearningsLiveTest do
     assert %LearningProposal{status: :pending} = Repo.reload!(override)
   end
 
-  test "the digest link names the triage channel and opens the latest digest", %{conn: conn, project: project} do
-    {:ok, view, _html} = live(conn, ~p"/learnings")
+  test "the digest link names the learnings channel, not an older triage channel, and opens the latest digest", %{
+    conn: conn,
+    project: project
+  } do
+    {:ok, view, html} = live(conn, ~p"/learnings")
     refute has_element?(view, "#learnings-digest-link")
+    refute html =~ "06:00 digest in"
+    refute has_element?(view, "#learnings-digest-picker")
 
-    connect_slack_channel(project)
+    %{workspace: workspace} = connect_slack_channel(project)
+    stub_slack(team_id: workspace.external_id, channels: [{"C_LEARN", "rail-learnings"}])
+
+    {:ok, _project} =
+      Rail.Projects.update_project(system_scope(), project, %{
+        "learnings_slack_workspace_id" => workspace.id,
+        "learnings_channel_external_id" => "C_LEARN"
+      })
+
     {:ok, view, _html} = live(conn, ~p"/learnings")
-    assert has_element?(view, "span#learnings-digest-link", "#rail-feedback")
+    assert has_element?(view, "span#learnings-digest-link", "#rail-learnings")
+    refute has_element?(view, "#learnings-digest-link", "#rail-feedback")
 
     Repo.insert!(%CuratorPass{
       project_id: project.id,
@@ -484,7 +498,108 @@ defmodule RailWeb.LearningsLiveTest do
     })
 
     {:ok, view, _html} = live(conn, ~p"/learnings")
-    assert has_element?(view, "a#learnings-digest-link[href='https://slack.example/p1']", "#rail-feedback")
+    assert has_element?(view, "a#learnings-digest-link[href='https://slack.example/p1']", "#rail-learnings")
+  end
+
+  test "an admin picks where the digest posts from the footer, and another tab's pick redraws it", %{
+    conn: conn,
+    project: project
+  } do
+    {:ok, admin} =
+      Users.register_oauth_user(%{
+        github_id: "llv-admin",
+        login: "ada",
+        name: "Ada Admin",
+        email: "ada@llv.example",
+        admin: true
+      })
+
+    conn = log_in_user(conn, admin)
+    %{workspace: workspace} = connect_slack_channel(project)
+    stub_slack(team_id: workspace.external_id, channels: [{"C_LEARN", "rail-learnings"}, {"C_ENG", "eng"}])
+
+    {:ok, view, _html} = live(conn, ~p"/learnings")
+    Req.Test.allow(Rail.Slack, self(), view.pid)
+    refute has_element?(view, "#learnings-digest-link")
+    assert has_element?(view, "#learnings-digest-picker-trigger", "Post digest to Slack")
+
+    view |> element("#learnings-digest-picker-trigger") |> render_click()
+    assert has_element?(view, "#learnings-digest-picker[phx-click-away=close]")
+    assert has_element?(view, "#learnings-digest-picker-none .pi-check-bold")
+    refute has_element?(view, "#learnings-digest-picker-permalink")
+
+    view |> element("#learnings-digest-picker-channel-C_LEARN") |> render_click()
+    assert has_element?(view, "#learnings-digest-picker-trigger", "06:00 digest in")
+    assert has_element?(view, "#learnings-digest-picker-trigger", "#rail-learnings")
+    refute has_element?(view, "#learnings-digest-picker-saved")
+
+    assert {:ok, %{learnings_channel_external_id: "C_LEARN"}} = Rail.Projects.get_project(project.id)
+
+    Repo.insert!(%CuratorPass{
+      project_id: project.id,
+      started_at: DateTime.utc_now(),
+      finished_at: DateTime.utc_now(),
+      digest_permalink: "https://slack.example/p1"
+    })
+
+    {:ok, view, _html} = live(conn, ~p"/learnings")
+    Req.Test.allow(Rail.Slack, self(), view.pid)
+    view |> element("#learnings-digest-picker-trigger") |> render_click()
+
+    assert has_element?(
+             view,
+             "a#learnings-digest-picker-permalink[href='https://slack.example/p1']",
+             "Open today's digest in Slack"
+           )
+
+    {:ok, project} = Rail.Projects.get_project(project.id)
+
+    {:ok, _project} =
+      Rail.Projects.update_project(system_scope(), project, %{
+        "learnings_slack_workspace_id" => workspace.id,
+        "learnings_channel_external_id" => "C_ENG"
+      })
+
+    assert has_element?(view, "#learnings-digest-picker-trigger", "#eng")
+
+    conn = Plug.Conn.put_session(conn, :selected_project_id, nil)
+    {:ok, view, _html} = live(conn, ~p"/learnings")
+    refute has_element?(view, "#learnings-digest-picker")
+  end
+
+  test "a page load asks Slack for the channel's name once, and a broadcast that leaves it alone asks nothing", %{
+    conn: conn,
+    project: project
+  } do
+    %{workspace: workspace} = connect_slack_channel(project)
+
+    {:ok, project} =
+      Rail.Projects.update_project(system_scope(), project, %{
+        "learnings_slack_workspace_id" => workspace.id,
+        "learnings_channel_external_id" => "C_LEARN"
+      })
+
+    test = self()
+
+    Req.Test.stub(Rail.Slack, fn conn ->
+      send(test, {:asked_slack, conn.request_path})
+      Req.Test.json(conn, %{"ok" => true, "channel" => %{"id" => "C_LEARN", "name" => "rail-learnings"}})
+    end)
+
+    assert conn |> get(~p"/learnings") |> html_response(200) =~ "#C_LEARN"
+    refute_received {:asked_slack, _path}
+
+    {:ok, view, _html} = live(conn, ~p"/learnings")
+    assert has_element?(view, "span#learnings-digest-link", "#rail-learnings")
+    assert_received {:asked_slack, "/api/conversations.info"}
+    refute_received {:asked_slack, _path}
+
+    Req.Test.allow(Rail.Slack, self(), view.pid)
+    Phoenix.PubSub.broadcast(Rail.PubSub, "learnings", {:learnings_changed, project.id})
+    {:ok, _project} = Rail.Projects.update_project(system_scope(), project, %{"name" => "Renamed"})
+
+    assert has_element?(view, "span#learnings-digest-link", "#rail-learnings")
+    refute_received {:asked_slack, _path}
   end
 
   test "a change from another writer updates an open page", %{conn: conn, project: project} do

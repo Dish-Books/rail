@@ -8,6 +8,7 @@ defmodule RailWeb.LearningsLive do
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Scope
+  alias RailWeb.Components.LearningsChannelPicker
 
   @statuses [:review, :active, :provisional, :retired]
   @double_click_ms 400
@@ -20,7 +21,10 @@ defmodule RailWeb.LearningsLive do
   }
 
   def mount(_params, _session, socket) do
-    if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "learnings")
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Rail.PubSub, "learnings")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "projects")
+    end
 
     project =
       case socket.assigns.current_project_id && Projects.get_project(socket.assigns.current_project_id) do
@@ -28,11 +32,21 @@ defmodule RailWeb.LearningsLive do
         _all_projects -> nil
       end
 
+    # Only the connected mount asks Slack, so a page load costs one call; the dead render shows the id.
+    channel_name =
+      cond do
+        is_nil(project) -> nil
+        connected?(socket) -> LearningsChannelPicker.channel_name(project)
+        true -> project.learnings_channel_external_id
+      end
+
     socket =
       socket
       |> assign(:page_title, "Learnings")
       |> assign(:current_section, :learnings)
       |> assign(:project, project)
+      |> assign(:channel_name, channel_name)
+      |> assign(:show_digest_picker, is_struct(project, Project) and Scope.admin?(socket.assigns.current_scope))
       |> assign(:open_menu, nil)
       |> assign(:form, nil)
       |> assign(:form_target, nil)
@@ -104,7 +118,19 @@ defmodule RailWeb.LearningsLive do
           project_name={@project && @project.name}
           show_projects={is_nil(@project)}
           digest={@digest}
-        />
+        >
+          <:digest_picker :if={@show_digest_picker}>
+            <.live_component
+              module={LearningsChannelPicker}
+              id="learnings-digest-picker"
+              variant={:footer}
+              current_scope={@current_scope}
+              project={@project}
+              channel_name={@channel_name}
+              permalink={@digest.permalink}
+            />
+          </:digest_picker>
+        </.learnings_queue>
 
         <.learning_detail
           :if={@learning}
@@ -267,6 +293,20 @@ defmodule RailWeb.LearningsLive do
     if is_nil(project) or project.id == project_id, do: {:noreply, load(socket)}, else: {:noreply, socket}
   end
 
+  # A channel picked here or in another tab is named again; anything else about the project costs no Slack call.
+  def handle_info({:project_changed, id}, %{assigns: %{project: %Project{id: id}}} = socket) do
+    {:ok, project} = Projects.get_project(id)
+    channel_name = LearningsChannelPicker.channel_name(project, socket.assigns.project, socket.assigns.channel_name)
+
+    socket =
+      socket
+      |> assign(:project, project)
+      |> assign(:channel_name, channel_name)
+      |> assign(:digest, digest(project, channel_name))
+
+    {:noreply, socket}
+  end
+
   # The navigation hook and the issue dialog broadcast things this page has no use for.
   def handle_info(_message, socket), do: {:noreply, socket}
 
@@ -333,7 +373,7 @@ defmodule RailWeb.LearningsLive do
     |> assign(:learnings, learnings)
     |> assign(:proposals, proposals)
     |> assign(:search_unavailable, unavailable)
-    |> assign(:digest, digest(assigns.project))
+    |> assign(:digest, digest(assigns.project, assigns.channel_name))
     |> assign_detail(detail)
     |> assign_params()
   end
@@ -458,23 +498,17 @@ defmodule RailWeb.LearningsLive do
     ~p"/learnings?#{params}"
   end
 
-  defp digest(nil), do: nil
+  defp digest(nil, _channel_name), do: nil
 
-  # The digest goes to the project's first triage channel, so that is the one named.
-  defp digest(%Project{} = project) do
-    case project |> Projects.list_slack_channels() |> Enum.sort_by(& &1.inserted_at, DateTime) do
-      [channel | _rest] ->
-        permalink =
-          case Learnings.get_latest_curator_pass(project) do
-            {:ok, pass} -> pass.digest_permalink
-            {:error, :not_found} -> nil
-          end
+  # The latest digest stays linked after the channel changes, even though it was posted in the old one.
+  defp digest(%Project{} = project, channel_name) do
+    permalink =
+      case Learnings.get_latest_curator_pass(project) do
+        {:ok, pass} -> pass.digest_permalink
+        {:error, :not_found} -> nil
+      end
 
-        %{channel: channel.name, permalink: permalink}
-
-      [] ->
-        nil
-    end
+    %{channel: channel_name, permalink: permalink}
   end
 
   defp attrs(params) do

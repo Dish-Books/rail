@@ -7,8 +7,11 @@ defmodule RailWeb.Settings.ProjectsLive do
   alias Rail.Slack
   alias Rail.Triage
   alias Rail.Users
+  alias RailWeb.Components.LearningsChannelPicker
 
   def mount(_params, _session, socket) do
+    if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "projects")
+
     projects = Projects.list_projects(socket.assigns.current_scope)
     linear_workspaces = Projects.list_linear_workspaces()
     {:ok, users} = Users.list_users(socket.assigns.current_scope)
@@ -26,6 +29,7 @@ defmodule RailWeb.Settings.ProjectsLive do
       |> assign(:channels_confirm, nil)
       |> assign(:channels_saved, false)
       |> assign(:channels_error, nil)
+      |> assign(:learnings_channel_name, nil)
       |> assign(:show_modal, nil)
       |> assign(:modal_title, nil)
       |> assign(:selected_project, nil)
@@ -631,6 +635,16 @@ defmodule RailWeb.Settings.ProjectsLive do
                 <.button type="submit" id="save-slack-channels-button">Save channels</.button>
               </div>
             </.form>
+
+            <.live_component
+              :if={@show_modal == :edit}
+              module={LearningsChannelPicker}
+              id="learnings-channel-picker"
+              variant={:settings}
+              current_scope={@current_scope}
+              project={@selected_project}
+              channel_name={@learnings_channel_name}
+            />
           </div>
         </div>
       </div>
@@ -668,6 +682,7 @@ defmodule RailWeb.Settings.ProjectsLive do
           |> assign(:channels_confirm, nil)
           |> assign(:channels_saved, false)
           |> assign(:channels_error, nil)
+          |> assign(:learnings_channel_name, LearningsChannelPicker.channel_name(project))
           |> assign(:show_modal, :edit)
           |> assign(:modal_title, "Edit Project")
           |> assign(:selected_project, project)
@@ -794,6 +809,33 @@ defmodule RailWeb.Settings.ProjectsLive do
 
       _other ->
         {:noreply, socket}
+    end
+  end
+
+  # An edit from anywhere, such as a learnings channel picked on the Learnings page, shows here too.
+  def handle_info({:project_changed, project_id}, socket) do
+    if Enum.any?(socket.assigns.projects, &(&1.id == project_id)),
+      do: {:noreply, refresh_project(socket, project_id)},
+      else: {:noreply, socket}
+  end
+
+  # The navigation hook subscribes this view to pipeline events it does not use.
+  def handle_info(_message, socket), do: {:noreply, socket}
+
+  defp refresh_project(socket, project_id) do
+    {:ok, project} = Projects.get_project(project_id)
+    socket = assign(socket, :projects, update_list_item(socket.assigns.projects, project))
+
+    case socket.assigns.selected_project do
+      %Project{id: ^project_id} = current ->
+        channel_name = LearningsChannelPicker.channel_name(project, current, socket.assigns.learnings_channel_name)
+
+        socket
+        |> assign(:selected_project, project)
+        |> assign(:learnings_channel_name, channel_name)
+
+      _other_or_none ->
+        socket
     end
   end
 

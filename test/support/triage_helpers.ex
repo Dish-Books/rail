@@ -14,7 +14,7 @@ defmodule RailTest.TriageHelpers do
   Answers Slack's read endpoints for the calling test. `chat.postMessage` is
   deliberately absent, so a post the test did not expect crashes it.
 
-  Takes `:team_id`, `:channels` (`[{id, name}]`), `:users` (`%{id => name}`),
+  Takes `:team_id`, `:channels` (`[{id, name}]`, also what `conversations.info` names), `:users` (`%{id => name}`),
   `:replies` (the messages `conversations.replies` returns) and `:files`
   (`%{path => {content_type, body}}`). A file path not in `:files` gets the HTML
   sign-in page Slack serves an app without `files:read`.
@@ -30,6 +30,14 @@ defmodule RailTest.TriageHelpers do
       %{request_path: "/files-pri/" <> _file} = conn ->
         {content_type, body} = Map.get(files, conn.request_path, {"text/html", "<html>Sign in to Slack</html>"})
         conn |> Plug.Conn.put_resp_content_type(content_type, nil) |> Plug.Conn.send_resp(200, body)
+
+      %{request_path: "/api/conversations.info"} = conn ->
+        conn = Plug.Conn.fetch_query_params(conn)
+
+        case List.keyfind(channels, conn.query_params["channel"], 0) do
+          {id, name} -> Req.Test.json(conn, %{"ok" => true, "channel" => %{"id" => id, "name" => name}})
+          nil -> Req.Test.json(conn, %{"ok" => false, "error" => "channel_not_found"})
+        end
 
       conn ->
         conn = Plug.Conn.fetch_query_params(conn)

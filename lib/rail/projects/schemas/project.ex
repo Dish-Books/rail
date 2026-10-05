@@ -6,6 +6,7 @@ defmodule Rail.Projects.Schemas.Project do
   alias Rail.Linear.Client, as: Linear
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.SlackChannel
+  alias Rail.Projects.Schemas.SlackWorkspace
   alias Rail.Users.Schemas.User
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "prj"}
@@ -29,6 +30,9 @@ defmodule Rail.Projects.Schemas.Project do
     belongs_to :linear_workspace, LinearWorkspace
     # Whose MCP connections a triage pass uses; a pass whose role names any it cannot reach fails.
     belongs_to :triage_user, User
+    # Where the curator's digest posts. It is not a `slack_channels` row, so triage never reads it.
+    belongs_to :learnings_slack_workspace, SlackWorkspace
+    field :learnings_channel_external_id, :string
 
     # Its threads hang off each one, so a channel sent back with its `id` is updated, never recreated,
     # and only one left out is deleted. Params without `slack_channels` leave them alone.
@@ -50,7 +54,9 @@ defmodule Rail.Projects.Schemas.Project do
     :worktree_setup_script,
     :ci_command,
     :ci_timeout_minutes,
-    :triage_user_id
+    :triage_user_id,
+    :learnings_slack_workspace_id,
+    :learnings_channel_external_id
   ]
 
   @required_fields [
@@ -71,9 +77,18 @@ defmodule Rail.Projects.Schemas.Project do
     |> validate_number(:ci_timeout_minutes, greater_than: 0, message: "must be at least a minute")
     |> foreign_key_constraint(:linear_workspace_id)
     |> foreign_key_constraint(:triage_user_id)
+    |> validate_learnings_channel()
+    |> foreign_key_constraint(:learnings_slack_workspace_id)
     |> unique_constraint(:github_repo)
     |> cast_assoc(:slack_channels)
     |> put_linear_team_id()
+  end
+
+  # A channel id means nothing without the workspace whose bot posts there.
+  defp validate_learnings_channel(changeset) do
+    if get_field(changeset, :learnings_channel_external_id),
+      do: validate_required(changeset, [:learnings_slack_workspace_id]),
+      else: changeset
   end
 
   # Every worktree is added from this checkout, so it has to be the root of one.

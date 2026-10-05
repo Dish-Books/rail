@@ -12,6 +12,8 @@ defmodule Rail.Slack.Client do
   @api_url "https://slack.com/api"
   @authorize_url "https://slack.com/oauth/v2/authorize"
   @page_size 200
+  # A page waits on this lookup, so a slow or rate-limiting Slack shows the channel's id instead.
+  @channel_info_timeout 2_000
 
   def auth_test(%SlackWorkspace{token: token}), do: get(token, "auth.test", [])
 
@@ -31,6 +33,19 @@ defmodule Rail.Slack.Client do
 
   def user_info(%SlackWorkspace{token: token}, user_id) do
     with {:ok, %{"user" => user}} <- get(token, "users.info", user: user_id), do: {:ok, user}
+  end
+
+  @doc """
+  One channel as Slack describes it now, so its current name can be shown without storing it.
+  """
+  def channel_info(%SlackWorkspace{token: token}, channel) do
+    with {:ok, %{"channel" => info}} <-
+           request(:get, token, "conversations.info",
+             params: [channel: channel],
+             retry: false,
+             receive_timeout: @channel_info_timeout
+           ),
+         do: {:ok, info}
   end
 
   def permalink(%SlackWorkspace{token: token}, channel, ts) do

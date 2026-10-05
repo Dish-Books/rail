@@ -9,7 +9,12 @@ defmodule Rail.Projects.Actions.ListSlackChannels do
 
   @doc """
   The channels a project triages, or several projects' in one query, by name.
+  `external: true` lists every project's channels marked as shared outside the team.
   """
+  def list_slack_channels([{:external, external}]) when is_boolean(external) do
+    Repo.all(from c in SlackChannel, where: c.external == ^external, order_by: [asc: c.name])
+  end
+
   def list_slack_channels(%Project{id: project_id}) do
     Repo.all(from c in SlackChannel, where: c.project_id == ^project_id, order_by: [asc: c.name])
   end
