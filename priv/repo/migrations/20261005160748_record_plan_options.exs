@@ -7,19 +7,25 @@ defmodule Rail.Repo.Migrations.RecordPlanOptions do
   # moved into Plan was written for its pick, and the file `save_plan` keeps beside
   # the plan is written to say so. A task missing its scratch, plan or pick is left as it is.
   #
-  # A task started straight at design or architect never saved a ticket, the issue
-  # being its ticket, so the issue is written as one for approval to publish.
+  # A task that never had a product run, started straight at design or architect,
+  # never saved a ticket, the issue being its ticket, so the issue is written as one
+  # for approval to publish. A task that had one leaves its ticket to Product.
   def up do
     %{rows: rows} =
       repo().query!("""
-      SELECT tasks.scratch_path, issues.identifier, issues.title, issues.description, issues.priority, issues.estimate
+      SELECT tasks.scratch_path, issues.identifier,
+             EXISTS (
+               SELECT 1 FROM runs r JOIN roles ro ON ro.id = r.role_id
+               WHERE r.task_id = tasks.id AND ro.stage = 'product'
+             ),
+             issues.title, issues.description, issues.priority, issues.estimate
       FROM tasks JOIN issues ON issues.id = tasks.issue_id
       WHERE tasks.stage = 'plan' AND tasks.cleaned_up_at IS NULL
       """)
 
-    for [scratch_path, identifier | issue] <- rows, File.dir?(scratch_path) do
+    for [scratch_path, identifier, had_product? | issue] <- rows, File.dir?(scratch_path) do
       record_option(scratch_path, identifier)
-      record_ticket(scratch_path, identifier, issue)
+      if not had_product?, do: record_ticket(scratch_path, identifier, issue)
     end
   end
 
