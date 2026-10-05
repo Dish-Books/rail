@@ -107,6 +107,14 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
     assert_received {:pipeline_changed, ^task_id}
   end
 
+  test "stopping a run waiting for usage tells the task page watching it", %{working: working} do
+    %Run{id: run_id} = run = working.(%{status: :waiting_for_usage})
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run_id}")
+
+    assert {:ok, %Run{status: :finished}, nil} = Pipeline.stop_run(system_scope(), run)
+    assert_received {:run_changed, ^run_id}
+  end
+
   test "an undelivered message comes back rather than being discarded", %{working: working} do
     run = working.(%{pending_chat: "Please add a test"})
 

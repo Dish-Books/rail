@@ -764,7 +764,8 @@ defmodule RailWeb.Live.RunConversationTest do
     html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
 
     assert html =~ ~r/id="conversation-model"[^>]*>\s*claude-opus-5-5/
-    assert html =~ ~r/id="conversation-account".*Claude Code · work.*Weekly 31%/s
+    assert html =~ ~r/id="conversation-account"[^>]*title="Claude Code · work"/
+    assert html =~ ~r/id="conversation-account".*<span class="truncate">work<\/span>.*Weekly 31%/s
     assert html =~ ~r/data-qa="turn-account">Claude Code · work</
   end
 
@@ -896,7 +897,7 @@ defmodule RailWeb.Live.RunConversationTest do
 
       html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
 
-      assert html =~ "This conversation lives on Claude Code · work"
+      assert html =~ ~r/title="Claude Code · work">\s*This conversation lives on the work account/
       assert html =~ ~s(id="usage-wait-stop")
 
       assert [only] =

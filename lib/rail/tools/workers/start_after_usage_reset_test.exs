@@ -1,5 +1,6 @@
 defmodule Rail.Tools.Workers.StartAfterUsageResetTest do
-  use Rail.DataCase, async: true
+  # Dispatch is switched off application-wide in one test, so nothing may run beside it.
+  use Rail.DataCase, async: false
   use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Issues.Schemas.Issue
@@ -92,5 +93,16 @@ defmodule Rail.Tools.Workers.StartAfterUsageResetTest do
 
     assert :ok = perform_job(StartAfterUsageReset, %{os_process_id: waiting.id})
     assert %OsProcess{status: :running} = Repo.get!(OsProcess, waiting.id)
+  end
+
+  test "leaves the turn waiting while dispatch is off", %{account: account, waiting: waiting} do
+    previous = Application.get_env(:rail, :no_dispatch)
+    Application.put_env(:rail, :no_dispatch, true)
+    on_exit(fn -> Application.put_env(:rail, :no_dispatch, previous) end)
+    account |> Backend.usage_changeset(%{name: :claude, status: :ready, usage: []}) |> Repo.update!()
+    reject(Tools, :spawn_os_process, 3)
+
+    assert {:snooze, 60} = perform_job(StartAfterUsageReset, %{os_process_id: waiting.id})
+    assert %OsProcess{status: :waiting_for_usage} = Repo.get!(OsProcess, waiting.id)
   end
 end

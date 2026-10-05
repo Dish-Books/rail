@@ -108,6 +108,29 @@ defmodule Rail.Pipeline.Actions.EndTurnAndMergeTest do
     assert %Run{status: :running} = Repo.get!(Run, run_id)
   end
 
+  test "a conflict turn waiting for usage keeps the run in progress and the queued message behind it", %{
+    task: task,
+    run: %Run{id: run_id} = run,
+    os_process: os_process
+  } do
+    {:ok, _queued} = Pipeline.update_run(run, %{pending_chat: "Also rename the module"})
+    stub(Tools, :stop_os_process, fn _scope, _os_process, _opts -> {:ok, os_process} end)
+    stub(Git, :fetch_default_branch, fn _project, _path -> :ok end)
+    stub(Git, :up_to_date_with?, fn _path, _base -> false end)
+    expect(Git, :merge_default_branch, fn _scope, _task -> {:conflicts, ["lib/a.ex"]} end)
+
+    expect(Tools, :start_os_process, fn spawned, _argv ->
+      {:ok, waiting} = Pipeline.update_run(spawned, %{status: :waiting_for_usage})
+      {:ok, %OsProcess{run: waiting}}
+    end)
+
+    assert {:ok, :merging} = Pipeline.end_turn_and_merge(task)
+    assert_receive {:run_changed, ^run_id}, 5_000
+
+    assert %Run{status: :waiting_for_usage, stage_outcome: :in_progress, pending_chat: "Also rename the module"} =
+             Repo.get!(Run, run_id)
+  end
+
   test "a merge Rail could not make is recorded on the run", %{
     task: task,
     run: %Run{id: run_id},

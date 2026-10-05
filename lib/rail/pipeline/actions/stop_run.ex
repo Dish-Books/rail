@@ -50,7 +50,9 @@ defmodule Rail.Pipeline.Actions.StopRun do
       |> Run.changeset(%{status: :finished})
       |> Repo.update()
 
-    # A run stopped in line never ran, so no settle announces it.
+    # A run stopped in line, or while it waited for usage, never ran, so no settle
+    # announces it: the Overview and the task page are both told here.
+    Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run.id}", {:run_changed, run.id})
     broadcast_pipeline_changed(%{stopped | task: run.task})
   end
 end

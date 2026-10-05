@@ -206,6 +206,45 @@ defmodule RailWeb.TaskLiveTest do
     end)
   end
 
+  test "stopping a stage waiting for usage clears its header and tab without a reload", %{
+    conn: conn,
+    task: task,
+    project: project
+  } do
+    model = "claude-task-usage-stop-#{System.unique_integer([:positive])}"
+    {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
+    {:ok, engineer} = Roles.update_role(system_scope(), engineer, %{model: model})
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+    reset = DateTime.utc_now() |> DateTime.shift(hour: 2) |> DateTime.truncate(:second)
+
+    {:ok, account} =
+      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true", models: [%{id: model}]})
+
+    session = %{"label" => "Session", "remaining_percent" => 0.0, "resets_at" => DateTime.to_iso8601(reset)}
+
+    account
+    |> Backend.usage_changeset(%{
+      name: :claude,
+      status: :ready,
+      usage: [%{name: "Session", details: %{"windows" => [session]}}]
+    })
+    |> Repo.update!()
+
+    {:ok, run} =
+      Pipeline.create_run(%{task_id: task.id, role_id: engineer.id, status: :starting, started_at: DateTime.utc_now()})
+
+    assert {:ok, %OsProcess{status: :waiting_for_usage}} = Tools.start_os_process(run, ["2"])
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{engineer.id}")
+    assert has_element?(view, "[data-qa='task_status_chip']", "Engineer waiting for usage")
+
+    view |> element("#usage-banner [data-qa='stop-run']") |> render_click()
+
+    refute has_element?(view, "[data-qa='task_status_chip']", "waiting for usage")
+    refute has_element?(view, "#task-usage-starts")
+    refute has_element?(view, "#task-tab-#{engineer.id}", "waiting for usage")
+  end
+
   test "a stage whose turn has just stopped waiting for usage names no start time", %{
     conn: conn,
     task: task,
@@ -286,7 +325,7 @@ defmodule RailWeb.TaskLiveTest do
     Pipeline.append_run_events(run.id, waiting.id, ["[rail] This conversation lives on Claude Code · work."])
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{engineer.id}")
-    assert has_element?(view, "#usage-wait-card", "This conversation lives on Claude Code · work")
+    assert has_element?(view, "#usage-wait-card", "This conversation lives on the work account")
 
     view |> element("#usage-wait-stop") |> render_click()
 

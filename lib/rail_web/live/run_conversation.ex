@@ -1473,7 +1473,7 @@ defmodule RailWeb.Live.RunConversation do
       class="ml-auto min-w-0 inline-flex items-center gap-1.5 rounded-md bg-slate-100 dark:bg-slate-800 ring-1 ring-inset ring-slate-200 dark:ring-slate-700 px-1.5 py-0.5 text-[11px] text-slate-700 dark:text-slate-200"
     >
       <.icon name="pi-terminal-window" class="h-3.5 w-3.5 shrink-0 text-slate-400" />
-      <span class="truncate">{Backend.display_name(@account)}</span>
+      <span class="truncate">{account_name(@account)}</span>
       <span
         :if={@window}
         data-qa="conversation-account-window"
@@ -1497,6 +1497,10 @@ defmodule RailWeb.Live.RunConversation do
     """
   end
 
+  # The conversation header has room for little beside the role and its model, so
+  # an account goes by what tells it apart, with its CLI in the title.
+  defp account_name(%Backend{} = account), do: Backend.short_name(account) || Backend.cli_name(account.name)
+
   # --- Usage Card Subcomponent ---
 
   attr :wait, :map, required: true
@@ -1515,7 +1519,9 @@ defmodule RailWeb.Live.RunConversation do
     >
       <p class="flex items-center gap-2 px-3 pt-2 pb-1.5 font-semibold text-violet-700 dark:text-violet-300">
         <.icon name="pi-gauge" class="h-4 w-4 shrink-0" />
-        <span class="min-w-0 truncate">This conversation lives on {Backend.display_name(@pinned)}</span>
+        <span class="min-w-0 truncate" title={Backend.display_name(@pinned)}>
+          This conversation lives on the {account_name(@pinned)} account
+        </span>
         <button
           type="button"
           id="usage-wait-stop"
