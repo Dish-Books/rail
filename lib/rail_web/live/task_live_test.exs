@@ -1404,6 +1404,34 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#plan-item-plan-status", "Not saved yet")
     end
 
+    test "a stopped Plan run says how to pick it up: a message when it has a conversation, Retry when it has none", %{
+      conn: conn,
+      task: task,
+      run: run
+    } do
+      {:ok, _stopped} = Pipeline.update_run(run, %{stage_outcome: :in_progress})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#plan-ticket-pending", "Send it a message in the conversation")
+
+      {:ok, _moved} = Pipeline.update_run(Repo.reload!(run), %{conversation_id: nil})
+      send(view.pid, :task_changed)
+
+      view |> element("#plan-item-ticket") |> render_click()
+
+      assert has_element?(
+               view,
+               "#plan-ticket-pending",
+               "Retry it from the conversation to start it again from its brief."
+             )
+
+      view |> element("#plan-item-design") |> render_click()
+      assert has_element?(view, "#plan-design-pending", "Retry it from the conversation")
+      view |> element("#plan-item-plan") |> render_click()
+      assert has_element?(view, "#plan-plan-pending", "Retry it from the conversation")
+      assert has_element?(view, "#retry-run")
+    end
+
     test "a change with no screen says so, and Approve needs only the ticket and the plan", %{
       conn: conn,
       task: task,

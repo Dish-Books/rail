@@ -126,7 +126,12 @@ defmodule RailWeb.Live.PlanStage do
               id="plan-pane"
               class="flex-1 min-w-0 min-h-0 overflow-y-auto px-6 @5xl:px-8 py-5 @5xl:py-6"
             >
-              <.ticket_pane :if={@selected_item == "ticket"} ticket={@ticket} running={@running} />
+              <.ticket_pane
+                :if={@selected_item == "ticket"}
+                ticket={@ticket}
+                running={@running}
+                pick_up={@pick_up}
+              />
 
               <.design_pane
                 :if={@selected_item == "design"}
@@ -135,6 +140,7 @@ defmodule RailWeb.Live.PlanStage do
                 option={@option}
                 plan={@plan}
                 running={@running}
+                pick_up={@pick_up}
                 can_pick={@can_pick}
                 target={@myself}
               />
@@ -199,6 +205,7 @@ defmodule RailWeb.Live.PlanStage do
 
   attr :ticket, :any, required: true
   attr :running, :boolean, required: true
+  attr :pick_up, :string, required: true
 
   defp ticket_pane(assigns) do
     ~H"""
@@ -212,8 +219,7 @@ defmodule RailWeb.Live.PlanStage do
         if @running,
           do:
             "Product is reading the issue and the code it touches. The ticket appears here as soon as it is saved.",
-          else:
-            "Plan stopped before saving a ticket. Send it a message in the conversation to pick up where it left off."
+          else: "Plan stopped before saving a ticket. " <> @pick_up
       }
     />
 
@@ -234,6 +240,7 @@ defmodule RailWeb.Live.PlanStage do
   attr :option, :any, required: true
   attr :plan, :any, required: true
   attr :running, :boolean, required: true
+  attr :pick_up, :string, required: true
   attr :can_pick, :boolean, required: true
   attr :target, :any, required: true
 
@@ -272,8 +279,7 @@ defmodule RailWeb.Live.PlanStage do
         if @running,
           do:
             "When the change has a screen, the Designer mocks up three directions. Each appears here as soon as it is saved.",
-          else:
-            "Plan stopped before saving any design options. Send it a message in the conversation to pick up where it left off."
+          else: "Plan stopped before saving any design options. " <> @pick_up
       }
     />
 
@@ -624,7 +630,8 @@ defmodule RailWeb.Live.PlanStage do
     |> assign(:items, items)
     |> assign(:selected_item, socket.assigns.chosen_item || default_item(items, ticket, plan))
     |> assign(:banner, banner(plan, picked, running))
-    |> assign(:pending_text, pending_text(running))
+    |> assign(:pick_up, pick_up(run))
+    |> assign(:pending_text, pending_text(running, pick_up(run)))
     |> assign(:show_approve, approvable?(socket.assigns, ticket, design, plan))
   end
 
@@ -753,12 +760,17 @@ defmodule RailWeb.Live.PlanStage do
     "#{prefix} Below is #{written}."
   end
 
-  defp pending_text(true) do
+  defp pending_text(true, _pick_up) do
     "Architect is reading the ticket and the code it touches, then writing the plan an engineer builds from. It appears here as soon as it is saved."
   end
 
-  defp pending_text(false) do
-    "Plan stopped before saving a plan. Send it a message in the conversation to pick up where it left off."
+  defp pending_text(false, pick_up), do: "Plan stopped before saving a plan. " <> pick_up
+
+  # A run with no conversation, such as one moved here when Plan shipped, starts again from its brief.
+  defp pick_up(run) do
+    if Run.resumable?(run),
+      do: "Send it a message in the conversation to pick up where it left off.",
+      else: "Retry it from the conversation to start it again from its brief."
   end
 
   # The pick, once there is one; otherwise the option being looked at, while it still exists.

@@ -76,12 +76,16 @@ defmodule RailWeb.Components.UpNextTest do
   end
 
   test "a run that stopped without concluding says how to resume it", %{waiting: waiting} do
-    stopped = %{waiting.(:engineer) | stage_outcome: :in_progress}
+    stopped = %{waiting.(:engineer) | stage_outcome: :in_progress, conversation_id: "sess_up_next"}
 
     html = render_component(&UpNext.up_next/1, runs: [stopped])
 
     assert html =~ "Needs a fix"
-    assert html =~ "stopped before finishing"
+    assert html =~ "stopped before finishing. Send it a message to pick up where it left off."
+
+    # A run with no conversation, such as one moved into Plan when it shipped, starts again from its brief.
+    html = render_component(&UpNext.up_next/1, runs: [%{stopped | conversation_id: nil}])
+    assert html =~ "stopped before finishing. Retry it to start again from its brief."
   end
 
   test "a stalled run in the rows says the same thing", %{waiting: waiting} do

@@ -213,8 +213,11 @@ defmodule RailWeb.Components.UpNext do
   # what it needs is the same either way.
   defp stalled(%Run{error: error}) when is_binary(error), do: error
 
+  # With no conversation to resume, Retry is the only way on.
   defp stalled(%Run{} = run) do
-    "#{run.role.name} stopped before finishing. Send it a message to pick up where it left off."
+    if Run.resumable?(run),
+      do: "#{run.role.name} stopped before finishing. Send it a message to pick up where it left off.",
+      else: "#{run.role.name} stopped before finishing. Retry it to start again from its brief."
   end
 
   # A stage that stalled is a problem rather than a queue, and reads as one.
