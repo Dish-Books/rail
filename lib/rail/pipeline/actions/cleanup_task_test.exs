@@ -27,7 +27,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Cleanup Task Issue"})
 
-    {:ok, task} = Pipeline.create_task(issue, :product)
+    {:ok, task} = Pipeline.create_task(issue, :plan)
 
     %{project: project, issue: issue, task: task, engineer_role: engineer_role}
   end
@@ -101,7 +101,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
 
     {:ok, issue_8707} = Issues.create_issue(system_scope(), project, %{description: "Task 8707"})
 
-    {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_8707, :product)
+    {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_8707, :plan)
 
     {:ok, %Task{} = task} =
       Pipeline.update_task(task, %{
@@ -124,7 +124,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     assert {:ok, %Task{cleaned_up_at: %DateTime{}}} = Pipeline.cleanup_task(task)
 
     assert {:ok, %Task{cleaned_up_at: %DateTime{}}} = Pipeline.get_task(task.id)
-    assert {:ok, %Task{id: new_id, cleaned_up_at: nil}} = Pipeline.create_task(issue, :product)
+    assert {:ok, %Task{id: new_id, cleaned_up_at: nil}} = Pipeline.create_task(issue, :plan)
     refute new_id == task.id
     assert %{task: %Task{id: ^new_id}} = Repo.preload(issue, :task, force: true)
   end
@@ -147,7 +147,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
 
     {:ok, issue_8709} = Issues.create_issue(system_scope(), project, %{description: "Task 8709"})
 
-    {:ok, task} = Pipeline.create_task(issue_8709, :product)
+    {:ok, task} = Pipeline.create_task(issue_8709, :plan)
 
     {:ok, task} =
       Pipeline.update_task(task, %{
@@ -174,7 +174,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     end)
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Task cleaned twice"})
-    {:ok, task} = Pipeline.create_task(issue, :product)
+    {:ok, task} = Pipeline.create_task(issue, :plan)
     {:ok, task} = Pipeline.update_task(task, %{stage: :merged})
 
     assert {:ok, %Task{cleaned_up_at: %DateTime{} = first}} = Pipeline.cleanup_task(task)

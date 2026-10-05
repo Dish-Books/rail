@@ -55,6 +55,19 @@ _claude_backend =
 read_prompt = &(".rail/prompts/#{&1}.md" |> File.read!() |> String.replace_suffix("\n", ""))
 
 default_roles = [
+  # Leads the three below, which run inside its one conversation as subagents on its tools.
+  %{
+    stage: :plan,
+    name: "Plan",
+    description: "Leads Product, Designer and Architect to the ticket, the design and the plan",
+    icon_name: "pi-compass-tool",
+    cli: :claude,
+    model: "claude-opus-5-5",
+    reasoning_effort: :high,
+    system_prompt: read_prompt.("plan"),
+    max_concurrent: 1,
+    position: 0
+  },
   %{
     stage: :product,
     name: "Product Manager",

@@ -28,11 +28,9 @@ defmodule RailWeb.TaskLive do
   alias Rail.Scope
   alias Rail.Tools
   alias Rail.Users
-  alias RailWeb.Live.ArchitectStage
   alias RailWeb.Live.DemoStage
-  alias RailWeb.Live.DesignStage
   alias RailWeb.Live.EngineerStage
-  alias RailWeb.Live.ProductStage
+  alias RailWeb.Live.PlanStage
   alias RailWeb.Live.QaStage
   alias RailWeb.Live.QuestionCard
   alias RailWeb.Live.ReviewStage
@@ -89,6 +87,9 @@ defmodule RailWeb.TaskLive do
       |> assign(:focus_file, nil)
       |> assign(:engineer_tab, nil)
 
+    # A stage moved from another page or by a run finishing is what keeps this one current.
+    if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+
     {:ok, socket}
   end
 
@@ -134,66 +135,10 @@ defmodule RailWeb.TaskLive do
         </div>
 
         <.live_component
-          :if={@task != nil and @pane == :product}
-          module={ProductStage}
-          id={stage_component_id(@selected_role)}
-          task={@task}
-          run={@selected_run}
-          stage_run={@stage_run}
-          line={@line}
-          approvable={@approvable}
-        >
-          <:tabs><.task_tabs tabs={@tabs} /></:tabs>
-          <:actions>
-            <.claim_button task={@task} />
-            <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
-            <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
-          </:actions>
-          <:sidebar>
-            <.conversation_sidebar
-              task={@task}
-              current_scope={@current_scope}
-              roles_map={@roles_map}
-              round_questions={@round_questions}
-              suggestions={@suggestions}
-              conversation_run={@conversation_run}
-            />
-          </:sidebar>
-        </.live_component>
-
-        <.live_component
-          :if={@task != nil and @pane == :design}
-          module={DesignStage}
+          :if={@task != nil and @pane == :plan}
+          module={PlanStage}
           id={stage_component_id(@selected_role)}
           current_scope={@current_scope}
-          task={@task}
-          run={@selected_run}
-          stage_run={@stage_run}
-          line={@line}
-          approvable={@approvable}
-        >
-          <:tabs><.task_tabs tabs={@tabs} /></:tabs>
-          <:actions>
-            <.claim_button task={@task} />
-            <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
-            <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
-          </:actions>
-          <:sidebar>
-            <.conversation_sidebar
-              task={@task}
-              current_scope={@current_scope}
-              roles_map={@roles_map}
-              round_questions={@round_questions}
-              suggestions={@suggestions}
-              conversation_run={@conversation_run}
-            />
-          </:sidebar>
-        </.live_component>
-
-        <.live_component
-          :if={@task != nil and @pane == :architect}
-          module={ArchitectStage}
-          id={stage_component_id(@selected_role)}
           task={@task}
           run={@selected_run}
           stage_run={@stage_run}
@@ -501,6 +446,12 @@ defmodule RailWeb.TaskLive do
     {:noreply, socket}
   end
 
+  def handle_info({:pipeline_changed, task_id}, %{assigns: %{task_id: task_id}} = socket) do
+    {:noreply, refresh_task(socket)}
+  end
+
+  def handle_info({:pipeline_changed, _other_task_id}, socket), do: {:noreply, socket}
+
   # An agent saved a ticket, an option, a plan, a finding or a picture, in this
   # task, while its run is still going.
   def handle_info({:output_saved, task_id}, socket) do
@@ -649,14 +600,8 @@ defmodule RailWeb.TaskLive do
   # Whatever the open stage shows is read off disk or the rows again.
   defp reload_stage(socket) do
     case socket.assigns do
-      %{pane: :product, task: task, selected_role: role} ->
-        send_update(ProductStage, id: stage_component_id(role), task: task)
-
-      %{pane: :design, task: task, selected_role: role} ->
-        send_update(DesignStage, id: stage_component_id(role), task: task)
-
-      %{pane: :architect, task: task, selected_role: role} ->
-        send_update(ArchitectStage, id: stage_component_id(role), task: task)
+      %{pane: :plan, task: task, selected_role: role} ->
+        send_update(PlanStage, id: stage_component_id(role), task: task)
 
       %{pane: :engineer, task: task, selected_role: role} ->
         send_update(EngineerStage, id: stage_component_id(role), task: task)
@@ -860,7 +805,7 @@ defmodule RailWeb.TaskLive do
   end
 
   defp pane(nil), do: :issue
-  defp pane(%Role{stage: stage}) when stage in [:product, :design, :architect, :engineer, :review, :qa, :demo], do: stage
+  defp pane(%Role{stage: stage}) when stage in [:plan, :engineer, :review, :qa, :demo], do: stage
   defp pane(%Role{}), do: :none
 
   defp stage_component_id(%Role{id: id}), do: "stage-#{id}"

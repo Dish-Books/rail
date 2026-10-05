@@ -10,7 +10,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
 
   setup %{project: project} do
     roles =
-      Map.new([:product, :design, :architect, :engineer, :review, :qa, :demo], fn stage ->
+      Map.new([:plan, :engineer, :review, :qa, :demo], fn stage ->
         {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
 
         {stage, role}
@@ -33,12 +33,12 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "List Questions Issue"})
 
-    {:ok, task} = Pipeline.create_task(issue, :product)
+    {:ok, task} = Pipeline.create_task(issue, :plan)
 
     {:ok, run} =
       Pipeline.create_run(%{
         task_id: task.id,
-        role_id: roles[:product].id,
+        role_id: roles[:plan].id,
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -66,15 +66,15 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     {:ok, other_run} =
       Pipeline.create_run(%{
         task_id: task.id,
-        role_id: roles[:design].id,
+        role_id: roles[:engineer].id,
         status: :running,
         started_at: DateTime.utc_now()
       })
 
-    {:ok, first} = Pipeline.register_question(run, %DetectedQuestion{prompt: "From product?"})
+    {:ok, first} = Pipeline.register_question(run, %DetectedQuestion{prompt: "From plan?"})
 
     {:ok, second} =
-      Pipeline.register_question(Repo.preload(other_run, task: :issue), %DetectedQuestion{prompt: "From design?"})
+      Pipeline.register_question(Repo.preload(other_run, task: :issue), %DetectedQuestion{prompt: "From engineer?"})
 
     assert Enum.map(Pipeline.list_questions(task, order_by: [asc: :inserted_at]), & &1.id) == [first.id, second.id]
   end

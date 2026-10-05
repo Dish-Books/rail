@@ -147,7 +147,7 @@ defmodule RailWeb.TriageLiveTest do
   } do
     {:ok, _product} =
       Rail.Roles.create_role(system_scope(), project, %{
-        stage: :product,
+        stage: :plan,
         name: "Product",
         model: "claude-opus-5-5",
         system_prompt: "You write tickets.",
@@ -190,7 +190,7 @@ defmodule RailWeb.TriageLiveTest do
     assert has_element?(view, "#triage-item-#{bug.id}[data-state='settled']", "Created TRI-214")
     assert has_element?(view, "#triage-item-posted-#{bug.id}", "Fixed soon. Filed as TRI-214.")
     refute has_element?(view, "#triage-item-#{bug.id}", "{issue link}")
-    assert has_element?(view, "#triage-item-task-#{bug.id}", "Product")
+    assert has_element?(view, "#triage-item-task-#{bug.id}", "Plan")
 
     view |> form("#reply-form-#{request.id}") |> render_submit()
     assert has_element?(view, "#triage-item-#{request.id}[data-state='settled']", "Reply posted by Michael")
@@ -503,7 +503,7 @@ defmodule RailWeb.TriageLiveTest do
       })
     end)
 
-    stub(Rail.Pipeline, :start_task, fn _issue, :product -> {:ok, :started} end)
+    stub(Rail.Pipeline, :start_task, fn _issue, :plan -> {:ok, :started} end)
     Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => false, "error" => "not_in_channel"}))
 
     view |> form("#issue-form-#{bug.id}") |> render_submit()

@@ -242,7 +242,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     # No stage param: defaults to the first canonical stage with no role bound
     view |> element("#add-custom-role-button") |> render_click()
     assert has_element?(view, "#role-editor-modal")
-    assert has_element?(view, "#role-stage-select option[value='product'][selected]")
+    assert has_element?(view, "#role-stage-select option[value='plan'][selected]")
 
     view
     |> element("#role-form")
@@ -250,7 +250,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
       "role" => %{
         "name" => "Security Auditor",
         "description" => "Audits code",
-        "stage" => "product",
+        "stage" => "plan",
         "model_choice" => "claude:claude-opus-5-5",
         "reasoning_effort" => "max",
         "system_prompt" => "You audit security.",
@@ -259,7 +259,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     })
 
     refute has_element?(view, "#role-editor-modal")
-    assert has_element?(view, "#bound-role-name-product", "Security Auditor")
+    assert has_element?(view, "#bound-role-name-plan", "Security Auditor")
   end
 
   test "edits an existing role", %{admin_conn: conn, admin_user: admin_user} do

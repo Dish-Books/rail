@@ -132,4 +132,34 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
     assert ["-p", "", "--model", "", "--effort", "high", "--dangerously-skip-permissions" | _rest] =
              Tools.build_args(%{})
   end
+
+  test "an agents list is one --agents flag, before any resume, and carries no tool list" do
+    agents = [
+      %{name: "product", description: "Writes the ticket", prompt: "You are product.", model: "claude-opus-5-5"},
+      %{name: "architect", description: "Writes the plan", prompt: "You are architect.", model: "claude-sonnet-5-5"}
+    ]
+
+    args = Tools.build_args(prompt: "Plan it", agents: agents, conversation_id: "c-1")
+
+    assert ["--agents", json, "--resume", "c-1"] = Enum.take(args, -4)
+
+    assert %{
+             "product" => %{
+               "description" => "Writes the ticket",
+               "prompt" => "You are product.",
+               "model" => "claude-opus-5-5"
+             },
+             "architect" => %{
+               "description" => "Writes the plan",
+               "prompt" => "You are architect.",
+               "model" => "claude-sonnet-5-5"
+             }
+           } = Jason.decode!(json)
+
+    refute json =~ "tools"
+  end
+
+  test "no agents adds no flag" do
+    refute "--agents" in Tools.build_args(prompt: "Plan it", agents: [])
+  end
 end

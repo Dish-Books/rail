@@ -1,11 +1,12 @@
 defmodule Rail.Pipeline.Actions.PickDesignOption do
   @moduledoc """
-  Records which of the designer's options the human chose, and tells the designer.
+  Records which of the design options the human chose, and tells the Plan agent.
 
   The pick is Rail's, not the agent's: it is written to `<scratch>/design/picked`,
-  a file the brief tells the designer never to write. Everything after it is a
-  conversation, so the designer hears about it the way it hears anything else,
-  as a message from the human. The pick also deletes the options not picked.
+  a file the brief tells the agents never to write. Everything after it is a
+  conversation, so Plan hears about it the way it hears anything else, as a
+  message from the human, and its brief says what to do with it. The pick also
+  deletes the options not picked.
   """
 
   import Rail.Pipeline.Utils.WriteScratchFile
@@ -17,10 +18,9 @@ defmodule Rail.Pipeline.Actions.PickDesignOption do
   alias Rail.Scope
 
   @doc """
-  Picks the option `key` from the design `run` produced, telling the designer as
-  the scope's user.
+  Picks the option `key` from the design `run` produced, telling Plan as the scope's user.
 
-  Returns `{:ok, run}` once the designer has been told, the message sent or queued.
+  Returns `{:ok, run}` once Plan has been told, the message sent or queued.
   """
   def pick_design_option(%Scope{} = scope, %Run{} = run, key) when is_binary(key) do
     run = Repo.preload(run, [task: :runs], force: true)
@@ -47,7 +47,7 @@ defmodule Rail.Pipeline.Actions.PickDesignOption do
     end
   end
 
-  defp pickable(%Task{stage: stage}) when stage != :design, do: {:error, {:invalid_stage, stage}}
+  defp pickable(%Task{stage: stage}) when stage != :plan, do: {:error, {:invalid_stage, stage}}
 
   defp pickable(%Task{} = task) do
     if Task.running?(task), do: {:error, :stage_running}, else: :ok
@@ -64,12 +64,5 @@ defmodule Rail.Pipeline.Actions.PickDesignOption do
   defp found({[], _others}), do: {:error, :option_not_found}
   defp found({[option | _duplicates], others}), do: {:ok, option, others}
 
-  defp message(option) do
-    """
-    I picked #{option.title} (#{option.key}). From here on we refine only that option: \
-    change #{option.key}.html, retake #{option.key}.png and save it again with \
-    save_design_option every time it changes. The other options are deleted, and \
-    #{option.key} is the only one that can be saved now.
-    """
-  end
+  defp message(option), do: "I picked #{option.title} (#{option.key})."
 end

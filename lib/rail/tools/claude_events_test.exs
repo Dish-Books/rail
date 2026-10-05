@@ -361,4 +361,121 @@ defmodule Rail.Tools.ClaudeEventsTest do
     state = ClaudeEvents.handle_event(state, event)
     assert state.saw_result
   end
+
+  test "a subagent call is its own line, and everything inside it is tagged with the call" do
+    events = [
+      %{
+        "type" => "assistant",
+        "message" => %{
+          "content" => [
+            %{
+              "type" => "tool_use",
+              "id" => "toolu_pm",
+              "name" => "Task",
+              "input" => %{"subagent_type" => "product", "description" => "write\n the ticket", "prompt" => "Go."}
+            }
+          ]
+        }
+      },
+      %{
+        "type" => "assistant",
+        "parent_tool_use_id" => "toolu_pm",
+        "message" => %{
+          "content" => [
+            %{"type" => "text", "text" => "Reading the issue.\nSaving it."},
+            %{"type" => "tool_use", "id" => "toolu_save", "name" => "mcp__rail__save_ticket", "input" => %{}}
+          ]
+        }
+      },
+      %{
+        "type" => "user",
+        "parent_tool_use_id" => "toolu_pm",
+        "message" => %{
+          "content" => [
+            %{
+              "type" => "tool_result",
+              "tool_use_id" => "toolu_save",
+              "is_error" => true,
+              "content" => "Refused, nothing saved. title: is required."
+            }
+          ]
+        }
+      },
+      %{
+        "type" => "user",
+        "message" => %{"content" => [%{"type" => "tool_result", "tool_use_id" => "toolu_pm", "content" => "Saved."}]}
+      }
+    ]
+
+    state = Enum.reduce(events, ClaudeEvents.new(), &ClaudeEvents.handle_event(&2, &1))
+
+    assert state.logs == [
+             "[subagent toolu_pm] product · write the ticket",
+             "[within toolu_pm] Reading the issue.",
+             "[within toolu_pm] Saving it.",
+             "[within toolu_pm] [tool] mcp__rail__save_ticket",
+             "[within toolu_pm] [tool error mcp__rail__save_ticket] Refused, nothing saved. title: is required.",
+             "[subagent end toolu_pm]"
+           ]
+
+    # The run's final word is its own, never a subagent's.
+    assert state.assistant_text == ""
+  end
+
+  test "an Agent call that fails ends with its error, and two at once keep their own tags" do
+    call = fn id, type ->
+      %{"type" => "tool_use", "id" => id, "name" => "Agent", "input" => %{"subagent_type" => type}}
+    end
+
+    said = fn id, text ->
+      %{
+        "type" => "assistant",
+        "parent_tool_use_id" => id,
+        "message" => %{"content" => [%{"type" => "text", "text" => text}]}
+      }
+    end
+
+    events = [
+      %{
+        "type" => "assistant",
+        "message" => %{"content" => [call.("toolu_a", "designer"), call.("toolu_b", "architect")]}
+      },
+      said.("toolu_a", "Option one."),
+      said.("toolu_b", "Reading the code."),
+      %{
+        "type" => "user",
+        "message" => %{
+          "content" => [
+            %{
+              "type" => "tool_result",
+              "tool_use_id" => "toolu_a",
+              "is_error" => true,
+              "content" => [%{"type" => "text", "text" => "Out of turns"}]
+            }
+          ]
+        }
+      }
+    ]
+
+    state = Enum.reduce(events, ClaudeEvents.new(), &ClaudeEvents.handle_event(&2, &1))
+
+    assert state.logs == [
+             "[subagent toolu_a] designer ·",
+             "[subagent toolu_b] architect ·",
+             "[within toolu_a] Option one.",
+             "[within toolu_b] Reading the code.",
+             "[subagent end toolu_a] Out of turns"
+           ]
+  end
+
+  test "a subagent call with no type, or a blank one, reads as the general one" do
+    for input <- ["?", %{"subagent_type" => "  ", "description" => " \n "}] do
+      event = %{
+        "type" => "assistant",
+        "message" => %{"content" => [%{"type" => "tool_use", "id" => "toolu_g", "name" => "Task", "input" => input}]}
+      }
+
+      assert %{logs: ["[subagent toolu_g] general-purpose ·"]} = ClaudeEvents.handle_event(ClaudeEvents.new(), event)
+    end
+  end
 end

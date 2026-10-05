@@ -32,8 +32,8 @@ defmodule Rail.Pipeline.Actions.CreateTaskTest do
   test "names the worktree after the issue's identifier", %{issue: %Issue{id: issue_id} = issue} do
     path = "/tmp/repos/test-seed/.worktrees/crt-1"
 
-    assert {:ok, %Task{issue_id: ^issue_id, stage: :product, worktree_name: "crt-1", worktree_path: ^path}} =
-             Pipeline.create_task(issue, :product)
+    assert {:ok, %Task{issue_id: ^issue_id, stage: :plan, worktree_name: "crt-1", worktree_path: ^path}} =
+             Pipeline.create_task(issue, :plan)
   end
 
   test "names the worktree after the issue's branch when it has one", %{issue: issue} do
@@ -43,8 +43,8 @@ defmodule Rail.Pipeline.Actions.CreateTaskTest do
   end
 
   test "returns the task an issue already has", %{issue: issue} do
-    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue, :product)
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue, :plan)
 
-    assert {:ok, %Task{id: ^task_id, stage: :product}} = Pipeline.create_task(issue, :design)
+    assert {:ok, %Task{id: ^task_id, stage: :plan}} = Pipeline.create_task(issue, :plan)
   end
 end

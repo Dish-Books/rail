@@ -13,7 +13,7 @@ defmodule RailWeb.Live.RunConversationTest do
 
   setup %{project: project} do
     roles =
-      Map.new([:architect, :engineer], fn stage ->
+      Map.new([:plan, :product, :design, :architect, :engineer], fn stage ->
         {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
         {stage, role}
       end)
@@ -34,7 +34,7 @@ defmodule RailWeb.Live.RunConversationTest do
     end)
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Conversation Issue"})
-    {:ok, task} = Pipeline.create_task(issue, :product)
+    {:ok, task} = Pipeline.create_task(issue, :plan)
     {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
 
     roles_map = Map.new(roles, fn {_stage, role} -> {role.id, role} end)
@@ -1090,5 +1090,159 @@ defmodule RailWeb.Live.RunConversationTest do
 
     # A result that spent nothing says only its status, with no dangling separator.
     assert html =~ ~r/\[result\] error_during_execution\s*</
+  end
+
+  test "a subagent is a line with its role, its description and what it saved, open while it works", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :plan})
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:plan].id,
+        status: :running,
+        conversation_id: "conv_plan",
+        started_at: DateTime.utc_now()
+      })
+
+    call = fn id, type, description ->
+      ~s({"type":"assistant","message":{"content":[{"type":"tool_use","id":"#{id}","name":"Task","input":{"subagent_type":"#{type}","description":"#{description}"}}]}})
+    end
+
+    within = fn id, block -> ~s({"type":"assistant","parent_tool_use_id":"#{id}","message":{"content":[#{block}]}}) end
+
+    Pipeline.append_run_events(run.id, nil, [
+      call.("toolu_pm", "product", "wrote the ticket"),
+      within.("toolu_pm", ~s({"type":"text","text":"Reading the issue."})),
+      within.("toolu_pm", ~s({"type":"tool_use","id":"toolu_t","name":"mcp__rail__save_ticket","input":{"title":"T"}})),
+      ~s({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_pm","content":"Saved."}]}}),
+      call.("toolu_ar", "architect", "plan from the ticket"),
+      within.("toolu_ar", ~s({"type":"tool_use","id":"toolu_p","name":"mcp__rail__save_plan","input":{"plan":"x"}})),
+      ~s({"type":"user","parent_tool_use_id":"toolu_ar","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_p","is_error":true,"content":"Refused, nothing saved. plan: must open with the heading."}]}}),
+      ~s({"type":"assistant","message":{"content":[{"type":"text","text":"The ticket is saved."}]}})
+    ])
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], stage_run: run, roles_map: roles_map)
+
+    assert html =~
+             ~r/id="subagent-[^"]+" data-qa="subagent-block" data-status="done".*product role.*wrote the ticket.*ticket saved/s
+
+    # Plan is still working, so the Designer may yet be handed its part: nothing reads as skipped.
+    refute html =~ ~s(data-status="skipped")
+    assert html =~ ~r/data-status="running".*architect role.*plan from the ticket/s
+
+    # The finished Product line is closed; the Architect still working is open on its own transcript.
+    refute html =~ "Reading the issue."
+    assert html =~ ~s(data-qa="subagent-transcript")
+    assert html =~ ~r/id="activity-tile-1-0".*save_plan.*pi-warning-circle/s
+    assert html =~ "The ticket is saved."
+  end
+
+  test "a stopped Plan run with no options saved says the Designer was skipped, before the Architect's line", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:plan].id,
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
+    Pipeline.append_run_events(run.id, nil, [
+      "[subagent toolu_p] product · write the ticket",
+      "[subagent end toolu_p]",
+      "[subagent toolu_a] architect · plan from the ticket",
+      "[subagent end toolu_a]"
+    ])
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], stage_run: run, roles_map: roles_map)
+
+    assert html =~ ~r/product role.*data-status="skipped".*design role.*no screen changes in this task.*architect role/s
+  end
+
+  test "an Architect handed its part before the Designer does not make the design read as skipped", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    design_dir = Path.join(task.scratch_path, "design")
+    File.mkdir_p!(design_dir)
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    File.write!(Path.join(design_dir, "manifest.json"), ~s({"options": [{"key": "rows", "title": "Rows"}]}))
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:plan].id,
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
+    Pipeline.append_run_events(run.id, nil, [
+      "[subagent toolu_a] architect · plan from the ticket",
+      "[subagent toolu_d] designer · three options",
+      "[subagent end toolu_a]",
+      "[subagent end toolu_d]"
+    ])
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], stage_run: run, roles_map: roles_map)
+
+    assert html =~ ~r/architect role.*design role.*three options/s
+    refute html =~ ~s(data-status="skipped")
+  end
+
+  test "a subagent with a type Rail does not know reads by its type", %{task: task, roles: roles, roles_map: roles_map} do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:plan].id,
+        status: :finished,
+        conversation_id: "conv_general",
+        started_at: DateTime.utc_now()
+      })
+
+    Pipeline.append_run_events(run.id, nil, [
+      "[subagent toolu_g] general-purpose · look around",
+      "[subagent end toolu_g] Ran out",
+      "[subagent toolu_d] designer · three options",
+      "[within toolu_d] [tool] mcp__rail__save_design_option rows",
+      "[within toolu_d] [tool] mcp__rail__save_design_option rows",
+      "[subagent end toolu_d]",
+      "[subagent toolu_a] architect · plan for Rows"
+    ])
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], stage_run: run, roles_map: roles_map)
+
+    assert html =~ ~r/data-status="failed".*General Purpose.*look around/s
+
+    # A Designer line before the Architect's means there was a screen, so none is marked skipped; a re-save is one option.
+    assert html =~ ~r/data-status="done".*design role.*three options.*1 option/s
+    refute html =~ "skipped"
+  end
+
+  test "a Plan run with no conversation can be retried, since its brief starts it again", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :plan})
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:plan].id,
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+    assert html =~ ~s(id="retry-run")
   end
 end

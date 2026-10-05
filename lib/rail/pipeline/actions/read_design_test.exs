@@ -106,4 +106,17 @@ defmodule Rail.Pipeline.Actions.ReadDesignTest do
     File.write!(Path.join(dir, "picked"), "cards\n")
     assert %{picked: "cards"} = Pipeline.read_design(task)
   end
+
+  test "says when the pick was made, and skips reading the pages when asked", %{task: task, design_dir: dir} do
+    File.write!(Path.join(dir, "manifest.json"), ~s({"options": [{"key": "cards", "title": "Cards"}]}))
+    File.write!(Path.join(dir, "cards.html"), "<h1>Cards</h1>")
+
+    assert %{picked: nil, picked_at: nil, options: [%{html: "<h1>Cards</h1>"}]} = Pipeline.read_design(task)
+
+    File.write!(Path.join(dir, "picked"), "cards")
+    File.touch!(Path.join(dir, "picked"), 1_900_000_000)
+
+    assert %{picked: "cards", picked_at: ~U[2030-03-17 17:46:40Z], options: [%{html: nil, html_version: nil}]} =
+             Pipeline.read_design(task, pages: false)
+  end
 end

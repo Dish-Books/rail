@@ -16,7 +16,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
   setup %{project: project} do
     roles =
-      Map.new([:product, :design, :architect, :engineer, :review, :qa, :demo], fn stage ->
+      Map.new([:plan, :engineer, :review, :qa, :demo], fn stage ->
         {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
 
         {stage, role}
@@ -39,7 +39,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Register Question Issue"})
 
-    {:ok, task} = Pipeline.create_task(issue, :product)
+    {:ok, task} = Pipeline.create_task(issue, :plan)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end

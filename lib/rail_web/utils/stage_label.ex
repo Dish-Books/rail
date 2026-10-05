@@ -3,10 +3,11 @@ defmodule RailWeb.Utils.StageLabel do
   The one line that says where a task is and what its run is doing.
 
   Two things make the sentence: the stage the task sits at, and what the run for
-  it says about itself. Neither is enough alone — "Product" does not say whether
+  it says about itself. Neither is enough alone: "Plan" does not say whether
   anyone is waiting, and `:done` does not say done with what.
   """
 
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
 
@@ -26,7 +27,7 @@ defmodule RailWeb.Utils.StageLabel do
   def stage_label(%Task{stage: stage}, %Run{status: :waiting_for_usage}),
     do: "#{Task.stage_label(stage)} waiting for usage"
 
-  def stage_label(%Task{stage: stage}, run) do
+  def stage_label(%Task{stage: stage} = task, run) do
     case Run.state(run) do
       :queued -> "Queued for #{Task.stage_label(stage)}"
       :running -> "#{Task.stage_label(stage)} running"
@@ -34,7 +35,7 @@ defmodule RailWeb.Utils.StageLabel do
       :blocked -> "#{Task.stage_label(stage)} needs an answer"
       :failed -> "#{Task.stage_label(stage)} failed"
       :stopped -> "#{Task.stage_label(stage)} stopped"
-      :done -> approval_label(stage)
+      :done -> approval_label(task)
     end
   end
 
@@ -46,12 +47,18 @@ defmodule RailWeb.Utils.StageLabel do
   is two answers to one question, and the reader has to open the task to find
   out which is right.
   """
-  def approval_label(:product), do: "Review the ticket"
-  def approval_label(:design), do: "Review the designs"
-  def approval_label(:architect), do: "Review the plan"
-  def approval_label(:engineer), do: "Review the diff"
-  def approval_label(:review), do: "Review the findings"
-  def approval_label(:qa), do: "Review the QA report"
-  def approval_label(:demo), do: "Watch the demo"
-  def approval_label(_other), do: "Waiting on you"
+  def approval_label(%Task{stage: :plan} = task) do
+    if waiting_on_pick?(task), do: "Pick a design", else: "Review the plan"
+  end
+
+  def approval_label(%Task{stage: :engineer}), do: "Review the diff"
+  def approval_label(%Task{stage: :review}), do: "Review the findings"
+  def approval_label(%Task{stage: :qa}), do: "Review the QA report"
+  def approval_label(%Task{stage: :demo}), do: "Watch the demo"
+  def approval_label(%Task{}), do: "Waiting on you"
+
+  @doc "True when `task` has design options saved and none of them picked yet."
+  def waiting_on_pick?(%Task{} = task) do
+    match?(%{options: [_first | _rest], picked: nil}, Pipeline.read_design(task, pages: false))
+  end
 end

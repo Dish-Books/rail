@@ -37,18 +37,18 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
     end)
 
     roles =
-      Map.new([:product, :design, :architect, :engineer, :review, :qa, :demo], fn stage ->
+      Map.new([:plan, :engineer, :review, :qa, :demo], fn stage ->
         {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
 
         {stage, role}
       end)
 
-    {:ok, task} = Pipeline.create_task(issue, :product)
+    {:ok, task} = Pipeline.create_task(issue, :plan)
 
     {:ok, run} =
       Pipeline.create_run(%{
         task_id: task.id,
-        role_id: roles[:product].id,
+        role_id: roles[:plan].id,
         status: :running,
         conversation_id: "sess_dismiss",
         started_at: DateTime.utc_now()

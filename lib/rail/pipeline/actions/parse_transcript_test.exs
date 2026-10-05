@@ -197,4 +197,76 @@ defmodule Rail.Pipeline.Actions.ParseTranscriptTest do
     assert [%{content: "User question"}] = Enum.filter(turns, &(&1.author == :human))
     assert [%{content: "Agent response"}] = Enum.filter(turns, &(&1.author == :role))
   end
+
+  test "a subagent is one turn whose nested turns are its own prose and activity, and Plan's lines stay outside" do
+    turns =
+      Pipeline.parse_transcript([
+        "I will start with the ticket.",
+        "[subagent toolu_pm] product · write the ticket",
+        "[within toolu_pm] Reading the issue.",
+        "[within toolu_pm] [tool] mcp__rail__save_ticket",
+        "[within toolu_pm] [tool error mcp__rail__save_ticket] Refused, nothing saved. title: is required.",
+        "[within toolu_pm] Saved it.",
+        "[subagent end toolu_pm]",
+        "The ticket is saved."
+      ])
+
+    assert [
+             %Turn{author: :role, content: "I will start with the ticket."},
+             %Turn{
+               author: :subagent,
+               label: "product",
+               content: "write the ticket",
+               status: :done,
+               turns: [
+                 %Turn{author: :role, content: "Reading the issue."},
+                 %Turn{
+                   author: :activity,
+                   content: "[tool] mcp__rail__save_ticket\n[tool error mcp__rail__save_ticket]" <> _refusal
+                 },
+                 %Turn{author: :role, content: "Saved it."}
+               ]
+             },
+             %Turn{author: :role, content: "The ticket is saved."}
+           ] = turns
+  end
+
+  test "interleaved lines from two calls go to their own subagents, and one still going says so" do
+    turns =
+      Pipeline.parse_transcript([
+        "[subagent toolu_a] designer · draw three options",
+        "[subagent toolu_b] architect · plan it",
+        "[within toolu_a] Option one.",
+        "[within toolu_b] Reading the code.",
+        "[within toolu_a] [tool] mcp__rail__save_design_option",
+        "[subagent end toolu_a] Out of turns"
+      ])
+
+    assert [
+             %Turn{
+               author: :subagent,
+               label: "designer",
+               status: :failed,
+               turns: [
+                 %Turn{author: :role, content: "Option one."},
+                 %Turn{author: :activity, content: "[tool] mcp__rail__save_design_option"},
+                 %Turn{author: :event, content: "[error] Out of turns"}
+               ]
+             },
+             %Turn{
+               author: :subagent,
+               label: "architect",
+               status: :running,
+               turns: [%Turn{author: :role, content: "Reading the code."}]
+             }
+           ] = turns
+  end
+
+  test "a subagent whose call was never logged still keeps what it said" do
+    assert [%Turn{author: :subagent, label: "subagent", content: "", status: :done, turns: []}] =
+             Pipeline.parse_transcript(["[subagent end toolu_x]"])
+
+    assert [%Turn{author: :human}, %Turn{author: :subagent, turns: [%Turn{author: :role, content: "Hi."}]}] =
+             Pipeline.parse_transcript(["[human] Go", "[within toolu_y] Hi."])
+  end
 end

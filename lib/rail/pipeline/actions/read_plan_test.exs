@@ -19,7 +19,7 @@ defmodule Rail.Pipeline.Actions.ReadPlanTest do
     end)
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "Read Plan"})
-    {:ok, task} = Pipeline.create_task(issue, :architect)
+    {:ok, task} = Pipeline.create_task(issue, :plan)
     plans_dir = Path.join(task.scratch_path, "plans")
     File.mkdir_p!(plans_dir)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
@@ -27,10 +27,20 @@ defmodule Rail.Pipeline.Actions.ReadPlanTest do
     %{task: Repo.preload(task, :issue), plan_path: Path.join(plans_dir, "RDP-1.md")}
   end
 
-  test "reads the plan the architect wrote", %{task: task, plan_path: path} do
+  test "reads the plan with when it was saved and the option it was written for", %{task: task, plan_path: path} do
     File.write!(path, "## Implementation plan\n\n### Approach\nExtend the existing module.\n")
 
-    assert Pipeline.read_plan(task) =~ "Extend the existing module."
+    assert %{content: "## Implementation plan" <> _rest, saved_at: %DateTime{}, design: nil} = Pipeline.read_plan(task)
+
+    File.write!(Path.join(Path.dirname(path), "RDP-1.design.json"), ~s({"key": "rows", "title": "Charts in the row"}))
+    assert %{design: %{key: "rows", title: "Charts in the row"}} = Pipeline.read_plan(task)
+  end
+
+  test "an option file that is not one names no option", %{task: task, plan_path: path} do
+    File.write!(path, "## Implementation plan\n")
+    File.write!(Path.join(Path.dirname(path), "RDP-1.design.json"), ~s({"key": 1}))
+
+    assert %{design: nil} = Pipeline.read_plan(task)
   end
 
   test "an unwritten plan is no plan", %{task: task} do

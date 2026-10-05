@@ -29,7 +29,7 @@ defmodule Rail.Pipeline.Actions.GetTaskTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Get Task Issue"})
 
-    {:ok, task} = Pipeline.create_task(issue, :product)
+    {:ok, task} = Pipeline.create_task(issue, :plan)
 
     %{backend: backend, project: project, issue: issue, task: task}
   end
@@ -43,7 +43,7 @@ defmodule Rail.Pipeline.Actions.GetTaskTest do
     issue: %{id: issue_id},
     task: %Task{id: task_id} = task
   } do
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :product)
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
     {:ok, %Run{id: run_id}} =
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
@@ -53,7 +53,7 @@ defmodule Rail.Pipeline.Actions.GetTaskTest do
               id: ^task_id,
               project: %{id: ^project_id},
               issue: %{id: ^issue_id},
-              runs: [%Run{id: ^run_id, role: %{stage: :product}}]
+              runs: [%Run{id: ^run_id, role: %{stage: :plan}}]
             }} = Pipeline.get_task(task.id)
   end
 

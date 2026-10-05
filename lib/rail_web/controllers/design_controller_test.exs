@@ -27,7 +27,7 @@ defmodule RailWeb.DesignControllerTest do
     end)
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Design Controller"})
-    {:ok, task} = Pipeline.create_task(issue, :design)
+    {:ok, task} = Pipeline.create_task(issue, :plan)
     design_dir = Path.join(task.scratch_path, "design")
     File.mkdir_p!(design_dir)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)

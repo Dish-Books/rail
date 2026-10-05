@@ -27,16 +27,29 @@ defmodule Rail.Pipeline.Turn do
 
   A `:human` turn carries the `sender_id` of the person who sent it, or `nil` for
   lines logged before senders were recorded and for those Rail wrote for a human.
+
+  `:subagent` is a helper the role handed work to: `label` is its type, `content` the description it was
+  given, `turns` its own transcript and `status` whether it is `:running`, `:done` or `:failed`.
   """
-  defstruct author: :role, content: "", label: nil, at: nil, duration_seconds: nil, process: nil, sender_id: nil
+  defstruct author: :role,
+            content: "",
+            label: nil,
+            at: nil,
+            duration_seconds: nil,
+            process: nil,
+            sender_id: nil,
+            turns: [],
+            status: nil
 
   @type t :: %__MODULE__{
-          author: :human | :role | :activity | :driving | :event | :turn_start | :command | :reminder,
+          author: :human | :role | :activity | :driving | :event | :turn_start | :command | :reminder | :subagent,
           content: String.t(),
           label: String.t() | nil,
           at: DateTime.t() | nil,
           duration_seconds: non_neg_integer() | nil,
           process: struct() | nil,
-          sender_id: String.t() | nil
+          sender_id: String.t() | nil,
+          turns: [t()],
+          status: :running | :done | :failed | nil
         }
 end

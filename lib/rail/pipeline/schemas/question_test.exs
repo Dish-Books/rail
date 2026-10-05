@@ -30,9 +30,9 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Question Schema Issue"})
 
-    {:ok, task} = Pipeline.create_task(issue, :product)
+    {:ok, task} = Pipeline.create_task(issue, :plan)
 
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :product)
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
     {:ok, run} =
       Pipeline.create_run(%{

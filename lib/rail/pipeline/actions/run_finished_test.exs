@@ -19,7 +19,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   setup %{project: project} do
     roles =
-      Map.new([:product, :design, :architect, :engineer, :review, :qa, :demo, :debugger], fn stage ->
+      Map.new([:plan, :engineer, :review, :qa, :demo, :debugger], fn stage ->
         {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
 
         {stage, role}
@@ -41,13 +41,15 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     end)
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Run Finished Issue"})
-    {:ok, task} = Pipeline.create_task(issue, :product)
+    {:ok, task} = Pipeline.create_task(issue, :plan)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
-    # Product and architect both check that their agent left its file behind, so a
-    # run meant to read as clean needs one there.
+    # Plan checks that its agent left a ticket and a plan behind, so a run meant to
+    # read as clean needs both there.
     File.mkdir_p!(Path.join(task.scratch_path, "tickets"))
     File.write!(Path.join([task.scratch_path, "tickets", "RUN-1.md"]), "---\ntitle: Run Finished Issue\n---\n\nBody.\n")
+    File.mkdir_p!(Path.join(task.scratch_path, "plans"))
+    File.write!(Path.join([task.scratch_path, "plans", "RUN-1.md"]), "## Implementation plan\n\nExtend the module.\n")
 
     exited = fn stage, run_attrs ->
       {:ok, run} =
@@ -98,7 +100,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   end
 
   test "records the exit against the run and marks the process finished", %{exited: exited} do
-    {run, os_process} = exited.(:product, %{})
+    {run, os_process} = exited.(:plan, %{})
 
     assert {:ok, %Run{status: :finished, exit_code: 0, completed_at: %DateTime{}}} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
@@ -108,7 +110,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   end
 
   test "usage accumulates across the processes a run is carried by", %{exited: exited} do
-    {run, os_process} = exited.(:product, %{usage: %Run.Usage{input_tokens: 10, output_tokens: 5}})
+    {run, os_process} = exited.(:plan, %{usage: %Run.Usage{input_tokens: 10, output_tokens: 5}})
 
     {:ok, _run} =
       Pipeline.run_finished(os_process, %{
@@ -120,17 +122,17 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   end
 
   test "a non-zero exit records the error and concludes nothing", %{task: task, exited: exited} do
-    {_run, os_process} = exited.(:product, %{})
+    {_run, os_process} = exited.(:plan, %{})
 
     assert {:ok, %Run{exit_code: 2, error: "Exited with code 2", stage_outcome: :in_progress}} =
              Pipeline.run_finished(os_process, %{exit_code: 2, error: "Exited with code 2"})
 
-    assert %Task{stage: :product} = Repo.reload!(task)
+    assert %Task{stage: :plan} = Repo.reload!(task)
   end
 
   test "a settled run tells whoever is watching the pipeline", %{task: %Task{id: task_id}, exited: exited} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
-    {_run, os_process} = exited.(:product, %{})
+    {_run, os_process} = exited.(:plan, %{})
 
     assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert_received {:pipeline_changed, ^task_id}
@@ -138,7 +140,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   test "a process whose run is gone has nothing to settle", %{task: %Task{id: task_id}, exited: exited} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
-    {run, os_process} = exited.(:product, %{})
+    {run, os_process} = exited.(:plan, %{})
     Repo.delete!(run)
 
     assert {:error, :invalid_state} = Pipeline.run_finished(os_process)
@@ -147,7 +149,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   test "a message queued while the run worked goes out once it is idle", %{task: task, exited: exited} do
     {:ok, _task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
-    {run, os_process} = exited.(:product, %{pending_chat: "Please also add a test"})
+    {run, os_process} = exited.(:plan, %{pending_chat: "Please also add a test"})
 
     test_pid = self()
 
@@ -165,27 +167,27 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   end
 
   test "a run that came back clean latches done and moves nothing", %{task: task, exited: exited} do
-    {run, os_process} = exited.(:product, %{})
+    {run, os_process} = exited.(:plan, %{})
 
     Pipeline.append_run_events(run.id, nil, ["The ticket is written."])
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
 
-    # Product hands on only when a human approves; the exit itself moves nothing.
-    assert %Task{stage: :product} = Repo.reload!(task)
+    # Plan hands on only when a human approves; the exit itself moves nothing.
+    assert %Task{stage: :plan} = Repo.reload!(task)
   end
 
   test "a run that already had its say is left alone however often it exits", %{task: task, exited: exited} do
-    {run, os_process} = exited.(:product, %{stage_outcome: :done})
+    {run, os_process} = exited.(:plan, %{stage_outcome: :done})
 
     Pipeline.append_run_events(run.id, nil, ["Still done."])
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-    assert %Task{stage: :product} = Repo.reload!(task)
+    assert %Task{stage: :plan} = Repo.reload!(task)
   end
 
   test "a run that asked something parks on it rather than concluding", %{task: task, exited: exited} do
-    {run, os_process} = exited.(:product, %{})
+    {run, os_process} = exited.(:plan, %{})
 
     # Questions are read back from what this process wrote, so the lines carry it.
     now = DateTime.utc_now()
@@ -658,61 +660,49 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert %Task{stage: :review} = Repo.reload!(task)
   end
 
-  test "an architect run that left no plan stays open for the message that fixes it", %{
-    task: task,
-    exited: exited
-  } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :architect})
-    {_run, os_process} = exited.(:architect, %{})
+  test "a Plan run that left no plan stays open for the message that fixes it", %{task: task, exited: exited} do
+    File.rm!(Path.join([task.scratch_path, "plans", "RUN-1.md"]))
+    {_run, os_process} = exited.(:plan, %{})
 
-    assert {:ok, %Run{stage_outcome: :in_progress, error: "The architect did not save a plan."}} =
+    assert {:ok, %Run{stage_outcome: :in_progress, error: "The Plan agent did not save a plan."}} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
 
-    assert %Task{stage: :architect} = Repo.reload!(task)
+    assert %Task{stage: :plan} = Repo.reload!(task)
   end
 
-  test "an architect run that wrote its plan latches done", %{task: task, exited: exited} do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :architect})
-    File.mkdir_p!(Path.join(task.scratch_path, "plans"))
-    File.write!(Path.join([task.scratch_path, "plans", "RUN-1.md"]), "## Implementation plan\n\nExtend the module.\n")
-
-    {_run, os_process} = exited.(:architect, %{})
-
-    assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-    assert %Task{stage: :architect} = Repo.reload!(task)
-  end
-
-  test "a product run that left no ticket stays open for the message that fixes it", %{
-    task: task,
-    exited: exited
-  } do
+  test "a Plan run that left no ticket stays open for the message that fixes it", %{task: task, exited: exited} do
     File.rm!(Path.join([task.scratch_path, "tickets", "RUN-1.md"]))
-    {_run, os_process} = exited.(:product, %{})
+    {_run, os_process} = exited.(:plan, %{})
 
-    assert {:ok, %Run{stage_outcome: :in_progress, error: "The product agent did not save a ticket."}} =
+    assert {:ok, %Run{stage_outcome: :in_progress, error: "The Plan agent did not save a ticket."}} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
-
-    assert %Task{stage: :product} = Repo.reload!(task)
   end
 
-  test "a design run that left its options incomplete stays open for the message that fixes it", %{
+  test "a Plan run that left two options and no pick stays open for the message that fixes it", %{
     task: task,
     exited: exited
   } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :design})
-    {_run, os_process} = exited.(:design, %{})
-
-    assert {:ok, %Run{stage_outcome: :in_progress, error: "The designer did not save any design options."}} =
-             Pipeline.run_finished(os_process, %{exit_code: 0})
-
-    assert %Task{stage: :design} = Repo.reload!(task)
-  end
-
-  test "a design run that wrote three complete options latches done", %{task: task, exited: exited} do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :design})
     design_dir = Path.join(task.scratch_path, "design")
     File.mkdir_p!(design_dir)
-    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+    File.write!(
+      Path.join(design_dir, "manifest.json"),
+      ~s({"options": [{"key": "a", "title": "A"}, {"key": "b", "title": "B"}]})
+    )
+
+    {_run, os_process} = exited.(:plan, %{})
+
+    assert {:ok,
+            %Run{stage_outcome: :in_progress, error: "The Plan agent saved 2 design options. It needs 3, or a pick."}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+  end
+
+  test "a Plan run that wrote its ticket, three complete options and its plan latches done", %{
+    task: task,
+    exited: exited
+  } do
+    design_dir = Path.join(task.scratch_path, "design")
+    File.mkdir_p!(design_dir)
 
     File.write!(
       Path.join(design_dir, "manifest.json"),
@@ -724,13 +714,14 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       File.write!(Path.join(design_dir, "#{key}.png"), "png")
     end
 
-    {_run, os_process} = exited.(:design, %{})
+    {_run, os_process} = exited.(:plan, %{})
 
     assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert %Task{stage: :plan} = Repo.reload!(task)
   end
 
   test "an outcome that arrives with string keys settles the same way", %{exited: exited} do
-    {_run, os_process} = exited.(:product, %{})
+    {_run, os_process} = exited.(:plan, %{})
 
     assert {:ok, %Run{exit_code: 3, error: "It went wrong"}} =
              Pipeline.run_finished(os_process, %{
@@ -741,34 +732,34 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   end
 
   test "an outcome with no exit code settles as a clean exit", %{exited: exited} do
-    {_run, os_process} = exited.(:product, %{})
+    {_run, os_process} = exited.(:plan, %{})
 
     assert {:ok, %Run{exit_code: 0, usage: %Run.Usage{input_tokens: 4}}} =
              Pipeline.run_finished(os_process, %{usage: %{input_tokens: 4}})
   end
 
   test "a usage record under a string key is taken as it is", %{exited: exited} do
-    {_run, os_process} = exited.(:product, %{})
+    {_run, os_process} = exited.(:plan, %{})
 
     assert {:ok, %Run{usage: %Run.Usage{output_tokens: 6}}} =
              Pipeline.run_finished(os_process, %{"exit_code" => 0, "usage" => %Run.Usage{output_tokens: 6}})
   end
 
   test "a clean exit that still recorded an error stays open", %{exited: exited} do
-    {_run, os_process} = exited.(:product, %{})
+    {_run, os_process} = exited.(:plan, %{})
 
     assert {:ok, %Run{error: "It went wrong", stage_outcome: :in_progress}} =
              Pipeline.run_finished(os_process, %{exit_code: 0, error: "It went wrong"})
   end
 
   test "re-settling a process keeps what the run layer already wrote", %{exited: exited} do
-    {_run, os_process} = exited.(:product, %{exit_code: 1, error: "Recorded earlier"})
+    {_run, os_process} = exited.(:plan, %{exit_code: 1, error: "Recorded earlier"})
 
     assert {:ok, %Run{exit_code: 1, error: "Recorded earlier"}} = Pipeline.run_finished(os_process)
   end
 
   test "a run parked on a question stays parked when its process exits", %{exited: exited} do
-    {_run, os_process} = exited.(:product, %{status: :blocked_on_input})
+    {_run, os_process} = exited.(:plan, %{status: :blocked_on_input})
 
     assert {:ok, %Run{status: :blocked_on_input}} = Pipeline.run_finished(os_process, %{exit_code: 0})
   end
@@ -776,7 +767,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   # It has been waiting on the human since it stopped to ask, not since a later exit.
   test "a run still parked on a question keeps the time it stopped to ask", %{exited: exited} do
     asked_at = DateTime.shift(DateTime.utc_now(), minute: -3)
-    {_run, os_process} = exited.(:product, %{status: :blocked_on_input, completed_at: asked_at})
+    {_run, os_process} = exited.(:plan, %{status: :blocked_on_input, completed_at: asked_at})
 
     assert {:ok, %Run{status: :blocked_on_input, completed_at: ^asked_at}} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
@@ -784,7 +775,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   test "a run resumed after asking is dated from the turn that finished it", %{exited: exited} do
     asked_at = DateTime.shift(DateTime.utc_now(), minute: -3)
-    {_run, os_process} = exited.(:product, %{completed_at: asked_at})
+    {_run, os_process} = exited.(:plan, %{completed_at: asked_at})
 
     assert {:ok, %Run{status: :finished, completed_at: completed_at}} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
@@ -1367,7 +1358,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     end
 
     test "is sent at once and the run carries on without a person", %{task: task, exited: exited, asked: asked} do
-      {run, os_process} = exited.(:product, %{})
+      {run, os_process} = exited.(:plan, %{})
       asked.(run, os_process, ["Which database?"])
 
       assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
@@ -1389,7 +1380,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     end
 
     test "waits while a person still has a question to answer", %{task: task, exited: exited, asked: asked} do
-      {run, os_process} = exited.(:product, %{})
+      {run, os_process} = exited.(:plan, %{})
       asked.(run, os_process, ["Which database?", "Ship behind a flag?"])
 
       assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
@@ -1401,7 +1392,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     end
 
     test "waits on a turn a person stopped, rather than resuming it", %{task: task, exited: exited, asked: asked} do
-      {run, os_process} = exited.(:product, %{})
+      {run, os_process} = exited.(:plan, %{})
       asked.(run, os_process, ["Which database?"])
       {:ok, os_process} = os_process |> Ecto.Changeset.change(ended_reason: :stopped) |> Repo.update()
       reject(&Tools.start_os_process/2)

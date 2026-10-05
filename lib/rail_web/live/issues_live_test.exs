@@ -599,7 +599,7 @@ defmodule RailWeb.IssuesLiveTest do
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
     refute has_element?(view, "#task-link-#{issue.id}")
 
-    {:ok, task} = Pipeline.create_task(issue, :product)
+    {:ok, task} = Pipeline.create_task(issue, :plan)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
     assert has_element?(view, "#task-link-#{issue.id}[href='/tasks/#{task.id}']")

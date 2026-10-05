@@ -306,7 +306,7 @@ defmodule RailWeb.OverviewLiveTest do
           |> Issue.linear_changeset(%{completed_at: completed_at, owner_user_id: owner_user_id})
           |> Repo.update!()
 
-        {:ok, task} = Pipeline.create_task(issue, :product)
+        {:ok, task} = Pipeline.create_task(issue, :plan)
         {:ok, task} = Pipeline.update_task(task, attrs)
         Repo.preload(task, :issue)
       end
@@ -335,7 +335,7 @@ defmodule RailWeb.OverviewLiveTest do
           {:ok, run} =
             Pipeline.create_run(%{
               task_id: task.id,
-              role_id: roles[:product].id,
+              role_id: roles[:plan].id,
               status: :finished,
               stage_outcome: :done,
               started_at: DateTime.shift(now, day: -2),
@@ -433,7 +433,7 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, run} =
         Pipeline.create_run(%{
           task_id: theirs.id,
-          role_id: roles[:product].id,
+          role_id: roles[:plan].id,
           status: :finished,
           stage_outcome: :done,
           started_at: DateTime.shift(now, hour: -2),
@@ -478,7 +478,7 @@ defmodule RailWeb.OverviewLiveTest do
         {:ok, _run} =
           Pipeline.create_run(%{
             task_id: task.id,
-            role_id: roles[:product].id,
+            role_id: roles[:plan].id,
             status: :finished,
             stage_outcome: :done,
             started_at: DateTime.shift(now, hour: -(hours + 1)),
@@ -580,14 +580,14 @@ defmodule RailWeb.OverviewLiveTest do
       task_for: task_for
     } do
       now = DateTime.utc_now()
-      theirs = task_for.("Their plan", %{owner_user_id: rival.id, stage: :architect})
-      mine = task_for.("My plan", %{stage: :architect})
+      theirs = task_for.("Their plan", %{owner_user_id: rival.id, stage: :plan})
+      mine = task_for.("My plan", %{stage: :plan})
 
       for task <- [theirs, mine] do
         {:ok, _run} =
           Pipeline.create_run(%{
             task_id: task.id,
-            role_id: roles[:architect].id,
+            role_id: roles[:plan].id,
             status: :finished,
             stage_outcome: :done,
             started_at: DateTime.shift(now, hour: -2),
@@ -629,7 +629,7 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, _run} =
         Pipeline.create_run(%{
           task_id: waiting.id,
-          role_id: roles[:product].id,
+          role_id: roles[:plan].id,
           status: :finished,
           stage_outcome: :done,
           started_at: DateTime.shift(now, hour: -3),
@@ -667,7 +667,7 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, review_run} =
         Pipeline.create_run(%{
           task_id: review.id,
-          role_id: roles[:product].id,
+          role_id: roles[:plan].id,
           status: :finished,
           stage_outcome: :done,
           started_at: DateTime.shift(now, hour: -4),
@@ -697,7 +697,7 @@ defmodule RailWeb.OverviewLiveTest do
       end
 
       {one_task, one_question} =
-        blocked_run.("Naming decision", roles[:architect], ["Which name?"], DateTime.shift(now, hour: -2))
+        blocked_run.("Naming decision", roles[:plan], ["Which name?"], DateTime.shift(now, hour: -2))
 
       {two_task, two_questions} =
         blocked_run.("Two decisions", roles[:engineer], ["Which db?", "Behind a flag?"], DateTime.shift(now, hour: -1))
@@ -706,7 +706,7 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert has_element?(view, "#up-next-featured-#{review_run.id}[href='/tasks/#{review.id}']", "Ticket to review")
       assert has_element?(view, "#up-next-featured-#{review_run.id} [data-qa='up-next-chip']", "Ready for review")
-      assert has_element?(view, "#up-next-featured-#{review_run.id}", "Review the ticket")
+      assert has_element?(view, "#up-next-featured-#{review_run.id}", "Review the plan")
 
       assert has_element?(view, "#up-next-row-#{one_question.id}[href='/tasks/#{one_task.id}']", "asked a question")
       assert has_element?(view, "#up-next-row-#{two_questions.id}[href='/tasks/#{two_task.id}']", "asked 2 questions")
@@ -731,28 +731,36 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#activity-asked-#{two_questions.id}", "asked 2 questions")
     end
 
-    test "a task in design waits once, on its design, and the stage it left is done with it", %{
+    test "a task at Plan with options unpicked waits once, on the pick, and the run it took over is done with it", %{
       conn: conn,
       roles: roles,
       task_for: task_for
     } do
       now = DateTime.utc_now()
-      task = task_for.("Warn on duplicate bills", %{stage: :design})
+      task = task_for.("Warn on duplicate bills", %{stage: :plan})
+      design_dir = Path.join(task.scratch_path, "design")
+      File.mkdir_p!(design_dir)
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
-      {:ok, product_run} =
+      File.write!(
+        Path.join(design_dir, "manifest.json"),
+        ~s({"options": [{"key": "a", "title": "A"}, {"key": "b", "title": "B"}, {"key": "c", "title": "C"}]})
+      )
+
+      {:ok, design_run} =
         Pipeline.create_run(%{
           task_id: task.id,
-          role_id: roles[:product].id,
+          role_id: roles[:design].id,
           status: :finished,
           stage_outcome: :done,
           started_at: DateTime.shift(now, hour: -5),
           completed_at: DateTime.shift(now, hour: -4)
         })
 
-      {:ok, design_run} =
+      {:ok, plan_run} =
         Pipeline.create_run(%{
           task_id: task.id,
-          role_id: roles[:design].id,
+          role_id: roles[:plan].id,
           status: :finished,
           stage_outcome: :done,
           started_at: DateTime.shift(now, hour: -2),
@@ -761,20 +769,20 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/")
 
-      assert has_element?(view, "#up-next-featured-#{design_run.id}", "Review the designs")
+      assert has_element?(view, "#up-next-featured-#{plan_run.id}", "#{task.issue.identifier} · plan role")
+      assert has_element?(view, "#up-next-featured-#{plan_run.id}", "Pick a design")
 
       assert has_element?(
                view,
-               "#up-next-featured-#{design_run.id} [data-qa='up-next-summary']",
-               "Waiting on you to read the designs"
+               "#up-next-featured-#{plan_run.id} [data-qa='up-next-summary']",
+               "Waiting on you to pick a design."
              )
 
-      refute has_element?(view, "#up-next-featured-#{product_run.id}")
-      refute has_element?(view, "#up-next-row-#{product_run.id}")
+      refute has_element?(view, "#up-next-featured-#{design_run.id}")
+      refute has_element?(view, "#up-next-row-#{design_run.id}")
       assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")
 
-      # The row dates from the design run, not the product run the task left behind.
-      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='done']", "Review the designs")
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='done']", "Pick a design")
       assert has_element?(view, "#in-progress-task-#{task.id} [data-qa='in-progress-age']", "1h 0m")
     end
 
@@ -788,7 +796,7 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, run} =
         Pipeline.create_run(%{
           task_id: task.id,
-          role_id: roles[:product].id,
+          role_id: roles[:plan].id,
           status: :running,
           conversation_id: "sess_answered",
           started_at: DateTime.utc_now()
@@ -816,7 +824,7 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, run} =
         Pipeline.create_run(%{
           task_id: task.id,
-          role_id: roles[:product].id,
+          role_id: roles[:plan].id,
           status: :running,
           conversation_id: "sess_pending",
           started_at: DateTime.utc_now()
@@ -872,23 +880,23 @@ defmodule RailWeb.OverviewLiveTest do
           completed_at: DateTime.shift(now, hour: -4)
         })
 
-      stopped_task = task_for.("Stopped work", %{stage: :architect})
+      stopped_task = task_for.("Stopped work", %{stage: :plan})
 
       {:ok, stopped} =
         Pipeline.create_run(%{
           task_id: stopped_task.id,
-          role_id: roles[:architect].id,
+          role_id: roles[:plan].id,
           status: :finished,
           started_at: DateTime.shift(now, hour: -4),
           completed_at: DateTime.shift(now, hour: -3)
         })
 
-      moved_on = task_for.("Moved on work", %{stage: :architect})
+      moved_on = task_for.("Moved on work", %{stage: :engineer})
 
       {:ok, finished} =
         Pipeline.create_run(%{
           task_id: moved_on.id,
-          role_id: roles[:product].id,
+          role_id: roles[:plan].id,
           status: :finished,
           stage_outcome: :done,
           started_at: DateTime.shift(now, hour: -3),
@@ -897,12 +905,12 @@ defmodule RailWeb.OverviewLiveTest do
 
       shipped = task_for.("Shipped work", %{completed_at: DateTime.shift(now, hour: -1)})
 
-      old_task = task_for.("Old work", %{stage: :architect})
+      old_task = task_for.("Old work", %{stage: :plan})
 
       {:ok, old} =
         Pipeline.create_run(%{
           task_id: old_task.id,
-          role_id: roles[:architect].id,
+          role_id: roles[:plan].id,
           status: :finished,
           started_at: DateTime.shift(now, day: -3),
           completed_at: DateTime.shift(now, day: -3)
@@ -932,9 +940,9 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert positions == Enum.sort(positions)
 
-      # Only a run at the task's own stage says where it stands, not the product
+      # Only a run at the task's own stage says where it stands, not the Plan
       # run it moved on from.
-      assert has_element?(view, "#in-progress-task-#{moved_on.id}[data-state='queued']", "Queued for Architect")
+      assert has_element?(view, "#in-progress-task-#{moved_on.id}[data-state='queued']", "Queued for Engineer")
 
       # Of two tasks that broke, the one broken longest comes first.
       assert html |> :binary.match("in-progress-task-#{old_task.id}") |> elem(0) <
@@ -1066,12 +1074,12 @@ defmodule RailWeb.OverviewLiveTest do
           started_at: DateTime.shift(now, hour: -4)
         })
 
-      architect = task_for.("Prorate seat changes", %{stage: :architect})
+      architect = task_for.("Prorate seat changes", %{stage: :plan})
 
       {:ok, _done} =
         Pipeline.create_run(%{
           task_id: architect.id,
-          role_id: roles[:architect].id,
+          role_id: roles[:plan].id,
           status: :finished,
           stage_outcome: :done,
           started_at: DateTime.shift(now, hour: -3),
@@ -1202,7 +1210,7 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/")
 
-      assert has_element?(view, "#in-progress-task-#{mine.id}[data-state='queued']", "Queued for Product")
+      assert has_element?(view, "#in-progress-task-#{mine.id}[data-state='queued']", "Queued for Plan")
       refute has_element?(view, "#in-progress-task-#{theirs.id}")
       refute has_element?(view, "[data-qa='in-progress-project-header']")
       assert has_element?(view, "#in-progress-count", ~r/^\s*1 task\s*$/)
@@ -1247,7 +1255,7 @@ defmodule RailWeb.OverviewLiveTest do
 
       {:ok, other_role} =
         Roles.create_role(system_scope(), other_project, %{
-          stage: :product,
+          stage: :plan,
           name: "Other Product",
           model: "claude-opus-5-5",
           system_prompt: "You write tickets.",
@@ -1265,7 +1273,7 @@ defmodule RailWeb.OverviewLiveTest do
       shipped_elsewhere =
         task_for.("Shipped elsewhere", %{project: other_project, completed_at: DateTime.shift(now, hour: -2)})
 
-      for {task, role} <- [{own, roles[:product]}, {elsewhere, other_role}] do
+      for {task, role} <- [{own, roles[:plan]}, {elsewhere, other_role}] do
         {:ok, _done} =
           Pipeline.create_run(%{
             task_id: task.id,

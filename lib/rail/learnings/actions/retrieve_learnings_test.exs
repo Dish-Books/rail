@@ -32,6 +32,26 @@ defmodule Rail.Learnings.Actions.RetrieveLearningsTest do
     assert_received {:embedded, "the ticket", "RETRIEVAL_QUERY"}
   end
 
+  test "a Plan run is given rules scoped to plan and to the roles it leads, and not to the others", %{
+    project: project,
+    task: task
+  } do
+    {:ok, plan} = Roles.get_role(project_id: project.id, stage: :plan)
+
+    {:ok, run} =
+      Pipeline.create_run(%{task_id: task.id, role_id: plan.id, status: :starting, started_at: DateTime.utc_now()})
+
+    stub_vertex(%{"ticket" => vector([1.0])})
+    %{id: plan_id} = learning(project, %{rule: "Plan", kind: :convention, roles: [:plan]}, embedding: [1.0])
+
+    %{id: architect_id} =
+      learning(project, %{rule: "Architect", kind: :convention, roles: [:architect]}, embedding: [0.9, 0.1])
+
+    learning(project, %{rule: "Engineer", kind: :convention, roles: [:engineer]}, embedding: [1.0])
+
+    assert [%Learning{id: ^plan_id}, %Learning{id: ^architect_id}] = Learnings.retrieve_learnings(run, ["the ticket"])
+  end
+
   test "a path-scoped rule is found only for files under its glob", %{project: project, run: run} do
     stub_vertex(%{"lib/" => vector([1.0])})
 

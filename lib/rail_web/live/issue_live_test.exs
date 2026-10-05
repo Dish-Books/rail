@@ -193,13 +193,13 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-owner", "Unassigned")
     refute has_element?(view, "#issue-task-link")
 
-    view |> element("#issue-start-product") |> render_click()
+    view |> element("#issue-start-plan") |> render_click()
 
-    assert %Task{id: task_id, stage: :product} = Repo.get_by(Task, issue_id: issue.id)
+    assert %Task{id: task_id, stage: :plan} = Repo.get_by(Task, issue_id: issue.id)
     assert_redirect(view, ~p"/tasks/#{task_id}")
   end
 
-  test "an issue whose ticket is written can start at design, skipping product", %{conn: conn, project: project} do
+  test "an issue offers one Start at Plan button, where every task begins", %{conn: conn, project: project} do
     issue =
       %Issue{}
       |> Issue.linear_changeset(%{
@@ -211,20 +211,12 @@ defmodule RailWeb.IssueLiveTest do
       })
       |> Repo.insert!()
 
-    expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
-
-    expect(Tools, :start_os_process, fn %Run{} = run, _argv ->
-      {:ok, %OsProcess{task_id: run.task_id, run: run}}
-    end)
-
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
-    allow(Git, self(), view.pid)
-    allow(Tools, self(), view.pid)
 
-    view |> element("#issue-start-design") |> render_click()
-
-    assert %Task{id: task_id, stage: :design} = Repo.get_by(Task, issue_id: issue.id)
-    assert_redirect(view, ~p"/tasks/#{task_id}")
+    assert has_element?(view, "#issue-start-plan", "Plan")
+    refute has_element?(view, "#issue-start-product")
+    refute has_element?(view, "#issue-start-design")
+    refute has_element?(view, "#issue-start-architect")
   end
 
   test "a Duplicate issue reads as Duplicate and offers no start", %{conn: conn, project: project} do
@@ -309,10 +301,10 @@ defmodule RailWeb.IssueLiveTest do
     expect(Git, :get_or_create_worktree, fn _project, _task -> {:error, "no checkout"} end)
     allow(Git, self(), view.pid)
 
-    view |> element("#issue-start-product") |> render_click()
+    view |> element("#issue-start-plan") |> render_click()
 
     assert has_element?(view, "#flash-error", "Could not create the worktree: no checkout")
-    assert has_element?(view, "#issue-start-product")
+    assert has_element?(view, "#issue-start-plan")
     refute has_element?(view, "#issue-task-link")
     refute Repo.get_by(Task, issue_id: issue.id)
   end
@@ -458,24 +450,24 @@ defmodule RailWeb.IssueLiveTest do
     allow(Git, self(), view.pid)
     allow(Tools, self(), view.pid)
 
-    view |> element("#issue-start-product") |> render_click()
+    view |> element("#issue-start-plan") |> render_click()
     assert has_element?(view, "#flash-error", "Could not create the worktree: no checkout")
 
-    view |> element("#issue-start-product") |> render_click()
+    view |> element("#issue-start-plan") |> render_click()
     assert has_element?(view, "#flash-error", "Could not start the agent: :enoent")
 
     assert {:ok, dispatch_view, _html} = live(conn, ~p"/issues/#{dispatch_issue.identifier}")
     allow(Git, self(), dispatch_view.pid)
     allow(Tools, self(), dispatch_view.pid)
 
-    dispatch_view |> element("#issue-start-product") |> render_click()
+    dispatch_view |> element("#issue-start-plan") |> render_click()
     assert has_element?(dispatch_view, "#flash-error", "Dispatch is switched off, so no agent was started.")
 
     assert {:ok, other_view, _html} = live(conn, ~p"/issues/#{other_issue.identifier}")
     allow(Git, self(), other_view.pid)
     allow(Tools, self(), other_view.pid)
 
-    other_view |> element("#issue-start-product") |> render_click()
+    other_view |> element("#issue-start-plan") |> render_click()
     assert has_element?(other_view, "#flash-error", "Could not start: :unavailable")
   end
 

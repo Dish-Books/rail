@@ -30,7 +30,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "List Tasks Issue"})
 
-    {:ok, task} = Pipeline.create_task(issue, :product)
+    {:ok, task} = Pipeline.create_task(issue, :plan)
 
     %{project: project, issue: issue, task: task}
   end
@@ -45,7 +45,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
   test "filters tasks by stage", %{project: project, task: task} do
     {:ok, %Task{id: prod_id}} =
       Pipeline.update_task(task, %{
-        stage: :product
+        stage: :plan
       })
 
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -65,7 +65,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     {:ok, issue_7103} = Issues.create_issue(system_scope(), project, %{description: "Task 7103"})
 
-    {:ok, %Task{id: eng_q_id}} = Pipeline.create_task(issue_7103, :product)
+    {:ok, %Task{id: eng_q_id}} = Pipeline.create_task(issue_7103, :plan)
 
     {:ok, %Task{id: eng_q_id}} =
       Pipeline.update_task(Repo.get!(Task, eng_q_id), %{
@@ -89,11 +89,11 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     {:ok, issue_7104} = Issues.create_issue(system_scope(), project, %{description: "Task 7104"})
 
-    {:ok, t_eng_other} = Pipeline.create_task(issue_7104, :product)
+    {:ok, t_eng_other} = Pipeline.create_task(issue_7104, :plan)
 
     {:ok, %Task{id: eng_other_id}} = Pipeline.update_task(t_eng_other, %{stage: :engineer})
 
-    assert [%Task{id: ^prod_id}] = Pipeline.list_tasks(project_id: project.id, stage: :product)
+    assert [%Task{id: ^prod_id}] = Pipeline.list_tasks(project_id: project.id, stage: :plan)
 
     engineer_ids = [project_id: project.id, stage: :engineer] |> Pipeline.list_tasks() |> Enum.map(& &1.id) |> Enum.sort()
     assert engineer_ids == Enum.sort([eng_q_id, eng_other_id])
@@ -122,7 +122,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     {:ok, issue_7105} = Issues.create_issue(system_scope(), project, %{description: "Beta"})
 
-    {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7105, :product)
+    {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7105, :plan)
 
     assert [%Task{id: ^id2}, %Task{id: ^id1}] =
              Pipeline.list_tasks(project_id: project.id, order_by: [desc: :inserted_at])
@@ -176,7 +176,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     {:ok, issue_7106} = Issues.create_issue(system_scope(), p2, %{description: "P2 Task"})
 
-    {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7106, :product)
+    {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7106, :plan)
 
     all_tasks_system = Pipeline.list_tasks()
     all_ids_system = Enum.map(all_tasks_system, & &1.id)
@@ -228,7 +228,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
         {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Task #{n}"})
         {:ok, issue} = Issues.update_issue(issue, %{owner_user_id: owner_id})
-        {:ok, task} = Pipeline.create_task(issue, :product)
+        {:ok, task} = Pipeline.create_task(issue, :plan)
         task
       end
 

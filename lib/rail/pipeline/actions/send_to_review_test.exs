@@ -125,9 +125,9 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
   end
 
   test "refuses a task that has not reached engineer", %{task: task, run: run} do
-    {:ok, _moved} = Pipeline.update_task(task, %{stage: :architect})
+    {:ok, _moved} = Pipeline.update_task(task, %{stage: :plan})
 
-    assert {:error, {:invalid_stage, :architect}} = Pipeline.send_to_review(run)
+    assert {:error, {:invalid_stage, :plan}} = Pipeline.send_to_review(run)
   end
 
   test "a project with CI sends nothing to review that CI has not passed", %{project: project, task: task, run: run} do

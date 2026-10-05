@@ -1,6 +1,8 @@
 defmodule Rail.Pipeline.Actions.StartTaskTest do
   use Rail.DataCase, async: true
 
+  import Ecto.Query
+
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -26,12 +28,16 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
     %{issue: issue}
   end
 
-  test "starts the task at architect, running the architect role", %{project: project, issue: issue} do
-    {:ok, %Role{id: role_id}} = Roles.get_role(project_id: project.id, stage: :architect)
+  test "starts the task at Plan with one Plan run, and no product, design or architect run", %{
+    project: project,
+    issue: issue
+  } do
+    {:ok, %Role{id: role_id}} = Roles.get_role(project_id: project.id, stage: :plan)
 
     expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
     expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
 
-    assert {:ok, %Task{stage: :architect, runs: [%Run{role_id: ^role_id}]}} = Pipeline.start_task(issue, :architect)
+    assert {:ok, %Task{id: task_id, stage: :plan, runs: [%Run{role_id: ^role_id}]}} = Pipeline.start_task(issue, :plan)
+    assert [%Run{role_id: ^role_id}] = Repo.all(from r in Run, where: r.task_id == ^task_id)
   end
 end

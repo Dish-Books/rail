@@ -19,7 +19,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveDesignOptionTest do
     end)
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Run Tool Design"})
-    {:ok, task} = Pipeline.create_task(issue, :design)
+    {:ok, task} = Pipeline.create_task(issue, :plan)
     dir = Path.join(task.scratch_path, "design")
     File.mkdir_p!(dir)
     File.write!(Path.join(dir, "round-bar.html"), "<html></html>")

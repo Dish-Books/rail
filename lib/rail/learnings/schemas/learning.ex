@@ -78,6 +78,7 @@ defmodule Rail.Learnings.Schemas.Learning do
   def status_label(:active), do: "Active"
   def status_label(:retired), do: "Retired"
 
+  def role_label(:plan), do: "Plan"
   def role_label(:product), do: "Product"
   def role_label(:design), do: "Designer"
   def role_label(:architect), do: "Architect"

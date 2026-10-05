@@ -120,7 +120,7 @@ defmodule RailWeb.Components.IssueView do
               <p class="text-xs text-slate-500 dark:text-slate-400">Start at</p>
               <div class="flex gap-1.5">
                 <button
-                  :for={stage <- [:product, :design, :architect]}
+                  :for={stage <- [:plan]}
                   type="button"
                   id={"issue-start-#{stage}"}
                   data-qa={"issue-start-#{stage}"}

@@ -20,7 +20,7 @@ defmodule Rail.Pipeline.Actions.GetImplementationPlanTest do
     end)
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "Get Plan"})
-    {:ok, task} = Pipeline.create_task(issue, :architect)
+    {:ok, task} = Pipeline.create_task(issue, :plan)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     %{task: task}

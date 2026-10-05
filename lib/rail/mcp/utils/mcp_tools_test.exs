@@ -6,14 +6,12 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
   alias Rail.Roles.Schemas.Role
 
   setup do
-    stages = [:product, :design, :architect, :engineer, :review, :qa, :demo, :triage]
+    stages = [:plan, :product, :design, :architect, :engineer, :review, :qa, :demo, :triage]
     %{names: Map.new(stages, fn stage -> {stage, %Role{stage: stage} |> mcp_tools() |> Enum.map(& &1["name"])} end)}
   end
 
   test "each stage that writes something is offered exactly its own save tool", %{names: names} do
-    assert names[:product] == ["save_ticket", "knowledge_search"]
-    assert names[:design] == ["save_design_option", "knowledge_search"]
-    assert names[:architect] == ["save_plan", "knowledge_search"]
+    assert names[:plan] == ["save_ticket", "save_design_option", "save_plan", "knowledge_search"]
     assert names[:engineer] == ["commit", "request_merge", "knowledge_search"]
     assert names[:review] == ["save_finding", "save_review", "knowledge_search"]
   end
@@ -60,6 +58,16 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
 
   test "a stage with no output of its own is offered only the knowledge base", %{names: names} do
     assert names[:triage] == ["knowledge_search"]
+
+    # Product, design and architect run inside Plan, on its tools; no run holds those roles now.
+    assert names[:product] == ["knowledge_search"]
+    assert names[:design] == ["knowledge_search"]
+    assert names[:architect] == ["knowledge_search"]
+  end
+
+  test "save_plan takes the plan and, optionally, the design option it was written for" do
+    assert %{"properties" => %{"plan" => _plan, "design" => %{"type" => "string"}}, "required" => ["plan"]} =
+             %Role{stage: :plan} |> mcp_tools() |> Enum.find(&(&1["name"] == "save_plan")) |> Map.fetch!("inputSchema")
   end
 
   test "every role stage is offered knowledge_search" do
