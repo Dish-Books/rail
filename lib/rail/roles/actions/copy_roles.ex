@@ -34,7 +34,7 @@ defmodule Rail.Roles.Actions.CopyRoles do
           name: role.name,
           description: role.description,
           icon_name: role.icon_name,
-          backend_id: role.backend_id,
+          cli: role.cli,
           model: role.model,
           reasoning_effort: role.reasoning_effort,
           system_prompt: role.system_prompt,

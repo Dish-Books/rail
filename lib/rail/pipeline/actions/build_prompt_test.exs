@@ -2,7 +2,6 @@ defmodule Rail.Pipeline.Actions.BuildPromptTest do
   use Rail.DataCase, async: true
 
   alias Rail.Pipeline
-  alias Rail.Tools.Schemas.Backend
 
   test "sends the answer, not the task again, when resuming a session" do
     opts = [
@@ -10,7 +9,7 @@ defmodule Rail.Pipeline.Actions.BuildPromptTest do
       pending_answer: "You asked: archived bills?\nThe answer is: exclude",
       context_snippet: "house rules",
       task_description: "do the thing",
-      backend: %Backend{name: :agy}
+      cli: :agy
     ]
 
     prompt = Pipeline.build_prompt(opts)
@@ -36,7 +35,7 @@ defmodule Rail.Pipeline.Actions.BuildPromptTest do
 
   test "emits role instructions inside tags for Agy on the first run only" do
     first_opts = [
-      backend: %Backend{name: :agy},
+      cli: :agy,
       role_instructions: "Act as a principal engineer.",
       context_snippet: "house rules",
       task_description: "do the thing"
@@ -53,7 +52,7 @@ defmodule Rail.Pipeline.Actions.BuildPromptTest do
     assert first_prompt =~ "do the thing"
 
     resume_opts = [
-      backend: %Backend{name: :agy},
+      cli: :agy,
       conversation_id: "sess-123",
       pending_answer: "My answer",
       role_instructions: "Act as a principal engineer."
@@ -71,7 +70,7 @@ defmodule Rail.Pipeline.Actions.BuildPromptTest do
 
   test "claude omits role instructions from prompt body" do
     opts = [
-      backend: %Backend{name: :claude},
+      cli: :claude,
       role_instructions: "Act as a principal engineer.",
       task_description: "do the thing"
     ]

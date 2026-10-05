@@ -74,7 +74,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
     end
   end
 
-  defp reload(%Run{id: id}), do: Run |> Repo.get(id) |> Repo.preload([:task, role: :backend])
+  defp reload(%Run{id: id}), do: Run |> Repo.get(id) |> Repo.preload([:task, :role])
 
   defp worktree(%Project{} = project, %Task{} = task) do
     case prepare_worktree(project, task) do
@@ -123,7 +123,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
 
     argv =
       Tools.build_args(
-        backend: role.backend,
+        cli: role.cli,
         prompt: message,
         model: role.model,
         reasoning_effort: role.reasoning_effort || "high",

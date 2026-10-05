@@ -38,11 +38,12 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
     File.mkdir_p!(worktree_path)
     on_exit(fn -> File.rm_rf(tmp_dir) end)
 
-    {:ok, backend} = Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+    model = "claude-launch-#{System.unique_integer([:positive])}"
+    backend = ready_backend(model)
     {:ok, seeded} = Roles.get_role(project_id: project.id, stage: :engineer)
 
     {:ok, role} =
-      Roles.update_role(system_scope(), seeded, %{backend_id: backend.id, reserved_cpus: 2, reserved_memory_gb: 4})
+      Roles.update_role(system_scope(), seeded, %{model: model, reserved_cpus: 2, reserved_memory_gb: 4})
 
     issue =
       %Issue{}

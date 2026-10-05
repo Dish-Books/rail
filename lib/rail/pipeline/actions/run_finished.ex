@@ -53,7 +53,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   Settles the run whose OS process just exited, against `outcome`.
   """
   def run_finished(%OsProcess{} = os_process, outcome \\ %{}, opts \\ []) do
-    case Repo.preload(os_process, [run: [:task, role: :backend]], force: true) do
+    case Repo.preload(os_process, [run: [:task, :role]], force: true) do
       %OsProcess{run: %Run{task: %Task{}}} = os_process ->
         run =
           os_process
@@ -234,7 +234,9 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   # for the message that fixes it. One that started CI has CI's say still to come,
   # whether CI runs now or waits in line for its sandbox.
   defp latch_done(%Run{error: error} = run) when is_binary(error), do: run
-  defp latch_done(%Run{status: status} = run) when status in [:running, :waiting_for_resources], do: run
+
+  defp latch_done(%Run{status: status} = run) when status in [:running, :waiting_for_resources, :waiting_for_usage],
+    do: run
 
   defp latch_done(%Run{} = run) do
     {:ok, latched} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
@@ -262,7 +264,8 @@ defmodule Rail.Pipeline.Actions.RunFinished do
 
   # Finishing started another process on this run, running or in line, and the
   # message waits for it.
-  defp drain_queued_message(%Run{status: status} = run, _opts) when status in [:running, :waiting_for_resources], do: run
+  defp drain_queued_message(%Run{status: status} = run, _opts)
+       when status in [:running, :waiting_for_resources, :waiting_for_usage], do: run
 
   defp drain_queued_message(%Run{} = run, opts) do
     if pending_questions(run.task_id) == [] do

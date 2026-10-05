@@ -33,7 +33,7 @@ defmodule Rail.Triage.RunnerTest do
     Repo.update_all(from(t in Thread, where: t.id == ^thread_id), set: [triage_started_at: DateTime.utc_now()])
     test = self()
 
-    expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
       send(test, :agent_ran)
       File.write!(result_path, Jason.encode!(%{"items" => [triage_bug()]}))
       {:ok, ""}
@@ -56,7 +56,7 @@ defmodule Rail.Triage.RunnerTest do
     test = self()
 
     Tools
-    |> expect(:run_agent, fn _backend, _argv, _opts ->
+    |> expect(:run_agent, fn _role, _argv, _opts ->
       send(test, :first_pass)
 
       Triage.handle_slack_event(
@@ -67,7 +67,7 @@ defmodule Rail.Triage.RunnerTest do
       File.write!(result_path, Jason.encode!(%{"items" => []}))
       {:ok, ""}
     end)
-    |> expect(:run_agent, fn _backend, _argv, _opts ->
+    |> expect(:run_agent, fn _role, _argv, _opts ->
       send(test, :second_pass)
       File.write!(result_path, Jason.encode!(%{"items" => []}))
       {:ok, ""}
@@ -90,7 +90,7 @@ defmodule Rail.Triage.RunnerTest do
     Repo.update_all(from(t in Thread, where: t.id == ^thread_id), set: [triage_started_at: DateTime.utc_now()])
     test = self()
 
-    expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
       send(test, :agent_ran)
       File.write!(result_path, Jason.encode!(%{"items" => []}))
       {:ok, ""}
@@ -103,8 +103,32 @@ defmodule Rail.Triage.RunnerTest do
     assert_receive :agent_ran, 5_000
   end
 
+  test "a pass that waited for usage runs again at the reset", %{thread: %{id: thread_id}, result_path: result_path} do
+    Repo.update_all(from(t in Thread, where: t.id == ^thread_id), set: [status: :waiting])
+    runner = start_supervised!({Runner, enabled: true, retry_after: 60_000})
+    _recovered = :sys.get_state(runner)
+    test = self()
+
+    Tools
+    |> expect(:run_agent, fn _role, _argv, _opts ->
+      send(test, :waited)
+      {:error, {:waiting_for_usage, DateTime.add(DateTime.utc_now(), 300, :millisecond)}}
+    end)
+    |> expect(:run_agent, fn _role, _argv, _opts ->
+      send(test, :ran_after_reset)
+      File.write!(result_path, Jason.encode!(%{"items" => []}))
+      {:ok, ""}
+    end)
+
+    Phoenix.PubSub.broadcast(Rail.PubSub, "triage", {:triage_scheduled, thread_id, 0})
+
+    assert_receive :waited, 5_000
+    refute_receive :ran_after_reset, 100
+    assert_receive :ran_after_reset, 5_000
+  end
+
   test "a pass that crashes says so on its thread and lets go of it", %{thread: %{id: thread_id}} do
-    stub(Tools, :run_agent, fn _backend, _argv, _opts -> raise "agent exploded" end)
+    stub(Tools, :run_agent, fn _role, _argv, _opts -> raise "agent exploded" end)
 
     start_supervised!({Runner, enabled: true})
 

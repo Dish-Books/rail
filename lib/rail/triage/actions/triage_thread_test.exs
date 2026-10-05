@@ -71,7 +71,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     bug: bug,
     result_path: result_path
   } do
-    expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
       File.write!(result_path, Jason.encode!(%{"title" => "Tasks stuck at Design", "items" => [bug]}))
       {:ok, ""}
     end)
@@ -109,7 +109,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     request: request,
     result_path: result_path
   } do
-    expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
       File.write!(result_path, Jason.encode!(%{"items" => [request]}))
       {:ok, ""}
     end)
@@ -124,7 +124,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     thread: %{id: thread_id, external_id: ts} = thread,
     result_path: result_path
   } do
-    expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
       File.write!(
         result_path,
         Jason.encode!(%{
@@ -172,7 +172,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
 
     {:ok, %{id: issue_id}} = Issues.create_issue(system_scope(), project, %{title: "Wait times"})
 
-    expect(Tools, :run_agent, fn _backend, argv, _opts ->
+    expect(Tools, :run_agent, fn _role, argv, _opts ->
       assert Enum.any?(argv, &(&1 =~ "search Linear for one that already covers the item" and &1 =~ "on the TRI team"))
       refute thread |> Thread.scratch_path() |> Path.join("issues.md") |> File.exists?()
       File.write!(result_path, Jason.encode!(%{"items" => [Map.put(request, "existing_issue", "TRI-23")]}))
@@ -189,7 +189,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     thread: thread,
     result_path: result_path
   } do
-    expect(Tools, :run_agent, fn _backend, argv, _opts ->
+    expect(Tools, :run_agent, fn _role, argv, _opts ->
       brief = Enum.find(argv, &(&1 =~ "Triage the Slack thread in"))
       assert brief =~ "Where the issue should be linked, write `{issue link}`"
       assert brief =~ "the reply says the item is already tracked in that issue, giving its identifier"
@@ -206,7 +206,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     thread: thread,
     result_path: result_path
   } do
-    expect(Tools, :run_agent, fn _backend, argv, _opts ->
+    expect(Tools, :run_agent, fn _role, argv, _opts ->
       brief = Enum.find(argv, &(&1 =~ "Triage the Slack thread in"))
       assert brief =~ "channel is external, shared with people outside the team"
       assert brief =~ "never write `{issue link}` and never name a Linear issue or its identifier in a reply"
@@ -244,7 +244,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
       })
     end)
 
-    expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
       File.write!(result_path, Jason.encode!(%{"items" => [Map.put(request, "existing_issue", "TRI-31")]}))
       {:ok, ""}
     end)
@@ -261,7 +261,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     request: request,
     result_path: result_path
   } do
-    expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
       File.write!(
         result_path,
         Jason.encode!(%{
@@ -310,7 +310,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
       "summary" => "Fixed in TRI-9."
     }
 
-    expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
       File.write!(result_path, Jason.encode!(%{"items" => [bug, fixed]}))
       {:ok, ""}
     end)
@@ -327,7 +327,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
         })
       )
 
-    expect(Tools, :run_agent, fn _backend, argv, _opts ->
+    expect(Tools, :run_agent, fn _role, argv, _opts ->
       assert Enum.any?(argv, &(&1 =~ "`stuck-at-design`" and &1 =~ "`switcher-resets` (settled"))
 
       widened = Map.put(bug, "summary", "Both BILL-88 and BILL-91.")
@@ -386,7 +386,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
         })
       )
 
-    expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
       assert thread |> Thread.scratch_path() |> Path.join("thread.md") |> File.read!() =~ "PostHog (bot)"
 
       thread
@@ -405,10 +405,10 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
 
   test "the agent gets an MCP token whose hash the thread holds only while the pass runs", %{
     thread: %{id: thread_id} = thread,
-    role: %{backend_id: backend_id},
+    role: %{id: role_id},
     result_path: result_path
   } do
-    expect(Tools, :run_agent, fn %{id: ^backend_id}, argv, opts ->
+    expect(Tools, :run_agent, fn %{id: ^role_id}, argv, opts ->
       assert %{"RAIL_MCP_TOKEN" => token} = opts[:env]
       assert opts[:timeout] == to_timeout(minute: 30)
       assert File.dir?(opts[:cd])
@@ -437,7 +437,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     git!(remote, ["commit", "-m", "add prompt"])
     git!(project.clone_path, ["fetch", "origin", "main"])
 
-    expect(Tools, :run_agent, fn _backend, argv, _opts ->
+    expect(Tools, :run_agent, fn _role, argv, _opts ->
       assert ["--append-system-prompt", "From the repo."] in Enum.chunk_every(argv, 2, 1)
       File.write!(result_path, Jason.encode!(%{"items" => []}))
       {:ok, ""}
@@ -450,7 +450,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     thread: thread,
     result_path: result_path
   } do
-    expect(Tools, :run_agent, fn _backend, argv, _opts ->
+    expect(Tools, :run_agent, fn _role, argv, _opts ->
       assert ["--append-system-prompt", "You triage."] in Enum.chunk_every(argv, 2, 1)
       File.write!(result_path, Jason.encode!(%{"items" => []}))
       {:ok, ""}
@@ -460,7 +460,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
   end
 
   test "a pass held by another snoozes", %{thread: thread, result_path: result_path} do
-    expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
       assert {:snooze, 30} = Triage.triage_thread(thread)
       File.write!(result_path, Jason.encode!(%{"items" => []}))
       {:ok, ""}
@@ -491,7 +491,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
   } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "triage")
 
-    expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
       Triage.handle_slack_event(
         workspace,
         slack_message_event(channel, %{"ts" => "1790000300.000100", "thread_ts" => thread.external_id})
@@ -561,7 +561,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
             {{:error, :timeout}, "Triage was still running after 30 minutes, so it was stopped."},
             {{:error, :dispatch_disabled}, "Dispatch is switched off, so triage did not run."}
           ] do
-        expect(Tools, :run_agent, fn _backend, _argv, _opts -> outcome end)
+        expect(Tools, :run_agent, fn _role, _argv, _opts -> outcome end)
 
         assert :ok = Triage.triage_thread(thread)
         assert %Thread{error: ^error} = Repo.get!(Thread, thread_id)
@@ -586,7 +586,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     end
 
     test "when the result is missing or malformed", %{thread: %{id: thread_id} = thread, result_path: result_path} do
-      expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+      expect(Tools, :run_agent, fn _role, _argv, _opts ->
         File.write!(result_path, "{not json")
         {:ok, ""}
       end)
@@ -645,7 +645,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
       end
     end)
 
-    expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
       read = thread |> Thread.scratch_path() |> Path.join("thread.md") |> File.read!()
       assert read =~ "Dan Okafor · "
       assert read =~ "Same on BILL-91"
@@ -677,7 +677,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
         slack_message_event(channel, %{"ts" => "1790000100.000200", "thread_ts" => thread.external_id, "text" => "+1"})
       )
 
-    expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
       rewritten =
         Map.merge(bug, %{
           "reply" => "Couldn't reproduce yet.",
@@ -733,7 +733,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
 
       path = Path.join([Thread.scratch_path(thread), "images", "1790000100.000200-1.png"])
 
-      expect(Tools, :run_agent, fn _backend, argv, _opts ->
+      expect(Tools, :run_agent, fn _role, argv, _opts ->
         read = thread |> Thread.scratch_path() |> Path.join("thread.md") |> File.read!()
 
         assert read =~
@@ -780,7 +780,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
 
       path = Path.join([Thread.scratch_path(thread), "images", "1790000100.000200-1.png"])
 
-      expect(Tools, :run_agent, fn _backend, argv, _opts ->
+      expect(Tools, :run_agent, fn _role, argv, _opts ->
         read = thread |> Thread.scratch_path() |> Path.join("thread.md") |> File.read!()
 
         assert read =~
@@ -837,7 +837,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
 
       path = Path.join([Thread.scratch_path(thread), "images", "1790000600.000100-1.jpg"])
 
-      expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+      expect(Tools, :run_agent, fn _role, _argv, _opts ->
         read = thread |> Thread.scratch_path() |> Path.join("thread.md") |> File.read!()
 
         assert read =~
@@ -879,7 +879,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
           })
         )
 
-      expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+      expect(Tools, :run_agent, fn _role, _argv, _opts ->
         read = thread |> Thread.scratch_path() |> Path.join("thread.md") |> File.read!()
         assert read =~ "this button is broken\n\nImage attached, but Rail could not read it: button.png\n"
         File.write!(result_path, Jason.encode!(%{"items" => [bug]}))
@@ -909,7 +909,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
           })
         )
 
-      expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+      expect(Tools, :run_agent, fn _role, _argv, _opts ->
         read = thread |> Thread.scratch_path() |> Path.join("thread.md") |> File.read!()
         assert read =~ ~r/### 1790000100\.000200 · [^\n]+\n\nA file was attached, but Rail could not read it\.\n/
         File.write!(result_path, Jason.encode!(%{"items" => []}))
@@ -950,7 +950,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
       {:ok, thread} = Triage.handle_slack_event(workspace, slack_message_event(channel, reply))
       stub_slack(users: %{"U_PRIYA" => "Priya"}, replies: [parent, reply])
 
-      expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+      expect(Tools, :run_agent, fn _role, _argv, _opts ->
         assert [] = File.ls!(images)
         refute thread |> Thread.scratch_path() |> Path.join("thread.md") |> File.read!() =~ "Image attached"
         File.write!(result_path, Jason.encode!(%{"items" => []}))
@@ -979,7 +979,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
       embedding: [1.0]
     )
 
-    expect(Tools, :run_agent, fn _backend, argv, _opts ->
+    expect(Tools, :run_agent, fn _role, argv, _opts ->
       prompt = Enum.join(argv, " ")
       assert prompt =~ "What this project has learned"
       assert prompt =~ "- Product: Up next is ordered by wait; that is expected Why: Decided on RAIL-12"
@@ -990,5 +990,25 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     assert :ok = Triage.triage_thread(thread)
     assert_received {:embedded, "Approved BILL-88" <> _rest, "RETRIEVAL_QUERY"}
     assert [] = Repo.all(Rail.Learnings.Schemas.LearningRetrieval)
+  end
+
+  test "a pass that waits for usage lets go of its thread with no error, and says when to come back", %{
+    thread: %{id: thread_id} = thread
+  } do
+    reset = DateTime.shift(DateTime.utc_now(), hour: 2)
+    expect(Tools, :run_agent, fn _role, _argv, _opts -> {:error, {:waiting_for_usage, reset}} end)
+
+    assert {:waiting_for_usage, ^reset} = Triage.triage_thread(thread)
+    assert %Thread{error: nil, triage_started_at: nil, mcp_token_hash: nil} = Repo.get!(Thread, thread_id)
+  end
+
+  test "a pass no signed-in account can run says so, as a run would", %{thread: %{id: thread_id} = thread} do
+    error =
+      "No signed-in account offers claude-opus-5-5. Sign one in on Settings › Backends, or pick another model for Triage."
+
+    expect(Tools, :run_agent, fn _role, _argv, _opts -> {:error, error} end)
+
+    assert :ok = Triage.triage_thread(thread)
+    assert %Thread{error: ^error} = Repo.get!(Thread, thread_id)
   end
 end

@@ -20,16 +20,13 @@ defmodule Rail.Roles.Actions.ListRolesTest do
       })
       |> Repo.insert!()
 
-    {:ok, backend} =
-      Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
-
-    %{backend: backend, project: project}
+    %{project: project}
   end
 
-  test "lists roles for a project ordered by position and inserted_at", %{backend: backend, project: project} do
+  test "lists roles for a project ordered by position and inserted_at", %{project: project} do
     {:ok, %Role{id: role1_id}} =
       Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
+        cli: :claude,
         name: "Second Role",
         position: 2,
         model: "claude-opus-5-5",
@@ -38,7 +35,7 @@ defmodule Rail.Roles.Actions.ListRolesTest do
 
     {:ok, %Role{id: role2_id}} =
       Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
+        cli: :claude,
         name: "First Role",
         position: 1,
         model: "claude-opus-5-5",
@@ -47,7 +44,7 @@ defmodule Rail.Roles.Actions.ListRolesTest do
 
     {:ok, %Role{id: role3_id}} =
       Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
+        cli: :claude,
         name: "Third Role",
         position: 2,
         model: "claude-opus-5-5",
@@ -58,12 +55,12 @@ defmodule Rail.Roles.Actions.ListRolesTest do
              Roles.list_roles(project.id)
   end
 
-  test "lists roles with system scope", %{backend: backend, project: project} do
+  test "lists roles with system scope", %{project: project} do
     scope = Scope.for_system()
 
     {:ok, %Role{id: role_id}} =
       Roles.create_role(scope, project, %{
-        backend_id: backend.id,
+        cli: :claude,
         name: "Engineer",
         model: "claude-opus-5-5",
         system_prompt: "You are an expert agent."
@@ -72,7 +69,7 @@ defmodule Rail.Roles.Actions.ListRolesTest do
     assert [%Role{id: ^role_id}] = Roles.list_roles(project.id)
   end
 
-  test "filters roles strictly to the requested project", %{backend: backend, project: project_a} do
+  test "filters roles strictly to the requested project", %{project: project_a} do
     scope = Scope.for_system()
 
     {:ok, project_b} =
@@ -87,7 +84,7 @@ defmodule Rail.Roles.Actions.ListRolesTest do
 
     {:ok, %Role{id: role_a_id}} =
       Roles.create_role(scope, project_a, %{
-        backend_id: backend.id,
+        cli: :claude,
         name: "Role in Project A",
         model: "claude-opus-5-5",
         system_prompt: "You are an expert agent."
@@ -95,7 +92,7 @@ defmodule Rail.Roles.Actions.ListRolesTest do
 
     {:ok, _role_b} =
       Roles.create_role(scope, project_b, %{
-        backend_id: backend.id,
+        cli: :claude,
         name: "Role in Project B",
         model: "claude-opus-5-5",
         system_prompt: "You are an expert agent."

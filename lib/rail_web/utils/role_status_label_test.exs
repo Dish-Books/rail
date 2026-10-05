@@ -20,6 +20,7 @@ defmodule RailWeb.Utils.RoleStatusLabelTest do
     assert role_status_label(role, %Run{status: :finished, error: "boom"}, task) == "failed"
     assert role_status_label(role, %Run{status: :finished}, task) == "stopped"
     assert role_status_label(role, %Run{status: :waiting_for_resources}, task) == "waiting for resources"
+    assert role_status_label(role, %Run{status: :waiting_for_usage}, task) == "waiting for usage"
   end
 
   test "the role for the stage the task sits at says what to go and read" do

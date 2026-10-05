@@ -1,8 +1,6 @@
 defmodule Rail.Pipeline.Actions.BuildPrompt do
   @moduledoc false
 
-  alias Rail.Tools.Schemas.Backend
-
   @doc """
   Constructs the agent prompt string passed via `-p`.
 
@@ -25,7 +23,7 @@ defmodule Rail.Pipeline.Actions.BuildPrompt do
     has_answer = is_binary(answer) and String.trim(answer) != ""
 
     role_instructions =
-      if claude?(opts[:backend]) do
+      if opts[:cli] == :claude do
         nil
       else
         opts[:role_instructions] || opts[:system_prompt]
@@ -84,7 +82,4 @@ defmodule Rail.Pipeline.Actions.BuildPrompt do
   end
 
   defp maybe_append_plan(buffer, _empty_plan), do: buffer
-
-  defp claude?(%Backend{name: name}), do: name == :claude
-  defp claude?(_other_backend), do: false
 end

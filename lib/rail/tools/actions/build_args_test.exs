@@ -2,7 +2,6 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
   use Rail.DataCase, async: true
 
   alias Rail.Tools
-  alias Rail.Tools.Schemas.Backend
 
   setup do
     config =
@@ -21,7 +20,7 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
 
   test "builds standard Claude args in exact flag order", %{rail_mcp_config: rail_mcp_config} do
     opts = [
-      backend: %Backend{name: :claude},
+      cli: :claude,
       prompt: "Fix the bug",
       model: "claude-opus-5-5-20250219",
       effort: "high"
@@ -50,7 +49,7 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
 
   test "builds read-only Claude args with tools empty string", %{rail_mcp_config: rail_mcp_config} do
     opts = %{
-      backend: %Backend{name: :claude},
+      cli: :claude,
       prompt: "Review the code",
       model: "claude-3-5-sonnet-20241022",
       effort: "medium",
@@ -88,7 +87,7 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
     rail_mcp_config: rail_mcp_config
   } do
     for opts <- [[], [read_only: true], [mcp: false]] do
-      args = Tools.build_args([backend: %Backend{name: :claude}, prompt: "Go", model: "m"] ++ opts)
+      args = Tools.build_args([cli: :claude, prompt: "Go", model: "m"] ++ opts)
 
       assert ["--mcp-config", rail_mcp_config, "--strict-mcp-config", "--allowedTools", "mcp__rail"] ==
                Enum.slice(args, Enum.find_index(args, &(&1 == "--mcp-config")), 5)
@@ -99,7 +98,7 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
 
   test "appends the role prompt to Claude's own and attaches --resume when present" do
     opts = [
-      backend: %Backend{name: :claude},
+      cli: :claude,
       prompt: "Do work",
       model: "claude-opus-5-5",
       system_prompt: "Act as QA engineer.",
@@ -120,7 +119,7 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
 
   test "omits empty system-prompt and resume from Claude args" do
     opts = [
-      backend: %Backend{name: :claude},
+      cli: :claude,
       prompt: "Run",
       model: "claude-opus-5-5",
       system_prompt: "   ",
@@ -135,7 +134,7 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
 
   test "builds standard Agy args in exact flag order" do
     opts = [
-      backend: %Backend{name: :agy},
+      cli: :agy,
       prompt: "Refactor auth",
       model: "gemini-2.5-pro",
       effort: "high",
@@ -166,7 +165,7 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
 
   test "builds read-only Agy args with mode plan and no skip-permissions" do
     opts = %{
-      backend: %Backend{name: :agy},
+      cli: :agy,
       prompt: "Plan the feature",
       model: "gemini-2.5-flash",
       reasoning_effort: "low",
@@ -195,7 +194,7 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
 
   test "attaches --conversation for Agy resume turn" do
     opts = [
-      backend: %Backend{name: :agy},
+      cli: :agy,
       prompt: "Continue",
       model: "gemini-2.5-pro",
       conversation_id: "conv-xyz-789"
@@ -230,7 +229,7 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
 
   test "ignores whitespace in agy add_dir, log_file, and conversation" do
     opts = [
-      backend: %Backend{name: :agy},
+      cli: :agy,
       prompt: "Terse",
       model: "gemini",
       work_dir: "   ",

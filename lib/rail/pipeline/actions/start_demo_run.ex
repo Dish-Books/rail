@@ -45,7 +45,7 @@ defmodule Rail.Pipeline.Actions.StartDemoRun do
     prompt =
       Pipeline.build_prompt(
         task: task,
-        backend: role.backend,
+        cli: role.cli,
         role_instructions: role.system_prompt,
         context_snippet: brief(task),
         pending_answer: run.pending_answer,
@@ -54,7 +54,7 @@ defmodule Rail.Pipeline.Actions.StartDemoRun do
 
     args =
       Tools.build_args(
-        backend: role.backend,
+        cli: role.cli,
         prompt: prompt,
         model: role.model,
         reasoning_effort: role.reasoning_effort || "high",

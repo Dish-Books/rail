@@ -19,8 +19,6 @@ defmodule Rail.Tools.Actions.StartCommandProcessTest do
     File.mkdir_p!(worktree_path)
     on_exit(fn -> File.rm_rf(tmp_dir) end)
 
-    {:ok, backend} = Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
-
     project =
       %Project{}
       |> Project.changeset(%{
@@ -35,7 +33,7 @@ defmodule Rail.Tools.Actions.StartCommandProcessTest do
 
     {:ok, role} =
       Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
+        cli: :claude,
         stage: :engineer,
         name: "engineer role",
         model: "claude-opus-5-5",

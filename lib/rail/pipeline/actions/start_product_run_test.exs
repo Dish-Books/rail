@@ -22,9 +22,6 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
 
   # Its own project, because starting a run adds a worktree to a real clone.
   setup %{project: %{linear_workspace_id: workspace_id}} do
-    {:ok, backend} =
-      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
-
     scope = system_scope()
     clone_path = create_temp_git_repo()
     git!(clone_path, ["remote", "add", "origin", create_temp_git_repo(prefix: "rail_start_product_remote")])
@@ -48,7 +45,7 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
 
     {:ok, role} =
       Roles.create_role(scope, project, %{
-        backend_id: backend.id,
+        cli: :claude,
         stage: :product,
         name: "product role",
         model: "claude-opus-5-5",

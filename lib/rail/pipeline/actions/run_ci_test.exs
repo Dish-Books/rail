@@ -12,8 +12,6 @@ defmodule Rail.Pipeline.Actions.RunCiTest do
   alias Rail.Tools.Schemas.OsProcess
 
   setup do
-    {:ok, backend} = Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
-
     project =
       %Project{}
       |> Project.changeset(%{
@@ -30,7 +28,7 @@ defmodule Rail.Pipeline.Actions.RunCiTest do
 
     {:ok, role} =
       Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
+        cli: :claude,
         stage: :engineer,
         name: "engineer role",
         model: "claude-opus-5-5",

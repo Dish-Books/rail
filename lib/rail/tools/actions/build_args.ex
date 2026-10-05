@@ -1,17 +1,15 @@
 defmodule Rail.Tools.Actions.BuildArgs do
   @moduledoc false
 
-  alias Rail.Tools.Schemas.Backend
-
   @default_effort "high"
 
   @doc """
-  Builds the command-line arguments list for the specified backend.
+  Builds the command-line arguments list for the specified CLI.
 
   Enforces exact flag order, read-only mode permissions, and resume flags per spec 03 §2.
 
   Options:
-  - `:backend`: the `%Backend{}` the runs on
+  - `:cli`: the CLI the role runs on, `:claude` or `:agy`
   - `:prompt`: string prompt
   - `:model`: model name string
   - `:reasoning_effort` or `:effort`: `"high" | "medium" | "low"` (default `"high"`)
@@ -28,7 +26,7 @@ defmodule Rail.Tools.Actions.BuildArgs do
   end
 
   def build_args(opts) when is_map(opts) do
-    if claude?(opts[:backend]) do
+    if opts[:cli] == :claude do
       build_claude_args(opts)
     else
       build_agy_args(opts)
@@ -145,7 +143,4 @@ defmodule Rail.Tools.Actions.BuildArgs do
   end
 
   defp agy_conversation_flags(_other), do: []
-
-  defp claude?(%Backend{name: name}), do: name == :claude
-  defp claude?(_other_backend), do: false
 end

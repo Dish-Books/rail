@@ -111,7 +111,7 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
   } do
     test = self()
 
-    expect(Tools, :run_agent, fn _backend, argv, opts ->
+    expect(Tools, :run_agent, fn _role, argv, opts ->
       dir = opts[:cd]
 
       send(
@@ -178,7 +178,7 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
     {:ok, _issue} = Issues.update_issue(task.issue, %{state: :canceled})
     Repo.insert!(%ProcessedPullRequest{project_id: project.id, number: 7})
 
-    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
       File.write!(Path.join(opts[:cd], "result.json"), ~s({"observations": [{"text": "It was the wrong fix"}]}))
       {:ok, ""}
     end)
@@ -192,7 +192,7 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
   end
 
   test "a second extraction, after a reopen or from the backfill, fetches nothing and runs no agent", %{task: task} do
-    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
       File.write!(Path.join(opts[:cd], "result.json"), ~s({"observations": []}))
       {:ok, ""}
     end)
@@ -205,11 +205,17 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
   end
 
   test "a failed pass, or a project with no curator role, sets no marker and records nothing", %{task: task} do
-    expect(Tools, :run_agent, fn _backend, _argv, _opts -> {:ok, ""} end)
+    expect(Tools, :run_agent, fn _role, _argv, _opts -> {:ok, ""} end)
     assert {:error, :unreadable} = Learnings.extract_task_learnings(task)
 
-    expect(Tools, :run_agent, fn _backend, _argv, _opts -> {:error, :timeout} end)
+    expect(Tools, :run_agent, fn _role, _argv, _opts -> {:error, :timeout} end)
     assert {:error, :timeout} = Learnings.extract_task_learnings(task)
+
+    no_account =
+      "No signed-in account offers claude-opus-5-5. Sign one in on Settings › Backends, or pick another model for Curator."
+
+    expect(Tools, :run_agent, fn _role, _argv, _opts -> {:error, no_account} end)
+    assert {:error, ^no_account} = Learnings.extract_task_learnings(task)
 
     stub(Roles, :get_role, fn _by -> {:error, :role_not_found} end)
     assert {:error, :no_role} = Learnings.extract_task_learnings(task)
@@ -221,7 +227,7 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
   test "a task that never opened a pull request is read without one", %{project: project} do
     plain = learnings_task(project, "EXT-2")
 
-    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
       refute File.exists?(Path.join(opts[:cd], "compare.diff"))
       File.write!(Path.join(opts[:cd], "result.json"), ~s({"observations": []}))
       {:ok, ""}
@@ -236,7 +242,7 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
     finished = learnings_task(project, "EXT-3")
     failing = learnings_task(project, "EXT-4")
 
-    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
       send(test, {:dir, opts[:cd]})
       File.write!(Path.join(opts[:cd], "result.json"), ~s({"observations": []}))
       {:ok, ""}
@@ -246,7 +252,7 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
     assert_received {:dir, dir}
     refute File.exists?(dir)
 
-    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
       send(test, {:dir, opts[:cd]})
       {:error, {:exit, 1}}
     end)

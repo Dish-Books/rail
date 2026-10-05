@@ -27,8 +27,8 @@ defmodule Rail.Tools.Follower do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Repo
+  alias Rail.Roles.Schemas.Role
   alias Rail.Tools.FollowerRegistry
-  alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
 
   @default_tail_interval 120
@@ -68,8 +68,8 @@ defmodule Rail.Tools.Follower do
   @doc """
   Starts a new Follower GenServer.
 
-  `os_process` must carry its `run`, preloaded down to `role: :backend` -- the run
-  seeds the event state and the backend says what stream format to parse.
+  `os_process` must carry its `run`, preloaded down to its `role` -- the run
+  seeds the event state and the role's CLI says what stream format to parse.
   """
   def start_link({%OsProcess{} = os_process, opts}) when is_list(opts) do
     name = {:via, Registry, {FollowerRegistry, os_process.id}}
@@ -98,13 +98,13 @@ defmodule Rail.Tools.Follower do
 
   @impl true
   def init({%OsProcess{} = os_process, opts}) do
-    %OsProcess{stream_path: stream_path, run: %Run{role: %{backend: %Backend{} = backend}} = run} = os_process
+    %OsProcess{stream_path: stream_path, run: %Run{role: %Role{cli: cli}} = run} = os_process
 
     tail_interval_ms = Keyword.get(opts, :tail_interval_ms, @default_tail_interval)
     batch_interval_ms = Keyword.get(opts, :batch_interval_ms, @default_batch_interval)
 
     event_state =
-      new_event_state(if(OsProcess.command?(os_process), do: :command, else: backend),
+      new_event_state(if(OsProcess.command?(os_process), do: :command, else: cli),
         conversation_id: run.conversation_id
       )
 

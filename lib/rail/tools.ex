@@ -35,7 +35,7 @@ defmodule Rail.Tools do
   end
 
   defdelegate run(executable, args, opts \\ []), to: Actions.Run
-  defdelegate run_agent(backend, argv, opts), to: Actions.RunAgent
+  defdelegate run_agent(role, argv, opts), to: Actions.RunAgent
   defdelegate spawn_os_process(executable, args, opts \\ []), to: Actions.SpawnOsProcess
   defdelegate connect_port(port, owner), to: Actions.ConnectPort
   defdelegate os_process_alive?(pid), to: Actions.OsProcessAlive
@@ -57,6 +57,8 @@ defmodule Rail.Tools do
 
   defdelegate build_args(opts), to: Actions.BuildArgs
   defdelegate start_os_process(run, argv), to: Actions.StartOsProcess
+  defdelegate start_after_usage_reset(os_process_id), to: Actions.StartAfterUsageReset
+  defdelegate get_usage_wait(run), to: Actions.GetUsageWait
   defdelegate start_command_process(run, kind, command, opts \\ []), to: Actions.StartCommandProcess
   defdelegate stop_os_process(scope, os_process, opts \\ []), to: Actions.StopOsProcess
   defdelegate get_os_process(id), to: Actions.GetOsProcess
@@ -65,10 +67,11 @@ defmodule Rail.Tools do
   defdelegate get_sandbox_capacity(), to: Actions.GetSandboxCapacity
   defdelegate get_queue_position(run), to: Actions.GetQueuePosition
   defdelegate list_sandbox_usage(), to: Actions.ListSandboxUsage
-  defdelegate parse_stream(backend, lines, opts \\ []), to: Actions.ParseStream
+  defdelegate parse_stream(cli, lines, opts \\ []), to: Actions.ParseStream
   defdelegate plain_text(text), to: Actions.PlainText
 
   defdelegate list_backends(), to: Actions.ListBackends
+  defdelegate list_models(), to: Actions.ListModels
   defdelegate get_backend(name), to: Actions.GetBackend
   defdelegate refresh_usage(), to: Actions.RefreshUsage
 

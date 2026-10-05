@@ -68,6 +68,67 @@ defmodule Rail.Tools.Schemas.Backend do
     Path.join(root, id)
   end
 
+  @doc "What a CLI is called wherever Rail names it."
+  def cli_name(:claude), do: "Claude Code"
+  def cli_name(:agy), do: "Antigravity CLI"
+  def cli_name(name), do: name |> to_string() |> String.capitalize()
+
+  @doc """
+  What an account is called wherever Rail names it: its CLI, then what the user
+  called it or, failing that, who is signed in to it.
+  """
+  def display_name(%__MODULE__{name: name} = backend) do
+    case short_name(backend) do
+      account when is_binary(account) -> "#{cli_name(name)} · #{account}"
+      nil -> cli_name(name)
+    end
+  end
+
+  @doc "What tells an account apart from the others on its CLI, or nil when nothing does."
+  def short_name(%__MODULE__{} = backend) do
+    Enum.find([backend.label, backend.account_label], &(&1 not in [nil, ""]))
+  end
+
+  @doc "Why a run or a pass could not start: no signed-in account offers its role's model."
+  def no_account_error(model, role_name) do
+    "No signed-in account offers #{model}. Sign one in on Settings › Backends, or pick another model for #{role_name}."
+  end
+
+  @doc """
+  How much room `backend` has for a new conversation on `model`, read from the
+  usage its last probe stored.
+
+  Each of the 5-hour, weekly and model's weekly windows is measured as its
+  percent left over the fraction of its length still to run, so a window about
+  to reset stands higher than one that must last for days. The account stands
+  at its tightest window, and at 0 while any window is used up. Returns its
+  `standing`, its `tightest` window, the windows `used_up` and when the last of
+  those `resets_at`. A window whose reset has passed counts as fresh.
+  """
+  def calculate_standing(%__MODULE__{usage: usage}, model, now \\ DateTime.utc_now()) do
+    windows =
+      for %{details: details} <- usage || [],
+          window <- windows(details),
+          measured = measure_window(window, model, now),
+          is_map(measured),
+          do: measured
+
+    used_up = Enum.filter(windows, &(&1.remaining_percent <= 0))
+    tightest = Enum.min_by(windows, & &1.measure, fn -> nil end)
+
+    standing =
+      cond do
+        used_up != [] -> 0.0
+        tightest -> tightest.measure
+        true -> 100.0
+      end
+
+    resets_at =
+      used_up |> Enum.map(& &1.resets_at) |> Enum.reject(&is_nil/1) |> Enum.max(DateTime, fn -> nil end)
+
+    %{standing: standing, tightest: tightest, used_up: used_up, resets_at: resets_at}
+  end
+
   @doc """
   Builds a changeset for the configuration the user owns: the label, the
   executable path and the models selectable on it.
@@ -91,6 +152,53 @@ defmodule Rail.Tools.Schemas.Backend do
     |> validate_required([:name, :status])
     |> cast_embed(:usage, with: &usage_group_changeset/2)
   end
+
+  defp windows(%{"windows" => windows}) when is_list(windows), do: windows
+  defp windows(%{"remaining_percent" => percent} = window) when is_number(percent), do: [window]
+  defp windows(_unmeasured), do: []
+
+  # A window's label is what the probe called it; anything but the three windows
+  # a run can spend is left out, as is one the CLI could not measure.
+  defp measure_window(%{"label" => label, "remaining_percent" => percent} = window, model, now)
+       when is_binary(label) and is_number(percent) do
+    with {kind, display, hours} <- window_kind(label, model) do
+      resets_at = parse_reset(window["resets_at"])
+      left = if resets_at, do: DateTime.diff(resets_at, now, :second) / 3600 / hours, else: 1.0
+
+      if left <= 0 do
+        %{kind: kind, label: display, remaining_percent: 100.0, resets_at: nil, measure: 100.0}
+      else
+        percent = percent |> max(0) |> min(100) |> Kernel./(1)
+        %{kind: kind, label: display, remaining_percent: percent, resets_at: resets_at, measure: percent / min(left, 1.0)}
+      end
+    end
+  end
+
+  defp measure_window(_window, _model, _now), do: nil
+
+  defp window_kind(label, _model) when label in ["Session", "5-Hour"], do: {:five_hour, "5-hour", 5}
+  defp window_kind("Weekly", _model), do: {:weekly, "Weekly", 168}
+
+  defp window_kind("Weekly · " <> model_name = label, model) when is_binary(model) do
+    slug = model_name |> String.downcase() |> String.replace([" ", "."], "-")
+    if String.contains?(String.downcase(model), slug), do: {:model_weekly, label, 168}
+  end
+
+  defp window_kind(_label, _model), do: nil
+
+  defp parse_reset(at) when is_binary(at) do
+    case DateTime.from_iso8601(at) do
+      {:ok, at, _offset} -> at
+      {:error, _reason} -> nil
+    end
+  end
+
+  defp parse_reset(at) when is_integer(at) do
+    unit = if at > 10_000_000_000, do: :millisecond, else: :second
+    DateTime.from_unix!(at, unit)
+  end
+
+  defp parse_reset(_unknown), do: nil
 
   # A model with no display name shows as its id rather than as nothing.
   defp model_changeset(model, attrs) do

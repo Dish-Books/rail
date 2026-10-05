@@ -131,7 +131,7 @@ defmodule Rail.Pipeline.Actions.EnterStage do
     prompt =
       Pipeline.build_prompt(
         task: task,
-        backend: role.backend,
+        cli: role.cli,
         role_instructions: role.system_prompt,
         context_snippet: "",
         pending_answer: run.pending_answer,
@@ -140,7 +140,7 @@ defmodule Rail.Pipeline.Actions.EnterStage do
 
     argv =
       Tools.build_args(
-        backend: role.backend,
+        cli: role.cli,
         prompt: prompt,
         model: role.model,
         reasoning_effort: role.reasoning_effort || "high",

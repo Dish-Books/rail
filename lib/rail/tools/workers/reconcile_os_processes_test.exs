@@ -5,7 +5,6 @@ defmodule Rail.Tools.Workers.ReconcileOsProcessesTest do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects.Schemas.Project
   alias Rail.Roles
-  alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Tools.Workers.ReconcileOsProcesses
 
@@ -13,8 +12,6 @@ defmodule Rail.Tools.Workers.ReconcileOsProcessesTest do
     tmp_dir = Path.join(System.tmp_dir!(), "reconcile_worker_#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp_dir)
     on_exit(fn -> File.rm_rf(tmp_dir) end)
-
-    {:ok, backend} = Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
     project =
       %Project{}
@@ -30,7 +27,7 @@ defmodule Rail.Tools.Workers.ReconcileOsProcessesTest do
 
     {:ok, role} =
       Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
+        cli: :claude,
         stage: :engineer,
         name: "reconcile role",
         model: "claude-opus-5-5",

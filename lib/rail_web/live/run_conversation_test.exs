@@ -675,6 +675,183 @@ defmodule RailWeb.Live.RunConversationTest do
     end
   end
 
+  test "the role row names the model and the account the conversation is on, with its tightest window, and each turn names its account",
+       %{task: task, roles: roles, roles_map: roles_map} do
+    work =
+      ready_backend(
+        "claude-opus-5-5",
+        [
+          {"Session", 90.0, DateTime.shift(DateTime.utc_now(), hour: 3)},
+          {"Weekly", 31.0, DateTime.shift(DateTime.utc_now(), day: 4)}
+        ],
+        %{label: "work"}
+      )
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :running,
+        started_at: ~U[2026-09-09 14:05:00.000000Z]
+      })
+
+    turn =
+      Repo.insert!(%OsProcess{
+        run_id: run.id,
+        task_id: task.id,
+        backend_id: work.id,
+        stream_path: "/tmp/#{run.id}.ndjson",
+        status: :running,
+        started_at: ~U[2026-09-09 14:05:00.000000Z]
+      })
+
+    Pipeline.append_run_events(run.id, turn.id, ["[rail] working"])
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+    assert html =~ ~r/id="conversation-model"[^>]*>\s*claude-opus-5-5/
+    assert html =~ ~r/id="conversation-account".*Claude Code · work.*Weekly 31%/s
+    assert html =~ ~r/data-qa="turn-account">Claude Code · work</
+  end
+
+  describe "a turn waiting for usage" do
+    setup %{task: task, roles: roles, roles_map: roles_map} do
+      model = "claude-usage-#{System.unique_integer([:positive])}"
+      {:ok, engineer} = Roles.update_role(system_scope(), roles[:engineer], %{model: model})
+      soon = DateTime.utc_now() |> DateTime.shift(hour: 2) |> DateTime.truncate(:second)
+      later = DateTime.utc_now() |> DateTime.shift(day: 3) |> DateTime.truncate(:second)
+
+      {:ok, run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: engineer.id,
+          status: :waiting_for_usage,
+          started_at: ~U[2026-09-09 14:04:00.000000Z]
+        })
+
+      %{
+        engineer: engineer,
+        later: later,
+        model: model,
+        roles_map: Map.put(roles_map, engineer.id, engineer),
+        run: run,
+        soon: soon
+      }
+    end
+
+    test "lists every account offering the model with its spent window and reset, the earliest first", %{
+      task: task,
+      model: model,
+      roles_map: roles_map,
+      run: run,
+      soon: soon,
+      later: later
+    } do
+      max = ready_backend(model, [{"Session", 0.0, soon}], %{label: "max-2"})
+      work = ready_backend(model, [{"Weekly", 0.0, later}], %{label: "work"})
+      ops = ready_backend(model, [], %{label: "ops", status: :signed_out})
+      # Reset since the turn last tried, and not yet tried again.
+      _roomy = ready_backend(model, [{"Weekly", 15.0, later}], %{label: "roomy"})
+      _down = ready_backend(model, [], %{label: "down", status: :unavailable})
+
+      waiting =
+        Repo.insert!(%OsProcess{
+          run_id: run.id,
+          task_id: task.id,
+          stream_path: "/tmp/#{run.id}.ndjson",
+          status: :waiting_for_usage,
+          started_at: ~U[2026-09-09 14:04:00.000000Z],
+          queued_at: ~U[2026-09-09 14:04:00.000000Z]
+        })
+
+      Pipeline.append_run_events(run.id, waiting.id, [
+        "[rail] Every signed-in account offering #{model} has used up its usage."
+      ])
+
+      html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+      assert html =~ "waiting for usage since"
+      assert html =~ ~s(data-qa="conversation-state-dot" data-state="waiting_for_usage")
+      assert html =~ ~r/id="conversation-account".*no account yet/s
+      assert html =~ "#{model} is used up on every signed-in account"
+
+      assert [max_row, work_row, roomy_row, ops_row, down_row] =
+               html |> Floki.parse_fragment!() |> Floki.find("[data-qa=usage-wait-account]") |> Enum.map(&Floki.text/1)
+
+      assert roomy_row =~ "Weekly 15%" and roomy_row =~ "has room again"
+      assert down_row =~ "unavailable" and down_row =~ "not waited on"
+
+      assert max_row =~ "Claude Code · max-2" and max_row =~ "5-hour 0%"
+      assert work_row =~ "Claude Code · work" and work_row =~ "Weekly 0%"
+      assert ops_row =~ "Claude Code · ops" and ops_row =~ "signed out" and ops_row =~ "not waited on"
+      assert html =~ ~r/id="usage-reset-#{max.id}"[^>]*data-earliest="true"/
+      assert html =~ ~r/id="usage-reset-#{work.id}"[^>]*data-earliest="false"/
+      refute html =~ ~s(id="usage-reset-#{ops.id}")
+
+      assert html =~ ~s(id="usage-banner")
+      assert html =~ "engineer role is waiting for usage"
+      assert html =~ ~s(id="usage-banner-starts-at")
+      assert html =~ ~s(data-at="#{DateTime.to_iso8601(soon)}")
+      refute html =~ ~s(id="waiting-banner")
+      refute html =~ ~s(id="usage-wait-stop")
+    end
+
+    test "a run that has just stopped waiting shows no wait", %{task: task, roles_map: roles_map, run: run} do
+      html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+      refute html =~ ~s(id="usage-banner")
+      refute html =~ ~s(id="usage-wait-card")
+    end
+
+    test "a resumed conversation waits on its own account, and offers to stop", %{
+      task: task,
+      model: model,
+      roles_map: roles_map,
+      run: run,
+      later: later
+    } do
+      work = ready_backend(model, [{"Weekly", 0.0, later}], %{label: "work"})
+      _elsewhere = ready_backend(model, [], %{label: "max-2"})
+      {:ok, run} = Pipeline.update_run(run, %{conversation_id: "conv_pinned"})
+
+      answered =
+        Repo.insert!(%OsProcess{
+          run_id: run.id,
+          task_id: task.id,
+          backend_id: work.id,
+          stream_path: "/tmp/#{run.id}.ndjson",
+          status: :finished,
+          started_at: ~U[2026-09-09 13:31:00.000000Z]
+        })
+
+      waiting =
+        Repo.insert!(%OsProcess{
+          run_id: run.id,
+          task_id: task.id,
+          backend_id: work.id,
+          stream_path: "/tmp/#{run.id}.ndjson",
+          status: :waiting_for_usage,
+          started_at: ~U[2026-09-09 14:10:00.000000Z],
+          queued_at: ~U[2026-09-09 14:10:00.000000Z]
+        })
+
+      Pipeline.append_run_events(run.id, answered.id, ["[rail] the answered turn"])
+      Pipeline.append_run_events(run.id, waiting.id, ["[rail] This conversation lives on Claude Code · work."])
+
+      html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+      assert html =~ "This conversation lives on Claude Code · work"
+      assert html =~ ~s(id="usage-wait-stop")
+
+      assert [only] =
+               html |> Floki.parse_fragment!() |> Floki.find("[data-qa=usage-wait-account]") |> Enum.map(&Floki.text/1)
+
+      assert only =~ "Claude Code · work" and only =~ "Weekly 0%"
+      refute html =~ "max-2"
+      assert html =~ ~r/data-qa="turn-account">Claude Code · work</
+    end
+  end
+
   # A 400px floor overruns the column on an iPad, stacked or in landscape, and pushes the composer out.
   test "the chat pane takes whatever height its column leaves", %{
     task: task,

@@ -22,7 +22,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
         name: "Curator",
         model: "claude-opus-5-5",
         system_prompt: "You curate.",
-        backend_id: "bkd_test_seed"
+        cli: :claude
       })
 
     Req.Test.stub(Client, fn conn ->
@@ -65,7 +65,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     retiring = learning(project, %{rule: "Use SyncIssues", kind: :environment})
     test = self()
 
-    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
       send(
         test,
         {:read, File.read!(Path.join(opts[:cd], "observations.md")), File.read!(Path.join(opts[:cd], "rules.md"))}
@@ -119,7 +119,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     assert %Observation{curator_pass_id: ^pass_id, learning_id: nil} = Repo.reload!(second)
     assert_enqueued(worker: CollectPullRequest, args: %{project_id: project.id, number: 31})
 
-    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
       refute File.read!(Path.join(opts[:cd], "observations.md")) =~ first.id
       File.write!(Path.join(opts[:cd], "result.json"), ~s({"outcomes": [], "proposals": []}))
       {:ok, ""}
@@ -134,7 +134,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     sighting: sighting
   } do
     observation = sighting.(one, %{})
-    expect(Tools, :run_agent, fn _backend, _argv, _opts -> {:error, {:exit, 2}} end)
+    expect(Tools, :run_agent, fn _role, _argv, _opts -> {:error, {:exit, 2}} end)
 
     assert {:error, {{:exit, 2}, %CuratorPass{finished_at: nil, error: "{:exit, 2}"}}} =
              Learnings.curate_learnings(project)
@@ -172,7 +172,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     end)
 
     curate = fn proposals ->
-      expect(Tools, :run_agent, fn _backend, _argv, opts ->
+      expect(Tools, :run_agent, fn _role, _argv, opts ->
         File.write!(Path.join(opts[:cd], "result.json"), Jason.encode!(%{"proposals" => proposals}))
         {:ok, ""}
       end)
@@ -200,7 +200,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
   } do
     early = Enum.map([one, two], &sighting.(&1, %{}))
 
-    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
       File.write!(
         Path.join(opts[:cd], "result.json"),
         Jason.encode!(%{
@@ -224,7 +224,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
 
     later = sighting.(three, %{})
 
-    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
       assert File.read!(Path.join(opts[:cd], "proposals.md")) =~ draft.id
 
       File.write!(
@@ -254,7 +254,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     %{id: active_id} = active = learning(project, %{rule: "Active", kind: :decision})
     seen = sighting.(one, %{})
 
-    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
       File.write!(
         Path.join(opts[:cd], "result.json"),
         Jason.encode!(%{
@@ -324,7 +324,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
       end
     end)
 
-    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
       File.write!(
         Path.join(opts[:cd], "result.json"),
         Jason.encode!(%{
@@ -397,7 +397,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     curate = fn task, rule ->
       seen = sighting.(task, %{})
 
-      expect(Tools, :run_agent, fn _backend, _argv, opts ->
+      expect(Tools, :run_agent, fn _role, _argv, opts ->
         File.write!(
           Path.join(opts[:cd], "result.json"),
           Jason.encode!(%{
@@ -430,7 +430,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "learnings")
     Req.Test.stub(Rail.Slack, fn _conn -> flunk("posted a digest") end)
 
-    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
       File.write!(Path.join(opts[:cd], "result.json"), ~s({"outcomes": [], "proposals": []}))
       {:ok, ""}
     end)
@@ -440,7 +440,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
 
     seen = sighting.(one, %{})
 
-    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
       File.write!(
         Path.join(opts[:cd], "result.json"),
         Jason.encode!(%{
@@ -477,7 +477,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
       end
     end)
 
-    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
       {:ok, _picked} =
         Projects.update_project(system_scope(), project, %{
           "learnings_slack_workspace_id" => workspace.id,
@@ -509,7 +509,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
         name: "Curator",
         model: "claude-opus-5-5",
         system_prompt: "You curate.",
-        backend_id: "bkd_test_seed"
+        cli: :claude
       })
 
     Req.Test.stub(Client, fn conn ->
@@ -546,7 +546,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     end)
 
     for target <- [project, other] do
-      expect(Tools, :run_agent, fn _backend, _argv, opts ->
+      expect(Tools, :run_agent, fn _role, _argv, opts ->
         File.write!(Path.join(opts[:cd], "result.json"), ~s({"outcomes": [], "proposals": []}))
         {:ok, ""}
       end)
@@ -594,7 +594,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
       end
     end)
 
-    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
       File.write!(
         Path.join(opts[:cd], "result.json"),
         Jason.encode!(%{
@@ -637,7 +637,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
 
     later = sighting.(three, %{})
 
-    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
       File.write!(
         Path.join(opts[:cd], "result.json"),
         Jason.encode!(%{"outcomes" => [%{"observation" => later.id, "outcome" => "link", "learning" => rule.id}]})
@@ -654,7 +654,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
   test "the pass's folder is gone after it, whether it finished or failed", %{project: project} do
     test = self()
 
-    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
       send(test, {:dir, opts[:cd]})
       File.write!(Path.join(opts[:cd], "result.json"), ~s({}))
       {:ok, ""}
@@ -664,7 +664,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     assert_received {:dir, dir}
     refute File.exists?(dir)
 
-    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
       send(test, {:dir, opts[:cd]})
       {:error, {:exit, 1}}
     end)
@@ -683,7 +683,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     corrected = sighting.(one, %{source_kind: :diff_comment, learning_id: provisional_id})
     loose = sighting.(two, %{})
 
-    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
       File.write!(
         Path.join(opts[:cd], "result.json"),
         Jason.encode!(%{
@@ -722,7 +722,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     ]
 
     for proposals <- [same, same ++ different] do
-      expect(Tools, :run_agent, fn _backend, _argv, opts ->
+      expect(Tools, :run_agent, fn _role, _argv, opts ->
         File.write!(Path.join(opts[:cd], "result.json"), Jason.encode!(%{"proposals" => proposals}))
         {:ok, ""}
       end)

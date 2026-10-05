@@ -121,7 +121,7 @@ defmodule RailWeb.Settings.BackendsLive do
                   class="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
                 >
                   <.icon name={backend_icon(name)} class="h-4 w-4" />
-                  {display_name(name)}
+                  {Backend.cli_name(name)}
                 </button>
               </div>
             </div>
@@ -184,7 +184,7 @@ defmodule RailWeb.Settings.BackendsLive do
                       class="text-lg font-semibold text-slate-900 dark:text-slate-100"
                       id={"backend-name-#{key}"}
                     >
-                      {display_name(draft["name"])}
+                      {Backend.cli_name(draft["name"])}
                     </span>
                     <span
                       :if={draft["label"] not in [nil, ""]}
@@ -953,10 +953,6 @@ defmodule RailWeb.Settings.BackendsLive do
     |> Ecto.Changeset.traverse_errors(fn {msg, _opts} -> msg end)
     |> Enum.map_join("; ", fn {field, messages} -> "#{field} #{Enum.join(List.wrap(messages), ", ")}" end)
   end
-
-  defp display_name(:claude), do: "Claude Code"
-  defp display_name(:agy), do: "Antigravity CLI"
-  defp display_name(other), do: other |> to_string() |> String.capitalize()
 
   defp backend_icon(:claude), do: "pi-terminal-window"
   defp backend_icon(:agy), do: "pi-arrow-up"

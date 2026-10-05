@@ -13,8 +13,6 @@ defmodule Rail.Pipeline.Actions.RecordDemoTest do
   alias Rail.Tools.Schemas.OsProcess
 
   setup do
-    {:ok, backend} = Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
-
     project =
       %Project{}
       |> Project.changeset(%{
@@ -29,7 +27,7 @@ defmodule Rail.Pipeline.Actions.RecordDemoTest do
 
     {:ok, role} =
       Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
+        cli: :claude,
         stage: :demo,
         name: "demo role",
         model: "claude-opus-5-5",

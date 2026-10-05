@@ -28,10 +28,8 @@ defmodule Rail.Tools.FollowerTest do
   @moduletag :real_spawn
 
   setup %{project: project} do
-    # The Follower reads the stream in its backend's format, and the backend comes
-    # off the run's role.
+    # The Follower reads the stream in its CLI's format, which comes off the run's role.
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
-    %{backend: backend} = Repo.preload(role, :backend)
 
     tmp_dir = Path.join(System.tmp_dir!(), "follower_test_#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp_dir)
@@ -71,7 +69,7 @@ defmodule Rail.Tools.FollowerTest do
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
-      |> Repo.preload(role: :backend)
+      |> Repo.preload(:role)
 
     stream_path = Path.join(tmp_dir, "test.ndjson")
     File.write!(stream_path, "")
@@ -93,7 +91,6 @@ defmodule Rail.Tools.FollowerTest do
     end)
 
     %{
-      backend: backend,
       role: role,
       task: task,
       run: run,
@@ -434,7 +431,7 @@ defmodule Rail.Tools.FollowerTest do
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
-      |> Repo.preload(role: :backend)
+      |> Repo.preload(:role)
 
     stream = Path.join(tmp_dir, "clean_success.ndjson")
     line = ~s({"type":"result","subtype":"success","is_error":false,"session_id":"sess-clean"}\n)
@@ -491,7 +488,7 @@ defmodule Rail.Tools.FollowerTest do
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
-      |> Repo.preload(role: :backend)
+      |> Repo.preload(:role)
 
     stream = Path.join(tmp_dir, "silent_failure.ndjson")
     File.write!(stream, "")
@@ -541,7 +538,7 @@ defmodule Rail.Tools.FollowerTest do
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
-      |> Repo.preload(role: :backend)
+      |> Repo.preload(:role)
 
     stream1 = Path.join(tmp_dir, "err_only.ndjson")
     line1 = ~s({"type":"result","subtype":"error","is_error":true,"session_id":"sess-err1"}\n)
@@ -586,7 +583,7 @@ defmodule Rail.Tools.FollowerTest do
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
-      |> Repo.preload(role: :backend)
+      |> Repo.preload(:role)
 
     stream2 = Path.join(tmp_dir, "err_both.ndjson")
     line2 = ~s({"type":"result","subtype":"error","is_error":true,"session_id":"sess-both"}\n)
@@ -633,7 +630,7 @@ defmodule Rail.Tools.FollowerTest do
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
-      |> Repo.preload(role: :backend)
+      |> Repo.preload(:role)
 
     stream = Path.join(tmp_dir, "port_exit.ndjson")
     line = ~s({"type":"result","subtype":"success","session_id":"sess-port-exit"}\n)
@@ -668,7 +665,6 @@ defmodule Rail.Tools.FollowerTest do
   end
 
   test "detects question in stream and registers it to block task", %{
-    backend: backend,
     tmp_dir: tmp_dir,
     project: %{linear_workspace_id: workspace_id}
   } do
@@ -697,7 +693,7 @@ defmodule Rail.Tools.FollowerTest do
 
     {:ok, role} =
       Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
+        cli: :claude,
         name: "Role 12503",
         model: "claude-opus-5-5",
         system_prompt: "You are an expert agent for role 12503.",
@@ -736,7 +732,7 @@ defmodule Rail.Tools.FollowerTest do
         started_at: DateTime.utc_now()
       })
 
-    run = Repo.preload(run, role: :backend)
+    run = Repo.preload(run, :role)
 
     Pipeline.append_run_events(run.id, nil, ["Completed task implementation successfully."])
 
@@ -805,7 +801,7 @@ defmodule Rail.Tools.FollowerTest do
         conversation_id: "sess-orig"
       })
 
-    run = Repo.preload(run, role: :backend)
+    run = Repo.preload(run, :role)
 
     Pipeline.append_run_events(run.id, nil, ["Completed task implementation successfully."])
 
@@ -858,7 +854,7 @@ defmodule Rail.Tools.FollowerTest do
         conversation_id: "sess-same"
       })
 
-    run = Repo.preload(run, role: :backend)
+    run = Repo.preload(run, :role)
 
     Pipeline.append_run_events(run.id, nil, ["Completed task implementation successfully."])
 
@@ -912,7 +908,7 @@ defmodule Rail.Tools.FollowerTest do
         started_at: DateTime.utc_now()
       })
 
-    run = Repo.preload(run, role: :backend)
+    run = Repo.preload(run, :role)
 
     Pipeline.append_run_events(run.id, nil, ["Completed task implementation successfully."])
 
