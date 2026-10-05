@@ -82,14 +82,15 @@ defmodule RailWeb.Components.DiffRowTest do
              "diff_comment_add"
   end
 
-  # Wrapped rows hang four columns past the indent, and by whole tab stops on a line
-  # with a tab; a plain unindented line takes the stylesheet's four.
+  # Wrapped rows hang four columns past the indent, tabs being four wide, and by whole
+  # tab stops on a line with a tab; a hang of four is the stylesheet's default.
   test "a line carries how far its wrapped rows hang, in columns" do
     for {text, hang} <- [
           {"    x = 1", ["--hang: 8ch"]},
-          {"\tx = 1", ["--hang: 16ch"]},
-          {"  \t  x", ["--hang: 16ch"]},
-          {"x\t= 1", ["--hang: 8ch"]},
+          {"\tx = 1", ["--hang: 8ch"]},
+          {"\t\tx", ["--hang: 12ch"]},
+          {"  \t  x", ["--hang: 12ch"]},
+          {"x\t= 1", []},
           {"x = 1", []}
         ] do
       html =

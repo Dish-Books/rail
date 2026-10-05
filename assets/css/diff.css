@@ -25,13 +25,13 @@
 
 /* A wrapped line's further rows hang by `--hang`, which DiffRow sets past its indent,
  * so they never read as a line of their own. Drawn, not inserted: a copy is the line.
- * The cap keeps a deep indent readable in a narrow pane, in whole tab stops like the hang.
+ * The cap keeps a deep indent readable in a narrow pane, in whole stops of preflight's `tab-size: 4`.
  */
 .diff-text {
   @apply whitespace-pre;
 
   @variant diff-wrap {
-    --wrap-hang: min(var(--hang, 4ch), round(down, 40cqw, 8ch));
+    --wrap-hang: min(var(--hang, 4ch), round(down, 40cqw, 4ch));
     @apply min-w-0 whitespace-pre-wrap wrap-anywhere;
     padding-left: var(--wrap-hang);
     text-indent: calc(-1 * var(--wrap-hang));
