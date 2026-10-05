@@ -22,6 +22,10 @@ defmodule Rail.Pipeline.Utils.PlanSubagentsTest do
     refute Enum.any?(subagents, &Map.has_key?(&1, :tools))
 
     assert product =~ ~r/\AYou are the product agent.\n\n## Working inside Plan/
+    assert product =~ "You are performing the Product role inside Rail's Plan step."
+    assert designer =~ "You are performing the Designer role inside Rail's Plan step."
+    assert architect =~ "You are performing the Architect role inside Rail's Plan step."
+    refute Enum.any?([product, designer, architect], &(&1 =~ "is refused"))
     assert product =~ "save it with the `save_ticket` tool"
     assert product =~ "update the ticket and save it again"
 
@@ -30,7 +34,8 @@ defmodule Rail.Pipeline.Utils.PlanSubagentsTest do
     assert designer =~ "update the options it affects"
 
     assert architect =~ ~r/\AYou are the architect agent./
-    assert architect =~ "Leave the screen-specific details until the human picks"
+    assert architect =~ "Start as soon as the ticket is saved, while the Designer works"
+    assert architect =~ "or leave them until the human picks"
     assert architect =~ "Name the option the plan is written for as `design`"
     assert architect =~ "save the plan again with the change carried everywhere it reaches"
   end

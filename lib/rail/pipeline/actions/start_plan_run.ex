@@ -102,8 +102,8 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     How the Plan step works:
 
     1. Product first. Hand it the issue, its comments and anything the human has said, and have it save the ticket with `save_ticket`.
-    2. Designer only when the change has a screen. Hand it the saved ticket and have it save three options with `save_design_option`. When nothing anyone sees changes there are no options: skip Designer and say so in one line.
-    3. Architect once the ticket and any options are saved. Have it plan everything that does not hang on the screen, and either leave the screen-specific details until the pick or write them for the option you recommend, naming that option when it saves with `save_plan`. Never have it plan for all three.
+    2. Once the ticket is saved, hand it to Designer and Architect at once rather than one after the other. Designer only when the change has a screen: have it save three options with `save_design_option`. When nothing anyone sees changes there are no options: skip Designer and say so in one line.
+    3. Architect does not wait for the design: have it plan everything that does not hang on the screen from the ticket. Once the options are saved, have it either write the screen-specific details for the option you recommend, naming that option when it saves with `save_plan`, or leave them until the pick. Never have it plan for all three.
     4. End the turn by saying what is saved and, when there are options, which one you recommend and why, in a sentence or two. The human picks in Rail, not in the chat.
 
     Keeping the three in step:

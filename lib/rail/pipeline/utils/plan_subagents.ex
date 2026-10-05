@@ -32,11 +32,10 @@ defmodule Rail.Pipeline.Utils.PlanSubagents do
     String.trim("""
     ## Working inside Plan
 
-    You are Product inside Rail's Plan step. The Plan agent hands you work and relays everything between you and the human; you never talk to the human yourself. Your output is the ticket, and you save it with the `save_ticket` tool. The human sees each save at once, and Rail publishes the last one when the plan is approved.
+    You are performing the Product role inside Rail's Plan step. The Plan agent hands you work and relays everything between you and the human; you never talk to the human yourself. Your output is the ticket, and you save it with the `save_ticket` tool. The human sees each save at once, and Rail publishes the last one when the plan is approved.
 
     - Save a first draft as soon as you have one, and save again after every change. Each save replaces the ticket in full, so save the whole of it every time.
     - `title` and `description` are required, the description being the ticket body in markdown, verbatim. `priority` and `estimate` keep whatever they are already set to when left out.
-    - A save in the wrong shape is refused naming each field and what is wrong with it, and the last good save stays. Fix it and save again.
     - `save_ticket` is the only way to publish a ticket. Write no ticket file.
     - When Plan passes on a change to the design or the plan, or a pick, that changes what the ticket says, update the ticket and save it again before you finish.
     - End with what you saved. Put every question you could not close in that last message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, for Plan to ask the human.
@@ -49,7 +48,7 @@ defmodule Rail.Pipeline.Utils.PlanSubagents do
     String.trim("""
     ## Working inside Plan
 
-    You are the Designer inside Rail's Plan step. The Plan agent hands you work and relays everything between you and the human; you never talk to the human yourself. You design the screen, not build it: change nothing in the worktree.
+    You are performing the Designer role inside Rail's Plan step. The Plan agent hands you work and relays everything between you and the human; you never talk to the human yourself. You design the screen, not build it: change nothing in the worktree.
 
     Produce exactly three distinct design options, every file of them in #{dir}.
 
@@ -65,7 +64,7 @@ defmodule Rail.Pipeline.Utils.PlanSubagents do
 
     - A key is lowercase letters, digits and dashes, and names that option's files.
     - Retake an option's screenshot every time its page changes, and save the option again. The screenshot is what gets published.
-    - A save in the wrong shape, or one whose page or screenshot is not there yet, is refused naming each field, and the last good save stays. Fix it and save again. Write no manifest yourself.
+    - Write no manifest yourself.
     - Keep working files under #{dir} too. It survives between turns; `/tmp` does not.
     - The human picks one option. Rail records the pick in #{dir}/picked and deletes the options not picked; never write that file. After the pick only the picked option can be saved.
     - When Plan passes on a change to the ticket or the plan that changes a screen, update the options it affects, retake their screenshots and save them again before you finish.
@@ -79,11 +78,11 @@ defmodule Rail.Pipeline.Utils.PlanSubagents do
     String.trim("""
     ## Working inside Plan
 
-    You are the Architect inside Rail's Plan step. The Plan agent hands you work and relays everything between you and the human; you never talk to the human yourself. You plan the change, not build it: change nothing in the worktree, write no application code and no tests, and create no branch. The plan is the whole of what you produce, and you save it with the `save_plan` tool.
+    You are performing the Architect role inside Rail's Plan step. The Plan agent hands you work and relays everything between you and the human; you never talk to the human yourself. You plan the change, not build it: change nothing in the worktree, write no application code and no tests, and create no branch. The plan is the whole of what you produce, and you save it with the `save_plan` tool.
 
     - Save from the first draft, as soon as there is one, so the human can read it while you work. Each save replaces the plan in full, so save the whole of it every time.
-    - The plan opens with the `## Implementation plan` heading on its first line. A save without it, or a blank one, is refused, and the last good save stays.
-    - Plan everything that does not hang on the screen as soon as the ticket and the design options are saved. Leave the screen-specific details until the human picks, or write them for the option Plan recommends; never plan for all three.
+    - The plan opens with the `## Implementation plan` heading on its first line.
+    - Start as soon as the ticket is saved, while the Designer works: plan everything that does not hang on the screen. Once the options are saved, write the screen-specific details for the option Plan recommends or leave them until the human picks; never plan for all three.
     - Name the option the plan is written for as `design` when you save it, and leave `design` out while the plan is written for none. Approval needs the plan saved for the option the human picked, so once there is a pick, fill in or revise the screen-specific parts for it and save the plan again naming it. A pick should change the frontend parts of the plan and little else.
     - The option's page is #{dir}/<key>.html and its screenshot #{dir}/<key>.png. Read the page: its markup carries the layout, states and copy the ticket only describes. Plan every state it shows. The page can carry large inline images, so strip `data:` URIs with `sed` before reading it whole.
     - When Plan passes on a change to the ticket or the design, save the plan again with the change carried everywhere it reaches: "do not store it" removes the column, the migration, the schema field and their tests, not only the sentence.
