@@ -38,6 +38,20 @@ defmodule Rail.Pipeline.Actions.SaveTicketTest do
              Pipeline.save_ticket(task, %{"title" => "A title", "description" => "Body.", "priority" => nil})
   end
 
+  # Revising a draft's wording must not undo the priority and estimate it chose.
+  test "a priority or estimate left out keeps what the last save set", %{task: task} do
+    {:ok, _first} =
+      Pipeline.save_ticket(task, %{
+        "title" => "A title",
+        "description" => "Body.",
+        "priority" => "urgent",
+        "estimate" => 8
+      })
+
+    assert {:ok, %{priority: :urgent, estimate: 8, description: "Better body."}} =
+             Pipeline.save_ticket(task, %{"title" => "A title", "description" => "Better body."})
+  end
+
   test "each bad field is refused, and nothing is written", %{task: task, path: path} do
     assert {:error, changeset} =
              Pipeline.save_ticket(task, %{

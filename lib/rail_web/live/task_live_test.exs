@@ -4832,8 +4832,7 @@ defmodule RailWeb.TaskLiveTest do
       File.write!(Path.join(qa_dir, "TLV-1.json"), """
       {"verdict": "fail",
        "summary": "The bill saves but its total is wrong.",
-       "not_checked": "The Plaid callback, which needs a real bank.",
-       "findings": []}
+       "not_checked": "The Plaid callback, which needs a real bank."}
       """)
 
       raised = [
@@ -5745,7 +5744,7 @@ defmodule RailWeb.TaskLiveTest do
       report = Path.join([task.scratch_path, "qa", "TLV-1.json"])
 
       for {written, shown} <- [{"pass", "Passed"}, {"concerns", "Passed with concerns"}, {"sort of", "no verdict"}] do
-        File.write!(report, ~s({"verdict": "#{written}", "summary": "What happened.", "findings": []}))
+        File.write!(report, ~s({"verdict": "#{written}", "summary": "What happened."}))
 
         assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
         assert has_element?(view, "[data-qa='qa_verdict_label']", shown)

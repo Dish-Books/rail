@@ -587,7 +587,7 @@ defmodule RailWeb.Live.RunConversationTest do
 
     html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
 
-    assert html =~ "Tool activity (4 steps)"
+    assert html =~ "Tool activity (3 steps)"
     assert html =~ "Read ×2, Bash"
     assert html =~ "pi-warning-circle"
   end
@@ -615,7 +615,9 @@ defmodule RailWeb.Live.RunConversationTest do
 
     html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
 
-    assert html =~ "save_finding ×3, Read"
+    # A refused call is one call: its error line is flagged, never counted again.
+    assert html =~ "Tool activity (3 steps)"
+    assert html =~ "save_finding ×2, Read"
     refute html =~ "mcp__rail__"
     assert html =~ "pi-warning-circle"
   end

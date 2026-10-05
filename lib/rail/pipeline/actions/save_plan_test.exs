@@ -32,10 +32,13 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
     {:ok, _first} = Pipeline.save_plan(task, "## Implementation plan\n\nFirst.")
 
     assert {:error, blank} = Pipeline.save_plan(task, "   ")
-    assert %{content: ["can't be blank"]} = errors_on(blank)
+    assert %{plan: ["can't be blank"]} = errors_on(blank)
 
     assert {:error, unheaded} = Pipeline.save_plan(task, "# Plan\n\nSecond.")
-    assert %{content: ["must open with the `## Implementation plan` heading"]} = errors_on(unheaded)
+    assert %{plan: ["must open with the `## Implementation plan` heading"]} = errors_on(unheaded)
+
+    assert {:error, listed} = Pipeline.save_plan(task, ["## Implementation plan"])
+    assert %{plan: ["is invalid"]} = errors_on(listed)
 
     assert Pipeline.read_plan(task) == "## Implementation plan\n\nFirst.\n"
   end

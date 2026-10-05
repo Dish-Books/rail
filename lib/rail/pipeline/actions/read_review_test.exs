@@ -22,20 +22,20 @@ defmodule Rail.Pipeline.Actions.ReadReviewTest do
     assert Pipeline.read_review(task) == ~U[2026-10-04 12:00:00Z]
   end
 
-  # Written by the agent before Rail took the file over, so it says nothing of
-  # when; the file's own time stands in.
-  test "a report written before this change still counts as closed", %{task: task, path: path} do
+  # An agent still holding the old brief writes its report here after the deploy;
+  # reading that as closed would drop its findings and send the task on.
+  test "a report in the old shape an agent wrote is not a closed review", %{task: task, path: path} do
     File.write!(path, ~s({"findings": [{"key": "k", "title": "t"}]}))
-    File.touch!(path, 1_790_000_000)
+    assert Pipeline.read_review(task) == nil
 
-    assert Pipeline.read_review(task) == ~U[2026-09-21 14:13:20Z]
+    File.write!(path, ~s({"findings": []}))
+    assert Pipeline.read_review(task) == nil
   end
 
-  test "a saved time that is not a time falls back to the file's", %{task: task, path: path} do
+  test "a saved time that is not a time is not a closed review", %{task: task, path: path} do
     File.write!(path, ~s({"saved_at": "yesterday"}))
-    File.touch!(path, 1_790_000_000)
 
-    assert Pipeline.read_review(task) == ~U[2026-09-21 14:13:20Z]
+    assert Pipeline.read_review(task) == nil
   end
 
   test "a missing or unreadable file reads as not closed", %{task: task, path: path} do

@@ -72,7 +72,8 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
     File.write!(Path.join(repo, "feature.ex"), "one\n")
     test_pid = self()
 
-    expect(Tools, :stop_os_process, fn _scope, %OsProcess{id: ^os_process_id}, _opts ->
+    expect(Tools, :stop_os_process, fn _scope, %OsProcess{id: ^os_process_id}, opts ->
+      assert opts[:ended_reason] == :handed_over
       send(test_pid, :stopped)
       {:ok, os_process}
     end)
@@ -291,6 +292,25 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
              Pipeline.list_run_events(run),
              & &1.line
            )
+  end
+
+  # Git's refusals run to several lines, and a log line is one: the rest would read
+  # as the agent's own words.
+  test "a failure over several lines is said on one", %{
+    task: task,
+    run: %Run{id: run_id} = run,
+    repo: repo,
+    os_process: os_process
+  } do
+    File.write!(Path.join(repo, "feature.ex"), "one\n")
+    stub(Tools, :stop_os_process, fn _scope, _os_process, _opts -> {:ok, os_process} end)
+    stub(Git, :push_branch, fn _scope, _task -> {:error, "remote: GH006: Protected branch\nTo origin.git\n"} end)
+
+    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, "ETC-1: add the feature")
+    assert_receive {:run_changed, ^run_id}, 5_000
+
+    assert ["[rail] Could not commit the engineer's work: remote: GH006: Protected branch To origin.git"] =
+             Enum.map(Pipeline.list_run_events(run), & &1.line)
   end
 
   test "a failure git gives no words for is spelled out on the run", %{

@@ -227,7 +227,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
 
   # A round Rail answered whole from past answers waits on nobody, so it goes back at
   # once; one a person still has to answer waits, as does one whose turn was stopped.
-  defp send_rail_answers(%Run{} = run, %OsProcess{ended_reason: :stopped}), do: run
+  defp send_rail_answers(%Run{} = run, %OsProcess{ended_reason: reason}) when reason in [:stopped, :handed_over], do: run
 
   defp send_rail_answers(%Run{} = run, %OsProcess{}) do
     round = unsent_round(run)

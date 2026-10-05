@@ -143,6 +143,20 @@ defmodule RailWeb.McpControllerTest do
     refute said =~ "MCP server request failed"
   end
 
+  test "a Rail tool's failure in words is passed on as words", %{authed: conn, context: context} do
+    stub(Mcp, :call_run_tool, fn ^context, "request_merge", _arguments ->
+      {:error, {:rail_failed, "fatal: 'gone.git' does not appear to be a git repository\nfatal: Could not read"}}
+    end)
+
+    message = %{"jsonrpc" => "2.0", "id" => 9, "method" => "tools/call", "params" => %{"name" => "request_merge"}}
+
+    said =
+      "Rail could not run request_merge: fatal: 'gone.git' does not appear to be a git repository\nfatal: Could not read"
+
+    assert %{"result" => %{"isError" => true, "content" => [%{"text" => ^said}]}} =
+             conn |> post(~p"/mcp", Jason.encode!(message)) |> json_response(200)
+  end
+
   test "GET offers no event stream", %{authed: conn} do
     conn = get(conn, ~p"/mcp")
 

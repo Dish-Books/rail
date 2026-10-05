@@ -453,7 +453,8 @@ defmodule RailWeb.SandboxesLive do
   @failed "text-red-600 dark:text-red-400"
   @stopped "text-slate-600 dark:text-slate-300"
 
-  defp ending(%OsProcess{ended_reason: :finished}), do: %{label: "Finished", icon: "pi-check-circle", class: @finished}
+  defp ending(%OsProcess{ended_reason: reason}) when reason in [:finished, :handed_over],
+    do: %{label: "Finished", icon: "pi-check-circle", class: @finished}
 
   defp ending(%OsProcess{ended_reason: :out_of_memory} = sandbox),
     do: %{label: "Killed · used more than its #{sandbox.reserved_memory_gb} GB", icon: "pi-x-circle", class: @failed}

@@ -3,14 +3,15 @@ defmodule Rail.Pipeline.Actions.ReadQaReport do
   Reads the verdict a QA pass saved out of its task's scratch directory,
   `<scratch>/qa/<identifier>.json`.
 
-  The findings are rows. A report an agent wrote before Rail took over the file
-  still carries its own, and they are ignored here: only the verdict, the summary
-  and what went unchecked are read, so a QA task in flight then keeps its verdict.
+  Only the shape `save_verdict` writes counts: an old-brief agent's report there,
+  findings and all, is no verdict, so its run does not pass as finished.
   """
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.QaReport
   alias Rail.Pipeline.Schemas.Task
+
+  @saved ["verdict", "summary", "not_checked"]
 
   @doc """
   Returns `task`'s QA verdict, or `nil` when there is none to read.
@@ -21,7 +22,8 @@ defmodule Rail.Pipeline.Actions.ReadQaReport do
     path = Path.join([scratch_path, "qa", "#{identifier}.json"])
 
     with {:ok, content} <- File.read(path),
-         {:ok, %{} = report} <- Jason.decode(content) do
+         {:ok, %{"verdict" => _verdict} = report} <- Jason.decode(content),
+         [] <- Map.keys(report) -- @saved do
       %QaReport{
         verdict: enum(report["verdict"], QaReport.verdicts()),
         summary: text(report["summary"]),

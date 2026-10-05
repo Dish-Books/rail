@@ -21,13 +21,13 @@ defmodule Rail.Pipeline.Actions.SavePlan do
     %Task{issue: %Issue{identifier: identifier}} = task = Repo.preload(task, :issue)
 
     changeset =
-      {%{}, %{content: :string}}
-      |> cast(%{content: content}, [:content])
-      |> update_change(:content, &String.trim/1)
-      |> validate_required([:content])
-      |> validate_format(:content, @heading, message: "must open with the `## Implementation plan` heading")
+      {%{}, %{plan: :string}}
+      |> cast(%{plan: content}, [:plan])
+      |> update_change(:plan, &String.trim/1)
+      |> validate_required([:plan])
+      |> validate_format(:plan, @heading, message: "must open with the `## Implementation plan` heading")
 
-    with {:ok, %{content: plan}} <- apply_action(changeset, :insert) do
+    with {:ok, %{plan: plan}} <- apply_action(changeset, :insert) do
       write_scratch_file(Path.join([task.scratch_path, "plans", "#{identifier}.md"]), plan <> "\n")
       Pipeline.broadcast_output_saved(task)
 

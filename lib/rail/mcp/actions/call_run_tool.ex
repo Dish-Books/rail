@@ -159,12 +159,9 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   # Everything says what it is doing before it does it, because a tab that takes
   # ten seconds to open is ten seconds of a person watching nothing happen.
   #
-  # Five are the exception, for three reasons. The checklist and filing lines tell
-  # the panel to read again, so one written first arrives before there is
-  # anything to read. A call whose arguments say nothing - `browser_problems`
-  # takes none - has nothing to log until it has an answer. And a caption is only
-  # worth reading beside the time it was stamped at, which the tool works out.
-  defp answers_itself?(name), do: name in ["qa_plan", "qa_check", "qa_file", "browser_problems", "demo_say"]
+  # These are logged once they answer: a plan, mark or filing can be refused and its
+  # line must say so, `browser_problems` has nothing to say first, and a caption's time is the tool's.
+  defp answers_itself?(name), do: name in ["qa_plan", "qa_check", "qa_shot", "qa_file", "browser_problems", "demo_say"]
 
   # What the browser complained about, counted rather than quoted: the agent has
   # the list, and a watcher wants to know whether there was one.
@@ -198,7 +195,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
 
   defp asked("qa_plan", %{"checks" => checks}) when is_list(checks), do: "plan #{length(checks)} checks"
   defp asked("qa_check", %{"key" => key, "outcome" => outcome}), do: "check #{inspect(key)} #{outcome}"
-  defp asked("qa_shot", %{"name" => name}), do: "shot #{inspect(name)}"
+  defp asked("qa_shot", %{"name" => name}) when is_binary(name), do: "shot #{inspect(name)}"
   defp asked("qa_file", %{"name" => name}), do: "file #{inspect(name)}"
   defp asked("demo_say", %{"text" => text}), do: "say #{inspect(text)}"
   defp asked("demo_say", _arguments), do: "say"

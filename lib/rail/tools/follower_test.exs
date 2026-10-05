@@ -391,6 +391,24 @@ defmodule Rail.Tools.FollowerTest do
     assert stopped2.status == :finished
   end
 
+  # A turn the agent ended itself, by `commit`, is recorded as handed over rather
+  # than stopped, whether its follower settles it or the fallback does.
+  test "a stop that hands the turn over says so on the row", %{os_process: os_process, run: run} do
+    port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["10"]])
+    {:os_pid, pid} = Port.info(port, :os_pid)
+
+    {:ok, follower_pid} =
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run}, tail_interval_ms: 30)
+
+    Sandbox.allow(Repo, self(), follower_pid)
+
+    assert {:ok, %OsProcess{ended_reason: :handed_over}} =
+             Follower.stop_os_process(os_process, ended_reason: :handed_over, grace_period: 50)
+
+    assert {:ok, %OsProcess{ended_reason: :handed_over}} =
+             Follower.stop_os_process(Repo.reload!(os_process), ended_reason: :handed_over, grace_period: 50)
+  end
+
   test "stop_os_process/2 with no follower still terminates the row's live process", %{os_process: os_process} do
     port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["10"]])
     {:os_pid, pid} = Port.info(port, :os_pid)

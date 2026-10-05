@@ -28,7 +28,8 @@ defmodule Rail.Pipeline.Utils.EndEngineerTurn do
 
     # Off the row before the stop, which settles the run and would send it.
     {:ok, drained} = run |> Run.changeset(%{pending_chat: nil}) |> Repo.update()
-    stop_live_process(Scope.for_system(), drained)
+    # Handed over, not stopped: the agent ended its own turn, and Sandboxes says so.
+    stop_live_process(Scope.for_system(), drained, ended_reason: :handed_over)
     {:ok, stopped} = Run |> Repo.get!(run.id) |> Run.changeset(%{status: :finished}) |> Repo.update()
 
     caller = self()
@@ -73,7 +74,8 @@ defmodule Rail.Pipeline.Utils.EndEngineerTurn do
   # Said in the conversation too, since a queued message starting the next turn
   # takes the run's error with it.
   defp fail(%Run{} = run, text) do
-    Pipeline.append_run_events(run.id, nil, ["[rail] #{text}"])
+    # One line, since a log line that wraps reads its tail as the agent's words.
+    Pipeline.append_run_events(run.id, nil, ["[rail] " <> (text |> String.split() |> Enum.join(" "))])
     update(run, %{error: text})
   end
 

@@ -118,11 +118,15 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
     assert %Task{stage: :review} = Repo.reload!(task)
   end
 
-  test "a report written before this change still closes the review", %{task: task, run: run, report_path: path} do
+  test "a report an old-brief agent wrote does not close the review, so the task stays", %{
+    task: task,
+    run: run,
+    report_path: path
+  } do
     File.mkdir_p!(Path.dirname(path))
-    File.write!(path, ~s({"findings": []}))
+    File.write!(path, ~s({"findings": [{"key": "old-finding", "title": "Old", "severity": "major"}]}))
 
-    assert %Run{error: nil, stage_outcome: :done} = review_run_finished(run, [])
-    assert %Task{stage: :qa} = Repo.reload!(task)
+    assert %Run{error: "The reviewer did not save its review."} = review_run_finished(run, [])
+    assert %Task{stage: :review} = Repo.reload!(task)
   end
 end

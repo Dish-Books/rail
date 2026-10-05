@@ -21,15 +21,15 @@ defmodule Rail.Pipeline.Actions.SaveTicket do
   }
 
   @doc """
-  Saves `attrs` as `task`'s ticket, a priority or estimate left out keeping the
-  issue's own. Returns `{:ok, ticket}` as `read_ticket/1` reads it, or `{:error, changeset}`.
+  Saves `attrs` as `task`'s ticket, a priority or estimate left out keeping the last
+  save's, or the issue's. Returns `{:ok, ticket}` as `read_ticket/1` reads it, or `{:error, changeset}`.
   """
   def save_ticket(%Task{} = task, attrs) when is_map(attrs) do
     %Task{issue: %Issue{} = issue} = task = Repo.preload(task, :issue)
     given = attrs |> Enum.reject(fn {_field, value} -> is_nil(value) end) |> Map.new()
 
     changeset =
-      {%{priority: issue.priority, estimate: issue.estimate}, @types}
+      {kept(task, issue), @types}
       |> cast(given, Map.keys(@types))
       |> update_change(:title, &String.trim/1)
       |> update_change(:description, &String.trim/1)
@@ -45,6 +45,17 @@ defmodule Rail.Pipeline.Actions.SaveTicket do
       Pipeline.broadcast_output_saved(task)
 
       {:ok, Pipeline.read_ticket(task)}
+    end
+  end
+
+  # What a save leaves out stands as the last save set it, or else as the issue has it.
+  defp kept(%Task{} = task, %Issue{} = issue) do
+    case Pipeline.read_ticket(task) do
+      %{priority: priority, estimate: estimate} ->
+        %{priority: priority || issue.priority, estimate: estimate || issue.estimate}
+
+      nil ->
+        %{priority: issue.priority, estimate: issue.estimate}
     end
   end
 end

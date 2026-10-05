@@ -70,7 +70,7 @@ defmodule RailWeb.McpController do
 
       {:error, {:rail_failed, reason}} ->
         Logger.warning("[mcp] #{params["name"]} failed: #{inspect(reason)}")
-        text = "Rail could not run #{params["name"]}: #{inspect(reason)}"
+        text = "Rail could not run #{params["name"]}: #{if is_binary(reason), do: reason, else: inspect(reason)}"
         {:ok, %{"content" => [%{"type" => "text", "text" => text}], "isError" => true}}
 
       {:error, reason} ->

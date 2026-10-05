@@ -24,14 +24,17 @@ defmodule Rail.Pipeline.Actions.ReadQaReportTest do
              Pipeline.read_qa_report(task)
   end
 
-  # Written by the agent before Rail took the file over: the findings in it are
-  # ignored, and the verdict still stands.
-  test "a report written before this change, findings and all, keeps its verdict", %{task: task, path: path} do
+  # An agent still holding the old brief writes its report here after the deploy;
+  # reading its verdict would drop its findings and send the task on.
+  test "a report in the old shape an agent wrote is no verdict", %{task: task, path: path} do
     File.write!(path, """
     {"verdict": "pass", "summary": "Fine.", "findings": [{"key": "k", "title": "t", "evidence": []}]}
     """)
 
-    assert %QaReport{verdict: :pass, summary: "Fine.", not_checked: nil} = Pipeline.read_qa_report(task)
+    assert Pipeline.read_qa_report(task) == nil
+
+    File.write!(path, ~s({"summary": "No verdict at all."}))
+    assert Pipeline.read_qa_report(task) == nil
   end
 
   test "a verdict Rail does not know, or a blank field, reads as none", %{task: task, path: path} do

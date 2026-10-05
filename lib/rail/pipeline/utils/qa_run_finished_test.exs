@@ -120,15 +120,15 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
     assert %Task{stage: :qa} = Repo.reload!(task)
   end
 
-  test "a report written before this change, findings and all, still counts as a verdict", %{
+  test "a report an old-brief agent wrote is no verdict, so the task stays at QA", %{
     task: task,
     run: run,
     report_path: path
   } do
     File.write!(path, ~s({"verdict": "pass", "summary": "Fine.", "findings": []}))
 
-    assert %Run{error: nil, stage_outcome: :done} = qa_run_finished(run, [])
-    assert %Task{stage: :demo} = Repo.reload!(task)
+    assert %Run{error: "The QA agent did not save a verdict."} = qa_run_finished(run, [])
+    assert %Task{stage: :qa} = Repo.reload!(task)
   end
 
   test "a verdict file Rail cannot read is no verdict", %{run: run, report_path: path} do

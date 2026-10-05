@@ -215,11 +215,16 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     assert outcome =~ "`pass`, `fail` or `skipped`"
   end
 
-  test "a shot with no name is refused rather than raised", %{context: context} do
+  # Logged once it has answered, so a refused shot never reads as a picture taken.
+  test "a shot with no name is refused rather than raised, and logged as refused", %{context: context, run: run} do
     reject(Tools, :start_browser_session, 2)
 
     assert {:error, {:refused, "qa_shot needs a `name`" <> _rest}} =
              Mcp.call_run_tool(context, "qa_shot", %{"check" => "totals"})
+
+    assert {:error, {:refused, _numbered}} = Mcp.call_run_tool(context, "qa_shot", %{"name" => 42})
+
+    assert ["[qa] shot · refused", "[qa] shot · refused"] = Enum.map(Pipeline.list_run_events(run), & &1.line)
   end
 
   # The agent drives the tab itself, so what it is handed is the tab's address

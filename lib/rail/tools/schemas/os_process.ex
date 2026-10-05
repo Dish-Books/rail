@@ -29,7 +29,7 @@ defmodule Rail.Tools.Schemas.OsProcess do
   @kinds [:agent, :setup, :ci]
 
   @runtimes [:local, :docker]
-  @ended_reasons [:finished, :stopped, :timed_out, :out_of_memory, :killed, :failed_to_start]
+  @ended_reasons [:finished, :stopped, :handed_over, :timed_out, :out_of_memory, :killed, :failed_to_start]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "proc"}
   schema "os_processes" do
