@@ -6,9 +6,12 @@ defmodule Rail.Repo.Migrations.CombinePlanStage do
   # subagents, and each project gets a Plan role on its architect's backend and
   # model, allowed every MCP tool any of the three was.
   #
-  # Every task that ran any of the three gets one Plan run in their place, with no
-  # conversation, and their runs and history go. A task still at one of the three
-  # moves to Plan, stopped, for Retry to start; one past it has its Plan run done.
+  # Every task that ran any of the three gets one Plan run in their place, and their
+  # runs and history go. The Plan run resumes the session of the task's latest
+  # architect run, or of its latest product or design run if it never reached
+  # architect, when that run's role was on the Plan role's backend, the account
+  # holding the session. A task still at one of the three moves to Plan, stopped,
+  # for a message to resume; one past it has its Plan run done.
   # A run still going would outlive its row, so the deploy waits until none is.
   def up do
     %{rows: in_flight} =
@@ -94,25 +97,27 @@ defmodule Rail.Repo.Migrations.CombinePlanStage do
     %{rows: latest} =
       repo().query!("""
       SELECT DISTINCT ON (t.id) t.id, t.stage IN ('product', 'design', 'architect'), r.started_at, r.completed_at,
-             plan.id
+             plan.id, CASE WHEN old_role.backend_id = plan.backend_id THEN r.conversation_id END
       FROM tasks t
       JOIN runs r ON r.task_id = t.id
       JOIN roles old_role ON old_role.id = r.role_id AND old_role.stage IN ('product', 'design', 'architect')
       JOIN roles plan ON plan.project_id = t.project_id AND plan.stage = 'plan'
       WHERE NOT EXISTS (SELECT 1 FROM runs p WHERE p.task_id = t.id AND p.role_id = plan.id)
-      ORDER BY t.id, r.started_at DESC, r.inserted_at DESC
+      ORDER BY t.id, old_role.stage = 'architect' DESC, r.started_at DESC, r.inserted_at DESC
       """)
 
-    for [task_id, at_plan?, started_at, completed_at, role_id] <- latest do
+    for [task_id, at_plan?, started_at, completed_at, role_id, conversation_id] <- latest do
       repo().query!(
         """
-        INSERT INTO runs (id, task_id, role_id, status, stage_outcome, started_at, completed_at, inserted_at, updated_at)
-        VALUES ($1, $2, $3, 'finished', $4, $5, $6, now() AT TIME ZONE 'utc', now() AT TIME ZONE 'utc')
+        INSERT INTO runs (id, task_id, role_id, conversation_id, status, stage_outcome, started_at, completed_at,
+                          inserted_at, updated_at)
+        VALUES ($1, $2, $3, $4, 'finished', $5, $6, $7, now() AT TIME ZONE 'utc', now() AT TIME ZONE 'utc')
         """,
         [
           UXID.generate!(prefix: "run"),
           task_id,
           role_id,
+          conversation_id,
           if(at_plan?, do: "in_progress", else: "done"),
           started_at,
           completed_at
