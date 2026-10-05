@@ -32,39 +32,39 @@ defmodule RailWeb.Live.ReviewStageTest do
     checklist = learning(project, %{rule: "Handle nil", kind: :convention})
     calibration = learning(project, %{rule: "Don't flag a missing @doc on private components", kind: :calibration})
 
-    {:ok, _findings} =
-      Pipeline.sync_review_findings(task, [
-        %{
-          key: "unhandled-nil",
-          title: "Nil is not handled",
-          file: "lib/a.ex",
-          line: 3,
-          severity: :major,
-          recommendation: :fix,
-          status: :open,
-          rule: checklist.id
-        },
-        %{
-          key: "missing-doc",
-          title: "Missing @doc on comment_round/1",
-          file: "lib/b.ex",
-          line: 88,
-          severity: :nit,
-          recommendation: :skip,
-          status: :open,
-          rule: calibration.id
-        },
-        %{
-          key: "missing-doc-2",
-          title: "Missing @doc on round_badge/1",
-          file: "lib/b.ex",
-          line: 131,
-          severity: :nit,
-          recommendation: :skip,
-          status: :open,
-          rule: calibration.id
-        }
-      ])
+    for finding <- [
+          %{
+            key: "unhandled-nil",
+            title: "Nil is not handled",
+            file: "lib/a.ex",
+            line: 3,
+            severity: :major,
+            recommendation: :fix,
+            status: :open,
+            rule: checklist.id
+          },
+          %{
+            key: "missing-doc",
+            title: "Missing @doc on comment_round/1",
+            file: "lib/b.ex",
+            line: 88,
+            severity: :nit,
+            recommendation: :skip,
+            status: :open,
+            rule: calibration.id
+          },
+          %{
+            key: "missing-doc-2",
+            title: "Missing @doc on round_badge/1",
+            file: "lib/b.ex",
+            line: 131,
+            severity: :nit,
+            recommendation: :skip,
+            status: :open,
+            rule: calibration.id
+          }
+        ],
+        do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
     %{conn: log_in_user(conn, user), task: task, calibration: calibration}
   end
@@ -120,10 +120,13 @@ defmodule RailWeb.Live.ReviewStageTest do
     other = learnings_task(project, "RST-2", :review)
 
     override = fn key ->
-      {:ok, findings} =
-        Pipeline.sync_review_findings(other, [
-          %{key: key, title: key, severity: :nit, recommendation: :skip, status: :open, rule: calibration.id}
-        ])
+      findings =
+        for finding <- [
+              %{key: key, title: key, severity: :nit, recommendation: :skip, status: :open, rule: calibration.id}
+            ] do
+          {:ok, saved} = Pipeline.save_review_finding(other, finding)
+          saved
+        end
 
       {:ok, fixed} = Pipeline.decide_review_finding(system_scope(), Enum.find(findings, &(&1.key == key)), :fix)
       {:ok, _flagged} = Rail.Learnings.record_overrides(other, [fixed])

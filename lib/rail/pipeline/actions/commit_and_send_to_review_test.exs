@@ -91,6 +91,15 @@ defmodule Rail.Pipeline.Actions.CommitAndSendToReviewTest do
     assert %Run{stage_outcome: :done, review_on_ci_pass: false, error: nil} = Repo.reload!(run)
   end
 
+  # The human pressed the button, so nobody wrote the message.
+  test "the human's commit is made under the follow-up subject", %{scope: scope, run: run, repo: repo} do
+    File.write!(Path.join(repo, "feature.ex"), "one\n")
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    assert {:ok, %Run{}} = Pipeline.commit_and_send_to_review(scope, run)
+    assert git!(repo, ["log", "-1", "--pretty=%s"]) =~ ": follow-up changes"
+  end
+
   test "with CI, the commit waits on CI, holding the go-ahead for when it passes", %{
     scope: scope,
     project: project,

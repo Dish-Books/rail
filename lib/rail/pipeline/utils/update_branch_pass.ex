@@ -64,7 +64,7 @@ defmodule Rail.Pipeline.Utils.UpdateBranchPass do
     # CI that fails sends the engineer a round to fix, so the stage is open again.
     {:ok, open} = run |> Run.changeset(%{stage_outcome: :in_progress, ci_failure_streak: 0}) |> Repo.update()
 
-    with :ok <- Pipeline.commit_engineer_work(Scope.for_system(), task) do
+    with :ok <- Pipeline.commit_engineer_work(Scope.for_system(), task, nil) do
       # Starting CI moved the run on, even into the line; with no CI, the push was the whole of it.
       %Run{} = sent = Repo.get!(Run, open.id)
 

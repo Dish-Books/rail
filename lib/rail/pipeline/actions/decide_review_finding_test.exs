@@ -26,10 +26,14 @@ defmodule Rail.Pipeline.Actions.DecideReviewFindingTest do
     {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
-    {:ok, [finding]} =
-      Pipeline.sync_review_findings(task, [
-        %{key: "unhandled-nil", title: "Nil is not handled", severity: :major, recommendation: :fix, status: :open}
-      ])
+    [finding] =
+      for finding <- [
+            %{key: "unhandled-nil", title: "Nil is not handled", severity: :major, recommendation: :fix, status: :open}
+          ] do
+        {:ok, saved} = Pipeline.save_review_finding(task, finding)
+
+        saved
+      end
 
     %{task: task, role: role, finding: finding}
   end
@@ -77,17 +81,21 @@ defmodule Rail.Pipeline.Actions.DecideReviewFindingTest do
 
     calibration = learning(project, %{rule: "Don't flag this", kind: :calibration})
 
-    {:ok, [_finding]} =
-      Pipeline.sync_review_findings(task, [
-        %{
-          key: "unhandled-nil",
-          title: "Nil is not handled",
-          severity: :major,
-          recommendation: :fix,
-          status: :open,
-          rule: calibration.id
-        }
-      ])
+    [_finding] =
+      for finding <- [
+            %{
+              key: "unhandled-nil",
+              title: "Nil is not handled",
+              severity: :major,
+              recommendation: :fix,
+              status: :open,
+              rule: calibration.id
+            }
+          ] do
+        {:ok, saved} = Pipeline.save_review_finding(task, finding)
+
+        saved
+      end
 
     assert {:ok, %ReviewFinding{decision: :fix, decided_by_id: ^user_id}} =
              Pipeline.decide_review_finding(Rail.Scope.for_user(user), Repo.reload!(finding), :fix)

@@ -72,14 +72,14 @@ defmodule Rail.Pipeline.Utils.ProductRunFinishedTest do
   } do
     File.rm!(path)
 
-    assert %Run{error: "The product agent did not write tickets/S14601-1.md."} = product_run_finished(run, [])
+    assert %Run{error: "The product agent did not save a ticket."} = product_run_finished(run, [])
     assert %Task{stage: :product} = Repo.get!(Task, task.id)
   end
 
   test "a ticket that is only whitespace is no ticket", %{run: run, ticket_path: path} do
     File.write!(path, "\n  \n")
 
-    assert %Run{error: "The product agent did not write tickets/S14601-1.md."} =
+    assert %Run{error: "The product agent did not save a ticket."} =
              product_run_finished(run, [])
   end
 end

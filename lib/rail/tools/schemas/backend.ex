@@ -6,7 +6,7 @@ defmodule Rail.Tools.Schemas.Backend do
   """
   use Rail.Schema
 
-  @names [:claude, :agy, :codex]
+  @names [:claude]
   @statuses [:not_configured, :signed_out, :unavailable, :ready]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "bkd"}
@@ -27,6 +27,10 @@ defmodule Rail.Tools.Schemas.Backend do
     field :account_detail, :string
     field :fetched_at, :utc_datetime_usec
     field :unavailable_reason, :string
+    # When the backend stopped being signed in with nobody having signed it out:
+    # Claude refused its sign-in, or a probe found a ready one signed out. Cleared
+    # once a probe finds it signed in again, or it is signed out on purpose.
+    field :session_lost_at, :utc_datetime_usec
 
     # A group of quota limits the CLI reported, with the windows it measured
     # them over carried in `details`.
@@ -42,7 +46,15 @@ defmodule Rail.Tools.Schemas.Backend do
 
   @config_fields [:name, :label, :executable_path]
   @required_config_fields [:name, :executable_path]
-  @usage_fields [:name, :status, :account_label, :account_detail, :fetched_at, :unavailable_reason]
+  @usage_fields [
+    :name,
+    :status,
+    :account_label,
+    :account_detail,
+    :fetched_at,
+    :unavailable_reason,
+    :session_lost_at
+  ]
 
   @doc "Returns the backends that can be configured."
   def names, do: @names
@@ -52,11 +64,9 @@ defmodule Rail.Tools.Schemas.Backend do
 
   @doc """
   Returns the environment variable a backend's CLI reads its config directory
-  from, or nil when it has none.
+  from.
   """
   def env_var(:claude), do: "CLAUDE_CONFIG_DIR"
-  def env_var(:codex), do: "CODEX_HOME"
-  def env_var(_name), do: nil
 
   @doc """
   Returns the directory a backend's CLI keeps its signed-in account in. It is
@@ -70,8 +80,6 @@ defmodule Rail.Tools.Schemas.Backend do
 
   @doc "What a CLI is called wherever Rail names it."
   def cli_name(:claude), do: "Claude Code"
-  def cli_name(:agy), do: "Antigravity CLI"
-  def cli_name(name), do: name |> to_string() |> String.capitalize()
 
   @doc """
   What an account is called wherever Rail names it: its CLI, then what the user

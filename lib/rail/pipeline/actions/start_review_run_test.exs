@@ -41,7 +41,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     %{task: task, run: run}
   end
 
-  test "briefs the reviewer on the change and the one report file it writes", %{task: task, run: run} do
+  test "briefs the reviewer on the change and the tools it reports with", %{task: task, run: run} do
     reviews_dir = Path.join(task.scratch_path, "reviews")
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
@@ -50,7 +50,13 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
       assert prompt =~ "You are reading it, not changing it"
       assert prompt =~ "git diff origin/main...HEAD"
       assert prompt =~ "The branch #{task.worktree_name}" or prompt =~ task.worktree_name
-      assert prompt =~ "cat > #{reviews_dir}/SRV-1.json <<'JSON'"
+      assert prompt =~ "`save_finding` saves one finding, as soon as you have confirmed it"
+
+      assert prompt =~
+               "`save_review` says the pass is finished, and it is the last thing you do, including when you found nothing"
+
+      refute prompt =~ "<<'JSON'"
+      refute prompt =~ reviews_dir
       assert prompt =~ "Ask everything at once."
       assert prompt =~ "Filter invoices by vendor."
 
@@ -58,7 +64,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     end)
 
     assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_review_run(run)
-    assert File.dir?(reviews_dir)
+    refute File.exists?(reviews_dir)
   end
 
   test "keeps severity and recommendation apart, so a nit can still be worth fixing", %{run: run} do
@@ -81,7 +87,6 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
       assert prompt =~ "`detail` and `suggestion` have different readers"
       assert prompt =~ "the whole of what the engineer is handed"
       assert prompt =~ "whether this change caused the problem or merely stands next to it"
-      assert prompt =~ ~s("suggestion": "the change that settles it")
       assert prompt =~ "written as though the finding will be fixed"
       assert prompt =~ "hands the engineer a decision the human has already taken"
 
@@ -153,34 +158,37 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     task: task,
     run: run
   } do
-    {:ok, [to_fix, dismissed]} =
-      Pipeline.sync_review_findings(task, [
-        %{
-          key: "unhandled-nil",
-          title: "Nil is not handled",
-          detail: "The clause assumes a map.",
-          file: "lib/rail/example.ex",
-          line: 12,
-          severity: :major,
-          recommendation: :fix,
-          status: :open
-        },
-        %{
-          key: "naming-nit",
-          title: "The variable could be named better",
-          detail: nil,
-          file: nil,
-          line: nil,
-          severity: :nit,
-          recommendation: :fix,
-          status: :open
-        }
-      ])
+    [to_fix, dismissed] =
+      for finding <- [
+            %{
+              key: "unhandled-nil",
+              title: "Nil is not handled",
+              detail: "The clause assumes a map.",
+              file: "lib/rail/example.ex",
+              line: 12,
+              severity: :major,
+              recommendation: :fix,
+              status: :open
+            },
+            %{
+              key: "naming-nit",
+              title: "The variable could be named better",
+              detail: nil,
+              file: nil,
+              line: nil,
+              severity: :nit,
+              recommendation: :fix,
+              status: :open
+            }
+          ] do
+        {:ok, saved} = Pipeline.save_review_finding(task, finding)
+        saved
+      end
 
-    {:ok, _all} =
-      Pipeline.sync_review_findings(task, [
-        %{key: "not-ruled-on", title: "Nobody has looked", severity: :minor, recommendation: :fix, status: :open}
-      ])
+    for finding <- [
+          %{key: "not-ruled-on", title: "Nobody has looked", severity: :minor, recommendation: :fix, status: :open}
+        ],
+        do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
     {:ok, _stopped} = Pipeline.update_run(run, %{status: :finished})
     {:ok, _to_fix} = Pipeline.decide_review_finding(system_scope(), to_fix, :fix)
@@ -235,8 +243,8 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
         assert prompt =~ "The checklist: rules this project has learned."
         assert prompt =~ "- `#{rule.id}` Convention: Tests use the factory Applies to `test/**`."
         assert prompt =~ "- `#{calibration.id}` Calibration: Don't flag a missing @doc"
-        assert prompt =~ "A finding one says not to raise is still written, with that rule's id as `rule`"
-        assert prompt =~ ~s("rule": null)
+        assert prompt =~ "A finding one says not to raise is still saved, with that rule's id as `rule`"
+        assert prompt =~ "`status` and `rule`"
         assert prompt =~ "`rule` is the id of the checklist rule a finding comes from"
         {:ok, %OsProcess{run: spawned}}
       end)

@@ -91,13 +91,16 @@ defmodule Rail.Mcp.Utils.RunToolQaPlanTest do
     refute written =~ "Run these"
   end
 
-  # Nothing an agent can get wrong is an error: it reads the answer and puts it
-  # right on the next call.
-  test "a list Rail cannot use is refused in words, and nothing is written", %{task: task} do
-    assert {:ok, refused} = run_tool_qa_plan(task, %{"checks" => [%{"title" => "No key on this one"}]}, [])
-    assert refused =~ "not usable"
+  # A refusal is the agent's to put right on the next call, so it says which row.
+  test "a list Rail cannot use is refused naming the row, and nothing is written", %{task: task} do
+    checks = [%{"key" => "fine", "title" => "Fine"}, %{"title" => "No key on this one"}]
 
-    assert {:ok, "qa_plan needs a `checks` list. Nothing was written."} = run_tool_qa_plan(task, %{}, [])
+    assert {:error, %Ecto.Changeset{changes: %{checks: [_fine, unkeyed]}}} =
+             run_tool_qa_plan(task, %{"checks" => checks}, [])
+
+    assert %{key: ["can't be blank"]} = errors_on(unkeyed)
+
+    assert {:refused, "qa_plan needs a `checks` list. Nothing was written."} = run_tool_qa_plan(task, %{}, [])
 
     assert {:error, :qa_checklist_not_found} = Pipeline.read_qa_checklist(task)
   end

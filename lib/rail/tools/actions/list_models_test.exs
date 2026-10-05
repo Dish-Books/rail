@@ -23,8 +23,8 @@ defmodule Rail.Tools.Actions.ListModelsTest do
         models: [%{id: "claude-sonnet-5"}]
       })
 
-    {:ok, %Backend{id: agy_id}} =
-      Tools.create_backend(scope, %{name: :agy, executable_path: "/usr/bin/agy", models: [%{id: "claude-sonnet-5"}]})
+    {:ok, %Backend{id: personal_id}} =
+      Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true", models: [%{id: "claude-haiku-5"}]})
 
     models = Enum.reject(Tools.list_models(), &(&1.id == "claude-opus-5-5"))
 
@@ -36,7 +36,7 @@ defmodule Rail.Tools.Actions.ListModelsTest do
                display_name: "claude-fable-5-1",
                backends: [%Backend{id: ^work_id}]
              },
-             %{cli: :agy, id: "claude-sonnet-5", backends: [%Backend{id: ^agy_id}]}
+             %{cli: :claude, id: "claude-haiku-5", backends: [%Backend{id: ^personal_id}]}
            ] = models
   end
 end

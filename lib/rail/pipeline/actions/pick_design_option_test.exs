@@ -64,6 +64,10 @@ defmodule Rail.Pipeline.Actions.PickDesignOptionTest do
     assert %{picked: "table", options: [%{key: "table", title: "Table"}]} = Pipeline.read_design(task)
     assert [first | _rest] = Enum.map(Pipeline.list_run_events(run), & &1.line)
     assert first =~ "[human] I picked Table (table)."
+
+    said = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
+    assert said =~ "save it again with save_design_option every time it changes"
+    refute said =~ "keep it that way"
   end
 
   test "the picked option keeps everything the designer wrote about it", %{run: run, design_dir: dir} do

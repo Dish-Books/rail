@@ -150,12 +150,12 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     {:ok, _said} = Mcp.call_run_tool(filming, "demo_say", %{"text" => "Entering a bill for Sysco"})
 
     # A caption with no words is still a call somebody has to see having happened.
-    {:ok, _nothing} = Mcp.call_run_tool(filming, "demo_say", %{})
+    {:error, {:refused, _nothing}} = Mcp.call_run_tool(filming, "demo_say", %{})
 
     log = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
 
     assert log =~ ~s([demo] 0:00 say "Entering a bill for Sysco")
-    assert log =~ "[demo] say"
+    assert log =~ "[demo] say · refused"
   end
 
   # The checklist is written before anything is opened, so neither of these costs
@@ -188,36 +188,43 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     assert log =~ ~s([qa] check "totals" pass)
   end
 
-  # Nothing here is worth failing the call over: the agent can read the answer and
-  # put it right on the next one.
-  test "a plan or a mark Rail cannot use comes back as words rather than an error", %{context: context} do
-    assert {:ok, %{"content" => [%{"text" => marked}]}} =
+  # Each is the agent's to put right on the next call, so each comes back refused
+  # with the reason, the plan's naming the row that was wrong.
+  test "a plan or a mark Rail cannot use is refused with the reason", %{context: context} do
+    assert {:error, {:refused, marked}} =
              Mcp.call_run_tool(context, "qa_check", %{"key" => "totals", "outcome" => "pass"})
 
     assert marked =~ "no checklist yet"
 
-    assert {:ok, %{"content" => [%{"text" => refused}]}} =
-             Mcp.call_run_tool(context, "qa_plan", %{"checks" => [%{"title" => "no key on this one"}]})
+    assert {:error, {:refused, "Refused, nothing saved. checks 2 key: is required."}} =
+             Mcp.call_run_tool(context, "qa_plan", %{
+               "checks" => [%{"key" => "one", "title" => "A bill saves"}, %{"title" => "no key on this one"}]
+             })
 
-    assert refused =~ "not usable"
-
-    assert {:ok, %{"content" => [%{"text" => "qa_plan needs a `checks` list. Nothing was written."}]}} =
+    assert {:error, {:refused, "qa_plan needs a `checks` list. Nothing was written."}} =
              Mcp.call_run_tool(context, "qa_plan", %{})
 
     {:ok, _planned} = Mcp.call_run_tool(context, "qa_plan", %{"checks" => [%{"key" => "one", "title" => "A bill saves"}]})
 
-    assert {:ok, %{"content" => [%{"text" => unknown}]}} =
-             Mcp.call_run_tool(context, "qa_check", %{"key" => "two", "outcome" => "pass"})
-
+    assert {:error, {:refused, unknown}} = Mcp.call_run_tool(context, "qa_check", %{"key" => "two", "outcome" => "pass"})
     assert unknown =~ ~s(No check called "two")
 
-    assert {:ok, %{"content" => [%{"text" => outcome}]}} =
+    assert {:error, {:refused, outcome}} =
              Mcp.call_run_tool(context, "qa_check", %{"key" => "one", "outcome" => "probably"})
 
     assert outcome =~ "`pass`, `fail` or `skipped`"
+  end
 
-    assert {:ok, %{"content" => [%{"text" => "qa_check needs a `key` and an `outcome`. Nothing was recorded."}]}} =
-             Mcp.call_run_tool(context, "qa_check", %{"key" => "one"})
+  # Logged once it has answered, so a refused shot never reads as a picture taken.
+  test "a shot with no name is refused rather than raised, and logged as refused", %{context: context, run: run} do
+    reject(Tools, :start_browser_session, 2)
+
+    assert {:error, {:refused, "qa_shot needs a `name`" <> _rest}} =
+             Mcp.call_run_tool(context, "qa_shot", %{"check" => "totals"})
+
+    assert {:error, {:refused, _numbered}} = Mcp.call_run_tool(context, "qa_shot", %{"name" => 42})
+
+    assert ["[qa] shot · refused", "[qa] shot · refused"] = Enum.map(Pipeline.list_run_events(run), & &1.line)
   end
 
   # The agent drives the tab itself, so what it is handed is the tab's address
@@ -271,10 +278,10 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     assert File.exists?(Path.join([task.scratch_path, "qa", "evidence", "script-runs~the-script-s-log.log"]))
 
     # A refusal reads as one in the log, rather than as one more file filed.
-    {:ok, _refused} =
+    {:error, {:refused, _refused}} =
       Mcp.call_run_tool(context, "qa_file", %{"check" => "script-runs", "name" => "Stolen", "path" => "/etc/passwd"})
 
-    {:ok, _usage} = Mcp.call_run_tool(context, "qa_file", %{"check" => "script-runs", "name" => "No path"})
+    {:error, {:refused, _usage}} = Mcp.call_run_tool(context, "qa_file", %{"check" => "script-runs", "name" => "No path"})
 
     log = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
 
@@ -316,11 +323,11 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     assert text =~ "1 checks"
   end
 
-  test "a call with no task behind it is refused", %{roles: roles} do
-    assert {:error, :no_task} =
+  test "a call with no task behind it is Rail's failure", %{roles: roles} do
+    assert {:error, {:rail_failed, :no_task}} =
              Mcp.call_run_tool(%RunContext{os_process: %OsProcess{}, role: roles[:qa], user: nil}, "browser_connect", %{})
 
-    assert {:error, :no_task} =
+    assert {:error, {:rail_failed, :no_task}} =
              Mcp.call_run_tool(
                %RunContext{os_process: %OsProcess{task_id: "tsk_gone"}, role: roles[:qa], user: nil},
                "browser_connect",
@@ -334,11 +341,12 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     assert {:error, :unknown_tool} = Mcp.call_run_tool(context, "qa_invented", %{})
   end
 
-  # Whatever went wrong down there reaches the agent as an error rather than as
-  # a sentence, because it is not something a different instruction would fix.
-  test "a browser that will not open is an error, not advice", %{context: context} do
+  # Whatever went wrong down there is Rail's, not something a different
+  # instruction would fix, and it says so rather than reading as a refusal.
+  test "a browser that will not open is Rail's failure, not advice", %{context: context} do
     stub(Tools, :start_browser_session, fn _task, _opts -> {:error, {:browser_unavailable, :chrome_not_found}} end)
 
-    assert {:error, {:browser_unavailable, :chrome_not_found}} = Mcp.call_run_tool(context, "browser_connect", %{})
+    assert {:error, {:rail_failed, {:browser_unavailable, :chrome_not_found}}} =
+             Mcp.call_run_tool(context, "browser_connect", %{})
   end
 end

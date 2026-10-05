@@ -45,7 +45,7 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
   end
 
   test "a run that wrote no manifest records that it did not", %{run: run} do
-    assert %Run{error: "The designer did not write design/manifest.json."} = design_run_finished(run, [])
+    assert %Run{error: "The designer did not save any design options."} = design_run_finished(run, [])
   end
 
   test "a run that wrote other than three options records how many", %{run: run, design_dir: dir} do
@@ -54,7 +54,7 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
       ~s({"options": [{"key": "a", "title": "A"}, {"key": "b", "title": "B"}]})
     )
 
-    assert %Run{error: "The designer wrote 2 design options, not 3."} = design_run_finished(run, [])
+    assert %Run{error: "The designer saved 2 design options, not 3."} = design_run_finished(run, [])
   end
 
   test "names the options still missing a page or a screenshot", %{run: run, design_dir: dir} do
@@ -66,7 +66,7 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
     for key <- ["a", "b", "c"], do: File.write!(Path.join(dir, "#{key}.html"), "<p>#{key}</p>")
     File.write!(Path.join(dir, "a.png"), "png")
 
-    assert %Run{error: "Design options missing a page or screenshot: b, c."} = design_run_finished(run, [])
+    assert %Run{error: "Saved design options missing a page or screenshot: b, c."} = design_run_finished(run, [])
   end
 
   test "a picked design refined down to its one option finishes cleanly", %{run: run, design_dir: dir} do
@@ -83,7 +83,7 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
     File.write!(Path.join(dir, "picked"), "b")
     File.write!(Path.join(dir, "b.html"), "<p>b</p>")
 
-    assert %Run{error: "Design options missing a page or screenshot: b."} = design_run_finished(run, [])
+    assert %Run{error: "Saved design options missing a page or screenshot: b."} = design_run_finished(run, [])
   end
 
   test "three complete options clear the error and leave the task where it is", %{run: run, design_dir: dir} do

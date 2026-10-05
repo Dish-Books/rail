@@ -36,6 +36,9 @@ defmodule Rail.Mcp.Utils.McpTools do
   pass said it would do, going green a row at a time with its evidence beside it.
   None of the four opens a browser of its own.
 
+  Every stage hands its output over through save tools of its own, checked when
+  called; review and QA each have a `save_finding`, with that stage's own fields.
+
   `@knowledge_tools` are offered to every role: `knowledge_search` reads the
   rules the project has learned, which no stage should have to guess at.
 
@@ -214,6 +217,261 @@ defmodule Rail.Mcp.Utils.McpTools do
     }
   ]
 
+  @severity %{
+    "type" => "string",
+    "enum" => ["blocker", "major", "minor", "nit"],
+    "description" => "How much it matters."
+  }
+  @recommendation %{
+    "type" => "string",
+    "enum" => ["fix", "skip"],
+    "description" => "Whether you would act on it. Your advice; a human decides."
+  }
+  @status %{
+    "type" => "string",
+    "enum" => ["open", "fixed", "not_fixed"],
+    "description" =>
+      "`open` for a problem that still stands; on a later pass, `fixed` or `not_fixed` for one raised before."
+  }
+  @finding_key %{
+    "type" => "string",
+    "description" =>
+      "Your own name for the problem, lowercase with hyphens. Keep it the same for the same problem across " <>
+        "saves and passes: saving a key again updates that finding rather than raising it twice."
+  }
+
+  @product_tools [
+    %{
+      "name" => "save_ticket",
+      "description" =>
+        "Save the ticket. The panel shows it to the human as soon as it is saved, so save a first draft as " <>
+          "soon as you have one and save again after every change: each save replaces the ticket in full. " <>
+          "A save in the wrong shape is refused naming each field, and the last good save stays.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{
+          "title" => %{"type" => "string", "description" => "The ticket title, one line."},
+          "description" => %{"type" => "string", "description" => "The ticket body, in markdown, verbatim."},
+          "priority" => %{
+            "type" => "string",
+            "enum" => ["urgent", "high", "medium", "low"],
+            "description" => "Left out, the issue's own priority stays."
+          },
+          "estimate" => %{
+            "type" => "integer",
+            "description" => "Points, zero or more. Left out, the issue's own estimate stays."
+          }
+        },
+        "required" => ["title", "description"]
+      }
+    }
+  ]
+
+  @design_tools [
+    %{
+      "name" => "save_design_option",
+      "description" =>
+        "Save one design option once its page `<key>.html` and screenshot `<key>.png` exist in the design " <>
+          "folder, and save it again whenever it changes. The panel shows each option as it is saved, while " <>
+          "the others are still being built. Three options before the human picks, and only the picked one after.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{
+          "key" => %{
+            "type" => "string",
+            "description" => "Lowercase letters, digits and dashes. It names the option's files."
+          },
+          "title" => %{"type" => "string", "description" => "The option's name."},
+          "summary" => %{"type" => "string", "description" => "One or two sentences: the position this option takes."},
+          "good_at" => %{"type" => "array", "items" => %{"type" => "string"}, "description" => "Short phrases."},
+          "costs" => %{"type" => "array", "items" => %{"type" => "string"}, "description" => "Short phrases."},
+          "assumptions" => %{
+            "type" => "string",
+            "description" => "What you assumed, so it can be vetoed; empty when nothing."
+          }
+        },
+        "required" => ["key", "title", "summary"]
+      }
+    }
+  ]
+
+  @architect_tools [
+    %{
+      "name" => "save_plan",
+      "description" =>
+        "Save the implementation plan. The panel shows it as soon as it is saved, so save from the first " <>
+          "draft and again after every review comment: each save replaces the plan in full. It must open with " <>
+          "the `## Implementation plan` heading.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{
+          "plan" => %{"type" => "string", "description" => "The whole plan, in markdown."}
+        },
+        "required" => ["plan"]
+      }
+    }
+  ]
+
+  @engineer_tools [
+    %{
+      "name" => "commit",
+      "description" =>
+        "Hand over finished work. Call it once the work is finished and its tests pass: it ends your turn " <>
+          "on the spot, and Rail commits the worktree under your message and pushes it or runs CI. After a CI " <>
+          "failure that was not your change's to fix, call it with nothing changed and CI runs again.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{
+          "message" => %{
+            "type" => "string",
+            "description" =>
+              "One line saying what this change does, a blank line, then what changed and why, as a commit body."
+          }
+        },
+        "required" => ["message"]
+      }
+    },
+    %{
+      "name" => "request_merge",
+      "description" =>
+        "Ask Rail to merge the default branch into a clean worktree, for example when CI failed on a change " <>
+          "that landed there. It ends your turn on the spot. A clean merge is sent on, and conflicts come back " <>
+          "to you as a new turn.",
+      "inputSchema" => %{"type" => "object", "properties" => %{}}
+    }
+  ]
+
+  @review_tools [
+    %{
+      "name" => "save_finding",
+      "description" =>
+        "Save one finding as soon as you have confirmed it, rather than at the end; the human sees it while " <>
+          "you keep reading. A save in the wrong shape is refused naming each field; fix it and save again.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{
+          "key" => @finding_key,
+          "title" => %{"type" => "string", "description" => "One line naming the problem."},
+          "detail" => %{"type" => "string", "description" => "What is wrong and what it costs."},
+          "suggestion" => %{"type" => "string", "description" => "The change that settles it."},
+          "file" => %{"type" => "string", "description" => "The file it is in, relative to the worktree."},
+          "line" => %{"type" => "integer", "description" => "One line number, a positive whole number."},
+          "severity" => @severity,
+          "recommendation" => @recommendation,
+          "status" => @status,
+          "rule" => %{
+            "type" => "string",
+            "description" =>
+              "The id of the checklist rule the finding comes from; leave it out when it comes from none. " <>
+                "A finding a calibration rule says not to raise is still saved, with that rule's id."
+          }
+        },
+        "required" => ["key", "title", "severity", "recommendation"]
+      }
+    },
+    %{
+      "name" => "save_review",
+      "description" =>
+        "Say the review pass is finished, once every finding is saved. Call it last, and call it when you " <>
+          "found nothing too: that is a clean review. A pass that ends without it has not reported.",
+      "inputSchema" => %{"type" => "object", "properties" => %{}}
+    }
+  ]
+
+  @qa_report_tools [
+    %{
+      "name" => "save_finding",
+      "description" =>
+        "Save one finding as soon as you have reproduced it, with its evidence filed first through qa_shot or " <>
+          "qa_file. A finding with no evidence, or citing a file that is not in the QA folder, is refused naming " <>
+          "each field; fix it and save again.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{
+          "key" => @finding_key,
+          "title" => %{"type" => "string", "description" => "One line naming the defect."},
+          "check" => %{"type" => "string", "description" => "The key of the checklist row it came out of."},
+          "criterion" => %{"type" => "string", "description" => "The acceptance criterion it fails, quoted."},
+          "screen" => %{"type" => "string", "description" => "Where it was seen, such as /bills/new."},
+          "steps" => %{"type" => "string", "description" => "Numbered steps that reproduce it."},
+          "expected" => %{"type" => "string", "description" => "What should have happened."},
+          "observed" => %{"type" => "string", "description" => "What happened."},
+          "detail" => %{"type" => "string", "description" => "What it costs and who it costs it."},
+          "suggestion" => %{"type" => "string", "description" => "The change that settles it."},
+          "severity" => @severity,
+          "recommendation" => @recommendation,
+          "caused_by_change" => %{
+            "type" => "boolean",
+            "description" => "`false` for something already broken before this branch."
+          },
+          "status" => @status,
+          "evidence" => %{
+            "type" => "array",
+            "description" => "At least one piece: a name qa_shot or qa_file handed back, or a small value inline.",
+            "items" => %{
+              "type" => "object",
+              "properties" => %{
+                "name" => %{"type" => "string", "description" => "What it shows."},
+                "kind" => %{"type" => "string", "enum" => ["screenshot", "log", "query", "note"]},
+                "path" => %{"type" => "string", "description" => "Relative to the QA folder, as Rail named it."},
+                "text" => %{"type" => "string", "description" => "Something small enough to read inline."}
+              },
+              "required" => ["name", "kind"]
+            }
+          }
+        },
+        "required" => ["key", "title", "check", "severity", "recommendation", "evidence"]
+      }
+    },
+    %{
+      "name" => "save_verdict",
+      "description" =>
+        "Save the verdict on the whole change, last, once every finding is saved. A pass that ends without " <>
+          "it has not reported.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{
+          "verdict" => %{
+            "type" => "string",
+            "enum" => ["pass", "concerns", "fail"],
+            "description" => "Your judgement, not a tally of the findings."
+          },
+          "summary" => %{
+            "type" => "string",
+            "description" => "One or two sentences: whether it works, and the one thing most in the way if not."
+          },
+          "not_checked" => %{
+            "type" => "string",
+            "description" => "What you could not check, and why, including anything you faked or stood in for."
+          }
+        },
+        "required" => ["verdict", "summary"]
+      }
+    }
+  ]
+
+  @demo_report_tools [
+    %{
+      "name" => "save_demo",
+      "description" => "Save the write-up of the recording, once the take is recorded. Saving again replaces it.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{
+          "title" => %{"type" => "string", "description" => "What this change lets somebody do, in a few words."},
+          "summary" => %{
+            "type" => "string",
+            "description" => "Two or three sentences: what the change is, and what the walkthrough shows."
+          },
+          "not_shown" => %{
+            "type" => "string",
+            "description" => "Anything on the ticket the recording does not cover, and why; empty when nothing."
+          }
+        },
+        "required" => ["title", "summary"]
+      }
+    }
+  ]
+
   @knowledge_tools [
     %{
       "name" => "knowledge_search",
@@ -234,9 +492,15 @@ defmodule Rail.Mcp.Utils.McpTools do
 
   @doc """
   The tools Rail serves this run itself: the browser for the two stages that
-  drive one, whatever else that stage reports with, and the knowledge base for all.
+  drive one, the save tools each stage hands its output over with, and the
+  knowledge base for all.
   """
-  def mcp_tools(%Role{stage: :qa}), do: @browser_tools ++ @qa_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :demo}), do: @browser_tools ++ @demo_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :product}), do: @product_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :design}), do: @design_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :architect}), do: @architect_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :engineer}), do: @engineer_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :review}), do: @review_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :qa}), do: @browser_tools ++ @qa_tools ++ @qa_report_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :demo}), do: @browser_tools ++ @demo_tools ++ @demo_report_tools ++ @knowledge_tools
   def mcp_tools(%Role{}), do: @knowledge_tools
 end

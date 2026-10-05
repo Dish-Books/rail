@@ -27,11 +27,11 @@ defmodule RailWeb.Live.QaStage do
   What this change broke sorts above what it merely stands next to. Both are
   worth reporting and only one of them is usually this branch's to fix.
 
-  While the pass is running there are no findings to read yet, so what is shown
-  instead is what it is doing: the checklist it wrote before it opened anything,
-  going green a row at a time, beside the browser it is driving. A pass that
-  stalls stalls somewhere a person can see, and one that stops half way says which
-  rows it never reached.
+  While the pass is running, what is shown is what it is doing: the checklist it
+  wrote before it opened anything, going green a row at a time, beside the browser
+  it is driving, with each finding listed above it as QA saves it and nothing to
+  rule on until the pass finishes. A pass that stalls stalls somewhere a person
+  can see, and one that stops half way says which rows it never reached.
   """
   use RailWeb, :live_component
 
@@ -113,9 +113,6 @@ defmodule RailWeb.Live.QaStage do
             <.qa_sidebar
               report={@report}
               summary_open={@pane == :summary}
-              held={@held}
-              unproven={@unproven}
-              reminders={@reminders}
               findings={@findings}
               selected={@selected}
               checklist={@checklist}
@@ -164,14 +161,13 @@ defmodule RailWeb.Live.QaStage do
                 evidence_text={@evidence_text}
                 position={@position}
                 count={length(@findings)}
+                running={@running}
                 decidable={@approvable and not @running}
                 neighbours={@neighbours}
                 target={@myself}
               />
 
               <.qa_pending :if={@pane == :pending} pending={@pending} report={@report} />
-
-              <.held_back :if={@pane == :held_back} running={@running} />
             </div>
           </div>
         </div>
@@ -184,7 +180,7 @@ defmodule RailWeb.Live.QaStage do
 
   @impl true
   def handle_event("select_finding", %{"key" => key}, socket) do
-    socket = socket |> assign(:selected_key, key) |> assign(:evidence_index, 0) |> focus(nil)
+    socket = socket |> assign(:selected_key, key) |> assign(:evidence_index, 0) |> focus({:finding, key})
 
     {:noreply, socket}
   end
@@ -351,9 +347,6 @@ defmodule RailWeb.Live.QaStage do
 
   attr :report, :any, required: true
   attr :summary_open, :boolean, required: true
-  attr :held, :boolean, required: true
-  attr :unproven, :list, required: true
-  attr :reminders, :integer, required: true
   attr :findings, :list, required: true
   attr :selected, :any, required: true
   attr :checklist, :any, required: true
@@ -376,39 +369,18 @@ defmodule RailWeb.Live.QaStage do
       data-qa="qa_sidebar"
       class="w-full lg:w-[300px] max-h-1/2 lg:max-h-none shrink-0 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/30"
     >
-      <.held_report
-        :if={@held}
-        unproven={@unproven}
-        running={@running}
-        reminders={@reminders}
-      />
-
       <.summary_item
-        :if={@report != nil and not @running and not @held}
+        :if={@report != nil and not @running}
         report={@report}
         open={@summary_open}
         target={@target}
       />
 
-      <div
-        :if={@held}
-        id="qa-findings-held"
-        data-qa="qa_findings_held"
-        class="shrink-0 border-b border-slate-200 dark:border-slate-700"
-      >
-        <div class="flex items-baseline gap-2 px-4 py-3 border-b border-slate-200 dark:border-slate-700">
-          <span class="text-sm font-bold text-slate-900 dark:text-slate-100">Findings</span>
-          <span class="text-xs text-slate-500 dark:text-slate-400">held back</span>
-        </div>
-        <p class="px-4 py-3 text-[12.5px] text-slate-500 dark:text-slate-400">
-          QA reported {length(@report.findings)}. None is shown until every one carries evidence.
-        </p>
-      </div>
-
       <.finding_list
-        :if={@findings != [] and not @held}
+        :if={@findings != []}
         findings={@findings}
         selected={@selected}
+        running={@running}
         target={@target}
       />
 
@@ -424,51 +396,13 @@ defmodule RailWeb.Live.QaStage do
     """
   end
 
-  attr :unproven, :list, required: true
-  attr :running, :boolean, required: true
-  attr :reminders, :integer, required: true
-
-  # Where the verdict sits once QA has reported, because until its report is
-  # valid what is wrong with the report is the verdict a reader can use.
-  defp held_report(assigns) do
-    assigns = assign(assigns, :limit, QaReport.evidence_reminder_limit())
-
-    ~H"""
-    <div
-      id="qa-held"
-      data-qa="qa_held"
-      data-tone={held_tone(@running)}
-      class={["shrink-0 w-full px-4 py-3 border-b", held_colors(@running)]}
-    >
-      <span class="flex items-center gap-2.5">
-        <.icon name="pi-clipboard-text" class="size-[15px]" />
-        <span class="text-sm font-bold">{held_title(@running)}</span>
-      </span>
-
-      <ul class="mt-2 space-y-2 text-[12.5px] leading-snug">
-        <li :for={finding <- @unproven} data-qa="qa_held_finding" class="flex gap-2">
-          <span class={["mt-1.5 size-1.5 rounded-full shrink-0", held_dot(@running)]} />
-          <span>
-            <span class="font-semibold">{finding.title}</span>
-            <span class="block opacity-80">{unproven_reason(finding)}</span>
-          </span>
-        </li>
-      </ul>
-
-      <p :if={@running} class="mt-2.5 text-[11.5px] opacity-80">
-        Reminder {@reminders} of {@limit}. Rail asked QA for evidence in the conversation.
-      </p>
-      <p :if={not @running and @reminders >= @limit} class="mt-2.5 text-[11.5px] opacity-80">
-        Still missing after {@limit} reminders, so Rail stopped asking.
-      </p>
-    </div>
-    """
-  end
-
   attr :findings, :list, required: true
   attr :selected, :any, required: true
+  attr :running, :boolean, required: true
   attr :target, :any, required: true
 
+  # A finding saved mid-pass shows at once, but nobody rules on a pass that has
+  # not finished, so it does not ask for a call yet.
   defp finding_list(assigns) do
     ~H"""
     <div
@@ -513,7 +447,7 @@ defmodule RailWeb.Live.QaStage do
               {finding.title}
             </span>
             <span
-              :if={QaFinding.undecided?(finding)}
+              :if={QaFinding.undecided?(finding) and not @running}
               data-qa="qa_finding_needs_call"
               class="block text-[10px] font-semibold text-blue-600 dark:text-blue-400"
             >
@@ -537,6 +471,7 @@ defmodule RailWeb.Live.QaStage do
   attr :evidence_text, :any, required: true
   attr :position, :integer, required: true
   attr :count, :integer, required: true
+  attr :running, :boolean, required: true
   attr :decidable, :boolean, required: true
   attr :neighbours, :map, required: true
   attr :target, :any, required: true
@@ -574,11 +509,18 @@ defmodule RailWeb.Live.QaStage do
               Not this change
             </span>
             <span
-              :if={@finding.decision == nil and @finding.status != :fixed}
+              :if={@finding.decision == nil and @finding.status != :fixed and not @running}
               data-qa="qa_finding_undecided"
               class="text-xs font-semibold text-blue-600 dark:text-blue-400"
             >
               Needs your call
+            </span>
+            <span
+              :if={@running and @finding.status != :fixed}
+              data-qa="qa_finding_locked"
+              class="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"
+            >
+              <.icon name="pi-lock-simple" class="size-3.5 shrink-0" /> Rule on it once QA finishes
             </span>
             <span
               :if={@finding.decision == :skip}
@@ -1030,6 +972,9 @@ defmodule RailWeb.Live.QaStage do
       |> assign(:taken, (assigns.current && filed_for(assigns.shots, assigns.current)) || [])
       |> assign(:filed, (assigns.current && filed_for(assigns.files, assigns.current)) || [])
 
+    # The row's newest picture is the one the pass just took, so it says so.
+    assigns = assign(assigns, :newest, List.last(assigns.taken))
+
     ~H"""
     <div
       id="qa-running"
@@ -1114,7 +1059,11 @@ defmodule RailWeb.Live.QaStage do
             phx-target={@target}
             phx-value-file={shot.file}
             title={shot.name}
-            class="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-left cursor-pointer hover:border-blue-400 dark:hover:border-blue-500"
+            class={[
+              "relative overflow-hidden rounded-lg border bg-white dark:bg-slate-900 text-left cursor-pointer hover:border-blue-400 dark:hover:border-blue-500",
+              shot == @newest && "border-blue-400 dark:border-blue-500",
+              shot != @newest && "border-slate-200 dark:border-slate-700"
+            ]}
           >
             <img
               src={~p"/tasks/#{@task.id}/qa/evidence/#{shot.file}"}
@@ -1122,6 +1071,13 @@ defmodule RailWeb.Live.QaStage do
               loading="lazy"
               class="h-[66px] w-full object-cover object-top"
             />
+            <span
+              :if={shot == @newest}
+              data-qa="qa_current_shot_new"
+              class="absolute top-1 left-1 rounded-full px-1.5 py-px text-[10px] font-semibold bg-blue-600 text-white"
+            >
+              New
+            </span>
             <span class="block truncate px-2 py-1.5 font-mono text-[10.5px] text-slate-500 dark:text-slate-400">
               {shot.name}
             </span>
@@ -1536,37 +1492,6 @@ defmodule RailWeb.Live.QaStage do
     """
   end
 
-  attr :running, :boolean, required: true
-
-  # A report sent back for evidence has nothing in it to decide yet, and only
-  # one that Rail has stopped asking about needs a person.
-  defp held_back(assigns) do
-    ~H"""
-    <div
-      id="qa-held-back"
-      data-qa="qa_held_back"
-      class="flex-1 min-h-0 flex flex-col items-center justify-center gap-5 p-8"
-    >
-      <div class={[
-        "flex items-center justify-center size-14 rounded-2xl ring-1",
-        held_back_tone(@running)
-      ]}>
-        <.icon name={held_back_icon(@running)} class="size-7" />
-      </div>
-
-      <div class="text-center max-w-md">
-        <h2 id="qa-held-back-title" class="text-base font-semibold text-slate-900 dark:text-slate-100">
-          {held_back_title(@running)}
-        </h2>
-
-        <p class="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-          {held_back_body(@running)}
-        </p>
-      </div>
-    </div>
-    """
-  end
-
   # What this change broke, worst first; then what it only stands next to. Ruling
   # on a finding never moves it.
   defp load(socket) do
@@ -1592,7 +1517,6 @@ defmodule RailWeb.Live.QaStage do
     |> assign(:reported, reported)
     |> assign(:pending, pending(socket.assigns.run, socket.assigns.task))
     |> assign(:report, report)
-    |> assign_held(report, reported)
     |> assign_evidence(selected)
     |> assign(:checklist, checklist)
     |> assign(:shots, shots)
@@ -1603,15 +1527,6 @@ defmodule RailWeb.Live.QaStage do
     |> assign(:current, current)
     |> assign(:driving, browser_driving(socket.assigns.run, socket.assigns.task))
     |> pane()
-  end
-
-  defp assign_held(socket, report, reported) do
-    held = held?(socket.assigns.run, reported, report)
-
-    socket
-    |> assign(:held, held)
-    |> assign(:unproven, if(held, do: QaReport.unproven(report), else: []))
-    |> assign(:reminders, socket.assigns.run.evidence_reminders)
   end
 
   # The tab picked stays picked while the finding does, and a finding that lost
@@ -1650,7 +1565,8 @@ defmodule RailWeb.Live.QaStage do
 
   defp chosen(%{shot: %{}}), do: :shot
   defp chosen(%{focus: :summary, report: %QaReport{}, running: false}), do: :summary
-  defp chosen(%{held: true, check: nil}), do: :held_back
+  # A finding saved mid-pass can be read while the browser drives; ruling waits.
+  defp chosen(%{focus: {:finding, _key}, selected: %QaFinding{}}), do: :finding
   defp chosen(%{running: true, check: check, current: check}), do: :browser
   defp chosen(%{check: %QaCheck{}}), do: :check
   defp chosen(%{running: true}), do: :browser
@@ -1725,11 +1641,6 @@ defmodule RailWeb.Live.QaStage do
       true -> :clean
     end
   end
-
-  # Only a report Rail has sent back is held, so a run that latched before
-  # reports were held keeps showing its findings.
-  defp held?(%Run{evidence_reminders: reminders}, false, %QaReport{}) when reminders > 0, do: true
-  defp held?(_run, _reported, _report), do: false
 
   # QA picks the kind it cites a file as, and none of them is a PDF, so what the
   # file holds decides how it is shown.
@@ -1837,43 +1748,6 @@ defmodule RailWeb.Live.QaStage do
 
   defp recommendation_line(%QaFinding{recommendation: :fix}), do: "QA recommends fixing this."
   defp recommendation_line(%QaFinding{recommendation: :skip}), do: "QA recommends leaving this."
-
-  defp held_tone(true), do: "sent_back"
-  defp held_tone(false), do: "not_valid"
-
-  defp held_title(true), do: "Sent back to QA"
-  defp held_title(false), do: "Report not valid"
-
-  defp held_colors(true),
-    do: "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900 text-amber-900 dark:text-amber-200"
-
-  defp held_colors(false),
-    do: "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900 text-red-800 dark:text-red-200"
-
-  defp held_dot(true), do: "bg-amber-500"
-  defp held_dot(false), do: "bg-red-500"
-
-  defp unproven_reason(%{refused: []}), do: "No evidence attached"
-  defp unproven_reason(%{refused: refused}), do: "Evidence refused: #{Enum.join(refused, "; ")}"
-
-  defp held_back_tone(true),
-    do: "bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 ring-blue-100 dark:ring-blue-900"
-
-  defp held_back_tone(false),
-    do: "bg-red-50 dark:bg-red-950 text-red-600 dark:text-red-400 ring-red-100 dark:ring-red-900"
-
-  defp held_back_icon(true), do: "pi-hourglass-medium"
-  defp held_back_icon(false), do: "pi-warning-circle"
-
-  defp held_back_title(true), do: "Waiting for QA's evidence"
-  defp held_back_title(false), do: "No findings to decide"
-
-  defp held_back_body(true), do: "The findings show here once QA's report is valid. Nothing needs you yet."
-
-  defp held_back_body(false) do
-    "QA's report still has findings without evidence. Message QA to fix it, or run QA again. " <>
-      "The findings it names are in the sidebar."
-  end
 
   # A file read as text keeps the kind QA cited it as, unless that was a picture
   # it is not. Anything else is named for what it holds.

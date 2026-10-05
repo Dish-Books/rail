@@ -1,16 +1,37 @@
+const SETTLE_FRAMES = 3;
+const SETTLE_CAP = 30;
+const READER_SCROLLS = ["wheel", "touchstart", "keydown"];
+
+// A line goes by what an edit above it does not renumber: its old number, or for an
+// added line, which has none, its text.
+const keyOf = (row) => {
+  const { kind } = row.dataset;
+
+  return kind === "added"
+    ? `added:${row.querySelector(".diff-text")?.textContent}`
+    : `${kind}:${row.querySelector(".diff-num").textContent}`;
+};
+
 // Keeps a reader where they were while the diff underneath them changes, and
 // takes them to one file or comment when they ask for it.
 //
 // The engineer writes files as it works, so the pane re-reads and LiveView
 // patches the rows. Anything that grows above the viewport would otherwise carry
-// the reader down the page mid-sentence. Before a patch this records which file
-// section the viewport is sitting in and how far into it; after, it puts that
-// section back where it was.
+// the reader down the page mid-sentence. Before a patch this records the line at
+// the top of the viewport, or its file when there is none; after, it puts that
+// line back where it was. A wrapped line above it may now take more rows.
 export const DiffScroller = {
   mounted() {
     this.anchor = null;
     this.scrolledTo = null;
     this.pendingComment = null;
+    this.settling = null;
+
+    this.stopSettling = () => {
+      this.settling = null;
+      for (const type of READER_SCROLLS) this.el.removeEventListener(type, this.stopSettling);
+    };
+
     this.honorScrollTo();
 
     // Picking a file or a comment out of the list beside the diff is asking to
@@ -46,11 +67,21 @@ export const DiffScroller = {
       this.restoreAnchor();
     });
 
+    // Turning wrap on or off re-flows every line without a patch, so the toolbar
+    // says when, and the line the reader is on stays put.
+    this.holdForWrap = () => (this.anchor = this.currentAnchor());
+    this.restoreForWrap = () => this.restoreAnchor();
+    window.addEventListener("diff:wrap-before", this.holdForWrap);
+    window.addEventListener("diff:wrap-after", this.restoreForWrap);
+
     this.watchHeaders();
   },
 
   destroyed() {
     this.stuck.disconnect();
+    this.stopSettling();
+    window.removeEventListener("diff:wrap-before", this.holdForWrap);
+    window.removeEventListener("diff:wrap-after", this.restoreForWrap);
   },
 
   watchHeaders() {
@@ -82,12 +113,31 @@ export const DiffScroller = {
     if (!this.anchor) return;
 
     const section = this.el.querySelector(`#${CSS.escape(this.anchor.id)}`);
+    const row = section && this.anchor.key ? this.rowFor(section, this.anchor) : null;
 
-    if (section) {
+    if (row) {
+      this.el.scrollTop += this.offsetOf(row) - this.anchor.rowOffset;
+    } else if (section) {
       this.el.scrollTop += this.offsetOf(section) - this.anchor.offset;
     }
 
     this.anchor = null;
+  },
+
+  // A patch reuses row elements for whatever line now sits there, so the line is
+  // looked for by its key; of repeated added text, the one nearest its old place.
+  rowFor(section, { key, rowOffset }) {
+    let found = null;
+    let distance = Infinity;
+
+    for (const candidate of section.querySelectorAll(".diff-line")) {
+      if (keyOf(candidate) !== key) continue;
+
+      const away = Math.abs(this.offsetOf(candidate) - rowOffset);
+      if (away < distance) [found, distance] = [candidate, away];
+    }
+
+    return found;
   },
 
   // Honored once per file asked for, so a later patch does not drag the reader
@@ -133,25 +183,36 @@ export const DiffScroller = {
     if (!target) return false;
 
     this.el.scrollTop += this.offsetOf(target) - under(target);
-    this.settle(find, under, 3);
+
+    // The reader scrolling on their own is not layout settling, so it ends the pull.
+    this.stopSettling();
+    const token = {};
+    this.settling = token;
+    for (const type of READER_SCROLLS) this.el.addEventListener(type, this.stopSettling, { passive: true });
+    this.settle(find, under, 0, token);
 
     return true;
   },
 
   // A section is only laid out once it is scrolled near, so the first jump lands
-  // against `contain-intrinsic-size` rather than the real thing. Re-measuring
-  // over the next few frames closes the gap the real layout opened.
-  settle(find, under, frames) {
-    if (frames <= 0) return;
-
+  // against `contain-intrinsic-size` rather than the real thing, which wrapped lines
+  // make far taller. Re-measuring until the target holds still closes that gap.
+  settle(find, under, frame, token) {
     requestAnimationFrame(() => {
+      if (this.settling !== token) return;
+
       const target = find();
-      if (!target) return;
+      if (!target) return this.stopSettling();
 
       const offset = this.offsetOf(target) - under(target);
-      if (Math.abs(offset) > 1) this.el.scrollTop += offset;
+      const moved = Math.abs(offset) > 1;
+      if (moved) this.el.scrollTop += offset;
 
-      this.settle(find, under, frames - 1);
+      if ((moved || frame + 1 < SETTLE_FRAMES) && frame + 1 < SETTLE_CAP) {
+        this.settle(find, under, frame + 1, token);
+      } else {
+        this.stopSettling();
+      }
     });
   },
 
@@ -163,21 +224,45 @@ export const DiffScroller = {
     return null;
   },
 
-  // The section the viewport is inside: the last one starting at or above it.
+  // The section the viewport is inside, the last one starting at or above it, and
+  // the first of its lines still showing at the top.
   currentAnchor() {
-    let anchor = null;
+    let section = null;
 
-    for (const section of this.sections()) {
-      const offset = this.offsetOf(section);
+    for (const candidate of this.sections()) {
+      const offset = this.offsetOf(candidate);
 
-      if (offset <= 0 || anchor === null) {
-        anchor = { id: section.id, offset };
-      }
-
+      if (offset <= 0 || section === null) section = candidate;
       if (offset > 0) break;
     }
 
-    return anchor;
+    if (!section) return null;
+
+    const row = this.rowAtTop(section);
+    const anchor = { id: section.id, offset: this.offsetOf(section) };
+
+    return row ? { ...anchor, key: keyOf(row), rowOffset: this.offsetOf(row) } : anchor;
+  },
+
+  // Rows run top to bottom, so the first one not wholly above the viewport is
+  // found by halving rather than measuring thousands.
+  rowAtTop(section) {
+    const rows = section.querySelectorAll(".diff-line");
+    const top = this.el.getBoundingClientRect().top;
+    let low = 0;
+    let high = rows.length;
+
+    while (low < high) {
+      const middle = (low + high) >> 1;
+
+      if (rows[middle].getBoundingClientRect().bottom <= top) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+
+    return rows[low] || null;
   },
 
   sections() {

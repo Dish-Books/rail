@@ -114,6 +114,7 @@ defmodule RailWeb.SandboxesLiveTest do
     finished = ended.(%{ended_reason: :finished})
     killed = ended.(%{ended_reason: :out_of_memory, reserved_cpus: 2, reserved_memory_gb: 4})
     stopped = ended.(%{ended_reason: :stopped, stopped_by_id: user.id})
+    handed_over = ended.(%{ended_reason: :handed_over})
     timed_out = ended.(%{kind: :ci, ended_reason: :timed_out})
     killed_otherwise = ended.(%{ended_reason: :killed})
     never_started = ended.(%{ended_reason: :failed_to_start})
@@ -143,6 +144,7 @@ defmodule RailWeb.SandboxesLiveTest do
       finished: finished,
       killed: killed,
       stopped: stopped,
+      handed_over: handed_over,
       timed_out: timed_out,
       killed_otherwise: killed_otherwise,
       never_started: never_started
@@ -228,6 +230,7 @@ defmodule RailWeb.SandboxesLiveTest do
     finished: finished,
     killed: killed,
     stopped: stopped,
+    handed_over: handed_over,
     timed_out: timed_out,
     killed_otherwise: killed_otherwise,
     never_started: never_started
@@ -239,10 +242,12 @@ defmodule RailWeb.SandboxesLiveTest do
     refute has_element?(view, "#ended-sandboxes thead", "Freed")
     refute has_element?(view, "#ended-#{killed.id} [data-qa='freed']")
     assert has_element?(view, "#ended-#{stopped.id} [data-qa='ended-how']", "Stopped by Lucas Stellet")
+    # An engineer turn ended by `commit` finished; nobody stopped it.
+    assert has_element?(view, "#ended-#{handed_over.id} [data-qa='ended-how']", "Finished")
     assert has_element?(view, "#ended-#{timed_out.id} [data-qa='ended-how']", "Timed out")
     assert has_element?(view, "#ended-#{killed_otherwise.id} [data-qa='ended-how']", "Killed")
     assert has_element?(view, "#ended-#{never_started.id} [data-qa='ended-how']", "Could not start")
-    assert view |> element("#ended-sandboxes tbody") |> render() |> String.split("<tr") |> length() == 7
+    assert view |> element("#ended-sandboxes tbody") |> render() |> String.split("<tr") |> length() == 8
   end
 
   test "stopping a run from the line takes it out, and records who stopped it", %{

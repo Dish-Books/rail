@@ -2,6 +2,7 @@ defmodule Rail.Tools.Actions.RunAgentTest do
   # Dispatch is switched off application-wide in one test, so nothing may run beside it.
   use Rail.DataCase, async: false
 
+  alias Rail.Repo
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
@@ -17,6 +18,7 @@ defmodule Rail.Tools.Actions.RunAgentTest do
     #!/bin/sh
     case "$1" in
       fail) echo "broke"; exit 3 ;;
+      refused) echo '{"type":"result","is_error":true,"error":"authentication_failed","result":"Invalid bearer token"}'; exit 1 ;;
       hang) sleep 5 ;;
       *) echo "$CLAUDE_CONFIG_DIR|$RAIL_MCP_TOKEN|$(pwd)" ;;
     esac
@@ -74,10 +76,36 @@ defmodule Rail.Tools.Actions.RunAgentTest do
   end
 
   test "a non-zero exit, or no agent to run, is an error", %{backend: backend, dir: dir, role: role} do
-    assert {:error, {:exit, 3}} = Tools.run_agent(role, ["fail"], cd: dir, timeout: 5_000)
+    assert {:error, {:exit, 3, "broke\n"}} = Tools.run_agent(role, ["fail"], cd: dir, timeout: 5_000)
 
     {:ok, _missing} = Tools.update_backend(system_scope(), backend, %{executable_path: Path.join(dir, "no-such-agent")})
     assert {:error, %ErlangError{original: :enoent}} = Tools.run_agent(role, [], cd: dir, timeout: 5_000)
+  end
+
+  test "runs nothing when the only account offering the model is signed out", %{backend: backend, dir: dir, role: role} do
+    backend |> Backend.usage_changeset(%{name: :claude, status: :signed_out}) |> Repo.update!()
+    reject(&Tools.run/3)
+
+    assert {:error, :backend_signed_out} = Tools.run_agent(role, [], cd: dir, timeout: 5_000)
+  end
+
+  test "a sign-in Claude refuses signs the account out once, so nothing more is started on it", %{
+    backend: backend,
+    dir: dir,
+    role: role
+  } do
+    assert {:error, {:exit, 1, output}} = Tools.run_agent(role, ["refused"], cd: dir, timeout: 5_000)
+    assert Tools.agent_failure_reason(output) =~ "Invalid bearer token. Sign the backend in again"
+
+    assert %Backend{status: :signed_out, session_lost_at: %DateTime{} = lost_at, unavailable_reason: reason} =
+             Repo.get!(Backend, backend.id)
+
+    assert reason =~ "Claude refused this backend's sign-in."
+
+    # A pass that started before the refusal was recorded changes nothing when it is refused too.
+    Backend |> Repo.get!(backend.id) |> Backend.usage_changeset(%{name: :claude, status: :ready}) |> Repo.update!()
+    assert {:error, {:exit, 1, _output}} = Tools.run_agent(role, ["refused"], cd: dir, timeout: 5_000)
+    assert %Backend{session_lost_at: ^lost_at} = Repo.get!(Backend, backend.id)
   end
 
   test "an agent still running at the timeout is stopped", %{dir: dir, role: role} do
@@ -128,8 +156,8 @@ defmodule Rail.Tools.Actions.RunAgentTest do
     assert_in_delta DateTime.diff(at, DateTime.utc_now()), 5 * 60, 5
   end
 
-  test "names the model when no signed-in account offers it", %{account: account, dir: dir, role: role} do
-    _signed_out = account.("claude-elsewhere", [], %{status: :signed_out})
+  test "names the model when no account that can run it offers it", %{account: account, dir: dir, role: role} do
+    _unconfigured = account.("claude-elsewhere", [], %{status: :not_configured})
 
     assert {:error, "No signed-in account offers claude-elsewhere. " <> _how} =
              Tools.run_agent(%{role | model: "claude-elsewhere"}, [], cd: dir, timeout: 5_000)

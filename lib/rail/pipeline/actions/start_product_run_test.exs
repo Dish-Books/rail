@@ -86,7 +86,12 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
 
     expect(Tools, :start_os_process, fn %Run{role_id: ^role_id, status: :running} = run, argv ->
       assert ["-p", prompt, "--model", "claude-opus-5-5", "--effort", "high" | _flags] = argv
-      assert prompt =~ "tickets/#{issue.identifier}.md"
+      assert prompt =~ "title: Attachments follow their source document"
+      assert prompt =~ "priority: medium"
+      assert prompt =~ "Save the ticket with the `save_ticket` tool."
+      assert prompt =~ "Save a first draft as soon as you have one, and save again after every change."
+      refute prompt =~ "<<'TICKET'"
+      refute prompt =~ "tickets/#{issue.identifier}.md"
       assert prompt =~ ~s(<comment author="Ana")
       assert prompt =~ "It only happens on Sysco bills."
       assert "--append-system-prompt" in argv
@@ -105,13 +110,8 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
     assert %Task{worktree_path: worktree_path} = task = Repo.get!(Task, task_id)
     assert File.dir?(worktree_path)
 
-    content =
-      task.scratch_path
-      |> Path.join("tickets/#{issue.identifier}.md")
-      |> File.read!()
-
-    assert content =~ "title: Attachments follow their source document"
-    assert content =~ "priority: medium"
+    # A seeded file would read as a saved ticket before the agent saved one.
+    refute File.exists?(Path.join(task.scratch_path, "tickets/#{issue.identifier}.md"))
 
     # Queued, not called: no Linear mock is left, so a call made now would raise.
     assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: issue_id})

@@ -5,8 +5,9 @@ defmodule RailWeb.McpController do
   It is stateless: no `Mcp-Session-Id`, no server-initiated stream. Each POST is
   one JSON-RPC message answered with one JSON body, which is all an agent needs
   to list and call the tools Rail proxies. Tool execution failures come back as
-  a `CallToolResult` with `isError: true`, so the agent sees them; a name it may
-  not call is a protocol error.
+  a `CallToolResult` with `isError: true`, so the agent sees them: a refused save
+  with the reason to fix it, a failure of Rail's own tool as Rail's, and only a
+  proxied server's as that server's. A name it may not call is a protocol error.
   """
   use RailWeb, :controller
 
@@ -63,6 +64,14 @@ defmodule RailWeb.McpController do
 
       {:error, :unknown_tool} ->
         {:error, -32_602, "Unknown tool: #{params["name"]}"}
+
+      {:error, {:refused, text}} ->
+        {:ok, %{"content" => [%{"type" => "text", "text" => text}], "isError" => true}}
+
+      {:error, {:rail_failed, reason}} ->
+        Logger.warning("[mcp] #{params["name"]} failed: #{inspect(reason)}")
+        text = "Rail could not run #{params["name"]}: #{if is_binary(reason), do: reason, else: inspect(reason)}"
+        {:ok, %{"content" => [%{"type" => "text", "text" => text}], "isError" => true}}
 
       {:error, reason} ->
         Logger.warning("[mcp] #{params["name"]} failed: #{inspect(reason)}")

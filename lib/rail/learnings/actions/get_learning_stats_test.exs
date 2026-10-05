@@ -42,10 +42,11 @@ defmodule Rail.Learnings.Actions.GetLearningStatsTest do
       }
     end
 
-    {:ok, _findings} =
-      Pipeline.sync_review_findings(task, [finding.("doc-a", calibration.id), finding.("broke", convention.id)])
+    for finding <- [finding.("doc-a", calibration.id), finding.("broke", convention.id)],
+        do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
-    {:ok, _findings} = Pipeline.sync_review_findings(other_task, [finding.("doc-b", calibration.id)])
+    for finding <- [finding.("doc-b", calibration.id)],
+        do: {:ok, _saved} = Pipeline.save_review_finding(other_task, finding)
 
     %{calibration: calibration, convention: convention, task: task, other_task: other_task}
   end

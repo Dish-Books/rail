@@ -8,6 +8,7 @@ defmodule RailWeb.Hooks.NavHookTest do
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
+  alias Rail.Tools.Schemas.Backend
   alias Rail.Triage
   alias Rail.Users
 
@@ -267,5 +268,25 @@ defmodule RailWeb.Hooks.NavHookTest do
       view |> element("#project-switcher-button") |> render_click()
       refute has_element?(view, "#project-option-#{other_project.id}")
     end
+  end
+
+  test "every page says so when a backend was signed out with nobody signing it out", %{conn: conn} do
+    backend =
+      Repo.insert!(
+        Backend.changeset(%Backend{}, %{
+          name: :claude,
+          executable_path: "/bin/sleep",
+          label: "work"
+        })
+      )
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues")
+    refute has_element?(view, "[data-qa=lost_backend_banner]")
+
+    Repo.update!(Backend.usage_changeset(backend, %{status: :signed_out, session_lost_at: DateTime.utc_now()}))
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues")
+    assert has_element?(view, "#lost-backend-banner-#{backend.id}", "The work backend lost its sign-in")
+    assert has_element?(view, "#lost-backend-banner-#{backend.id} a[href='/settings/backends']")
   end
 end

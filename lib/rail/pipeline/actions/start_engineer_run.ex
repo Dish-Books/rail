@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.StartEngineerRun do
   @moduledoc """
   Spawns the engineer stage's run: the brief naming the plan to build and the
-  file that says the build is finished, and the process that does it.
+  `commit` call that says the build is finished, and the process that does it.
 
   `enter_stage/3` has already claimed the stage, started the run and made the
   worktree; this is the part only engineer knows about.
@@ -30,13 +30,12 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
   """
   def start_engineer_run(%Run{task: %Task{} = task, role: %Role{} = role} = run) do
     task = Repo.preload(task, [:project, issue: [comments: :replies]])
-    File.mkdir_p!(Path.join(task.scratch_path, "commits"))
+    # The brief promises a workspace that survives between turns.
+    File.mkdir_p!(task.scratch_path)
 
     prompt =
       Pipeline.build_prompt(
         task: task,
-        cli: role.cli,
-        role_instructions: role.system_prompt,
         context_snippet: brief(task, run),
         pending_answer: run.pending_answer,
         conversation_id: run.conversation_id
@@ -44,7 +43,6 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
 
     args =
       Tools.build_args(
-        cli: role.cli,
         prompt: prompt,
         model: role.model,
         reasoning_effort: role.reasoning_effort || "high",
@@ -57,9 +55,6 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
   end
 
   defp brief(%Task{scratch_path: scratch_path, issue: %Issue{} = issue} = task, %Run{} = run) do
-    dir = Path.join(scratch_path, "commits")
-    file = Path.join(dir, "#{issue.identifier}.md")
-
     String.trim("""
     Build the approved plan below. #{workspace(task)}
 
@@ -69,19 +64,13 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
 
     The machine is Rail's. Do not ask about it: work around what you can, and say in your last message what you could not. A headless Chrome you start yourself needs `--no-sandbox` here.
 
-    Writing #{file} is how you say the work is finished, and it is the last thing you do. Write it from your worktree with a heredoc, the body and its closing MSG line at column zero:
+    Calling the `commit` tool is how you say the work is finished, and it is the last thing you do: the call ends your turn on the spot, and Rail commits your worktree under its `message` and sends it on. The message is one line saying what this change does, a blank line, then what changed and why, as a commit body.
 
-    mkdir -p #{dir}
-    cat > #{file} <<'MSG'
-    <one line saying what this change does>
-
-    <what changed and why, as a commit body>
-    MSG
-
-    - A heredoc into #{file}, never an inline string.
-    - Write it only when the work is actually finished and the tests for what you changed pass. A test that fails only where your change does not touch is not a reason to hold it back: name the test in the commit body and finish. If you stop part way, for a question or anything else, leave the file unwritten and the task waits for you rather than committing half a change.#{ci(task)}
+    - Call it only when the work is actually finished and the tests for what you changed pass. A test that fails only where your change does not touch is not a reason to hold it back: name the test in the commit body and finish. If you stop part way, for a question or anything else, do not call it, and the task waits for you rather than committing half a change.
+    - `commit` is the only way to hand over your work. Write no commit message file.
+    - `request_merge` asks Rail to merge #{task.project.default_branch} into a clean worktree, for example when CI failed on a change that landed there. It ends your turn too, and conflicts come back to you as a new turn.#{ci(task)}
     - Run every command in the foreground and wait for it, test runs included. Never start one in the background meaning to read it when it finishes: your turn ends the moment you stop writing, the CLI carrying you exits, and it kills whatever you left running. Nothing wakes you when it is done, so "I have started X and will check it shortly" is the end of the round with X unread and the work unfinished. A single command is cut off at ten minutes, so give a long one a `timeout` under that, or run it in parts, rather than backgrounding it.
-    - Review and QA findings come back as further turns of this same conversation. Each round writes the file again and becomes a commit of its own, so describe that round's change, not the whole ticket over again.
+    - Review and QA findings come back as further turns of this same conversation. Each round ends with `commit` again and becomes a commit of its own, so describe that round's change, not the whole ticket over again.
     - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or a named assumption is not a question.
 
     #{plan(task)}

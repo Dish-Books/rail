@@ -46,10 +46,10 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
 
     {:ok, _source_engineer} =
       Roles.create_role(system_scope(), source, %{
-        cli: :agy,
+        cli: :claude,
         stage: :engineer,
         name: "Source Engineer",
-        model: "gemini-3.8-flash-high",
+        model: "claude-haiku-5",
         system_prompt: "Source Engineer prompt",
         reserved_cpus: 2,
         reserved_memory_gb: 4
@@ -64,8 +64,8 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
 
     assert Enum.any?(
              target_roles,
-             &(&1.name == "Source Engineer" and &1.stage == :engineer and &1.cli == :agy and
-                 &1.model == "gemini-3.8-flash-high" and &1.reserved_cpus == 2 and &1.reserved_memory_gb == 4)
+             &(&1.name == "Source Engineer" and &1.stage == :engineer and &1.cli == :claude and
+                 &1.model == "claude-haiku-5" and &1.reserved_cpus == 2 and &1.reserved_memory_gb == 4)
            )
   end
 
@@ -85,10 +85,10 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
 
     {:ok, _source_engineer} =
       Roles.create_role(system_scope(), source, %{
-        cli: :agy,
+        cli: :claude,
         stage: :engineer,
         name: "Source Engineer",
-        model: "gemini-3.8-flash-high",
+        model: "claude-opus-5-5",
         system_prompt: "Source Engineer prompt"
       })
 

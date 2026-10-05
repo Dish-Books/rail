@@ -13,7 +13,8 @@ defmodule Rail.Tools.Actions.LogoutBackend do
     account_detail: nil,
     usage: [],
     fetched_at: nil,
-    unavailable_reason: nil
+    unavailable_reason: nil,
+    session_lost_at: nil
   }
 
   @doc """

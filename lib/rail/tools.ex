@@ -36,6 +36,7 @@ defmodule Rail.Tools do
 
   defdelegate run(executable, args, opts \\ []), to: Actions.Run
   defdelegate run_agent(role, argv, opts), to: Actions.RunAgent
+  defdelegate agent_failure_reason(output), to: Actions.AgentFailureReason
   defdelegate spawn_os_process(executable, args, opts \\ []), to: Actions.SpawnOsProcess
   defdelegate connect_port(port, owner), to: Actions.ConnectPort
   defdelegate os_process_alive?(pid), to: Actions.OsProcessAlive

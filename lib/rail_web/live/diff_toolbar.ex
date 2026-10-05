@@ -1,7 +1,8 @@
 defmodule RailWeb.Live.DiffToolbar do
   @moduledoc """
   The diff pane's toolbar, a component of its own so that its counts move
-  without patching every line of the pane.
+  without patching every line of the pane. It folds at `@5xl` and again at `@3xl`
+  of its own width, which is what a 1440 and a 1280 window leave it.
   """
   use RailWeb, :live_component
 
@@ -11,7 +12,7 @@ defmodule RailWeb.Live.DiffToolbar do
     <div
       id="diff-toolbar"
       data-qa="diff_toolbar"
-      class="h-12 shrink-0 flex items-center gap-3 px-3 border-b border-slate-200 dark:border-slate-700"
+      class="@container h-12 shrink-0 flex items-center gap-3 px-3 border-b border-slate-200 dark:border-slate-700"
     >
       <button
         type="button"
@@ -38,6 +39,22 @@ defmodule RailWeb.Live.DiffToolbar do
         option_qa="diff_filter_option"
       />
 
+      <%!-- Wrap is this browser's choice, which the hook applies and tells the stage. --%>
+      <.segmented_control
+        id="diff-wrap"
+        data-qa="diff_wrap"
+        class="shrink-0"
+        title="Long lines"
+        phx-hook="DiffWrap"
+        data-target={@target}
+        options={[{:scroll, "Scroll", "pi-arrow-line-right"}, {:wrap, "Wrap", "pi-arrow-u-down-left"}]}
+        selected={@wrap}
+        event="select_diff_wrap"
+        target={@target}
+        value_name="wrap"
+        option_qa="diff_wrap_option"
+      />
+
       <.diff_stat additions={@additions} deletions={@deletions} class="shrink-0" />
 
       <div
@@ -46,7 +63,7 @@ defmodule RailWeb.Live.DiffToolbar do
         class="shrink-0 flex items-center gap-2"
         title="Files you have marked read"
       >
-        <div class="h-1.5 w-16 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+        <div class="hidden @3xl:block h-1.5 w-16 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
           <div class="h-full rounded-full bg-emerald-500" style={"width: #{read(@total, @viewed)}%;"} />
         </div>
         <span class="font-mono text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
@@ -77,7 +94,7 @@ defmodule RailWeb.Live.DiffToolbar do
       <span
         :if={@unsent > 0}
         data-qa="diff_comments_hint"
-        class="inline-flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap"
+        class="hidden @5xl:inline-flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap"
       >
         <span class={[
           "size-1.5 rounded-full",
@@ -95,9 +112,13 @@ defmodule RailWeb.Live.DiffToolbar do
         phx-click="send_diff_comments"
         phx-disable-with="Sending…"
         phx-target={@target}
-        class="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 shadow-xs cursor-pointer"
+        title={hint(@engineer_running?)}
+        class="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 shadow-xs cursor-pointer whitespace-nowrap"
       >
-        <.icon name="pi-paper-plane-tilt" class="size-4" />{send_label(@unsent)}
+        <.icon name="pi-paper-plane-tilt" class="size-4" />
+        <span>
+          Send {@unsent}<span data-qa="send_noun" class="hidden @3xl:inline">{noun(@unsent)}</span>
+        </span>
       </button>
     </div>
     """
@@ -109,6 +130,6 @@ defmodule RailWeb.Live.DiffToolbar do
   defp hint(true), do: "Engineer is working. These wait until its turn ends."
   defp hint(false), do: "Engineer is idle and starts on these at once."
 
-  defp send_label(1), do: "Send 1 comment"
-  defp send_label(unsent), do: "Send #{unsent} comments"
+  defp noun(1), do: " comment"
+  defp noun(_unsent), do: " comments"
 end

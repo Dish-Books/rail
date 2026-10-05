@@ -127,7 +127,7 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
     #{String.trim(tail)}
     ```
 
-    The whole log is #{stream_path}. Fix what it reports, then finish the round as before, writing the commit message again. Rail runs CI once more when you do. When the failure is not your change's to fix, such as a flaky test elsewhere, write the commit message without changing anything and Rail runs CI again on the same commit.
+    The whole log is #{stream_path}. Fix what it reports, then call `commit` again with a message for this round. Rail runs CI once more when you do. When the failure is not your change's to fix, such as a flaky test elsewhere, call `commit` without changing anything and Rail runs CI again on the same commit. When it failed on a change that landed on the default branch, call `request_merge` instead.
     """
   end
 

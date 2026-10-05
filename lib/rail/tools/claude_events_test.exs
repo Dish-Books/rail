@@ -115,6 +115,74 @@ defmodule Rail.Tools.ClaudeEventsTest do
     assert state.logs == ["[tool error] File not found: /repo/missing.dart"]
   end
 
+  # A refusal comes back answering the call only by its id, so the name the call
+  # was made under is what files it, whether the text came as a string or blocks.
+  test "a failed result is logged under the name of the tool that failed" do
+    call = %{
+      "type" => "assistant",
+      "message" => %{
+        "content" => [
+          %{"type" => "tool_use", "id" => "toolu_1", "name" => "mcp__rail__save_finding", "input" => %{"key" => "k"}},
+          %{"type" => "tool_use", "id" => "toolu_2", "name" => "Read", "input" => %{"file_path" => "/repo/a.ex"}}
+        ]
+      }
+    }
+
+    refused = %{
+      "type" => "user",
+      "message" => %{
+        "content" => [
+          %{
+            "type" => "tool_result",
+            "tool_use_id" => "toolu_1",
+            "is_error" => true,
+            "content" => [%{"type" => "text", "text" => "Refused, nothing saved."}, %{"type" => "image"}]
+          },
+          %{"type" => "tool_result", "tool_use_id" => "toolu_2", "is_error" => true, "content" => %{"odd" => true}}
+        ]
+      }
+    }
+
+    state = ClaudeEvents.new() |> ClaudeEvents.handle_event(call) |> ClaudeEvents.handle_event(refused)
+
+    assert Enum.take(state.logs, -2) == [
+             "[tool error mcp__rail__save_finding] Refused, nothing saved.",
+             ~s([tool error Read] %{"odd" => true})
+           ]
+  end
+
+  # A turn `commit` stops never writes its result event, so what it spent is
+  # counted from each message as it streams, one message arriving in several events.
+  test "usage is counted per message as it streams, and the result's own total wins when it comes" do
+    said = fn id, input, output ->
+      %{
+        "type" => "assistant",
+        "message" => %{
+          "id" => id,
+          "content" => [%{"type" => "text", "text" => "Working."}],
+          "usage" => %{"input_tokens" => input, "output_tokens" => output, "cache_read_input_tokens" => 10}
+        }
+      }
+    end
+
+    streamed =
+      Enum.reduce([said.("msg_1", 100, 5), said.("msg_1", 100, 20), said.("msg_2", 40, 7)], ClaudeEvents.new(), fn event,
+                                                                                                                   state ->
+        ClaudeEvents.handle_event(state, event)
+      end)
+
+    assert %Run.Usage{input_tokens: 140, output_tokens: 27, cache_read_input_tokens: 20} = streamed.usage
+
+    finished =
+      ClaudeEvents.handle_event(streamed, %{
+        "type" => "result",
+        "subtype" => "success",
+        "usage" => %{"input_tokens" => 150, "output_tokens" => 30}
+      })
+
+    assert %Run.Usage{input_tokens: 150, output_tokens: 30, cache_read_input_tokens: 0} = finished.usage
+  end
+
   test "rate_limit_event logs when status is not allowed" do
     state = ClaudeEvents.new()
 
@@ -209,6 +277,10 @@ defmodule Rail.Tools.ClaudeEventsTest do
     assert ClaudeEvents.reported_failure?(state)
     refute ClaudeEvents.success?(state)
     assert state.result_error == "claude reported error_max_turns: Ran out of turns"
+    refute state.authentication_failed
+
+    refused = Map.put(event, "error", "authentication_failed")
+    assert %ClaudeEvents{authentication_failed: true} = ClaudeEvents.handle_event(ClaudeEvents.new(), refused)
 
     assert Enum.take(state.logs, -2) == [
              "[error] claude reported error_max_turns: Ran out of turns",

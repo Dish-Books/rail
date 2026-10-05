@@ -88,7 +88,7 @@ defmodule Rail.Pipeline.Actions.SendQaFindingsToEngineer do
 
     #{Enum.map_join(findings, "\n\n", &finding/1)}
 
-    Reproduce each one before you change anything - the steps are there because a defect you cannot see is a defect you will argue with rather than fix. Each carries QA's suggested fix, written for a finding that would be addressed, which is what this one is: apply it rather than weighing whether to. Work in the same worktree on the same branch, run the project's checks from the top, and write the commit message file as you did before - that round becomes a commit of its own, so describe what you changed this round rather than the whole ticket again. Where you disagree with a finding, say so and why rather than silently leaving it.
+    Reproduce each one before you change anything - the steps are there because a defect you cannot see is a defect you will argue with rather than fix. Each carries QA's suggested fix, written for a finding that would be addressed, which is what this one is: apply it rather than weighing whether to. Work in the same worktree on the same branch, run the project's checks from the top, and call `commit` when the round is done - that round becomes a commit of its own, so describe what you changed this round rather than the whole ticket again. Where you disagree with a finding, say so and why rather than silently leaving it.
     """
   end
 

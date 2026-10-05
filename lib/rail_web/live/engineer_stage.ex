@@ -41,6 +41,7 @@ defmodule RailWeb.Live.EngineerStage do
       |> assign_new(:error, fn -> nil end)
       |> assign_new(:committing, fn -> false end)
       |> assign_new(:filter, fn -> :branch end)
+      |> assign_new(:wrap, fn -> :scroll end)
       |> assign_new(:query, fn -> "" end)
       |> assign_new(:show_files, fn -> true end)
       |> assign_new(:collapsed, fn -> [] end)
@@ -186,6 +187,14 @@ defmodule RailWeb.Live.EngineerStage do
       |> assign(:draft, nil)
 
     {:noreply, load_diff(socket)}
+  end
+
+  # The browser wraps the lines itself, so only the toolbar's pressed option moves.
+  # Kept on this socket alone: it is this browser's choice, not the task's.
+  def handle_event("select_diff_wrap", %{"wrap" => wrap}, socket) do
+    socket = socket |> assign(:wrap, if(wrap == "wrap", do: :wrap, else: :scroll)) |> sync_pane()
+
+    {:noreply, socket}
   end
 
   def handle_event("filter_diff_files", %{"query" => query}, socket) do
@@ -608,6 +617,7 @@ defmodule RailWeb.Live.EngineerStage do
     %{
       files: assigns.files,
       filter: assigns.filter,
+      wrap: assigns.wrap,
       query: assigns.query,
       show_file_tree: assigns.show_files,
       collapsed: assigns.collapsed,

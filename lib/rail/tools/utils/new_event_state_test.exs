@@ -3,13 +3,11 @@ defmodule Rail.Tools.Utils.NewEventStateTest do
 
   import Rail.Tools.Utils.NewEventState
 
-  alias Rail.Tools.AgyEvents
   alias Rail.Tools.ClaudeEvents
   alias Rail.Tools.CommandEvents
 
-  test "picks the accumulator for the backend" do
+  test "a backend's stream gets Claude's accumulator" do
     assert %ClaudeEvents{} = new_event_state(:claude)
-    assert %AgyEvents{} = new_event_state(:agy)
   end
 
   test "a command's output gets a state with nothing to accumulate" do

@@ -106,7 +106,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinished do
         %{run | task: mark_pull_request_ready(task)}
 
       nil ->
-        fail(run, "The demo agent did not write #{write_up(task)}.")
+        fail(run, "The demo agent did not save a write-up.")
     end
   end
 
@@ -150,8 +150,6 @@ defmodule Rail.Pipeline.Utils.DemoRunFinished do
   # ffmpeg says what went wrong in its last few lines and spends everything above
   # them listing how it was built.
   defp tail(output), do: String.slice(output, -500, 500)
-
-  defp write_up(%Task{issue: %Issue{identifier: identifier}}), do: "demo/#{identifier}.json"
 
   defp fail(%Run{} = run, error) do
     {:ok, failed} = run |> Run.changeset(%{error: error}) |> Repo.update()

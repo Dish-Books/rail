@@ -51,6 +51,16 @@ defmodule Rail.Pipeline.Schemas.ReviewFindingTest do
     refute Map.has_key?(changeset.changes, :decision)
   end
 
+  test "a key that is not a slug, or a line that is not a positive whole number, is refused", %{attrs: attrs} do
+    assert %{key: ["must be lowercase letters, digits and hyphens"]} =
+             errors_on(ReviewFinding.changeset(%ReviewFinding{}, %{attrs | key: "Unhandled nil"}))
+
+    assert %{line: ["must be a positive whole number"]} =
+             errors_on(ReviewFinding.changeset(%ReviewFinding{}, Map.put(attrs, :line, 0)))
+
+    assert %{line: ["is invalid"]} = errors_on(ReviewFinding.changeset(%ReviewFinding{}, Map.put(attrs, :line, "88-94")))
+  end
+
   test "a finding needs a key, a title, a severity and a recommendation", %{task: task} do
     changeset = ReviewFinding.changeset(%ReviewFinding{}, %{task_id: task.id})
 
@@ -103,6 +113,11 @@ defmodule Rail.Pipeline.Schemas.ReviewFindingTest do
   test "severities read as words" do
     assert Enum.map(ReviewFinding.severities(), &ReviewFinding.severity_label/1) ==
              ["Blocker", "Major", "Minor", "Nit"]
+  end
+
+  test "a reviewer recommends one of two things and says one of three about a finding" do
+    assert ReviewFinding.recommendations() == [:fix, :skip]
+    assert ReviewFinding.statuses() == [:open, :fixed, :not_fixed]
   end
 
   test "a suppressed finding nobody decided is neither undecided nor outstanding, and Fix makes it one to fix", %{

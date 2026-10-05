@@ -58,13 +58,13 @@ defmodule Rail.Pipeline.Utils.ArchitectRunFinishedTest do
     task: task,
     run: run
   } do
-    assert %Run{error: "The architect did not write plans/AFN-1.md."} = architect_run_finished(run, [])
+    assert %Run{error: "The architect did not save a plan."} = architect_run_finished(run, [])
     assert %Task{stage: :architect} = Repo.reload!(task)
   end
 
   test "a plan that is only whitespace is no plan", %{run: run, plan_path: path} do
     File.write!(path, "\n  \n")
 
-    assert %Run{error: "The architect did not write plans/AFN-1.md."} = architect_run_finished(run, [])
+    assert %Run{error: "The architect did not save a plan."} = architect_run_finished(run, [])
   end
 end

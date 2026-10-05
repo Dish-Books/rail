@@ -21,6 +21,7 @@ defmodule Rail.Tools.Follower do
   import Rail.Tools.Utils.ParseLine
   import Rail.Tools.Utils.PumpStream
   import Rail.Tools.Utils.ReadExitFile
+  import Rail.Tools.Utils.RejectToken
   import Rail.Tools.Utils.RemoveSandbox
   import Rail.Tools.Utils.SandboxState
 
@@ -29,6 +30,7 @@ defmodule Rail.Tools.Follower do
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools.FollowerRegistry
+  alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
 
   @default_tail_interval 120
@@ -59,6 +61,7 @@ defmodule Rail.Tools.Follower do
     saved_offset: 0,
     resumed?: false,
     stopped?: false,
+    stop_reason: :stopped,
     timed_out?: false,
     oom_killed?: false,
     partial_line: "",
@@ -134,7 +137,14 @@ defmodule Rail.Tools.Follower do
   def handle_call({:stop_os_process, opts}, _from, state) do
     state |> sandbox() |> end_sandbox(opts)
 
-    state = %{state | exit_code: -1, stopped?: true, stopped_by_id: Keyword.get(opts, :stopped_by_id)}
+    state = %{
+      state
+      | exit_code: -1,
+        stopped?: true,
+        stop_reason: Keyword.get(opts, :ended_reason, :stopped),
+        stopped_by_id: Keyword.get(opts, :stopped_by_id)
+    }
+
     {updated_os_process, final_state} = do_child_exit(state)
     {:stop, :normal, {:ok, updated_os_process}, final_state}
   end
@@ -283,7 +293,7 @@ defmodule Rail.Tools.Follower do
       os_process
       |> OsProcess.changeset(%{
         status: :finished,
-        ended_reason: :stopped,
+        ended_reason: Keyword.get(opts, :ended_reason, :stopped),
         ended_at: DateTime.utc_now(),
         stopped_by_id: Keyword.get(opts, :stopped_by_id)
       })
@@ -331,6 +341,8 @@ defmodule Rail.Tools.Follower do
     case Repo.get(OsProcess, state.os_process_id) do
       %OsProcess{} = os_process ->
         {exit_code, error} = settle_exit(state, os_process, event_state, raw_stderr)
+        # Before the line moves, so nothing waiting on the same backend starts only to fail too.
+        if Map.get(event_state, :authentication_failed, false), do: reject_turn_token(os_process)
 
         {:ok, updated_os_process} =
           os_process
@@ -369,6 +381,15 @@ defmodule Rail.Tools.Follower do
     end
   end
 
+  # The token refused is the one of the account this turn was placed on.
+  defp reject_turn_token(%OsProcess{} = os_process) do
+    case Repo.preload(os_process, :backend) do
+      %OsProcess{backend: %Backend{} = backend} -> reject_token(backend)
+      # coveralls-ignore-next-line (every agent turn is placed on an account before it runs)
+      %OsProcess{backend: nil} -> :ok
+    end
+  end
+
   # 124, as `timeout(1)` has it: what ran out was time, not a stop someone asked for.
   defp settle_exit(%__MODULE__{timed_out?: true}, %OsProcess{}, _event_state, _raw_stderr) do
     {124, "Timed out, so it was stopped."}
@@ -393,7 +414,7 @@ defmodule Rail.Tools.Follower do
     {compute_exit_code(state.exit_code, error, event_state.saw_result), error}
   end
 
-  defp ended_reason(%__MODULE__{stopped?: true}, _exit_code), do: :stopped
+  defp ended_reason(%__MODULE__{stopped?: true, stop_reason: reason}, _exit_code), do: reason
   defp ended_reason(%__MODULE__{timed_out?: true}, _exit_code), do: :timed_out
   defp ended_reason(%__MODULE__{oom_killed?: true}, _exit_code), do: :out_of_memory
   defp ended_reason(%__MODULE__{}, 137), do: :killed

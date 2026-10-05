@@ -57,6 +57,7 @@ defmodule RailWeb.Settings.BackendsLive do
       projects={@projects}
       theme={@theme}
       show_project_switcher={@show_project_switcher}
+      lost_backends={@lost_backends}
     >
       <div class="max-w-[90rem] mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-10" id="backends-settings">
         <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
@@ -95,36 +96,15 @@ defmodule RailWeb.Settings.BackendsLive do
               <span>Refresh quotas</span>
             </.button>
 
-            <div class="relative" phx-click-away={JS.hide(to: "#add-backend-menu")}>
-              <.button
-                variant="primary"
-                id="add-backend-button"
-                data-qa="add_backend_button"
-                phx-click={JS.toggle(to: "#add-backend-menu")}
-              >
-                <.icon name="pi-plus" class="h-4 w-4" />
-                <span>Add backend</span>
-              </.button>
-
-              <div
-                id="add-backend-menu"
-                class="hidden absolute right-0 z-10 mt-2 w-48 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 py-1 shadow-lg"
-              >
-                <button
-                  :for={name <- Backend.names()}
-                  type="button"
-                  phx-click={
-                    JS.push("add_backend", value: %{name: name}) |> JS.hide(to: "#add-backend-menu")
-                  }
-                  id={"add-backend-#{name}"}
-                  data-qa={"add_backend_#{name}"}
-                  class="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
-                >
-                  <.icon name={backend_icon(name)} class="h-4 w-4" />
-                  {Backend.cli_name(name)}
-                </button>
-              </div>
-            </div>
+            <.button
+              variant="primary"
+              id="add-backend-claude"
+              data-qa="add_backend_claude"
+              phx-click="add_backend"
+            >
+              <.icon name="pi-plus" class="h-4 w-4" />
+              <span>Add backend</span>
+            </.button>
           </div>
         </div>
 
@@ -158,7 +138,7 @@ defmodule RailWeb.Settings.BackendsLive do
             <% account = Map.get(@accounts, key) %>
             <% login = Map.get(@logins, key) %>
             <% expanded = MapSet.member?(@expanded, key) %>
-            <% can_sign_in = draft["name"] == :claude and not is_nil(account) %>
+            <% can_sign_in = not is_nil(account) %>
             <% needs_sign_in = needs_sign_in?(account) %>
 
             <div
@@ -627,13 +607,12 @@ defmodule RailWeb.Settings.BackendsLive do
 
   # A new backend is only a draft until it is saved, keyed so it cannot collide
   # with a saved row's id, and shown open on top so it can be filled in.
-  def handle_event("add_backend", %{"name" => name}, socket) do
-    name = Enum.find(Backend.names(), &(to_string(&1) == name))
+  def handle_event("add_backend", _params, socket) do
     key = "new-#{System.unique_integer([:positive])}"
 
     socket =
       socket
-      |> assign(:drafts, Map.put(socket.assigns.drafts, key, new_draft(name)))
+      |> assign(:drafts, Map.put(socket.assigns.drafts, key, new_draft(:claude)))
       |> assign(:draft_keys, [key | socket.assigns.draft_keys])
       |> expand(key)
 
@@ -882,8 +861,10 @@ defmodule RailWeb.Settings.BackendsLive do
     added = Enum.reject(backends, &Map.has_key?(drafts, &1.id))
     {saved_keys, new_keys} = Enum.split_with(draft_keys, &(not String.starts_with?(&1, "new-")))
 
+    # A sign-in or sign-out changes what every page's banner says, as well as this card.
     socket
     |> assign(:accounts, Map.new(backends, &{&1.id, &1}))
+    |> assign(:lost_backends, Enum.filter(backends, & &1.session_lost_at))
     |> assign(:drafts, Enum.reduce(added, drafts, &Map.put(&2, &1.id, draft_for(&1))))
     |> assign(:draft_keys, new_keys ++ saved_keys ++ Enum.map(added, & &1.id))
   end
@@ -955,8 +936,6 @@ defmodule RailWeb.Settings.BackendsLive do
   end
 
   defp backend_icon(:claude), do: "pi-terminal-window"
-  defp backend_icon(:agy), do: "pi-arrow-up"
-  defp backend_icon(_other), do: "pi-diamond"
 
   defp account_subtitle(nil), do: "Not saved yet"
   defp account_subtitle(%Backend{account_label: label}) when label not in [nil, ""], do: label

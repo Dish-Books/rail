@@ -53,8 +53,6 @@ defmodule Rail.Pipeline.Schemas.Run do
     field :ci_failure_streak, :integer, default: 0
     # A human's commit or CI run asked for review once CI passes.
     field :review_on_ci_pass, :boolean, default: false
-    # QA reports sent back in a row for findings that carried no evidence.
-    field :evidence_reminders, :integer, default: 0
 
     # What the agent has spent getting this far, by kind of token. What that
     # costs is a question for the backend's own billing, not for a run.
@@ -90,8 +88,7 @@ defmodule Rail.Pipeline.Schemas.Run do
     :stage_fingerprint_head_sha,
     :stage_fingerprint_dirty_digest,
     :ci_failure_streak,
-    :review_on_ci_pass,
-    :evidence_reminders
+    :review_on_ci_pass
   ]
 
   @usage_fields [

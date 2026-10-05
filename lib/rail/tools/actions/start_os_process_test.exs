@@ -2,6 +2,8 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  import Rail.Tools.Utils.AdmitSandboxes
+
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -333,9 +335,7 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
     assert File.read!(system_prompt_path) == "Start it with mix phx.server."
   end
 
-  test "leaves the prompt in argv for other backends", %{backend: backend, role: role, run: run, scope: scope} do
-    backend |> Ecto.Changeset.change(name: :agy) |> Repo.update!()
-    {:ok, _role} = Roles.update_role(scope, role, %{cli: :agy})
+  test "leaves argv alone when it carries no prompt", %{run: run} do
     test_pid = self()
 
     expect(Tools, :spawn_os_process, fn _executable, args, opts ->
@@ -345,9 +345,9 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
 
     expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
 
-    {:ok, _os_process} = Tools.start_os_process(run, ["-p", "the prompt", "--model", "gemini"])
+    {:ok, _os_process} = Tools.start_os_process(run, ["--model", "claude-opus-5-5", "--version"])
 
-    assert_received {:spawned, ["-p", "the prompt", "--model", "gemini"], opts}
+    assert_received {:spawned, ["--model", "claude-opus-5-5", "--version"], opts}
     refute Keyword.has_key?(opts, :stdin_path)
   end
 
@@ -400,6 +400,30 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
     assert is_port(opts[:port])
 
     Tools.terminate_os_process(os_process.os_pid, grace_period: 100)
+  end
+
+  test "a turn on a signed-out backend is held in line, and starts once the backend is signed in", %{
+    backend: backend,
+    run: run
+  } do
+    signed_out = Repo.update!(Backend.usage_changeset(backend, %{status: :signed_out}))
+
+    assert {:ok, %OsProcess{id: held_id, status: :waiting_for_resources, os_pid: nil}} =
+             Tools.start_os_process(run, ["2"])
+
+    assert :waiting = run.id |> then(&Repo.get!(Run, &1)) |> Run.state()
+
+    assert [
+             "[rail] Turn 1 is held, because the claude backend is signed out. " <>
+               "It starts on its own once someone signs it in under Settings → Backends."
+           ] = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
+
+    Repo.update!(Backend.usage_changeset(signed_out, %{status: :ready}))
+    expect(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:ok, nil, 4242} end)
+    expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
+
+    assert %{^held_id => {:ok, %OsProcess{status: :running}}} = admit_sandboxes()
+    assert %Run{status: :running} = Repo.get!(Run, run.id)
   end
 
   describe "on a machine with too little free" do
@@ -831,7 +855,26 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
                "This conversation lives on Claude Code · home"
     end
 
-    test "a resumed conversation whose account is signed out fails, naming that account", %{
+    test "a resumed conversation whose account is signed out is held there, not moved", %{
+      ready_backend: ready_backend,
+      model: model,
+      run: run
+    } do
+      %{id: home_id} = home = ready_backend.(model, [], %{label: "home"})
+      assert {:ok, %OsProcess{id: first_id}} = Tools.start_os_process(run, ["2"])
+      OsProcess |> Repo.get!(first_id) |> OsProcess.changeset(%{status: :finished}) |> Repo.update!()
+      {:ok, run} = Pipeline.update_run(Repo.get!(Run, run.id), %{conversation_id: "sess-home", status: :finished})
+      home |> Backend.usage_changeset(%{name: :claude, status: :signed_out}) |> Repo.update!()
+      _other = ready_backend.(model, [], %{})
+      reject(Tools, :spawn_os_process, 3)
+
+      assert {:ok, %OsProcess{status: :waiting_for_resources, backend_id: ^home_id}} = Tools.start_os_process(run, ["2"])
+
+      assert run |> Pipeline.list_run_events() |> List.last() |> Map.fetch!(:line) =~
+               "is held, because the home backend is signed out"
+    end
+
+    test "a resumed conversation whose account Rail cannot run fails, naming that account", %{
       ready_backend: ready_backend,
       model: model,
       run: run
@@ -840,23 +883,23 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
       assert {:ok, %OsProcess{id: first_id}} = Tools.start_os_process(run, ["2"])
       OsProcess |> Repo.get!(first_id) |> OsProcess.changeset(%{status: :finished}) |> Repo.update!()
       {:ok, run} = Pipeline.update_run(Repo.get!(Run, run.id), %{conversation_id: "sess-home", status: :finished})
-      home |> Backend.usage_changeset(%{name: :claude, status: :signed_out}) |> Repo.update!()
-      _other = ready_backend.(model, [], %{})
+      home |> Backend.usage_changeset(%{name: :claude, status: :not_configured}) |> Repo.update!()
 
       assert {:error,
-              {:spawn_failed, "This conversation lives on Claude Code · home, which is not signed in." <> _how, %Run{}}} =
+              {:spawn_failed, "This conversation lives on Claude Code · home, which Rail cannot run." <> _how, %Run{}}} =
                Tools.start_os_process(run, ["2"])
 
       assert %Run{error: "This conversation lives on Claude Code · home" <> _rest} = Repo.get!(Run, run.id)
     end
 
-    test "with no signed-in account offering the model the run fails at once, naming it", %{
+    test "with no account that can run the model the run fails at once, naming it", %{
       ready_backend: ready_backend,
       model: model,
       role: role,
       run: run
     } do
-      _signed_out = ready_backend.(model, [], %{status: :signed_out})
+      # One that cannot run is no more use than none.
+      _unconfigured = ready_backend.(model, [], %{status: :not_configured})
 
       error =
         "No signed-in account offers #{model}. Sign one in on Settings › Backends, or pick another model for #{role.name}."

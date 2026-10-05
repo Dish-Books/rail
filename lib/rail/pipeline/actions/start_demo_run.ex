@@ -1,14 +1,14 @@
 defmodule Rail.Pipeline.Actions.StartDemoRun do
   @moduledoc """
-  Spawns the demo stage's run: the brief naming the change to show, the one file
-  the write-up goes in, and the process that records it.
+  Spawns the demo stage's run: the brief naming the change to show, the tool the
+  write-up is saved with, and the process that records it.
 
   `enter_stage/3` has already claimed the stage, started the run and made the
   worktree; this is the part only the demo knows about.
 
   The brief is only what Rail needs the run to know: where its worktree is, that
-  it is being recorded, which tools Rail serves it, the one file Rail reads
-  afterwards, and this task's own ticket, plan and QA findings. How to make a
+  it is being recorded, which tools Rail serves it, how the write-up is saved,
+  and this task's own ticket, plan and QA findings. How to make a
   walkthrough worth watching is the role's prompt, which the project owns and
   edits - Rail has no opinion about it and no reason to repeat it on every run.
 
@@ -45,8 +45,6 @@ defmodule Rail.Pipeline.Actions.StartDemoRun do
     prompt =
       Pipeline.build_prompt(
         task: task,
-        cli: role.cli,
-        role_instructions: role.system_prompt,
         context_snippet: brief(task),
         pending_answer: run.pending_answer,
         conversation_id: run.conversation_id
@@ -54,7 +52,6 @@ defmodule Rail.Pipeline.Actions.StartDemoRun do
 
     args =
       Tools.build_args(
-        cli: role.cli,
         prompt: prompt,
         model: role.model,
         reasoning_effort: role.reasoning_effort || "high",
@@ -67,9 +64,6 @@ defmodule Rail.Pipeline.Actions.StartDemoRun do
   end
 
   defp brief(%Task{scratch_path: scratch_path, issue: %Issue{} = issue} = task) do
-    dir = Path.join(scratch_path, "demo")
-    file = Path.join(dir, "#{issue.identifier}.json")
-
     String.trim("""
     Record a walkthrough of the change described below, by driving the running application. #{workspace(task)}
 
@@ -94,20 +88,12 @@ defmodule Rail.Pipeline.Actions.StartDemoRun do
     Captions need time to be read: two `demo_say` calls in the same second leave the first one unseen, so let about five seconds pass after each. Look at the page before you narrate that something worked: a script finishing is not the application having done the right thing. Never wait for something to age out or time out on camera; set the state up before `demo_start`.
 
     #{avoid(task)}
-    Writing #{file} is how you hand the recording over, and it is the last thing you do. Write it from your worktree with a heredoc, the body and its closing JSON line at column zero:
+    Saving the write-up with the `save_demo` tool is how you hand the recording over, once the take is recorded, and it is the last thing you do: its `title` is what this change lets somebody do, in a few words, its `summary` two or three sentences on what the change is and what the walkthrough shows about it, and `not_shown` anything on the ticket the recording does not cover, and why.
 
-    mkdir -p #{dir}
-    cat > #{file} <<'JSON'
-    {
-      "title": "what this change lets somebody do, in a few words",
-      "summary": "two or three sentences: what the change is, and what the walkthrough shows about it",
-      "not_shown": "anything on the ticket the recording does not cover, and why"
-    }
-    JSON
-
-    - A heredoc into #{file}, never an inline string. Write the whole file every recording; it describes the video that exists now, not what changed since the last one.
+    - Save the whole write-up every recording; it describes the video that exists now, not what changed since the last one. A save in the wrong shape is refused naming each field: fix it and save again.
     - `not_shown` is empty when the walkthrough covered everything. Where an outside service or an agent was a stand-in that a viewer would take for the real thing, say so there.
-    - Write the file only once the recording is finished. If you stop part way, for a question or anything else, leave the file unwritten and the task waits for you.
+    - Save it only once the recording is finished. If you stop part way, for a question or anything else, do not call `save_demo`, and the task waits for you.
+    - `save_demo` is the only way to hand the recording over. Write no write-up file.
     - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the app, the ticket or the plan is not a question.
 
     #{plan(task)}

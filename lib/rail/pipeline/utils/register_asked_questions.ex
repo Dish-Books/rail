@@ -28,7 +28,7 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestions do
   # markers; what the agent said carries none.
   @markers [
     "[tool]",
-    "[tool error]",
+    "[tool error",
     "[init]",
     "[result]",
     "[denied]",

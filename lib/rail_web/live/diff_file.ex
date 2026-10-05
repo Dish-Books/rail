@@ -117,9 +117,9 @@ defmodule RailWeb.Live.DiffFile do
       <div
         :if={not @collapsed?}
         style={"content-visibility: auto; contain-intrinsic-size: auto #{intrinsic_height(@segments)}px;"}
-        class="@container overflow-x-auto rounded-b-xl"
+        class="diff-body rounded-b-xl"
       >
-        <div class="min-w-max">
+        <div class="diff-rows">
           <div :for={segment <- @segments} class="contents">
             <.diff_row
               :for={row <- segment.rows}

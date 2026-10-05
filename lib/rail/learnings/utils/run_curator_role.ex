@@ -13,8 +13,9 @@ defmodule Rail.Learnings.Utils.RunCuratorRole do
 
   @doc """
   Runs the curator over `brief` with `dir` as its working directory. Returns
-  `{:ok, result}`, or an error naming why there is none, which for a curator
-  that waits for usage is `{:waiting_for_usage, resets_at}`.
+  `{:ok, result}`, or an error naming why there is none: a failed agent is
+  `{:error, {:exit, code, reason}}`, with the reason it gave or `nil`, and a
+  curator that waits for usage `{:error, {:waiting_for_usage, resets_at}}`.
   """
   def run_curator_role(%Project{id: project_id}, dir, brief) do
     result = Path.join(dir, "result.json")
@@ -27,8 +28,8 @@ defmodule Rail.Learnings.Utils.RunCuratorRole do
          {:ok, %{} = decoded} <- Jason.decode(content) do
       {:ok, decoded}
     else
-      {:error, reason} when reason in [:no_role, :timeout, :dispatch_disabled] -> {:error, reason}
-      {:error, {:exit, _code} = exit} -> {:error, exit}
+      {:error, reason} when reason in [:no_role, :timeout, :dispatch_disabled, :backend_signed_out] -> {:error, reason}
+      {:error, {:exit, code, output}} -> {:error, {:exit, code, Tools.agent_failure_reason(output)}}
       {:error, {:waiting_for_usage, %DateTime{}} = wait} -> {:error, wait}
       {:error, no_account} when is_binary(no_account) -> {:error, no_account}
       _missing_or_malformed -> {:error, :unreadable}
@@ -43,11 +44,10 @@ defmodule Rail.Learnings.Utils.RunCuratorRole do
   end
 
   defp agent(role, dir, brief) do
-    prompt = Pipeline.build_prompt(cli: role.cli, role_instructions: role.system_prompt, context_snippet: brief)
+    prompt = Pipeline.build_prompt(context_snippet: brief)
 
     args =
       Tools.build_args(
-        cli: role.cli,
         prompt: prompt,
         model: role.model,
         reasoning_effort: to_string(role.reasoning_effort || :high),

@@ -20,8 +20,10 @@ defmodule Rail.Tools.Utils.PickBackend do
   flight. Ties go to fewer turns in flight, then to the account added first.
 
   Returns `{:ok, backend}`, `{:wait, resets_at}` when every account it could go
-  to is used up, `{:error, :no_account}` when none offers `model`, or
-  `{:error, {:signed_out, pinned}}`.
+  to is used up, `{:held, backend}` when the only accounts it could go to are
+  signed out, so the turn waits for one to be signed in again,
+  `{:error, :no_account}` when none offers `model`, or
+  `{:error, {:unavailable, pinned}}` when the conversation's own account cannot run.
   """
   def pick_backend(cli, model, pinned)
 
@@ -32,13 +34,18 @@ defmodule Rail.Tools.Utils.PickBackend do
     end
   end
 
-  def pick_backend(_cli, _model, %Backend{} = pinned), do: {:error, {:signed_out, pinned}}
+  def pick_backend(_cli, _model, %Backend{status: :signed_out} = pinned), do: {:held, pinned}
+  def pick_backend(_cli, _model, %Backend{} = pinned), do: {:error, {:unavailable, pinned}}
 
   def pick_backend(cli, model, nil) do
-    offering =
-      from(b in Backend, where: b.name == ^cli and b.status == :ready, order_by: [asc: b.inserted_at, asc: b.id])
+    {offering, signed_out} =
+      from(b in Backend,
+        where: b.name == ^cli and b.status in [:ready, :signed_out],
+        order_by: [asc: b.inserted_at, asc: b.id]
+      )
       |> Repo.all()
       |> Enum.filter(fn %Backend{models: models} -> Enum.any?(models, &(&1.id == model)) end)
+      |> Enum.split_with(&(&1.status == :ready))
 
     ids = Enum.map(offering, & &1.id)
     now = DateTime.utc_now()
@@ -61,6 +68,9 @@ defmodule Rail.Tools.Utils.PickBackend do
       end)
 
     case Enum.filter(ranked, fn {_backend, standing, _turns, _order} -> standing.used_up == [] end) do
+      [] when ranked == [] and signed_out != [] ->
+        {:held, hd(signed_out)}
+
       [] when ranked == [] ->
         {:error, :no_account}
 

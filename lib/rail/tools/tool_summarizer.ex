@@ -2,8 +2,7 @@ defmodule Rail.Tools.ToolSummarizer do
   @moduledoc """
   Summarizes tool call inputs into compact strings for log transcript lines.
 
-  Prioritizes common file, command, query, and path parameters across Claude and Agy,
-  falling back to a comma-separated key list when none match.
+  Prioritizes common file, command, query, and path parameters, falling back to a comma-separated key list when none match.
   """
 
   @prioritized_keys [
@@ -12,14 +11,7 @@ defmodule Rail.Tools.ToolSummarizer do
     "command",
     "pattern",
     "query",
-    "url",
-    "AbsolutePath",
-    "TargetFile",
-    "CommandLine",
-    "Pattern",
-    "Query",
-    "SearchDirectory",
-    "DirectoryPath"
+    "url"
   ]
 
   @key_pairs Enum.map(@prioritized_keys, fn key -> {key, String.to_atom(key)} end)
@@ -29,6 +21,16 @@ defmodule Rail.Tools.ToolSummarizer do
 
   Supports 1-arity `summarize_tool_input(params)` and 2-arity `summarize_tool_input(tool_name, params)`.
   """
+  def summarize_tool_input("mcp__rail__save_" <> _output, %{} = params) do
+    named = Enum.find_value(["key", "title"], &text(params[&1]))
+    graded = text(params["severity"])
+
+    case [named, graded] |> Enum.reject(&is_nil/1) |> Enum.join(" · ") do
+      "" -> summarize_tool_input(params)
+      summary -> truncate(summary, 160)
+    end
+  end
+
   def summarize_tool_input(tool_name, params) when is_binary(tool_name) or is_atom(tool_name) do
     summarize_tool_input(params)
   end
@@ -76,6 +78,9 @@ defmodule Rail.Tools.ToolSummarizer do
   def truncate(other, max_length) when is_integer(max_length) do
     truncate(to_string(other), max_length)
   end
+
+  defp text(value) when is_binary(value) and value != "", do: value
+  defp text(_missing), do: nil
 
   defp find_first_matching_value(map, [{str_key, atom_key} | rest]) do
     case Map.fetch(map, str_key) do

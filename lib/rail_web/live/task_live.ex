@@ -9,9 +9,9 @@ defmodule RailWeb.TaskLive do
   takes the page over. A role that has not run has nothing to read, so it has no
   tab until it does.
 
-  The page owns one thing the components cannot: the `run:<id>` subscription. A
-  LiveComponent may not subscribe, so log lines arrive here and are forwarded to
-  the conversation with `send_update/2`.
+  The page owns what the components cannot: the subscriptions. A LiveComponent
+  may not subscribe, so log lines arrive here and are forwarded to the
+  conversation, and a saved output to the open stage, with `send_update/2`.
   """
   use RailWeb, :live_view
 
@@ -79,6 +79,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:subscribed_run_ids, MapSet.new())
       |> assign(:watched_browser_task_id, nil)
       |> assign(:watched_comments_task_id, nil)
+      |> assign(:watched_outputs_task_id, nil)
       |> assign(:frame_window_open?, false)
       |> assign(:held_frame, nil)
       |> assign(:roles_map, %{})
@@ -118,6 +119,7 @@ defmodule RailWeb.TaskLive do
       projects={@projects}
       theme={@theme}
       show_project_switcher={@show_project_switcher}
+      lost_backends={@lost_backends}
     >
       <div id="task-page" data-qa="task-page" class="contents">
         <div
@@ -440,7 +442,7 @@ defmodule RailWeb.TaskLive do
       send_update(RunConversation, id: "run-conversation", run_id: run_id, appended_events: events)
     end
 
-    socket = socket |> refresh_diff() |> refresh_written(events)
+    socket = refresh_diff(socket)
 
     {:noreply, socket}
   end
@@ -490,37 +492,19 @@ defmodule RailWeb.TaskLive do
     {:noreply, refresh_task(socket)}
   end
 
-  # A finished turn may have rewritten the ticket, the design or the plan on disk
-  # without changing a row, so the stage is told to read it again rather than left
-  # to notice.
+  # A finished turn may have left the stage in a state its panel reads differently,
+  # so the stage is told to read again rather than left to notice.
   def handle_info({:os_process_finished, _run, _outcome}, socket) do
     socket = refresh_task(socket)
+    reload_stage(socket)
 
-    case socket.assigns do
-      %{pane: :product, task: task, selected_role: role} ->
-        send_update(ProductStage, id: stage_component_id(role), task: task)
+    {:noreply, socket}
+  end
 
-      %{pane: :design, task: task, selected_role: role} ->
-        send_update(DesignStage, id: stage_component_id(role), task: task)
-
-      %{pane: :architect, task: task, selected_role: role} ->
-        send_update(ArchitectStage, id: stage_component_id(role), task: task)
-
-      %{pane: :engineer, task: task, selected_role: role} ->
-        send_update(EngineerStage, id: stage_component_id(role), task: task)
-
-      %{pane: :review, task: task, selected_role: role} ->
-        send_update(ReviewStage, id: stage_component_id(role), task: task)
-
-      %{pane: :qa, task: task, selected_role: role} ->
-        send_update(QaStage, id: stage_component_id(role), task: task)
-
-      %{pane: :demo, task: task, selected_role: role} ->
-        send_update(DemoStage, id: stage_component_id(role), task: task)
-
-      _no_stage_on_disk ->
-        :ok
-    end
+  # An agent saved a ticket, an option, a plan, a finding or a picture, in this
+  # task, while its run is still going.
+  def handle_info({:output_saved, task_id}, socket) do
+    if socket.assigns.task_id == task_id, do: reload_stage(socket)
 
     {:noreply, socket}
   end
@@ -662,6 +646,35 @@ defmodule RailWeb.TaskLive do
     """
   end
 
+  # Whatever the open stage shows is read off disk or the rows again.
+  defp reload_stage(socket) do
+    case socket.assigns do
+      %{pane: :product, task: task, selected_role: role} ->
+        send_update(ProductStage, id: stage_component_id(role), task: task)
+
+      %{pane: :design, task: task, selected_role: role} ->
+        send_update(DesignStage, id: stage_component_id(role), task: task)
+
+      %{pane: :architect, task: task, selected_role: role} ->
+        send_update(ArchitectStage, id: stage_component_id(role), task: task)
+
+      %{pane: :engineer, task: task, selected_role: role} ->
+        send_update(EngineerStage, id: stage_component_id(role), task: task)
+
+      %{pane: :review, task: task, selected_role: role} ->
+        send_update(ReviewStage, id: stage_component_id(role), task: task)
+
+      %{pane: :qa, task: task, selected_role: role} ->
+        send_update(QaStage, id: stage_component_id(role), task: task)
+
+      %{pane: :demo, task: task, selected_role: role} ->
+        send_update(DemoStage, id: stage_component_id(role), task: task)
+
+      _no_stage_on_disk ->
+        :ok
+    end
+  end
+
   defp refresh_diff(%{assigns: %{pane: :engineer, selected_role: %Role{} = role, task: %Task{} = task}} = socket) do
     now = System.monotonic_time(:millisecond)
 
@@ -675,32 +688,6 @@ defmodule RailWeb.TaskLive do
 
   defp refresh_diff(socket), do: socket
 
-  # What a running stage writes goes to disk, so nothing tells the panel it moved.
-  # The run says so in its own log as it happens, and that is already being
-  # carried here: QA's checklist fills a row at a time, and a demo's captions land
-  # as they are narrated.
-  defp refresh_written(%{assigns: %{pane: :qa, task: task, selected_role: role}} = socket, events) do
-    if Enum.any?(events, &checklist_line?/1) do
-      send_update(QaStage, id: stage_component_id(role), task: task)
-    end
-
-    socket
-  end
-
-  defp refresh_written(%{assigns: %{pane: :demo, task: task, selected_role: role}} = socket, events) do
-    if Enum.any?(events, &beat_line?/1) do
-      send_update(DemoStage, id: stage_component_id(role), task: task)
-    end
-
-    socket
-  end
-
-  defp refresh_written(socket, _events), do: socket
-
-  defp checklist_line?(%{line: line}), do: String.starts_with?(line, ["[qa] plan ", "[qa] check ", "[qa] file "])
-
-  defp beat_line?(%{line: line}), do: String.starts_with?(line, "[demo] say ")
-
   defp due?(nil, _now), do: true
   defp due?(last, now), do: now - last >= @diff_refresh_ms
 
@@ -708,7 +695,12 @@ defmodule RailWeb.TaskLive do
   defp refresh_task(socket) do
     with {:ok, task} <- Pipeline.get_task(socket.assigns.task_id),
          true <- Scope.can_access_project?(socket.assigns.current_scope, task.project_id) do
-      socket |> load_assignees(task) |> apply_task(task) |> watch_diff_comments(task) |> sync_tab_url()
+      socket
+      |> load_assignees(task)
+      |> apply_task(task)
+      |> watch_diff_comments(task)
+      |> watch_outputs(task)
+      |> sync_tab_url()
     else
       _missing -> assign(socket, :task, nil)
     end
@@ -971,6 +963,19 @@ defmodule RailWeb.TaskLive do
     end
 
     assign(socket, :watched_comments_task_id, if(connected?(socket), do: task_id, else: watched))
+  end
+
+  # Every save an agent makes on the task, from any stage, so every tab open on
+  # it shows the save without a reload.
+  defp watch_outputs(socket, %Task{id: task_id}) do
+    watched = socket.assigns.watched_outputs_task_id
+
+    if connected?(socket) and watched != task_id do
+      if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "outputs:#{watched}")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task_id}")
+    end
+
+    assign(socket, :watched_outputs_task_id, if(connected?(socket), do: task_id, else: watched))
   end
 
   defp push_frame(socket, data) do

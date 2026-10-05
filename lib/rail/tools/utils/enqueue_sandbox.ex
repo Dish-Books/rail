@@ -9,6 +9,7 @@ defmodule Rail.Tools.Utils.EnqueueSandbox do
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools
+  alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
 
   @doc """
@@ -33,7 +34,7 @@ defmodule Rail.Tools.Utils.EnqueueSandbox do
       |> Repo.update!()
 
     results = admit_sandboxes(own: queued.id)
-    current = Repo.get!(OsProcess, queued.id)
+    current = OsProcess |> Repo.get!(queued.id) |> Repo.preload(:backend)
 
     cond do
       Map.has_key?(results, queued.id) -> results[queued.id]
@@ -41,6 +42,16 @@ defmodule Rail.Tools.Utils.EnqueueSandbox do
       # coveralls-ignore-next-line (another pass started it between the two, which no test can time)
       true -> {:ok, current}
     end
+  end
+
+  defp announce(%OsProcess{kind: :agent, backend: %Backend{status: :signed_out} = backend} = os_process, %Run{} = run) do
+    line =
+      "[rail] #{label(os_process)} is held, because the #{backend.label || backend.name} backend is signed out. " <>
+        "It starts on its own once someone signs it in under Settings → Backends."
+
+    Pipeline.append_run_events(run.id, os_process.id, [line])
+    Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run.id}", {:run_changed, run.id})
+    os_process
   end
 
   defp announce(%OsProcess{} = os_process, %Run{} = run) do

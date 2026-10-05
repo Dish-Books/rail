@@ -26,8 +26,10 @@ defmodule Rail.Tools.Utils.PlaceOnAccount do
   The pick and the stamp are one step on this machine, so turns started together
   see each other and split across accounts. When every account it could go to is
   used up, the row waits for usage instead, holding no reservation and keeping
-  `argv` and `token` until a job at the earliest reset places it again. `run`
-  carries its task, down to the project, and its role.
+  `argv` and `token` until a job at the earliest reset places it again. A turn
+  that can only go to a signed-out account joins the line on it, and the line
+  holds it until that account is signed in. `run` carries its task, down to the
+  project, and its role.
 
   Returns what `enqueue_sandbox/3` does, `{:waiting_for_usage, os_process,
   resets_at}`, or `{:error, reason}` with the row failed to start.
@@ -37,8 +39,12 @@ defmodule Rail.Tools.Utils.PlaceOnAccount do
 
     placed =
       :global.trans({:rail_account_placement, self()}, fn ->
-        with {:ok, backend} <- pick_backend(role.cli, role.model, pinned) do
-          {:ok, backend, os_process |> OsProcess.changeset(%{backend_id: backend.id}) |> Repo.update!()}
+        case pick_backend(role.cli, role.model, pinned) do
+          {placed, backend} when placed in [:ok, :held] ->
+            {:ok, backend, os_process |> OsProcess.changeset(%{backend_id: backend.id}) |> Repo.update!()}
+
+          wait_or_refusal ->
+            wait_or_refusal
         end
       end)
 
@@ -54,11 +60,11 @@ defmodule Rail.Tools.Utils.PlaceOnAccount do
       {:error, :no_account} ->
         refuse(os_process, Backend.no_account_error(role.model, role.name))
 
-      {:error, {:signed_out, backend}} ->
+      {:error, {:unavailable, backend}} ->
         refuse(
           os_process,
-          "This conversation lives on #{Backend.display_name(backend)}, which is not signed in. " <>
-            "Sign it in on Settings › Backends to continue it."
+          "This conversation lives on #{Backend.display_name(backend)}, which Rail cannot run. " <>
+            "Fix it on Settings › Backends to continue it."
         )
     end
   end
@@ -130,8 +136,8 @@ defmodule Rail.Tools.Utils.PlaceOnAccount do
   # trust to the repository it belongs to.
   defp launch_spec(backend, argv, stream_path, %Task{project: %Project{} = project} = task, token) do
     trust_workspace(backend, [project.clone_path, task.worktree_path])
-    {args, stdin_path} = prompt_on_stdin(backend, argv, stream_path)
-    args = system_prompt_in_file(backend, args, stream_path)
+    {args, stdin_path} = prompt_on_stdin(argv, stream_path)
+    args = system_prompt_in_file(args, stream_path)
 
     %{
       "executable" => backend.executable_path,
@@ -151,20 +157,20 @@ defmodule Rail.Tools.Utils.PlaceOnAccount do
   # --print flag, and with no prompt argument it reads the prompt from stdin.
   # The file sits beside the run's stream, so what the agent was sent can be read
   # back later.
-  defp prompt_on_stdin(%Backend{name: :claude}, ["-p", prompt | rest], stream_path) when is_binary(prompt) do
+  defp prompt_on_stdin(["-p", prompt | rest], stream_path) when is_binary(prompt) do
     prompt_path = "#{stream_path}.prompt"
     File.write!(prompt_path, prompt)
     {["-p" | rest], prompt_path}
   end
 
-  defp prompt_on_stdin(_backend, argv, _stream_path), do: {argv, nil}
+  defp prompt_on_stdin(argv, _stream_path), do: {argv, nil}
 
   # The role's prompt goes in a file for the same reason, and for one more: in
   # argv it is in the agent's command line, where `pgrep -f` reads it. A demo
   # prompt that says `mix phx.server` made the agent's own process match the
   # `pgrep -f "mix phx.server"` it ran to stop its server in the worktree, so it
   # killed itself and the run ended "Exited with code 143".
-  defp system_prompt_in_file(%Backend{name: :claude}, args, stream_path) do
+  defp system_prompt_in_file(args, stream_path) do
     case Enum.split_while(args, &(&1 != "--append-system-prompt")) do
       {before, ["--append-system-prompt", system_prompt | rest]} ->
         system_prompt_path = "#{stream_path}.system-prompt"
@@ -175,6 +181,4 @@ defmodule Rail.Tools.Utils.PlaceOnAccount do
         args
     end
   end
-
-  defp system_prompt_in_file(_backend, args, _stream_path), do: args
 end

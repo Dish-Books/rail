@@ -21,10 +21,17 @@ defmodule Rail.Pipeline.Utils.DesignRunFinished do
 
     error =
       cond do
-        design == nil -> "The designer did not write design/manifest.json."
-        design.picked == nil and length(options) != 3 -> "The designer wrote #{length(options)} design options, not 3."
-        incomplete != [] -> "Design options missing a page or screenshot: #{Enum.map_join(incomplete, ", ", & &1.key)}."
-        true -> nil
+        options == [] ->
+          "The designer did not save any design options."
+
+        design.picked == nil and length(options) != 3 ->
+          "The designer saved #{length(options)} design options, not 3."
+
+        incomplete != [] ->
+          "Saved design options missing a page or screenshot: #{Enum.map_join(incomplete, ", ", & &1.key)}."
+
+        true ->
+          nil
       end
 
     {:ok, finished} = run |> Run.changeset(%{error: error}) |> Repo.update()

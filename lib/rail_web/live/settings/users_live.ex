@@ -46,6 +46,7 @@ defmodule RailWeb.Settings.UsersLive do
       projects={@projects}
       theme={@theme}
       show_project_switcher={@show_project_switcher}
+      lost_backends={@lost_backends}
     >
       <div class={[@sheet && "2xl:pr-[440px]"]}>
         <div class="max-w-[90rem] mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-10" id="users-settings">

@@ -9,10 +9,7 @@ defmodule RailWeb.Settings.RolesLive do
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
 
-  @default_models %{
-    claude: "claude-opus-5-5",
-    agy: "gemini-3.8-flash-high"
-  }
+  @default_model "claude-opus-5-5"
 
   def mount(_params, _session, socket) do
     projects = Projects.list_projects(socket.assigns.current_scope)
@@ -70,6 +67,7 @@ defmodule RailWeb.Settings.RolesLive do
       projects={@projects}
       theme={@theme}
       show_project_switcher={@show_project_switcher}
+      lost_backends={@lost_backends}
     >
       <div class="max-w-[90rem] mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-10" id="roles-settings">
         <div>
@@ -932,7 +930,8 @@ defmodule RailWeb.Settings.RolesLive do
         List.first(unbound_stages(socket.assigns.canonical_stages, socket.assigns.roles))
 
     default_model =
-      Enum.find(socket.assigns.models, &(@default_models[&1.cli] == &1.id)) || List.first(socket.assigns.models)
+      Enum.find(socket.assigns.models, &(&1.cli == :claude and &1.id == @default_model)) ||
+        List.first(socket.assigns.models)
 
     form_data = %{
       "role_id" => "",

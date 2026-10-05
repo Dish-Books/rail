@@ -41,27 +41,33 @@ defmodule RailWeb.QaControllerTest do
     File.write!(Path.join(evidence_dir, "page~the-page.html"), "<script>alert(1)</script>")
     File.write!(Path.join(evidence_dir, "bill.jpg"), "jpeg bytes")
     File.write!(Path.join(evidence_dir, "page.html"), "<script>alert(1)</script>")
+    # Saved while there, then deleted: a finding cannot cite a file that is not.
+    File.write!(Path.join(evidence_dir, "gone.png"), "png bytes")
+    File.write!(Path.join(evidence_dir, "gone.log"), "a log")
 
-    {:ok, _raised} =
-      Pipeline.sync_qa_findings(task, [
-        %{
-          key: "total-unrounded",
-          title: "The total renders as $1234.5",
-          check: "A bill's total reads as money",
-          severity: :major,
-          recommendation: :fix,
-          status: :open,
-          evidence: [
-            %{name: "the total", kind: :screenshot, path: "evidence/total.png"},
-            %{name: "the stacktrace", kind: :log, path: "evidence/server.log"},
-            %{name: "the stored amount", kind: :query, text: "1234.50"},
-            %{name: "a file QA wrote and then deleted", kind: :screenshot, path: "evidence/gone.png"},
-            %{name: "a page it wrote", kind: :log, path: "evidence/page.html"},
-            %{name: "the bill", kind: :screenshot, path: "evidence/bill.jpg"},
-            %{name: "a log QA wrote and then deleted", kind: :log, path: "evidence/gone.log"}
-          ]
-        }
-      ])
+    for finding <- [
+          %{
+            key: "total-unrounded",
+            title: "The total renders as $1234.5",
+            check: "A bill's total reads as money",
+            severity: :major,
+            recommendation: :fix,
+            status: :open,
+            evidence: [
+              %{name: "the total", kind: :screenshot, path: "evidence/total.png"},
+              %{name: "the stacktrace", kind: :log, path: "evidence/server.log"},
+              %{name: "the stored amount", kind: :query, text: "1234.50"},
+              %{name: "a file QA wrote and then deleted", kind: :screenshot, path: "evidence/gone.png"},
+              %{name: "a page it wrote", kind: :log, path: "evidence/page.html"},
+              %{name: "the bill", kind: :screenshot, path: "evidence/bill.jpg"},
+              %{name: "a log QA wrote and then deleted", kind: :log, path: "evidence/gone.log"}
+            ]
+          }
+        ],
+        do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
+
+    File.rm!(Path.join(evidence_dir, "gone.png"))
+    File.rm!(Path.join(evidence_dir, "gone.log"))
 
     %{conn: log_in_user(conn, user), task: task}
   end
@@ -91,18 +97,18 @@ defmodule RailWeb.QaControllerTest do
 
   # The name `qa_file` handed back is the name the agent was told to cite.
   test "serves a filed log a finding cites by the name Rail gave it", %{conn: conn, task: task} do
-    {:ok, _raised} =
-      Pipeline.sync_qa_findings(task, [
-        %{
-          key: "cites-filed",
-          title: "The script reports a failure",
-          check: "script-runs",
-          severity: :minor,
-          recommendation: :fix,
-          status: :open,
-          evidence: [%{name: "the log", kind: :log, path: "evidence/script-runs~the-log.log"}]
-        }
-      ])
+    for finding <- [
+          %{
+            key: "cites-filed",
+            title: "The script reports a failure",
+            check: "script-runs",
+            severity: :minor,
+            recommendation: :fix,
+            status: :open,
+            evidence: [%{name: "the log", kind: :log, path: "evidence/script-runs~the-log.log"}]
+          }
+        ],
+        do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
     conn = get(conn, ~p"/tasks/#{task.id}/qa/cites-filed/evidence/0")
 

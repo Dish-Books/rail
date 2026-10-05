@@ -122,12 +122,26 @@ defmodule Rail.Tools.Actions.StartAfterUsageResetTest do
     assert %OsProcess{status: :finished, ended_reason: :stopped} = Repo.get!(OsProcess, waiting.id)
   end
 
-  test "a turn whose account has since been signed out fails its run, and the page is told", %{
-    account: account,
+  test "a turn whose account has since been signed out is held in line on it until it is signed in", %{
+    account: %Backend{id: account_id} = account,
     run: %Run{id: run_id},
     waiting: waiting
   } do
     account |> Backend.usage_changeset(%{name: :claude, status: :signed_out}) |> Repo.update!()
+    reject(Tools, :spawn_os_process, 3)
+
+    assert {:ok, %OsProcess{status: :waiting_for_resources, backend_id: ^account_id}} =
+             Tools.start_after_usage_reset(waiting.id)
+
+    assert %Run{status: :waiting_for_resources} = Repo.get!(Run, run_id)
+  end
+
+  test "a turn whose model no account offers any more fails its run, and the page is told", %{
+    account: account,
+    run: %Run{id: run_id},
+    waiting: waiting
+  } do
+    {:ok, _no_model} = Tools.update_backend(system_scope(), account, %{models: []})
 
     assert {:error, "No signed-in account offers " <> _how} = Tools.start_after_usage_reset(waiting.id)
     assert %Run{status: :finished, error: "No signed-in account offers " <> _rest} = Repo.get!(Run, run_id)

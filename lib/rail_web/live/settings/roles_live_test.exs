@@ -170,10 +170,10 @@ defmodule RailWeb.Settings.RolesLiveTest do
     # A row sets the model and its CLI together, and a model no account offers stays selectable once chosen.
     view
     |> element("#role-form")
-    |> render_change(%{"role" => %{"model_choice" => "agy:gemini-ultra-custom"}})
+    |> render_change(%{"role" => %{"model_choice" => "claude:claude-custom"}})
 
-    assert has_element?(view, "#role-model-agy-gemini-ultra-custom input[checked]")
-    assert has_element?(view, "#role-model-agy-gemini-ultra-custom", "Antigravity CLI · no signed-in account")
+    assert has_element?(view, "#role-model-claude-claude-custom input[checked]")
+    assert has_element?(view, "#role-model-claude-claude-custom", "Claude Code · no signed-in account")
 
     # Models are managed in backend settings
     assert has_element?(view, "#manage-models-link")
@@ -186,7 +186,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "name" => "Product Lead",
         "description" => "Owns specs",
         "stage" => "product",
-        "model_choice" => "agy:gemini-3.8-flash-high",
+        "model_choice" => "claude:claude-haiku-5",
         "reasoning_effort" => "medium",
         "system_prompt" => "",
         "max_concurrent" => "2"
@@ -203,7 +203,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "name" => "Product Lead",
         "description" => "Owns specs",
         "stage" => "product",
-        "model_choice" => "agy:gemini-3.8-flash-high",
+        "model_choice" => "claude:claude-haiku-5",
         "reasoning_effort" => "medium",
         "system_prompt" => "You are product lead.",
         "max_concurrent" => "2"
@@ -213,7 +213,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     refute has_element?(view, "#role-editor-modal")
     assert has_element?(view, "#bound-role-name-product", "Product Lead")
 
-    assert {:ok, %Role{cli: :agy, model: "gemini-3.8-flash-high"}} =
+    assert {:ok, %Role{cli: :claude, model: "claude-haiku-5"}} =
              Roles.get_role(project_id: project.id, stage: :product)
 
     assert has_element?(view, "#bound-role-no-account-product", "no signed-in account")
@@ -744,8 +744,8 @@ defmodule RailWeb.Settings.RolesLiveTest do
              Roles.create_role(scope, source_project, %{
                name: "Demo Recorder Role",
                stage: :demo,
-               cli: :agy,
-               model: "gemini-3.8-flash-high",
+               cli: :claude,
+               model: "claude-haiku-5",
                system_prompt: "Record demos"
              })
 
@@ -1024,6 +1024,9 @@ defmodule RailWeb.Settings.RolesLiveTest do
   test "handles unconfigured backends, blank model and stage, and unrelated messages", %{
     admin_conn: conn
   } do
+    {:ok, _bare} =
+      Rail.Tools.create_backend(Rail.Scope.for_system(), %{name: :claude, executable_path: "/usr/local/bin/claude"})
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Roles Live Project 13021",
@@ -1034,15 +1037,13 @@ defmodule RailWeb.Settings.RolesLiveTest do
         clone_path: "/tmp/repos/roles-live-13021"
       })
 
-    {:ok, _codex_backend} =
-      Rail.Tools.create_backend(Rail.Scope.for_system(), %{name: :codex, executable_path: "/usr/local/bin/codex"})
-
     assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
 
     send(view.pid, :unrelated_pipeline_event)
 
     view |> element("#assign-stage-button-product") |> render_click()
-    refute has_element?(view, "[id^='role-model-codex']")
+    # The seeded account's Opus and the setup's Sonnet; a backend with no models adds no row.
+    assert [_opus, _sonnet] = view |> render() |> Floki.parse_fragment!() |> Floki.find("[data-qa=role-model-option]")
 
     render_hook(view, "validate_role", %{"role" => %{"model_choice" => "claude:claude-sonnet-5"}})
     assert has_element?(view, "#role-model-claude-claude-sonnet-5 input[checked]")
@@ -1171,7 +1172,8 @@ defmodule RailWeb.Settings.RolesLiveTest do
     _max = offering.(["claude-sonnet-5"], %{label: "max-2"})
     _ops = offering.(["claude-sonnet-5", "claude-fable-5-1"], %{label: "ops", status: :signed_out})
     _down = offering.(["claude-sonnet-5"], %{label: "down", status: :unavailable})
-    _gemini = offering.(["gemini-3.8-flash-high"], %{name: :agy})
+    # Model ids carry dots, which the row's DOM id does not.
+    _unlabeled = offering.(["claude-sonnet-5.5"], %{})
 
     assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
     view |> element("#assign-stage-button-design") |> render_click()
@@ -1180,7 +1182,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert has_element?(view, "#role-model-claude-claude-sonnet-5 .text-slate-400", "· ops signed out · down unavailable")
     assert has_element?(view, "#role-model-claude-claude-fable-5-1 .text-red-600", "Claude Code · ops, signed out")
     refute has_element?(view, "#role-model-claude-claude-sonnet-5 .text-red-600")
-    assert has_element?(view, "#role-model-agy-gemini-3-8-flash-high", "Antigravity CLI")
+    assert has_element?(view, "#role-model-claude-claude-sonnet-5-5", "Claude Code")
 
     view
     |> element("#role-form")
@@ -1188,12 +1190,12 @@ defmodule RailWeb.Settings.RolesLiveTest do
       "role" => %{
         "name" => "Designer",
         "stage" => "design",
-        "model_choice" => "agy:gemini-3.8-flash-high",
+        "model_choice" => "claude:claude-sonnet-5.5",
         "system_prompt" => "You design."
       }
     })
 
-    assert {:ok, %Role{cli: :agy, model: "gemini-3.8-flash-high"}} =
+    assert {:ok, %Role{cli: :claude, model: "claude-sonnet-5.5"}} =
              Roles.get_role(project_id: project.id, stage: :design)
   end
 
@@ -1234,5 +1236,25 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert has_element?(view, "#bound-role-accounts-review", "on 1 account")
     assert has_element?(view, "#bound-role-no-account-design", "no signed-in account")
     refute has_element?(view, "#stage-role-details-engineer", "Claude Code")
+  end
+
+  test "a new role starts on the first model offered when the default is not", %{admin_conn: conn} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13092",
+        github_repo: "org/roles-live-13092",
+        github_installation_id: 13_092,
+        linear_team_key: "P13092",
+        default_branch: "main",
+        clone_path: "/tmp/repos/roles-live-13092"
+      })
+
+    # Only the seeded account offers Opus.
+    Rail.Repo.delete!(Rail.Repo.get!(Backend, "bkd_test_seed"))
+
+    assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
+    view |> element("#assign-stage-button-product") |> render_click()
+
+    assert has_element?(view, "#role-model-claude-claude-sonnet-5 input[checked]")
   end
 end

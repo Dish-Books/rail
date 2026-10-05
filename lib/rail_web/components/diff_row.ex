@@ -92,6 +92,9 @@ defmodule RailWeb.Components.DiffRow do
   # The styling is `assets/css/diff.css`'s, keyed off these attributes, because a
   # large branch draws thousands of lines and each would otherwise carry it all.
   defp line(assigns) do
+    hang = hang(assigns.line.text)
+    assigns = assign(assigns, :hang, if(hang == 4, do: [], else: [style: "--hang: #{hang}ch"]))
+
     ~H"""
     <%!-- A row fetched because something points at it says so: a reader arriving
     from a finding should not have to count lines to find the one it meant. --%>
@@ -112,7 +115,7 @@ defmodule RailWeb.Components.DiffRow do
       </div>
       <%!-- A flex row drops the whitespace between its children, which a `pre` cell
       would otherwise draw as the blank lines the markup is written across. --%>
-      <div class="diff-code">
+      <div class="diff-code" {@hang}>
         <.code text={@line.text} html={Map.get(@line, :html)} />
       </div>
     </div>
@@ -126,10 +129,24 @@ defmodule RailWeb.Components.DiffRow do
   # is escaped by being drawn rather than injected.
   defp code(assigns) do
     ~H"""
-    <span :if={@html} class="whitespace-pre">{raw(@html)}</span>
-    <span :if={is_nil(@html)} class="whitespace-pre">{@text}</span>
+    <span :if={@html} class="diff-text">{raw(@html)}</span>
+    <span :if={is_nil(@html)} class="diff-text">{@text}</span>
     """
   end
+
+  # Wrapped rows hang four columns past the indent. Tab stops are measured past the
+  # hang, so a line with a tab hangs by whole stops of four to keep its tabs in place.
+  defp hang(text) do
+    hang = indent(text, 0) + 4
+
+    if :binary.match(text, "\t") == :nomatch, do: hang, else: div(hang + 3, 4) * 4
+  end
+
+  # Columns, as drawn: Tailwind's preflight sets `tab-size: 4`, so a tab runs to the next
+  # stop of four. Bytes rather than characters, so a line that is not UTF-8 still measures.
+  defp indent(<<" ", rest::binary>>, columns), do: indent(rest, columns + 1)
+  defp indent(<<"\t", rest::binary>>, columns), do: indent(rest, div(columns, 4) * 4 + 4)
+  defp indent(_rest, columns), do: columns
 
   defp glyph(:added), do: "+"
   defp glyph(:deleted), do: "-"

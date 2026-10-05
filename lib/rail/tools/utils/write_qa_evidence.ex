@@ -10,6 +10,9 @@ defmodule Rail.Tools.Utils.WriteQaEvidence do
   What the caption actually said is written down beside the file rather than
   read back out of the filename, which has lost the capitals, the punctuation
   and anything past sixty characters by the time it is a filename.
+
+  The bytes land under a hidden name in the QA folder, outside the listing, and
+  a rename files them, so the panel and the evidence route never serve half a file.
   """
 
   @doc """
@@ -20,9 +23,11 @@ defmodule Rail.Tools.Utils.WriteQaEvidence do
   def write_qa_evidence(scratch_path, name, key, extension, write) do
     file = "evidence/#{prefix(key)}#{slug(name)}#{extension}"
     path = Path.join([scratch_path, "qa", file])
+    temporary = Path.join([scratch_path, "qa", ".#{Path.basename(file)}.#{System.unique_integer([:positive])}.tmp"])
 
     File.mkdir_p!(Path.dirname(path))
-    write.(path)
+    write.(temporary)
+    File.rename!(temporary, path)
     caption(path, Path.basename(file), name)
 
     file

@@ -17,6 +17,7 @@
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         const theme = saved === 'light' || saved === 'dark' ? saved : prefersDark ? 'dark' : 'light';
         document.documentElement.setAttribute('data-theme', theme);
+        if (localStorage.getItem('diffWrap') === 'wrap') document.documentElement.setAttribute('data-diff-wrap', '');
       })();
     </script>
     <script phx-track-static type="module" src={~p"/assets/app.js"}>

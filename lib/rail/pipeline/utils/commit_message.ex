@@ -4,8 +4,8 @@ defmodule Rail.Pipeline.Utils.CommitMessage do
 
   The engineer writes the subject and body; Rail adds the trailers that say
   which ticket this was and that Rail made the commit. A commit reached without
-  a written message is one the human asked for from the diff pane, so it gets a
-  subject saying exactly that rather than a blank one.
+  a message is one the human or a merge asked for, so it gets a subject saying
+  exactly that rather than a blank one.
   """
 
   alias Rail.Issues.Schemas.Issue

@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.StartArchitectRun do
   @moduledoc """
-  Spawns the architect stage's run: the brief naming the one file the plan goes
-  in, and the process that writes it.
+  Spawns the architect stage's run: the brief saying how the plan is saved, and
+  the process that writes it.
 
   `enter_stage/3` has already claimed the stage, started the run and made the
   worktree; this is the part only architect knows about.
@@ -27,13 +27,10 @@ defmodule Rail.Pipeline.Actions.StartArchitectRun do
   """
   def start_architect_run(%Run{task: %Task{} = task, role: %Role{} = role} = run) do
     task = Repo.preload(task, issue: [comments: :replies])
-    File.mkdir_p!(Path.join(task.scratch_path, "plans"))
 
     prompt =
       Pipeline.build_prompt(
         task: task,
-        cli: role.cli,
-        role_instructions: role.system_prompt,
         context_snippet: brief(task, run),
         pending_answer: run.pending_answer,
         conversation_id: run.conversation_id
@@ -41,7 +38,6 @@ defmodule Rail.Pipeline.Actions.StartArchitectRun do
 
     args =
       Tools.build_args(
-        cli: role.cli,
         prompt: prompt,
         model: role.model,
         reasoning_effort: role.reasoning_effort || "high",
@@ -53,27 +49,16 @@ defmodule Rail.Pipeline.Actions.StartArchitectRun do
     Tools.start_os_process(run, args)
   end
 
-  defp brief(%Task{scratch_path: scratch_path, issue: %Issue{} = issue} = task, %Run{} = run) do
-    dir = Path.join(scratch_path, "plans")
-    file = Path.join(dir, "#{issue.identifier}.md")
-
+  defp brief(%Task{issue: %Issue{} = issue} = task, %Run{} = run) do
     String.trim("""
     Plan the implementation of the approved ticket below. You are planning it, not building it: change nothing in your worktree, write no application code and no tests, and create no branch.
 
-    The plan is the file #{file}, and it is the whole of what you produce. The ticket itself is not yours to write.
+    The plan is the whole of what you produce, and you save it with the `save_plan` tool. The ticket itself is not yours to write.
 
-    Write it from your worktree with a heredoc, the body and its closing PLAN line at column zero:
-
-    mkdir -p #{dir}
-    cat > #{file} <<'PLAN'
-    ## Implementation plan
-
-    <the implementation plan>
-    PLAN
-
-    - A heredoc into #{file}, never an inline string.
-    - Keep the `## Implementation plan` heading on the first line.
-    - Review comments come back as further turns of this same conversation. When that happens, write the file again with the correction carried everywhere it reaches: "do not store it" removes the column, the migration, the schema field and their tests, not only the sentence.
+    - Save from the first draft, as soon as there is one, so the human watching can read it while you work. Each save replaces the plan in full, so save the whole of it every time.
+    - The plan opens with the `## Implementation plan` heading on its first line. A save without it, or a blank one, is refused, and the last good save stays.
+    - Review comments come back as further turns of this same conversation. When that happens, save the plan again with the correction carried everywhere it reaches: "do not store it" removes the column, the migration, the schema field and their tests, not only the sentence.
+    - `save_plan` is the only way to hand over the plan. Write no plan file.
     - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or a named assumption is not a question.
 
     #{learnings_brief(run, ["#{issue.title}\n\n#{issue.description}"])}
