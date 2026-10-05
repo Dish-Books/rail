@@ -618,13 +618,13 @@ defmodule RailWeb.Live.PlanStage do
     |> assign(:sheet, plan && build_plan_sheet(plan.content))
     |> assign(:approved, approved)
     |> assign(:running, running)
-    |> assign(:can_pick, task.stage == :plan and run != nil)
+    |> assign(:can_pick, task.stage == :plan and Run.can_chat?(run))
     |> assign(:selected_key, selected_key)
     |> assign(:option, shown_option(design, selected_key))
     |> assign(:items, items)
     |> assign(:selected_item, socket.assigns.chosen_item || default_item(items, ticket, plan))
     |> assign(:banner, banner(plan, picked, running))
-    |> assign(:pending_text, pending_text(socket.assigns.earlier_runs, picked, design, running))
+    |> assign(:pending_text, pending_text(running))
     |> assign(:show_approve, approvable?(socket.assigns, ticket, design, plan))
   end
 
@@ -753,23 +753,11 @@ defmodule RailWeb.Live.PlanStage do
     "#{prefix} Below is #{written}."
   end
 
-  defp pending_text(_earlier_runs, _picked, _design, true) do
+  defp pending_text(true) do
     "Architect is reading the ticket and the code it touches, then writing the plan an engineer builds from. It appears here as soon as it is saved."
   end
 
-  defp pending_text([_first | _rest] = earlier_runs, picked, design, false) do
-    stage =
-      earlier_runs |> Enum.max_by(&(&1.started_at || &1.inserted_at), DateTime) |> Map.fetch!(:role) |> Map.fetch!(:stage)
-
-    from = %{product: "Product", design: "Design", architect: "Architect"}[stage]
-
-    next =
-      if picked == nil and match?(%{options: [_one | _more]}, design), do: "Pick a design and", else: "Send a message and"
-
-    "This task moved here from #{from}. #{next} Plan writes the plan for it."
-  end
-
-  defp pending_text([], _picked, _design, false) do
+  defp pending_text(false) do
     "Plan stopped before saving a plan. Send it a message in the conversation to pick up where it left off."
   end
 
@@ -808,7 +796,11 @@ defmodule RailWeb.Live.PlanStage do
     {:noreply, assign(socket, :error, nil)}
   end
 
-  defp respond({:error, reason}, socket), do: {:noreply, assign(socket, :error, message_for(reason))}
+  # A refusal usually means the task moved under the page, so the page reads it again.
+  defp respond({:error, reason}, socket) do
+    send(self(), :task_changed)
+    {:noreply, assign(socket, :error, message_for(reason))}
+  end
 
   defp message_for(:stage_running), do: "Something is still running on this task."
   defp message_for({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not Plan."

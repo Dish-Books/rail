@@ -10,7 +10,6 @@ defmodule RailWeb.Live.RunConversation do
   use RailWeb, :live_component
 
   import Rail.Pipeline.Utils.DrivingLine
-  import RailWeb.Utils.StageLabel, only: [waiting_on_pick?: 1]
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -25,8 +24,7 @@ defmodule RailWeb.Live.RunConversation do
 
   `stage_run` is the run the page's tab picked out, and it is what is read here;
   a tab whose role has not run passes `nil`. Rendered without the key at all, the
-  most recent run is read. `earlier_runs` are the product, design and architect
-  runs a Plan run took over, read above its own conversation.
+  most recent run is read.
 
   `appended_events` may arrive on their own from the page's `run:<id>`
   subscriptions, tagged with the run they belong to, in which case only the log
@@ -59,7 +57,6 @@ defmodule RailWeb.Live.RunConversation do
       |> assign(:selected_run, selected_run)
       |> assign_line(selected_run)
       |> assign_run_events(load_run_events(selected_run))
-      |> assign_earlier()
 
     {:ok, socket}
   end
@@ -151,8 +148,6 @@ defmodule RailWeb.Live.RunConversation do
                 expanded_activities={@expanded_activities}
                 runs={@runs}
                 roles_map={@roles_map}
-                earlier={@earlier}
-                moved_note={@moved_note}
                 target={@myself}
               />
             <% end %>
@@ -221,15 +216,13 @@ defmodule RailWeb.Live.RunConversation do
   attr :expanded_activities, MapSet, required: true
   attr :runs, :list, default: []
   attr :roles_map, :map, default: %{}
-  attr :earlier, :list, default: [], doc: "the runs a Plan run took over, each `%{run:, role_name:, at:, turns:}`"
-  attr :moved_note, :string, default: nil
   attr :target, :any, required: true
 
   def chat_pane(assigns) do
     assigns =
       assigns
       |> assign(:messages, assigns.turns)
-      |> assign(:has_messages, assigns.turns != [] or assigns.earlier != [])
+      |> assign(:has_messages, assigns.turns != [])
 
     ~H"""
     <div id="chat-pane-root" data-qa="chat-pane" class="flex flex-col flex-1 min-h-0">
@@ -253,38 +246,6 @@ defmodule RailWeb.Live.RunConversation do
             </p>
           </div>
         <% else %>
-          <div :for={{section, n} <- Enum.with_index(@earlier)} id={"earlier-#{n}"} class="space-y-4">
-            <.section_divider id={"earlier-divider-#{n}"} label={section.role_name} at={section.at} />
-            <.message_item
-              :for={{msg, idx} <- Enum.with_index(section.turns)}
-              msg={msg}
-              idx={"e#{n}-#{idx}"}
-              sender={sender_label(msg, @reader_id, @senders)}
-              role={@role}
-              runs={@runs}
-              roles_map={@roles_map}
-              expanded_activities={@expanded_activities}
-              worktree_path={@task.worktree_path}
-              target={@target}
-            />
-          </div>
-
-          <.section_divider
-            :if={@earlier != []}
-            id="plan-divider"
-            label="Plan · from"
-            at={@run.inserted_at}
-          />
-
-          <p
-            :if={@moved_note && @messages == []}
-            id="moved-note"
-            data-qa="moved_note"
-            class="text-[12.5px] text-slate-500 dark:text-slate-400"
-          >
-            {@moved_note}
-          </p>
-
           <%= for {msg, idx} <- Enum.with_index(@messages) do %>
             <.message_item
               msg={msg}
@@ -300,25 +261,6 @@ defmodule RailWeb.Live.RunConversation do
           <% end %>
         <% end %>
       </div>
-    </div>
-    """
-  end
-
-  attr :id, :string, required: true
-  attr :label, :string, required: true
-  attr :at, DateTime, required: true
-
-  # Where one earlier role's conversation begins, or where Plan's own takes over from them.
-  def section_divider(assigns) do
-    ~H"""
-    <div
-      id={@id}
-      data-qa="section-divider"
-      class="flex items-center gap-3 pt-2 text-[11px] text-slate-400 dark:text-slate-500"
-    >
-      <span class="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
-      <span class="font-mono shrink-0">{@label} <.local_time id={"#{@id}-at"} at={@at} /></span>
-      <span class="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
     </div>
     """
   end
@@ -1194,10 +1136,6 @@ defmodule RailWeb.Live.RunConversation do
     |> assign_new(:current_scope, fn -> nil end)
     |> assign_new(:senders, fn -> %{} end)
     |> assign_new(:line, fn -> nil end)
-    |> assign_new(:earlier_runs, fn -> [] end)
-    |> assign_new(:earlier, fn -> [] end)
-    |> assign_new(:earlier_ids, fn -> nil end)
-    |> assign_new(:moved_note, fn -> nil end)
   end
 
   # The log the component holds; the rendered lines and the turns read out of it
@@ -1237,8 +1175,6 @@ defmodule RailWeb.Live.RunConversation do
   defp plan_run?(%{selected_run: %Run{role_id: role_id}, roles_map: %{} = roles_map}),
     do: match?(%{stage: :plan}, roles_map[role_id])
 
-  defp plan_run?(_assigns), do: false
-
   # Only a Plan run that has stopped with no options saved had no screen; while it works the
   # Designer may still be on its way, so order of hand-offs proves nothing.
   defp no_screen?(%{selected_run: %Run{} = run, task: task} = assigns) do
@@ -1262,56 +1198,6 @@ defmodule RailWeb.Live.RunConversation do
       true ->
         turns
     end
-  end
-
-  # The runs a Plan run took over are finished, so they are read once, in one query, for as long as
-  # they stay the same runs.
-  defp assign_earlier(socket) do
-    %{earlier_runs: runs, roles_map: roles_map, task: task} = socket.assigns
-    runs = if plan_run?(socket.assigns), do: runs, else: []
-    ids = Enum.map(runs, & &1.id)
-
-    if ids == socket.assigns.earlier_ids do
-      socket
-    else
-      events = runs |> Pipeline.list_run_events() |> Enum.group_by(& &1.run_id)
-
-      earlier =
-        for run <- runs, role = roles_map[run.role_id] do
-          lines = events |> Map.get(run.id, []) |> Enum.map(& &1.line)
-          lines = if match?(%{backend: %Backend{}}, role), do: Tools.parse_stream(role.backend, lines).logs, else: lines
-
-          %{
-            run: run,
-            role_name: role.name,
-            at: run.started_at || run.inserted_at,
-            turns: Pipeline.parse_transcript(lines)
-          }
-        end
-
-      socket
-      |> assign(:earlier, earlier)
-      |> assign(:earlier_ids, ids)
-      |> assign(:moved_note, moved_note(for(run <- runs, role = roles_map[run.role_id], do: role.stage), task))
-    end
-  end
-
-  defp moved_note([], _task), do: nil
-
-  defp moved_note(stages, task) do
-    moved =
-      stages
-      |> Enum.uniq()
-      |> Enum.map(&%{product: "product", design: "design", architect: "architect"}[&1])
-      |> then(fn [first | rest] -> [String.capitalize(first) | rest] end)
-
-    moved =
-      if length(moved) > 1, do: Enum.join(Enum.drop(moved, -1), ", ") <> " and " <> List.last(moved), else: hd(moved)
-
-    next =
-      if waiting_on_pick?(task), do: "Pick a design, or send a message to continue.", else: "Send a message to continue."
-
-    "#{moved} moved into Plan. #{next}"
   end
 
   defp subagent_name(label, roles_map) do

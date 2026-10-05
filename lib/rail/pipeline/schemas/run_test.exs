@@ -2,6 +2,7 @@ defmodule Rail.Pipeline.Schemas.RunTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
@@ -76,6 +77,16 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     assert Run.state(%Run{status: :finished}) == :stopped
     assert Run.state(nil) == :queued
     assert Run.state(%Run{status: :waiting_for_resources}) == :waiting
+  end
+
+  test "state/1 reads a stopped run with an unsent question of its own as blocked, and one whose questions went as stopped" do
+    unsent = %Run{status: :finished, questions: [%Question{delivered_at: ~U[2026-10-05 10:00:00Z]}, %Question{}]}
+    sent = %Run{status: :finished, questions: [%Question{delivered_at: ~U[2026-10-05 10:00:00Z]}]}
+
+    assert Run.state(unsent) == :blocked
+    assert Run.state(sent) == :stopped
+    assert Run.state(%{unsent | stage_outcome: :done}) == :done
+    assert Run.state(%{unsent | error: "boom"}) == :failed
   end
 
   test "statuses/0 returns all allowed statuses" do

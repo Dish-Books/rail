@@ -48,9 +48,6 @@ defmodule RailWeb.TaskLive do
 
   @issue_tab "issue"
 
-  # Plan's subagents: never tabs, their earlier runs read as the start of Plan's conversation.
-  @plan_subagent_stages [:product, :design, :architect]
-
   # What the Issue tab's owner menu and comments raise, handled as the issue page handles them.
   @issue_events ["assign", "filter_assignees", "draft_comment", "comment"]
 
@@ -89,7 +86,9 @@ defmodule RailWeb.TaskLive do
       |> assign(:cleaning_up, false)
       |> assign(:focus_file, nil)
       |> assign(:engineer_tab, nil)
-      |> assign(:earlier_runs, [])
+
+    # A stage moved from another page or by a run finishing is what keeps this one current.
+    if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
 
     {:ok, socket}
   end
@@ -145,7 +144,6 @@ defmodule RailWeb.TaskLive do
           stage_run={@stage_run}
           line={@line}
           approvable={@approvable}
-          earlier_runs={@earlier_runs}
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
@@ -161,7 +159,6 @@ defmodule RailWeb.TaskLive do
               round_questions={@round_questions}
               suggestions={@suggestions}
               conversation_run={@conversation_run}
-              earlier_runs={@earlier_runs}
             />
           </:sidebar>
         </.live_component>
@@ -449,6 +446,12 @@ defmodule RailWeb.TaskLive do
     {:noreply, socket}
   end
 
+  def handle_info({:pipeline_changed, task_id}, %{assigns: %{task_id: task_id}} = socket) do
+    {:noreply, refresh_task(socket)}
+  end
+
+  def handle_info({:pipeline_changed, _other_task_id}, socket), do: {:noreply, socket}
+
   # An agent saved a ticket, an option, a plan, a finding or a picture, in this
   # task, while its run is still going.
   def handle_info({:output_saved, task_id}, socket) do
@@ -566,7 +569,6 @@ defmodule RailWeb.TaskLive do
   attr :suggestions, :map, required: true
   attr :conversation_run, :any, required: true
   attr :current_scope, Scope, required: true
-  attr :earlier_runs, :list, default: []
 
   # Questions sit above the conversation they came out of. Answering only records:
   # the round reaches the agent when the human says it is done.
@@ -589,7 +591,6 @@ defmodule RailWeb.TaskLive do
       task={@task}
       runs={@task.runs || []}
       stage_run={@conversation_run}
-      earlier_runs={@earlier_runs}
       roles_map={@roles_map}
       current_scope={@current_scope}
     />
@@ -677,7 +678,6 @@ defmodule RailWeb.TaskLive do
     |> assign(:stage_run, stage_run(started, task))
     |> assign(:line, line(stage_run(started, task)))
     |> assign(:conversation_run, selected_run)
-    |> assign(:earlier_runs, earlier_shown(role, task, selected_run))
     |> assign(:pane, pane(role))
     |> assign(:approvable, approvable?(role, task, selected_run))
     |> assign(:tabs, build_tabs(task, started, role, questions))
@@ -734,31 +734,12 @@ defmodule RailWeb.TaskLive do
 
   # A role with no run has nothing to read, so it is not a tab yet, unless its
   # stage is where the task is: demo is entered without starting, and its tab is
-  # where the human decides whether it runs at all. Plan's subagents are never
-  # tabs; a task that ran them before Plan existed reads them on the Plan tab.
-  defp started_roles(roles, %Task{runs: runs, stage: stage} = task) do
-    earlier = earlier_runs(task)
-
+  # where the human decides whether it runs at all.
+  defp started_roles(roles, %Task{runs: runs, stage: stage}) do
     roles
-    |> Enum.reject(&(&1.stage in @plan_subagent_stages))
-    |> Enum.map(&{&1, role_run(runs, &1) || earlier_run(&1, earlier)})
+    |> Enum.map(&{&1, role_run(runs, &1)})
     |> Enum.reject(fn {role, run} -> run == nil and not (role.stage == :demo and stage == :demo) end)
   end
-
-  # Oldest first, as the conversation reads them.
-  defp earlier_runs(%Task{runs: runs}) do
-    runs
-    |> Enum.filter(&(&1.role.stage in @plan_subagent_stages))
-    |> Enum.sort_by(&{DateTime.to_unix(&1.started_at || &1.inserted_at, :microsecond), &1.id})
-  end
-
-  # Only the Plan tab reads them, and never the one it is already reading as its own.
-  defp earlier_shown(%Role{stage: :plan}, task, %Run{id: id}), do: task |> earlier_runs() |> Enum.reject(&(&1.id == id))
-  defp earlier_shown(_role, _task, _run), do: []
-
-  # A task that has never had a Plan run still opens its Plan tab on the last of those before it.
-  defp earlier_run(%Role{stage: :plan}, earlier), do: List.last(earlier)
-  defp earlier_run(%Role{}, _earlier), do: nil
 
   # The tab in the URL is the one to open. Without one, it is the role for the
   # stage the task sits at; and once the task moves on, that role takes over from

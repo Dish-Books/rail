@@ -1022,62 +1022,6 @@ defmodule RailWeb.Live.RunConversationTest do
     refute html =~ "skipped"
   end
 
-  test "Plan reads the runs it took over above its own, with the moved-here note until it says anything", %{
-    task: task,
-    roles: roles,
-    roles_map: roles_map
-  } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :plan})
-
-    earlier =
-      for {stage, at, said} <- [
-            {:product, ~U[2026-10-02 10:00:00.000000Z], "The ticket is saved."},
-            {:design, ~U[2026-10-03 10:00:00.000000Z], "Three options are saved."}
-          ] do
-        {:ok, run} =
-          Pipeline.create_run(%{task_id: task.id, role_id: roles[stage].id, status: :finished, started_at: at})
-
-        Pipeline.append_run_events(run.id, nil, [
-          ~s({"type":"assistant","message":{"content":[{"type":"text","text":"#{said}"}]}})
-        ])
-
-        run
-      end
-
-    {:ok, plan} =
-      Pipeline.create_run(%{
-        task_id: task.id,
-        role_id: roles[:plan].id,
-        status: :finished,
-        stage_outcome: :done,
-        conversation_id: "conv_moved",
-        started_at: ~U[2026-10-03 10:00:00.000000Z]
-      })
-
-    render = fn ->
-      render_component(RunConversation,
-        id: "conv",
-        task: task,
-        runs: [plan | earlier],
-        stage_run: plan,
-        earlier_runs: earlier,
-        roles_map: roles_map
-      )
-    end
-
-    html = render.()
-
-    assert html =~
-             ~r/id="earlier-divider-0".*product role.*The ticket is saved.*id="earlier-divider-1".*design role.*Three options are saved.*id="plan-divider".*Plan · from/s
-
-    assert html =~ "Product and design moved into Plan. Send a message to continue."
-    refute html =~ "No messages yet."
-
-    Pipeline.append_run_events(plan.id, nil, ["[human] I picked Rows (rows)."])
-
-    refute render.() =~ "moved into Plan"
-  end
-
   test "a Plan run with no conversation can be retried, since its brief starts it again", %{
     task: task,
     roles: roles,

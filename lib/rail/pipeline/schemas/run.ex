@@ -131,13 +131,19 @@ defmodule Rail.Pipeline.Schemas.Run do
   `:waiting` is a run in line for the CPU and memory its role reserves, which
   starts on its own once they are free.
 
-  `nil` reads as `:queued`: a stage with no run has not started.
+  `nil` reads as `:queued`: a stage with no run has not started. With its questions
+  loaded, a run that stopped while one of its own is still unsent reads as `:blocked`.
   """
   def state(%__MODULE__{status: status}) when status in [:starting, :running], do: :running
   def state(%__MODULE__{status: :waiting_for_resources}), do: :waiting
   def state(%__MODULE__{status: :blocked_on_input}), do: :blocked
   def state(%__MODULE__{stage_outcome: :done}), do: :done
   def state(%__MODULE__{error: error}) when is_binary(error), do: :failed
+
+  def state(%__MODULE__{questions: questions}) when is_list(questions) do
+    if Enum.any?(questions, &is_nil(&1.delivered_at)), do: :blocked, else: :stopped
+  end
+
   def state(%__MODULE__{}), do: :stopped
 
   # No run for a stage means that stage has not started.

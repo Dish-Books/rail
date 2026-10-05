@@ -116,7 +116,7 @@ defmodule Rail.Pipeline do
 
   defdelegate append_run_events(run_id, os_process_id, lines), to: Actions.AppendRunEvents
   defdelegate broadcast_output_saved(task), to: Actions.BroadcastOutputSaved
-  defdelegate list_run_events(run_or_runs, opts \\ []), to: Actions.ListRunEvents
+  defdelegate list_run_events(run, opts \\ []), to: Actions.ListRunEvents
   defdelegate parse_transcript(lines), to: Actions.ParseTranscript
 
   defdelegate build_prompt(opts), to: Actions.BuildPrompt

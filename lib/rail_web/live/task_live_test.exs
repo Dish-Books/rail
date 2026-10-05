@@ -1145,29 +1145,12 @@ defmodule RailWeb.TaskLiveTest do
       }
     end
 
-    test "a task shows the Linear Issue and Plan tabs only, whatever ran before Plan", %{
-      conn: conn,
-      task: task,
-      role: role,
-      roles: roles
-    } do
-      for stage <- [:product, :design, :architect] do
-        {:ok, _old} =
-          Pipeline.create_run(%{
-            task_id: task.id,
-            role_id: roles[stage].id,
-            status: :finished,
-            started_at: ~U[2026-10-01 10:00:00Z]
-          })
-      end
-
+    test "a task shows the Linear Issue and Plan tabs only", %{conn: conn, task: task, role: role} do
       assert {:ok, view, html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(view, "#task-tab-issue", "Linear Issue")
       assert has_element?(view, "#task-tab-#{role.id}[aria-selected='true']", "plan role")
       assert html |> Floki.parse_document!() |> Floki.find("[role='tab'][id^='task-tab-']") |> length() == 2
-
-      for stage <- [:product, :design, :architect], do: refute(has_element?(view, "#task-tab-#{roles[stage].id}"))
     end
 
     test "each output shows the moment it is saved, in every page open on the task", %{
@@ -1344,7 +1327,7 @@ defmodule RailWeb.TaskLiveTest do
                Repo.get_by(ImplementationPlan, task_id: task.id)
     end
 
-    test "a second page clicking Approve is told the task is at Engineer", %{
+    test "an Approve clicked on a page that has not caught up is refused, and the page catches up", %{
       conn: conn,
       task: task,
       save_ticket: save_ticket,
@@ -1353,14 +1336,29 @@ defmodule RailWeb.TaskLiveTest do
       save_ticket.()
       save_plan.(nil)
 
-      assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :engineer})
 
-      one |> element("#approve-plan") |> render_click()
-      assert %Task{stage: :engineer} = Repo.reload!(task)
+      view |> element("#approve-plan") |> render_click()
 
-      two |> element("#approve-plan") |> render_click()
-      assert has_element?(two, "#plan-error", "This task is at Engineer, not Plan.")
+      assert has_element?(view, "#plan-error", "This task is at Engineer, not Plan.")
+      refute has_element?(view, "#approve-plan")
+      assert has_element?(view, "[data-qa='task_status_chip']", "Queued for Engineer")
+    end
+
+    test "a page left open ignores another task's move", %{
+      conn: conn,
+      task: task,
+      save_ticket: save_ticket,
+      save_plan: save_plan
+    } do
+      save_ticket.()
+      save_plan.(nil)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      send(view.pid, {:pipeline_changed, "tsk_another"})
+
+      assert has_element?(view, "#approve-plan")
     end
 
     test "approving a run that started working since the page loaded says so", %{
@@ -1428,49 +1426,6 @@ defmodule RailWeb.TaskLiveTest do
 
       view |> element("#plan-item-plan") |> render_click()
       assert has_element?(view, "[data-qa='plan_plan']", "For nobody.")
-    end
-
-    test "a task moved here from Design shows its options, pick and conversation, and can be messaged", %{
-      conn: conn,
-      task: task,
-      run: run,
-      roles: roles,
-      save_ticket: save_ticket,
-      save_options: save_options
-    } do
-      save_ticket.()
-      save_options.(["cards", "table", "timeline"])
-
-      {:ok, design_run} =
-        Pipeline.create_run(%{
-          task_id: task.id,
-          role_id: roles[:design].id,
-          status: :finished,
-          stage_outcome: :done,
-          conversation_id: "sess_plan_stage",
-          started_at: ~U[2026-10-03 10:00:00Z]
-        })
-
-      Pipeline.append_run_events(design_run.id, nil, ["Three options are saved."])
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#plan-item-design-status", "Pick one of 3")
-      assert has_element?(view, "#earlier-divider-0", "design role")
-      assert has_element?(view, "#earlier-0", "Three options are saved.")
-      assert has_element?(view, "#plan-divider", "Plan · from")
-      assert has_element?(view, "#moved-note", "Design moved into Plan. Pick a design, or send a message to continue.")
-
-      view |> element("#plan-item-plan") |> render_click()
-
-      assert has_element?(
-               view,
-               "#plan-plan-pending",
-               "This task moved here from Design. Pick a design and Plan writes the plan for it."
-             )
-
-      view |> element("#chat-composer-form") |> render_submit(%{"message" => "Carry on"})
-      assert Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "Carry on"))
     end
 
     test "a subagent line opens on its own transcript, a refused save with its reason", %{
