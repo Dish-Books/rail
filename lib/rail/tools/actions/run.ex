@@ -50,7 +50,8 @@ defmodule Rail.Tools.Actions.Run do
   end
 
   defp cmd(executable, args, opts, cd) do
-    base_opts = [{:env, env_list(Keyword.get(opts, :env, %{}), nil)} | Keyword.take(opts, [:into, :stderr_to_stdout])]
+    extra = Enum.into(Keyword.get(opts, :env, %{}), tool_env(executable))
+    base_opts = [{:env, env_list(extra, nil)} | Keyword.take(opts, [:into, :stderr_to_stdout])]
 
     cmd_opts =
       if is_binary(cd) do
@@ -61,6 +62,12 @@ defmodule Rail.Tools.Actions.Run do
 
     System.cmd(resolve(executable), args, cmd_opts)
   end
+
+  # Rail reads a worktree with `git status` and the like while it commits in the
+  # same one, and a read that refreshes the index takes its lock: a commit landing
+  # then fails on `index.lock: File exists`. Rail's reads leave the index alone.
+  defp tool_env("git"), do: %{"GIT_OPTIONAL_LOCKS" => "0"}
+  defp tool_env(_executable), do: %{}
 
   # Resolves an executable to its absolute path on the tool PATH. Names that
   # already contain a `/` are taken as given, and a name nothing on PATH matches

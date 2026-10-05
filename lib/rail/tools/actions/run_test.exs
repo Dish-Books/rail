@@ -13,6 +13,14 @@ defmodule Rail.Tools.Actions.RunTest do
     assert String.trim(output_env) == "rail_test"
   end
 
+  test "git never takes the index lock for a read, unless the caller says otherwise" do
+    print_env = ["-c", "alias.printenv=!printenv GIT_OPTIONAL_LOCKS", "printenv"]
+
+    assert {"0\n", 0} = Tools.run("git", print_env)
+    assert {"1\n", 0} = Tools.run("git", print_env, env: %{"GIT_OPTIONAL_LOCKS" => "1"})
+    assert {"", 1} = Tools.run("sh", ["-c", "printenv GIT_OPTIONAL_LOCKS"])
+  end
+
   test "honours working_directory, cd, into and stderr_to_stdout" do
     assert {output_wd, 0} =
              Tools.run("pwd", [], working_directory: System.tmp_dir!(), into: "")
