@@ -4,6 +4,8 @@ defmodule Rail.Git.Utils.FileLinesTest do
   import Rail.Git.Utils.FileLines
   import RailTest.GitHelpers
 
+  alias Rail.Tools
+
   setup do
     repo = create_temp_git_repo()
     File.mkdir_p!(Path.join(repo, "lib"))
@@ -65,6 +67,16 @@ defmodule Rail.Git.Utils.FileLinesTest do
 
     assert file_lines(repo, "notes.txt") == nil
     assert file_lines(repo, "lib/linked/secret.txt") == nil
+  end
+
+  # A regression hangs on the open rather than failing, so the test is cut short.
+  @tag timeout: 5_000
+  test "a pipe, or a link to one, is not opened", %{repo: repo} do
+    {_output, 0} = Tools.run("mkfifo", [Path.join(repo, "pipe")])
+    File.ln_s!("pipe", Path.join(repo, "fifo.ex"))
+
+    assert file_lines(repo, "fifo.ex") == nil
+    assert file_lines(repo, "pipe") == nil
   end
 
   test "an empty file has no lines", %{repo: repo} do

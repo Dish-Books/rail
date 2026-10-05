@@ -17,7 +17,10 @@ defmodule Rail.Git.Utils.FileLines do
     root = Path.expand(worktree_path)
     full_path = root |> Path.join(path) |> Path.expand()
 
+    # Checked before opening too, since opening a pipe blocks until something writes to it.
     with true <- String.starts_with?(full_path, root <> "/"),
+         false <- linked?(root, full_path),
+         {:ok, %File.Stat{type: :regular}} <- File.lstat(full_path),
          {:ok, file} <- :file.open(full_path, [:read, :raw, :binary]) do
       try do
         if opened?(file, root, full_path), do: file |> read([]) |> lines()
