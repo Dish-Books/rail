@@ -28,6 +28,7 @@ defmodule Rail.Tools.Follower do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Repo
+  alias Rail.Roles.Schemas.Role
   alias Rail.Tools.FollowerRegistry
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
@@ -70,8 +71,8 @@ defmodule Rail.Tools.Follower do
   @doc """
   Starts a new Follower GenServer.
 
-  `os_process` must carry its `run`, preloaded down to `role: :backend` -- the run
-  seeds the event state and the backend says what stream format to parse.
+  `os_process` must carry its `run`, preloaded down to its `role` -- the run
+  seeds the event state and the role's CLI says what stream format to parse.
   """
   def start_link({%OsProcess{} = os_process, opts}) when is_list(opts) do
     name = {:via, Registry, {FollowerRegistry, os_process.id}}
@@ -100,13 +101,13 @@ defmodule Rail.Tools.Follower do
 
   @impl true
   def init({%OsProcess{} = os_process, opts}) do
-    %OsProcess{stream_path: stream_path, run: %Run{role: %{backend: %Backend{} = backend}} = run} = os_process
+    %OsProcess{stream_path: stream_path, run: %Run{role: %Role{cli: cli}} = run} = os_process
 
     tail_interval_ms = Keyword.get(opts, :tail_interval_ms, @default_tail_interval)
     batch_interval_ms = Keyword.get(opts, :batch_interval_ms, @default_batch_interval)
 
     event_state =
-      new_event_state(if(OsProcess.command?(os_process), do: :command, else: backend),
+      new_event_state(if(OsProcess.command?(os_process), do: :command, else: cli),
         conversation_id: run.conversation_id
       )
 
@@ -341,7 +342,7 @@ defmodule Rail.Tools.Follower do
       %OsProcess{} = os_process ->
         {exit_code, error} = settle_exit(state, os_process, event_state, raw_stderr)
         # Before the line moves, so nothing waiting on the same backend starts only to fail too.
-        if Map.get(event_state, :authentication_failed, false), do: reject_run_token(state.run_id)
+        if Map.get(event_state, :authentication_failed, false), do: reject_turn_token(os_process)
 
         {:ok, updated_os_process} =
           os_process
@@ -380,9 +381,13 @@ defmodule Rail.Tools.Follower do
     end
   end
 
-  defp reject_run_token(run_id) do
-    %Run{role: %{backend: backend}} = Run |> Repo.get!(run_id) |> Repo.preload(role: :backend)
-    reject_token(backend)
+  # The token refused is the one of the account this turn was placed on.
+  defp reject_turn_token(%OsProcess{} = os_process) do
+    case Repo.preload(os_process, :backend) do
+      %OsProcess{backend: %Backend{} = backend} -> reject_token(backend)
+      # coveralls-ignore-next-line (every agent turn is placed on an account before it runs)
+      %OsProcess{backend: nil} -> :ok
+    end
   end
 
   # 124, as `timeout(1)` has it: what ran out was time, not a stop someone asked for.

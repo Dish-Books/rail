@@ -45,7 +45,7 @@ defmodule Rail.Pipeline.Utils.EndEngineerTurn do
 
   defp act_and_settle(%Run{} = run, act, queued) do
     result = attempt(act)
-    run = Run |> Repo.get!(run.id) |> Repo.preload([:task, role: :backend])
+    run = Run |> Repo.get!(run.id) |> Repo.preload([:task, :role])
 
     settled =
       case result do
@@ -68,7 +68,9 @@ defmodule Rail.Pipeline.Utils.EndEngineerTurn do
 
   # Starting CI, or a turn to resolve a merge, moved the run on, and what that
   # concludes is still to come.
-  defp latch_done(%Run{status: status} = run) when status in [:running, :waiting_for_resources], do: run
+  defp latch_done(%Run{status: status} = run) when status in [:running, :waiting_for_resources, :waiting_for_usage],
+    do: run
+
   defp latch_done(%Run{} = run), do: update(run, %{stage_outcome: :done, error: nil})
 
   # Said in the conversation too, since a queued message starting the next turn
@@ -84,7 +86,7 @@ defmodule Rail.Pipeline.Utils.EndEngineerTurn do
   defp requeue(%Run{} = run, queued) do
     held = update(run, %{pending_chat: queued})
 
-    if held.status not in [:running, :waiting_for_resources] and pending_questions(held.task_id) == [] do
+    if held.status not in [:running, :waiting_for_resources, :waiting_for_usage] and pending_questions(held.task_id) == [] do
       dispatch_message(held)
     end
 

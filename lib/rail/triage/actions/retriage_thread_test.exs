@@ -33,7 +33,7 @@ defmodule Rail.Triage.Actions.RetriageThreadTest do
 
     assert_receive {:triage_scheduled, ^thread_id, 0}
 
-    expect(Tools, :run_agent, fn _backend, argv, _opts ->
+    expect(Tools, :run_agent, fn _role, argv, _opts ->
       assert Enum.any?(argv, &(&1 =~ "A person asked for this thread to be triaged"))
 
       thread
@@ -56,7 +56,7 @@ defmodule Rail.Triage.Actions.RetriageThreadTest do
     assert {:ok, %Thread{status: :triaging, error: nil, forced: false}} =
              Triage.retriage_thread(Scope.for_user(%{id: nil}), thread)
 
-    expect(Tools, :run_agent, fn _backend, argv, _opts ->
+    expect(Tools, :run_agent, fn _role, argv, _opts ->
       refute Enum.any?(argv, &(&1 =~ "having seen it marked as needing no response"))
       thread |> Thread.scratch_path() |> Path.join("result.json") |> File.write!(Jason.encode!(%{"items" => []}))
       {:ok, ""}

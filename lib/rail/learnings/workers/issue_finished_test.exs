@@ -18,7 +18,7 @@ defmodule Rail.Learnings.Workers.IssueFinishedTest do
       {:ok, _issue} = Issues.update_issue(task.issue, %{state: state})
       Repo.update_all(from(t in Task, where: t.id == ^task.id), set: [learnings_extracted_at: nil])
 
-      expect(Tools, :run_agent, fn _backend, _argv, opts ->
+      expect(Tools, :run_agent, fn _role, _argv, opts ->
         File.write!(Path.join(opts[:cd], "result.json"), ~s({"observations": []}))
         {:ok, ""}
       end)
@@ -29,9 +29,18 @@ defmodule Rail.Learnings.Workers.IssueFinishedTest do
   end
 
   test "a failed pass is retried", %{task: task} do
-    expect(Tools, :run_agent, fn _backend, _argv, _opts -> {:error, {:exit, 1, ""}} end)
+    expect(Tools, :run_agent, fn _role, _argv, _opts -> {:error, {:exit, 1, ""}} end)
 
     assert {:error, {:exit, 1, nil}} = perform_job(IssueFinished, %{issue_id: task.issue_id})
+  end
+
+  test "a pass that waits for usage runs again once the account resets", %{task: task} do
+    reset = DateTime.shift(DateTime.utc_now(), minute: 90)
+    expect(Tools, :run_agent, fn _role, _argv, _opts -> {:error, {:waiting_for_usage, reset}} end)
+
+    assert {:snooze, seconds} = perform_job(IssueFinished, %{issue_id: task.issue_id})
+    assert_in_delta seconds, 90 * 60, 5
+    assert %Task{learnings_extracted_at: nil} = Repo.reload!(task)
   end
 
   test "an issue with no task, or that is gone, runs nothing", %{project: project} do

@@ -64,7 +64,7 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWork do
 
   defp engineer_run(%Task{} = task) do
     {:ok, %Role{id: role_id}} = Roles.get_role(project_id: task.project_id, stage: :engineer)
-    Run |> Repo.get_by!(task_id: task.id, role_id: role_id) |> Repo.preload([:task, role: :backend])
+    Run |> Repo.get_by!(task_id: task.id, role_id: role_id) |> Repo.preload([:task, :role])
   end
 
   # A push that failed leaves a commit that was made and never sent, so running

@@ -58,7 +58,9 @@ Rail's moving parts are agents, Linear, GitHub and Slack, and none of them are r
   `lib/test_helper.exs` does; issues through `Issue.linear_changeset`.
 - **Give the demo its own project,** such as "Acme Web", with its issues owned by the signed-in user,
   so My work on the Overview shows only what you seeded and none of QA's leftovers.
-- **Agents are stand-ins:** a bash script as the role's backend that answers `auth status --json`
+- **Agents are stand-ins:** a bash script as the executable of a backend that offers the role's
+  model and is marked ready, with `cachedUsageUtilization` in its config directory's `.claude.json`
+  so the usage probe keeps it so. It answers `auth status --json`
   with `{"loggedIn":true}`, reads the prompt on stdin, replies once and then waits. Turn dispatch on
   with `Application.put_env(:rail, :no_dispatch, false)` over rpc only while it is the backend.
 - **Linear, GitHub and Slack are fakes** over rpc, `Application.put_env(:rail, :linear | :github |

@@ -13,6 +13,15 @@ defmodule RailWeb.Utils.RunStateStyle do
   The look of `run`'s state: its Phosphor `icon`, Tailwind `text_class` and
   `chip_class`, and the `pill_label` a state pill shows.
   """
+  def run_state_style(%Run{status: :waiting_for_usage}) do
+    %{
+      icon: "pi-gauge",
+      text_class: classes(:violet, :text),
+      chip_class: classes(:violet, :chip),
+      pill_label: "Waiting for usage"
+    }
+  end
+
   def run_state_style(run) do
     state = Run.state(run)
     color = color_for(state)

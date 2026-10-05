@@ -58,7 +58,7 @@ defmodule Rail.Pipeline.Actions.UpdateBranch do
     {:ok, %Role{id: role_id}} = Roles.get_role(project_id: task.project_id, stage: :engineer)
 
     case Repo.get_by(Run, task_id: task.id, role_id: role_id) do
-      %Run{} = run -> {:ok, Repo.preload(run, role: :backend)}
+      %Run{} = run -> {:ok, Repo.preload(run, :role)}
       nil -> {:error, :no_engineer_run}
     end
   end

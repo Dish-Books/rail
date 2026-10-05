@@ -69,8 +69,8 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     assert has_element?(view, "[id^='account-label-new-']", "Not saved yet")
     refute has_element?(view, "[id^='status-badge-new-']")
 
-    # A token is saved on a backend that exists, so a draft takes none.
-    refute has_element?(view, "[id^='token-form-new-']")
+    # A backend is signed in once it is saved, so a draft offers no sign-in.
+    refute has_element?(view, "[id^='login-new-']")
   end
 
   test "saves a label, executable path and models, then renders them back", %{conn: conn} do
@@ -161,7 +161,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     assert has_element?(view, "#backend-label-#{id}", "personal")
   end
 
-  test "signs a Claude backend in with a pasted token, replaces a rejected one, and removes it", %{conn: conn} do
+  test "signs a Claude backend in from its card", %{conn: conn} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_backends_live_14",
@@ -171,58 +171,153 @@ defmodule RailWeb.Settings.BackendsLiveTest do
       })
 
     authed_conn = log_in_user(conn, user)
-    scope = Scope.for_system()
 
-    {:ok, %Backend{id: id}} = Tools.create_backend(scope, %{name: :claude, executable_path: System.find_executable("sh")})
+    {:ok, backend} = Tools.create_backend(Scope.for_system(), %{name: :claude, executable_path: "/bin/claude"})
+
+    session = spawn(fn -> Process.sleep(:infinity) end)
+    url = "https://claude.com/cai/oauth/authorize?code=true&state=abc"
+    test_pid = self()
+
+    expect(Tools, :start_backend_login, fn _scope, %Backend{id: id}, owner ->
+      send(test_pid, {:owner, owner})
+      ^id = backend.id
+      {:ok, %{session: session, url: url}}
+    end)
+
+    assert {:ok, %{pid: view_pid} = view, _html} = live(authed_conn, ~p"/settings/backends")
+
+    # Only a CLI Rail can sign in gets the controls.
+
+    view |> element("#start-login-#{backend.id}") |> render_click()
+    render_async(view)
+
+    # The session belongs to the page, so leaving it ends the sign-in.
+    assert_received {:owner, ^view_pid}
+    assert has_element?(view, "#login-url-#{backend.id}[href='#{url}']")
+
+    # Signing in is followed by reading the account's usage, which is what the
+    # card then shows.
+    expect(Tools, :submit_backend_login_code, fn _scope, ^session, "the-code" -> :ok end)
+
+    # The card says it is signing in only while the read is still running, so the
+    # read waits here until the assertion below has seen it.
+    expect(Tools, :refresh_usage, fn ->
+      send(test_pid, {:reading_usage, self()})
+      assert_receive :finish_reading
+
+      {:ok, [Repo.update!(Backend.usage_changeset(backend, %{status: :ready, account_label: "me@example.com"}))]}
+    end)
+
+    view |> element("#login-code-form-#{backend.id}") |> render_change(%{"code" => "the-co"})
+    assert has_element?(view, "#login-code-#{backend.id}[value='the-co']")
+
+    view |> element("#login-code-form-#{backend.id}") |> render_submit(%{"code" => "the-code"})
+
+    assert_receive {:reading_usage, reader}
+    assert has_element?(view, "#submit-login-code-#{backend.id}", "Signing in")
+
+    send(reader, :finish_reading)
+    render_async(view)
+
+    refute has_element?(view, "#login-code-form-#{backend.id}")
+    assert has_element?(view, "#account-label-#{backend.id}", "me@example.com")
+    assert has_element?(view, "#logout-#{backend.id}")
+  end
+
+  test "says why a sign-in failed, lets it be retried, and cancels it", %{conn: conn} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_15",
+        login: "backends_live_user_15",
+        email: "backends_live_user_15@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
+
+    {:ok, backend} = Tools.create_backend(Scope.for_system(), %{name: :claude, executable_path: "/bin/claude"})
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
-    view |> element("#backend-header-#{id}") |> render_click()
 
-    assert has_element?(view, "#token-help-#{id}", "Run `claude setup-token` on a machine with a browser")
-    refute has_element?(view, "#remove-token-#{id}")
+    failures = [
+      {{:error, :expired}, "Sign-in expired"},
+      {{:error, :login_exited}, "Sign-in ended before it finished"},
+      {{:error, :not_authorized}, "not allowed"},
+      {{:error, :timeout}, "Sign-in failed: :timeout"},
+      {:raise, "Sign-in crashed"}
+    ]
 
-    view |> element("#token-form-#{id}") |> render_submit(%{"token" => "  "})
-    assert has_element?(view, "#token-error-#{id}", "Paste the token first.")
+    for {result, message} <- failures do
+      expect(Tools, :start_backend_login, fn _scope, _backend, _owner ->
+        if result == :raise, do: raise("boom"), else: result
+      end)
 
-    view |> element("#token-form-#{id}") |> render_change(%{"token" => "sk"})
-    refute has_element?(view, "#token-error-#{id}")
+      view |> element("#start-login-#{backend.id}") |> render_click()
+      render_async(view)
 
-    view |> element("#token-form-#{id}") |> render_submit(%{"token" => "two words"})
-    assert has_element?(view, "#token-error-#{id}", "That is not a token: it has spaces in it.")
+      assert has_element?(view, "#login-error-#{backend.id}", message)
+    end
 
-    html = view |> element("#token-form-#{id}") |> render_submit(%{"token" => " sk-ant-oat01-abc\n"})
+    session = spawn(fn -> Process.sleep(:infinity) end)
 
-    # The token is never sent back to the page.
-    refute html =~ "sk-ant-oat01-abc"
-    refute has_element?(view, "#token-error-#{id}")
-    assert %Backend{oauth_token: "sk-ant-oat01-abc", status: :ready} = Repo.get!(Backend, id)
-    assert has_element?(view, "#account-label-#{id}", "Long-lived token")
-    assert has_element?(view, "#no-quota-windows-#{id}", "A token cannot read quotas")
-    assert has_element?(view, "#token-help-#{id}", "Signed in with a token")
+    stub(Tools, :start_backend_login, fn _scope, _backend, _owner ->
+      {:ok, %{session: session, url: "https://claude.com/cai/oauth/authorize?x=1"}}
+    end)
 
-    # A token Claude rejected is said on every page, until a new one is saved.
-    Backend
-    |> Repo.get!(id)
-    |> Backend.usage_changeset(%{status: :signed_out, session_lost_at: DateTime.utc_now()})
-    |> Repo.update!()
+    view |> element("#start-login-#{backend.id}") |> render_click()
+    render_async(view)
+    refute has_element?(view, "#login-error-#{backend.id}")
+
+    # A rejected code says so, and a fresh sign-in can be started.
+    expect(Tools, :submit_backend_login_code, fn _scope, ^session, "bad" -> {:error, "Invalid code"} end)
+    view |> element("#login-code-form-#{backend.id}") |> render_submit(%{"code" => "bad"})
+    render_async(view)
+
+    assert has_element?(view, "#login-error-#{backend.id}", "Sign-in failed: Invalid code")
+    assert has_element?(view, "#start-login-#{backend.id}")
+
+    view |> element("#start-login-#{backend.id}") |> render_click()
+    render_async(view)
+
+    expect(Tools, :cancel_backend_login, fn _scope, ^session -> :ok end)
+    view |> element("#cancel-login-#{backend.id}") |> render_click()
+
+    refute has_element?(view, "#login-code-form-#{backend.id}")
+    assert has_element?(view, "#start-login-#{backend.id}")
+  end
+
+  test "signs a Claude backend out", %{conn: conn} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_16",
+        login: "backends_live_user_16",
+        email: "backends_live_user_16@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
+
+    {:ok, backend} = Tools.create_backend(Scope.for_system(), %{name: :claude, executable_path: "/bin/claude"})
+    backend = Repo.update!(Backend.usage_changeset(backend, %{status: :ready}))
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
-    assert has_element?(view, "#lost-backend-banner-#{id}")
-    assert has_element?(view, "#quotas-unavailable-#{id}", "Needs a token")
-    view |> element("#backend-header-#{id}") |> render_click()
-    assert has_element?(view, "#token-help-#{id}", "Claude rejected this token.")
+    view |> element("#backend-header-#{backend.id}") |> render_click()
 
-    view |> element("#token-form-#{id}") |> render_submit(%{"token" => "sk-ant-oat01-new"})
-    refute has_element?(view, "#lost-backend-banner-#{id}")
-    assert %Backend{oauth_token: "sk-ant-oat01-new", status: :ready, session_lost_at: nil} = Repo.get!(Backend, id)
+    expect(Tools, :logout_backend, fn _scope, %Backend{} -> {:error, "Not logged in"} end)
+    view |> element("#logout-#{backend.id}") |> render_click()
+    assert has_element?(view, "#login-error-#{backend.id}", "Not logged in")
 
-    view |> element("#remove-token-#{id}") |> render_click()
-    assert %Backend{oauth_token: nil, status: :signed_out} = Repo.get!(Backend, id)
+    # The card changes as soon as the CLI signs out, without waiting on a refresh.
+    expect(Tools, :logout_backend, fn _scope, %Backend{} ->
+      {:ok, Repo.update!(Backend.usage_changeset(backend, %{status: :signed_out}))}
+    end)
 
-    expect(Tools, :set_backend_token, fn _scope, %Backend{id: ^id}, "tok" -> {:error, :not_authorized} end)
-    view |> element("#token-form-#{id}") |> render_submit(%{"token" => "tok"})
-    assert has_element?(view, "#token-error-#{id}", "You are not allowed to change a backend's token.")
-    refute has_element?(view, "#remove-token-#{id}")
+    view |> element("#logout-#{backend.id}") |> render_click()
+
+    refute has_element?(view, "#login-error-#{backend.id}")
+    assert has_element?(view, "#quotas-unavailable-#{backend.id}", "Quotas unavailable until sign-in")
+    assert has_element?(view, "#account-label-#{backend.id}", "Not signed in")
+    assert has_element?(view, "#start-login-#{backend.id}")
   end
 
   test "an empty display name falls back to the model id", %{conn: conn} do
@@ -486,7 +581,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     expect(Tools, :refresh_usage, fn -> {:ok, []} end)
     view |> element("#refresh-quotas-button") |> render_click()
 
-    assert has_element?(view, "#no-quota-windows-#{claude.id}", "A token cannot read quotas")
+    assert has_element?(view, "#no-quota-windows-#{claude.id}", "No quota windows reported")
   end
 
   test "handles refresh_quotas, pubsub updates, ticks, and async failure", %{conn: conn} do
@@ -791,7 +886,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     assert has_element?(view, "#no-backends")
   end
 
-  test "says a backend whose CLI is in place needs a token", %{conn: conn} do
+  test "offers sign-in for a backend whose CLI is in place but has no account yet", %{conn: conn} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_backends_live_19",
@@ -809,11 +904,56 @@ defmodule RailWeb.Settings.BackendsLiveTest do
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
 
-    assert has_element?(view, "#quotas-unavailable-#{ready_cli.id}", "Needs a token")
+    assert has_element?(view, "#quotas-unavailable-#{ready_cli.id}", "Quotas unavailable until sign-in")
+    assert has_element?(view, "#start-login-#{ready_cli.id}", "Sign in")
     refute has_element?(view, "#status-badge-#{ready_cli.id}")
 
     # A CLI that is not there is a configuration problem before it is a sign-in one.
     refute has_element?(view, "#quotas-unavailable-#{missing_cli.id}")
     assert has_element?(view, "#status-badge-#{missing_cli.id}", "Not configured")
+  end
+
+  test "finishes a sign-in the CLI completed through the browser it opened", %{conn: conn} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_20",
+        login: "backends_live_user_20",
+        email: "backends_live_user_20@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
+
+    {:ok, backend} = Tools.create_backend(Scope.for_system(), %{name: :claude, executable_path: "/bin/claude"})
+    session = spawn(fn -> Process.sleep(:infinity) end)
+
+    stub(Tools, :start_backend_login, fn _scope, _backend, _owner ->
+      {:ok, %{session: session, url: "https://claude.com/cai/oauth/authorize?x=1"}}
+    end)
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
+
+    view |> element("#start-login-#{backend.id}") |> render_click()
+    render_async(view)
+
+    # A session this page no longer holds is none of its business.
+    send(view.pid, {:backend_login_exited, spawn(fn -> :ok end), :ok})
+    assert has_element?(view, "#login-code-form-#{backend.id}")
+
+    send(view.pid, {:backend_login_exited, session, {:error, "Login failed"}})
+    assert has_element?(view, "#login-error-#{backend.id}", "Sign-in failed: Login failed")
+
+    view |> element("#start-login-#{backend.id}") |> render_click()
+    render_async(view)
+
+    expect(Tools, :refresh_usage, fn ->
+      {:ok, [Repo.update!(Backend.usage_changeset(backend, %{status: :ready, account_label: "me@example.com"}))]}
+    end)
+
+    send(view.pid, {:backend_login_exited, session, :ok})
+    render_async(view)
+
+    refute has_element?(view, "#login-#{backend.id}")
+    assert has_element?(view, "#account-label-#{backend.id}", "me@example.com")
   end
 end

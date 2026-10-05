@@ -117,7 +117,7 @@ defmodule Rail.Mcp.Actions.AuthenticateRunTokenTest do
       triage_role_id: triage_role_id,
       triage_user_id: triage_user_id
     } do
-      expect(Rail.Tools, :run_agent, fn _backend, _argv, opts ->
+      expect(Rail.Tools, :run_agent, fn _role, _argv, opts ->
         assert {:ok,
                 %RunContext{
                   os_process: nil,
@@ -141,7 +141,7 @@ defmodule Rail.Mcp.Actions.AuthenticateRunTokenTest do
     end
 
     test "is dead once the pass is stale", %{thread: thread} do
-      expect(Rail.Tools, :run_agent, fn _backend, _argv, opts ->
+      expect(Rail.Tools, :run_agent, fn _role, _argv, opts ->
         stale = DateTime.shift(DateTime.utc_now(), minute: -46)
 
         Repo.update_all(from(t in Thread, where: t.id == ^thread.id),

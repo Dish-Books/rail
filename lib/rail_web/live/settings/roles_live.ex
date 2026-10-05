@@ -29,7 +29,7 @@ defmodule RailWeb.Settings.RolesLive do
       |> assign(:roles_project_id, roles_project_id)
       |> assign(:roles_project, roles_project)
       |> assign(:roles, if(roles_project_id, do: Roles.list_roles(roles_project_id), else: []))
-      |> assign(:backends, Tools.list_backends())
+      |> assign(:models, Tools.list_models())
       |> assign(:mcp_servers, Mcp.list_servers())
       |> assign(:canonical_stages, Role.canonical_stages())
       |> assign(
@@ -44,7 +44,6 @@ defmodule RailWeb.Settings.RolesLive do
       |> assign(:modal_form, nil)
       |> assign(:modal_original, nil)
       |> assign(:modal_errors, %{})
-      |> assign(:available_models, [])
       |> assign(:role_tab, :configuration)
       |> assign(:prompt_source, nil)
       |> assign(:prompt_preview, false)
@@ -208,12 +207,25 @@ defmodule RailWeb.Settings.RolesLive do
                       {bound_role.name}
                     </span>
                     <span>•</span>
-                    <span class="font-mono uppercase text-[10px] bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">
-                      {bound_role.backend.name}
-                    </span>
-                    <span>•</span>
                     <span class="font-mono text-[11px]">
                       {bound_role.model}
+                    </span>
+                    <span
+                      :if={ready_accounts(@models, bound_role) > 0}
+                      id={"bound-role-accounts-#{stage}"}
+                      class="text-slate-400 dark:text-slate-500"
+                    >
+                      on {ready_accounts(@models, bound_role)} {if ready_accounts(@models, bound_role) ==
+                                                                     1,
+                                                                   do: "account",
+                                                                   else: "accounts"}
+                    </span>
+                    <span
+                      :if={ready_accounts(@models, bound_role) == 0}
+                      id={"bound-role-no-account-#{stage}"}
+                      class="inline-flex items-center gap-1 text-red-600 dark:text-red-400"
+                    >
+                      <.icon name="pi-warning-circle" class="size-3.5" />no signed-in account
                     </span>
                     <span :if={bound_role.reasoning_effort}>•</span>
                     <span
@@ -369,7 +381,7 @@ defmodule RailWeb.Settings.RolesLive do
                       class="mt-0.5 block truncate text-xs text-slate-500 dark:text-slate-400"
                       id={"role-tab-summary-#{tab}"}
                     >
-                      {tab_summary(tab, @modal_form, @available_models, @mcp_servers)}
+                      {tab_summary(tab, @modal_form, @models, @mcp_servers)}
                     </span>
                   </button>
                 </nav>
@@ -450,25 +462,14 @@ defmodule RailWeb.Settings.RolesLive do
                       Runtime
                     </h3>
 
-                    <.input
-                      type="select"
-                      label="CLI backend"
-                      name="role[backend_id]"
-                      id="role-backend-select"
-                      phx-change="change_backend"
-                      value={@modal_form["backend_id"]}
-                      prompt={if @backends == [], do: "No backend configured"}
-                      options={Enum.map(@backends, &{backend_label(&1), &1.id})}
-                    />
-
                     <div>
                       <div class="mb-1.5 flex items-center justify-between">
-                        <label
-                          for="role-model-select"
+                        <span
+                          id="role-model-label"
                           class="block text-sm font-medium text-slate-700 dark:text-slate-200"
                         >
                           Model
-                        </label>
+                        </span>
                         <.link
                           navigate={~p"/settings/backends"}
                           id="manage-models-link"
@@ -477,19 +478,66 @@ defmodule RailWeb.Settings.RolesLive do
                           Manage models
                         </.link>
                       </div>
-                      <.input
-                        type="select"
-                        name="role[model_choice]"
-                        id="role-model-select"
-                        value={@modal_form["model"]}
-                        options={
-                          Enum.map(
-                            model_options(@available_models, @modal_form["model"]),
-                            &{&1.display_name, &1.id}
-                          )
-                        }
-                        errors={List.wrap(@modal_errors[:model])}
-                      />
+                      <div
+                        id="role-model-options"
+                        role="radiogroup"
+                        aria-labelledby="role-model-label"
+                        class="rounded-lg border border-slate-200 dark:border-slate-700/80 divide-y divide-slate-200 dark:divide-slate-700/70 text-sm"
+                      >
+                        <p
+                          :if={model_options(@models, @modal_form) == []}
+                          id="role-no-models"
+                          class="px-3 py-2 text-sm text-slate-500 dark:text-slate-400"
+                        >
+                          No account offers a model yet.
+                        </p>
+                        <label
+                          :for={model <- model_options(@models, @modal_form)}
+                          id={model_dom_id(model)}
+                          data-qa="role-model-option"
+                          class="grid grid-cols-[1.1rem_minmax(0,11rem)_minmax(0,1fr)] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 has-[:checked]:bg-indigo-50 dark:has-[:checked]:bg-indigo-500/10"
+                        >
+                          <input
+                            type="radio"
+                            name="role[model_choice]"
+                            value={"#{model.cli}:#{model.id}"}
+                            checked={
+                              to_string(model.cli) == @modal_form["cli"] and
+                                model.id == @modal_form["model"]
+                            }
+                            class="h-4 w-4 accent-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
+                          />
+                          <span class="truncate font-medium text-slate-900 dark:text-slate-100">
+                            {model.display_name}
+                          </span>
+                          <% reach = model_reach(model) %>
+                          <span class={[
+                            "truncate text-xs",
+                            reach.none? && "text-red-600 dark:text-red-400",
+                            not reach.none? && "text-slate-500 dark:text-slate-400"
+                          ]}>
+                            <.icon
+                              :if={reach.none?}
+                              name="pi-warning-circle"
+                              class="size-3.5 align-[-2px]"
+                            />
+                            {reach.text}<span
+                              :if={reach.off}
+                              class="text-slate-400 dark:text-slate-500"
+                            > · {reach.off}</span>
+                          </span>
+                        </label>
+                      </div>
+                      <p
+                        :if={@modal_errors[:model] || @modal_errors[:cli]}
+                        id="role-model-error"
+                        class="mt-1.5 text-xs text-red-600 dark:text-red-400"
+                      >
+                        {Enum.join(
+                          List.wrap(@modal_errors[:model]) ++ List.wrap(@modal_errors[:cli]),
+                          ", "
+                        )}
+                      </p>
                     </div>
 
                     <div class="grid grid-cols-1 gap-5 sm:grid-cols-[1fr_11rem]">
@@ -881,17 +929,17 @@ defmodule RailWeb.Settings.RolesLive do
       params["stage"] ||
         List.first(unbound_stages(socket.assigns.canonical_stages, socket.assigns.roles))
 
-    backend = default_backend(socket.assigns.backends)
-    models = models_for(backend)
-    default_model = default_model_for(backend)
+    default_model =
+      Enum.find(socket.assigns.models, &(&1.cli == :claude and &1.id == @default_model)) ||
+        List.first(socket.assigns.models)
 
     form_data = %{
       "role_id" => "",
       "name" => stage_default_name(stage),
       "description" => "",
       "stage" => if(stage, do: to_string(stage), else: ""),
-      "backend_id" => backend && backend.id,
-      "model" => default_model,
+      "cli" => default_model && to_string(default_model.cli),
+      "model" => default_model && default_model.id,
       "reasoning_effort" => "high",
       "system_prompt" => "You are an agent persona.",
       "max_concurrent" => 1,
@@ -908,7 +956,6 @@ defmodule RailWeb.Settings.RolesLive do
       |> assign(:modal_form, form_data)
       |> assign(:modal_original, form_data)
       |> assign(:modal_errors, %{})
-      |> assign(:available_models, models)
       |> assign(:role_tab, :configuration)
       |> assign(:prompt_preview, false)
       |> assign(:expanded_mcp_servers, MapSet.new())
@@ -920,14 +967,12 @@ defmodule RailWeb.Settings.RolesLive do
     role = Enum.find(socket.assigns.roles, &(&1.id == role_id))
 
     if role do
-      models = models_for(role.backend)
-
       form_data = %{
         "role_id" => role.id,
         "name" => role.name,
         "description" => role.description || "",
         "stage" => if(role.stage, do: to_string(role.stage), else: ""),
-        "backend_id" => role.backend_id,
+        "cli" => to_string(role.cli),
         "model" => role.model,
         "reasoning_effort" => if(role.reasoning_effort, do: to_string(role.reasoning_effort), else: "high"),
         "system_prompt" => role.system_prompt,
@@ -945,7 +990,6 @@ defmodule RailWeb.Settings.RolesLive do
         |> assign(:modal_form, form_data)
         |> assign(:modal_original, form_data)
         |> assign(:modal_errors, %{})
-        |> assign(:available_models, models)
         |> assign(:role_tab, :configuration)
         |> assign(:prompt_preview, false)
         |> assign(:expanded_mcp_servers, MapSet.new())
@@ -1022,33 +1066,12 @@ defmodule RailWeb.Settings.RolesLive do
   end
 
   def handle_event("validate_role", %{"role" => role_params}, socket) do
-    backend = backend_by_id(socket.assigns.backends, role_params["backend_id"])
-    model_choice = role_params["model_choice"]
-    chosen_model = model_choice || default_model_for(backend)
-
     updated_form =
       socket.assigns.modal_form
-      |> Map.merge(role_params)
-      |> Map.put("model", chosen_model)
+      |> Map.merge(Map.delete(role_params, "model_choice"))
+      |> Map.merge(model_choice(role_params["model_choice"], socket.assigns.modal_form))
 
     {:noreply, assign(socket, :modal_form, updated_form)}
-  end
-
-  def handle_event("change_backend", %{"role" => %{"backend_id" => backend_id}}, socket) do
-    backend = backend_by_id(socket.assigns.backends, backend_id)
-    models = models_for(backend)
-
-    updated_form =
-      socket.assigns.modal_form
-      |> Map.put("backend_id", backend_id)
-      |> Map.put("model", default_model_for(backend))
-
-    socket =
-      socket
-      |> assign(:modal_form, updated_form)
-      |> assign(:available_models, models)
-
-    {:noreply, socket}
   end
 
   def handle_event("save_role", %{"role" => role_params}, socket) do
@@ -1058,7 +1081,7 @@ defmodule RailWeb.Settings.RolesLive do
     existing_role = socket.assigns.modal_role
 
     attrs =
-      build_role_attrs(role_params, existing_role, length(socket.assigns.roles), socket.assigns.backends)
+      build_role_attrs(role_params, existing_role, length(socket.assigns.roles), socket.assigns.modal_form)
 
     case execute_role_save(scope, socket.assigns.roles_project, modal, existing_role, attrs) do
       {:ok, _role} ->
@@ -1125,42 +1148,68 @@ defmodule RailWeb.Settings.RolesLive do
     {:noreply, socket}
   end
 
-  # A role can hold a model that is no longer in its backend's configured list
-  # (renamed model, hand-seeded role). Keep it selectable so opening the edit
-  # modal never silently rewrites the stored model.
-  defp model_options(available_models, current_model) do
-    current = String.trim(to_string(current_model || ""))
+  # A role can hold a model no account offers any more (renamed model, hand-seeded
+  # role). Keep it selectable so opening the edit modal never silently rewrites it.
+  defp model_options(models, %{"cli" => cli, "model" => current}) when is_binary(cli) and current not in [nil, ""] do
+    if Enum.any?(models, &(to_string(&1.cli) == cli and &1.id == current)),
+      do: models,
+      else:
+        Enum.reverse([
+          %{cli: String.to_existing_atom(cli), id: current, display_name: current, backends: []} | Enum.reverse(models)
+        ])
+  end
 
-    if current == "" or Enum.any?(available_models, &(&1.id == current)) do
-      available_models
-    else
-      Enum.reverse([%{id: current, display_name: current} | Enum.reverse(available_models)])
+  defp model_options(models, _form), do: models
+
+  # A choice names its CLI and its model, since two CLIs can offer one model id.
+  defp model_choice("" <> choice, form) do
+    case String.split(choice, ":", parts: 2) do
+      [cli, model] -> %{"cli" => cli, "model" => model}
+      [model] -> %{"cli" => form["cli"], "model" => model}
     end
   end
 
-  defp backend_by_id(backends, id) when is_binary(id) and id != "" do
-    Enum.find(backends, &(&1.id == id))
+  defp model_choice(nil, form), do: Map.take(form, ["cli", "model"])
+
+  # Which accounts offer a model: the signed-in ones, then the rest dimmed, or in
+  # red when not one of them is signed in.
+  defp model_reach(%{cli: cli, backends: backends}) do
+    {ready, off} = Enum.split_with(backends, &(&1.status == :ready))
+    names = ready |> Enum.map(&Backend.short_name/1) |> Enum.reject(&is_nil/1)
+    off_names = for backend <- off, name = Backend.short_name(backend), do: {name, off_word(backend)}
+
+    cond do
+      ready != [] ->
+        %{
+          none?: false,
+          text: Enum.join([Backend.cli_name(cli) | if(names == [], do: [], else: [Enum.join(names, ", ")])], " · "),
+          off: if(off_names != [], do: Enum.map_join(off_names, " · ", fn {name, word} -> "#{name} #{word}" end))
+        }
+
+      off_names != [] ->
+        %{
+          none?: true,
+          text:
+            "#{Backend.cli_name(cli)} · " <> Enum.map_join(off_names, " · ", fn {name, word} -> "#{name}, #{word}" end),
+          off: nil
+        }
+
+      true ->
+        %{none?: true, text: "#{Backend.cli_name(cli)} · no signed-in account", off: nil}
+    end
   end
 
-  defp backend_by_id(_backends, _id), do: nil
+  # Model ids carry dots, which a DOM id read as a selector cannot.
+  defp model_dom_id(%{cli: cli, id: id}), do: "role-model-#{cli}-#{String.replace(id, ~r/[^A-Za-z0-9_-]/, "-")}"
 
-  # A new role starts on the first backend listed.
-  defp default_backend(backends), do: List.first(backends)
+  defp off_word(%Backend{status: :unavailable}), do: "unavailable"
+  defp off_word(%Backend{}), do: "signed out"
 
-  defp models_for(%Backend{models: models}), do: models || []
-  defp models_for(_unconfigured), do: []
-
-  defp default_model_for(%Backend{}), do: @default_model
-  defp default_model_for(_unconfigured), do: nil
-
-  # Two backends of one kind are told apart by what the user called them, then
-  # by the account signed in.
-  defp backend_label(%Backend{} = backend) do
-    kind = "Claude Code (claude -p)"
-
-    case Enum.find([backend.label, backend.account_label], &(&1 not in [nil, ""])) do
-      account when is_binary(account) -> "#{kind} · #{account}"
-      nil -> kind
+  # Read from the models already loaded for the page, so the list costs no query per role.
+  defp ready_accounts(models, %Role{cli: cli, model: model}) do
+    case Enum.find(models, &(&1.cli == cli and &1.id == model)) do
+      %{backends: backends} -> Enum.count(backends, &(&1.status == :ready))
+      nil -> 0
     end
   end
 
@@ -1232,9 +1281,8 @@ defmodule RailWeb.Settings.RolesLive do
     end
   end
 
-  defp build_role_attrs(role_params, existing_role, roles_count, backends) do
-    backend = backend_by_id(backends, role_params["backend_id"])
-    final_model = role_params["model_choice"] || default_model_for(backend)
+  defp build_role_attrs(role_params, existing_role, roles_count, form) do
+    %{"cli" => cli, "model" => final_model} = model_choice(role_params["model_choice"], form)
 
     stage =
       case role_params["stage"] do
@@ -1246,7 +1294,7 @@ defmodule RailWeb.Settings.RolesLive do
       name: String.trim(role_params["name"] || ""),
       description: String.trim(role_params["description"] || ""),
       stage: stage,
-      backend_id: backend && backend.id,
+      cli: cli,
       model: String.trim(final_model || ""),
       reasoning_effort: parse_effort(role_params["reasoning_effort"]),
       system_prompt: String.trim(role_params["system_prompt"] || ""),
@@ -1277,7 +1325,7 @@ defmodule RailWeb.Settings.RolesLive do
     {"name", "name"},
     {"description", "description"},
     {"stage", "stage"},
-    {"backend_id", "backend"},
+    {"cli", "CLI"},
     {"model", "model"},
     {"reasoning_effort", "reasoning effort"},
     {"system_prompt", "prompt"},
@@ -1301,7 +1349,12 @@ defmodule RailWeb.Settings.RolesLive do
   defp tab_title(:mcp_tools), do: "MCP tools"
 
   defp tab_summary(:configuration, form, models, _servers) do
-    model = Enum.find_value(models, form["model"], &(&1.id == form["model"] && &1.display_name))
+    model =
+      Enum.find_value(
+        models,
+        form["model"],
+        &((&1.id == form["model"] and to_string(&1.cli) == form["cli"]) && &1.display_name)
+      )
 
     ["Identity", model, effort_value(form["reasoning_effort"]), reservation_summary(form)]
     |> Enum.reject(&(&1 in [nil, ""]))

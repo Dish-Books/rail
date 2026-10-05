@@ -6,6 +6,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
+  alias Rail.Tools.Schemas.Backend
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
@@ -21,19 +22,22 @@ defmodule RailWeb.Settings.RolesLiveTest do
                admin: true
              })
 
-    {:ok, claude_backend} =
-      Rail.Tools.create_backend(Rail.Scope.for_system(), %{
-        name: :claude,
-        label: "work",
-        executable_path: "/usr/local/bin/claude",
-        models: [%{id: "claude-sonnet-5", display_name: "claude-sonnet-5"}]
-      })
+    # An account offering `models`, signed in unless `attrs` says otherwise.
+    offering = fn models, attrs ->
+      {:ok, backend} =
+        Rail.Tools.create_backend(
+          Rail.Scope.for_system(),
+          Map.merge(
+            %{name: :claude, executable_path: "/usr/local/bin/claude", models: Enum.map(models, &%{id: &1})},
+            Map.delete(attrs, :status)
+          )
+        )
 
-    {:ok, bare_backend} =
-      Rail.Tools.create_backend(Rail.Scope.for_system(), %{
-        name: :claude,
-        executable_path: "/usr/local/bin/claude"
-      })
+      Rail.Repo.update!(Backend.usage_changeset(backend, %{name: backend.name, status: Map.get(attrs, :status, :ready)}))
+    end
+
+    # Every editor lists what the accounts offer: the seeded account's Opus, and this one's Sonnet.
+    _work = offering.(["claude-sonnet-5"], %{label: "work"})
 
     admin_conn = log_in_user(conn, admin_user)
 
@@ -53,8 +57,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
       admin_conn: admin_conn,
       admin_user: admin_user,
       regular_conn: regular_conn,
-      claude_backend: claude_backend,
-      bare_backend: bare_backend
+      offering: offering
     }
   end
 
@@ -66,7 +69,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert {:error, {:redirect, %{to: "/"}}} = live(conn, ~p"/settings/roles")
   end
 
-  test "renders stage list and bound roles", %{claude_backend: claude_backend, admin_conn: conn, admin_user: admin_user} do
+  test "renders stage list and bound roles", %{admin_conn: conn, admin_user: admin_user} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Roles Live Project 13001",
@@ -91,7 +94,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
                name: "Senior Engineer",
                description: "Writes tested features",
                stage: :engineer,
-               backend_id: claude_backend.id,
+               cli: :claude,
                model: "claude-opus-5-5",
                reasoning_effort: :high,
                system_prompt: "You are an engineer."
@@ -130,7 +133,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert_redirect(view, ~p"/project-selection?#{[project_id: project2.id, return_to: "/settings/roles"]}")
   end
 
-  test "creates a new role with stage binding", %{bare_backend: bare_backend, admin_conn: conn} do
+  test "creates a new role with stage binding", %{admin_conn: conn} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Roles Live Project 13003",
@@ -160,26 +163,17 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert [class] = view |> render() |> Floki.parse_fragment!() |> Floki.attribute("#role-form", "class")
     assert "h-[90dvh]" in String.split(class)
 
-    # Two backends of one kind are told apart by their label.
-    assert has_element?(view, "#role-backend-select option", "Claude Code (claude -p) · work")
-    assert has_element?(view, "#role-backend-select option[value='#{bare_backend.id}']", "Claude Code (claude -p)")
+    # A role picks a model, never an account: each model is a row naming the accounts offering it.
+    refute has_element?(view, "#role-backend-select")
+    assert has_element?(view, "#role-model-claude-claude-sonnet-5", "Claude Code · work")
 
-    # Validate form change with backend change
-    view
-    |> element("#role-backend-select")
-    |> render_change(%{"role" => %{"backend_id" => bare_backend.id}})
-
+    # A row sets the model and its CLI together, and a model no account offers stays selectable once chosen.
     view
     |> element("#role-form")
-    |> render_change(%{
-      "role" => %{
-        "backend_id" => bare_backend.id,
-        "model_choice" => "claude-custom"
-      }
-    })
+    |> render_change(%{"role" => %{"model_choice" => "claude:claude-custom"}})
 
-    # The backend has no configured models, so the chosen model stays selectable on its own
-    assert has_element?(view, "#role-model-select option[value='claude-custom']")
+    assert has_element?(view, "#role-model-claude-claude-custom input[checked]")
+    assert has_element?(view, "#role-model-claude-claude-custom", "Claude Code · no signed-in account")
 
     # Models are managed in backend settings
     assert has_element?(view, "#manage-models-link")
@@ -192,8 +186,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "name" => "Product Lead",
         "description" => "Owns specs",
         "stage" => "product",
-        "backend_id" => bare_backend.id,
-        "model_choice" => "claude-haiku-5",
+        "model_choice" => "claude:claude-haiku-5",
         "reasoning_effort" => "medium",
         "system_prompt" => "",
         "max_concurrent" => "2"
@@ -210,8 +203,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "name" => "Product Lead",
         "description" => "Owns specs",
         "stage" => "product",
-        "backend_id" => bare_backend.id,
-        "model_choice" => "claude-haiku-5",
+        "model_choice" => "claude:claude-haiku-5",
         "reasoning_effort" => "medium",
         "system_prompt" => "You are product lead.",
         "max_concurrent" => "2"
@@ -220,9 +212,14 @@ defmodule RailWeb.Settings.RolesLiveTest do
 
     refute has_element?(view, "#role-editor-modal")
     assert has_element?(view, "#bound-role-name-product", "Product Lead")
+
+    assert {:ok, %Role{cli: :claude, model: "claude-haiku-5"}} =
+             Roles.get_role(project_id: project.id, stage: :product)
+
+    assert has_element?(view, "#bound-role-no-account-product", "no signed-in account")
   end
 
-  test "toolbar add button creates a role on the first free stage", %{claude_backend: claude_backend, admin_conn: conn} do
+  test "toolbar add button creates a role on the first free stage", %{admin_conn: conn} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Roles Live Project 13004",
@@ -254,8 +251,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "name" => "Security Auditor",
         "description" => "Audits code",
         "stage" => "product",
-        "backend_id" => claude_backend.id,
-        "model_choice" => "claude-opus-5-5",
+        "model_choice" => "claude:claude-opus-5-5",
         "reasoning_effort" => "max",
         "system_prompt" => "You audit security.",
         "max_concurrent" => "1"
@@ -266,7 +262,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert has_element?(view, "#bound-role-name-product", "Security Auditor")
   end
 
-  test "edits an existing role", %{claude_backend: claude_backend, admin_conn: conn, admin_user: admin_user} do
+  test "edits an existing role", %{admin_conn: conn, admin_user: admin_user} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Roles Live Project 13005",
@@ -291,7 +287,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
                name: "Bug Hunter",
                description: "Chases down defects",
                stage: :debugger,
-               backend_id: claude_backend.id,
+               cli: :claude,
                model: "claude-opus-5-5",
                reasoning_effort: :high,
                system_prompt: "You chase down defects."
@@ -306,7 +302,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert has_element?(view, "#role-unsaved-changes", "No unsaved changes")
 
     # Tabs switch panels, and each tab summarises what it holds.
-    assert has_element?(view, "#role-tab-summary-configuration", "Identity · claude-opus-5-5 · high")
+    assert has_element?(view, "#role-tab-summary-configuration", "Identity · Opus 5.5 · high")
     assert has_element?(view, "#role-tab-summary-prompt", "23 chars")
     assert has_element?(view, "#role-tab-summary-mcp_tools", "None enabled")
     assert has_element?(view, "#role-panel-prompt.hidden")
@@ -349,8 +345,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
       "role" => %{
         "name" => "Bug Hunter",
         "stage" => "debugger",
-        "backend_id" => claude_backend.id,
-        "model_choice" => "claude-opus-5-5",
+        "model_choice" => "claude:claude-opus-5-5",
         "system_prompt" => ""
       }
     })
@@ -358,8 +353,8 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert has_element?(view, "#role-prompt-error")
     refute has_element?(view, "#role-panel-prompt.hidden")
 
-    # A stored model outside the backend's configured list stays selected
-    assert has_element?(view, "#role-model-select option[value='claude-opus-5-5']")
+    # The stored model stays selected
+    assert has_element?(view, "#role-model-claude-claude-opus-5-5 input[checked]")
 
     # Update description and prompt
     view
@@ -369,8 +364,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "name" => "Chief Bug Hunter",
         "description" => "Leads the hunt",
         "stage" => "debugger",
-        "backend_id" => claude_backend.id,
-        "model_choice" => "claude-opus-5-5",
+        "model_choice" => "claude:claude-opus-5-5",
         "reasoning_effort" => "xhigh",
         "system_prompt" => "You are chief bug hunter.",
         "max_concurrent" => "1"
@@ -388,7 +382,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
   end
 
   test "a role whose prompt comes from the repo shows that file's text and path, and does not offer to edit it", %{
-    claude_backend: claude_backend,
     admin_conn: conn,
     admin_user: admin_user
   } do
@@ -416,7 +409,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
              Roles.create_role(Rail.Scope.for_user(admin_user), project, %{
                name: "Engineer",
                stage: :engineer,
-               backend_id: claude_backend.id,
+               cli: :claude,
                model: "claude-opus-5-5",
                system_prompt: "Stored engineer prompt."
              })
@@ -440,8 +433,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
       "role" => %{
         "name" => "Engineer",
         "stage" => "engineer",
-        "backend_id" => claude_backend.id,
-        "model_choice" => "claude-sonnet-5"
+        "model_choice" => "claude:claude-sonnet-5"
       }
     })
 
@@ -450,7 +442,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
   end
 
   test "a role with no prompt file in its repo shows no source and keeps an editable prompt", %{
-    claude_backend: claude_backend,
     admin_conn: conn,
     admin_user: admin_user
   } do
@@ -469,7 +460,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
              Roles.create_role(Rail.Scope.for_user(admin_user), project, %{
                name: "Engineer",
                stage: :engineer,
-               backend_id: claude_backend.id,
+               cli: :claude,
                model: "claude-opus-5-5",
                system_prompt: "Stored engineer prompt."
              })
@@ -487,7 +478,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
 
   # The test machine has 4 CPUs and 8 GB to reserve (config/test.exs).
   test "a role's sandbox reservation shows on its row, and the editor says how many fit and refuses what never would",
-       %{claude_backend: claude_backend, admin_conn: conn, admin_user: admin_user} do
+       %{admin_conn: conn, admin_user: admin_user} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Roles Live Project 13090",
@@ -502,7 +493,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
              Roles.create_role(Rail.Scope.for_user(admin_user), project, %{
                name: "Bug Hunter",
                stage: :debugger,
-               backend_id: claude_backend.id,
+               cli: :claude,
                model: "claude-opus-5-5",
                reasoning_effort: :high,
                system_prompt: "You chase down defects."
@@ -526,7 +517,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     view |> element("#role-form") |> render_change(%{"role" => %{"reserved_cpus" => "2", "reserved_memory_gb" => "4"}})
     assert has_element?(view, "#role-sandbox-fit", "2 Bug Hunter sandboxes fit on this machine at once")
     assert has_element?(view, "#role-unsaved-changes", "2 unsaved changes · CPUs, memory")
-    assert has_element?(view, "#role-tab-summary-configuration", "Identity · claude-opus-5-5 · high · 2 CPUs, 4 GB")
+    assert has_element?(view, "#role-tab-summary-configuration", "Identity · Opus 5.5 · high · 2 CPUs, 4 GB")
 
     view |> element("#role-form") |> render_change(%{"role" => %{"reserved_cpus" => "", "reserved_memory_gb" => "4"}})
     refute has_element?(view, "#role-sandbox-fit")
@@ -542,8 +533,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
       "role" => %{
         "name" => "Bug Hunter",
         "stage" => "debugger",
-        "backend_id" => claude_backend.id,
-        "model_choice" => "claude-opus-5-5",
+        "model_choice" => "claude:claude-opus-5-5",
         "system_prompt" => "You chase down defects.",
         "reserved_cpus" => "16",
         "reserved_memory_gb" => "4"
@@ -566,7 +556,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
   end
 
   test "a machine whose capacity cannot be read shows no preview, and the role still saves", %{
-    claude_backend: claude_backend,
     admin_conn: conn,
     admin_user: admin_user
   } do
@@ -586,7 +575,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
       Roles.create_role(Rail.Scope.for_user(admin_user), project, %{
         name: "Bug Hunter",
         stage: :debugger,
-        backend_id: claude_backend.id,
+        cli: :claude,
         model: "claude-opus-5-5",
         system_prompt: "You chase down defects."
       })
@@ -598,7 +587,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     refute has_element?(view, "#role-sandbox-fit")
   end
 
-  test "allows MCP tools on a role", %{claude_backend: claude_backend, admin_conn: conn, admin_user: admin_user} do
+  test "allows MCP tools on a role", %{admin_conn: conn, admin_user: admin_user} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Roles Live Project 13020",
@@ -623,7 +612,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
              Roles.create_role(Rail.Scope.for_user(admin_user), project, %{
                name: "Engineer",
                stage: :engineer,
-               backend_id: claude_backend.id,
+               cli: :claude,
                model: "claude-opus-5-5",
                system_prompt: "You are an engineer."
              })
@@ -666,8 +655,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
       "role" => %{
         "name" => "Engineer",
         "stage" => "engineer",
-        "backend_id" => claude_backend.id,
-        "model_choice" => "claude-opus-5-5",
+        "model_choice" => "claude:claude-opus-5-5",
         "reasoning_effort" => "high",
         "system_prompt" => "You are an engineer.",
         "max_concurrent" => "1",
@@ -683,7 +671,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert has_element?(view, "#role-mcp-all-rl_sentry[checked]")
   end
 
-  test "deletes a role", %{claude_backend: claude_backend, admin_conn: conn, admin_user: admin_user} do
+  test "deletes a role", %{admin_conn: conn, admin_user: admin_user} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Roles Live Project 13006",
@@ -707,7 +695,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
              Roles.create_role(scope, project, %{
                name: "Temporary Reviewer",
                stage: :review,
-               backend_id: claude_backend.id,
+               cli: :claude,
                model: "claude-opus-5-5",
                system_prompt: "Review PRs"
              })
@@ -732,7 +720,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     refute has_element?(view, "#bound-role-name-review")
   end
 
-  test "copies roles from another project", %{bare_backend: bare_backend, admin_conn: conn, admin_user: admin_user} do
+  test "copies roles from another project", %{admin_conn: conn, admin_user: admin_user} do
     scope = Rail.Scope.for_user(admin_user)
 
     {:ok, source_project} =
@@ -756,7 +744,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
              Roles.create_role(scope, source_project, %{
                name: "Demo Recorder Role",
                stage: :demo,
-               backend_id: bare_backend.id,
+               cli: :claude,
                model: "claude-haiku-5",
                system_prompt: "Record demos"
              })
@@ -905,8 +893,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
   end
 
   test "renders available models dropdown and validates name in create modal", %{
-    bare_backend: bare_backend,
-    claude_backend: claude_backend,
     admin_conn: conn,
     admin_user: _admin_user
   } do
@@ -933,11 +919,9 @@ defmodule RailWeb.Settings.RolesLiveTest do
     view |> element("#assign-stage-button-product") |> render_click()
     assert has_element?(view, "#role-editor-modal")
 
-    # Options from available_models are rendered; the seeded backend has none, so pick ours
-    render_hook(view, "change_backend", %{"role" => %{"backend_id" => claude_backend.id}})
-    assert has_element?(view, "#role-model-select option[value='claude-sonnet-5']")
-
-    refute has_element?(view, "#role-model-select option[value='__custom__']")
+    # Every account's models are rows, the seeded account's and ours
+    assert has_element?(view, "#role-model-claude-claude-opus-5-5")
+    assert has_element?(view, "#role-model-claude-claude-sonnet-5")
 
     # Submit the form with an empty name and an unparseable max_concurrent
     view
@@ -946,8 +930,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "name" => "",
         "description" => "A description",
         "stage" => "product",
-        "backend_id" => claude_backend.id,
-        "model_choice" => "claude-sonnet-5",
+        "model_choice" => "claude:claude-sonnet-5",
         "reasoning_effort" => "high",
         "system_prompt" => "Prompt",
         "max_concurrent" => "invalid"
@@ -960,18 +943,14 @@ defmodule RailWeb.Settings.RolesLiveTest do
     # Validate with model_choice: nil
     render_hook(view, "validate_role", %{
       "role" => %{
-        "backend_id" => claude_backend.id,
         "model_choice" => nil
       }
     })
 
-    # Switching to a backend with no configured row yields no models
-    render_hook(view, "change_backend", %{"role" => %{"backend_id" => bare_backend.id}})
-    refute has_element?(view, "#role-model-select option[value='claude-sonnet-5']")
+    assert has_element?(view, "#role-model-claude-claude-opus-5-5 input[checked]")
   end
 
   test "handles stage_default_name and max_concurrent variations in create modal", %{
-    claude_backend: claude_backend,
     admin_conn: conn,
     admin_user: _admin_user
   } do
@@ -1004,7 +983,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert has_element?(view, "input[name='role[name]'][value='Unknown_custom_stage_test']")
 
     # Submit with integer max_concurrent
-    render_hook(view, "change_backend", %{"role" => %{"backend_id" => claude_backend.id}})
 
     view
     |> form("#role-form", %{
@@ -1012,8 +990,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "name" => "Valid Name",
         "description" => "Desc",
         "stage" => "engineer",
-        "backend_id" => claude_backend.id,
-        "model_choice" => "claude-sonnet-5",
+        "model_choice" => "claude:claude-sonnet-5",
         "reasoning_effort" => "high",
         "system_prompt" => "Prompt",
         "max_concurrent" => 3
@@ -1026,7 +1003,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
     # Create another with max_concurrent: nil
     render_hook(view, "open_create_modal", %{"stage" => ""})
     assert has_element?(view, "#role-editor-modal")
-    render_hook(view, "change_backend", %{"role" => %{"backend_id" => claude_backend.id}})
 
     view
     |> form("#role-form", %{
@@ -1034,8 +1010,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "name" => "Another Valid Name",
         "description" => "Desc",
         "stage" => "qa",
-        "backend_id" => claude_backend.id,
-        "model_choice" => "claude-sonnet-5",
+        "model_choice" => "claude:claude-sonnet-5",
         "reasoning_effort" => "high",
         "system_prompt" => "Prompt",
         "max_concurrent" => ""
@@ -1047,9 +1022,11 @@ defmodule RailWeb.Settings.RolesLiveTest do
   end
 
   test "handles unconfigured backends, blank model and stage, and unrelated messages", %{
-    claude_backend: claude_backend,
     admin_conn: conn
   } do
+    {:ok, _bare} =
+      Rail.Tools.create_backend(Rail.Scope.for_system(), %{name: :claude, executable_path: "/usr/local/bin/claude"})
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Roles Live Project 13021",
@@ -1065,16 +1042,14 @@ defmodule RailWeb.Settings.RolesLiveTest do
     send(view.pid, :unrelated_pipeline_event)
 
     view |> element("#assign-stage-button-product") |> render_click()
-    assert has_element?(view, "#role-backend-select option", "Claude Code (claude -p)")
+    # The seeded account's Opus and the setup's Sonnet; a backend with no models adds no row.
+    assert [_opus, _sonnet] = view |> render() |> Floki.parse_fragment!() |> Floki.find("[data-qa=role-model-option]")
 
-    render_hook(view, "validate_role", %{
-      "role" => %{"backend_id" => claude_backend.id, "model_choice" => "claude-sonnet-5"}
-    })
+    render_hook(view, "validate_role", %{"role" => %{"model_choice" => "claude:claude-sonnet-5"}})
+    assert has_element?(view, "#role-model-claude-claude-sonnet-5 input[checked]")
 
-    assert has_element?(view, "#role-model-select option[value='claude-sonnet-5'][selected]")
-
-    render_hook(view, "change_backend", %{"role" => %{"backend_id" => ""}})
-    refute has_element?(view, "#role-model-select option")
+    render_hook(view, "validate_role", %{"role" => %{"model_choice" => "claude:"}})
+    refute has_element?(view, "[data-qa=role-model-option] input[checked]")
 
     view
     |> element("#role-form")
@@ -1082,13 +1057,12 @@ defmodule RailWeb.Settings.RolesLiveTest do
       "role" => %{
         "name" => "No Model",
         "stage" => "",
-        "backend_id" => claude_backend.id,
         "model_choice" => "",
         "system_prompt" => "Prompt"
       }
     })
 
-    assert has_element?(view, "#role-model-select-error", "can't be blank")
+    assert has_element?(view, "#role-model-error", "can't be blank")
   end
 
   test "handles open_delete_modal with non-existent role and delete_role when modal_role is nil", %{
@@ -1179,5 +1153,108 @@ defmodule RailWeb.Settings.RolesLiveTest do
     # Trigger copy_roles error branch
     stub(Roles, :copy_roles, fn _scope, _target, _source, _opts -> {:error, :failed} end)
     render_hook(view, "copy_roles", %{"source_project_id" => project.id})
+  end
+
+  test "the editor lists every model with the accounts offering it, and a row saves the model and its CLI", %{
+    offering: offering,
+    admin_conn: conn
+  } do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13090",
+        github_repo: "org/roles-live-13090",
+        github_installation_id: 13_090,
+        linear_team_key: "P13090",
+        default_branch: "main",
+        clone_path: "/tmp/repos/roles-live-13090"
+      })
+
+    _max = offering.(["claude-sonnet-5"], %{label: "max-2"})
+    _ops = offering.(["claude-sonnet-5", "claude-fable-5-1"], %{label: "ops", status: :signed_out})
+    _down = offering.(["claude-sonnet-5"], %{label: "down", status: :unavailable})
+    # Model ids carry dots, which the row's DOM id does not.
+    _unlabeled = offering.(["claude-sonnet-5.5"], %{})
+
+    assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
+    view |> element("#assign-stage-button-design") |> render_click()
+
+    assert has_element?(view, "#role-model-claude-claude-sonnet-5", "Claude Code · work, max-2")
+    assert has_element?(view, "#role-model-claude-claude-sonnet-5 .text-slate-400", "· ops signed out · down unavailable")
+    assert has_element?(view, "#role-model-claude-claude-fable-5-1 .text-red-600", "Claude Code · ops, signed out")
+    refute has_element?(view, "#role-model-claude-claude-sonnet-5 .text-red-600")
+    assert has_element?(view, "#role-model-claude-claude-sonnet-5-5", "Claude Code")
+
+    view
+    |> element("#role-form")
+    |> render_submit(%{
+      "role" => %{
+        "name" => "Designer",
+        "stage" => "design",
+        "model_choice" => "claude:claude-sonnet-5.5",
+        "system_prompt" => "You design."
+      }
+    })
+
+    assert {:ok, %Role{cli: :claude, model: "claude-sonnet-5.5"}} =
+             Roles.get_role(project_id: project.id, stage: :design)
+  end
+
+  test "the roles list names each role's model and how many signed-in accounts offer it", %{
+    offering: offering,
+    admin_conn: conn,
+    admin_user: admin_user
+  } do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13091",
+        github_repo: "org/roles-live-13091",
+        github_installation_id: 13_091,
+        linear_team_key: "P13091",
+        default_branch: "main",
+        clone_path: "/tmp/repos/roles-live-13091"
+      })
+
+    _max = offering.(["claude-sonnet-5"], %{label: "max-2"})
+    _ops = offering.(["claude-fable-5-1"], %{label: "ops", status: :signed_out})
+    scope = Rail.Scope.for_user(admin_user)
+
+    for {stage, model} <- [engineer: "claude-sonnet-5", design: "claude-fable-5-1", review: "claude-opus-5-5"] do
+      {:ok, _role} =
+        Roles.create_role(scope, project, %{
+          name: "#{stage}",
+          stage: stage,
+          cli: :claude,
+          model: model,
+          system_prompt: "Go."
+        })
+    end
+
+    assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
+
+    assert has_element?(view, "#stage-role-details-engineer", "claude-sonnet-5")
+    assert has_element?(view, "#bound-role-accounts-engineer", "on 2 accounts")
+    assert has_element?(view, "#bound-role-accounts-review", "on 1 account")
+    assert has_element?(view, "#bound-role-no-account-design", "no signed-in account")
+    refute has_element?(view, "#stage-role-details-engineer", "Claude Code")
+  end
+
+  test "a new role starts on the first model offered when the default is not", %{admin_conn: conn} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13092",
+        github_repo: "org/roles-live-13092",
+        github_installation_id: 13_092,
+        linear_team_key: "P13092",
+        default_branch: "main",
+        clone_path: "/tmp/repos/roles-live-13092"
+      })
+
+    # Only the seeded account offers Opus.
+    Rail.Repo.delete!(Rail.Repo.get!(Backend, "bkd_test_seed"))
+
+    assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
+    view |> element("#assign-stage-button-product") |> render_click()
+
+    assert has_element?(view, "#role-model-claude-claude-sonnet-5 input[checked]")
   end
 end

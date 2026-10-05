@@ -22,7 +22,6 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestions do
   alias Rail.Pipeline.Schemas.RunEvent
   alias Rail.Repo
   alias Rail.Tools
-  alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
 
   # Everything Rail, the tools or the human contributed carries one of these
@@ -53,7 +52,7 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestions do
   to move on.
   """
   def register_asked_questions(%OsProcess{} = os_process, %Run{} = run) do
-    run = Repo.preload(run, [task: :issue, role: :backend], force: true)
+    run = Repo.preload(run, [:role, task: :issue], force: true)
     questions = os_process |> agent_log(run) |> detect_questions()
 
     for detected <- questions,
@@ -90,12 +89,10 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestions do
   # The agent's own words for one OS process, oldest first.
   defp agent_log(%OsProcess{}, %Run{role: nil}), do: ""
 
-  defp agent_log(%OsProcess{id: os_process_id}, %Run{role: %{backend: backend}}) do
-    backend = if is_struct(backend, Backend), do: backend, else: %Backend{name: :claude}
-
+  defp agent_log(%OsProcess{id: os_process_id}, %Run{role: %{cli: cli}}) do
     lines = os_process_id |> events_from() |> Enum.map(& &1.line)
 
-    backend
+    cli
     |> Tools.parse_stream(lines)
     |> Map.fetch!(:logs)
     |> Enum.reject(&tagged?/1)

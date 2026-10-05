@@ -19,21 +19,18 @@ defmodule Rail.Roles.Schemas.RoleTest do
       })
       |> Repo.insert!()
 
-    {:ok, backend} =
-      Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
-
     scope = system_scope()
 
     {:ok, role} =
       Roles.create_role(scope, project, %{
-        backend_id: backend.id,
+        cli: :claude,
         name: "Engineer",
         stage: :engineer,
         model: "claude-opus-5-5",
         system_prompt: "You are an expert engineer."
       })
 
-    %{backend: backend, project: project, role: role}
+    %{project: project, role: role}
   end
 
   test "canonical_stages/0 returns list of 10 stages" do
@@ -48,10 +45,10 @@ defmodule Rail.Roles.Schemas.RoleTest do
     refute :rebase in stages
   end
 
-  test "a role can be saved at the curator stage, which no task enters", %{backend: backend, project: project} do
+  test "a role can be saved at the curator stage, which no task enters", %{project: project} do
     assert {:ok, %Role{stage: :curator}} =
              Roles.create_role(system_scope(), project, %{
-               backend_id: backend.id,
+               cli: :claude,
                name: "Curator",
                stage: :curator,
                model: "claude-opus-5-5",
@@ -67,16 +64,16 @@ defmodule Rail.Roles.Schemas.RoleTest do
              name: ["can't be blank"],
              model: ["can't be blank"],
              system_prompt: ["can't be blank"],
-             backend_id: ["can't be blank"]
+             cli: ["can't be blank"]
            } = errors_on(changeset)
   end
 
-  test "changeset accepts valid attributes and sets defaults", %{backend: backend, project: project} do
+  test "changeset accepts valid attributes and sets defaults", %{project: project} do
     attrs = %{
       name: "Architect Agent",
       model: "claude-opus-5-5",
       system_prompt: "You design systems.",
-      backend_id: backend.id
+      cli: :claude
     }
 
     changeset = Role.changeset(%Role{}, Map.put(attrs, :project_id, project.id))
@@ -96,7 +93,7 @@ defmodule Rail.Roles.Schemas.RoleTest do
     changeset = Role.changeset(%Role{}, Map.put(attrs, :project_id, project.id))
 
     refute changeset.valid?
-    assert %{backend_id: ["can't be blank"]} = errors_on(changeset)
+    assert %{cli: ["can't be blank"]} = errors_on(changeset)
   end
 
   test "changeset validates numeric bounds", %{project: project} do
@@ -133,7 +130,7 @@ defmodule Rail.Roles.Schemas.RoleTest do
            } = errors_on(changeset)
   end
 
-  test "changeset enforces partial unique index on project_id and stage", %{backend: backend, project: project} do
+  test "changeset enforces partial unique index on project_id and stage", %{project: project} do
     assert {:error, changeset} =
              %Role{}
              |> Role.changeset(%{
@@ -142,14 +139,14 @@ defmodule Rail.Roles.Schemas.RoleTest do
                stage: :engineer,
                model: "claude-opus-5-5",
                system_prompt: "Code 2",
-               backend_id: backend.id
+               cli: :claude
              })
              |> Repo.insert()
 
     assert %{stage: ["has already been taken"]} = errors_on(changeset)
   end
 
-  test "allows multiple unbound roles with stage: nil in the same project", %{backend: backend, project: project} do
+  test "allows multiple unbound roles with stage: nil in the same project", %{project: project} do
     assert {:ok, %Role{stage: nil, name: "Unbound 1"}} =
              %Role{}
              |> Role.changeset(%{
@@ -158,7 +155,7 @@ defmodule Rail.Roles.Schemas.RoleTest do
                stage: nil,
                model: "m",
                system_prompt: "p",
-               backend_id: backend.id
+               cli: :claude
              })
              |> Repo.insert()
 
@@ -170,17 +167,17 @@ defmodule Rail.Roles.Schemas.RoleTest do
                stage: nil,
                model: "m",
                system_prompt: "p",
-               backend_id: backend.id
+               cli: :claude
              })
              |> Repo.insert()
   end
 
-  test "validates foreign key on project_id", %{backend: backend} do
+  test "validates foreign key on project_id" do
     attrs = %{
       name: "Missing Project Role",
       model: "claude",
       system_prompt: "Prompt",
-      backend_id: backend.id
+      cli: :claude
     }
 
     assert {:error, changeset} =

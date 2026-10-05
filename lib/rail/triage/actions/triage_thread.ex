@@ -38,8 +38,9 @@ defmodule Rail.Triage.Actions.TriageThread do
   @timeout to_timeout(minute: 30)
 
   @doc """
-  Triages `thread`. Returns `:ok`, or `{:snooze, 30}` when another pass holds it.
-  A pass that fails records why on the thread and leaves its items as they were.
+  Triages `thread`. Returns `:ok`, `{:snooze, 30}` when another pass holds it, or
+  `{:waiting_for_usage, resets_at}` when every account is used up, which is no
+  failure. A pass that fails records why on the thread and leaves its items as they were.
   """
   def triage_thread(%Thread{id: thread_id}) do
     {token, hash} = Mcp.issue_run_token()
@@ -68,7 +69,12 @@ defmodule Rail.Triage.Actions.TriageThread do
       end
 
     finish(thread, outcome)
-    release(thread, started_at)
+    :ok = release(thread, started_at)
+
+    case outcome do
+      {:error, {:waiting_for_usage, resets_at}} -> {:waiting_for_usage, resets_at}
+      _ran_or_failed -> :ok
+    end
   end
 
   defp pass(thread, token) do
@@ -209,7 +215,7 @@ defmodule Rail.Triage.Actions.TriageThread do
         work_dir: worktree
       )
 
-    Tools.run_agent(role.backend, args, env: %{"RAIL_MCP_TOKEN" => token}, cd: worktree, timeout: @timeout)
+    Tools.run_agent(role, args, env: %{"RAIL_MCP_TOKEN" => token}, cd: worktree, timeout: @timeout)
   end
 
   defp finish(thread, {:ok, %Thread{}}) do
@@ -217,6 +223,7 @@ defmodule Rail.Triage.Actions.TriageThread do
   end
 
   defp finish(_thread, :nothing), do: :ok
+  defp finish(_thread, {:error, {:waiting_for_usage, _resets_at}}), do: :ok
 
   defp finish(%Thread{id: thread_id} = thread, {:error, reason}) do
     Repo.update_all(from(i in Item, where: i.thread_id == ^thread_id and i.retriaging), set: [retriaging: false])

@@ -24,6 +24,7 @@ defmodule Rail.Tools do
     children = [
       {Registry, keys: :unique, name: Rail.Tools.FollowerRegistry},
       Rail.Tools.FollowerSupervisor,
+      {DynamicSupervisor, name: Rail.Tools.LoginSupervisor, strategy: :one_for_one},
       {Registry, keys: :unique, name: Rail.Tools.BrowserRegistry},
       {Registry, keys: :unique, name: Rail.Tools.RecorderRegistry},
       {DynamicSupervisor, name: Rail.Tools.BrowserSupervisor, strategy: :one_for_one},
@@ -34,7 +35,7 @@ defmodule Rail.Tools do
   end
 
   defdelegate run(executable, args, opts \\ []), to: Actions.Run
-  defdelegate run_agent(backend, argv, opts), to: Actions.RunAgent
+  defdelegate run_agent(role, argv, opts), to: Actions.RunAgent
   defdelegate agent_failure_reason(output), to: Actions.AgentFailureReason
   defdelegate spawn_os_process(executable, args, opts \\ []), to: Actions.SpawnOsProcess
   defdelegate connect_port(port, owner), to: Actions.ConnectPort
@@ -57,6 +58,8 @@ defmodule Rail.Tools do
 
   defdelegate build_args(opts), to: Actions.BuildArgs
   defdelegate start_os_process(run, argv), to: Actions.StartOsProcess
+  defdelegate start_after_usage_reset(os_process_id), to: Actions.StartAfterUsageReset
+  defdelegate get_usage_wait(run), to: Actions.GetUsageWait
   defdelegate start_command_process(run, kind, command, opts \\ []), to: Actions.StartCommandProcess
   defdelegate stop_os_process(scope, os_process, opts \\ []), to: Actions.StopOsProcess
   defdelegate get_os_process(id), to: Actions.GetOsProcess
@@ -65,10 +68,11 @@ defmodule Rail.Tools do
   defdelegate get_sandbox_capacity(), to: Actions.GetSandboxCapacity
   defdelegate get_queue_position(run), to: Actions.GetQueuePosition
   defdelegate list_sandbox_usage(), to: Actions.ListSandboxUsage
-  defdelegate parse_stream(backend, lines, opts \\ []), to: Actions.ParseStream
+  defdelegate parse_stream(cli, lines, opts \\ []), to: Actions.ParseStream
   defdelegate plain_text(text), to: Actions.PlainText
 
   defdelegate list_backends(), to: Actions.ListBackends
+  defdelegate list_models(), to: Actions.ListModels
   defdelegate get_backend(name), to: Actions.GetBackend
   defdelegate refresh_usage(), to: Actions.RefreshUsage
 
@@ -79,5 +83,14 @@ defmodule Rail.Tools do
   defdelegate update_backend(scope, backend, attrs), to: Actions.UpdateBackend
 
   @decorate can?(resource: :backends, action: :manage)
-  defdelegate set_backend_token(scope, backend, token), to: Actions.SetBackendToken
+  defdelegate start_backend_login(scope, backend, owner \\ self()), to: Actions.StartBackendLogin
+
+  @decorate can?(resource: :backends, action: :manage)
+  defdelegate submit_backend_login_code(scope, session, code), to: Actions.SubmitBackendLoginCode
+
+  @decorate can?(resource: :backends, action: :manage)
+  defdelegate cancel_backend_login(scope, session), to: Actions.CancelBackendLogin
+
+  @decorate can?(resource: :backends, action: :manage)
+  defdelegate logout_backend(scope, backend), to: Actions.LogoutBackend
 end

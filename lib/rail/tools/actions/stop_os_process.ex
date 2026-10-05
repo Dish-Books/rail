@@ -12,8 +12,8 @@ defmodule Rail.Tools.Actions.StopOsProcess do
   @doc """
   Stops an OS process, and frees what it held for the next in line.
 
-  One still waiting for its sandbox has nothing to kill, so it just leaves the
-  line. The row records who asked, when a person did.
+  One still waiting for its sandbox or for usage has nothing to kill, so it just
+  leaves its wait, and never starts. The row records who asked, when a person did.
   """
   def stop_os_process(%Scope{} = scope, %OsProcess{} = os_process, opts \\ []) do
     now = DateTime.utc_now()
@@ -22,7 +22,7 @@ defmodule Rail.Tools.Actions.StopOsProcess do
     # Conditional, since the row may have started between being read and this.
     {left_line, _rows} =
       Repo.update_all(
-        from(p in OsProcess, where: p.id == ^os_process.id and p.status == :waiting_for_resources),
+        from(p in OsProcess, where: p.id == ^os_process.id and p.status in [:waiting_for_resources, :waiting_for_usage]),
         set: [
           status: :finished,
           ended_reason: :stopped,

@@ -42,7 +42,11 @@ defmodule Rail.Learnings.Workers.IssueFinished do
   defp extract(%Issue{id: issue_id}) do
     case Pipeline.list_tasks(issue_id: issue_id, include_cleaned_up: true, order_by: [desc: :inserted_at]) do
       [task | _earlier] ->
-        with {:ok, _task} <- Learnings.extract_task_learnings(task), do: :ok
+        case Learnings.extract_task_learnings(task) do
+          {:ok, _task} -> :ok
+          {:error, {:waiting_for_usage, resets_at}} -> {:snooze, max(DateTime.diff(resets_at, DateTime.utc_now()), 1)}
+          {:error, reason} -> {:error, reason}
+        end
 
       [] ->
         :ok

@@ -23,7 +23,7 @@ defmodule Rail.Tools.Actions.StartCommandProcess do
   loaded, running or waiting, or `{:error, reason}`.
   """
   def start_command_process(%Run{} = run, kind, command, opts \\ []) when is_binary(command) do
-    %Run{task: %Task{} = task} = run = Repo.preload(run, [:task, role: :backend])
+    %Run{task: %Task{} = task} = run = Repo.preload(run, [:task, :role])
     os_process = insert_os_process(run, kind, command, opts)
 
     env =

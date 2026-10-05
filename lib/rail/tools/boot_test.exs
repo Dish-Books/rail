@@ -25,8 +25,6 @@ defmodule Rail.Tools.BootTest do
 
     # Adoption hands the row to a Follower, which reads the stream format off the
     # run's role, so every run here needs a real role behind it.
-    {:ok, backend} =
-      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
     project =
       %Project{}
@@ -42,14 +40,14 @@ defmodule Rail.Tools.BootTest do
 
     {:ok, role} =
       Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
+        cli: :claude,
         stage: :engineer,
         name: "boot role",
         model: "claude-opus-5-5",
         system_prompt: "You are the engineer."
       })
 
-    %{tmp_dir: tmp_dir, backend: backend, project: project, role: role}
+    %{tmp_dir: tmp_dir, project: project, role: role}
   end
 
   test "adopts live child process, starts Follower and replays stream", %{tmp_dir: tmp_dir, role: role} do

@@ -67,7 +67,10 @@ defmodule Rail.Pipeline.Utils.UpdateBranchPass do
     with :ok <- Pipeline.commit_engineer_work(Scope.for_system(), task, nil) do
       # Starting CI moved the run on, even into the line; with no CI, the push was the whole of it.
       %Run{} = sent = Repo.get!(Run, open.id)
-      attrs = if sent.status in [:running, :waiting_for_resources], do: %{}, else: %{stage_outcome: :done}
+
+      attrs =
+        if sent.status in [:running, :waiting_for_resources, :waiting_for_usage], do: %{}, else: %{stage_outcome: :done}
+
       {:ok, sent} = sent |> Run.changeset(attrs) |> Repo.update()
       {:ok, %{sent | task: task, role: run.role}}
     end

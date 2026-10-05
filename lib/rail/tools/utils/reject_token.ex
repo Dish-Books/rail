@@ -4,22 +4,23 @@ defmodule Rail.Tools.Utils.RejectToken do
   import Rail.Tools.Utils.AnnounceLostSession
 
   alias Rail.Repo
-  alias Rail.Tools.Claude
   alias Rail.Tools.Schemas.Backend
 
   @doc """
-  Records that Claude refused the backend's token, so nothing more is started
-  on it, and says so once. The row is read again first: the caller's copy may
-  predate a token saved since, or another run's refusal.
+  Records that Claude refused the backend's sign-in, so nothing more is started
+  on it until it is signed in again, and says so once. The row is read again
+  first: the caller's copy may predate a sign-in since, or another run's refusal.
   """
   def reject_token(%Backend{id: id}) do
     case Repo.get(Backend, id) do
-      %Backend{session_lost_at: nil, oauth_token: token} = backend when is_binary(token) ->
-        lost = %{backend | session_lost_at: DateTime.utc_now()}
-
+      %Backend{session_lost_at: nil} = backend ->
         rejected =
           backend
-          |> Backend.usage_changeset(Map.put(Claude.probe(lost), :session_lost_at, lost.session_lost_at))
+          |> Backend.usage_changeset(%{
+            status: :signed_out,
+            session_lost_at: DateTime.utc_now(),
+            unavailable_reason: "Claude refused this backend's sign-in. Sign it in again."
+          })
           |> Repo.update!()
 
         announce_lost_session(rejected)

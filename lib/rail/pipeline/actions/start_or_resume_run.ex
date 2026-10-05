@@ -17,7 +17,7 @@ defmodule Rail.Pipeline.Actions.StartOrResumeRun do
   `stage_outcome` goes back to `:in_progress`: this run's stage is starting over,
   so whatever it concluded last time no longer stands and it has to say so again.
 
-  The row comes back with its task and its role's backend loaded: the run is
+  The row comes back with its task and its role loaded: the run is
   the handle the spawn path works from, and it has to be enough on its own.
   """
   def start_or_resume_run(task, role, worktree_path) do
@@ -48,7 +48,7 @@ defmodule Rail.Pipeline.Actions.StartOrResumeRun do
   end
 
   defp with_associations({:ok, %Run{} = run}) do
-    {:ok, Repo.preload(run, [:task, role: :backend])}
+    {:ok, Repo.preload(run, [:task, :role])}
   end
 
   defp fingerprint(worktree_path) when is_binary(worktree_path) and worktree_path != "" do

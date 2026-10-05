@@ -14,16 +14,18 @@ defmodule Rail.Tools.Utils.AnnounceLostSession do
   require Logger
 
   @doc """
-  Tells every project with a role on `backend` that it lost its sign-in with
-  nobody signing it out, in the channel the project's learnings digest posts in.
+  Tells every project with a role whose model `backend` offers that it lost its
+  sign-in with nobody signing it out, in the channel the project's learnings digest posts in.
   A channel several projects share is told once, and one marked external never.
   """
-  def announce_lost_session(%Backend{id: backend_id} = backend) do
+  def announce_lost_session(%Backend{name: cli, models: models} = backend) do
+    offered = Enum.map(models, & &1.id)
+
     projects =
       Repo.all(
         from p in Project,
           where: not is_nil(p.learnings_channel_external_id),
-          where: p.id in subquery(from r in Role, where: r.backend_id == ^backend_id, select: r.project_id),
+          where: p.id in subquery(from r in Role, where: r.cli == ^cli and r.model in ^offered, select: r.project_id),
           preload: :learnings_slack_workspace
       )
 

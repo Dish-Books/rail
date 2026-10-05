@@ -37,9 +37,9 @@ default_project =
     })
     |> Repo.insert!()
 
-# 3. CLI Backends — a role cannot exist without the backend it runs on, and the
-# path it records is the absolute one the spawner executes.
-claude_backend =
+# 3. CLI Backends - the account a role's runs are placed on, and the absolute
+# path the spawner executes.
+_claude_backend =
   Repo.get_by(Backend, name: :claude) ||
     %Backend{}
     |> Backend.changeset(%{
@@ -60,7 +60,7 @@ default_roles = [
     name: "Product Manager",
     description: "Clarifies problem statements, gathers requirements, and prepares issues for architecture",
     icon_name: "pi-clipboard-text",
-    backend_id: claude_backend.id,
+    cli: :claude,
     model: "claude-opus-5-5",
     reasoning_effort: :high,
     system_prompt: read_prompt.("product"),
@@ -72,7 +72,7 @@ default_roles = [
     name: "Product Designer",
     description: "Designs user interfaces, layout specs, and UX flows",
     icon_name: "pi-paint-brush",
-    backend_id: claude_backend.id,
+    cli: :claude,
     model: "claude-opus-5-5",
     reasoning_effort: :high,
     system_prompt: read_prompt.("design"),
@@ -84,7 +84,7 @@ default_roles = [
     name: "Software Architect",
     description: "Designs technical architecture, file changes, and implementation plans",
     icon_name: "pi-cube",
-    backend_id: claude_backend.id,
+    cli: :claude,
     model: "claude-opus-5-5",
     reasoning_effort: :high,
     system_prompt: read_prompt.("architect"),
@@ -96,7 +96,7 @@ default_roles = [
     name: "Software Engineer",
     description: "Implements vertical slices, writes tests, and adheres to code standards",
     icon_name: "pi-code",
-    backend_id: claude_backend.id,
+    cli: :claude,
     model: "claude-opus-5-5",
     reasoning_effort: :high,
     system_prompt: read_prompt.("engineer"),
@@ -108,7 +108,7 @@ default_roles = [
     name: "Code Reviewer",
     description: "Reviews code changes against quality standards, architecture, and tests",
     icon_name: "pi-eye",
-    backend_id: claude_backend.id,
+    cli: :claude,
     model: "claude-opus-5-5",
     reasoning_effort: :high,
     system_prompt: read_prompt.("review"),
@@ -120,7 +120,7 @@ default_roles = [
     name: "QA Engineer",
     description: "Executes automated test suites and exercises running applications",
     icon_name: "pi-flask",
-    backend_id: claude_backend.id,
+    cli: :claude,
     model: "claude-opus-5-5",
     reasoning_effort: :high,
     system_prompt: read_prompt.("qa"),
@@ -132,7 +132,7 @@ default_roles = [
     name: "Demo Presenter",
     description: "Records narrated walkthroughs of the finished change in the running application",
     icon_name: "pi-video-camera",
-    backend_id: claude_backend.id,
+    cli: :claude,
     model: "claude-opus-5-5",
     reasoning_effort: :high,
     system_prompt: read_prompt.("demo"),
@@ -144,7 +144,7 @@ default_roles = [
     name: "Triage",
     description: "Reads Slack threads, verifies each claim against the code, and drafts replies and issues",
     icon_name: "pi-magnifying-glass",
-    backend_id: claude_backend.id,
+    cli: :claude,
     model: "claude-opus-5-5",
     reasoning_effort: :high,
     system_prompt: read_prompt.("triage"),
@@ -156,7 +156,7 @@ default_roles = [
     name: "Curator",
     description: "Distills finished tasks into observations and proposes daily how the project's rules should change",
     icon_name: "pi-brain",
-    backend_id: claude_backend.id,
+    cli: :claude,
     model: "claude-opus-5-5",
     reasoning_effort: :high,
     # Every curator pass carries its whole job in its brief, so the role needs no prompt file.

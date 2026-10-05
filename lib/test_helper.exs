@@ -94,15 +94,24 @@ project =
     upsert
   )
 
-backend =
-  Rail.Repo.insert!(%Backend{id: "bkd_test_seed", name: :claude, executable_path: "/usr/bin/true"}, upsert)
+# Signed in and offering the seeded roles' model, so their runs have an account to be placed on.
+Rail.Repo.insert!(
+  %Backend{
+    id: "bkd_test_seed",
+    name: :claude,
+    executable_path: "/usr/bin/true",
+    status: :ready,
+    models: [%Backend.Model{id: "claude-opus-5-5", display_name: "Opus 5.5"}]
+  },
+  upsert
+)
 
 Enum.each(Role.canonical_stages(), fn stage ->
   Rail.Repo.insert!(
     %Role{
       id: "rol_test_seed_#{stage}",
       project_id: project.id,
-      backend_id: backend.id,
+      cli: :claude,
       stage: stage,
       name: "#{stage} role",
       model: "claude-opus-5-5",

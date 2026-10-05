@@ -24,18 +24,16 @@ defmodule Rail.Roles.Utils.LoadPromptsTest do
       })
       |> Repo.insert!()
 
-    {:ok, backend} = Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
-
     {:ok, engineer} =
       Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
+        cli: :claude,
         stage: :engineer,
         name: "Engineer",
         model: "claude-opus-5-5",
         system_prompt: "Stored engineer prompt."
       })
 
-    %{project: project, remote: remote, clone: clone, backend: backend, engineer: engineer}
+    %{project: project, remote: remote, clone: clone, engineer: engineer}
   end
 
   test "a merged and fetched prompt file becomes the role's prompt, named by its path", %{
@@ -70,8 +68,7 @@ defmodule Rail.Roles.Utils.LoadPromptsTest do
   test "leaves a role with no file for its stage, or no stage at all, as stored", %{
     project: project,
     remote: remote,
-    clone: clone,
-    backend: backend
+    clone: clone
   } do
     File.mkdir_p!(Path.join(remote, ".rail/prompts"))
     File.write!(Path.join(remote, ".rail/prompts/review.md"), "Review prompt.\n")
@@ -81,7 +78,7 @@ defmodule Rail.Roles.Utils.LoadPromptsTest do
 
     {:ok, _custom} =
       Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
+        cli: :claude,
         name: "Custom",
         position: 1,
         model: "claude-opus-5-5",
@@ -185,8 +182,7 @@ defmodule Rail.Roles.Utils.LoadPromptsTest do
   test "each project loads only the prompts in its own repo", %{
     project: project,
     remote: remote,
-    clone: clone,
-    backend: backend
+    clone: clone
   } do
     File.mkdir_p!(Path.join(remote, ".rail/prompts"))
     File.write!(Path.join(remote, ".rail/prompts/engineer.md"), "First project.\n")
@@ -217,7 +213,7 @@ defmodule Rail.Roles.Utils.LoadPromptsTest do
 
     {:ok, _other_engineer} =
       Roles.create_role(system_scope(), other_project, %{
-        backend_id: backend.id,
+        cli: :claude,
         stage: :engineer,
         name: "Engineer",
         model: "claude-opus-5-5",
