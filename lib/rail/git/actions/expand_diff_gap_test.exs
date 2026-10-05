@@ -55,6 +55,17 @@ defmodule Rail.Git.Actions.ExpandDiffGapTest do
     refute html =~ "l-keyword-function"
   end
 
+  # The highlighter cannot take a file that is not text whole, but the gap's own lines can be.
+  test "a gap in a file with a byte that is not text elsewhere is still colored", %{task: task} do
+    File.write!(
+      Path.join(task.worktree_path, "latin.ex"),
+      <<"# caf", 0xE9, "\ndefmodule Latin do\n  def one, do: 1\nend\n">>
+    )
+
+    assert {"latin.ex:0", [%{text: "  def one, do: 1", html: html}]} = Git.expand_diff_gap(task, "latin.ex", 0, 3, 3)
+    assert html =~ "l-keyword-function"
+  end
+
   test "a file it cannot read expands to nothing", %{task: task} do
     assert {"missing.txt:1", []} = Git.expand_diff_gap(task, "missing.txt", 1, 1, 5)
   end

@@ -66,10 +66,14 @@ defmodule Rail.Git.Actions.LoadDiff do
     end
   end
 
-  # A line's color depends on where it sits in its file, so each side is
-  # highlighted whole: the old one as it was at the diff's base, the new one as it is.
+  # A line's color depends on where it sits in its file, so each side is highlighted
+  # whole: the old one as it was at the diff's base, and only when a deleted row needs it.
   defp highlight(%{rows: rows, path: path} = file, worktree_path, base) do
-    old = colors(rows, :deleted, :old_line, path, fn -> file_lines(worktree_path, file.old_path, base) end)
+    old =
+      if Enum.any?(rows, &(&1[:line_kind] == :deleted)),
+        do: colors(rows, :deleted, :old_line, path, fn -> file_lines(worktree_path, file.old_path, base) end),
+        else: %{}
+
     new = colors(rows, :added, :new_line, path, fn -> file_lines(worktree_path, path) end)
 
     %{file | rows: Enum.map(rows, &stamp(&1, old, new))}

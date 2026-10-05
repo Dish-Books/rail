@@ -11,10 +11,12 @@ defmodule Rail.Git.Utils.FileLines do
   """
   def file_lines(worktree_path, path, revision \\ :worktree)
 
+  # A path that climbs out of the worktree names nothing in it, whoever sent it.
   def file_lines(worktree_path, path, :worktree) do
-    full_path = Path.join(worktree_path, path)
+    full_path = worktree_path |> Path.join(path) |> Path.expand()
 
-    with false <- File.dir?(full_path),
+    with true <- String.starts_with?(full_path, Path.expand(worktree_path) <> "/"),
+         false <- File.dir?(full_path),
          {:ok, content} <- File.read(full_path) do
       lines(content)
     else

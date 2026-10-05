@@ -28,15 +28,18 @@ defmodule Rail.Git.Actions.ExpandDiffGap do
     end
   end
 
-  # The whole file is highlighted, so a gap inside a comment or heredoc that
-  # opens above it reads the way the file does.
+  # The whole file is highlighted, so a gap inside a comment or heredoc that opens
+  # above it reads the way the file does. A file that is not text cannot be, so the gap alone is.
   defp gap(lines, path, start_line, end_line) do
     first = max(0, start_line - 1)
     count = max(0, end_line - start_line + 1)
+    gap = Enum.slice(lines, first, count)
 
-    lines
-    |> highlight_lines(path)
-    |> Enum.slice(first, count)
-    |> Enum.zip_with(Enum.slice(lines, first, count), fn html, text -> %{text: text, html: html} end)
+    html =
+      if Enum.all?(lines, &String.valid?/1),
+        do: lines |> highlight_lines(path) |> Enum.slice(first, count),
+        else: highlight_lines(gap, path)
+
+    Enum.zip_with(html, gap, fn html, text -> %{text: text, html: html} end)
   end
 end

@@ -3,6 +3,7 @@ defmodule RailWeb.Live.EngineerStageTest do
 
   import Phoenix.LiveViewTest
 
+  alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Repo
@@ -93,6 +94,21 @@ defmodule RailWeb.Live.EngineerStageTest do
     assert %DiffComment{filter: :uncommitted, context_text: uncommitted} = Repo.get_by!(DiffComment, body: "Why another?")
     assert uncommitted =~ "> + line 11"
     assert uncommitted =~ "    line 10"
+  end
+
+  # The path comes from the page, so one the pane never drew is not read at all.
+  test "a gap asked for in a file the diff does not show reads nothing", %{conn: conn, task: task} do
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    reject(&Git.expand_diff_gap/5)
+
+    render_click(with_target(view, "#engineer-stage"), "expand_gap", %{
+      "path" => "../../../../etc/passwd",
+      "gap_index" => "0",
+      "start_line" => "1",
+      "end_line" => "1000"
+    })
+
+    refute render(view) =~ "root:"
   end
 
   test "opening, saving and sending a comment recolors no line", %{conn: conn, task: task} do

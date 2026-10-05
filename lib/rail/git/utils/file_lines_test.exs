@@ -38,6 +38,15 @@ defmodule Rail.Git.Utils.FileLinesTest do
     assert file_lines(repo, "lib/thing.ex", "HEAD~1") == nil
   end
 
+  test "a path that climbs out of the worktree has no lines to read", %{repo: repo} do
+    outside = repo <> "_outside.txt"
+    File.write!(outside, "secret\n")
+    on_exit(fn -> File.rm(outside) end)
+
+    assert file_lines(repo, "../" <> Path.basename(outside)) == nil
+    assert file_lines(repo, "lib/../../" <> Path.basename(outside)) == nil
+  end
+
   test "an empty file has no lines", %{repo: repo} do
     File.write!(Path.join(repo, "empty.txt"), "")
     git!(repo, ["add", "."])

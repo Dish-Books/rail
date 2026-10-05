@@ -6,6 +6,7 @@ defmodule Rail.Git.Actions.LoadDiffTest do
   alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Tools
   alias Rail.Users
 
   setup %{project: project} do
@@ -211,6 +212,33 @@ defmodule Rail.Git.Actions.LoadDiffTest do
     assert outside_is =~ "l-keyword-function"
     refute outside_was =~ "l-comment"
     refute outside_is =~ "l-comment"
+  end
+
+  # Context rows take the new side's colors, so an old file read for them is thrown away.
+  test "a file with nothing deleted never reads its old side", %{scope: scope, task: task, repo: repo} do
+    File.write!(Path.join(repo, "grown.ex"), "defmodule Grown do\n  def one, do: 1\nend\n")
+    git!(repo, ["add", "."])
+    git!(repo, ["commit", "-m", "grown"])
+    File.write!(Path.join(repo, "grown.ex"), "defmodule Grown do\n  def one, do: 1\n  def two, do: 2\nend\n")
+    test_pid = self()
+
+    stub(Tools, :run, fn
+      "git", ["cat-file" | _rest] = args, opts ->
+        send(test_pid, :read_old_side)
+        call_original(Tools, :run, ["git", args, opts])
+
+      executable, args, opts ->
+        call_original(Tools, :run, [executable, args, opts])
+    end)
+
+    assert {:ok, files} = Git.load_diff(scope, task, :uncommitted)
+
+    assert %{rows: rows} = Enum.find(files, &(&1.path == "grown.ex"))
+    assert %{html: added} = Enum.find(rows, &(&1[:line_kind] == :added))
+    assert %{html: context} = Enum.find(rows, &(&1[:line_kind] == :context))
+    assert added =~ "l-keyword-function"
+    assert context =~ "l-keyword"
+    refute_received :read_old_side
   end
 
   test "a file whose hunks touch nothing that spans lines is colored as its hunk lines are", %{
