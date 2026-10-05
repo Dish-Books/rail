@@ -82,13 +82,14 @@ defmodule RailWeb.Components.DiffRowTest do
              "diff_comment_add"
   end
 
-  # A wrapped line's further rows hang past its own indent, counted the way the
-  # browser draws it: a tab runs to the next stop of eight.
-  test "a line carries its indent in columns, and an unindented one carries none" do
-    for {text, indent} <- [
-          {"    x = 1", ["--ind: 4ch"]},
-          {"\tx = 1", ["--ind: 8ch"]},
-          {"  \t  x", ["--ind: 10ch"]},
+  # Wrapped rows hang four columns past the indent, and by whole tab stops on a line
+  # with a tab; a plain unindented line takes the stylesheet's four.
+  test "a line carries how far its wrapped rows hang, in columns" do
+    for {text, hang} <- [
+          {"    x = 1", ["--hang: 8ch"]},
+          {"\tx = 1", ["--hang: 16ch"]},
+          {"  \t  x", ["--hang: 16ch"]},
+          {"x\t= 1", ["--hang: 8ch"]},
           {"x = 1", []}
         ] do
       html =
@@ -96,14 +97,14 @@ defmodule RailWeb.Components.DiffRowTest do
         |> render_component(row: %{kind: :line, line_kind: :added, old_line: nil, new_line: 1, text: text})
         |> Floki.parse_fragment!()
 
-      assert Floki.attribute(html, ".diff-code", "style") == indent
+      assert Floki.attribute(html, ".diff-code", "style") == hang
     end
   end
 
   test "a line that is not UTF-8 still measures its indent" do
     row = %{kind: :line, line_kind: :added, old_line: nil, new_line: 1, text: <<"  ", 0xFF, 0xFE>>}
 
-    assert render_component(&DiffRow.diff_row/1, row: row) =~ "--ind: 2ch"
+    assert render_component(&DiffRow.diff_row/1, row: row) =~ "--hang: 6ch"
   end
 
   # Wrapping is drawn by the browser, so a copied line is the line and its
@@ -126,7 +127,7 @@ defmodule RailWeb.Components.DiffRowTest do
       html = render_component(&DiffRow.diff_row/1, row: row)
 
       refute html =~ "diff-text"
-      refute html =~ "--ind"
+      refute html =~ "--hang"
     end
   end
 end

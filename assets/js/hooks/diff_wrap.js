@@ -10,13 +10,7 @@ const applyWrap = (wrap) => document.documentElement.toggleAttribute("data-diff-
 
 export const DiffWrap = {
   mounted() {
-    // The server draws Scroll pressed until it hears otherwise. Another tab may
-    // have chosen since this page loaded, so the stored choice wins.
-    const wrap = storedWrap();
-    applyWrap(wrap);
-
-    const pressed = this.el.querySelector("[aria-pressed='true']")?.getAttribute("phx-value-wrap");
-    if (wrap !== pressed) this.pushEventTo(this.el.dataset.target, "select_diff_wrap", { wrap });
+    this.sync();
 
     // The button's own phx-click tells the stage; this only redraws the lines,
     // letting the scroller hold the reader's place around it.
@@ -34,5 +28,21 @@ export const DiffWrap = {
       applyWrap(wrap);
       window.dispatchEvent(new CustomEvent("diff:wrap-after"));
     });
+  },
+
+  // A rejoined stage starts again at Scroll, and LiveView keeps this hook rather
+  // than mounting it again, so it is told once more.
+  reconnected() {
+    this.sync();
+  },
+
+  // The server draws Scroll pressed until it hears otherwise. Another tab may
+  // have chosen since this page loaded, so the stored choice wins.
+  sync() {
+    const wrap = storedWrap();
+    applyWrap(wrap);
+
+    const pressed = this.el.querySelector("[aria-pressed='true']")?.getAttribute("phx-value-wrap");
+    if (wrap !== pressed) this.pushEventTo(this.el.dataset.target, "select_diff_wrap", { wrap });
   }
 };

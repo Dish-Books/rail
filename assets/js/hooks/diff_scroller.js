@@ -1,5 +1,6 @@
 const SETTLE_FRAMES = 3;
 const SETTLE_CAP = 30;
+const READER_SCROLLS = ["wheel", "touchstart", "keydown"];
 
 // A line goes by its kind and numbers, which no other line of its file shares.
 const keyOf = (row) => {
@@ -21,6 +22,13 @@ export const DiffScroller = {
     this.anchor = null;
     this.scrolledTo = null;
     this.pendingComment = null;
+    this.settling = null;
+
+    this.stopSettling = () => {
+      this.settling = null;
+      for (const type of READER_SCROLLS) this.el.removeEventListener(type, this.stopSettling);
+    };
+
     this.honorScrollTo();
 
     // Picking a file or a comment out of the list beside the diff is asking to
@@ -68,6 +76,7 @@ export const DiffScroller = {
 
   destroyed() {
     this.stuck.disconnect();
+    this.stopSettling();
     window.removeEventListener("diff:wrap-before", this.holdForWrap);
     window.removeEventListener("diff:wrap-after", this.restoreForWrap);
   },
@@ -163,7 +172,13 @@ export const DiffScroller = {
     if (!target) return false;
 
     this.el.scrollTop += this.offsetOf(target) - under(target);
-    this.settle(find, under, 0);
+
+    // The reader scrolling on their own is not layout settling, so it ends the pull.
+    this.stopSettling();
+    const token = {};
+    this.settling = token;
+    for (const type of READER_SCROLLS) this.el.addEventListener(type, this.stopSettling, { passive: true });
+    this.settle(find, under, 0, token);
 
     return true;
   },
@@ -171,16 +186,22 @@ export const DiffScroller = {
   // A section is only laid out once it is scrolled near, so the first jump lands
   // against `contain-intrinsic-size` rather than the real thing, which wrapped lines
   // make far taller. Re-measuring until the target holds still closes that gap.
-  settle(find, under, frame) {
+  settle(find, under, frame, token) {
     requestAnimationFrame(() => {
+      if (this.settling !== token) return;
+
       const target = find();
-      if (!target) return;
+      if (!target) return this.stopSettling();
 
       const offset = this.offsetOf(target) - under(target);
       const moved = Math.abs(offset) > 1;
       if (moved) this.el.scrollTop += offset;
 
-      if ((moved || frame + 1 < SETTLE_FRAMES) && frame + 1 < SETTLE_CAP) this.settle(find, under, frame + 1);
+      if ((moved || frame + 1 < SETTLE_FRAMES) && frame + 1 < SETTLE_CAP) {
+        this.settle(find, under, frame + 1, token);
+      } else {
+        this.stopSettling();
+      }
     });
   },
 

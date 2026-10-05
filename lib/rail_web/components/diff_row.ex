@@ -92,8 +92,8 @@ defmodule RailWeb.Components.DiffRow do
   # The styling is `assets/css/diff.css`'s, keyed off these attributes, because a
   # large branch draws thousands of lines and each would otherwise carry it all.
   defp line(assigns) do
-    indent = indent(assigns.line.text, 0)
-    assigns = assign(assigns, :indent, if(indent > 0, do: [style: "--ind: #{indent}ch"], else: []))
+    hang = hang(assigns.line.text)
+    assigns = assign(assigns, :hang, if(hang == 4, do: [], else: [style: "--hang: #{hang}ch"]))
 
     ~H"""
     <%!-- A row fetched because something points at it says so: a reader arriving
@@ -115,7 +115,7 @@ defmodule RailWeb.Components.DiffRow do
       </div>
       <%!-- A flex row drops the whitespace between its children, which a `pre` cell
       would otherwise draw as the blank lines the markup is written across. --%>
-      <div class="diff-code" {@indent}>
+      <div class="diff-code" {@hang}>
         <.code text={@line.text} html={Map.get(@line, :html)} />
       </div>
     </div>
@@ -132,6 +132,14 @@ defmodule RailWeb.Components.DiffRow do
     <span :if={@html} class="diff-text">{raw(@html)}</span>
     <span :if={is_nil(@html)} class="diff-text">{@text}</span>
     """
+  end
+
+  # Wrapped rows hang four columns past the indent. Tab stops are measured past the
+  # hang, so a line with a tab hangs by whole stops to keep its tabs where Scroll has them.
+  defp hang(text) do
+    hang = indent(text, 0) + 4
+
+    if :binary.match(text, "\t") == :nomatch, do: hang, else: div(hang + 7, 8) * 8
   end
 
   # Columns, as the browser draws them: a tab runs to the next stop of eight. Bytes
