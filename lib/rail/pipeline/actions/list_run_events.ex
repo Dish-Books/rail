@@ -15,9 +15,11 @@ defmodule Rail.Pipeline.Actions.ListRunEvents do
   for the newest few rather than reading a long pass's whole log to see the end
   of it.
   """
-  def list_run_events(run_or_runs, opts \\ [])
+  def list_run_events(run_or_runs, opts \\ []) do
+    if is_list(run_or_runs), do: list_many(run_or_runs), else: list_one(run_or_runs, opts)
+  end
 
-  def list_run_events(%Run{id: run_id}, opts) do
+  defp list_one(%Run{id: run_id}, opts) do
     limit = Keyword.get(opts, :limit)
     order = Keyword.get(opts, :order, :asc)
 
@@ -27,9 +29,9 @@ defmodule Rail.Pipeline.Actions.ListRunEvents do
     Repo.all(query)
   end
 
-  def list_run_events([], _opts), do: []
+  defp list_many([]), do: []
 
-  def list_run_events(runs, _opts) when is_list(runs) do
+  defp list_many(runs) do
     ids = Enum.map(runs, fn %Run{id: id} -> id end)
 
     Repo.all(
