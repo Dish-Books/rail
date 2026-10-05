@@ -29,6 +29,7 @@ defmodule Rail.Pipeline.Schemas.QaFinding do
   @severities [:blocker, :major, :minor, :nit]
   @recommendations [:fix, :skip]
   @statuses [:open, :fixed, :not_fixed]
+  @key ~r/\A[a-z0-9][a-z0-9-]*\z/
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "qaf"}
   schema "qa_findings" do
@@ -94,6 +95,8 @@ defmodule Rail.Pipeline.Schemas.QaFinding do
     |> cast(attrs, @cast_fields)
     |> cast_embed(:evidence)
     |> validate_required(@required_fields)
+    |> validate_format(:key, @key, message: "must be lowercase letters, digits and hyphens")
+    |> validate_evidenced()
     |> foreign_key_constraint(:task_id)
     |> unique_constraint([:task_id, :key])
   end
@@ -144,4 +147,12 @@ defmodule Rail.Pipeline.Schemas.QaFinding do
   def severity_label(:major), do: "Major"
   def severity_label(:minor), do: "Minor"
   def severity_label(:nit), do: "Nit"
+
+  # A finding nobody can see the proof of is one the human has only QA's word for.
+  defp validate_evidenced(changeset) do
+    case get_field(changeset, :evidence) do
+      [] -> add_error(changeset, :evidence, "needs at least one screenshot, file or note showing the defect")
+      _evidenced -> changeset
+    end
+  end
 end

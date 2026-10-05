@@ -16,6 +16,9 @@ defmodule Rail.Tools.ClaudeEvents do
     final_text: "",
     assistant_text: "",
     usage: %Run.Usage{},
+    base_usage: %Run.Usage{},
+    message_usage: %{},
+    tool_names: %{},
     num_turns: 0,
     thinking_tokens: 0,
     saw_result: false
@@ -34,6 +37,7 @@ defmodule Rail.Tools.ClaudeEvents do
     %__MODULE__{
       conversation_id: opts[:conversation_id],
       usage: opts[:usage] || %Run.Usage{},
+      base_usage: opts[:usage] || %Run.Usage{},
       num_turns: opts[:num_turns] || 0,
       thinking_tokens: opts[:thinking_tokens] || 0
     }
@@ -86,6 +90,7 @@ defmodule Rail.Tools.ClaudeEvents do
 
   def handle_event(%__MODULE__{} = state, %{"type" => "assistant"} = event) do
     content = get_in(event, ["message", "content"])
+    state = stream_usage(state, event["message"])
 
     if is_list(content) do
       Enum.reduce(content, state, &process_assistant_block/2)
@@ -189,6 +194,9 @@ defmodule Rail.Tools.ClaudeEvents do
     name = block["name"] || "tool"
     summary = ToolSummarizer.summarize_tool_input(name, block["input"])
 
+    state =
+      if is_binary(block["id"]), do: %{state | tool_names: Map.put(state.tool_names, block["id"], name)}, else: state
+
     log_line =
       if summary == "" do
         "[tool] #{name}"
@@ -201,12 +209,28 @@ defmodule Rail.Tools.ClaudeEvents do
 
   defp process_assistant_block(_other_block, state), do: state
 
+  # A failed result names the call it answers only by id, so the name is carried
+  # over from the call: a refusal reads under the tool that refused it.
   defp process_user_block(%{"type" => "tool_result", "is_error" => true} = block, state) do
-    detail = ToolSummarizer.truncate(to_string(block["content"]), 300)
-    append_log(state, "[tool error] #{detail}")
+    detail = ToolSummarizer.truncate(error_text(block["content"]), 300)
+
+    case state.tool_names[block["tool_use_id"]] do
+      name when is_binary(name) -> append_log(state, "[tool error #{name}] #{detail}")
+      nil -> append_log(state, "[tool error] #{detail}")
+    end
   end
 
   defp process_user_block(_other_block, state), do: state
+
+  defp error_text(blocks) when is_list(blocks) do
+    Enum.map_join(blocks, "\n", fn
+      %{"type" => "text", "text" => text} when is_binary(text) -> text
+      _other_block -> ""
+    end)
+  end
+
+  defp error_text(content) when is_binary(content), do: content
+  defp error_text(content), do: inspect(content)
 
   defp maybe_update_conversation_id(state, session_id) when is_binary(session_id) and session_id != "" do
     if String.trim(session_id) == "" do
@@ -227,17 +251,27 @@ defmodule Rail.Tools.ClaudeEvents do
 
   defp extract_usage(event, current_usage) do
     case event["usage"] do
-      %{} = u ->
-        %Run.Usage{
-          input_tokens: to_int(u["input_tokens"]),
-          output_tokens: to_int(u["output_tokens"]),
-          cache_read_input_tokens: to_int(u["cache_read_input_tokens"]),
-          cache_creation_input_tokens: to_int(u["cache_creation_input_tokens"])
-        }
-
-      _missing_usage ->
-        current_usage
+      %{} = u -> usage_from(u)
+      _missing_usage -> current_usage
     end
+  end
+
+  # The result carries the turn's total, but a turn stopped before it, as `commit`
+  # stops one, says nothing; so each message is counted once as it streams.
+  defp stream_usage(state, %{"id" => id, "usage" => %{} = usage}) when is_binary(id) do
+    messages = Map.put(state.message_usage, id, usage_from(usage))
+    %{state | message_usage: messages, usage: Enum.reduce(Map.values(messages), state.base_usage, &Run.add_usage(&2, &1))}
+  end
+
+  defp stream_usage(state, _message), do: state
+
+  defp usage_from(u) do
+    %Run.Usage{
+      input_tokens: to_int(u["input_tokens"]),
+      output_tokens: to_int(u["output_tokens"]),
+      cache_read_input_tokens: to_int(u["cache_read_input_tokens"]),
+      cache_creation_input_tokens: to_int(u["cache_creation_input_tokens"])
+    }
   end
 
   defp extract_thinking_tokens(event, current_tokens) do

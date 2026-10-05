@@ -21,7 +21,7 @@ defmodule Rail.Pipeline.Actions.CommitAndSendToReview do
     # Set before committing, so a CI that finishes fast still finds it.
     {:ok, flagged} = run |> Run.changeset(%{review_on_ci_pass: true}) |> Repo.update()
 
-    case Pipeline.commit_engineer_work(scope, run.task) do
+    case Pipeline.commit_engineer_work(scope, run.task, nil) do
       :ok ->
         send_on(Repo.get!(Run, flagged.id))
 

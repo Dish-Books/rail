@@ -1,11 +1,11 @@
 defmodule RailWeb.Live.ArchitectStage do
   @moduledoc """
-  The implementation plan an architect run wrote, and the approval of it.
+  The implementation plan an architect run saved, and the approval of it.
 
   The plan lives in scratch until a human reads it, so this is what reads it, and
   the button only exists when there is something to show. Refining it is the
   conversation in the sidebar: every message is another turn, and the architect
-  writes the file again.
+  saves the plan again.
   """
   use RailWeb, :live_component
 
@@ -169,11 +169,11 @@ defmodule RailWeb.Live.ArchitectStage do
 
         <p :if={@running} class="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
           The architect is reading the ticket and the code it touches, then writing the
-          plan an engineer builds from. It appears here once it is written.
+          plan an engineer builds from. It appears here as soon as it is saved.
         </p>
 
         <p :if={not @running} class="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-          The architect stopped before writing a plan. Send it a message in the
+          The architect stopped before saving a plan. Send it a message in the
           conversation to pick up where it left off.
         </p>
       </div>
@@ -194,7 +194,7 @@ defmodule RailWeb.Live.ArchitectStage do
 
   defp message_for(:stage_running), do: "Something is still running on this task."
   defp message_for({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not architect."
-  defp message_for(:no_plan), do: "The architect has not written a plan yet."
+  defp message_for(:no_plan), do: "The architect has not saved a plan yet."
   # coveralls-ignore-start (a refusal nobody has written a sentence for yet)
   defp message_for(reason), do: "Could not approve the plan: #{inspect(reason)}"
   # coveralls-ignore-stop

@@ -69,19 +69,6 @@ defmodule Rail.Pipeline.Actions.StartOrResumeRunTest do
              before.stage_fingerprint_dirty_digest
   end
 
-  # A new pass writes a new report, and what the last one was reminded of is not
-  # held against it.
-  test "a stage starting over starts its count of evidence reminders over", %{
-    task: task,
-    role: role,
-    worktree: worktree
-  } do
-    {:ok, first} = Pipeline.start_or_resume_run(task, role, worktree)
-    {:ok, _reminded} = Pipeline.update_run(first, %{evidence_reminders: 2})
-
-    assert {:ok, %Run{evidence_reminders: 0}} = Pipeline.start_or_resume_run(task, role, worktree)
-  end
-
   test "leaves the fingerprint nil when git cannot answer", %{task: task, role: role} do
     non_repo = Path.join(System.tmp_dir!(), "sorrr_missing_#{System.unique_integer([:positive])}")
 

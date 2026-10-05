@@ -23,12 +23,16 @@ defmodule Rail.Mcp.Utils.RunToolQaShot do
   Captures what `task`'s browser is looking at as `arguments["name"]`, against the
   check `arguments["check"]`, and says where it was filed.
   """
-  def run_tool_qa_shot(%Task{} = task, %{"name" => name} = arguments, opts) do
+  def run_tool_qa_shot(%Task{} = task, %{"name" => name} = arguments, opts) when is_binary(name) do
     with {:ok, session} <- Tools.start_browser_session(task, opts),
          {:ok, file} <- Tools.capture_browser_evidence(session, task, name, arguments["check"]) do
       {:ok,
        "Filed as #{file}. Cite that name in the finding's evidence. Reading it is how you check how " <>
          "something looks, and it stays in your context once you do, so read it only when a check turns on that."}
     end
+  end
+
+  def run_tool_qa_shot(%Task{}, _arguments, _opts) do
+    {:refused, "qa_shot needs a `name` saying what the picture shows and the `check` it is for. Nothing was filed."}
   end
 end

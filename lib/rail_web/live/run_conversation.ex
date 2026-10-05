@@ -376,6 +376,8 @@ defmodule RailWeb.Live.RunConversation do
         <% expanded = MapSet.member?(@expanded_activities, @idx) %>
         <% steps = tool_steps(@text, @worktree_path) %>
         <% error_count = Enum.count(steps, & &1.error?) %>
+        <%!-- A refused call is one call: its error line is flagged, not counted again. --%>
+        <% calls = Enum.reject(steps, & &1.error?) %>
         <div
           id={"activity-tile-#{@idx}"}
           data-qa="activity-tile"
@@ -390,11 +392,11 @@ defmodule RailWeb.Live.RunConversation do
           >
             <.icon name="pi-wrench" class="h-3.5 w-3.5 shrink-0" />
             <span class="font-medium text-slate-700 dark:text-slate-300 shrink-0">
-              {if length(steps) == 1,
+              {if length(calls) == 1,
                 do: "Tool activity (1 step)",
-                else: "Tool activity (#{length(steps)} steps)"}
+                else: "Tool activity (#{length(calls)} steps)"}
             </span>
-            <span class="truncate">{tool_names_summary(steps)}</span>
+            <span class="truncate">{tool_names_summary(calls)}</span>
             <span
               :if={error_count > 0}
               class="inline-flex items-center gap-1 shrink-0 text-red-600 dark:text-red-400"
@@ -1233,8 +1235,8 @@ defmodule RailWeb.Live.RunConversation do
   defp format_started_at(_not_running), do: nil
 
   # An activity turn is `[tool] Name summary` lines, as the backends write them,
-  # with `[tool error] detail` where a call failed. Older logs name the tool in
-  # the bracket instead: `[tool read_file] summary`.
+  # with `[tool error name] detail` where a call failed. Older logs name the tool
+  # in the bracket for a call too, `[tool read_file] summary`, or not at all.
   defp tool_steps(text, worktree_path) do
     text
     |> to_string()
@@ -1258,8 +1260,9 @@ defmodule RailWeb.Live.RunConversation do
     end
   end
 
+  # Rail's own tools read by their names, without the server they came through.
   defp step({name, detail}, error?, worktree_path) do
-    %{name: name, detail: relative_to(detail, worktree_path), error?: error?}
+    %{name: String.replace_prefix(name, "mcp__rail__", ""), detail: relative_to(detail, worktree_path), error?: error?}
   end
 
   # Paths inside the task's worktree read shorter from its root.

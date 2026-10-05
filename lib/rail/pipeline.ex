@@ -33,20 +33,24 @@ defmodule Rail.Pipeline do
   defdelegate start_product_run(issue), to: Actions.StartProductRun
   defdelegate approve_product_plan(run, opts \\ []), to: Actions.ApproveProductPlan
   defdelegate read_ticket(task), to: Actions.ReadTicket
+  defdelegate save_ticket(task, attrs), to: Actions.SaveTicket
 
   defdelegate start_design_run(run), to: Actions.StartDesignRun
   defdelegate read_design(task), to: Actions.ReadDesign
+  defdelegate save_design_option(task, attrs), to: Actions.SaveDesignOption
   defdelegate pick_design_option(scope, run, key), to: Actions.PickDesignOption
   defdelegate approve_design(run), to: Actions.ApproveDesign
 
   defdelegate start_architect_run(run), to: Actions.StartArchitectRun
   defdelegate read_plan(task), to: Actions.ReadPlan
+  defdelegate save_plan(task, content), to: Actions.SavePlan
   defdelegate approve_plan(run), to: Actions.ApprovePlan
   defdelegate get_implementation_plan(task), to: Actions.GetImplementationPlan
 
   defdelegate start_engineer_run(run), to: Actions.StartEngineerRun
-  defdelegate read_commit_message(task), to: Actions.ReadCommitMessage
-  defdelegate commit_engineer_work(scope, task), to: Actions.CommitEngineerWork
+  defdelegate end_turn_and_commit(task, message), to: Actions.EndTurnAndCommit
+  defdelegate end_turn_and_merge(task), to: Actions.EndTurnAndMerge
+  defdelegate commit_engineer_work(scope, task, message), to: Actions.CommitEngineerWork
   defdelegate commit_and_send_to_review(scope, run), to: Actions.CommitAndSendToReview
   defdelegate send_to_review(run), to: Actions.SendToReview
   defdelegate changed_since_review?(task), to: Actions.ChangedSinceReview
@@ -56,7 +60,8 @@ defmodule Rail.Pipeline do
 
   defdelegate start_review_run(run), to: Actions.StartReviewRun
   defdelegate read_review(task), to: Actions.ReadReview
-  defdelegate sync_review_findings(task, findings), to: Actions.SyncReviewFindings
+  defdelegate save_review_finding(task, attrs), to: Actions.SaveReviewFinding
+  defdelegate save_review(task), to: Actions.SaveReview
   defdelegate list_review_findings(task), to: Actions.ListReviewFindings
   defdelegate decide_review_finding(scope, finding, decision), to: Actions.DecideReviewFinding
   defdelegate send_findings_to_engineer(run), to: Actions.SendFindingsToEngineer
@@ -70,7 +75,8 @@ defmodule Rail.Pipeline do
   defdelegate read_qa_evidence(task, evidence), to: Actions.ReadQaEvidence
   defdelegate classify_qa_evidence(task, path), to: Actions.ClassifyQaEvidence
   defdelegate read_qa_report(task), to: Actions.ReadQaReport
-  defdelegate sync_qa_findings(task, findings), to: Actions.SyncQaFindings
+  defdelegate save_qa_finding(task, attrs), to: Actions.SaveQaFinding
+  defdelegate save_qa_verdict(task, attrs), to: Actions.SaveQaVerdict
   defdelegate list_qa_findings(task), to: Actions.ListQaFindings
   defdelegate decide_qa_finding(scope, finding, decision), to: Actions.DecideQaFinding
   defdelegate send_qa_findings_to_engineer(run), to: Actions.SendQaFindingsToEngineer
@@ -80,6 +86,7 @@ defmodule Rail.Pipeline do
 
   defdelegate start_demo_run(run), to: Actions.StartDemoRun
   defdelegate read_demo(task), to: Actions.ReadDemo
+  defdelegate save_demo(task, attrs), to: Actions.SaveDemo
   defdelegate list_demo_beats(task), to: Actions.ListDemoBeats
 
   defdelegate start_task(issue, stage), to: Actions.StartTask
@@ -114,6 +121,7 @@ defmodule Rail.Pipeline do
   defdelegate update_run(run, attrs), to: Actions.UpdateRun
 
   defdelegate append_run_events(run_id, os_process_id, lines), to: Actions.AppendRunEvents
+  defdelegate broadcast_output_saved(task), to: Actions.BroadcastOutputSaved
   defdelegate list_run_events(run, opts \\ []), to: Actions.ListRunEvents
   defdelegate parse_transcript(lines), to: Actions.ParseTranscript
 

@@ -587,8 +587,38 @@ defmodule RailWeb.Live.RunConversationTest do
 
     html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
 
-    assert html =~ "Tool activity (4 steps)"
+    assert html =~ "Tool activity (3 steps)"
     assert html =~ "Read ×2, Bash"
+    assert html =~ "pi-warning-circle"
+  end
+
+  test "Rail's own tools read by their names, a refused save among them", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :finished,
+        conversation_id: "conv_saves",
+        started_at: ~U[2026-09-09 10:00:00.000000Z]
+      })
+
+    Pipeline.append_run_events(run.id, nil, [
+      "[tool] mcp__rail__save_finding comment-saved-during-send · major",
+      "[tool] mcp__rail__save_finding round-query-scope · high",
+      ~s([tool error mcp__rail__save_finding] Refused, nothing saved. severity: "high" is not one of blocker, major, minor, nit.),
+      "[tool] Read lib/rail.ex"
+    ])
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+    # A refused call is one call: its error line is flagged, never counted again.
+    assert html =~ "Tool activity (3 steps)"
+    assert html =~ "save_finding ×2, Read"
+    refute html =~ "mcp__rail__"
     assert html =~ "pi-warning-circle"
   end
 

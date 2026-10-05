@@ -12,6 +12,7 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidence do
 
   import Rail.Tools.Utils.WriteQaEvidence
 
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Tools.BrowserSession
 
@@ -20,11 +21,14 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidence do
   relative to the task's QA directory - which is exactly what a finding's
   evidence should carry.
   """
-  def capture_browser_evidence(session, %Task{scratch_path: scratch_path}, name, key \\ nil) do
+  def capture_browser_evidence(session, %Task{scratch_path: scratch_path} = task, name, key \\ nil) do
     with {:ok, %{"data" => data}} <-
            BrowserSession.call(session, "Page.captureScreenshot", %{format: "jpeg", quality: 72}),
          {:ok, bytes} <- Base.decode64(data) do
-      {:ok, write_qa_evidence(scratch_path, name, key, ".jpg", &File.write!(&1, bytes))}
+      file = write_qa_evidence(scratch_path, name, key, ".jpg", &File.write!(&1, bytes))
+      Pipeline.broadcast_output_saved(task)
+
+      {:ok, file}
     else
       :error -> {:error, :unreadable_screenshot}
       {:error, reason} -> {:error, reason}

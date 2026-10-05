@@ -36,7 +36,7 @@ defmodule Rail.Pipeline.Utils.LearningsBrief do
 
     #{Enum.map_join(rules, "\n", &line(&1, true))}
 
-    A calibration rule says what not to raise. A finding one says not to raise is still written, with that rule's id as `rule`: Rail sets it apart for a person rather than dropping it, so leaving it out loses the record that the rule held.
+    A calibration rule says what not to raise. A finding one says not to raise is still saved, with that rule's id as `rule`: Rail sets it apart for a person rather than dropping it, so leaving it out loses the record that the rule held.
     """
   end
 

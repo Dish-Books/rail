@@ -9,6 +9,7 @@ defmodule Rail.Tools.Actions.FileQaEvidence do
 
   import Rail.Tools.Utils.WriteQaEvidence
 
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.QaEvidence
   alias Rail.Pipeline.Schemas.Task
 
@@ -18,7 +19,7 @@ defmodule Rail.Tools.Actions.FileQaEvidence do
   A path that is absolute or climbs out is `:unconfined_path`; one that is only
   spelled with characters Rail does not serve is `:unusable_name`.
   """
-  def file_qa_evidence(%Task{scratch_path: scratch_path}, path, name, key) do
+  def file_qa_evidence(%Task{scratch_path: scratch_path} = task, path, name, key) do
     qa = Path.join(scratch_path, "qa")
     source = Path.expand(Path.join(qa, path))
 
@@ -34,10 +35,10 @@ defmodule Rail.Tools.Actions.FileQaEvidence do
 
       true ->
         extension = String.downcase(Path.extname(path))
+        file = write_qa_evidence(scratch_path, name, key, extension, &File.cp!(source, &1))
+        Pipeline.broadcast_output_saved(task)
 
-        # Copying a file onto itself empties it, and a name Rail filed is a path
-        # the agent has just been handed.
-        {:ok, write_qa_evidence(scratch_path, name, key, extension, &(Path.expand(&1) == source or File.cp!(source, &1)))}
+        {:ok, file}
     end
   end
 

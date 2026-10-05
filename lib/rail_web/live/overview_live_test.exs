@@ -1042,7 +1042,7 @@ defmodule RailWeb.OverviewLiveTest do
 
       stub(Git, :push_branch, fn _scope, _task -> :ok end)
       File.write!(Path.join(task.worktree_path, "after_demo.ex"), "changed\n")
-      assert :ok = Pipeline.commit_engineer_work(system_scope(), task)
+      assert :ok = Pipeline.commit_engineer_work(system_scope(), task, nil)
 
       assert {:ok, view, _html} = live(conn, ~p"/")
       assert has_element?(view, "#up-next-featured-#{engineer_run.id} [data-qa='up-next-chip']", "Ready for review")

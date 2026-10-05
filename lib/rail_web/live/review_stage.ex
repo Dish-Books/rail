@@ -97,6 +97,8 @@ defmodule RailWeb.Live.ReviewStage do
             suppressed={@suppressed}
             show_suppressed={@show_suppressed or ReviewFinding.suppressed?(@selected)}
             selected={@selected}
+            running={@running}
+            stopped={@pending == :stopped}
             target={@myself}
           />
           <.finding_detail
@@ -106,6 +108,7 @@ defmodule RailWeb.Live.ReviewStage do
             count={length(@findings)}
             hunk={@hunk}
             diff_link={diff_link(@task, @engineer_tab, @hunk)}
+            running={@running}
             decidable={@approvable and not @running}
             neighbours={@neighbours}
             target={@myself}
@@ -182,8 +185,12 @@ defmodule RailWeb.Live.ReviewStage do
   attr :suppressed, :list, required: true
   attr :show_suppressed, :boolean, required: true
   attr :selected, :any, required: true
+  attr :running, :boolean, required: true
+  attr :stopped, :boolean, required: true
   attr :target, :any, required: true
 
+  # Findings show as the reviewer saves them, but a pass still going is not one
+  # to rule on, so nothing asks for a call until it has finished.
   defp finding_list(assigns) do
     ~H"""
     <div
@@ -229,7 +236,7 @@ defmodule RailWeb.Live.ReviewStage do
               {finding.title}
             </span>
             <span
-              :if={ReviewFinding.undecided?(finding)}
+              :if={ReviewFinding.undecided?(finding) and not @running}
               data-qa="review_finding_needs_call"
               class="block text-[10px] font-semibold text-blue-600 dark:text-blue-400"
             >
@@ -296,13 +303,36 @@ defmodule RailWeb.Live.ReviewStage do
             </span>
           </button>
         </div>
+
+        <div
+          :if={@running}
+          id="review-still-reviewing"
+          data-qa="review_still_reviewing"
+          class="flex gap-2.5 px-3 py-2.5 text-[12px] text-slate-500 dark:text-slate-400"
+        >
+          <span class="relative mt-1 flex size-2 shrink-0">
+            <span class="absolute inline-flex size-full rounded-full bg-blue-400 opacity-60 motion-safe:animate-ping" />
+            <span class="relative inline-flex size-2 rounded-full bg-blue-500" />
+          </span>
+          <span>Still reviewing. New findings appear here.</span>
+        </div>
+
+        <div
+          :if={@stopped}
+          id="review-stopped-short"
+          data-qa="review_stopped_short"
+          class="flex gap-2.5 px-3 py-2.5 text-[12px] text-slate-500 dark:text-slate-400"
+        >
+          <.icon name="pi-stop-circle" class="size-[15px] shrink-0" />
+          <span>Stopped before it finished. Message the reviewer to pick up where it left off.</span>
+        </div>
       </div>
 
       <p
         data-qa="review_finding_tally"
         class="px-4 py-3 border-t border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400"
       >
-        {tally(@findings)}
+        {if @running, do: "#{length(@findings)} so far", else: tally(@findings)}
       </p>
     </div>
     """
@@ -314,6 +344,7 @@ defmodule RailWeb.Live.ReviewStage do
   attr :count, :integer, required: true
   attr :hunk, :any, required: true
   attr :diff_link, :any, required: true
+  attr :running, :boolean, required: true
   attr :decidable, :boolean, required: true
   attr :neighbours, :map, required: true
   attr :target, :any, required: true
@@ -327,7 +358,7 @@ defmodule RailWeb.Live.ReviewStage do
     >
       <div class="shrink-0 flex items-start gap-4 px-7 py-4 border-b border-slate-200 dark:border-slate-700">
         <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2.5">
+          <div class="flex flex-wrap items-center gap-2.5">
             <span class={[
               "rounded px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider",
               severity_chip(@finding)
@@ -338,11 +369,19 @@ defmodule RailWeb.Live.ReviewStage do
               {@position} of {@count}
             </span>
             <span
-              :if={ReviewFinding.undecided?(@finding)}
+              :if={ReviewFinding.undecided?(@finding) and not @running}
               data-qa="finding_undecided"
               class="text-xs font-semibold text-blue-600 dark:text-blue-400"
             >
               Needs your call
+            </span>
+            <span
+              :if={@running and @finding.status != :fixed}
+              data-qa="finding_locked"
+              class="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"
+            >
+              <.icon name="pi-lock-simple" class="size-3.5 shrink-0" />
+              Rule on it once the review finishes
             </span>
             <span
               :if={ReviewFinding.suppressed?(@finding)}
@@ -749,7 +788,7 @@ defmodule RailWeb.Live.ReviewStage do
   defp pending_title(:stopped), do: "No findings yet"
 
   defp pending_body(:reading) do
-    "The reviewer is reading the branch against the plan it was built from. Whatever it finds appears here as soon as it reports."
+    "The reviewer is reading the branch against the plan it was built from. Each finding appears here as soon as it is saved."
   end
 
   defp pending_body(:clean) do

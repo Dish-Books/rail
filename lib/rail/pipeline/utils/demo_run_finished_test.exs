@@ -147,7 +147,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
     expect(Tools, :stop_browser_recording, fn %Task{} -> demo_dir end)
     expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
 
-    assert %Run{error: "The demo agent did not write demo/DFN-1.json."} = demo_run_finished(run, [])
+    assert %Run{error: "The demo agent did not save a write-up."} = demo_run_finished(run, [])
     assert %Task{stage: :demo} = Repo.reload!(task)
   end
 end

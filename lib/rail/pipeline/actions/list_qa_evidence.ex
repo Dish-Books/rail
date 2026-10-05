@@ -2,9 +2,9 @@ defmodule Rail.Pipeline.Actions.ListQaEvidence do
   @moduledoc """
   Every piece of evidence a QA pass has filed so far, newest first.
 
-  The findings each name their own, but those only exist once the pass has
-  written its report - and the whole point of watching a pass is seeing what it
-  saw while it is still going. So this reads the directory rather than the rows.
+  The findings each name their own, but a picture is filed before any finding
+  cites it - and the whole point of watching a pass is seeing what it saw while
+  it is still going. So this reads the directory rather than the rows.
 
   The check each one was filed against is in its name, because Rail put it there.
   What the caption said is read from the captions written beside the files -

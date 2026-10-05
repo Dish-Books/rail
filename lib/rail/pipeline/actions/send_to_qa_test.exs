@@ -56,14 +56,19 @@ defmodule Rail.Pipeline.Actions.SendToQaTest do
   end
 
   test "findings the engineer fixed are not outstanding", %{task: task, run: run, raised: raised} do
-    {:ok, _synced} = Pipeline.sync_review_findings(task, [%{raised | status: :fixed}])
+    for finding <- [%{raised | status: :fixed}], do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.send_to_qa(run)
     assert %Task{stage: :qa} = Repo.reload!(task)
   end
 
   test "findings the human dismissed are not outstanding either", %{task: task, run: run, raised: raised} do
-    {:ok, [finding]} = Pipeline.sync_review_findings(task, [raised])
+    [finding] =
+      for finding <- [raised] do
+        {:ok, saved} = Pipeline.save_review_finding(task, finding)
+        saved
+      end
+
     {:ok, _dismissed} = Pipeline.decide_review_finding(system_scope(), finding, :skip)
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.send_to_qa(run)
@@ -71,7 +76,12 @@ defmodule Rail.Pipeline.Actions.SendToQaTest do
   end
 
   test "a change with something still to fix does not go on", %{task: task, run: run, raised: raised} do
-    {:ok, [finding]} = Pipeline.sync_review_findings(task, [raised])
+    [finding] =
+      for finding <- [raised] do
+        {:ok, saved} = Pipeline.save_review_finding(task, finding)
+        saved
+      end
+
     {:ok, _to_fix} = Pipeline.decide_review_finding(system_scope(), finding, :fix)
 
     assert {:error, :findings_outstanding} = Pipeline.send_to_qa(run)
@@ -81,7 +91,7 @@ defmodule Rail.Pipeline.Actions.SendToQaTest do
   # Silence is not a dismissal, so a finding nobody has ruled on holds the change
   # here rather than going quietly to QA.
   test "a finding nobody has ruled on does not go on either", %{task: task, run: run, raised: raised} do
-    {:ok, _synced} = Pipeline.sync_review_findings(task, [raised])
+    for finding <- [raised], do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
     assert {:error, :findings_undecided} = Pipeline.send_to_qa(run)
     assert %Task{stage: :review} = Repo.reload!(task)

@@ -47,6 +47,18 @@ defmodule Rail.Pipeline.Actions.WriteQaChecklistTest do
     assert %{"checks" => [^first, %{"criterion" => "Totals match"}]} = path |> File.read!() |> Jason.decode!()
   end
 
+  test "every page open on the task hears the checklist written, and no temporary file is left", %{
+    task: %{id: task_id} = task,
+    path: path
+  } do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task_id}")
+
+    {:ok, _checklist} = Pipeline.write_qa_checklist(task, [%{"key" => "bill-saves", "title" => "A bill saves"}])
+
+    assert_received {:output_saved, ^task_id}
+    assert File.ls!(Path.dirname(path)) == ["checklist.json"]
+  end
+
   # A second QA pass lists every check again and re-runs the few the new commits
   # could have touched. What it does not run stands as it was answered, marked as
   # somebody else's work.

@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.StartReviewRun do
   @moduledoc """
-  Spawns the review stage's run: the brief naming the change to read and the one
-  file the findings go in, and the process that writes it.
+  Spawns the review stage's run: the brief naming the change to read and the
+  tools its findings are saved with, and the process that reads it.
 
   `enter_stage/3` has already claimed the stage, started the run and made the
   worktree; this is the part only review knows about.
@@ -42,7 +42,6 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
   """
   def start_review_run(%Run{task: %Task{} = task, role: %Role{} = role} = run) do
     task = Repo.preload(task, [:project, issue: [comments: :replies]])
-    File.mkdir_p!(Path.join(task.scratch_path, "reviews"))
 
     prompt =
       Pipeline.build_prompt(
@@ -69,9 +68,6 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
   end
 
   defp brief(%Task{scratch_path: scratch_path, issue: %Issue{} = issue} = task, %Run{} = run) do
-    dir = Path.join(scratch_path, "reviews")
-    file = Path.join(dir, "#{issue.identifier}.json")
-
     String.trim("""
     Review the change described below. #{workspace(task)}
 
@@ -81,29 +77,9 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
 
     Nothing under #{scratch_path} is part of the change, and the diff never includes it.
 
-    Writing #{file} is how you report, and it is the last thing you do. Write it from your worktree with a heredoc, the body and its closing JSON line at column zero:
+    You report with two tools. `save_finding` saves one finding, as soon as you have confirmed it rather than at the end: the human watching sees each one while you keep reading, though nobody rules on any until you have finished. `save_review` says the pass is finished, and it is the last thing you do, including when you found nothing.
 
-    mkdir -p #{dir}
-    cat > #{file} <<'JSON'
-    {
-      "findings": [
-        {
-          "key": "short-stable-slug",
-          "title": "one line naming the problem",
-          "detail": "what is wrong and what it costs",
-          "suggestion": "the change that settles it",
-          "file": "lib/path/to/file.ex",
-          "line": 42,
-          "severity": "major",
-          "recommendation": "fix",
-          "status": "open",
-          "rule": null
-        }
-      ]
-    }
-    JSON
-
-    - A heredoc into #{file}, never an inline string. Write the whole file every pass; it is the complete report, not a list of what is new.
+    - A finding's fields are `key`, `title`, `detail`, `suggestion`, `file`, `line`, `severity`, `recommendation`, `status` and `rule`. A save in the wrong shape is refused naming each field and what is wrong with it: fix it and save again. Saving a key again replaces what you said about it.
     - One finding per problem. Two symptoms of one cause are one finding; one file with three unrelated problems is three.
     - `key` is your own name for the problem, lowercase with hyphens, and it must stay the same for the same problem across passes. That is what lets a later pass update a finding rather than raise it twice.
     - `severity` is `blocker`, `major`, `minor` or `nit`, and says how much the problem matters. `recommendation` is `fix` or `skip`, and says whether you would act on it. They are separate axes: a nit worth the thirty seconds it costs is `fix`, and a blocker is never `skip`. Most changes have some of each.
@@ -111,11 +87,12 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     - `detail` and `suggestion` have different readers, so do not write one twice. `detail` is what is wrong and what it costs, which is what the human rules on. Say in `detail` whether this change caused the problem or merely stands next to it - something already broken before this change is `skip` unless the change made it worse.
     - `suggestion` is written as though the finding will be fixed, because by the time an engineer reads it a human has decided it will be. It is one change, named concretely enough to apply: the files, the edit, and the tests that go with it. It is the whole of what the engineer is handed.
     - Nothing in `suggestion` restates or reconsiders `recommendation`. "Leave it", "only if you think it matters", or a fix offered as one branch of a choice hands the engineer a decision the human has already taken, and it will be built as the hedge rather than the fix. Recommend `skip` in the field for recommending it; still write the fix you would apply if told to.
-    - `status` is `open` for a problem that still stands. Leave findings out entirely rather than inventing them: `{"findings": []}` is a clean review and is the right answer when the change is good.
-    - A finding with no file is fine. Give `file` and `line` whenever you can point at one.
-    - `rule` is the id of the checklist rule a finding comes from, and null when it comes from none. A finding a calibration rule says not to raise is still written, with that rule's id.
+    - `status` is `open` for a problem that still stands. Leave findings out entirely rather than inventing them: no findings and then `save_review` is a clean review, and is the right answer when the change is good.
+    - A finding with no file is fine. Give `file` and `line` whenever you can point at one; `line` is one positive whole number.
+    - `rule` is the id of the checklist rule a finding comes from; leave it out when it comes from none. A finding a calibration rule says not to raise is still saved, with that rule's id.
     - Report only what you checked. You have the worktree: open the callers, read the test, run it. A finding you could have confirmed and did not is a guess, and a guess costs the engineer a whole round.
-    - Read the whole change before you write anything, and write the file only once you have finished. A finding against one file that the next file already answers is noise. If you stop part way, for a question or anything else, leave the file unwritten and the task waits for you.
+    - Confirm a finding against the rest of the change before you save it. A finding against one file that the next file already answers is noise. If you stop part way, for a question or anything else, do not call `save_review`, and the task waits for you.
+    - `save_finding` and `save_review` are the only way to report. Write no report file.
     - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or the plan is not a question.
 
     #{outstanding(task)}
@@ -163,7 +140,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
 
         #{Enum.map_join(findings, "\n", &finding_line/1)}
 
-        Restate each of those keys in the file you write, with `status` set to `fixed` where the change now addresses it and `not_fixed` where it does not, and say in `detail` what you actually checked. Keep a dismissed finding listed with the `status` it has and never argue it again - the human has ruled on it. Anything new you find in the change as it now stands is a new finding with a new key, and is welcome.
+        Save each of those keys again with `save_finding`, with `status` set to `fixed` where the change now addresses it and `not_fixed` where it does not, and say in `detail` what you actually checked. Save a dismissed finding again with the `status` it has and never argue it again - the human has ruled on it. Anything new you find in the change as it now stands is a new finding with a new key, and is welcome.
         """
     end
   end

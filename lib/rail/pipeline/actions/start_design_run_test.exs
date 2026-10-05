@@ -40,7 +40,7 @@ defmodule Rail.Pipeline.Actions.StartDesignRunTest do
     %{task: task, run: run}
   end
 
-  test "briefs the designer on the three options it writes into scratch", %{
+  test "briefs the designer on the three options it builds in scratch and saves one at a time", %{
     task: task,
     run: run
   } do
@@ -49,7 +49,9 @@ defmodule Rail.Pipeline.Actions.StartDesignRunTest do
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
       assert ["-p", prompt | _rest] = argv
       assert prompt =~ "exactly three distinct design options"
-      assert prompt =~ "cat > #{design_dir}/manifest.json <<'MANIFEST'"
+      assert prompt =~ "Save each option with the `save_design_option` tool as soon as its page and screenshot exist"
+      refute prompt =~ "<<'MANIFEST'"
+      refute prompt =~ "manifest.json"
       assert prompt =~ "--window-size=1920,1170 --screenshot=#{design_dir}/<key>.png file://#{design_dir}/<key>.html"
       assert prompt =~ "Rail records the pick in #{design_dir}/picked and deletes the options not picked"
       assert prompt =~ ~s(<ticket title="Invoice filters">\nFilter invoices by vendor.\n</ticket>)

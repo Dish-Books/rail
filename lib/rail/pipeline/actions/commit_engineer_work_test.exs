@@ -37,7 +37,6 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
     {:ok, task} = Pipeline.create_task(issue, :engineer)
     repo = create_temp_git_repo()
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: repo})
-    File.mkdir_p!(Path.join(task.scratch_path, "commits"))
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     stub(Git, :push_branch, fn _scope, _task -> :ok end)
@@ -71,21 +70,19 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
       scope: scope,
       project: project,
       task: task,
-      repo: repo,
-      message_path: Path.join(task.scratch_path, "commits/CMW-1.md")
+      repo: repo
     }
   end
 
-  test "commits what the engineer wrote, under the trailers naming the ticket and Rail", %{
+  test "commits under the message it is handed, with the trailers naming the ticket and Rail", %{
     scope: scope,
     task: task,
-    repo: repo,
-    message_path: message_path
+    repo: repo
   } do
     File.write!(Path.join(repo, "feature.ex"), "one\n")
-    File.write!(message_path, "CMW-1: add the vendor filter\n\nFilters invoices by vendor.\n")
 
-    assert :ok = Pipeline.commit_engineer_work(scope, task)
+    assert :ok =
+             Pipeline.commit_engineer_work(scope, task, "CMW-1: add the vendor filter\n\nFilters invoices by vendor.\n")
 
     message = git!(repo, ["log", "-1", "--pretty=%B"])
     assert message =~ "CMW-1: add the vendor filter"
@@ -94,46 +91,19 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
     assert message =~ "Co-Authored-By: Rail <rail[bot]@railai.dev>"
   end
 
-  # This is the Commit button: the human asked for it, so there is no written
-  # message to use.
-  test "falls back to a subject naming the ticket when nothing was written", %{
+  # This is the Commit button or a merge: nobody wrote a message to use. A file
+  # an engineer wrote before commits were handed over by tool is never read.
+  test "falls back to a subject naming the ticket when no message is given", %{
     scope: scope,
     task: task,
     repo: repo
   } do
     File.write!(Path.join(repo, "feature.ex"), "one\n")
+    File.mkdir_p!(Path.join(task.scratch_path, "commits"))
+    File.write!(Path.join([task.scratch_path, "commits", "CMW-1.md"]), "CMW-1: an old message\n")
 
-    assert :ok = Pipeline.commit_engineer_work(scope, task)
+    assert :ok = Pipeline.commit_engineer_work(scope, task, nil)
     assert git!(repo, ["log", "-1", "--pretty=%s"]) =~ "CMW-1: follow-up changes"
-  end
-
-  # The file being gone is what makes its absence mean something next round.
-  test "drops the message file once the commit exists", %{
-    scope: scope,
-    task: task,
-    repo: repo,
-    message_path: message_path
-  } do
-    File.write!(Path.join(repo, "feature.ex"), "one\n")
-    File.write!(message_path, "CMW-1: add the vendor filter\n")
-
-    assert :ok = Pipeline.commit_engineer_work(scope, task)
-    refute File.exists?(message_path)
-  end
-
-  test "keeps the message file when the push failed", %{
-    scope: scope,
-    task: task,
-    repo: repo,
-    message_path: message_path
-  } do
-    File.write!(Path.join(repo, "feature.ex"), "one\n")
-    File.write!(message_path, "CMW-1: add the vendor filter\n")
-
-    stub(Git, :push_branch, fn _scope, _task -> {:error, "remote rejected"} end)
-
-    assert {:error, "remote rejected"} = Pipeline.commit_engineer_work(scope, task)
-    assert File.exists?(message_path)
   end
 
   # A push that failed left a commit made and never sent. Running again has
@@ -142,33 +112,30 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
   test "pushes again without committing again when only the push failed", %{
     scope: scope,
     task: task,
-    repo: repo,
-    message_path: message_path
+    repo: repo
   } do
     File.write!(Path.join(repo, "feature.ex"), "one\n")
-    File.write!(message_path, "CMW-1: add the vendor filter\n")
 
     stub(Git, :push_branch, fn _scope, _task -> {:error, "remote rejected"} end)
-    assert {:error, "remote rejected"} = Pipeline.commit_engineer_work(scope, task)
+    assert {:error, "remote rejected"} = Pipeline.commit_engineer_work(scope, task, "CMW-1: add the vendor filter")
 
     commits = git!(repo, ["rev-list", "--count", "HEAD"])
 
     stub(Git, :push_branch, fn _scope, _task -> :ok end)
-    assert :ok = Pipeline.commit_engineer_work(scope, task)
+    assert :ok = Pipeline.commit_engineer_work(scope, task, nil)
 
     assert git!(repo, ["rev-list", "--count", "HEAD"]) == commits
-    refute File.exists?(message_path)
   end
 
   test "a clean worktree with nothing left to push is still nothing to do", %{scope: scope, task: task} do
-    assert :ok = Pipeline.commit_engineer_work(scope, task)
+    assert :ok = Pipeline.commit_engineer_work(scope, task, nil)
   end
 
   test "a commit on a task past engineer sends it back to engineer", %{scope: scope, task: task, repo: repo} do
     {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
     File.write!(Path.join(repo, "feature.ex"), "one\n")
 
-    assert :ok = Pipeline.commit_engineer_work(scope, task)
+    assert :ok = Pipeline.commit_engineer_work(scope, task, nil)
     assert %Task{stage: :engineer} = Repo.reload!(task)
   end
 
@@ -181,7 +148,7 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
     {:ok, _moved} = Pipeline.update_task(task, %{stage: :qa})
     File.write!(Path.join(repo, "feature.ex"), "one\n")
 
-    assert :ok = Pipeline.commit_engineer_work(scope, %{task | stage: :engineer})
+    assert :ok = Pipeline.commit_engineer_work(scope, %{task | stage: :engineer}, nil)
     assert %Task{stage: :engineer} = Repo.reload!(task)
   end
 
@@ -189,7 +156,7 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
   test "a push with nothing to commit leaves a task past engineer where it is", %{scope: scope, task: task} do
     {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
 
-    assert :ok = Pipeline.commit_engineer_work(scope, task)
+    assert :ok = Pipeline.commit_engineer_work(scope, task, nil)
     assert %Task{stage: :qa} = Repo.reload!(task)
   end
 
@@ -198,12 +165,10 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
     project: project,
     run: run,
     task: task,
-    repo: repo,
-    message_path: message_path
+    repo: repo
   } do
     {:ok, _project} = Projects.update_project(scope, project, %{ci_command: "mise run ci"})
     File.write!(Path.join(repo, "feature.ex"), "one\n")
-    File.write!(message_path, "CMW-1: add the vendor filter\n")
 
     reject(&Git.push_branch/2)
     stub(Git, :credential_env, fn _project -> {:ok, %{}} end)
@@ -212,8 +177,7 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
       {:ok, %OsProcess{kind: :ci, run: spawned}}
     end)
 
-    assert :ok = Pipeline.commit_engineer_work(scope, task)
-    refute File.exists?(message_path)
+    assert :ok = Pipeline.commit_engineer_work(scope, task, "CMW-1: add the vendor filter")
     assert %Run{status: :running} = Repo.reload!(run)
   end
 
@@ -242,7 +206,7 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
     reject(Tools, :start_command_process, 4)
     expect(Git, :push_branch, fn _scope, _task -> :ok end)
 
-    assert :ok = Pipeline.commit_engineer_work(scope, task)
+    assert :ok = Pipeline.commit_engineer_work(scope, task, nil)
   end
 
   test "the first push opens the task's pull request as a draft, and keeps it", %{scope: scope, task: task} do
@@ -275,7 +239,7 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
       end
     end)
 
-    assert :ok = Pipeline.commit_engineer_work(scope, task)
+    assert :ok = Pipeline.commit_engineer_work(scope, task, nil)
 
     assert %Task{pr_number: 12, pr_url: "https://github.com/example/test-seed/pull/12", pr_is_draft: true} =
              Repo.reload!(task)
@@ -294,7 +258,7 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
       end
     end)
 
-    assert :ok = Pipeline.commit_engineer_work(scope, task)
+    assert :ok = Pipeline.commit_engineer_work(scope, task, nil)
     assert %Task{pr_number: 9, pr_is_draft: false} = Repo.reload!(task)
   end
 
@@ -302,7 +266,7 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
     {:ok, task} = Pipeline.update_task(task, %{pr_number: 5, pr_url: "https://github.com/example/test-seed/pull/5"})
     Req.Test.stub(Client, fn _conn -> flunk("asked GitHub about a pull request the task already has") end)
 
-    assert :ok = Pipeline.commit_engineer_work(scope, task)
+    assert :ok = Pipeline.commit_engineer_work(scope, task, nil)
   end
 
   test "a pull request that cannot be opened is said in the run's log, and the push still stands", %{
@@ -314,7 +278,7 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
       conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "Not Found"})
     end)
 
-    assert :ok = Pipeline.commit_engineer_work(scope, task)
+    assert :ok = Pipeline.commit_engineer_work(scope, task, nil)
     assert %Task{pr_number: nil} = Repo.reload!(task)
     assert [%RunEvent{run_id: ^run_id, line: "[rail] Could not open the pull request: " <> _reason}] = Repo.all(RunEvent)
   end
@@ -348,7 +312,7 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
       end
     end)
 
-    assert :ok = Pipeline.commit_engineer_work(scope, task)
+    assert :ok = Pipeline.commit_engineer_work(scope, task, nil)
     assert %Task{pr_number: 21} = Repo.reload!(task)
   end
 
@@ -382,7 +346,7 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
       end
     end)
 
-    assert :ok = Pipeline.commit_engineer_work(scope, task)
+    assert :ok = Pipeline.commit_engineer_work(scope, task, nil)
     assert %Task{pr_number: 22} = Repo.reload!(task)
   end
 end

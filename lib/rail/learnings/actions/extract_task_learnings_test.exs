@@ -36,10 +36,14 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
 
     Pipeline.append_run_events(run.id, nil, ["[human] Use the factory, please"])
 
-    {:ok, [finding]} =
-      Pipeline.sync_review_findings(task, [
-        %{key: "nil", title: "Nil is not handled", severity: :major, recommendation: :fix, status: :open}
-      ])
+    [finding] =
+      for finding <- [
+            %{key: "nil", title: "Nil is not handled", severity: :major, recommendation: :fix, status: :open}
+          ] do
+        {:ok, saved} = Pipeline.save_review_finding(task, finding)
+
+        saved
+      end
 
     {:ok, _decided} = Pipeline.decide_review_finding(Rail.Scope.for_user(user), finding, :fix)
 
@@ -52,30 +56,38 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
     rule = learning(project, %{rule: "Use the factory", kind: :convention})
     calibration = learning(project, %{rule: "Don't flag docs", kind: :calibration})
 
-    {:ok, _findings} =
-      Pipeline.sync_review_findings(task, [
-        %{key: "doc", title: "Missing @doc", severity: :nit, recommendation: :skip, status: :open, rule: calibration.id},
-        %{
-          key: "factory",
-          title: "Repo.insert! in a test",
-          severity: :minor,
-          recommendation: :fix,
-          status: :open,
-          rule: rule.id
-        }
-      ])
+    for finding <- [
+          %{
+            key: "doc",
+            title: "Missing @doc",
+            severity: :nit,
+            recommendation: :skip,
+            status: :open,
+            rule: calibration.id
+          },
+          %{
+            key: "factory",
+            title: "Repo.insert! in a test",
+            severity: :minor,
+            recommendation: :fix,
+            status: :open,
+            rule: rule.id
+          }
+        ],
+        do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
-    {:ok, _qa} =
-      Pipeline.sync_qa_findings(task, [
-        %{
-          key: "total",
-          title: "The total is unrounded",
-          check: "totals",
-          severity: :major,
-          recommendation: :fix,
-          status: :open
-        }
-      ])
+    for finding <- [
+          %{
+            key: "total",
+            title: "The total is unrounded",
+            check: "totals",
+            severity: :major,
+            recommendation: :fix,
+            status: :open,
+            evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+          }
+        ],
+        do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
     {:ok, _pending} =
       Pipeline.register_question(%{run | task: Repo.preload(task, :issue)}, %DetectedQuestion{prompt: "Behind a flag?"})

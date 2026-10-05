@@ -1,6 +1,6 @@
 defmodule Rail.Pipeline.Actions.ReadPlan do
   @moduledoc """
-  Reads the implementation plan an architect run wrote into its task's scratch
+  Reads the implementation plan an architect run saved into its task's scratch
   directory.
 
   The plan lives in scratch while it is being argued over, at

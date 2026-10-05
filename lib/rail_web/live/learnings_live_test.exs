@@ -76,10 +76,10 @@ defmodule RailWeb.LearningsLiveTest do
     override = Repo.insert!(%LearningProposal{project_id: project.id, action: :override, learning_id: rule.id})
     task = learnings_task(project, "OWN-1", :review)
 
-    {:ok, _suppressed} =
-      Pipeline.sync_review_findings(task, [
-        %{key: "doc", title: "Missing @doc", severity: :nit, recommendation: :skip, status: :open, rule: rule.id}
-      ])
+    for finding <- [
+          %{key: "doc", title: "Missing @doc", severity: :nit, recommendation: :skip, status: :open, rule: rule.id}
+        ],
+        do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
     {:ok, view, _html} = live(conn, ~p"/learnings/#{rule.id}")
     assert has_element?(view, "#learnings-segment-active[aria-pressed=true]")
@@ -375,9 +375,18 @@ defmodule RailWeb.LearningsLiveTest do
             rule: rule.id
           }
 
-    {:ok, [first | _rest]} = Pipeline.sync_review_findings(task, findings)
+    [first | _rest] =
+      for finding <- findings do
+        {:ok, saved} = Pipeline.save_review_finding(task, finding)
+
+        saved
+      end
+
     second_task = learnings_task(project, "LLV-3", :review)
-    {:ok, _elsewhere} = Pipeline.sync_review_findings(second_task, [%{hd(findings) | key: "elsewhere"}])
+
+    for finding <- [%{hd(findings) | key: "elsewhere"}],
+        do: {:ok, _saved} = Pipeline.save_review_finding(second_task, finding)
+
     {:ok, fixed} = Pipeline.decide_review_finding(Rail.Scope.for_user(user), first, :fix)
     {:ok, _flagged} = Learnings.record_overrides(task, [fixed])
 
@@ -815,10 +824,10 @@ defmodule RailWeb.LearningsLiveTest do
 
     Learnings.retrieve_learnings(run, [])
 
-    {:ok, _findings} =
-      Pipeline.sync_review_findings(task, [
-        %{key: "scope", title: "No scope", severity: :major, recommendation: :fix, status: :open, rule: pinned.id}
-      ])
+    for finding <- [
+          %{key: "scope", title: "No scope", severity: :major, recommendation: :fix, status: :open, rule: pinned.id}
+        ],
+        do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
     {:ok, view, _html} = live(conn, ~p"/learnings?status=active")
     assert has_element?(view, "#learnings-match-line", "Newest 100 of 101 active")

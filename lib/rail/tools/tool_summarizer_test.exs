@@ -44,6 +44,14 @@ defmodule Rail.Tools.ToolSummarizerTest do
              "mix compile"
   end
 
+  test "summarizes a Rail save by what it saved and how much it matters" do
+    finding = %{"key" => "comment-saved-during-send", "severity" => "major", "detail" => "Long."}
+
+    assert ToolSummarizer.summarize_tool_input("mcp__rail__save_finding", finding) == "comment-saved-during-send · major"
+    assert ToolSummarizer.summarize_tool_input("mcp__rail__save_ticket", %{"title" => "One round"}) == "One round"
+    assert ToolSummarizer.summarize_tool_input("mcp__rail__save_plan", %{"plan" => "## Implementation plan"}) == "plan"
+  end
+
   test "falls back to keys list when no prioritized key matches" do
     params = %{"foo" => 1, "bar" => 2}
     result = ToolSummarizer.summarize_tool_input(params)

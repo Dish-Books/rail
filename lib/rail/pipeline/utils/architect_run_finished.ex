@@ -4,15 +4,13 @@ defmodule Rail.Pipeline.Utils.ArchitectRunFinished do
 
   The architect's plan stays in scratch until a human approves it: nothing is
   captured here and nothing moves. What an architect run can get wrong is exiting
-  cleanly without leaving a plan, and that is recorded on the run rather than
+  cleanly without saving a plan, and that is recorded on the run rather than
   parking a human in front of nothing, so the stage stays open for the message
   that fixes it.
   """
 
-  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
-  alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
 
   @doc "Finishes `run` as the architect stage."
@@ -21,11 +19,9 @@ defmodule Rail.Pipeline.Utils.ArchitectRunFinished do
 
     case Pipeline.read_plan(task) do
       content when is_binary(content) -> run
-      nil -> fail(run, "The architect did not write #{plan_file(task)}.")
+      nil -> fail(run, "The architect did not save a plan.")
     end
   end
-
-  defp plan_file(%Task{issue: %Issue{identifier: identifier}}), do: "plans/#{identifier}.md"
 
   defp fail(%Run{} = run, error) do
     {:ok, failed} = run |> Run.changeset(%{error: error}) |> Repo.update()

@@ -41,7 +41,7 @@ defmodule Rail.Pipeline.Actions.StartDemoRunTest do
     %{task: task, run: run}
   end
 
-  test "briefs the demo on the change, the browser and the file it hands over", %{task: task, run: run} do
+  test "briefs the demo on the change, the browser and the write-up it saves", %{task: task, run: run} do
     demo_dir = Path.join(task.scratch_path, "demo")
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
@@ -50,7 +50,9 @@ defmodule Rail.Pipeline.Actions.StartDemoRunTest do
       assert prompt =~ "You are showing it, not changing it"
       assert prompt =~ "git diff origin/main...HEAD"
       assert prompt =~ task.worktree_name
-      assert prompt =~ "cat > #{demo_dir}/SDM-1.json <<'JSON'"
+      assert prompt =~ "Saving the write-up with the `save_demo` tool is how you hand the recording over"
+      refute prompt =~ "<<'JSON'"
+      refute prompt =~ "#{demo_dir}/SDM-1.json"
       assert prompt =~ "Filter invoices by vendor."
       assert prompt =~ "Ask everything at once."
 
@@ -146,18 +148,23 @@ defmodule Rail.Pipeline.Actions.StartDemoRunTest do
     {:ok, at_qa} = Pipeline.update_task(task, %{stage: :qa})
     {:ok, _settled} = Pipeline.update_run(run, %{status: :finished})
 
-    {:ok, [finding]} =
-      Pipeline.sync_qa_findings(task, [
-        %{
-          key: "totals-off",
-          title: "The footer total ignores credits",
-          check: "totals",
-          screen: "/invoices",
-          severity: :minor,
-          recommendation: :skip,
-          status: :open
-        }
-      ])
+    [finding] =
+      for finding <- [
+            %{
+              key: "totals-off",
+              title: "The footer total ignores credits",
+              check: "totals",
+              screen: "/invoices",
+              severity: :minor,
+              recommendation: :skip,
+              status: :open,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            }
+          ] do
+        {:ok, saved} = Pipeline.save_qa_finding(task, finding)
+
+        saved
+      end
 
     {:ok, _dismissed} = Pipeline.decide_qa_finding(system_scope(), finding, :skip)
     {:ok, _filming} = Pipeline.update_task(at_qa, %{stage: :demo})

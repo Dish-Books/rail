@@ -21,6 +21,7 @@ defmodule Rail.Mcp.Utils.RunToolDemoSay do
   else.
   """
 
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DemoBeat
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Tools
@@ -33,16 +34,17 @@ defmodule Rail.Mcp.Utils.RunToolDemoSay do
   def run_tool_demo_say(%Task{} = task, %{"text" => text} = arguments, _opts) when is_binary(text) do
     case Tools.get_browser_recording(task) do
       recorder when is_pid(recorder) -> said(task, recorder, text, arguments["criterion"])
-      nil -> {:ok, "Nothing is recording, so that caption would belong to no video. Call demo_start first."}
+      nil -> {:refused, "Nothing is recording, so that caption would belong to no video. Call demo_start first."}
     end
   end
 
-  def run_tool_demo_say(%Task{}, _arguments, _opts), do: {:ok, "demo_say needs a `text`. Nothing was recorded."}
+  def run_tool_demo_say(%Task{}, _arguments, _opts), do: {:refused, "demo_say needs a `text`. Nothing was recorded."}
 
   defp said(%Task{} = task, recorder, text, criterion) do
     at_ms = BrowserRecorder.elapsed_ms(recorder)
 
     append(task, %{at_ms: at_ms, text: text, criterion: criterion})
+    Pipeline.broadcast_output_saved(task)
 
     {:ok, "Said at #{DemoBeat.stamp(at_ms)}. Do the thing you just described now, while the caption is up."}
   end

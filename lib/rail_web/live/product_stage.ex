@@ -1,10 +1,11 @@
 defmodule RailWeb.Live.ProductStage do
   @moduledoc """
-  The ticket a product run wrote, and the two ways to approve it.
+  The ticket a product run saved, and the two ways to approve it.
 
   The product agent's ticket lives in scratch until a human reads it, so this is
-  what reads it — and the buttons only exist when there is something to show. An
-  approval without the ticket in front of it would be an approval of nothing.
+  what reads it, replaced in place each time the agent saves it again - and the
+  buttons only exist when there is something to show. An approval without the
+  ticket in front of it would be an approval of nothing.
   """
   use RailWeb, :live_component
 
@@ -36,8 +37,8 @@ defmodule RailWeb.Live.ProductStage do
       >
         <:tabs>{render_slot(@tabs)}</:tabs>
 
-        <:meta :if={@ticket != nil and (@ticket.priority || @ticket.estimate)}>
-          <span class="inline-flex items-center gap-1.5">
+        <:meta :if={@ticket != nil}>
+          <span :if={@ticket.priority || @ticket.estimate} class="inline-flex items-center gap-1.5">
             <span
               :if={@ticket.priority}
               id="product-ticket-priority"
@@ -48,6 +49,9 @@ defmodule RailWeb.Live.ProductStage do
             </span>
             <span :if={@ticket.priority && @ticket.estimate}>·</span>
             <span :if={@ticket.estimate} id="product-ticket-estimate">{@ticket.estimate} Points</span>
+          </span>
+          <span id="product-ticket-saved" data-qa="product_ticket_saved" class="text-slate-500">
+            Draft saved <.local_time id="product-ticket-saved-at" at={@ticket.saved_at} />
           </span>
         </:meta>
 
@@ -96,7 +100,7 @@ defmodule RailWeb.Live.ProductStage do
           data-qa="product_ticket_pending"
           class="max-w-3xl mx-auto text-sm text-slate-500 dark:text-slate-400"
         >
-          The product agent has not written a ticket yet.
+          The product agent has not saved a ticket yet.
         </div>
 
         <div

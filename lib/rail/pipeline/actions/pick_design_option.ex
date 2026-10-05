@@ -8,6 +8,8 @@ defmodule Rail.Pipeline.Actions.PickDesignOption do
   as a message from the human. The pick also deletes the options not picked.
   """
 
+  import Rail.Pipeline.Utils.WriteScratchFile
+
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -30,7 +32,7 @@ defmodule Rail.Pipeline.Actions.PickDesignOption do
       manifest = Path.join(dir, "manifest.json")
       %{"options" => entries} = manifest |> File.read!() |> Jason.decode!()
       entry = Enum.find(entries, &match?(%{"key" => ^key}, &1))
-      File.write!(manifest, Jason.encode!(%{"options" => [entry]}, pretty: true))
+      write_scratch_file(manifest, Jason.encode!(%{"options" => [entry]}, pretty: true))
 
       # An option may never have had its screenshot taken.
       for other <- others, path <- [other.html_path, other.screenshot_path] do
@@ -40,7 +42,7 @@ defmodule Rail.Pipeline.Actions.PickDesignOption do
         end
       end
 
-      File.write!(Path.join(dir, "picked"), option.key)
+      write_scratch_file(Path.join(dir, "picked"), option.key)
       {:ok, sent}
     end
   end
@@ -65,8 +67,9 @@ defmodule Rail.Pipeline.Actions.PickDesignOption do
   defp message(option) do
     """
     I picked #{option.title} (#{option.key}). From here on we refine only that option: \
-    change #{option.key}.html and retake #{option.key}.png every time it changes. The other \
-    options are deleted and manifest.json now lists only #{option.key}; keep it that way.
+    change #{option.key}.html, retake #{option.key}.png and save it again with \
+    save_design_option every time it changes. The other options are deleted, and \
+    #{option.key} is the only one that can be saved now.
     """
   end
 end

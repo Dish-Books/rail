@@ -104,10 +104,6 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp settled_status(%Run{status: :blocked_on_input}), do: :blocked_on_input
   defp settled_status(%Run{}), do: :finished
 
-  defp said_it_was_done?(%Task{} = task) do
-    task |> Repo.preload(:issue) |> Pipeline.read_commit_message() != nil
-  end
-
   defp exit_code(%{exit_code: code}, _run) when is_integer(code), do: code
   defp exit_code(%{"exit_code" => code}, _run) when is_integer(code), do: code
   defp exit_code(_outcome, %Run{exit_code: code}) when is_integer(code), do: code
@@ -195,20 +191,10 @@ defmodule Rail.Pipeline.Actions.RunFinished do
     run.exit_code == 0 and not asked_anything_open?(run)
   end
 
-  # The engineer says it has finished by writing its commit message, and that is
-  # a better signal than the exit code of the CLI carrying it: Agy exits non-zero
-  # when its root agent stops with background tasks still running, having done
-  # the work and said so. Throwing that turn away leaves the change sitting
-  # uncommitted in the worktree with nothing to move it on.
-  defp concluded?(%Run{role: %Role{stage: :engineer}, task: %Task{} = task} = run) do
-    run.stage_outcome == :in_progress and
-      not asked_anything_open?(run) and
-      (run.exit_code == 0 or said_it_was_done?(task))
-  end
-
   # Every other run only concludes by saying so, having actually finished: a
   # non-zero exit and a run still parked on a question are both runs that have
-  # not.
+  # not. An engineer turn that called `commit` was stopped, so it never concludes
+  # here: Rail is already committing what it left.
   defp concluded?(%Run{} = run) do
     run.stage_outcome == :in_progress and
       run.exit_code == 0 and
@@ -231,10 +217,8 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp finish_action(%Run{}), do: fn run, _opts -> run end
 
   # A finish that recorded an error did not conclude anything, so it stays open
-  # for the message that fixes it. One that started CI has CI's say still to come,
-  # whether CI runs now or waits in line for its sandbox.
+  # for the message that fixes it.
   defp latch_done(%Run{error: error} = run) when is_binary(error), do: run
-  defp latch_done(%Run{status: status} = run) when status in [:running, :waiting_for_resources], do: run
 
   defp latch_done(%Run{} = run) do
     {:ok, latched} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
@@ -243,7 +227,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
 
   # A round Rail answered whole from past answers waits on nobody, so it goes back at
   # once; one a person still has to answer waits, as does one whose turn was stopped.
-  defp send_rail_answers(%Run{} = run, %OsProcess{ended_reason: :stopped}), do: run
+  defp send_rail_answers(%Run{} = run, %OsProcess{ended_reason: reason}) when reason in [:stopped, :handed_over], do: run
 
   defp send_rail_answers(%Run{} = run, %OsProcess{}) do
     round = unsent_round(run)
