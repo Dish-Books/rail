@@ -58,7 +58,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
     String.trim("""
     Build the approved plan below. #{workspace(task)}
 
-    Never run git. No commits, no branches, no pushes, no pull request, and never switch or rename the branch you are on. Rail commits your worktree for you once you are finished, authored by the person the ticket is assigned to and signed with their key, which is exactly why it is not yours to do. Reading is the one exception: `git status`, `git diff` and `git log` are how you see your own change.
+    Git is yours to use, except for what Rail does for you. No commit, no push, no merge, no rebase, no pull request, and nothing like them that writes history or moves the branch: no amend, no reset, no cherry-pick, and never switch or rename the branch you are on. Rail commits your worktree for you once you are finished, authored by the person the ticket is assigned to and signed with their key, which is exactly why it is not yours to do.
 
     Nothing under #{scratch_path} is part of the change. It is your workspace, and Rail keeps it out of the commit. It survives between turns; `/tmp` and anything you left running do not.
 
