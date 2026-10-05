@@ -26,10 +26,14 @@ defmodule Rail.Pipeline.Actions.DecideReviewFindingTest do
     {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
-    {:ok, [finding]} =
-      save_review_findings(task, [
-        %{key: "unhandled-nil", title: "Nil is not handled", severity: :major, recommendation: :fix, status: :open}
-      ])
+    [finding] =
+      for finding <- [
+            %{key: "unhandled-nil", title: "Nil is not handled", severity: :major, recommendation: :fix, status: :open}
+          ] do
+        {:ok, saved} = Pipeline.save_review_finding(task, finding)
+
+        saved
+      end
 
     %{task: task, role: role, finding: finding}
   end

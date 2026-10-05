@@ -158,34 +158,37 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     task: task,
     run: run
   } do
-    {:ok, [to_fix, dismissed]} =
-      save_review_findings(task, [
-        %{
-          key: "unhandled-nil",
-          title: "Nil is not handled",
-          detail: "The clause assumes a map.",
-          file: "lib/rail/example.ex",
-          line: 12,
-          severity: :major,
-          recommendation: :fix,
-          status: :open
-        },
-        %{
-          key: "naming-nit",
-          title: "The variable could be named better",
-          detail: nil,
-          file: nil,
-          line: nil,
-          severity: :nit,
-          recommendation: :fix,
-          status: :open
-        }
-      ])
+    [to_fix, dismissed] =
+      for finding <- [
+            %{
+              key: "unhandled-nil",
+              title: "Nil is not handled",
+              detail: "The clause assumes a map.",
+              file: "lib/rail/example.ex",
+              line: 12,
+              severity: :major,
+              recommendation: :fix,
+              status: :open
+            },
+            %{
+              key: "naming-nit",
+              title: "The variable could be named better",
+              detail: nil,
+              file: nil,
+              line: nil,
+              severity: :nit,
+              recommendation: :fix,
+              status: :open
+            }
+          ] do
+        {:ok, saved} = Pipeline.save_review_finding(task, finding)
+        saved
+      end
 
-    {:ok, _all} =
-      save_review_findings(task, [
-        %{key: "not-ruled-on", title: "Nobody has looked", severity: :minor, recommendation: :fix, status: :open}
-      ])
+    for finding <- [
+          %{key: "not-ruled-on", title: "Nobody has looked", severity: :minor, recommendation: :fix, status: :open}
+        ],
+        do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
     {:ok, _stopped} = Pipeline.update_run(run, %{status: :finished})
     {:ok, _to_fix} = Pipeline.decide_review_finding(to_fix, :fix)

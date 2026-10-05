@@ -52,10 +52,6 @@ The deterministic gates in `mise run ci` (compile without warnings, format, Cred
 
 **Look for what is absent.** The diff shows what was written, not what was not: a test for the branch just added, the broadcast for the new write, the migration, the index for the query that now runs on every page load, a comment the change just made untrue.
 
-## Reporting
-
-Save each finding with `save_finding` as soon as you have confirmed it, and call `save_review` last, including when you found nothing. Those tools are the only way to hand over a review: write no report file.
-
 ## Calibration
 
 The humans who rule on your findings have been consistent. Match them.

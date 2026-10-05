@@ -95,9 +95,6 @@ A walkthrough, not a tour of the screens.
 
 ## The write-up
 
-Save it with `save_demo` once the take is recorded. That tool is the only way to hand the recording over: write no write-up file.
-
-
 - **`title`**: "Findings can be ruled on without losing your place", not "Add finding cursor".
 - **`summary`** is read before anybody presses play, in the same register as the captions.
 - **`not_shown`**: a screen that does not exist yet and a flow that needs a real Claude run or a

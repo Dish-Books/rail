@@ -27,13 +27,13 @@ defmodule Rail.Pipeline.Actions.ListReviewFindingsTest do
   end
 
   test "worst first, whatever order they were raised in", %{task: task} do
-    {:ok, _synced} =
-      save_review_findings(task, [
-        %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :skip, status: :open},
-        %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-        %{key: "a-minor", title: "A minor", severity: :minor, recommendation: :fix, status: :open},
-        %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open}
-      ])
+    for finding <- [
+          %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :skip, status: :open},
+          %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
+          %{key: "a-minor", title: "A minor", severity: :minor, recommendation: :fix, status: :open},
+          %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open}
+        ],
+        do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
     assert ["a-blocker", "a-major", "a-minor", "a-nit"] =
              task |> Pipeline.list_review_findings() |> Enum.map(& &1.key)
@@ -41,12 +41,15 @@ defmodule Rail.Pipeline.Actions.ListReviewFindingsTest do
 
   # Where a finding sits is what it is, so ruling on it never loses the reader's place.
   test "a ruling moves nothing", %{task: task} do
-    {:ok, [blocker, major, _nit]} =
-      save_review_findings(task, [
-        %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-        %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open},
-        %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
-      ])
+    [blocker, major, _nit] =
+      for finding <- [
+            %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
+            %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open},
+            %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
+          ] do
+        {:ok, saved} = Pipeline.save_review_finding(task, finding)
+        saved
+      end
 
     {:ok, _dismissed} = Pipeline.decide_review_finding(blocker, :skip)
     {:ok, _decided} = Pipeline.decide_review_finding(major, :fix)
@@ -56,11 +59,11 @@ defmodule Rail.Pipeline.Actions.ListReviewFindingsTest do
   end
 
   test "a fixed finding stays where its severity puts it", %{task: task} do
-    {:ok, _synced} =
-      save_review_findings(task, [
-        %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :fixed},
-        %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
-      ])
+    for finding <- [
+          %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :fixed},
+          %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
+        ],
+        do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
     assert ["a-blocker", "a-nit"] = task |> Pipeline.list_review_findings() |> Enum.map(& &1.key)
   end
@@ -73,21 +76,24 @@ defmodule Rail.Pipeline.Actions.ListReviewFindingsTest do
         %{key: key, title: key, severity: :nit, recommendation: :fix, status: :open}
       end
 
-    {:ok, _first_pass} = save_review_findings(task, raised)
+    for finding <- raised, do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
     assert ["a", "b", "c"] = task |> Pipeline.list_review_findings() |> Enum.map(& &1.key)
 
-    {:ok, _second_pass} = save_review_findings(task, Enum.reverse(raised))
+    for finding <- Enum.reverse(raised), do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
     assert ["a", "b", "c"] = task |> Pipeline.list_review_findings() |> Enum.map(& &1.key)
   end
 
   test "a tie on when they were raised is broken the same way every time", %{task: task} do
-    {:ok, synced} =
-      save_review_findings(task, [
-        %{key: "a", title: "a", severity: :nit, recommendation: :fix, status: :open},
-        %{key: "b", title: "b", severity: :nit, recommendation: :fix, status: :open}
-      ])
+    synced =
+      for finding <- [
+            %{key: "a", title: "a", severity: :nit, recommendation: :fix, status: :open},
+            %{key: "b", title: "b", severity: :nit, recommendation: :fix, status: :open}
+          ] do
+        {:ok, saved} = Pipeline.save_review_finding(task, finding)
+        saved
+      end
 
     # No factory builds findings, so the tie is arranged on the rows sync wrote.
     {2, nil} =

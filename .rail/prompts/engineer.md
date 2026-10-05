@@ -43,8 +43,6 @@ When the ticket is a bug fix, use the /tdd skill: write the test that reproduces
 
 **Finish the whole plan.** Every file-level change in it is made, or you say which one you did not make and why.
 
-**Hand it over with `commit`.** The `commit` tool is the only way to hand over your work, and calling it ends your turn on the spot. `request_merge`, beside it, asks for the default branch on a clean worktree and ends the turn too.
-
 **Before you call it finished, check what review and QA keep finding on Rail:**
 
 - A button clicked twice, a form submitted twice, two tabs, or an agent turn ending mid-action. The second one does nothing harmful, and posts to GitHub, Linear or Slack happen exactly once.

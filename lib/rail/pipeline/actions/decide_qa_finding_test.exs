@@ -26,17 +26,22 @@ defmodule Rail.Pipeline.Actions.DecideQaFindingTest do
     {:ok, task} = Pipeline.create_task(issue, :qa)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
-    {:ok, [finding]} =
-      save_qa_findings(task, [
-        %{
-          key: "total-unrounded",
-          title: "The total renders as $1234.5",
-          check: "A bill's total reads as money",
-          severity: :major,
-          recommendation: :fix,
-          status: :open
-        }
-      ])
+    [finding] =
+      for finding <- [
+            %{
+              key: "total-unrounded",
+              title: "The total renders as $1234.5",
+              check: "A bill's total reads as money",
+              severity: :major,
+              recommendation: :fix,
+              status: :open,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            }
+          ] do
+        {:ok, saved} = Pipeline.save_qa_finding(task, finding)
+
+        saved
+      end
 
     %{task: task, role: role, finding: finding}
   end

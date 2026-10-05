@@ -163,27 +163,32 @@ defmodule Rail.Pipeline.Actions.StartQaRunTest do
   end
 
   test "a later pass is owed a verdict on everything already raised", %{task: task, run: run} do
-    {:ok, [outstanding, dismissed]} =
-      save_qa_findings(task, [
-        %{
-          key: "total-unrounded",
-          title: "The total renders as $1234.5",
-          check: "A bill's total reads as money",
-          screen: "/bills/new",
-          severity: :major,
-          recommendation: :fix,
-          status: :open
-        },
-        %{
-          key: "spacing-nit",
-          title: "Buttons sit too close",
-          check: "The form looks like the rest of the app",
-          severity: :nit,
-          recommendation: :skip,
-          status: :open,
-          caused_by_change: false
-        }
-      ])
+    [outstanding, dismissed] =
+      for finding <- [
+            %{
+              key: "total-unrounded",
+              title: "The total renders as $1234.5",
+              check: "A bill's total reads as money",
+              screen: "/bills/new",
+              severity: :major,
+              recommendation: :fix,
+              status: :open,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            },
+            %{
+              key: "spacing-nit",
+              title: "Buttons sit too close",
+              check: "The form looks like the rest of the app",
+              severity: :nit,
+              recommendation: :skip,
+              status: :open,
+              caused_by_change: false,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            }
+          ] do
+        {:ok, saved} = Pipeline.save_qa_finding(task, finding)
+        saved
+      end
 
     {:ok, _stopped} = Pipeline.update_run(run, %{status: :finished})
     {:ok, _to_fix} = Pipeline.decide_qa_finding(outstanding, :fix)
@@ -206,10 +211,18 @@ defmodule Rail.Pipeline.Actions.StartQaRunTest do
   end
 
   test "a finding nobody has ruled on yet says so", %{task: task, run: run} do
-    {:ok, _raised} =
-      save_qa_findings(task, [
-        %{key: "one", title: "One", check: "A check", severity: :minor, recommendation: :fix, status: :open}
-      ])
+    for finding <- [
+          %{
+            key: "one",
+            title: "One",
+            check: "A check",
+            severity: :minor,
+            recommendation: :fix,
+            status: :open,
+            evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+          }
+        ],
+        do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
       assert ["-p", prompt | _rest] = argv

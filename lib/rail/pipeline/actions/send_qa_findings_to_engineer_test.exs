@@ -59,36 +59,41 @@ defmodule Rail.Pipeline.Actions.SendQaFindingsToEngineerTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, raised} =
-      save_qa_findings(task, [
-        %{
-          key: "total-unrounded",
-          title: "The bill total renders as $1234.5",
-          check: "A bill's total reads as money on the bill page",
-          criterion: "Totals read as money",
-          screen: "/bills/new",
-          steps: "1. Open a new bill\n2. Enter 1234.50",
-          expected: "$1,234.50",
-          observed: "$1234.5",
-          detail: "Every bill screen reads this way.",
-          suggestion: "Format it with Money.to_string/1.",
-          severity: :major,
-          recommendation: :fix,
-          status: :open,
-          evidence: [
-            %{name: "the total", kind: :screenshot, path: "evidence/total.png"},
-            %{name: "the stored amount", kind: :query, text: "1234.50"}
-          ]
-        },
-        %{
-          key: "spacing-nit",
-          title: "The save button sits too close to cancel",
-          check: "The bill form looks like the rest of the app",
-          severity: :nit,
-          recommendation: :skip,
-          status: :open
-        }
-      ])
+    raised =
+      for finding <- [
+            %{
+              key: "total-unrounded",
+              title: "The bill total renders as $1234.5",
+              check: "A bill's total reads as money on the bill page",
+              criterion: "Totals read as money",
+              screen: "/bills/new",
+              steps: "1. Open a new bill\n2. Enter 1234.50",
+              expected: "$1,234.50",
+              observed: "$1234.5",
+              detail: "Every bill screen reads this way.",
+              suggestion: "Format it with Money.to_string/1.",
+              severity: :major,
+              recommendation: :fix,
+              status: :open,
+              evidence: [
+                %{name: "the total", kind: :screenshot, path: "evidence/total.png"},
+                %{name: "the stored amount", kind: :query, text: "1234.50"}
+              ]
+            },
+            %{
+              key: "spacing-nit",
+              title: "The save button sits too close to cancel",
+              check: "The bill form looks like the rest of the app",
+              severity: :nit,
+              recommendation: :skip,
+              status: :open,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            }
+          ] do
+        {:ok, saved} = Pipeline.save_qa_finding(task, finding)
+
+        saved
+      end
 
     # Nothing is decided until a person decides it, so the fixture rules the way
     # QA advised and each test changes only what it is about.
@@ -197,10 +202,18 @@ defmodule Rail.Pipeline.Actions.SendQaFindingsToEngineerTest do
   # Sending while one is undecided would drop it from the round with nobody
   # having said to.
   test "nothing is sent while a finding has no ruling on it", %{task: task, qa_run: run} do
-    {:ok, _undecided} =
-      save_qa_findings(task, [
-        %{key: "brand-new", title: "New", check: "A check", severity: :minor, recommendation: :fix, status: :open}
-      ])
+    for finding <- [
+          %{
+            key: "brand-new",
+            title: "New",
+            check: "A check",
+            severity: :minor,
+            recommendation: :fix,
+            status: :open,
+            evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+          }
+        ],
+        do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
     assert {:error, :findings_undecided} = Pipeline.send_qa_findings_to_engineer(run)
     assert %Task{stage: :qa} = Repo.reload!(task)

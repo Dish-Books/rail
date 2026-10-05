@@ -148,18 +148,23 @@ defmodule Rail.Pipeline.Actions.StartDemoRunTest do
     {:ok, at_qa} = Pipeline.update_task(task, %{stage: :qa})
     {:ok, _settled} = Pipeline.update_run(run, %{status: :finished})
 
-    {:ok, [finding]} =
-      save_qa_findings(task, [
-        %{
-          key: "totals-off",
-          title: "The footer total ignores credits",
-          check: "totals",
-          screen: "/invoices",
-          severity: :minor,
-          recommendation: :skip,
-          status: :open
-        }
-      ])
+    [finding] =
+      for finding <- [
+            %{
+              key: "totals-off",
+              title: "The footer total ignores credits",
+              check: "totals",
+              screen: "/invoices",
+              severity: :minor,
+              recommendation: :skip,
+              status: :open,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            }
+          ] do
+        {:ok, saved} = Pipeline.save_qa_finding(task, finding)
+
+        saved
+      end
 
     {:ok, _dismissed} = Pipeline.decide_qa_finding(finding, :skip)
     {:ok, _filming} = Pipeline.update_task(at_qa, %{stage: :demo})

@@ -4078,7 +4078,11 @@ defmodule RailWeb.TaskLiveTest do
       # Nothing is decided until a person decides it, so a test that is not about
       # deciding rules the way the reviewer advised and changes only its own bit.
       decide_as_advised = fn ->
-        {:ok, findings} = save_review_findings(task, raised)
+        findings =
+          for finding <- raised do
+            {:ok, saved} = Pipeline.save_review_finding(task, finding)
+            saved
+          end
 
         Enum.map(findings, fn finding ->
           {:ok, decided} = Pipeline.decide_review_finding(finding, finding.recommendation)
@@ -4212,7 +4216,7 @@ defmodule RailWeb.TaskLiveTest do
       git!(task.worktree_path, ["add", "."])
       git!(task.worktree_path, ["commit", "-m", "the change under review"])
 
-      {:ok, _synced} = save_review_findings(task, raised)
+      for finding <- raised, do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -4222,11 +4226,8 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "the suggested fix is set apart from the reasoning", %{conn: conn, task: task, raised: raised} do
-      {:ok, _synced} =
-        save_review_findings(
-          task,
-          List.update_at(raised, 0, &Map.put(&1, :suggestion, "Match the empty map first."))
-        )
+      for finding <- List.update_at(raised, 0, &Map.put(&1, :suggestion, "Match the empty map first.")),
+          do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -4235,7 +4236,8 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "a finding the reviewer checked again shows as fixed", %{conn: conn, task: task, raised: raised} do
-      {:ok, _synced} = save_review_findings(task, List.update_at(raised, 0, &%{&1 | status: :fixed}))
+      for finding <- List.update_at(raised, 0, &%{&1 | status: :fixed}),
+          do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -4256,7 +4258,8 @@ defmodule RailWeb.TaskLiveTest do
       _decided = decide_as_advised.()
 
       # The later pass keeps the ruling and only restates what it found.
-      {:ok, _synced} = save_review_findings(task, List.update_at(raised, 0, &%{&1 | status: :not_fixed}))
+      for finding <- List.update_at(raised, 0, &%{&1 | status: :not_fixed}),
+          do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -4351,7 +4354,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "a reviewer still reading offers neither button", %{conn: conn, task: task, review_run: run, raised: raised} do
-      {:ok, _synced} = save_review_findings(task, raised)
+      for finding <- raised, do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
       {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
@@ -4395,7 +4398,7 @@ defmodule RailWeb.TaskLiveTest do
       review_run: run,
       raised: raised
     } do
-      {:ok, _synced} = save_review_findings(task, raised)
+      for finding <- raised, do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
       {:ok, _stopped} = Pipeline.update_run(run, %{status: :finished, stage_outcome: :in_progress})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
@@ -4444,7 +4447,7 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert has_element?(view, "#send-to-qa")
 
-      {:ok, _synced} = save_review_findings(task, raised)
+      for finding <- raised, do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
       _settled = render(view)
       refute has_element?(view, "#send-to-qa")
@@ -4484,7 +4487,7 @@ defmodule RailWeb.TaskLiveTest do
       review_run: run,
       raised: raised
     } do
-      {:ok, _synced} = save_review_findings(task, raised)
+      for finding <- raised, do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -4526,18 +4529,18 @@ defmodule RailWeb.TaskLiveTest do
       git!(task.worktree_path, ["add", "."])
       git!(task.worktree_path, ["commit", "-m", "the change under review"])
 
-      {:ok, _synced} =
-        save_review_findings(task, [
-          %{
-            key: "long-hunk",
-            title: "A long change",
-            file: "lib/rail/example.ex",
-            line: 20,
-            severity: :major,
-            recommendation: :fix,
-            status: :open
-          }
-        ])
+      for finding <- [
+            %{
+              key: "long-hunk",
+              title: "A long change",
+              file: "lib/rail/example.ex",
+              line: 20,
+              severity: :major,
+              recommendation: :fix,
+              status: :open
+            }
+          ],
+          do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -4549,13 +4552,13 @@ defmodule RailWeb.TaskLiveTest do
     # to be distinguishable - and a finding with no line, or no file at all, is
     # still a finding.
     test "each grade of finding reads as itself, wherever it is", %{conn: conn, task: task} do
-      {:ok, _synced} =
-        save_review_findings(task, [
-          %{key: "a-major", title: "A major", file: "lib/a.ex", severity: :major, recommendation: :fix},
-          %{key: "a-minor", title: "A minor", severity: :minor, recommendation: :fix},
-          %{key: "a-nit", title: "A nit", file: "lib/b.ex", line: 3, severity: :nit, recommendation: :skip},
-          %{key: "was-fixed", title: "Fixed since", severity: :major, recommendation: :fix, status: :fixed}
-        ])
+      for finding <- [
+            %{key: "a-major", title: "A major", file: "lib/a.ex", severity: :major, recommendation: :fix},
+            %{key: "a-minor", title: "A minor", severity: :minor, recommendation: :fix},
+            %{key: "a-nit", title: "A nit", file: "lib/b.ex", line: 3, severity: :nit, recommendation: :skip},
+            %{key: "was-fixed", title: "Fixed since", severity: :major, recommendation: :fix, status: :fixed}
+          ],
+          do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -4576,7 +4579,12 @@ defmodule RailWeb.TaskLiveTest do
     # The button was drawn when nothing was outstanding, and something became
     # outstanding while the reader was looking at it.
     test "a finding put back underneath the page stops it going to QA", %{conn: conn, task: task, raised: raised} do
-      {:ok, findings} = save_review_findings(task, raised)
+      findings =
+        for finding <- raised do
+          {:ok, saved} = Pipeline.save_review_finding(task, finding)
+          saved
+        end
+
       Enum.each(findings, fn finding -> {:ok, _skipped} = Pipeline.decide_review_finding(finding, :skip) end)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
@@ -4599,7 +4607,7 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert has_element?(view, "#review-pending-title", "Nothing to fix")
 
-      {:ok, _synced} = save_review_findings(task, raised)
+      for finding <- raised, do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
       send(view.pid, {:os_process_finished, run, %{}})
 
       _settled = render(view)
@@ -4610,12 +4618,12 @@ defmodule RailWeb.TaskLiveTest do
       conn: conn,
       task: task
     } do
-      {:ok, _raised} =
-        save_review_findings(task, [
-          %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-          %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open},
-          %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
-        ])
+      for finding <- [
+            %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
+            %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open},
+            %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
+          ],
+          do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -4630,11 +4638,11 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "a dismissed finding keeps its row", %{conn: conn, task: task} do
-      {:ok, _raised} =
-        save_review_findings(task, [
-          %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-          %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
-        ])
+      for finding <- [
+            %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
+            %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
+          ],
+          do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -4647,11 +4655,14 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "the list marks what still needs a call", %{conn: conn, task: task} do
-      {:ok, [blocker, _nit]} =
-        save_review_findings(task, [
-          %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-          %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
-        ])
+      [blocker, _nit] =
+        for finding <- [
+              %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
+              %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
+            ] do
+          {:ok, saved} = Pipeline.save_review_finding(task, finding)
+          saved
+        end
 
       {:ok, _decided} = Pipeline.decide_review_finding(blocker, :fix)
 
@@ -4662,11 +4673,14 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "the last ruling stays where it is and lets the change go on", %{conn: conn, task: task} do
-      {:ok, [blocker, _nit]} =
-        save_review_findings(task, [
-          %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-          %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
-        ])
+      [blocker, _nit] =
+        for finding <- [
+              %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
+              %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
+            ] do
+          {:ok, saved} = Pipeline.save_review_finding(task, finding)
+          saved
+        end
 
       {:ok, _decided} = Pipeline.decide_review_finding(blocker, :fix)
 
@@ -4681,12 +4695,15 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "changing a ruling leaves the reader where they are", %{conn: conn, task: task} do
-      {:ok, [blocker, _major, _nit]} =
-        save_review_findings(task, [
-          %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-          %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open},
-          %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
-        ])
+      [blocker, _major, _nit] =
+        for finding <- [
+              %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
+              %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open},
+              %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
+            ] do
+          {:ok, saved} = Pipeline.save_review_finding(task, finding)
+          saved
+        end
 
       {:ok, _decided} = Pipeline.decide_review_finding(blocker, :fix)
 
@@ -4701,11 +4718,11 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "with nothing needing a call below, the next one is above", %{conn: conn, task: task} do
-      {:ok, _raised} =
-        save_review_findings(task, [
-          %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-          %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
-        ])
+      for finding <- [
+            %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
+            %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
+          ],
+          do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -4717,12 +4734,12 @@ defmodule RailWeb.TaskLiveTest do
 
     # A double click's second click lands on the finding just moved to, which nobody has read.
     test "a double click rules only the finding that was read", %{conn: conn, task: task} do
-      {:ok, _raised} =
-        save_review_findings(task, [
-          %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-          %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open},
-          %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
-        ])
+      for finding <- [
+            %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
+            %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open},
+            %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
+          ],
+          do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -4736,11 +4753,11 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "the finding moved to can be ruled on once it has been seen", %{conn: conn, task: task} do
-      {:ok, _raised} =
-        save_review_findings(task, [
-          %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-          %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open}
-        ])
+      for finding <- [
+            %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
+            %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open}
+          ],
+          do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -4753,7 +4770,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "the row being read keeps itself in view", %{conn: conn, task: task, raised: raised} do
-      {:ok, _raised} = save_review_findings(task, raised)
+      for finding <- raised, do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -4762,11 +4779,11 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "neither send button shows while a finding still needs a call", %{conn: conn, task: task} do
-      {:ok, _raised} =
-        save_review_findings(task, [
-          %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-          %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
-        ])
+      for finding <- [
+            %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
+            %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
+          ],
+          do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -4841,14 +4858,19 @@ defmodule RailWeb.TaskLiveTest do
           severity: :nit,
           recommendation: :skip,
           status: :open,
-          caused_by_change: false
+          caused_by_change: false,
+          evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
         }
       ]
 
       # Nothing is decided until a person decides it, so a test that is not about
       # deciding rules the way QA advised and changes only its own bit.
       decide_as_advised = fn ->
-        {:ok, findings} = save_qa_findings(task, raised)
+        findings =
+          for finding <- raised do
+            {:ok, saved} = Pipeline.save_qa_finding(task, finding)
+            saved
+          end
 
         Enum.map(findings, fn finding ->
           {:ok, decided} = Pipeline.decide_qa_finding(finding, finding.recommendation)
@@ -5031,8 +5053,6 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "a pass that raised nothing says so", %{conn: conn, task: task} do
-      {:ok, _raised} = save_qa_findings(task, [])
-
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(view, "#qa-pending-title", "Nothing to fix")
@@ -5043,7 +5063,6 @@ defmodule RailWeb.TaskLiveTest do
       task: task,
       role: role
     } do
-      {:ok, _raised} = save_qa_findings(task, [])
       {:ok, _back} = Pipeline.update_task(task, %{stage: :engineer})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
@@ -5064,7 +5083,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "nothing can be sent while a finding has no ruling on it", %{conn: conn, task: task, raised: raised} do
-      {:ok, _undecided} = save_qa_findings(task, raised)
+      for finding <- raised, do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -5234,10 +5253,17 @@ defmodule RailWeb.TaskLiveTest do
     # A row that went green is a claim, and the picture filed against it is what
     # makes it checkable. They sit on the row rather than in one pile.
     test "a checklist row opens with the pictures taken for it", %{conn: conn, task: task} do
-      {:ok, _synced} =
-        save_qa_findings(task, [
-          %{key: "a-nit", title: "A nit", check: "check", severity: :nit, recommendation: :skip}
-        ])
+      for finding <- [
+            %{
+              key: "a-nit",
+              title: "A nit",
+              check: "check",
+              severity: :nit,
+              recommendation: :skip,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            }
+          ],
+          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
       {:ok, _checklist} =
         Pipeline.write_qa_checklist(task, [
@@ -5380,17 +5406,17 @@ defmodule RailWeb.TaskLiveTest do
       File.write!(Path.join(evidence, "totals~the-journal-entry.png"), "png bytes")
       File.write!(Path.join(evidence, "totals~the-ledger-export.csv"), String.duplicate("1,2500.00\n", 7_000))
 
-      {:ok, _synced} =
-        save_qa_findings(task, [
-          %{
-            key: "off-by-a-cent",
-            title: "The journal entry is off by a cent",
-            check: "totals",
-            severity: :major,
-            recommendation: :fix,
-            evidence: [%{name: "The ledger export", kind: :log, path: "evidence/totals~the-ledger-export.csv"}]
-          }
-        ])
+      for finding <- [
+            %{
+              key: "off-by-a-cent",
+              title: "The journal entry is off by a cent",
+              check: "totals",
+              severity: :major,
+              recommendation: :fix,
+              evidence: [%{name: "The ledger export", kind: :log, path: "evidence/totals~the-ledger-export.csv"}]
+            }
+          ],
+          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -5557,19 +5583,19 @@ defmodule RailWeb.TaskLiveTest do
       File.write!(Path.join([task.scratch_path, "qa", "evidence", "totals~the-journal-entry.png"]), "png bytes")
       File.write!(Path.join([task.scratch_path, "qa", "evidence", "totals~the-entry-a-cent-short.png"]), "png bytes")
 
-      {:ok, _synced} =
-        save_qa_findings(task, [
-          %{
-            key: "off-by-a-cent",
-            title: "The journal entry is off by a cent",
-            check: "totals",
-            severity: :major,
-            recommendation: :fix,
-            evidence: [
-              %{name: "The entry a cent short", kind: :screenshot, path: "evidence/totals~the-entry-a-cent-short.png"}
-            ]
-          }
-        ])
+      for finding <- [
+            %{
+              key: "off-by-a-cent",
+              title: "The journal entry is off by a cent",
+              check: "totals",
+              severity: :major,
+              recommendation: :fix,
+              evidence: [
+                %{name: "The entry a cent short", kind: :screenshot, path: "evidence/totals~the-entry-a-cent-short.png"}
+              ]
+            }
+          ],
+          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -5611,21 +5637,50 @@ defmodule RailWeb.TaskLiveTest do
     # to be distinguishable, and a fixed finding stops shouting whatever it was
     # raised as.
     test "each grade of finding reads as itself", %{conn: conn, task: task} do
-      {:ok, _synced} =
-        save_qa_findings(task, [
-          %{key: "a-blocker", title: "A blocker", check: "check", severity: :blocker, recommendation: :fix},
-          %{key: "a-major", title: "A major", check: "check", severity: :major, recommendation: :fix},
-          %{key: "a-minor", title: "A minor", check: "check", severity: :minor, recommendation: :fix},
-          %{key: "a-nit", title: "A nit", check: "check", severity: :nit, recommendation: :skip},
-          %{
-            key: "already-fixed",
-            title: "Fixed last round",
-            check: "The bill saves",
-            severity: :major,
-            recommendation: :fix,
-            status: :fixed
-          }
-        ])
+      for finding <- [
+            %{
+              key: "a-blocker",
+              title: "A blocker",
+              check: "check",
+              severity: :blocker,
+              recommendation: :fix,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            },
+            %{
+              key: "a-major",
+              title: "A major",
+              check: "check",
+              severity: :major,
+              recommendation: :fix,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            },
+            %{
+              key: "a-minor",
+              title: "A minor",
+              check: "check",
+              severity: :minor,
+              recommendation: :fix,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            },
+            %{
+              key: "a-nit",
+              title: "A nit",
+              check: "check",
+              severity: :nit,
+              recommendation: :skip,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            },
+            %{
+              key: "already-fixed",
+              title: "Fixed last round",
+              check: "The bill saves",
+              severity: :major,
+              recommendation: :fix,
+              status: :fixed,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            }
+          ],
+          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -5651,10 +5706,17 @@ defmodule RailWeb.TaskLiveTest do
     # A verdict is the one thing a reader wants at a glance, and a pass that wrote
     # a word Rail does not know has still said everything else it said.
     test "every verdict reads as itself, including one Rail cannot place", %{conn: conn, task: task} do
-      {:ok, _synced} =
-        save_qa_findings(task, [
-          %{key: "a-nit", title: "A nit", check: "check", severity: :nit, recommendation: :skip}
-        ])
+      for finding <- [
+            %{
+              key: "a-nit",
+              title: "A nit",
+              check: "check",
+              severity: :nit,
+              recommendation: :skip,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            }
+          ],
+          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
       report = Path.join([task.scratch_path, "qa", "TLV-1.json"])
 
@@ -5681,24 +5743,24 @@ defmodule RailWeb.TaskLiveTest do
       # Saved while there, then gone: a finding cannot cite a file that is not.
       File.write!(Path.join(evidence_dir, "gone.log"), "went")
 
-      {:ok, _synced} =
-        save_qa_findings(task, [
-          %{
-            key: "total-unrounded",
-            title: "The total is wrong",
-            check: "The total reads as money",
-            severity: :major,
-            recommendation: :fix,
-            evidence: [
-              %{name: "Server log during the export", kind: :log, path: "evidence/server.log"},
-              %{name: "Line items on INV-2025-0412", kind: :query, text: "amount_cents: 123450"},
-              %{name: "a log that went", kind: :log, path: "evidence/gone.log"},
-              %{name: "a dump", kind: :log, path: "evidence/dump.bin"},
-              %{name: "a long log", kind: :log, path: "evidence/long.log"},
-              %{name: "What the network tab showed", kind: :note, text: "POST /exports twice"}
-            ]
-          }
-        ])
+      for finding <- [
+            %{
+              key: "total-unrounded",
+              title: "The total is wrong",
+              check: "The total reads as money",
+              severity: :major,
+              recommendation: :fix,
+              evidence: [
+                %{name: "Server log during the export", kind: :log, path: "evidence/server.log"},
+                %{name: "Line items on INV-2025-0412", kind: :query, text: "amount_cents: 123450"},
+                %{name: "a log that went", kind: :log, path: "evidence/gone.log"},
+                %{name: "a dump", kind: :log, path: "evidence/dump.bin"},
+                %{name: "a long log", kind: :log, path: "evidence/long.log"},
+                %{name: "What the network tab showed", kind: :note, text: "POST /exports twice"}
+              ]
+            }
+          ],
+          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
       File.rm!(Path.join(evidence_dir, "gone.log"))
 
@@ -5744,21 +5806,25 @@ defmodule RailWeb.TaskLiveTest do
       File.write!(Path.join(evidence_dir, "totals~the-total-before-saving.jpg"), "jpeg bytes")
       File.write!(Path.join(evidence_dir, "totals~the-total-after-saving.jpg"), "jpeg bytes")
 
-      {:ok, _synced} =
-        save_qa_findings(task, [
-          %{
-            key: "total-unrounded",
-            title: "The total is wrong",
-            check: "totals",
-            severity: :major,
-            recommendation: :fix,
-            evidence: [
-              %{name: "The total before saving", kind: :screenshot, path: "evidence/totals~the-total-before-saving.jpg"},
-              %{name: "The total after saving", kind: :screenshot, path: "evidence/totals~the-total-after-saving.jpg"},
-              %{name: "What the database holds", kind: :query, text: "amount_cents: 123450"}
-            ]
-          }
-        ])
+      for finding <- [
+            %{
+              key: "total-unrounded",
+              title: "The total is wrong",
+              check: "totals",
+              severity: :major,
+              recommendation: :fix,
+              evidence: [
+                %{
+                  name: "The total before saving",
+                  kind: :screenshot,
+                  path: "evidence/totals~the-total-before-saving.jpg"
+                },
+                %{name: "The total after saving", kind: :screenshot, path: "evidence/totals~the-total-after-saving.jpg"},
+                %{name: "What the database holds", kind: :query, text: "amount_cents: 123450"}
+              ]
+            }
+          ],
+          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -5789,24 +5855,24 @@ defmodule RailWeb.TaskLiveTest do
       File.write!(Path.join(evidence_dir, "export~the-output.txt"), "wrote 3 rows")
       File.write!(Path.join(evidence_dir, "gone.png"), "png bytes")
 
-      {:ok, _synced} =
-        save_qa_findings(task, [
-          %{
-            key: "invoice-wrong",
-            title: "The invoice PDF is wrong",
-            check: "invoice",
-            severity: :major,
-            recommendation: :fix,
-            evidence: [
-              %{name: "The invoice", kind: :log, path: "evidence/invoice~the-invoice.pdf"},
-              %{name: "The total", kind: :log, path: "evidence/totals~the-total.png"},
-              %{name: "The archive", kind: :note, path: "evidence/export~the-archive.bin"},
-              %{name: "The statement", kind: :screenshot, path: "evidence/statement.pdf"},
-              %{name: "A picture that went", kind: :screenshot, path: "evidence/gone.png"},
-              %{name: "The output", kind: :screenshot, path: "evidence/export~the-output.txt"}
-            ]
-          }
-        ])
+      for finding <- [
+            %{
+              key: "invoice-wrong",
+              title: "The invoice PDF is wrong",
+              check: "invoice",
+              severity: :major,
+              recommendation: :fix,
+              evidence: [
+                %{name: "The invoice", kind: :log, path: "evidence/invoice~the-invoice.pdf"},
+                %{name: "The total", kind: :log, path: "evidence/totals~the-total.png"},
+                %{name: "The archive", kind: :note, path: "evidence/export~the-archive.bin"},
+                %{name: "The statement", kind: :screenshot, path: "evidence/statement.pdf"},
+                %{name: "A picture that went", kind: :screenshot, path: "evidence/gone.png"},
+                %{name: "The output", kind: :screenshot, path: "evidence/export~the-output.txt"}
+              ]
+            }
+          ],
+          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
       File.rm!(Path.join(evidence_dir, "gone.png"))
 
@@ -5845,11 +5911,11 @@ defmodule RailWeb.TaskLiveTest do
         %{name: "the second", kind: :query, text: "second"}
       ]
 
-      {:ok, _synced} =
-        save_qa_findings(task, [
-          %{key: "a-first", title: "A first", check: "c", severity: :major, recommendation: :fix, evidence: two},
-          %{key: "b-second", title: "B second", check: "c", severity: :major, recommendation: :fix, evidence: two}
-        ])
+      for finding <- [
+            %{key: "a-first", title: "A first", check: "c", severity: :major, recommendation: :fix, evidence: two},
+            %{key: "b-second", title: "B second", check: "c", severity: :major, recommendation: :fix, evidence: two}
+          ],
+          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -5888,7 +5954,12 @@ defmodule RailWeb.TaskLiveTest do
       raised: raised
     } do
       {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-      {:ok, [first | _rest]} = save_qa_findings(task, raised)
+
+      [first | _rest] =
+        for finding <- raised do
+          {:ok, saved} = Pipeline.save_qa_finding(task, finding)
+          saved
+        end
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -5909,10 +5980,20 @@ defmodule RailWeb.TaskLiveTest do
     # QA advises and the human decides, and the panel says so in both directions
     # rather than quietly recording the override.
     test "a finding the human kept against QA's advice says which way that went", %{conn: conn, task: task} do
-      {:ok, [nit]} =
-        save_qa_findings(task, [
-          %{key: "a-nit", title: "A nit", check: "check", severity: :nit, recommendation: :skip}
-        ])
+      [nit] =
+        for finding <- [
+              %{
+                key: "a-nit",
+                title: "A nit",
+                check: "check",
+                severity: :nit,
+                recommendation: :skip,
+                evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+              }
+            ] do
+          {:ok, saved} = Pipeline.save_qa_finding(task, finding)
+          saved
+        end
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert has_element?(view, "[data-qa='qa_finding_recommendation']", "QA recommends leaving this.")
@@ -5937,7 +6018,15 @@ defmodule RailWeb.TaskLiveTest do
 
       # A finding raised by a turn that landed while this was on screen, its
       # broadcast not yet arrived, has nobody's ruling on it yet.
-      late = %{key: "late", title: "Late", check: "c", severity: :nit, recommendation: :skip}
+      late = %{
+        key: "late",
+        title: "Late",
+        check: "c",
+        severity: :nit,
+        recommendation: :skip,
+        evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+      }
+
       evidence = [%{name: "seen", kind: :note, text: "Seen."}]
       Repo.insert!(QaFinding.changeset(%QaFinding{task_id: task.id}, Map.put(late, :evidence, evidence)))
 
@@ -6020,7 +6109,7 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert has_element?(view, "#qa-pending-title", "Nothing to fix")
 
-      {:ok, _synced} = save_qa_findings(task, raised)
+      for finding <- raised, do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
       send(view.pid, {:os_process_finished, run, %{}})
 
       _settled = render(view)
@@ -6031,19 +6120,36 @@ defmodule RailWeb.TaskLiveTest do
       conn: conn,
       task: task
     } do
-      {:ok, _raised} =
-        save_qa_findings(task, [
-          %{
-            key: "a-blocker",
-            title: "A blocker",
-            check: "A check",
-            severity: :blocker,
-            recommendation: :fix,
-            status: :open
-          },
-          %{key: "a-major", title: "A major", check: "A check", severity: :major, recommendation: :fix, status: :open},
-          %{key: "a-nit", title: "A nit", check: "A check", severity: :nit, recommendation: :fix, status: :open}
-        ])
+      for finding <- [
+            %{
+              key: "a-blocker",
+              title: "A blocker",
+              check: "A check",
+              severity: :blocker,
+              recommendation: :fix,
+              status: :open,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            },
+            %{
+              key: "a-major",
+              title: "A major",
+              check: "A check",
+              severity: :major,
+              recommendation: :fix,
+              status: :open,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            },
+            %{
+              key: "a-nit",
+              title: "A nit",
+              check: "A check",
+              severity: :nit,
+              recommendation: :fix,
+              status: :open,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            }
+          ],
+          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -6058,18 +6164,27 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "a dismissed finding keeps its row", %{conn: conn, task: task} do
-      {:ok, _raised} =
-        save_qa_findings(task, [
-          %{
-            key: "a-blocker",
-            title: "A blocker",
-            check: "A check",
-            severity: :blocker,
-            recommendation: :fix,
-            status: :open
-          },
-          %{key: "a-nit", title: "A nit", check: "A check", severity: :nit, recommendation: :fix, status: :open}
-        ])
+      for finding <- [
+            %{
+              key: "a-blocker",
+              title: "A blocker",
+              check: "A check",
+              severity: :blocker,
+              recommendation: :fix,
+              status: :open,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            },
+            %{
+              key: "a-nit",
+              title: "A nit",
+              check: "A check",
+              severity: :nit,
+              recommendation: :fix,
+              status: :open,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            }
+          ],
+          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -6082,18 +6197,30 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "the list marks what still needs a call", %{conn: conn, task: task} do
-      {:ok, [blocker, _nit]} =
-        save_qa_findings(task, [
-          %{
-            key: "a-blocker",
-            title: "A blocker",
-            check: "A check",
-            severity: :blocker,
-            recommendation: :fix,
-            status: :open
-          },
-          %{key: "a-nit", title: "A nit", check: "A check", severity: :nit, recommendation: :fix, status: :open}
-        ])
+      [blocker, _nit] =
+        for finding <- [
+              %{
+                key: "a-blocker",
+                title: "A blocker",
+                check: "A check",
+                severity: :blocker,
+                recommendation: :fix,
+                status: :open,
+                evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+              },
+              %{
+                key: "a-nit",
+                title: "A nit",
+                check: "A check",
+                severity: :nit,
+                recommendation: :fix,
+                status: :open,
+                evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+              }
+            ] do
+          {:ok, saved} = Pipeline.save_qa_finding(task, finding)
+          saved
+        end
 
       {:ok, _decided} = Pipeline.decide_qa_finding(blocker, :fix)
 
@@ -6104,18 +6231,30 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "the last ruling stays where it is and lets the change go on", %{conn: conn, task: task} do
-      {:ok, [blocker, _nit]} =
-        save_qa_findings(task, [
-          %{
-            key: "a-blocker",
-            title: "A blocker",
-            check: "A check",
-            severity: :blocker,
-            recommendation: :fix,
-            status: :open
-          },
-          %{key: "a-nit", title: "A nit", check: "A check", severity: :nit, recommendation: :fix, status: :open}
-        ])
+      [blocker, _nit] =
+        for finding <- [
+              %{
+                key: "a-blocker",
+                title: "A blocker",
+                check: "A check",
+                severity: :blocker,
+                recommendation: :fix,
+                status: :open,
+                evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+              },
+              %{
+                key: "a-nit",
+                title: "A nit",
+                check: "A check",
+                severity: :nit,
+                recommendation: :fix,
+                status: :open,
+                evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+              }
+            ] do
+          {:ok, saved} = Pipeline.save_qa_finding(task, finding)
+          saved
+        end
 
       {:ok, _decided} = Pipeline.decide_qa_finding(blocker, :fix)
 
@@ -6130,19 +6269,39 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "changing a ruling leaves the reader where they are", %{conn: conn, task: task} do
-      {:ok, [blocker, _major, _nit]} =
-        save_qa_findings(task, [
-          %{
-            key: "a-blocker",
-            title: "A blocker",
-            check: "A check",
-            severity: :blocker,
-            recommendation: :fix,
-            status: :open
-          },
-          %{key: "a-major", title: "A major", check: "A check", severity: :major, recommendation: :fix, status: :open},
-          %{key: "a-nit", title: "A nit", check: "A check", severity: :nit, recommendation: :fix, status: :open}
-        ])
+      [blocker, _major, _nit] =
+        for finding <- [
+              %{
+                key: "a-blocker",
+                title: "A blocker",
+                check: "A check",
+                severity: :blocker,
+                recommendation: :fix,
+                status: :open,
+                evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+              },
+              %{
+                key: "a-major",
+                title: "A major",
+                check: "A check",
+                severity: :major,
+                recommendation: :fix,
+                status: :open,
+                evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+              },
+              %{
+                key: "a-nit",
+                title: "A nit",
+                check: "A check",
+                severity: :nit,
+                recommendation: :fix,
+                status: :open,
+                evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+              }
+            ] do
+          {:ok, saved} = Pipeline.save_qa_finding(task, finding)
+          saved
+        end
 
       {:ok, _decided} = Pipeline.decide_qa_finding(blocker, :fix)
 
@@ -6157,18 +6316,27 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "with nothing needing a call below, the next one is above", %{conn: conn, task: task} do
-      {:ok, _raised} =
-        save_qa_findings(task, [
-          %{
-            key: "a-blocker",
-            title: "A blocker",
-            check: "A check",
-            severity: :blocker,
-            recommendation: :fix,
-            status: :open
-          },
-          %{key: "a-nit", title: "A nit", check: "A check", severity: :nit, recommendation: :fix, status: :open}
-        ])
+      for finding <- [
+            %{
+              key: "a-blocker",
+              title: "A blocker",
+              check: "A check",
+              severity: :blocker,
+              recommendation: :fix,
+              status: :open,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            },
+            %{
+              key: "a-nit",
+              title: "A nit",
+              check: "A check",
+              severity: :nit,
+              recommendation: :fix,
+              status: :open,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            }
+          ],
+          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -6182,10 +6350,18 @@ defmodule RailWeb.TaskLiveTest do
     test "a double click rules only the finding that was read", %{conn: conn, task: task} do
       findings =
         for {key, severity} <- [{"a-blocker", :blocker}, {"a-major", :major}, {"a-nit", :nit}] do
-          %{key: key, title: key, check: "A check", severity: severity, recommendation: :fix, status: :open}
+          %{
+            key: key,
+            title: key,
+            check: "A check",
+            severity: severity,
+            recommendation: :fix,
+            status: :open,
+            evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+          }
         end
 
-      {:ok, _raised} = save_qa_findings(task, findings)
+      for finding <- findings, do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -6201,10 +6377,18 @@ defmodule RailWeb.TaskLiveTest do
     test "the finding moved to can be ruled on once it has been seen", %{conn: conn, task: task} do
       findings =
         for {key, severity} <- [{"a-blocker", :blocker}, {"a-major", :major}] do
-          %{key: key, title: key, check: "A check", severity: severity, recommendation: :fix, status: :open}
+          %{
+            key: key,
+            title: key,
+            check: "A check",
+            severity: severity,
+            recommendation: :fix,
+            status: :open,
+            evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+          }
         end
 
-      {:ok, _raised} = save_qa_findings(task, findings)
+      for finding <- findings, do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -6217,7 +6401,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "the row being read keeps itself in view", %{conn: conn, task: task, raised: raised} do
-      {:ok, _raised} = save_qa_findings(task, raised)
+      for finding <- raised, do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 

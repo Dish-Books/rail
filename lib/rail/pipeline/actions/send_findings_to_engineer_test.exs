@@ -56,20 +56,24 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, raised} =
-      save_review_findings(task, [
-        %{
-          key: "unhandled-nil",
-          title: "Nil is not handled",
-          detail: "The clause assumes a map.",
-          file: "lib/rail/example.ex",
-          line: 12,
-          severity: :major,
-          recommendation: :fix,
-          status: :open
-        },
-        %{key: "naming-nit", title: "Poor variable name", severity: :nit, recommendation: :skip, status: :open}
-      ])
+    raised =
+      for finding <- [
+            %{
+              key: "unhandled-nil",
+              title: "Nil is not handled",
+              detail: "The clause assumes a map.",
+              file: "lib/rail/example.ex",
+              line: 12,
+              severity: :major,
+              recommendation: :fix,
+              status: :open
+            },
+            %{key: "naming-nit", title: "Poor variable name", severity: :nit, recommendation: :skip, status: :open}
+          ] do
+        {:ok, saved} = Pipeline.save_review_finding(task, finding)
+
+        saved
+      end
 
     # Nothing is decided until a person decides it, so the fixture rules the way
     # the reviewer advised and each test changes only what it is about.
@@ -114,25 +118,28 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
   # rather than run together with the reasoning the human ruled on - and a
   # reviewer that left the field blank has not written one.
   test "a remedy the reviewer wrote goes over labelled", %{task: task, review_run: run} do
-    {:ok, findings} =
-      save_review_findings(task, [
-        %{
-          key: "unhandled-nil",
-          title: "Nil is not handled",
-          suggestion: "Add a clause for nil.",
-          severity: :major,
-          recommendation: :fix,
-          status: :open
-        },
-        %{
-          key: "blank-suggestion",
-          title: "Nothing suggested",
-          suggestion: "   ",
-          severity: :minor,
-          recommendation: :fix,
-          status: :open
-        }
-      ])
+    findings =
+      for finding <- [
+            %{
+              key: "unhandled-nil",
+              title: "Nil is not handled",
+              suggestion: "Add a clause for nil.",
+              severity: :major,
+              recommendation: :fix,
+              status: :open
+            },
+            %{
+              key: "blank-suggestion",
+              title: "Nothing suggested",
+              suggestion: "   ",
+              severity: :minor,
+              recommendation: :fix,
+              status: :open
+            }
+          ] do
+        {:ok, saved} = Pipeline.save_review_finding(task, finding)
+        saved
+      end
 
     Enum.each(findings, fn finding -> {:ok, _fix} = Pipeline.decide_review_finding(finding, :fix) end)
 
@@ -184,10 +191,10 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
     engineer_run: engineer_run,
     review_run: run
   } do
-    {:ok, _synced} =
-      save_review_findings(task, [
-        %{key: "unhandled-nil", title: "Nil is not handled", severity: :major, recommendation: :fix, status: :fixed}
-      ])
+    for finding <- [
+          %{key: "unhandled-nil", title: "Nil is not handled", severity: :major, recommendation: :fix, status: :fixed}
+        ],
+        do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
     assert {:error, :nothing_outstanding} = Pipeline.send_findings_to_engineer(run)
     assert %Run{pending_answer: nil} = Repo.reload!(engineer_run)
@@ -202,10 +209,10 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
   # Sending while one is undecided would drop it from the round without anyone
   # having said to.
   test "nothing is sent while a finding has no decision", %{task: task, review_run: run} do
-    {:ok, _raised} =
-      save_review_findings(task, [
-        %{key: "brand-new", title: "Raised on the latest pass", severity: :major, recommendation: :fix, status: :open}
-      ])
+    for finding <- [
+          %{key: "brand-new", title: "Raised on the latest pass", severity: :major, recommendation: :fix, status: :open}
+        ],
+        do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
 
     assert {:error, :findings_undecided} = Pipeline.send_findings_to_engineer(run)
   end

@@ -60,10 +60,21 @@ defmodule Rail.Pipeline.Actions.SendToDemoTest do
   end
 
   test "a pass whose findings were all dismissed goes to demo too", %{task: task, run: run} do
-    {:ok, raised} =
-      save_qa_findings(task, [
-        %{key: "one", title: "One", check: "A check", severity: :blocker, recommendation: :fix, status: :open}
-      ])
+    raised =
+      for finding <- [
+            %{
+              key: "one",
+              title: "One",
+              check: "A check",
+              severity: :blocker,
+              recommendation: :fix,
+              status: :open,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            }
+          ] do
+        {:ok, saved} = Pipeline.save_qa_finding(task, finding)
+        saved
+      end
 
     for finding <- raised, do: {:ok, _dismissed} = Pipeline.decide_qa_finding(finding, :skip)
 
@@ -72,20 +83,39 @@ defmodule Rail.Pipeline.Actions.SendToDemoTest do
   end
 
   test "nothing moves while a finding has no ruling on it", %{task: task, run: run} do
-    {:ok, _raised} =
-      save_qa_findings(task, [
-        %{key: "one", title: "One", check: "A check", severity: :nit, recommendation: :skip, status: :open}
-      ])
+    for finding <- [
+          %{
+            key: "one",
+            title: "One",
+            check: "A check",
+            severity: :nit,
+            recommendation: :skip,
+            status: :open,
+            evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+          }
+        ],
+        do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
     assert {:error, :findings_undecided} = Pipeline.send_to_demo(run)
     assert %Task{stage: :qa} = Repo.reload!(task)
   end
 
   test "nothing moves while something is still to fix", %{task: task, run: run} do
-    {:ok, [finding]} =
-      save_qa_findings(task, [
-        %{key: "one", title: "One", check: "A check", severity: :major, recommendation: :fix, status: :open}
-      ])
+    [finding] =
+      for finding <- [
+            %{
+              key: "one",
+              title: "One",
+              check: "A check",
+              severity: :major,
+              recommendation: :fix,
+              status: :open,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            }
+          ] do
+        {:ok, saved} = Pipeline.save_qa_finding(task, finding)
+        saved
+      end
 
     {:ok, _to_fix} = Pipeline.decide_qa_finding(finding, :fix)
 

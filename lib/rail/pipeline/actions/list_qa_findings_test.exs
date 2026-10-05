@@ -41,11 +41,12 @@ defmodule Rail.Pipeline.Actions.ListQaFindingsTest do
           severity: severity,
           recommendation: :fix,
           status: :open,
-          caused_by_change: caused
+          caused_by_change: caused,
+          evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
         }
       end
 
-    {:ok, _synced} = save_qa_findings(task, findings)
+    for finding <- findings, do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
     assert Enum.map(Pipeline.list_qa_findings(task), & &1.key) == [
              "new-blocker",
@@ -59,10 +60,24 @@ defmodule Rail.Pipeline.Actions.ListQaFindingsTest do
   test "a ruling moves nothing", %{task: task} do
     findings =
       for {key, severity} <- [{"a-blocker", :blocker}, {"a-major", :major}, {"a-nit", :nit}] do
-        %{key: key, title: key, check: "A check", severity: severity, recommendation: :fix, status: :open}
+        %{
+          key: key,
+          title: key,
+          check: "A check",
+          severity: severity,
+          recommendation: :fix,
+          status: :open,
+          evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+        }
       end
 
-    {:ok, [blocker, major, _nit]} = save_qa_findings(task, findings)
+    [blocker, major, _nit] =
+      for finding <- findings do
+        {:ok, saved} = Pipeline.save_qa_finding(task, finding)
+
+        saved
+      end
+
     {:ok, _dismissed} = Pipeline.decide_qa_finding(blocker, :skip)
     {:ok, _decided} = Pipeline.decide_qa_finding(major, :fix)
 
@@ -70,18 +85,27 @@ defmodule Rail.Pipeline.Actions.ListQaFindingsTest do
   end
 
   test "a fixed finding stays where its severity puts it", %{task: task} do
-    {:ok, _synced} =
-      save_qa_findings(task, [
-        %{
-          key: "a-blocker",
-          title: "A blocker",
-          check: "A check",
-          severity: :blocker,
-          recommendation: :fix,
-          status: :fixed
-        },
-        %{key: "a-nit", title: "A nit", check: "A check", severity: :nit, recommendation: :fix, status: :open}
-      ])
+    for finding <- [
+          %{
+            key: "a-blocker",
+            title: "A blocker",
+            check: "A check",
+            severity: :blocker,
+            recommendation: :fix,
+            status: :fixed,
+            evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+          },
+          %{
+            key: "a-nit",
+            title: "A nit",
+            check: "A check",
+            severity: :nit,
+            recommendation: :fix,
+            status: :open,
+            evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+          }
+        ],
+        do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
     assert Enum.map(Pipeline.list_qa_findings(task), & &1.key) == ["a-blocker", "a-nit"]
   end
@@ -91,24 +115,51 @@ defmodule Rail.Pipeline.Actions.ListQaFindingsTest do
   } do
     raised =
       for key <- ["a", "b", "c"] do
-        %{key: key, title: key, check: "A check", severity: :nit, recommendation: :fix, status: :open}
+        %{
+          key: key,
+          title: key,
+          check: "A check",
+          severity: :nit,
+          recommendation: :fix,
+          status: :open,
+          evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+        }
       end
 
-    {:ok, _first_pass} = save_qa_findings(task, raised)
+    for finding <- raised, do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
     assert Enum.map(Pipeline.list_qa_findings(task), & &1.key) == ["a", "b", "c"]
 
-    {:ok, _second_pass} = save_qa_findings(task, Enum.reverse(raised))
+    for finding <- Enum.reverse(raised), do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
 
     assert Enum.map(Pipeline.list_qa_findings(task), & &1.key) == ["a", "b", "c"]
   end
 
   test "a tie on when they were raised is broken the same way every time", %{task: task} do
-    {:ok, synced} =
-      save_qa_findings(task, [
-        %{key: "a", title: "a", check: "A check", severity: :nit, recommendation: :fix, status: :open},
-        %{key: "b", title: "b", check: "A check", severity: :nit, recommendation: :fix, status: :open}
-      ])
+    synced =
+      for finding <- [
+            %{
+              key: "a",
+              title: "a",
+              check: "A check",
+              severity: :nit,
+              recommendation: :fix,
+              status: :open,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            },
+            %{
+              key: "b",
+              title: "b",
+              check: "A check",
+              severity: :nit,
+              recommendation: :fix,
+              status: :open,
+              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
+            }
+          ] do
+        {:ok, saved} = Pipeline.save_qa_finding(task, finding)
+        saved
+      end
 
     # No factory builds findings, so the tie is arranged on the rows sync wrote.
     {2, nil} =
