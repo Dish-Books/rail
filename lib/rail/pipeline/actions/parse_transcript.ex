@@ -7,6 +7,9 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
 
   @human_prefix ~r/^\[human(?::([^\]\s]+))?\]\s*/
   @reminder_prefix ~r/^\[(reminder \d+ of \d+|answered from past answers)\]\s*/
+  @subagent_call ~r/^\[subagent ([^\]\s]+)\] ([^·]*?)\s*·\s?(.*)$/
+  @subagent_end ~r/^\[subagent end ([^\]\s]+)\]\s?(.*)$/
+  @within ~r/^\[within ([^\]\s]+)\] (.*)$/
   @system_prefix ~r/^\[(run|init|tool|tool error|result|rail|handoff|denied|recovered|error|rate limit|stderr|human)(\s|\]|:)/
 
   @doc """
@@ -18,6 +21,9 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
   Rail sent the agent on its own as one reminder. A browser step is the
   exception: each one is its own turn, because each one is a separate thing that
   happened to the page.
+
+  A subagent is one turn wherever its call came, its own lines parsed the same way into its
+  `turns`, however they interleave with another's.
 
   Accepts a list of lines or one multiline string; a log with nothing in it
   parses to no turns rather than to an empty turn.
@@ -54,20 +60,58 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
         end
       end)
 
-    initial_state = %{human_lines: nil, sender_id: nil, reminder: nil, activity_lines: [], role_lines: [], turns: []}
+    initial_state = %{
+      human_lines: nil,
+      sender_id: nil,
+      reminder: nil,
+      activity_lines: [],
+      role_lines: [],
+      turns: [],
+      subagents: %{}
+    }
 
-    flat_lines
-    |> Enum.reduce(initial_state, &process_log_line/2)
-    |> flush_reminder()
-    |> flush_human()
-    |> flush_activity()
-    |> flush_role()
-    |> Map.fetch!(:turns)
-    |> Enum.reverse()
+    state =
+      flat_lines
+      |> Enum.reduce(initial_state, &process_log_line/2)
+      |> flush_reminder()
+      |> flush_human()
+      |> flush_activity()
+      |> flush_role()
+
+    state.turns |> Enum.reverse() |> Enum.with_index() |> Enum.map(&nest(&1, state.subagents))
   end
+
+  # A subagent's lines are only parsed once all of them are in, wherever they landed.
+  defp nest({%Turn{author: :subagent} = turn, index}, subagents) do
+    {_id, %{lines: lines, status: status, error: error}} =
+      Enum.find(subagents, fn {_id, subagent} -> subagent.index == index end)
+
+    lines = Enum.reverse(lines, if(error, do: ["[error] #{error}"], else: []))
+    %{turn | status: status, turns: if(lines == [], do: [], else: do_parse(lines))}
+  end
+
+  defp nest({turn, _index}, _subagents), do: turn
 
   defp process_log_line(line, state) do
     cond do
+      Regex.match?(@within, line) ->
+        [_line, id, inner] = Regex.run(@within, line)
+        state = ensure_subagent(state, id, "subagent", "")
+        put_in(state, [:subagents, id, :lines], [inner | state.subagents[id].lines])
+
+      Regex.match?(@subagent_end, line) ->
+        [_line, id, error] = Regex.run(@subagent_end, line)
+        state = ensure_subagent(state, id, "subagent", "")
+        failed? = String.trim(error) != ""
+
+        update_in(state, [:subagents, id], fn subagent ->
+          %{subagent | status: if(failed?, do: :failed, else: :done), error: if(failed?, do: String.trim(error))}
+        end)
+
+      Regex.match?(@subagent_call, line) ->
+        [_line, id, type, description] = Regex.run(@subagent_call, line)
+        ensure_subagent(state, id, String.trim(type), String.trim(description))
+
       Regex.match?(@reminder_prefix, line) ->
         [prefix, label] = Regex.run(@reminder_prefix, line)
 
@@ -141,6 +185,18 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
   defp tool_line?(line) do
     String.starts_with?(line, "[tool ") or String.starts_with?(line, "[tool]") or
       String.starts_with?(line, "[tool error")
+  end
+
+  # A line naming a call that was never started still gets a turn, so nothing it said is lost.
+  defp ensure_subagent(%{subagents: subagents} = state, id, _type, _description) when is_map_key(subagents, id), do: state
+
+  defp ensure_subagent(state, id, type, description) do
+    state = state |> flush_reminder() |> flush_human() |> flush_activity() |> flush_role()
+    subagent = %{index: length(state.turns), lines: [], status: :running, error: nil}
+
+    state
+    |> put_in([:subagents, id], subagent)
+    |> append_turn(%Turn{author: :subagent, label: type, content: description, status: :running})
   end
 
   defp append_activity_line(state, line), do: %{state | activity_lines: [line | state.activity_lines]}

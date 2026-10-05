@@ -57,7 +57,7 @@ defmodule RailWeb.Hooks.NavHookTest do
       |> Repo.insert!()
       |> Repo.preload(:project)
 
-    {:ok, other_task} = Pipeline.create_task(other_issue, :product)
+    {:ok, other_task} = Pipeline.create_task(other_issue, :plan)
 
     %{
       conn: log_in_user(conn, user),
@@ -186,15 +186,15 @@ defmodule RailWeb.Hooks.NavHookTest do
 
       {:ok, other_role} =
         Roles.create_role(system_scope(), other_project, %{
-          stage: :product,
+          stage: :plan,
           name: "Product",
           model: "claude-opus-5-5",
           system_prompt: "You write tickets.",
           backend_id: "bkd_test_seed"
         })
 
-      {:ok, role} = Roles.get_role(project_id: project.id, stage: :product)
-      {:ok, task} = Pipeline.create_task(Repo.preload(issue, :project), :product)
+      {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
+      {:ok, task} = Pipeline.create_task(Repo.preload(issue, :project), :plan)
       now = DateTime.utc_now()
 
       for {task, role} <- [{task, role}, {other_task, other_role}] do

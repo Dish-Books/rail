@@ -11,7 +11,7 @@ defmodule Rail.Pipeline.Actions.PickDesignOptionTest do
   setup %{project: project} do
     scope = system_scope()
 
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :design)
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -25,7 +25,7 @@ defmodule Rail.Pipeline.Actions.PickDesignOptionTest do
     end)
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "Pick Design"})
-    {:ok, task} = Pipeline.create_task(issue, :design)
+    {:ok, task} = Pipeline.create_task(issue, :plan)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
     design_dir = Path.join(task.scratch_path, "design")
     File.mkdir_p!(design_dir)
@@ -54,7 +54,11 @@ defmodule Rail.Pipeline.Actions.PickDesignOptionTest do
     %{task: task, role: role, run: run, design_dir: design_dir, manifest: manifest}
   end
 
-  test "records the pick and tells the designer to refine only it", %{task: task, run: run, design_dir: dir} do
+  test "a pick at Plan records the pick, deletes the others and says only what was picked", %{
+    task: task,
+    run: run,
+    design_dir: dir
+  } do
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
     assert {:ok, %Run{}} = Pipeline.pick_design_option(system_scope(), run, "table")
@@ -62,12 +66,7 @@ defmodule Rail.Pipeline.Actions.PickDesignOptionTest do
     assert File.read!(Path.join(dir, "picked")) == "table"
     assert Enum.sort(File.ls!(dir)) == ["manifest.json", "picked", "table.html", "table.png"]
     assert %{picked: "table", options: [%{key: "table", title: "Table"}]} = Pipeline.read_design(task)
-    assert [first | _rest] = Enum.map(Pipeline.list_run_events(run), & &1.line)
-    assert first =~ "[human] I picked Table (table)."
-
-    said = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
-    assert said =~ "save it again with save_design_option every time it changes"
-    refute said =~ "keep it that way"
+    assert ["[human] I picked Table (table)." | _rest] = Enum.map(Pipeline.list_run_events(run), & &1.line)
   end
 
   test "the picked option keeps everything the designer wrote about it", %{run: run, design_dir: dir} do
@@ -148,10 +147,10 @@ defmodule Rail.Pipeline.Actions.PickDesignOptionTest do
     assert File.read!(Path.join(dir, "manifest.json")) == manifest
   end
 
-  test "a task past design has nothing left to pick", %{task: task, run: run, design_dir: dir, manifest: manifest} do
-    {:ok, _moved} = Pipeline.update_task(task, %{stage: :architect})
+  test "a task at Engineer has nothing left to pick", %{task: task, run: run, design_dir: dir, manifest: manifest} do
+    {:ok, _moved} = Pipeline.update_task(task, %{stage: :engineer})
 
-    assert {:error, {:invalid_stage, :architect}} = Pipeline.pick_design_option(system_scope(), run, "cards")
+    assert {:error, {:invalid_stage, :engineer}} = Pipeline.pick_design_option(system_scope(), run, "cards")
 
     assert Enum.sort(File.ls!(dir)) ==
              ["cards.html", "cards.png", "manifest.json", "table.html", "table.png", "timeline.html", "timeline.png"]

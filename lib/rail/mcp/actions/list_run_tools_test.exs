@@ -111,4 +111,18 @@ defmodule Rail.Mcp.Actions.ListRunToolsTest do
     assert {:ok, [%{"name" => "knowledge_search"}]} =
              Mcp.list_run_tools(%RunContext{role: %Role{mcp_tools: []}, user: nil})
   end
+
+  # The subagents carry no tool list, so this is every tool they inherit.
+  test "a Plan run lists Rail's save tools and the proxied tools its role allows", %{user: user} do
+    context = %RunContext{role: %Role{stage: :plan, mcp_tools: ["lrt_linear__get_issue"]}, user: user}
+
+    assert {:ok,
+            [
+              %{"name" => "save_ticket"},
+              %{"name" => "save_design_option"},
+              %{"name" => "save_plan"},
+              %{"name" => "knowledge_search"},
+              %{"name" => "lrt_linear__get_issue"}
+            ]} = Mcp.list_run_tools(context)
+  end
 end

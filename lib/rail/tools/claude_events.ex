@@ -4,10 +4,16 @@ defmodule Rail.Tools.ClaudeEvents do
 
   Handles system initialization, agent prose and tool use, tool errors, rate limits,
   and final execution results with cumulative usage accounting.
+
+  A subagent call is `[subagent <call>] <type> · <description>` and its result `[subagent end <call>]`;
+  each line from inside it is the line it would be anywhere else, behind `[within <call>]`.
   """
 
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Tools.ToolSummarizer
+
+  # Claude has named the tool that starts a subagent both ways.
+  @subagent_tools ["Task", "Agent"]
 
   defstruct [
     :conversation_id,
@@ -19,6 +25,7 @@ defmodule Rail.Tools.ClaudeEvents do
     base_usage: %Run.Usage{},
     message_usage: %{},
     tool_names: %{},
+    subagent_calls: %{},
     num_turns: 0,
     thinking_tokens: 0,
     saw_result: false
@@ -91,9 +98,10 @@ defmodule Rail.Tools.ClaudeEvents do
   def handle_event(%__MODULE__{} = state, %{"type" => "assistant"} = event) do
     content = get_in(event, ["message", "content"])
     state = stream_usage(state, event["message"])
+    within = within(event)
 
     if is_list(content) do
-      Enum.reduce(content, state, &process_assistant_block/2)
+      Enum.reduce(content, state, &process_assistant_block(&1, &2, within))
     else
       state
     end
@@ -101,9 +109,10 @@ defmodule Rail.Tools.ClaudeEvents do
 
   def handle_event(%__MODULE__{} = state, %{"type" => "user"} = event) do
     content = get_in(event, ["message", "content"])
+    within = within(event)
 
     if is_list(content) do
-      Enum.reduce(content, state, &process_user_block/2)
+      Enum.reduce(content, state, &process_user_block(&1, &2, within))
     else
       state
     end
@@ -173,24 +182,37 @@ defmodule Rail.Tools.ClaudeEvents do
   def success?(%__MODULE__{saw_result: true, result_error: nil}), do: true
   def success?(%__MODULE__{}), do: false
 
-  defp process_assistant_block(%{"type" => "text", "text" => raw_text}, state) when is_binary(raw_text) do
+  # What a subagent says is its own, so it never reads as the run's final word.
+  defp process_assistant_block(%{"type" => "text", "text" => raw_text}, state, within) when is_binary(raw_text) do
     text = String.trim_trailing(raw_text)
 
-    if text == "" do
-      state
-    else
-      new_assistant_text = state.assistant_text <> text <> "\n"
-      lines = String.split(text, "\n")
-
-      %{
+    cond do
+      text == "" ->
         state
-        | assistant_text: new_assistant_text,
-          logs: Enum.concat(state.logs, lines)
-      }
+
+      within == nil ->
+        %{
+          state
+          | assistant_text: state.assistant_text <> text <> "\n",
+            logs: Enum.concat(state.logs, String.split(text, "\n"))
+        }
+
+      true ->
+        %{state | logs: Enum.concat(state.logs, Enum.map(String.split(text, "\n"), &tag(&1, within)))}
     end
   end
 
-  defp process_assistant_block(%{"type" => "tool_use"} = block, state) do
+  defp process_assistant_block(%{"type" => "tool_use", "name" => name, "id" => id} = block, state, nil)
+       when name in @subagent_tools and is_binary(id) do
+    input = if is_map(block["input"]), do: block["input"], else: %{}
+    type = one_line(input["subagent_type"]) || "general-purpose"
+    description = one_line(input["description"]) || ""
+
+    state = %{state | subagent_calls: Map.put(state.subagent_calls, id, type)}
+    append_log(state, String.trim_trailing("[subagent #{id}] #{type} · #{description}"))
+  end
+
+  defp process_assistant_block(%{"type" => "tool_use"} = block, state, within) do
     name = block["name"] || "tool"
     summary = ToolSummarizer.summarize_tool_input(name, block["input"])
 
@@ -204,23 +226,48 @@ defmodule Rail.Tools.ClaudeEvents do
         "[tool] #{name} #{summary}"
       end
 
-    append_log(state, log_line)
+    append_log(state, tag(log_line, within))
   end
 
-  defp process_assistant_block(_other_block, state), do: state
+  defp process_assistant_block(_other_block, state, _within), do: state
+
+  # A subagent's answer is its whole transcript's end, so only whether it failed is kept.
+  defp process_user_block(%{"type" => "tool_result", "tool_use_id" => id} = block, state, nil)
+       when is_binary(id) and is_map_key(state.subagent_calls, id) do
+    end_line = "[subagent end #{id}]"
+
+    if block["is_error"] == true,
+      do: append_log(state, "#{end_line} #{ToolSummarizer.truncate(error_text(block["content"]), 300)}"),
+      else: append_log(state, end_line)
+  end
 
   # A failed result names the call it answers only by id, so the name is carried
   # over from the call: a refusal reads under the tool that refused it.
-  defp process_user_block(%{"type" => "tool_result", "is_error" => true} = block, state) do
+  defp process_user_block(%{"type" => "tool_result", "is_error" => true} = block, state, within) do
     detail = ToolSummarizer.truncate(error_text(block["content"]), 300)
 
     case state.tool_names[block["tool_use_id"]] do
-      name when is_binary(name) -> append_log(state, "[tool error #{name}] #{detail}")
-      nil -> append_log(state, "[tool error] #{detail}")
+      name when is_binary(name) -> append_log(state, tag("[tool error #{name}] #{detail}", within))
+      nil -> append_log(state, tag("[tool error] #{detail}", within))
     end
   end
 
-  defp process_user_block(_other_block, state), do: state
+  defp process_user_block(_other_block, state, _within), do: state
+
+  defp within(%{"parent_tool_use_id" => id}) when is_binary(id) and id != "", do: id
+  defp within(_top_level), do: nil
+
+  defp tag(line, nil), do: line
+  defp tag(line, within), do: "[within #{within}] #{line}"
+
+  defp one_line(value) when is_binary(value) do
+    case value |> String.replace(~r/\s+/, " ") |> String.trim() do
+      "" -> nil
+      line -> line
+    end
+  end
+
+  defp one_line(_missing), do: nil
 
   defp error_text(blocks) when is_list(blocks) do
     Enum.map_join(blocks, "\n", fn

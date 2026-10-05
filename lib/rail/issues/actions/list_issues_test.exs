@@ -186,7 +186,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
       })
       |> Repo.insert!()
 
-    {:ok, %Task{id: task_id}} = Pipeline.create_task(%{issue | project: project}, :product)
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(%{issue | project: project}, :plan)
 
     assert %{issues: [%Issue{task: %Task{id: ^task_id, runs: []}}]} =
              Issues.list_issues(preload: [task: :runs])

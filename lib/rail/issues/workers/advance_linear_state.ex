@@ -35,14 +35,14 @@ defmodule Rail.Issues.Workers.AdvanceLinearState do
   defp advance(
          %Issue{owner_user_id: owner_user_id, project: %Project{} = project, task: %Task{stage: stage} = task} = issue
        )
-       when is_binary(owner_user_id) and stage in [:product, :design, :architect, :engineer, :review, :qa, :demo] do
+       when is_binary(owner_user_id) and stage in [:plan, :engineer, :review, :qa, :demo] do
     with {:ok, %{"issue" => %{"state" => current, "team" => %{"states" => %{"nodes" => states}}}}} <-
            Linear.issue_workflow(project, issue.external_id) do
       # In Progress and In Review share Linear's "started" type, so In Review can
       # only be told apart by its name.
       target =
         cond do
-          stage in [:product, :design, :architect, :engineer] ->
+          stage in [:plan, :engineer] ->
             states |> Enum.filter(&(&1["type"] == "started")) |> Enum.min_by(& &1["position"], fn -> nil end)
 
           stage in [:review, :qa, :demo] ->

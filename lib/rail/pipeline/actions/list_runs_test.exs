@@ -11,7 +11,7 @@ defmodule Rail.Pipeline.Actions.ListRunsTest do
   setup %{project: project} do
     scope = system_scope()
 
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :product)
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -25,7 +25,7 @@ defmodule Rail.Pipeline.Actions.ListRunsTest do
     end)
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "List Runs Issue"})
-    {:ok, task} = Pipeline.create_task(issue, :product)
+    {:ok, task} = Pipeline.create_task(issue, :plan)
 
     {:ok, run} =
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
@@ -74,7 +74,7 @@ defmodule Rail.Pipeline.Actions.ListRunsTest do
 
         {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "List Runs #{n}"})
         {:ok, issue} = Issues.update_issue(issue, %{owner_user_id: owner_id})
-        {:ok, task} = Pipeline.create_task(issue, :product)
+        {:ok, task} = Pipeline.create_task(issue, :plan)
 
         {:ok, run} =
           Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})

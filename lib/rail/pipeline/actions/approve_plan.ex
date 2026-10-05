@@ -1,66 +1,131 @@
 defmodule Rail.Pipeline.Actions.ApprovePlan do
   @moduledoc """
-  Records the implementation plan the architect wrote, and hands the task to the
-  engineer.
+  Approves the Plan step in one go: the ticket and the picked design are published to the issue, the
+  plan is recorded as the one the engineer builds from, and the task moves to Engineer.
 
-  The architect writes its plan into scratch and nothing else, because a human has
-  to read it first. Approving is what makes the plan the one the engineer builds
-  from, so it is copied out of scratch into a row of its own: the architect can go
-  on editing that file afterwards without quietly changing what was agreed.
-
-  Approving is a one-way door: the task leaves architect, and a task no longer
-  there has nothing left to approve. One plan per task, so a second architect pass
-  replaces what the first one said.
+  Approving is a one-way door. The task row is locked and Engineer claimed inside the same transaction,
+  so a second click or a second tab waits on the lock, then finds the task at Engineer and is refused
+  before anything is published again.
   """
 
+  import Ecto.Query
+
+  alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
+  alias Rail.Scope
 
   @doc """
-  Approves the plan `run` wrote and enters the engineer stage.
+  Approves what the Plan `run` saved and enters Engineer.
 
-  Returns `{:ok, run}`, the run that was handed in, latched done.
+  Returns `{:ok, run}`, the run latched done.
   """
-  def approve_plan(%Run{} = run) do
-    run = Repo.preload(run, [task: [:issue, :runs]], force: true)
+  def approve_plan(%Scope{} = scope, %Run{} = run) do
+    result =
+      Repo.transaction(fn ->
+        task = Repo.one!(from t in Task, where: t.id == ^run.task_id, lock: "FOR UPDATE")
+        task = Repo.preload(task, [:runs, issue: [], project: :linear_workspace])
 
-    with :ok <- approvable(run.task),
-         {:ok, content} <- plan(run.task) do
-      record(run.task, content)
-      enter_next(run)
+        with true <- Scope.can_access_project?(scope, task.project_id) || {:error, :not_found},
+             :ok <- approvable(task),
+             {:ok, ticket} <- ticket(task),
+             {:ok, plan} <- plan(task),
+             {:ok, design} <- design(task, plan),
+             :ok <- publish(task, ticket, design) do
+          record(task, plan.content)
+          {:ok, run} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
+          {:ok, task} = Pipeline.enter_stage(task, :engineer, start: false)
+          {run, task}
+        else
+          {:error, reason} -> Repo.rollback(reason)
+        end
+      end)
+
+    # Started only once the move is committed, so the engineer's spawn reads the task at Engineer.
+    with {:ok, {run, task}} <- result,
+         {:ok, _started} <- Pipeline.enter_stage(task, :engineer) do
+      {:ok, run}
     end
   end
 
-  defp approvable(%Task{stage: stage}) when stage != :architect, do: {:error, {:invalid_stage, stage}}
+  defp approvable(%Task{stage: stage}) when stage != :plan, do: {:error, {:invalid_stage, stage}}
 
   defp approvable(%Task{} = task) do
     if Task.running?(task), do: {:error, :stage_running}, else: :ok
   end
 
+  defp ticket(%Task{} = task) do
+    case Pipeline.read_ticket(task) do
+      %{} = ticket -> {:ok, ticket}
+      nil -> {:error, :no_ticket}
+    end
+  end
+
   defp plan(%Task{} = task) do
     case Pipeline.read_plan(task) do
-      content when is_binary(content) -> {:ok, content}
+      %{} = plan -> {:ok, plan}
       nil -> {:error, :no_plan}
     end
   end
 
+  # With no options there is no screen, and the ticket goes out alone.
+  defp design(%Task{} = task, plan) do
+    written_for = plan.design && plan.design.key
+
+    case Pipeline.read_design(task, pages: false) do
+      %{options: []} -> {:ok, nil}
+      %{picked: nil} -> {:error, :nothing_picked}
+      %{picked: ^written_for, options: options} -> options |> Enum.find(&(&1.key == written_for)) |> screenshot()
+      %{picked: _other} -> {:error, :plan_not_for_pick}
+      nil -> {:ok, nil}
+    end
+  end
+
+  # The screenshot is the published thing, so one older than its page would publish a design nobody approved.
+  defp screenshot(option) do
+    with {:ok, %File.Stat{mtime: html_mtime}} <- File.stat(option.html_path, time: :posix),
+         {:ok, %File.Stat{mtime: screenshot_mtime}} <- File.stat(option.screenshot_path, time: :posix) do
+      if screenshot_mtime >= html_mtime,
+        do: {:ok, {option, File.read!(option.screenshot_path)}},
+        else: {:error, :stale_screenshot}
+    else
+      {:error, _missing} -> {:error, :screenshot_missing}
+    end
+  end
+
+  # One write carries the ticket and the design. Linear hears about it from the sync that write enqueues.
+  defp publish(%Task{issue: %Issue{} = issue}, ticket, nil) do
+    update_issue(issue, %{title: ticket.title, description: ticket.description})
+  end
+
+  defp publish(%Task{issue: %Issue{} = issue} = task, ticket, {option, screenshot}) do
+    with {:ok, asset_url} <-
+           Issues.upload_asset(task.project, "#{issue.identifier}-#{option.key}.png", "image/png", screenshot) do
+      section = String.trim("## Design: #{option.title}\n\n#{option.summary}") <> "\n\n![#{option.title}](#{asset_url})"
+      description = String.trim(ticket.description || "")
+      description = if description == "", do: section, else: description <> "\n\n" <> section
+
+      update_issue(issue, %{title: ticket.title, description: description})
+    end
+  end
+
+  defp update_issue(%Issue{} = issue, attrs) do
+    case Issues.update_issue(issue, attrs) do
+      {:ok, _issue} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # One plan per task, so approving again after a return to Plan replaces what was agreed before.
   defp record(%Task{} = task, content) do
     existing = Repo.get_by(ImplementationPlan, task_id: task.id) || %ImplementationPlan{}
 
     existing
     |> ImplementationPlan.changeset(%{task_id: task.id, content: content, captured_at: DateTime.utc_now()})
     |> Repo.insert_or_update!()
-  end
-
-  # The run has said all it is going to: latch it before the next stage starts, so
-  # nothing that happens there can send this one round again.
-  defp enter_next(%Run{} = run) do
-    {:ok, run} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
-    {:ok, _next} = Pipeline.enter_stage(run.task, :engineer)
-
-    {:ok, run}
   end
 end

@@ -2,11 +2,11 @@ defmodule Rail.Pipeline do
   @moduledoc """
   Context boundary for the Rail development pipeline.
 
-  A task is created at `:product`, its run is started, the human approves the
-  ticket it writes, and the task is handed to design, where the human picks one of
-  three options, refines it in chat and approves it. Architect turns that into one
-  implementation plan, which the human approves in the same way, and engineer
-  builds it — Rail commits and pushes what it leaves, and the human reads the diff
+  A task is created at `:plan`, where one run leads Product, Designer and
+  Architect as subagents to a ticket, three design options when the change has a
+  screen, and one implementation plan. The human picks an option, and one approval
+  publishes the ticket and the picked design and records the plan. Engineer
+  builds it: Rail commits and pushes what it leaves, and the human reads the diff
   and sends it to review. Review reads the change and raises findings, each with a
   recommendation; the human decides which to address and either sends them back to
   the engineer or hands the change to QA. QA drives the running application and
@@ -30,21 +30,15 @@ defmodule Rail.Pipeline do
 
   defdelegate enter_stage(task, stage, opts \\ []), to: Actions.EnterStage
 
-  defdelegate start_product_run(issue), to: Actions.StartProductRun
-  defdelegate approve_product_plan(run, opts \\ []), to: Actions.ApproveProductPlan
+  defdelegate start_plan_run(issue_or_run), to: Actions.StartPlanRun
+  defdelegate approve_plan(scope, run), to: Actions.ApprovePlan
   defdelegate read_ticket(task), to: Actions.ReadTicket
   defdelegate save_ticket(task, attrs), to: Actions.SaveTicket
-
-  defdelegate start_design_run(run), to: Actions.StartDesignRun
-  defdelegate read_design(task), to: Actions.ReadDesign
+  defdelegate read_design(task, opts \\ []), to: Actions.ReadDesign
   defdelegate save_design_option(task, attrs), to: Actions.SaveDesignOption
   defdelegate pick_design_option(scope, run, key), to: Actions.PickDesignOption
-  defdelegate approve_design(run), to: Actions.ApproveDesign
-
-  defdelegate start_architect_run(run), to: Actions.StartArchitectRun
   defdelegate read_plan(task), to: Actions.ReadPlan
-  defdelegate save_plan(task, content), to: Actions.SavePlan
-  defdelegate approve_plan(run), to: Actions.ApprovePlan
+  defdelegate save_plan(task, attrs), to: Actions.SavePlan
   defdelegate get_implementation_plan(task), to: Actions.GetImplementationPlan
 
   defdelegate start_engineer_run(run), to: Actions.StartEngineerRun
@@ -122,7 +116,7 @@ defmodule Rail.Pipeline do
 
   defdelegate append_run_events(run_id, os_process_id, lines), to: Actions.AppendRunEvents
   defdelegate broadcast_output_saved(task), to: Actions.BroadcastOutputSaved
-  defdelegate list_run_events(run, opts \\ []), to: Actions.ListRunEvents
+  defdelegate list_run_events(run_or_runs, opts \\ []), to: Actions.ListRunEvents
   defdelegate parse_transcript(lines), to: Actions.ParseTranscript
 
   defdelegate build_prompt(opts), to: Actions.BuildPrompt

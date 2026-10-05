@@ -243,4 +243,37 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
     refute "--log-file" in args
     refute "--conversation" in args
   end
+
+  test "an agents list is one --agents flag for Claude, before any resume, and carries no tool list" do
+    agents = [
+      %{name: "product", description: "Writes the ticket", prompt: "You are product.", model: "claude-opus-5-5"},
+      %{name: "architect", description: "Writes the plan", prompt: "You are architect.", model: "claude-sonnet-5-5"}
+    ]
+
+    args = Tools.build_args(backend: %Backend{name: :claude}, prompt: "Plan it", agents: agents, conversation_id: "c-1")
+
+    assert ["--agents", json, "--resume", "c-1"] = Enum.take(args, -4)
+
+    assert %{
+             "product" => %{
+               "description" => "Writes the ticket",
+               "prompt" => "You are product.",
+               "model" => "claude-opus-5-5"
+             },
+             "architect" => %{
+               "description" => "Writes the plan",
+               "prompt" => "You are architect.",
+               "model" => "claude-sonnet-5-5"
+             }
+           } = Jason.decode!(json)
+
+    refute json =~ "tools"
+  end
+
+  test "agents add nothing for Agy, nor for Claude when there are none" do
+    agents = [%{name: "product", description: "d", prompt: "p", model: "m"}]
+
+    refute "--agents" in Tools.build_args(backend: %Backend{name: :agy}, prompt: "Plan it", agents: agents)
+    refute "--agents" in Tools.build_args(backend: %Backend{name: :claude}, prompt: "Plan it", agents: [])
+  end
 end

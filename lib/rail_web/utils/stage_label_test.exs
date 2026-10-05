@@ -16,36 +16,55 @@ defmodule RailWeb.Utils.StageLabelTest do
   end
 
   test "a stage that has not started is queued for it" do
-    assert stage_label(%Task{stage: :product}, nil) == "Queued for Product"
+    assert stage_label(%Task{stage: :plan}, nil) == "Queued for Plan"
   end
 
   test "a working stage says so" do
-    assert stage_label(%Task{stage: :product}, %Run{status: :running}) == "Product running"
+    assert stage_label(%Task{stage: :plan}, %Run{status: :running}) == "Plan running"
     assert stage_label(%Task{stage: :engineer}, %Run{status: :waiting_for_resources}) == "Engineer waiting for resources"
   end
 
   test "a stage parked on a question asks for the answer" do
-    assert stage_label(%Task{stage: :product}, %Run{status: :blocked_on_input}) == "Product needs an answer"
+    assert stage_label(%Task{stage: :plan}, %Run{status: :blocked_on_input}) == "Plan needs an answer"
   end
 
   test "a stage that hit an error says it failed" do
-    assert stage_label(%Task{stage: :product}, %Run{status: :finished, error: "boom"}) == "Product failed"
+    assert stage_label(%Task{stage: :plan}, %Run{status: :finished, error: "boom"}) == "Plan failed"
   end
 
   test "a stage that stopped without saying anything reads as stopped" do
-    assert stage_label(%Task{stage: :product}, %Run{status: :finished}) == "Product stopped"
+    assert stage_label(%Task{stage: :plan}, %Run{status: :finished}) == "Plan stopped"
   end
 
   test "a stage that concluded says what the human has to decide" do
     done = %Run{status: :finished, stage_outcome: :done}
+    scratch = Path.join(System.tmp_dir!(), "stage_label_#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf(scratch) end)
 
-    assert stage_label(%Task{stage: :product}, done) == "Review the ticket"
-    assert stage_label(%Task{stage: :design}, done) == "Review the designs"
-    assert stage_label(%Task{stage: :architect}, done) == "Review the plan"
+    assert stage_label(%Task{stage: :plan, scratch_path: scratch}, done) == "Review the plan"
     assert stage_label(%Task{stage: :engineer}, done) == "Review the diff"
     assert stage_label(%Task{stage: :review}, done) == "Review the findings"
     assert stage_label(%Task{stage: :qa}, done) == "Review the QA report"
     assert stage_label(%Task{stage: :demo}, done) == "Watch the demo"
-    assert approval_label(:merged) == "Waiting on you"
+    assert approval_label(%Task{stage: :merged}) == "Waiting on you"
+  end
+
+  test "a Plan run done with options and no pick asks for the pick, and once picked for the review" do
+    done = %Run{status: :finished, stage_outcome: :done}
+    scratch = Path.join(System.tmp_dir!(), "stage_label_#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf(scratch) end)
+    task = %Task{stage: :plan, scratch_path: scratch}
+
+    options = for key <- ["a", "b", "c"], do: %{"key" => key, "title" => String.upcase(key)}
+    File.mkdir_p!(Path.join(scratch, "design"))
+    File.write!(Path.join(scratch, "design/manifest.json"), Jason.encode!(%{"options" => options}))
+
+    assert waiting_on_pick?(task)
+    assert stage_label(task, done) == "Pick a design"
+
+    File.write!(Path.join(scratch, "design/picked"), "b")
+
+    refute waiting_on_pick?(task)
+    assert stage_label(task, done) == "Review the plan"
   end
 end

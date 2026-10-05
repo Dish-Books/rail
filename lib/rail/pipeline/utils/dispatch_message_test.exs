@@ -16,7 +16,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
   setup %{project: project} do
     scope = system_scope()
 
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :product)
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -34,7 +34,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     end)
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "Dispatch Message Issue"})
-    {:ok, task} = Pipeline.create_task(issue, :product)
+    {:ok, task} = Pipeline.create_task(issue, :plan)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
 
     {:ok, %Run{id: run_id} = run} =
@@ -69,7 +69,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
   } do
     remote = create_temp_git_repo(prefix: "rail_dispatch_prompt_remote")
     File.mkdir_p!(Path.join(remote, ".rail/prompts"))
-    File.write!(Path.join(remote, ".rail/prompts/product.md"), "From the repo.\n")
+    File.write!(Path.join(remote, ".rail/prompts/plan.md"), "From the repo.\n")
     git!(remote, ["add", "."])
     git!(remote, ["commit", "-m", "add prompt"])
     clone = create_temp_git_repo(prefix: "rail_dispatch_prompt_clone")
@@ -87,7 +87,23 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
 
   test "a turn with no prompt file in the project's repo carries the stored prompt", %{run: run} do
     expect(Tools, :start_os_process, fn spawned, argv ->
-      assert ["--append-system-prompt", "You are the product agent."] in Enum.chunk_every(argv, 2, 1)
+      assert ["--append-system-prompt", "You are the plan agent."] in Enum.chunk_every(argv, 2, 1)
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
+  end
+
+  test "a message to a Plan run spawns with Product, Designer and Architect as subagents", %{run: run} do
+    expect(Tools, :start_os_process, fn spawned, argv ->
+      [json] = for ["--agents", json] <- Enum.chunk_every(argv, 2, 1), do: json
+
+      assert %{
+               "product" => %{"prompt" => "You are the product agent." <> _product_rules},
+               "designer" => %{"prompt" => "You are the design agent." <> _design_rules},
+               "architect" => %{"prompt" => "You are the architect agent." <> _architect_rules}
+             } = Jason.decode!(json)
+
       {:ok, %OsProcess{run: spawned}}
     end)
 
@@ -135,7 +151,10 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
         started_at: DateTime.utc_now()
       })
 
-    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    expect(Tools, :start_os_process, fn spawned, argv ->
+      refute "--agents" in argv
+      {:ok, %OsProcess{run: spawned}}
+    end)
 
     assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
 

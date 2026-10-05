@@ -16,9 +16,7 @@ defmodule Rail.Pipeline.Schemas.Task do
   # The linear pipeline, then stages a task can be parked in off that path.
   # `:debugger` has no position in the sequence: nothing advances into or out of it.
   @stages [
-    :product,
-    :design,
-    :architect,
+    :plan,
     :engineer,
     :review,
     :qa,
@@ -29,7 +27,7 @@ defmodule Rail.Pipeline.Schemas.Task do
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "tsk"}
   schema "tasks" do
-    field :stage, Ecto.Enum, values: @stages, default: :product
+    field :stage, Ecto.Enum, values: @stages, default: :plan
     field :worktree_name, :string
     field :worktree_path, :string
     field :scratch_path, :string
@@ -137,9 +135,7 @@ defmodule Rail.Pipeline.Schemas.Task do
     File.regular?(Path.join([scratch_path, "demo", "demo.webm"]))
   end
 
-  def stage_label(:product), do: "Product"
-  def stage_label(:design), do: "Design"
-  def stage_label(:architect), do: "Architect"
+  def stage_label(:plan), do: "Plan"
   def stage_label(:engineer), do: "Engineer"
   def stage_label(:review), do: "Review"
   def stage_label(:qa), do: "QA"

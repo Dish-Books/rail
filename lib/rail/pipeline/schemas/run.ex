@@ -187,14 +187,14 @@ defmodule Rail.Pipeline.Schemas.Run do
   Returns true if this run is waiting on a human at all.
 
   Only the run of the stage the task is in can be waiting: a stage latches its
-  run to `:done` and leaves it that way, so the product run of a task already in
-  design is a finished verdict, not an outstanding one. Requires `role`, `task`
+  run to `:done` and leaves it that way, so the plan run of a task already at
+  engineer is a finished verdict, not an outstanding one. Requires `role`, `task`
   and the task's `issue` to be preloaded.
 
   A blocked run stays blocked until its answers are sent, so it keeps its place
   in the queue while the human works through the batch. A run at a stage a human
-  signs off is waiting on that sign-off once it is done: its ticket, design or
-  plan approved, its diff sent to review, or, once the demo is recorded, the
+  signs off is waiting on that sign-off once it is done: its ticket, design pick
+  and plan approved, its diff sent to review, or, once the demo is recorded, the
   change merged.
 
   A run that failed or stopped is waiting too, and on the same person. Neither
@@ -257,7 +257,7 @@ defmodule Rail.Pipeline.Schemas.Run do
   defp waiting_state?(:blocked, _stage), do: true
   defp waiting_state?(:failed, _stage), do: true
   defp waiting_state?(:stopped, _stage), do: true
-  defp waiting_state?(:done, stage), do: stage in [:product, :design, :architect, :engineer, :review, :qa, :demo]
+  defp waiting_state?(:done, stage), do: stage in [:plan, :engineer, :review, :qa, :demo]
   defp waiting_state?(_running_or_queued, _stage), do: false
 
   # A run is one conversation with one agent. Moving it to another would silently

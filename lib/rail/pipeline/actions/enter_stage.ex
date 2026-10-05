@@ -30,7 +30,7 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   alias Rail.Tools
 
   # The stages a Linear ticket's status follows; the rest leave it where it is.
-  @linear_stages [:design, :architect, :engineer, :review, :qa, :demo]
+  @linear_stages [:plan, :engineer, :review, :qa, :demo]
 
   @doc """
   Enters `stage` on `task` and spawns the role that stage belongs to.
@@ -120,8 +120,7 @@ defmodule Rail.Pipeline.Actions.EnterStage do
 
   # A stage with a brief of its own spawns itself; the rest have nothing to add.
   # The run carries its task and its role, so it is the whole of what a spawn needs.
-  defp start_process(%Run{role: %Role{stage: :design}} = run), do: Pipeline.start_design_run(run)
-  defp start_process(%Run{role: %Role{stage: :architect}} = run), do: Pipeline.start_architect_run(run)
+  defp start_process(%Run{role: %Role{stage: :plan}} = run), do: Pipeline.start_plan_run(run)
   defp start_process(%Run{role: %Role{stage: :engineer}} = run), do: Pipeline.start_engineer_run(run)
   defp start_process(%Run{role: %Role{stage: :review}} = run), do: Pipeline.start_review_run(run)
   defp start_process(%Run{role: %Role{stage: :qa}} = run), do: Pipeline.start_qa_run(run)

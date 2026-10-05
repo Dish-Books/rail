@@ -12,6 +12,9 @@ defmodule RailWeb.Components.UpNextTest do
   alias RailWeb.Components.UpNext
 
   setup do
+    scratch = Path.join(System.tmp_dir!(), "up_next_#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf(scratch) end)
+
     waiting = fn stage ->
       %Run{
         id: "run_#{stage}",
@@ -21,11 +24,11 @@ defmodule RailWeb.Components.UpNextTest do
         completed_at: ~U[2026-01-01 10:00:00Z],
         questions: [],
         role: %Role{name: "#{stage} role", icon_name: "pi-robot", stage: stage},
-        task: %Task{stage: stage, issue: %Issue{identifier: "UPN-1", title: "Invoice filters"}}
+        task: %Task{stage: stage, scratch_path: scratch, issue: %Issue{identifier: "UPN-1", title: "Invoice filters"}}
       }
     end
 
-    %{waiting: waiting}
+    %{waiting: waiting, scratch: scratch}
   end
 
   test "says nothing is waiting when nothing is" do
@@ -35,15 +38,16 @@ defmodule RailWeb.Components.UpNextTest do
   # A card and the page it opens have to name the errand the same way, so both
   # read it off `StageLabel.approval_label/1`.
   test "names the work each stage is holding out for review", %{waiting: waiting} do
-    for stage <- [:product, :design, :architect, :engineer, :review, :qa] do
-      html = render_component(&UpNext.up_next/1, runs: [waiting.(stage)])
+    for stage <- [:plan, :engineer, :review, :qa] do
+      run = waiting.(stage)
+      html = render_component(&UpNext.up_next/1, runs: [run])
 
-      assert html =~ approval_label(stage)
+      assert html =~ approval_label(run.task)
     end
   end
 
   test "says what is waiting to be read, however many of it there is", %{waiting: waiting} do
-    for {stage, work} <- [product: "ticket", design: "designs", review: "findings", qa: "QA report"] do
+    for {stage, work} <- [plan: "plan", review: "findings", qa: "QA report"] do
       html = render_component(&UpNext.up_next/1, runs: [waiting.(stage)])
 
       assert html =~ "Waiting on you to read the #{work}."
@@ -52,9 +56,9 @@ defmodule RailWeb.Components.UpNextTest do
 
   test "the longest-waiting leads and the rest follow as rows", %{waiting: waiting} do
     engineer = waiting.(:engineer)
-    architect = waiting.(:architect)
+    plan = waiting.(:plan)
 
-    html = render_component(&UpNext.up_next/1, runs: [engineer, architect])
+    html = render_component(&UpNext.up_next/1, runs: [engineer, plan])
 
     assert html =~ "up-next-featured-run_engineer"
     assert html =~ "plan ready for review"
@@ -83,7 +87,7 @@ defmodule RailWeb.Components.UpNextTest do
   test "a stalled run in the rows says the same thing", %{waiting: waiting} do
     stalled = %{waiting.(:engineer) | stage_outcome: :in_progress, error: "It went wrong"}
 
-    html = render_component(&UpNext.up_next/1, runs: [waiting.(:architect), stalled])
+    html = render_component(&UpNext.up_next/1, runs: [waiting.(:plan), stalled])
 
     assert html =~ "It went wrong"
     assert html =~ "Fix"
@@ -168,5 +172,21 @@ defmodule RailWeb.Components.UpNextTest do
     assert html =~ "Watch the demo"
     assert html =~ ~s(href="/tasks/tsk_demo")
     refute html =~ "Ready to merge"
+  end
+
+  test "a Plan run with options and no pick asks for the pick, as a card and as a row", %{
+    waiting: waiting,
+    scratch: scratch
+  } do
+    options = for key <- ["a", "b", "c"], do: %{"key" => key, "title" => String.upcase(key)}
+    File.mkdir_p!(Path.join(scratch, "design"))
+    File.write!(Path.join(scratch, "design/manifest.json"), Jason.encode!(%{"options" => options}))
+
+    html = render_component(&UpNext.up_next/1, runs: [waiting.(:plan)])
+    assert html =~ "Waiting on you to pick a design."
+    assert html =~ "Pick a design"
+
+    html = render_component(&UpNext.up_next/1, runs: [waiting.(:engineer), waiting.(:plan)])
+    assert html =~ ~r/id="up-next-row-run_plan".*pick a design.*>\s*Pick\s*</s
   end
 end

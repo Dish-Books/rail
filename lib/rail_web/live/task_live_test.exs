@@ -38,7 +38,7 @@ defmodule RailWeb.TaskLiveTest do
 
     {:ok, backend} = Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :product)
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -56,7 +56,7 @@ defmodule RailWeb.TaskLiveTest do
     end)
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Task Live Issue"})
-    {:ok, task} = Pipeline.create_task(issue, :product)
+    {:ok, task} = Pipeline.create_task(issue, :plan)
     File.mkdir_p!(Path.join(task.scratch_path, "tickets"))
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
@@ -87,7 +87,7 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "[data-qa='task_detail_title']", "Task Live Issue")
     assert has_element?(view, "[data-qa='task_issue_identifier']", "TLV-1")
     assert has_element?(view, "[data-qa='task_branch_name']", task.worktree_name)
-    assert has_element?(view, "[data-qa='task_status_chip']", "Review the ticket")
+    assert has_element?(view, "[data-qa='task_status_chip']", "Review the plan")
   end
 
   test "the header reads the task's own stage, not the tab a stage with no run falls back to", %{
@@ -206,114 +206,6 @@ defmodule RailWeb.TaskLiveTest do
 
     assert has_element?(view, "[data-qa='conversation-tab']")
     assert has_element?(view, "#conversation-role-#{role.id}")
-  end
-
-  test "the product stage renders the ticket and approving hands the task on", %{conn: conn, task: task} do
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
-
-    File.write!(
-      Path.join([task.scratch_path, "tickets", "TLV-1.md"]),
-      "---\ntitle: A better ticket\npriority: high\nestimate: 2\n---\n\nThe body the agent wrote."
-    )
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueUpdate" => %{"success" => true, "issue" => %{"id" => "lin_task_live_1", "identifier" => "TLV-1"}}
-        }
-      })
-    end)
-
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-    assert has_element?(view, "[data-qa='product_ticket']", "The body the agent wrote.")
-    assert has_element?(view, "#product-ticket-title", "A better ticket")
-    assert has_element?(view, "#product-ticket-priority", "High")
-    assert has_element?(view, "#product-ticket-estimate", "2 Points")
-    refute has_element?(view, "[data-qa='product_ticket']", "title:")
-
-    view |> element("#approve-product-plan") |> render_click()
-
-    assert %Task{stage: :design} = Repo.reload!(task)
-    assert %{title: "A better ticket"} = task |> Repo.reload!() |> Repo.preload(:issue) |> Map.fetch!(:issue)
-  end
-
-  test "the product stage says so when the agent has saved no ticket", %{conn: conn, task: task, run: run} do
-    {:ok, _failed} = Pipeline.update_run(run, %{error: "The product agent did not save a ticket."})
-
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-    assert has_element?(view, "[data-qa='task_error_card']", "The product agent did not save a ticket.")
-    assert has_element?(view, "[data-qa='product_ticket_pending']", "The product agent has not saved a ticket yet.")
-    refute has_element?(view, "#approve-product-plan")
-  end
-
-  # Each save replaces the ticket, in every tab open on the task, with when it was saved.
-  test "a ticket saved and saved again mid-run is replaced in place", %{conn: conn, task: task, run: run} do
-    {:ok, _working} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-    File.rm(Path.join([task.scratch_path, "tickets", "TLV-1.md"]))
-
-    assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}")
-    assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-    {:ok, _first} = Pipeline.save_ticket(task, %{"title" => "First draft", "description" => "The first body."})
-
-    for view <- [one, two] do
-      _settled = render(view)
-      assert has_element?(view, "[data-qa='product_ticket']", "The first body.")
-      assert has_element?(view, "[data-qa='product_ticket_saved']", "Draft saved")
-      assert has_element?(view, "#product-ticket-saved-at[phx-hook='LocalTime']")
-    end
-
-    {:ok, _second} = Pipeline.save_ticket(task, %{"title" => "Second draft", "description" => "The second body."})
-
-    for view <- [one, two] do
-      _settled = render(view)
-      assert has_element?(view, "[data-qa='product_ticket']", "The second body.")
-      refute has_element?(view, "[data-qa='product_ticket']", "The first body.")
-    end
-  end
-
-  test "a running stage offers no approval", %{conn: conn, task: task, run: run} do
-    {:ok, _working} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-    File.write!(Path.join([task.scratch_path, "tickets", "TLV-1.md"]), "# A ticket\n\nBody.")
-
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-    refute has_element?(view, "#approve-product-plan")
-    refute has_element?(view, "#approve-product-plan-skip-design")
-  end
-
-  test "approving a run that started working since the page loaded says so", %{conn: conn, task: task, run: run} do
-    File.write!(Path.join([task.scratch_path, "tickets", "TLV-1.md"]), "# A ticket\n\nBody.")
-
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-    {:ok, _working} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-
-    view |> element("#approve-product-plan") |> render_click()
-
-    assert has_element?(view, "#product-approve-error", "still running")
-  end
-
-  test "approving a task that has moved on says where it is", %{conn: conn, task: task} do
-    File.write!(Path.join([task.scratch_path, "tickets", "TLV-1.md"]), "# A ticket\n\nBody.")
-
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-    {:ok, _moved} = Pipeline.update_task(task, %{stage: :design})
-    view |> element("#approve-product-plan") |> render_click()
-
-    assert has_element?(view, "#product-approve-error", "at Design, not product")
-  end
-
-  test "approving a ticket with no title reports why it failed", %{conn: conn, task: task} do
-    File.write!(Path.join([task.scratch_path, "tickets", "TLV-1.md"]), "Just a body, no heading.")
-
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-    assert has_element?(view, "[data-qa='task_detail_title']", "Task Live Issue")
-
-    view |> element("#approve-product-plan") |> render_click()
-
-    assert has_element?(view, "#product-approve-error", "Could not approve the ticket")
   end
 
   test "a run with no conversation refuses a message", %{conn: conn, task: task, run: run} do
@@ -1016,7 +908,7 @@ defmodule RailWeb.TaskLiveTest do
       |> Repo.insert!()
       |> Repo.preload(:project)
 
-    {:ok, other_task} = Pipeline.create_task(other_issue, :product)
+    {:ok, other_task} = Pipeline.create_task(other_issue, :plan)
     on_exit(fn -> File.rm_rf(other_task.scratch_path) end)
 
     {:ok, other_run} =
@@ -1048,8 +940,8 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(view, "#task-tab-issue", "Linear Issue")
-      assert has_element?(view, "#task-tab-#{role.id}[aria-selected='true']", "review the ticket")
-      assert has_element?(view, "[data-qa='product-stage']")
+      assert has_element?(view, "#task-tab-#{role.id}[aria-selected='true']", "review the plan")
+      assert has_element?(view, "[data-qa='plan-stage']")
     end
 
     test "a tab shows the page-level progress bar while its stage loads", %{conn: conn, task: task} do
@@ -1076,7 +968,7 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#issue-linear-link[href='https://linear.app/tlv/issue/TLV-1']")
 
       # The issue is read on its own, and the task it is already on is not a link.
-      refute has_element?(view, "[data-qa='product-stage']")
+      refute has_element?(view, "[data-qa='plan-stage']")
       refute has_element?(view, "[data-qa='conversation-tab']")
       refute has_element?(view, "#task-conversation-column")
       refute has_element?(view, "[data-qa='issue-task-link']")
@@ -1090,14 +982,14 @@ defmodule RailWeb.TaskLiveTest do
     } do
       File.write!(Path.join([task.scratch_path, "tickets", "TLV-1.md"]), "The ticket as approved.")
 
-      {:ok, architect} = Roles.get_role(project_id: project.id, stage: :architect)
+      {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
 
-      {:ok, task} = Pipeline.update_task(task, %{stage: :architect})
+      {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
 
-      {:ok, _planning} =
+      {:ok, _building} =
         Pipeline.create_run(%{
           task_id: task.id,
-          role_id: architect.id,
+          role_id: engineer.id,
           status: :running,
           started_at: DateTime.utc_now()
         })
@@ -1105,9 +997,10 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       view |> element("#task-tab-#{role.id}") |> render_click()
+      view |> element("#plan-item-ticket") |> render_click()
 
-      assert has_element?(view, "[data-qa='product_ticket']", "The ticket as approved.")
-      refute has_element?(view, "[data-qa='approve_product_plan']")
+      assert has_element?(view, "[data-qa='plan_ticket']", "The ticket as approved.")
+      refute has_element?(view, "[data-qa='approve_plan']")
     end
 
     test "a role with no stage of its own has only its conversation", %{
@@ -1134,11 +1027,11 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "a role that has not run has no tab yet", %{conn: conn, task: task, project: project} do
-      {:ok, architect} = Roles.get_role(project_id: project.id, stage: :architect)
+      {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      refute has_element?(view, "#task-tab-#{architect.id}")
+      refute has_element?(view, "#task-tab-#{engineer.id}")
     end
 
     test "a blocked role counts what it is waiting on", %{conn: conn, task: task, role: role, run: run} do
@@ -1177,12 +1070,12 @@ defmodule RailWeb.TaskLiveTest do
       role: role,
       project: project
     } do
-      {:ok, architect} = Roles.get_role(project_id: project.id, stage: :architect)
+      {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
 
-      {:ok, _planning} =
+      {:ok, _building} =
         Pipeline.create_run(%{
           task_id: task.id,
-          role_id: architect.id,
+          role_id: engineer.id,
           status: :running,
           started_at: DateTime.utc_now()
         })
@@ -1190,260 +1083,239 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
       assert has_element?(view, "#task-tab-#{role.id}[aria-selected='true']")
 
-      {:ok, _moved} = Pipeline.update_task(task, %{stage: :architect})
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :engineer})
       send(view.pid, :task_changed)
 
-      assert has_element?(view, "#task-tab-#{architect.id}[aria-selected='true']")
-      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{architect.id}")
+      assert has_element?(view, "#task-tab-#{engineer.id}[aria-selected='true']")
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{engineer.id}")
     end
   end
 
-  describe "the design stage" do
-    setup %{project: project, task: task} do
-      {:ok, design_role} = Roles.get_role(project_id: project.id, stage: :design)
-
-      {:ok, task} = Pipeline.update_task(task, %{stage: :design, worktree_path: create_temp_git_repo()})
-
-      {:ok, design_run} =
-        Pipeline.create_run(%{
-          task_id: task.id,
-          role_id: design_role.id,
-          status: :finished,
-          stage_outcome: :done,
-          conversation_id: "sess_design_stage",
-          started_at: DateTime.utc_now()
-        })
-
+  describe "the Plan stage" do
+    setup %{project: project, task: task, run: run} do
+      {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+      {:ok, run} = Pipeline.update_run(run, %{conversation_id: "sess_plan_stage"})
       design_dir = Path.join(task.scratch_path, "design")
       File.mkdir_p!(design_dir)
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
 
-      File.write!(
-        Path.join(design_dir, "manifest.json"),
-        Jason.encode!(%{
-          "options" => [
-            %{
-              "key" => "cards",
-              "title" => "Cards",
-              "summary" => "Big tiles.",
-              "good_at" => ["Easy to scan"],
-              "costs" => ["Few per screen"],
-              "assumptions" => "Twelve per page."
-            },
-            %{"key" => "table", "title" => "Table", "summary" => "Dense rows."},
-            %{"key" => "timeline", "title" => "Timeline"}
-          ]
-        })
-      )
+      roles =
+        Map.new([:product, :design, :architect, :engineer], fn stage ->
+          {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
+          {stage, role}
+        end)
 
-      for key <- ["cards", "table", "timeline"], do: File.write!(Path.join(design_dir, "#{key}.html"), "<h1>#{key}</h1>")
-
-      %{task: task, design_run: design_run, design_dir: design_dir}
-    end
-
-    test "working in the question card does not read the design again", %{conn: conn, task: task, design_run: run} do
-      {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
-      blocked = Repo.preload(blocked, task: :issue)
-
-      {:ok, _first} =
-        Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which layout?", options: ["Cards", "Table"]})
-
-      {:ok, _second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "How many per page?"})
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      reject(&Pipeline.read_design/1)
-
-      for typed <- ["C", "Ca", "Cards", "Cards, twelve to a page"] do
-        view |> form("#answer-question-form", %{"answer" => typed}) |> render_change()
-        assert has_element?(view, "#answer-textarea", typed)
+      save_ticket = fn ->
+        description = "## Problem\n\nSlow.\n\n## Acceptance criteria\n\n- One\n- Two\n- Three\n- Four\n"
+        {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Sandboxes show usage", description: description})
       end
 
-      view |> element("#question-option-1") |> render_click()
-      assert has_element?(view, "#question-option-1.bg-blue-100")
+      save_options = fn keys ->
+        for key <- keys do
+          File.write!(Path.join(design_dir, "#{key}.html"), "<h1>#{key}</h1>")
+          File.write!(Path.join(design_dir, "#{key}.png"), "png bytes")
+          title = String.capitalize(key)
 
-      view |> element("#question-tab-1") |> render_click()
-      assert has_element?(view, "#question-prompt", "How many per page?")
+          {:ok, _option} =
+            Pipeline.save_design_option(task, %{
+              key: key,
+              title: title,
+              summary: "#{title} summary.",
+              good_at: ["Fast"],
+              costs: ["Busy at 1280px"],
+              assumptions: "Ten per page."
+            })
+        end
+      end
+
+      save_plan = fn design ->
+        {:ok, _plan} =
+          Pipeline.save_plan(task, %{plan: "## Implementation plan\n\nFor #{design || "nobody"}.", design: design})
+      end
+
+      %{
+        task: task,
+        run: run,
+        roles: roles,
+        design_dir: design_dir,
+        save_ticket: save_ticket,
+        save_options: save_options,
+        save_plan: save_plan
+      }
     end
 
-    # The first option is there to compare the moment it is saved, while the two
-    # still being built hold their places, in every tab open on the task.
-    test "an option saved mid-run shows beside dashed tabs for the ones still being built", %{
+    test "a task shows the Linear Issue and Plan tabs only, whatever ran before Plan", %{
       conn: conn,
       task: task,
-      design_run: run,
-      design_dir: dir
+      role: role,
+      roles: roles
     } do
-      File.rm!(Path.join(dir, "manifest.json"))
-      File.write!(Path.join(dir, "cards.png"), "png")
-      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+      for stage <- [:product, :design, :architect] do
+        {:ok, _old} =
+          Pipeline.create_run(%{
+            task_id: task.id,
+            role_id: roles[stage].id,
+            status: :finished,
+            started_at: ~U[2026-10-01 10:00:00Z]
+          })
+      end
+
+      assert {:ok, view, html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#task-tab-issue", "Linear Issue")
+      assert has_element?(view, "#task-tab-#{role.id}[aria-selected='true']", "plan role")
+      assert html |> Floki.parse_document!() |> Floki.find("[role='tab'][id^='task-tab-']") |> length() == 2
+
+      for stage <- [:product, :design, :architect], do: refute(has_element?(view, "#task-tab-#{roles[stage].id}"))
+    end
+
+    test "each output shows the moment it is saved, in every page open on the task", %{
+      conn: conn,
+      task: task,
+      run: run,
+      save_ticket: save_ticket,
+      save_options: save_options,
+      save_plan: save_plan
+    } do
+      {:ok, _working} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
 
       assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(one, "#design-pending")
+      assert has_element?(one, "#plan-item-ticket-status", "Being written")
+      assert has_element?(one, "#plan-ticket-pending", "Writing the ticket")
 
-      {:ok, _saved} =
-        Pipeline.save_design_option(task, %{"key" => "cards", "title" => "Cards", "summary" => "Big tiles."})
+      save_ticket.()
 
       for view <- [one, two] do
         _settled = render(view)
+        assert has_element?(view, "#plan-item-ticket-status", "4 criteria · saved")
+        assert has_element?(view, "#plan-item-ticket-saved[phx-hook='LocalTime']")
+      end
+
+      save_options.(["cards"])
+
+      for view <- [one, two] do
+        _settled = render(view)
+        assert has_element?(view, "#plan-item-design-status", "1 of 3 saved")
+        assert has_element?(view, "#plan-item-design[aria-current='true']")
         assert has_element?(view, "#design-tab-cards", "Cards")
-        assert has_element?(view, "#design-tab-building-2", "Option 2")
-        assert has_element?(view, "#design-tab-building-3", "Being built")
-        refute has_element?(view, "#design-tab-building-1")
+        assert has_element?(view, "#design-tab-building-2", "Being built")
+        assert has_element?(view, "#pick-design-cards[disabled]")
+      end
+
+      save_plan.(nil)
+
+      for view <- [one, two] do
+        _settled = render(view)
+        assert has_element?(view, "#plan-item-plan-status", "saved")
+        refute has_element?(view, "#approve-plan")
       end
     end
 
-    test "a stopped designer leaves no tab pretending to be built", %{conn: conn, task: task, design_dir: dir} do
-      File.write!(Path.join(dir, "manifest.json"), ~s({"options": [{"key": "cards", "title": "Cards"}]}))
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#design-tab-cards")
-      refute has_element?(view, "[data-qa='design_tab_building']")
-    end
-
-    test "says so when the designer has written nothing", %{conn: conn, task: task, design_dir: dir} do
-      File.rm!(Path.join(dir, "manifest.json"))
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "[data-qa='design_pending']")
-      assert has_element?(view, "#design-pending-title", "No design options yet")
-      refute has_element?(view, "#approve-design")
-    end
-
-    test "says the designer is at work while it is", %{
+    test "Use this design picks at Plan, and the message says only what was picked", %{
       conn: conn,
       task: task,
-      design_run: design_run,
-      design_dir: dir
+      run: run,
+      role: role,
+      design_dir: dir,
+      save_ticket: save_ticket,
+      save_options: save_options
     } do
-      File.rm!(Path.join(dir, "manifest.json"))
-      {:ok, _working} = Pipeline.update_run(design_run, %{status: :running})
+      save_ticket.()
+      save_options.(["cards", "table", "timeline"])
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      assert has_element?(view, "#design-pending-title", "Designing three options")
-    end
-
-    test "shows one option at a time, with its tradeoffs, and picking one tells the designer", %{
-      conn: conn,
-      task: task,
-      design_dir: dir
-    } do
-      File.write!(Path.join(dir, "cards.png"), "png")
-      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-      %{options: [%{html_version: cards}, %{html_version: table}, _timeline]} = Pipeline.read_design(task)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "[data-qa='task_status_chip']", "Review the designs")
-      assert has_element?(view, "#design-tab-cards[aria-selected='true'] img")
-      assert has_element?(view, "#design-tab-table[aria-selected='false']")
-      assert has_element?(view, "#design-tab-timeline")
-
-      assert has_element?(view, "#design-option-title", "Cards")
-      assert has_element?(view, "#design-option-cards", "Big tiles.")
-      assert has_element?(view, "#design-good-at", "Easy to scan")
-      assert has_element?(view, "#design-costs", "Few per screen")
-      assert has_element?(view, "#design-assumptions", "Twelve per page.")
-      assert has_element?(view, "#open-design-cards[href='/tasks/#{task.id}/design/cards?v=#{cards}']")
-      refute has_element?(view, "#approve-design")
+      assert has_element?(view, "[data-qa='task_status_chip']", "Pick a design")
+      assert has_element?(view, "#task-tab-#{role.id}", "pick a design")
+      assert has_element?(view, "#plan-item-design[aria-current='true']")
+      assert has_element?(view, "#plan-item-design-status", "Pick one of 3")
+      refute has_element?(view, "#approve-plan")
 
       view |> element("#design-tab-table") |> render_click()
-
-      assert has_element?(
-               view,
-               "#design-option-table iframe[src='/tasks/#{task.id}/design/table?v=#{table}'][sandbox='allow-scripts']"
-             )
-
-      refute has_element?(view, "iframe[srcdoc]")
-      assert has_element?(view, "#open-design-table[href='/tasks/#{task.id}/design/table?v=#{table}']")
-      refute has_element?(view, "#design-option-cards")
-      refute has_element?(view, "#design-good-at")
+      assert has_element?(view, "#design-option-title", "Table")
 
       view |> element("#pick-design-table") |> render_click()
 
       assert File.read!(Path.join(dir, "picked")) == "table"
-      refute File.exists?(Path.join(dir, "cards.html"))
-      refute File.exists?(Path.join(dir, "timeline.html"))
-      assert has_element?(view, "#design-option-title", "Table")
-      refute has_element?(view, "[data-qa='design_tab']")
-      refute has_element?(view, "#design-tab-cards")
-      refute has_element?(view, "#design-tab-timeline")
+      assert Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ ~r/^\[human:[^\]]+\] I picked Table \(table\)\.$/))
+      assert has_element?(view, "#plan-item-design-status", "Picked: Table")
 
-      # Once there is a pick, acting on it sits in the header with every other
-      # action on the task; approving waits for the designer's turn to finish.
-      refute has_element?(view, "#task-header #approve-design")
-      assert has_element?(view, "#task-header #open-design-table[href='/tasks/#{task.id}/design/table?v=#{table}']")
-      assert has_element?(view, "#design-option-table iframe[src='/tasks/#{task.id}/design/table?v=#{table}']")
-      refute has_element?(view, "[data-qa='pick_design']")
+      view |> element("#plan-item-design") |> render_click()
+      assert has_element?(view, "#design-option-table", "Picked")
+      assert has_element?(view, "#design-costs", "Busy at 1280px")
+      assert has_element?(view, "#design-assumptions", "Ten per page.")
+      refute has_element?(view, "[role='tablist'][aria-label='Design options']")
     end
 
-    test "a turn finishing re-reads the design the agent may have changed", %{
+    test "a pick of another option than the plan's says it is being revised, and offers no Approve", %{
       conn: conn,
       task: task,
-      design_run: design_run,
-      design_dir: dir
+      run: run,
+      design_dir: dir,
+      save_ticket: save_ticket,
+      save_options: save_options,
+      save_plan: save_plan
     } do
-      File.write!(Path.join(dir, "picked"), "cards")
-      %{options: [%{html_version: before} | _others]} = Pipeline.read_design(task)
+      save_ticket.()
+      save_options.(["cards", "table", "timeline"])
+      save_plan.("cards")
+      File.write!(Path.join(dir, "picked"), "table")
+      {:ok, working} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "#design-option-cards", "Big tiles.")
-      assert has_element?(view, "iframe[id='design-page-cards-#{before}']")
+
+      assert has_element?(view, "#plan-item-plan[aria-current='true']")
+      assert has_element?(view, "#plan-item-plan-status", "Revising for the pick")
+      assert has_element?(view, "#plan-revising", "Being revised for Table. Below is the plan written for Cards.")
+      refute has_element?(view, "#approve-plan")
+
+      {:ok, _stopped} = Pipeline.update_run(working, %{status: :finished})
+      send(view.pid, :task_changed)
+
+      assert has_element?(view, "#plan-item-plan-status", "Written for Cards, not Table")
+      assert has_element?(view, "#plan-revising", "Not yet revised for Table. Below is the plan written for Cards.")
+      refute has_element?(view, "#approve-plan")
+
+      File.rm!(Path.join([task.scratch_path, "plans", "TLV-1.design.json"]))
+      send(view.pid, {:output_saved, task.id})
+      _settled = render(view)
+      assert has_element?(view, "#plan-revising", "Below is the plan written before the pick.")
+    end
+
+    test "Approve shows once the ticket, the pick and the plan for it are saved, and moves the task to Engineer", %{
+      conn: conn,
+      task: task,
+      design_dir: dir,
+      save_ticket: save_ticket,
+      save_options: save_options,
+      save_plan: save_plan
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      refute has_element?(view, "#approve-plan")
+
+      save_ticket.()
+      save_options.(["cards", "table", "timeline"])
+      save_plan.(nil)
+      send(view.pid, {:output_saved, task.id})
+      _settled = render(view)
+      refute has_element?(view, "#approve-plan")
 
       File.write!(
         Path.join(dir, "manifest.json"),
-        ~s({"options": [{"key": "cards", "title": "Cards", "summary": "Bigger tiles."}]})
+        ~s({"options": [{"key": "table", "title": "Table", "summary": "Dense."}]})
       )
 
-      File.write!(Path.join(dir, "cards.html"), "<h1>cards, without the links</h1>")
-      %{options: [%{html_version: revised}]} = Pipeline.read_design(task)
-
-      send(view.pid, {:os_process_finished, design_run, %{}})
-
-      # The page forwards to the component, which renders on its own turn.
+      File.write!(Path.join(dir, "picked"), "table")
+      send(view.pid, {:output_saved, task.id})
       _settled = render(view)
-      assert has_element?(view, "#design-option-cards", "Bigger tiles.")
-      refute has_element?(view, "iframe[id='design-page-cards-#{before}']")
+      refute has_element?(view, "#approve-plan")
 
-      assert has_element?(
-               view,
-               "iframe[id='design-page-cards-#{revised}'][src='/tasks/#{task.id}/design/cards?v=#{revised}']"
-             )
-
-      assert has_element?(view, "#task-header #open-design-cards[href='/tasks/#{task.id}/design/cards?v=#{revised}']")
-    end
-
-    test "a turn finishing shows the screenshot it retook", %{
-      conn: conn,
-      task: task,
-      design_run: design_run,
-      design_dir: dir
-    } do
-      File.write!(Path.join(dir, "cards.png"), "png")
-      File.touch!(Path.join(dir, "cards.png"), 1_900_000_000)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "#design-tab-cards img[src$='?v=1900000000']")
-
-      File.touch!(Path.join(dir, "cards.png"), 1_900_000_060)
-      send(view.pid, {:os_process_finished, design_run, %{}})
-
+      save_plan.("table")
+      send(view.pid, {:output_saved, task.id})
       _settled = render(view)
-      assert has_element?(view, "#design-tab-cards img[src$='?v=1900000060']")
-    end
-
-    test "approving the picked design hands the task to the architect", %{
-      conn: conn,
-      task: task,
-      design_run: design_run,
-      design_dir: dir
-    } do
-      File.write!(Path.join(dir, "manifest.json"), ~s({"options": [{"key": "cards", "title": "Cards"}]}))
-      for key <- ["table", "timeline"], do: File.rm!(Path.join(dir, "#{key}.html"))
-      File.write!(Path.join(dir, "picked"), "cards")
-      File.write!(Path.join(dir, "cards.png"), "png bytes")
+      assert has_element?(view, "#approve-plan[phx-disable-with='Approving…']", "Approve")
 
       Req.Test.expect(Rail.Linear, fn conn ->
         Req.Test.json(conn, %{
@@ -1452,7 +1324,7 @@ defmodule RailWeb.TaskLiveTest do
               "success" => true,
               "uploadFile" => %{
                 "uploadUrl" => "https://uploads.linear.app/put/tlv-1",
-                "assetUrl" => "https://uploads.linear.app/assets/tlv-1-cards.png",
+                "assetUrl" => "https://uploads.linear.app/assets/tlv-1-table.png",
                 "headers" => []
               }
             }
@@ -1462,259 +1334,188 @@ defmodule RailWeb.TaskLiveTest do
 
       Req.Test.expect(Rail.Linear, fn conn -> Plug.Conn.send_resp(conn, 200, "") end)
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#approve-plan") |> render_click()
 
-      view |> element("#approve-design") |> render_click()
+      assert %Task{stage: :engineer} = Repo.reload!(task)
+      assert %Issue{title: "Sandboxes show usage", description: description} = Repo.get!(Issue, task.issue_id)
+      assert description =~ "## Design: Table"
 
-      assert %Task{stage: :architect} = Repo.reload!(task)
-      assert {:ok, approved, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{design_run.role_id}")
-      assert has_element?(approved, "#open-design-cards")
+      assert %ImplementationPlan{content: "## Implementation plan\n\nFor table.\n"} =
+               Repo.get_by(ImplementationPlan, task_id: task.id)
     end
 
-    test "a design that cannot be approved says why", %{conn: conn, task: task, design_dir: dir} do
-      File.write!(Path.join(dir, "picked"), "cards")
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("#approve-design") |> render_click()
-
-      assert has_element?(view, "#design-error", "no screenshot yet")
-    end
-
-    test "picking while the designer works says so", %{conn: conn, task: task, design_run: design_run} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      {:ok, _working} = Pipeline.update_run(design_run, %{status: :running})
-      view |> element("#pick-design-cards") |> render_click()
-
-      assert has_element?(view, "#design-error", "still running")
-    end
-
-    # Each of these is a state that arrived after the button was drawn, which is
-    # the only way a person gets to press one of them at all.
-    test "a pick that has gone stale says what is wrong rather than nothing", %{
+    test "a second page clicking Approve is told the task is at Engineer", %{
       conn: conn,
       task: task,
-      design_dir: dir
+      save_ticket: save_ticket,
+      save_plan: save_plan
     } do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      # Somebody else picked while this was on screen.
-      File.write!(Path.join(dir, "picked"), "table")
-      view |> element("#pick-design-cards") |> render_click()
-      assert has_element?(view, "#design-error", "already been picked")
-
-      # The designer rewrote its options and the one on screen is not among them.
-      File.rm!(Path.join(dir, "picked"))
-      File.write!(Path.join(dir, "manifest.json"), Jason.encode!(%{"options" => [%{"key" => "table", "title" => "T"}]}))
-      view |> element("#pick-design-cards") |> render_click()
-      assert has_element?(view, "#design-error", "no longer exists")
-
-      # The designer withdrew its options altogether.
-      File.rm!(Path.join(dir, "manifest.json"))
-      view |> element("#pick-design-cards") |> render_click()
-      assert has_element?(view, "#design-error", "not saved any options yet")
-    end
-
-    test "approving with nothing picked, or a picture older than the design, says so", %{
-      conn: conn,
-      task: task,
-      design_dir: dir
-    } do
-      File.write!(Path.join(dir, "picked"), "cards")
-      File.write!(Path.join(dir, "cards.png"), "png bytes")
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      # A screenshot older than the design it is of is a picture of something
-      # else.
-      old = DateTime.utc_now() |> DateTime.shift(hour: -1) |> DateTime.to_unix()
-      File.touch!(Path.join(dir, "cards.png"), old)
-
-      view |> element("#approve-design") |> render_click()
-      assert has_element?(view, "#design-error", "older than the design")
-
-      File.rm!(Path.join(dir, "picked"))
-      view |> element("#approve-design") |> render_click()
-      assert has_element?(view, "#design-error", "Pick a design before approving it.")
-    end
-
-    # A designer that has not said anything yet cannot be answered, and pressing
-    # a button that was drawn before it stopped says so.
-    test "a design run with no conversation cannot be picked from", %{
-      conn: conn,
-      task: task,
-      design_run: design_run
-    } do
-      {:ok, _silent} = Pipeline.update_run(design_run, %{conversation_id: nil})
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("#pick-design-cards") |> render_click()
-
-      assert has_element?(view, "#design-error", "cannot be messaged yet")
-    end
-
-    # A manifest that lists nothing has nothing to select, and the pane says the
-    # designer has written nothing rather than opening an empty option.
-    test "a manifest listing nothing reads as nothing written", %{conn: conn, task: task, design_dir: dir} do
-      File.write!(Path.join(dir, "manifest.json"), Jason.encode!(%{"options" => []}))
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "[data-qa='design_pending']")
-    end
-
-    test "a task that moved on under the reader cannot be picked from", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      {:ok, _moved} = Pipeline.update_task(task, %{stage: :architect})
-
-      view |> element("#pick-design-cards") |> render_click()
-
-      assert has_element?(view, "#design-error", "This task is at Architect, not design.")
-    end
-  end
-
-  describe "the architect stage" do
-    setup %{project: project, task: task} do
-      roles =
-        Map.new([:architect, :engineer], fn stage ->
-          {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
-
-          {stage, role}
-        end)
-
-      {:ok, task} = Pipeline.update_task(task, %{stage: :architect, worktree_path: create_temp_git_repo()})
-
-      {:ok, architect_run} =
-        Pipeline.create_run(%{
-          task_id: task.id,
-          role_id: roles[:architect].id,
-          status: :finished,
-          stage_outcome: :done,
-          conversation_id: "sess_architect_stage",
-          started_at: DateTime.utc_now()
-        })
-
-      plans_dir = Path.join(task.scratch_path, "plans")
-      File.mkdir_p!(plans_dir)
-      plan_path = Path.join(plans_dir, "TLV-1.md")
-      File.write!(plan_path, "## Implementation plan\n\n### Approach\nExtend the invoices module.\n")
-
-      %{task: task, roles: roles, architect_run: architect_run, plan_path: plan_path}
-    end
-
-    test "a plan saved and saved again mid-run is replaced in place in every tab", %{
-      conn: conn,
-      task: task,
-      architect_run: run,
-      plan_path: path
-    } do
-      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-      File.rm!(path)
+      save_ticket.()
+      save_plan.(nil)
 
       assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(one, "#architect-plan-pending")
 
-      {:ok, _first} = Pipeline.save_plan(task, "## Implementation plan\n\n### Approach\nThe first draft.")
+      one |> element("#approve-plan") |> render_click()
+      assert %Task{stage: :engineer} = Repo.reload!(task)
 
-      for view <- [one, two] do
-        _settled = render(view)
-        assert has_element?(view, "#architect-plan", "The first draft.")
-      end
-
-      {:ok, _second} = Pipeline.save_plan(task, "## Implementation plan\n\n### Approach\nThe second draft.")
-
-      for view <- [one, two] do
-        _settled = render(view)
-        assert has_element?(view, "#architect-plan", "The second draft.")
-        refute has_element?(view, "#architect-plan", "The first draft.")
-      end
+      two |> element("#approve-plan") |> render_click()
+      assert has_element?(two, "#plan-error", "This task is at Engineer, not Plan.")
     end
 
-    test "working in the question card does not read the plan again", %{conn: conn, task: task, architect_run: run} do
-      {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
-      blocked = Repo.preload(blocked, task: :issue)
-
-      {:ok, _first} =
-        Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Extend or add?", options: ["Extend", "Add"]})
-
-      {:ok, _second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which module?"})
+    test "approving a run that started working since the page loaded says so", %{
+      conn: conn,
+      task: task,
+      run: run,
+      save_ticket: save_ticket,
+      save_plan: save_plan
+    } do
+      save_ticket.()
+      save_plan.(nil)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      reject(&Pipeline.read_plan/1)
-      reject(&Pipeline.get_implementation_plan/1)
+      {:ok, _working} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
 
-      for typed <- ["E", "Ex", "Extend", "Extend the invoices module"] do
-        view |> form("#answer-question-form", %{"answer" => typed}) |> render_change()
-        assert has_element?(view, "#answer-textarea", typed)
-      end
+      view |> element("#approve-plan") |> render_click()
 
-      view |> element("#question-option-1") |> render_click()
-      assert has_element?(view, "#question-option-1.bg-blue-100")
-
-      view |> element("#question-tab-1") |> render_click()
-      assert has_element?(view, "#question-prompt", "Which module?")
+      assert has_element?(view, "#plan-error", "Something is still running on this task.")
+      assert %Task{stage: :plan} = Repo.reload!(task)
     end
 
-    test "renders the plan the architect wrote", %{conn: conn, task: task} do
+    test "a turn that ended short shows its error, the options it is short of, and where to pick", %{
+      conn: conn,
+      task: task,
+      run: run,
+      save_ticket: save_ticket,
+      save_options: save_options
+    } do
+      save_ticket.()
+      save_options.(["cards", "table"])
+      error = "The Plan agent saved 2 design options. It needs 3, or a pick."
+      {:ok, _failed} = Pipeline.update_run(run, %{error: error, stage_outcome: :in_progress})
+
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      assert has_element?(view, "#architect-plan", "Extend the invoices module.")
-      refute has_element?(view, "#plan-sheet")
+      assert has_element?(view, "[data-qa='task_status_chip']", "Plan failed")
+      assert has_element?(view, "[data-qa='task_error_card']", error)
+      assert has_element?(view, "#plan-item-design[aria-current='true']")
+      assert has_element?(view, "#plan-item-design-status", "2 of 3 saved: needs 3")
+      assert has_element?(view, "#design-tab-missing-3", "Not saved")
+      assert has_element?(view, "#pick-in-conversation", "Pick in the conversation.")
+      refute has_element?(view, "#pick-design-cards")
+      assert has_element?(view, "#plan-item-plan-status", "Not saved yet")
+    end
+
+    test "a change with no screen says so, and Approve needs only the ticket and the plan", %{
+      conn: conn,
+      task: task,
+      save_ticket: save_ticket,
+      save_plan: save_plan
+    } do
+      save_ticket.()
+      save_plan.(nil)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-qa='task_status_chip']", "Review the plan")
+      assert has_element?(view, "#plan-item-ticket[aria-current='true']")
+      assert has_element?(view, "[data-qa='plan_ticket']", "Slow.")
+      assert has_element?(view, "#plan-item-design-status", "No screen in this change")
       assert has_element?(view, "#approve-plan")
+
+      view |> element("#plan-item-design") |> render_click()
+      assert has_element?(view, "#plan-design-none", "No screen in this change")
+
+      view |> element("#plan-item-plan") |> render_click()
+      assert has_element?(view, "[data-qa='plan_plan']", "For nobody.")
     end
 
-    test "renders a plan in the old three-section format as the markdown it was written as", %{
+    test "a task moved here from Design shows its options, pick and conversation, and can be messaged", %{
       conn: conn,
       task: task,
-      plan_path: path
+      run: run,
+      roles: roles,
+      save_ticket: save_ticket,
+      save_options: save_options
     } do
-      File.write!(path, """
-      ## Implementation plan
+      save_ticket.()
+      save_options.(["cards", "table", "timeline"])
 
-      ### Approach
+      {:ok, design_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:design].id,
+          status: :finished,
+          stage_outcome: :done,
+          conversation_id: "sess_plan_stage",
+          started_at: ~U[2026-10-03 10:00:00Z]
+        })
 
-      Extend `Rail.Invoices` with a vendor filter.
-
-      ### File-level changes
-
-      - `lib/rail/invoices/actions/list_invoices.ex`: filters by `vendor_id` when given.
-
-      ### Verification
-
-      - `lib/rail/invoices/actions/list_invoices_test.exs` pins the filter.
-      """)
+      Pipeline.append_run_events(design_run.id, nil, ["Three options are saved."])
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      refute has_element?(view, "#plan-sheet")
-      refute has_element?(view, "#architect-plan", "No program design")
-      assert has_element?(view, "#architect-plan [data-qa='markdown-body'] h3", "File-level changes")
-      assert has_element?(view, "#architect-plan [data-qa='markdown-body']", "filters by vendor_id when given.")
+      assert has_element?(view, "#plan-item-design-status", "Pick one of 3")
+      assert has_element?(view, "#earlier-divider-0", "design role")
+      assert has_element?(view, "#earlier-0", "Three options are saved.")
+      assert has_element?(view, "#plan-divider", "Plan · from")
+      assert has_element?(view, "#moved-note", "Design moved into Plan. Pick a design, or send a message to continue.")
+
+      view |> element("#plan-item-plan") |> render_click()
+
+      assert has_element?(
+               view,
+               "#plan-plan-pending",
+               "This task moved here from Design. Pick a design and Plan writes the plan for it."
+             )
+
+      view |> element("#chat-composer-form") |> render_submit(%{"message" => "Carry on"})
+      assert Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "Carry on"))
     end
 
-    test "a plan in the sheet's sections draws both diagrams, and Source shows each as written", %{
+    test "a subagent line opens on its own transcript, a refused save with its reason", %{
       conn: conn,
       task: task,
-      plan_path: path
+      run: run
     } do
-      File.write!(path, sheet_plan())
+      Pipeline.append_run_events(run.id, nil, [
+        "[subagent toolu_ar] architect · plan from the ticket",
+        "[within toolu_ar] Reading the code.",
+        "[within toolu_ar] [tool] mcp__rail__save_plan",
+        "[within toolu_ar] [tool error mcp__rail__save_plan] Refused, nothing saved. plan: must open with the heading.",
+        "[subagent end toolu_ar]"
+      ])
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      refute has_element?(view, "[data-qa='subagent-transcript']")
 
-      assert has_element?(view, "#architect-plan #plan-sheet")
-      assert has_element?(view, "#architect-plan figure[id^='plan-diagram-change-'][phx-hook='PlanDiagram']")
-      assert has_element?(view, "#architect-plan figure[id^='plan-diagram-call_flow-'][phx-hook='PlanDiagram']")
+      view |> element("[data-qa='subagent-block'][data-status='done'] button") |> render_click()
+      assert has_element?(view, "[data-qa='subagent-transcript']", "Reading the code.")
+
+      view |> element("[data-qa='subagent-transcript'] [data-qa='activity-tile'] button") |> render_click()
+      assert has_element?(view, "[data-qa='subagent-transcript'] [data-qa='activity-step']", "must open with the heading")
+
+      view |> element("[data-qa='subagent-block'][data-status='done'] > button") |> render_click()
+      refute has_element?(view, "[data-qa='subagent-transcript']")
+    end
+
+    test "a plan in the sheet's sections draws its diagrams, Source shows each, and the item counts its files", %{
+      conn: conn,
+      task: task,
+      save_ticket: save_ticket
+    } do
+      save_ticket.()
+      {:ok, _plan} = Pipeline.save_plan(task, %{plan: sheet_plan()})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#plan-item-plan") |> render_click()
+
+      assert has_element?(view, "#plan-item-plan-status", "files · saved")
+      assert has_element?(view, "#plan-plan #plan-sheet")
       refute has_element?(view, "figure pre[data-diagram-source]:not(.hidden)")
 
       view |> element("button[phx-value-view='change:source']") |> render_click()
-
-      assert has_element?(view, "button[phx-value-view='change:source'][aria-pressed='true']")
       assert has_element?(view, "figure[id^='plan-diagram-change-'] pre[data-diagram-source]:not(.hidden)")
-      refute has_element?(view, "figure[id^='plan-diagram-call_flow-'] pre[data-diagram-source]:not(.hidden)")
 
       view |> element("button[phx-value-view='call_flow:source']") |> render_click()
       assert has_element?(view, "figure[id^='plan-diagram-call_flow-'] pre[data-diagram-source]:not(.hidden)")
@@ -1724,155 +1525,101 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "figure pre[data-diagram-source]:not(.hidden)")
     end
 
-    test "a plan whose files are a task list still opens, as the markdown it was written as", %{
-      conn: conn,
-      task: task,
-      plan_path: path
-    } do
-      File.write!(path, String.replace(sheet_plan(), "- `lib/rail/pipeline.ex`:", "- [ ] `lib/rail/pipeline.ex`:"))
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#architect-plan", "Sending a task back is a stage move")
-      assert has_element?(view, "#architect-plan input[type='checkbox']")
-      refute has_element?(view, "#plan-sheet")
-    end
-
-    # Whether a diagram draws is the browser's business; the server never judges it.
-    test "a plan whose diagram does not parse still approves", %{
-      conn: conn,
-      task: task,
-      roles: roles,
-      plan_path: path
-    } do
-      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
-      broken = String.replace(sheet_plan(), ~s(--> P["Pipeline"]), ~s(-> P["Pipeline"]))
-      File.write!(path, broken)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "figure[id^='plan-diagram-change-']")
-
-      view |> element("#approve-plan") |> render_click()
-
-      assert %Task{stage: :engineer} = Repo.reload!(task)
-      assert Repo.get_by(Run, task_id: task.id, role_id: roles[:engineer].id)
-      assert %ImplementationPlan{content: ^broken} = Repo.get_by(ImplementationPlan, task_id: task.id)
-    end
-
     test "after approval the tab shows the plan as approved, not what scratch says now", %{
       conn: conn,
       task: task,
-      roles: roles,
-      plan_path: path,
-      architect_run: architect_run
+      role: role,
+      save_ticket: save_ticket,
+      save_plan: save_plan
     } do
-      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
-      File.write!(path, sheet_plan())
-      assert {:ok, _approved} = Pipeline.approve_plan(architect_run)
-      File.write!(path, "## Implementation plan\n\n### Approach\nSomething else entirely.\n")
+      save_ticket.()
+      save_plan.(nil)
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{roles[:architect].id}")
+      Repo.insert!(%ImplementationPlan{
+        task_id: task.id,
+        content: "## Implementation plan\n\nAs approved.",
+        captured_at: DateTime.utc_now()
+      })
+
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :engineer})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
+      view |> element("#plan-item-plan") |> render_click()
 
       assert has_element?(view, "#plan-approved", "Plan approved")
-      assert has_element?(view, "#architect-plan #plan-sheet", "Sending a task back is a stage move")
-      refute has_element?(view, "#architect-plan", "Something else entirely.")
+      assert has_element?(view, "[data-qa='plan_plan']", "As approved.")
+      refute has_element?(view, "[data-qa='plan_plan']", "For nobody.")
       refute has_element?(view, "#approve-plan")
     end
 
-    test "a task moved past architect without an approval shows what scratch holds, unapproved", %{
+    test "every refusal a raced click can meet says why", %{
       conn: conn,
       task: task,
-      roles: roles
-    } do
-      {:ok, _moved} = Pipeline.update_task(task, %{stage: :engineer})
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{roles[:architect].id}")
-
-      assert has_element?(view, "#architect-plan", "Extend the invoices module.")
-      refute has_element?(view, "#plan-approved")
-    end
-
-    test "says so when the architect has written nothing", %{conn: conn, task: task, plan_path: path} do
-      File.rm!(path)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "[data-qa='architect_plan_pending']")
-      assert has_element?(view, "#architect-plan-pending-title", "No plan yet")
-      refute has_element?(view, "#approve-plan")
-    end
-
-    test "says the architect is at work while it is", %{
-      conn: conn,
-      task: task,
-      architect_run: architect_run,
-      plan_path: path
-    } do
-      File.rm!(path)
-      {:ok, _working} = Pipeline.update_run(architect_run, %{status: :running})
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#architect-plan-pending-title", "Planning the implementation")
-    end
-
-    # The architect rewrites the file in place, so a finished turn changes no row.
-    test "re-reads the plan when a turn finishes", %{
-      conn: conn,
-      task: task,
-      architect_run: architect_run,
-      plan_path: path
+      run: run,
+      design_dir: dir,
+      save_ticket: save_ticket,
+      save_options: save_options,
+      save_plan: save_plan
     } do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "#architect-plan", "Extend the invoices module.")
+      stage = with_target(view, "#plan-stage")
 
-      File.write!(path, "## Implementation plan\n\n### Approach\nExtend the payments module instead.\n")
-      send(view.pid, {:os_process_finished, architect_run, %{}})
+      render_click(stage, "approve", %{})
+      assert has_element?(view, "#plan-error", "Plan has not saved a ticket yet.")
 
-      # The page forwards to the component, which renders on its own turn.
-      _settled = render(view)
-      assert has_element?(view, "#architect-plan", "Extend the payments module instead.")
+      save_ticket.()
+      render_click(stage, "approve", %{})
+      assert has_element?(view, "#plan-error", "Plan has not saved a plan yet.")
+
+      render_click(stage, "pick", %{"key" => "cards"})
+      assert has_element?(view, "#plan-error", "No design options are saved yet.")
+
+      save_options.(["cards", "table", "timeline"])
+      save_plan.("cards")
+      render_click(stage, "approve", %{})
+      assert has_element?(view, "#plan-error", "Pick a design before approving.")
+
+      render_click(stage, "pick", %{"key" => "grid"})
+      assert has_element?(view, "#plan-error", "That design option no longer exists.")
+
+      File.write!(Path.join(dir, "picked"), "table")
+      render_click(stage, "approve", %{})
+      assert has_element?(view, "#plan-error", "The plan is not written for the picked design yet.")
+
+      render_click(stage, "pick", %{"key" => "cards"})
+      assert has_element?(view, "#plan-error", "A design has already been picked.")
+
+      save_plan.("table")
+      File.touch!(Path.join(dir, "table.html"), System.os_time(:second) + 60)
+      render_click(stage, "approve", %{})
+      assert has_element?(view, "#plan-error", "The screenshot is older than the design. Ask Plan to retake it.")
+
+      File.rm!(Path.join(dir, "table.png"))
+      render_click(stage, "approve", %{})
+      assert has_element?(view, "#plan-error", "The picked design has no screenshot yet.")
+
+      File.rm!(Path.join(dir, "picked"))
+      {:ok, _silent} = Pipeline.update_run(run, %{conversation_id: nil})
+      send(view.pid, :task_changed)
+      render_click(stage, "pick", %{"key" => "cards"})
+      assert has_element?(view, "#plan-error", "Plan cannot be messaged yet.")
     end
 
-    test "approving the plan hands the task to the engineer", %{conn: conn, task: task, roles: roles} do
-      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+    test "working in the question card does not read the outputs again", %{conn: conn, task: task, run: run} do
+      {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+      blocked = Repo.preload(blocked, task: :issue)
+      {:ok, _first} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which layout?", options: ["A", "B"]})
+      {:ok, _second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "How many per page?"})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      reject(&Pipeline.read_design/2)
+      reject(&Pipeline.read_plan/1)
+      reject(&Pipeline.read_ticket/1)
 
-      view |> element("#approve-plan") |> render_click()
-
-      assert %Task{stage: :engineer} = Repo.reload!(task)
-      assert Repo.get_by(Run, task_id: task.id, role_id: roles[:engineer].id)
-    end
-
-    test "approving while the architect works says why it did not", %{
-      conn: conn,
-      task: task,
-      architect_run: architect_run
-    } do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      {:ok, _working} = Pipeline.update_run(architect_run, %{status: :running})
-      view |> element("#approve-plan") |> render_click()
-
-      assert has_element?(view, "#architect-error", "still running")
-      assert %Task{stage: :architect} = Repo.reload!(task)
-    end
-
-    # Both of these arrived after the button was drawn, which is the only way a
-    # person gets to press it in either state.
-    test "an approval that has gone stale says what is wrong", %{conn: conn, task: task, plan_path: path} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      File.rm!(path)
-      view |> element("#approve-plan") |> render_click()
-      assert has_element?(view, "#architect-error", "not saved a plan yet")
-
-      File.write!(path, "## Implementation plan\n")
-      {:ok, _moved} = Pipeline.update_task(task, %{stage: :engineer})
-
-      view |> element("#approve-plan") |> render_click()
-      assert has_element?(view, "#architect-error", "This task is at Engineer, not architect.")
+      view |> form("#answer-question-form", %{"answer" => "A, please"}) |> render_change()
+      view |> element("#question-option-1") |> render_click()
+      view |> element("#question-tab-1") |> render_click()
+      assert has_element?(view, "#question-prompt", "How many per page?")
     end
   end
 
@@ -2753,11 +2500,16 @@ defmodule RailWeb.TaskLiveTest do
     # A turn that ended badly leaves the worktree dirty, and the task can already
     # have moved on by the time anyone looks. Withholding the button there leaves
     # work that nothing can commit.
-    test "the commit is still offered once the task has moved past engineer", %{conn: conn, task: task, repo: repo} do
+    test "the commit is still offered once the task has moved past engineer", %{
+      conn: conn,
+      task: task,
+      engineer_run: run,
+      repo: repo
+    } do
       File.write!(Path.join(repo, "left_behind.ex"), "uncommitted\n")
       {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{run.role_id}")
 
       assert has_element?(view, "#commit-work")
     end
@@ -3640,14 +3392,14 @@ defmodule RailWeb.TaskLiveTest do
 
   describe "the conversation, which the page hosts and feeds" do
     setup %{project: project, task: task, run: run} do
-      {:ok, other_role} = Roles.get_role(project_id: project.id, stage: :design)
+      {:ok, other_role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
       {:ok, other_run} =
         Pipeline.create_run(%{
           task_id: task.id,
           role_id: other_role.id,
           status: :finished,
-          conversation_id: "sess_design",
+          conversation_id: "sess_engineer",
           started_at: ~U[2026-09-09 09:00:00Z]
         })
 
@@ -3676,10 +3428,10 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#task-tab-#{other_role.id}")
 
       view |> element("#task-tab-#{other_role.id}") |> render_click()
-      assert has_element?(view, "#metadata-run-conversation-id", "sess_design")
+      assert has_element?(view, "#metadata-run-conversation-id", "sess_engineer")
 
       send(view.pid, :task_changed)
-      assert has_element?(view, "#metadata-run-conversation-id", "sess_design")
+      assert has_element?(view, "#metadata-run-conversation-id", "sess_engineer")
     end
 
     # One scroller serves every tab, so the scroll hook tells another run from a patch by its id.
@@ -3704,10 +3456,10 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert has_element?(view, "#metadata-run-conversation-id", "sess_product")
 
-      {:ok, _moved} = Pipeline.update_task(task, %{stage: :design})
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :engineer})
       send(view.pid, :task_changed)
 
-      assert has_element?(view, "#metadata-run-conversation-id", "sess_design")
+      assert has_element?(view, "#metadata-run-conversation-id", "sess_engineer")
     end
 
     test "log lines for another run on the task stay out of the one being read", %{
@@ -4022,14 +3774,15 @@ defmodule RailWeb.TaskLiveTest do
       File.write!(ticket_path, "# A ticket\n\nThe first draft.")
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "[data-qa='product_ticket']", "The first draft.")
+      view |> element("#plan-item-ticket") |> render_click()
+      assert has_element?(view, "[data-qa='plan_ticket']", "The first draft.")
 
       File.write!(ticket_path, "# A ticket\n\nThe revised draft.")
       send(view.pid, {:os_process_finished, run, %{}})
 
       # The page forwards to the component, which renders on its own turn.
       _settled = render(view)
-      assert has_element?(view, "[data-qa='product_ticket']", "The revised draft.")
+      assert has_element?(view, "[data-qa='plan_ticket']", "The revised draft.")
     end
   end
 

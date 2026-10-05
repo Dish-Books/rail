@@ -16,7 +16,7 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
   alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :product)
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -34,7 +34,7 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
     end)
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Run Finished Issue"})
-    {:ok, task} = Pipeline.create_task(issue, :product)
+    {:ok, task} = Pipeline.create_task(issue, :plan)
 
     {:ok, run} =
       Pipeline.create_run(%{
@@ -149,6 +149,27 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
     assert [%DetectedQuestion{prompt: "Which database?"}] =
              register_asked_questions(os_process, run)
 
+    assert [%Question{prompt: "Which database?"}] = pending_questions(task_id)
+  end
+
+  test "a subagent's question is its lead's to relay, so it is not filed", %{
+    task: %Task{id: task_id},
+    run: run,
+    spawn_os_process: spawn_os_process,
+    say: say
+  } do
+    os_process = spawn_os_process.()
+
+    Repo.insert!(%RunEvent{
+      run_id: run.id,
+      os_process_id: os_process.id,
+      line:
+        ~s({"type":"assistant","parent_tool_use_id":"toolu_pm","message":{"content":[{"type":"text","text":"[QUESTION: Which team?]"}]}})
+    })
+
+    say.(os_process, "[QUESTION: Which database?]")
+
+    assert [%DetectedQuestion{prompt: "Which database?"}] = register_asked_questions(os_process, run)
     assert [%Question{prompt: "Which database?"}] = pending_questions(task_id)
   end
 

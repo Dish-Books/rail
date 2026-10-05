@@ -240,7 +240,7 @@ defmodule Rail.Mcp.Utils.McpTools do
         "saves and passes: saving a key again updates that finding rather than raising it twice."
   }
 
-  @product_tools [
+  @plan_tools [
     %{
       "name" => "save_ticket",
       "description" =>
@@ -264,10 +264,7 @@ defmodule Rail.Mcp.Utils.McpTools do
         },
         "required" => ["title", "description"]
       }
-    }
-  ]
-
-  @design_tools [
+    },
     %{
       "name" => "save_design_option",
       "description" =>
@@ -292,20 +289,24 @@ defmodule Rail.Mcp.Utils.McpTools do
         },
         "required" => ["key", "title", "summary"]
       }
-    }
-  ]
-
-  @architect_tools [
+    },
     %{
       "name" => "save_plan",
       "description" =>
         "Save the implementation plan. The panel shows it as soon as it is saved, so save from the first " <>
           "draft and again after every review comment: each save replaces the plan in full. It must open with " <>
-          "the `## Implementation plan` heading.",
+          "the `## Implementation plan` heading. Name the design option it is written for; approval needs " <>
+          "the plan saved for the option the human picked.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{
-          "plan" => %{"type" => "string", "description" => "The whole plan, in markdown."}
+          "plan" => %{"type" => "string", "description" => "The whole plan, in markdown."},
+          "design" => %{
+            "type" => "string",
+            "description" =>
+              "The key of the saved design option this plan is written for. Leave it out when there are no " <>
+                "options, or while the plan leaves the screen open before the pick."
+          }
         },
         "required" => ["plan"]
       }
@@ -495,9 +496,7 @@ defmodule Rail.Mcp.Utils.McpTools do
   drive one, the save tools each stage hands its output over with, and the
   knowledge base for all.
   """
-  def mcp_tools(%Role{stage: :product}), do: @product_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :design}), do: @design_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :architect}), do: @architect_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :plan}), do: @plan_tools ++ @knowledge_tools
   def mcp_tools(%Role{stage: :engineer}), do: @engineer_tools ++ @knowledge_tools
   def mcp_tools(%Role{stage: :review}), do: @review_tools ++ @knowledge_tools
   def mcp_tools(%Role{stage: :qa}), do: @browser_tools ++ @qa_tools ++ @qa_report_tools ++ @knowledge_tools

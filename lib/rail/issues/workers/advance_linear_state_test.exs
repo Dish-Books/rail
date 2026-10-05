@@ -33,7 +33,7 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
     {:ok, issue} =
       Issues.create_issue(system_scope(), project, %{description: "Advance Issue", owner_user_id: owner.id})
 
-    {:ok, task} = Pipeline.create_task(issue, :product)
+    {:ok, task} = Pipeline.create_task(issue, :plan)
 
     # In Review comes before In Progress, so the started pick has to go by position,
     # not by the order sent.
@@ -93,7 +93,7 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
     nodes: nodes,
     states: states
   } do
-    {:ok, _task} = Pipeline.update_task(task, %{stage: :design})
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :plan})
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -116,7 +116,7 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
     nodes: nodes,
     states: states
   } do
-    {:ok, _task} = Pipeline.update_task(task, %{stage: :architect})
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :plan})
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -136,13 +136,13 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
     assert :ok = perform_job(AdvanceLinearState, %{issue_id: issue.id})
   end
 
-  test "design and architect move a Todo ticket to In Progress", %{
+  test "Plan moves a Todo ticket to In Progress", %{
     issue: issue,
     task: task,
     nodes: nodes,
     states: states
   } do
-    for stage <- [:design, :architect] do
+    for stage <- [:plan] do
       {:ok, _task} = Pipeline.update_task(task, %{stage: stage})
 
       Req.Test.expect(Rail.Linear, fn conn ->
@@ -252,7 +252,7 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
     nodes: nodes,
     states: states
   } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :design})
+    {:ok, task} = Pipeline.update_task(task, %{stage: :plan})
 
     Req.Test.expect(Rail.Linear, fn conn ->
       {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
@@ -290,7 +290,7 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
     nodes: nodes,
     states: states
   } do
-    {:ok, _task} = Pipeline.update_task(task, %{stage: :design})
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :plan})
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -301,13 +301,13 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
     assert :ok = perform_job(AdvanceLinearState, %{issue_id: issue.id})
   end
 
-  test "starting at product, design or architect leaves an In Review ticket alone", %{
+  test "starting at Plan leaves an In Review ticket alone", %{
     issue: issue,
     task: task,
     nodes: nodes,
     states: states
   } do
-    for stage <- [:product, :design, :architect] do
+    for stage <- [:plan] do
       {:ok, _task} = Pipeline.update_task(task, %{stage: stage})
 
       Req.Test.expect(Rail.Linear, fn conn ->
@@ -322,7 +322,7 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
 
   test "never reopens a ticket that is Done or Canceled", %{issue: issue, task: task, nodes: nodes, states: states} do
     for finished <- ["st_done", "st_canceled"],
-        stage <- [:product, :design, :architect, :engineer, :review, :qa, :demo] do
+        stage <- [:plan, :engineer, :review, :qa, :demo] do
       {:ok, _task} = Pipeline.update_task(task, %{stage: stage})
 
       Req.Test.expect(Rail.Linear, fn conn ->
@@ -365,7 +365,7 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
     states: states
   } do
     project |> Ecto.Changeset.change(linear_state_ids: %{}) |> Repo.update!()
-    {:ok, _task} = Pipeline.update_task(task, %{stage: :design})
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :plan})
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -442,7 +442,7 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
   end
 
   test "fails the job with Linear's error when the ticket cannot be read", %{issue: issue, task: task} do
-    {:ok, _task} = Pipeline.update_task(task, %{stage: :design})
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :plan})
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{"errors" => [%{"message" => "Entity not found"}]})

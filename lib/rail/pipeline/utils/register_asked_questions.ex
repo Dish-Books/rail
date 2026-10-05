@@ -25,9 +25,11 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestions do
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
 
-  # Everything Rail, the tools or the human contributed carries one of these
-  # markers; what the agent said carries none.
+  # Everything Rail, the tools, the human or a subagent contributed carries one of
+  # these markers; what the agent said carries none. A subagent's questions are its lead's to relay.
   @markers [
+    "[subagent",
+    "[within",
     "[tool]",
     "[tool error",
     "[init]",

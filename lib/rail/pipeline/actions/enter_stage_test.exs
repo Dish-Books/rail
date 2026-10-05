@@ -38,7 +38,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     end)
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Enter Stage Issue"})
-    {:ok, task} = Pipeline.create_task(issue, :product)
+    {:ok, task} = Pipeline.create_task(issue, :plan)
 
     %{project: project, task: task, roles: roles}
   end
@@ -62,7 +62,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 
-    assert {:ok, %Task{}} = Pipeline.enter_stage(task, :product, start: false)
+    assert {:ok, %Task{}} = Pipeline.enter_stage(task, :demo, start: false)
     assert_received {:pipeline_changed, ^task_id}
 
     assert {:ok, %Run{}} = Pipeline.enter_stage(task, :review)
@@ -72,7 +72,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
   test "every stage the ticket follows queues its Linear move", %{task: task} do
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 
-    for stage <- [:design, :architect, :engineer, :review, :qa, :demo] do
+    for stage <- [:plan, :engineer, :review, :qa, :demo] do
       assert {:ok, _run_or_task} = Pipeline.enter_stage(task, stage, start: stage != :demo)
       assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: task.issue_id})
 
@@ -81,21 +81,26 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     end
   end
 
-  test "product leaves the ticket's status alone", %{task: task} do
-    assert {:ok, %Task{stage: :product}} = Pipeline.enter_stage(task, :product, start: false)
+  test "a stage off the pipeline's path leaves the ticket's status alone", %{task: task} do
+    assert {:ok, %Task{stage: :debugger}} = Pipeline.enter_stage(task, :debugger, start: false)
 
     refute_enqueued(worker: AdvanceLinearState)
   end
 
-  test "design is spawned with its own brief", %{task: task, roles: roles} do
-    %{id: design_role_id} = roles[:design]
+  test "Plan is spawned with its own brief and its subagents, so Retry restarts it on that brief", %{
+    task: task,
+    roles: roles
+  } do
+    %{id: plan_role_id} = roles[:plan]
 
-    expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
-      assert prompt =~ "`save_design_option`"
+    expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] = argv ->
+      assert prompt =~ "You lead Rail's Plan step"
+      assert "--agents" in argv
       {:ok, %OsProcess{run: spawned, task: task}}
     end)
 
-    assert {:ok, %Run{role_id: ^design_role_id, status: :running}} = Pipeline.enter_stage(task, :design)
+    assert {:ok, %Run{role_id: ^plan_role_id, status: :running}} = Pipeline.enter_stage(task, :plan)
+    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: task.issue_id})
   end
 
   test "review is spawned with its own brief", %{task: task, roles: roles} do

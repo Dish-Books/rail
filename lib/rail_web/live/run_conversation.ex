@@ -10,6 +10,7 @@ defmodule RailWeb.Live.RunConversation do
   use RailWeb, :live_component
 
   import Rail.Pipeline.Utils.DrivingLine
+  import RailWeb.Utils.StageLabel, only: [waiting_on_pick?: 1]
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -24,7 +25,8 @@ defmodule RailWeb.Live.RunConversation do
 
   `stage_run` is the run the page's tab picked out, and it is what is read here;
   a tab whose role has not run passes `nil`. Rendered without the key at all, the
-  most recent run is read.
+  most recent run is read. `earlier_runs` are the product, design and architect
+  runs a Plan run took over, read above its own conversation.
 
   `appended_events` may arrive on their own from the page's `run:<id>`
   subscriptions, tagged with the run they belong to, in which case only the log
@@ -57,6 +59,7 @@ defmodule RailWeb.Live.RunConversation do
       |> assign(:selected_run, selected_run)
       |> assign_line(selected_run)
       |> assign_run_events(load_run_events(selected_run))
+      |> assign_earlier()
 
     {:ok, socket}
   end
@@ -148,6 +151,8 @@ defmodule RailWeb.Live.RunConversation do
                 expanded_activities={@expanded_activities}
                 runs={@runs}
                 roles_map={@roles_map}
+                earlier={@earlier}
+                moved_note={@moved_note}
                 target={@myself}
               />
             <% end %>
@@ -216,13 +221,15 @@ defmodule RailWeb.Live.RunConversation do
   attr :expanded_activities, MapSet, required: true
   attr :runs, :list, default: []
   attr :roles_map, :map, default: %{}
+  attr :earlier, :list, default: [], doc: "the runs a Plan run took over, each `%{run:, role_name:, at:, turns:}`"
+  attr :moved_note, :string, default: nil
   attr :target, :any, required: true
 
   def chat_pane(assigns) do
     assigns =
       assigns
       |> assign(:messages, assigns.turns)
-      |> assign(:has_messages, assigns.turns != [])
+      |> assign(:has_messages, assigns.turns != [] or assigns.earlier != [])
 
     ~H"""
     <div id="chat-pane-root" data-qa="chat-pane" class="flex flex-col flex-1 min-h-0">
@@ -246,6 +253,38 @@ defmodule RailWeb.Live.RunConversation do
             </p>
           </div>
         <% else %>
+          <div :for={{section, n} <- Enum.with_index(@earlier)} id={"earlier-#{n}"} class="space-y-4">
+            <.section_divider id={"earlier-divider-#{n}"} label={section.role_name} at={section.at} />
+            <.message_item
+              :for={{msg, idx} <- Enum.with_index(section.turns)}
+              msg={msg}
+              idx={"e#{n}-#{idx}"}
+              sender={sender_label(msg, @reader_id, @senders)}
+              role={@role}
+              runs={@runs}
+              roles_map={@roles_map}
+              expanded_activities={@expanded_activities}
+              worktree_path={@task.worktree_path}
+              target={@target}
+            />
+          </div>
+
+          <.section_divider
+            :if={@earlier != []}
+            id="plan-divider"
+            label="Plan · from"
+            at={@run.inserted_at}
+          />
+
+          <p
+            :if={@moved_note && @messages == []}
+            id="moved-note"
+            data-qa="moved_note"
+            class="text-[12.5px] text-slate-500 dark:text-slate-400"
+          >
+            {@moved_note}
+          </p>
+
           <%= for {msg, idx} <- Enum.with_index(@messages) do %>
             <.message_item
               msg={msg}
@@ -265,10 +304,29 @@ defmodule RailWeb.Live.RunConversation do
     """
   end
 
+  attr :id, :string, required: true
+  attr :label, :string, required: true
+  attr :at, DateTime, required: true
+
+  # Where one earlier role's conversation begins, or where Plan's own takes over from them.
+  def section_divider(assigns) do
+    ~H"""
+    <div
+      id={@id}
+      data-qa="section-divider"
+      class="flex items-center gap-3 pt-2 text-[11px] text-slate-400 dark:text-slate-500"
+    >
+      <span class="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+      <span class="font-mono shrink-0">{@label} <.local_time id={"#{@id}-at"} at={@at} /></span>
+      <span class="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+    </div>
+    """
+  end
+
   # --- Message Item Subcomponent ---
 
   attr :msg, :any, required: true
-  attr :idx, :integer, required: true
+  attr :idx, :any, required: true
   attr :sender, :string, default: "You"
   attr :role, :any, required: true
   attr :runs, :list, default: []
@@ -373,7 +431,7 @@ defmodule RailWeb.Live.RunConversation do
         </div>
       <% :activity -> %>
         <!-- 4.8 _ActivityTile (collapsible tool activity) -->
-        <% expanded = MapSet.member?(@expanded_activities, @idx) %>
+        <% expanded = MapSet.member?(@expanded_activities, to_string(@idx)) %>
         <% steps = tool_steps(@text, @worktree_path) %>
         <% error_count = Enum.count(steps, & &1.error?) %>
         <%!-- A refused call is one call: its error line is flagged, not counted again. --%>
@@ -494,6 +552,18 @@ defmodule RailWeb.Live.RunConversation do
             class="min-w-0 flex-1 whitespace-pre-wrap wrap-break-word text-slate-600 dark:text-slate-300"
           >{driving_rest(@text)}</span>
         </div>
+      <% :subagent -> %>
+        <.subagent_block
+          msg={@msg}
+          idx={@idx}
+          roles_map={@roles_map}
+          role={@role}
+          runs={@runs}
+          sender={@sender}
+          expanded_activities={@expanded_activities}
+          worktree_path={@worktree_path}
+          target={@target}
+        />
       <% :command -> %>
         <.command_block
           msg={@msg}
@@ -539,10 +609,121 @@ defmodule RailWeb.Live.RunConversation do
     """
   end
 
+  # --- Subagent Block Subcomponent ---
+
+  attr :msg, Turn, required: true
+  attr :idx, :any, required: true
+  attr :roles_map, :map, required: true
+  attr :role, :any, required: true
+  attr :runs, :list, required: true
+  attr :sender, :string, required: true
+  attr :expanded_activities, MapSet, required: true
+  attr :worktree_path, :string, required: true
+  attr :target, :any, required: true
+
+  # A line naming who Plan handed work to and what their saves came to, opening onto their own
+  # transcript: open while they work, closed after, and a click flips that either way.
+  def subagent_block(assigns) do
+    %Turn{status: status, turns: turns} = assigns.msg
+    key = "sub-#{assigns.idx}"
+    saved = subagent_saved(assigns.msg)
+
+    assigns =
+      assigns
+      |> assign(:key, key)
+      |> assign(:name, subagent_name(assigns.msg.label, assigns.roles_map))
+      |> assign(:saved, saved)
+      |> assign(:open?, turns != [] and status == :running != MapSet.member?(assigns.expanded_activities, key))
+
+    ~H"""
+    <div
+      id={"subagent-#{@idx}"}
+      data-qa="subagent-block"
+      data-status={@msg.status}
+      class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 overflow-hidden"
+    >
+      <button
+        type="button"
+        phx-click="toggle_activity"
+        phx-target={@target}
+        phx-value-index={@key}
+        disabled={@msg.turns == []}
+        aria-expanded={to_string(@open?)}
+        class="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left cursor-pointer disabled:cursor-default hover:bg-slate-100 dark:hover:bg-slate-800/70"
+      >
+        <span :if={@msg.status == :running} class="relative flex size-2 mx-[3.5px] shrink-0">
+          <span class="absolute inline-flex size-full rounded-full bg-blue-400 opacity-75 motion-safe:animate-ping" />
+          <span class="relative inline-flex size-2 rounded-full bg-blue-500" />
+        </span>
+        <.icon
+          :if={@msg.status == :done}
+          name="pi-check-circle"
+          class="size-[15px] text-emerald-500 dark:text-emerald-400"
+        />
+        <.icon
+          :if={@msg.status == :failed}
+          name="pi-warning-circle"
+          class="size-[15px] text-red-500 dark:text-red-400"
+        />
+        <.icon
+          :if={@msg.status == :skipped}
+          name="pi-minus-circle"
+          class="size-[15px] text-slate-400 dark:text-slate-500"
+        />
+        <span
+          data-qa="subagent-name"
+          class="font-semibold text-slate-900 dark:text-slate-100 shrink-0"
+        >{@name}</span>
+        <span
+          data-qa="subagent-description"
+          class="text-slate-500 dark:text-slate-400 truncate min-w-0"
+        >
+          {@msg.content}
+        </span>
+        <span
+          data-qa="subagent-saved"
+          class={[
+            "ml-auto shrink-0 font-mono text-[11px]",
+            @msg.status == :failed && "text-red-600 dark:text-red-300",
+            @msg.status != :failed && "text-slate-500 dark:text-slate-400"
+          ]}
+        >
+          {@saved}
+        </span>
+        <.icon
+          :if={@msg.turns != []}
+          name={if @open?, do: "pi-caret-down", else: "pi-caret-right"}
+          class="size-[13px] text-slate-400"
+        />
+      </button>
+
+      <div
+        :if={@open?}
+        id={"subagent-transcript-#{@idx}"}
+        data-qa="subagent-transcript"
+        class="border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 space-y-3"
+      >
+        <.message_item
+          :for={{msg, n} <- Enum.with_index(@msg.turns)}
+          msg={msg}
+          idx={"#{@idx}-#{n}"}
+          sender={@sender}
+          role={@role}
+          runs={@runs}
+          roles_map={@roles_map}
+          expanded_activities={@expanded_activities}
+          worktree_path={@worktree_path}
+          target={@target}
+        />
+      </div>
+    </div>
+    """
+  end
+
   # --- Command Block Subcomponent ---
 
   attr :msg, Turn, required: true
-  attr :idx, :integer, required: true
+  attr :idx, :any, required: true
   attr :expanded_activities, MapSet, required: true
   attr :target, :any, required: true
 
@@ -560,7 +741,10 @@ defmodule RailWeb.Live.RunConversation do
       |> assign(:running?, running?)
       |> assign(:waiting?, waiting?)
       |> assign(:failed?, failed?)
-      |> assign(:open?, (running? or waiting? or failed?) != MapSet.member?(assigns.expanded_activities, assigns.idx))
+      |> assign(
+        :open?,
+        (running? or waiting? or failed?) != MapSet.member?(assigns.expanded_activities, to_string(assigns.idx))
+      )
 
     ~H"""
     <div
@@ -888,7 +1072,6 @@ defmodule RailWeb.Live.RunConversation do
   end
 
   def handle_event("toggle_activity", %{"index" => index}, socket) do
-    index = String.to_integer(index)
     expanded = socket.assigns.expanded_activities
 
     expanded =
@@ -1011,6 +1194,10 @@ defmodule RailWeb.Live.RunConversation do
     |> assign_new(:current_scope, fn -> nil end)
     |> assign_new(:senders, fn -> %{} end)
     |> assign_new(:line, fn -> nil end)
+    |> assign_new(:earlier_runs, fn -> [] end)
+    |> assign_new(:earlier, fn -> [] end)
+    |> assign_new(:earlier_ids, fn -> nil end)
+    |> assign_new(:moved_note, fn -> nil end)
   end
 
   # The log the component holds; the rendered lines and the turns read out of it
@@ -1037,12 +1224,125 @@ defmodule RailWeb.Live.RunConversation do
         end
       end)
 
+    turns = if plan_run?(socket.assigns), do: mark_skipped_design(turns), else: turns
+
     socket
     |> assign_senders(turns)
     |> assign(:run_events, run_events)
     |> assign(:log_lines, lines)
     |> assign(:turns, turns)
     |> assign_elapsed(Map.values(processes))
+  end
+
+  defp plan_run?(%{selected_run: %Run{role_id: role_id}, roles_map: %{} = roles_map}),
+    do: match?(%{stage: :plan}, roles_map[role_id])
+
+  defp plan_run?(_assigns), do: false
+
+  # A plan written with no Designer turn before it was a change with no screen, and the line says so.
+  defp mark_skipped_design(turns) do
+    {marked, _designed?} =
+      Enum.flat_map_reduce(turns, false, fn
+        %Turn{author: :subagent, label: "designer"} = turn, _designed? ->
+          {[turn], true}
+
+        %Turn{author: :subagent, label: "architect"} = turn, false ->
+          skipped = %Turn{
+            author: :subagent,
+            label: "designer",
+            content: "no screen changes in this task",
+            status: :skipped
+          }
+
+          {[skipped, turn], true}
+
+        turn, designed? ->
+          {[turn], designed?}
+      end)
+
+    marked
+  end
+
+  # The runs a Plan run took over are finished, so they are read once, in one query, for as long as
+  # they stay the same runs.
+  defp assign_earlier(socket) do
+    %{earlier_runs: runs, roles_map: roles_map, task: task} = socket.assigns
+    runs = if plan_run?(socket.assigns), do: runs, else: []
+    ids = Enum.map(runs, & &1.id)
+
+    if ids == socket.assigns.earlier_ids do
+      socket
+    else
+      events = runs |> Pipeline.list_run_events() |> Enum.group_by(& &1.run_id)
+
+      earlier =
+        for run <- runs, role = roles_map[run.role_id] do
+          lines = events |> Map.get(run.id, []) |> Enum.map(& &1.line)
+          lines = if match?(%{backend: %Backend{}}, role), do: Tools.parse_stream(role.backend, lines).logs, else: lines
+
+          %{
+            run: run,
+            role_name: role.name,
+            at: run.started_at || run.inserted_at,
+            turns: Pipeline.parse_transcript(lines)
+          }
+        end
+
+      socket
+      |> assign(:earlier, earlier)
+      |> assign(:earlier_ids, ids)
+      |> assign(:moved_note, moved_note(for(run <- runs, role = roles_map[run.role_id], do: role.stage), task))
+    end
+  end
+
+  defp moved_note([], _task), do: nil
+
+  defp moved_note(stages, task) do
+    moved =
+      stages
+      |> Enum.uniq()
+      |> Enum.map(&%{product: "product", design: "design", architect: "architect"}[&1])
+      |> then(fn [first | rest] -> [String.capitalize(first) | rest] end)
+
+    moved =
+      if length(moved) > 1, do: Enum.join(Enum.drop(moved, -1), ", ") <> " and " <> List.last(moved), else: hd(moved)
+
+    next =
+      if waiting_on_pick?(task), do: "Pick a design, or send a message to continue.", else: "Send a message to continue."
+
+    "#{moved} moved into Plan. #{next}"
+  end
+
+  defp subagent_name(label, roles_map) do
+    stage = %{"product" => :product, "designer" => :design, "architect" => :architect}[label]
+
+    case Enum.find(Map.values(roles_map), &(stage != nil and &1.stage == stage)) do
+      %{name: name} -> name
+      nil -> label |> String.split(~r/[-_\s]+/, trim: true) |> Enum.map_join(" ", &String.capitalize/1)
+    end
+  end
+
+  # What the subagent's saves came to, read off its own tool calls: a refused save saved nothing.
+  defp subagent_saved(%Turn{status: :skipped}), do: "skipped"
+
+  defp subagent_saved(%Turn{turns: turns, status: status}) do
+    steps = for %Turn{author: :activity, content: content} <- turns, step <- tool_steps(content, ""), do: step
+
+    saved = fn name ->
+      Enum.count(steps, &(&1.name == name and not &1.error?)) - Enum.count(steps, &(&1.name == name and &1.error?))
+    end
+
+    keys = for %{name: "save_design_option", error?: false, detail: key} <- steps, uniq: true, do: key
+    options = min(length(keys), saved.("save_design_option"))
+
+    [
+      saved.("save_ticket") > 0 && "ticket saved",
+      (options > 0 and status in [:running, :failed]) && "#{options} of 3",
+      (options > 0 and status == :done) && if(options == 1, do: "1 option", else: "#{options} options"),
+      saved.("save_plan") > 0 && "plan saved"
+    ]
+    |> Enum.filter(&is_binary/1)
+    |> Enum.join(" · ")
   end
 
   # Looked up once per person, so a batch of lines from someone already known reads
@@ -1204,12 +1504,9 @@ defmodule RailWeb.Live.RunConversation do
   defp selected_role(%Run{role_id: role_id}, roles_map), do: resolve_role(role_id, roles_map)
 
   # Only the stage the task is in can be entered again without moving the task.
-  # Product is started from its issue, so entering it again would lose its brief.
-  defp retryable?(%Run{role_id: role_id} = run, %{stage: stage}, %{} = roles_map) when stage != :product do
+  defp retryable?(%Run{role_id: role_id} = run, %{stage: stage}, %{} = roles_map) do
     not Run.running?(run) and not Run.resumable?(run) and match?(%{stage: ^stage}, roles_map[role_id])
   end
-
-  defp retryable?(_run, _task, _roles_map), do: false
 
   defp restore_draft(nil, draft), do: draft
   defp restore_draft(queued, draft) when draft in [nil, ""], do: queued

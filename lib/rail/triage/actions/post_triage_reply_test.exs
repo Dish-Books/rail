@@ -112,7 +112,7 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
       })
     end)
 
-    stub(Rail.Pipeline, :start_task, fn _issue, :product -> {:ok, :started} end)
+    stub(Rail.Pipeline, :start_task, fn _issue, :plan -> {:ok, :started} end)
     Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => false, "error" => "not_in_channel"}))
     {:ok, %Item{reply_posted_at: nil}} = Triage.create_triage_issue(scope, item, %{})
 

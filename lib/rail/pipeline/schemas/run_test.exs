@@ -242,7 +242,7 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     passed_by = %Run{
       status: :finished,
       error: "It went wrong",
-      role: %Role{stage: :product},
+      role: %Role{stage: :plan},
       task: %Task{stage: :engineer, merged_at: nil, issue: %Issue{}}
     }
 
@@ -270,23 +270,12 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     assert Run.needs_attention?(done)
   end
 
-  test "a done product run is waiting on its ticket to be approved" do
+  test "a done Plan run is waiting on its plan to be approved" do
     done = %Run{
       status: :finished,
       stage_outcome: :done,
-      role: %Role{stage: :product},
-      task: %Task{stage: :product, merged_at: nil, issue: %Issue{}}
-    }
-
-    assert Run.needs_attention?(done)
-  end
-
-  test "a done design run is waiting on its design to be approved" do
-    done = %Run{
-      status: :finished,
-      stage_outcome: :done,
-      role: %Role{stage: :design},
-      task: %Task{stage: :design, merged_at: nil, issue: %Issue{}}
+      role: %Role{stage: :plan},
+      task: %Task{stage: :plan, merged_at: nil, issue: %Issue{}}
     }
 
     assert Run.needs_attention?(done)
@@ -296,22 +285,11 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     approved = %Run{
       status: :finished,
       stage_outcome: :done,
-      role: %Role{stage: :product},
-      task: %Task{stage: :design, merged_at: nil, issue: %Issue{}}
+      role: %Role{stage: :plan},
+      task: %Task{stage: :engineer, merged_at: nil, issue: %Issue{}}
     }
 
     refute Run.needs_attention?(approved)
-  end
-
-  test "a done architect run is waiting on its plan to be approved" do
-    done = %Run{
-      status: :finished,
-      stage_outcome: :done,
-      role: %Role{stage: :architect},
-      task: %Task{stage: :architect, merged_at: nil, issue: %Issue{}}
-    }
-
-    assert Run.needs_attention?(done)
   end
 
   test "a done engineer run is waiting on its diff being sent to review" do

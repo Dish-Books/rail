@@ -11,15 +11,32 @@ defmodule Rail.Mcp.Utils.RunToolSavePlanTest do
     scratch = Path.join(System.tmp_dir!(), "rt_save_plan_#{System.unique_integer([:positive])}")
     on_exit(fn -> File.rm_rf(scratch) end)
 
-    %{task: %Task{id: "tsk_rt_plan", scratch_path: scratch, issue: %Issue{identifier: "RTP-1"}}}
+    %{task: %Task{id: "tsk_rt_plan", scratch_path: scratch, issue: %Issue{identifier: "RTP-1"}}, scratch: scratch}
   end
 
-  test "a good save is receipted", %{task: task} do
-    assert {:ok, "Plan saved. " <> _rest} = run_tool_save_plan(task, %{"plan" => "## Implementation plan\n\nDo it."}, [])
-    assert Pipeline.read_plan(task) =~ "Do it."
+  test "a save with no option says it names none yet", %{task: task} do
+    assert {:ok, "Plan saved, written for no design option yet." <> _rest} =
+             run_tool_save_plan(task, %{"plan" => "## Implementation plan\n\nDo it."}, [])
+
+    assert %{content: "## Implementation plan\n\nDo it.\n", design: nil} = Pipeline.read_plan(task)
   end
 
-  test "a refusal is passed back as the changeset", %{task: task} do
+  test "a save for a saved option passes the key through and names the option", %{task: task, scratch: scratch} do
+    File.mkdir_p!(Path.join(scratch, "design"))
+
+    File.write!(
+      Path.join(scratch, "design/manifest.json"),
+      ~s({"options": [{"key": "rows", "title": "Charts in the row"}]})
+    )
+
+    assert {:ok, "Plan saved for Charts in the row (rows)." <> _rest} =
+             run_tool_save_plan(task, %{"plan" => "## Implementation plan\n\nDo it.", "design" => "rows"}, [])
+  end
+
+  test "a refusal is passed back as the changeset naming the field", %{task: task} do
     assert {:error, %Ecto.Changeset{valid?: false}} = run_tool_save_plan(task, %{}, [])
+
+    assert {:error, %Ecto.Changeset{errors: [design: _no_options]}} =
+             run_tool_save_plan(task, %{"plan" => "## Implementation plan\n\nDo it.", "design" => "rows"}, [])
   end
 end

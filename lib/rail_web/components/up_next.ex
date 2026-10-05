@@ -19,10 +19,18 @@ defmodule RailWeb.Components.UpNext do
   attr :runs, :list, required: true
 
   def up_next(assigns) do
+    # Read once per render: whether a Plan run waits on a pick is a file on disk, not a field.
+    picking =
+      for %Run{task: %Task{stage: :plan} = task} = run <- assigns.runs,
+          Run.state(run) == :done and waiting_on_pick?(task),
+          into: MapSet.new(),
+          do: run.id
+
     assigns =
       assigns
       |> assign(:featured, List.first(assigns.runs))
       |> assign(:rest, Enum.drop(assigns.runs, 1))
+      |> assign(:picking, picking)
 
     ~H"""
     <div id="up-next" data-qa="up-next" class="space-y-3">
@@ -63,7 +71,7 @@ defmodule RailWeb.Components.UpNext do
             </h3>
 
             <p data-qa="up-next-summary" class="mt-1 text-sm text-slate-600 dark:text-slate-400">
-              {summary(@featured)}
+              {summary(@featured, @picking)}
             </p>
           </div>
 
@@ -88,10 +96,10 @@ defmodule RailWeb.Components.UpNext do
         </span>
         <span class="min-w-0 flex-1 truncate text-sm text-slate-900 dark:text-slate-100">
           {run.task.issue.title} ·
-          <span class="text-slate-500 dark:text-slate-400">{detail(run)}</span>
+          <span class="text-slate-500 dark:text-slate-400">{detail(run, @picking)}</span>
         </span>
         <span class="shrink-0 text-sm font-semibold text-blue-600 dark:text-blue-400 group-hover:underline">
-          {verb(run)}
+          {verb(run, @picking)}
         </span>
       </.link>
     </div>
@@ -127,28 +135,39 @@ defmodule RailWeb.Components.UpNext do
 
   # The same sentence the task page puts at the top of the stage, so a card and
   # the page it opens do not name the errand differently.
-  defp action(%Run{task: %Task{stage: stage}} = run) do
+  defp action(%Run{task: %Task{} = task} = run) do
     case Run.state(run) do
-      :done -> if ready_to_merge?(run), do: "Ready to merge", else: approval_label(stage)
+      :done -> if ready_to_merge?(run), do: "Ready to merge", else: approval_label(task)
       :blocked -> "Answer questions"
       _stalled -> "Pick it up"
     end
   end
 
-  defp verb(run) do
+  defp verb(run, picking) do
     case Run.state(run) do
-      :done -> if ready_to_merge?(run), do: "Ready to merge", else: "Review"
-      :blocked -> "Answer"
-      _stalled -> "Fix"
+      :done ->
+        cond do
+          ready_to_merge?(run) -> "Ready to merge"
+          MapSet.member?(picking, run.id) -> "Pick"
+          true -> "Review"
+        end
+
+      :blocked ->
+        "Answer"
+
+      _stalled ->
+        "Fix"
     end
   end
 
-  defp summary(run) do
+  defp summary(run, picking) do
     case Run.state(run) do
       :done ->
-        if ready_to_merge?(run),
-          do: "The demo is recorded, and the pull request is waiting on you to merge it.",
-          else: "Waiting on you to read the #{work(run)}."
+        cond do
+          ready_to_merge?(run) -> "The demo is recorded, and the pull request is waiting on you to merge it."
+          MapSet.member?(picking, run.id) -> "Waiting on you to pick a design."
+          true -> "Waiting on you to read the #{work(run)}."
+        end
 
       :blocked ->
         asked(run)
@@ -158,11 +177,20 @@ defmodule RailWeb.Components.UpNext do
     end
   end
 
-  defp detail(run) do
+  defp detail(run, picking) do
     case Run.state(run) do
-      :done -> if ready_to_merge?(run), do: "demo recorded", else: "#{work(run)} ready for review"
-      :blocked -> "#{run.role.name} asked #{questions(run)}"
-      _stalled -> stalled(run)
+      :done ->
+        cond do
+          ready_to_merge?(run) -> "demo recorded"
+          MapSet.member?(picking, run.id) -> "pick a design"
+          true -> "#{work(run)} ready for review"
+        end
+
+      :blocked ->
+        "#{run.role.name} asked #{questions(run)}"
+
+      _stalled ->
+        stalled(run)
     end
   end
 
@@ -198,13 +226,11 @@ defmodule RailWeb.Components.UpNext do
     end
   end
 
-  defp work(%Run{task: %Task{stage: :design}}), do: "designs"
-  defp work(%Run{task: %Task{stage: :architect}}), do: "plan"
+  defp work(%Run{task: %Task{stage: :plan}}), do: "plan"
   defp work(%Run{task: %Task{stage: :engineer}}), do: "diff"
   defp work(%Run{task: %Task{stage: :review}}), do: "findings"
   defp work(%Run{task: %Task{stage: :qa}}), do: "QA report"
   defp work(%Run{task: %Task{stage: :demo}}), do: "demo"
-  defp work(%Run{}), do: "ticket"
 
   defp questions(%Run{questions: [_one]}), do: "a question"
   defp questions(%Run{questions: questions}), do: "#{length(questions)} questions"

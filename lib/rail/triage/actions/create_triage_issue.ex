@@ -1,7 +1,7 @@
 defmodule Rail.Triage.Actions.CreateTriageIssue do
   @moduledoc """
   Accepts an item's proposed issue: creates it with the person's edits, starts
-  its product stage, and posts its link in the thread as them, unless the channel is external.
+  its Plan step, and posts its link in the thread as them, unless the channel is external.
   """
 
   import Ecto.Query
@@ -35,7 +35,7 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
          {:ok, issue} <- create(scope, item, drafted) do
       # The post honors the channel as it was checked, and the row keeps its draft until what was posted replaces it.
       item = %{Repo.reload!(item) | thread: item.thread}
-      started = product(issue)
+      started = plan(issue)
       posted = post(scope, item, drafted, issue)
       {:ok, item} = item |> Ecto.Changeset.change(Map.merge(started, posted)) |> Repo.update()
       {:ok, _thread} = settle_thread(item.thread)
@@ -85,10 +85,10 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
     end
   end
 
-  defp product(%Issue{} = issue) do
-    case Pipeline.start_task(issue, :product) do
+  defp plan(%Issue{} = issue) do
+    case Pipeline.start_task(issue, :plan) do
       {:ok, _task} -> %{error: nil}
-      {:error, reason} -> %{error: "Created #{issue.identifier}, but product did not start: #{inspect(reason)}"}
+      {:error, reason} -> %{error: "Created #{issue.identifier}, but Plan did not start: #{inspect(reason)}"}
     end
   end
 

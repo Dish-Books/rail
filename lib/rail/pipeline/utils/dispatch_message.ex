@@ -12,6 +12,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   degrades to a message that is still queued rather than one that is lost.
   """
 
+  import Rail.Pipeline.Utils.PlanSubagents
   import Rail.Pipeline.Utils.PrepareWorktree
   import Rail.Pipeline.Utils.StartWorktreeSetup
   import Rail.Pipeline.Utils.TurnStamp
@@ -128,7 +129,9 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
         read_only: false,
         system_prompt: role.system_prompt,
         conversation_id: run.conversation_id,
-        work_dir: worktree_path
+        work_dir: worktree_path,
+        # Subagents are a spawn flag, not part of the saved session, so every Plan turn passes them again.
+        agents: if(role.stage == :plan, do: plan_subagents(task), else: [])
       )
 
     case Tools.start_os_process(run, argv) do

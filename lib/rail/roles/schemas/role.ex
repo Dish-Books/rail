@@ -9,6 +9,8 @@ defmodule Rail.Roles.Schemas.Role do
   alias Rail.Tools.Schemas.Backend
 
   @canonical_stages [
+    # Leads product, design and architect, which run inside it as subagents and are entered by no task.
+    :plan,
     :product,
     :design,
     :architect,

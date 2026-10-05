@@ -30,7 +30,7 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
       end)
 
       {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Attention #{n}"})
-      {:ok, task} = Pipeline.create_task(issue, :product)
+      {:ok, task} = Pipeline.create_task(issue, :plan)
       {:ok, task} = Pipeline.update_task(task, %{stage: stage})
       Repo.preload(task, :issue)
     end
@@ -87,12 +87,12 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
   end
 
   test "a run at a stage the task has left is not counted", %{roles: roles, task_for: task_for} do
-    task = task_for.(:design)
+    task = task_for.(:engineer)
 
     {:ok, _approved} =
       Pipeline.create_run(%{
         task_id: task.id,
-        role_id: roles[:product].id,
+        role_id: roles[:plan].id,
         status: :finished,
         stage_outcome: :done,
         started_at: DateTime.utc_now(),

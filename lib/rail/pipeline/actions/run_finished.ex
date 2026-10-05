@@ -23,14 +23,12 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   the task back there.
   """
 
-  import Rail.Pipeline.Utils.ArchitectRunFinished
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.CiRunFinished
   import Rail.Pipeline.Utils.DemoRunFinished
-  import Rail.Pipeline.Utils.DesignRunFinished
   import Rail.Pipeline.Utils.DispatchMessage
   import Rail.Pipeline.Utils.EngineerRunFinished
-  import Rail.Pipeline.Utils.ProductRunFinished
+  import Rail.Pipeline.Utils.PlanRunFinished
   import Rail.Pipeline.Utils.QaRunFinished
   import Rail.Pipeline.Utils.QuestionQueue
   import Rail.Pipeline.Utils.RegisterAskedQuestions
@@ -207,9 +205,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
     Enum.any?(pending_questions(task_id), &(&1.run_id == run_id))
   end
 
-  defp finish_action(%Run{role: %Role{stage: :product}}), do: &product_run_finished/2
-  defp finish_action(%Run{role: %Role{stage: :design}}), do: &design_run_finished/2
-  defp finish_action(%Run{role: %Role{stage: :architect}}), do: &architect_run_finished/2
+  defp finish_action(%Run{role: %Role{stage: :plan}}), do: &plan_run_finished/2
   defp finish_action(%Run{role: %Role{stage: :engineer}}), do: &engineer_run_finished/2
   defp finish_action(%Run{role: %Role{stage: :review}}), do: &review_run_finished/2
   defp finish_action(%Run{role: %Role{stage: :qa}}), do: &qa_run_finished/2

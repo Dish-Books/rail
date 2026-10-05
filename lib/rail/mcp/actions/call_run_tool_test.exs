@@ -217,7 +217,7 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
     end
 
     test "a refusal inside a list names the entry it was in", %{project: project, task: task} do
-      {:ok, design_role} = Roles.get_role(project_id: project.id, stage: :design)
+      {:ok, design_role} = Roles.get_role(project_id: project.id, stage: :plan)
       design = %RunContext{os_process: %OsProcess{task_id: task.id}, role: design_role, user: nil}
 
       assert {:error, {:refused, refused}} =
@@ -238,10 +238,10 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
       end
 
       assert {:ok, %{"content" => [%{"text" => "Ticket saved: One round." <> _rest}]}} =
-               Mcp.call_run_tool(context.(:product), "save_ticket", %{"title" => "One round", "description" => "Body."})
+               Mcp.call_run_tool(context.(:plan), "save_ticket", %{"title" => "One round", "description" => "Body."})
 
-      assert {:ok, %{"content" => [%{"text" => "Plan saved." <> _rest}]}} =
-               Mcp.call_run_tool(context.(:architect), "save_plan", %{"plan" => "## Implementation plan\n\nDo it."})
+      assert {:ok, %{"content" => [%{"text" => "Plan saved, written for no design option yet." <> _rest}]}} =
+               Mcp.call_run_tool(context.(:plan), "save_plan", %{"plan" => "## Implementation plan\n\nDo it."})
 
       assert {:ok, %{"content" => [%{"text" => "Verdict saved: Passed." <> _rest}]}} =
                Mcp.call_run_tool(context.(:qa), "save_verdict", %{"verdict" => "pass", "summary" => "Works."})

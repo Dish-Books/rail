@@ -6,6 +6,8 @@ defmodule RailWeb.Utils.RoleStatusLabel do
   already carries the name, so this says only the doing.
   """
 
+  import RailWeb.Utils.StageLabel, only: [approval_label: 1]
+
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
@@ -20,9 +22,9 @@ defmodule RailWeb.Utils.RoleStatusLabel do
 
   def role_status_label(%Role{}, nil, %Task{}), do: "not started"
 
-  def role_status_label(%Role{stage: stage}, %Run{} = run, %Task{stage: stage}) do
+  def role_status_label(%Role{stage: stage}, %Run{} = run, %Task{stage: stage} = task) do
     case Run.state(run) do
-      :done -> waiting_label(stage)
+      :done -> waiting_label(task)
       state -> label(state)
     end
   end
@@ -36,9 +38,8 @@ defmodule RailWeb.Utils.RoleStatusLabel do
   defp label(:stopped), do: "stopped"
   defp label(:done), do: "done"
 
-  defp waiting_label(:product), do: "review the ticket"
-  defp waiting_label(:design), do: "review the designs"
-  defp waiting_label(:architect), do: "review the plan"
-  defp waiting_label(:review), do: "review the findings"
-  defp waiting_label(_other), do: "needs review"
+  # The tab and the header answer the same question, the tab in lower case.
+  defp waiting_label(%Task{stage: :plan} = task), do: task |> approval_label() |> String.downcase()
+  defp waiting_label(%Task{stage: :review}), do: "review the findings"
+  defp waiting_label(%Task{}), do: "needs review"
 end

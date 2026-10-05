@@ -12,7 +12,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   alias Rail.Roles
 
   setup %{project: project} do
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :product)
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -32,7 +32,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     {:ok, %Issue{id: issue_id} = issue} =
       Issues.create_issue(system_scope(), project, %{description: "Task Schema Issue"})
 
-    {:ok, %Task{id: task_id} = task} = Pipeline.create_task(issue, :product)
+    {:ok, %Task{id: task_id} = task} = Pipeline.create_task(issue, :plan)
 
     %{project: project, issue: issue, issue_id: issue_id, task: task, task_id: task_id, role: role}
   end
@@ -43,7 +43,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     assert {:error, changeset} = %Task{} |> Task.changeset(attrs, project.id) |> Repo.insert()
     assert %{issue_id: ["has already been taken"]} = errors_on(changeset)
 
-    assert {:ok, %Task{id: ^task_id}} = Pipeline.create_task(issue, :product)
+    assert {:ok, %Task{id: ^task_id}} = Pipeline.create_task(issue, :plan)
   end
 
   test "changeset validates required fields" do
@@ -62,7 +62,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     changeset = Task.changeset(%Task{}, attrs, project.id)
 
     assert changeset.valid?
-    assert get_field(changeset, :stage) == :product
+    assert get_field(changeset, :stage) == :plan
     assert get_field(changeset, :worktree_name) == "core-feature"
   end
 
@@ -154,16 +154,15 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   end
 
   test "stages/0 keeps every stage a row could have been written with" do
-    assert :product in Task.stages()
+    assert :plan in Task.stages()
+    refute :product in Task.stages()
     assert :merged in Task.stages()
     assert :debugger in Task.stages()
   end
 
   test "stage_label/1 names each stage" do
     assert Enum.map(Task.stages(), &Task.stage_label/1) == [
-             "Product",
-             "Design",
-             "Architect",
+             "Plan",
              "Engineer",
              "Review",
              "QA",
@@ -176,7 +175,8 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   end
 
   test "cast_stage/1 takes an atom or a string and refuses anything else" do
-    assert Task.cast_stage(:product) == {:ok, :product}
+    assert Task.cast_stage(:plan) == {:ok, :plan}
+    assert Task.cast_stage(:product) == :error
     assert Task.cast_stage("merged") == {:ok, :merged}
     assert Task.cast_stage(:nonsense) == :error
     assert Task.cast_stage("nonsense") == :error

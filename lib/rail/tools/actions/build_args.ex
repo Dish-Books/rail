@@ -20,6 +20,7 @@ defmodule Rail.Tools.Actions.BuildArgs do
     Claude Code's own system prompt rather than replacing it, which is what teaches
     the agent its tools (deferred MCP tools included)
   - `:conversation_id`, `:conversation`, or `:resume`: session id for resumption
+  - `:agents`: subagents as `%{name:, description:, prompt:, model:}` maps (Claude only, one `--agents` flag)
   - `:work_dir` or `:working_directory`: directory for `--add-dir` (Agy only)
   - `:log_file`, `:log_path`, or `:agy_log_path`: path for `--log-file` (Agy only)
   """
@@ -69,8 +70,21 @@ defmodule Rail.Tools.Actions.BuildArgs do
       claude_mcp_flags() ++
       ["--output-format", "stream-json", "--verbose"] ++
       system_prompt_flags ++
+      agents_flags(opts[:agents]) ++
       resume_flags
   end
+
+  # No tool list, so each subagent inherits every tool the run has, Rail's included.
+  defp agents_flags([_first | _rest] = agents) do
+    definitions =
+      Map.new(agents, fn agent ->
+        {agent.name, %{"description" => agent.description, "prompt" => agent.prompt, "model" => agent.model}}
+      end)
+
+    ["--agents", Jason.encode!(definitions)]
+  end
+
+  defp agents_flags(_none), do: []
 
   # Every run is pointed at Rail and given a token for it. What it may actually
   # call is decided on Rail's side, per run, so there is nothing for the spawn to
