@@ -109,7 +109,6 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
       assert prompt =~ "Nothing is saved yet."
       assert prompt =~ "title: Attachments follow their source document"
       assert prompt =~ ~s(<comment author="Ana")
-      refute prompt =~ "<subagent name="
 
       [json] = for ["--agents", json] <- Enum.chunk_every(argv, 2, 1), do: json
 
@@ -175,24 +174,6 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     end)
 
     assert {:ok, %OsProcess{}} = Pipeline.start_plan_run(%{run | role: role})
-  end
-
-  test "a backend with no subagents gets their prompts inline and no --agents", %{
-    roles: %{plan: role},
-    issue: issue
-  } do
-    {:ok, agy} = Tools.create_backend(system_scope(), %{name: :agy, executable_path: "/usr/bin/true"})
-    {:ok, %Role{id: role_id}} = Roles.update_role(system_scope(), role, %{backend_id: agy.id})
-
-    expect(Tools, :start_os_process, fn run, ["-p", prompt | _rest] = argv ->
-      refute "--agents" in argv
-      assert prompt =~ "Your backend runs no subagents"
-      assert prompt =~ ~s(<subagent name="product">\nYou are the product agent.)
-      assert prompt =~ ~s(<subagent name="architect">)
-      {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
-    end)
-
-    assert {:ok, %OsProcess{run: %Run{role_id: ^role_id}}} = Pipeline.start_plan_run(issue)
   end
 
   test "the brief carries the rules people set for product, design and architect", %{project: project, issue: issue} do

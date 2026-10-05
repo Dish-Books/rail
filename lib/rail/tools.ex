@@ -24,7 +24,6 @@ defmodule Rail.Tools do
     children = [
       {Registry, keys: :unique, name: Rail.Tools.FollowerRegistry},
       Rail.Tools.FollowerSupervisor,
-      {DynamicSupervisor, name: Rail.Tools.LoginSupervisor, strategy: :one_for_one},
       {Registry, keys: :unique, name: Rail.Tools.BrowserRegistry},
       {Registry, keys: :unique, name: Rail.Tools.RecorderRegistry},
       {DynamicSupervisor, name: Rail.Tools.BrowserSupervisor, strategy: :one_for_one},
@@ -36,6 +35,7 @@ defmodule Rail.Tools do
 
   defdelegate run(executable, args, opts \\ []), to: Actions.Run
   defdelegate run_agent(backend, argv, opts), to: Actions.RunAgent
+  defdelegate agent_failure_reason(output), to: Actions.AgentFailureReason
   defdelegate spawn_os_process(executable, args, opts \\ []), to: Actions.SpawnOsProcess
   defdelegate connect_port(port, owner), to: Actions.ConnectPort
   defdelegate os_process_alive?(pid), to: Actions.OsProcessAlive
@@ -79,14 +79,5 @@ defmodule Rail.Tools do
   defdelegate update_backend(scope, backend, attrs), to: Actions.UpdateBackend
 
   @decorate can?(resource: :backends, action: :manage)
-  defdelegate start_backend_login(scope, backend, owner \\ self()), to: Actions.StartBackendLogin
-
-  @decorate can?(resource: :backends, action: :manage)
-  defdelegate submit_backend_login_code(scope, session, code), to: Actions.SubmitBackendLoginCode
-
-  @decorate can?(resource: :backends, action: :manage)
-  defdelegate cancel_backend_login(scope, session), to: Actions.CancelBackendLogin
-
-  @decorate can?(resource: :backends, action: :manage)
-  defdelegate logout_backend(scope, backend), to: Actions.LogoutBackend
+  defdelegate set_backend_token(scope, backend, token), to: Actions.SetBackendToken
 end

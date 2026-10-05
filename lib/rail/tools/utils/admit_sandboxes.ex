@@ -7,7 +7,9 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Repo
+  alias Rail.Roles.Schemas.Role
   alias Rail.Tools
+  alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
 
   require Logger
@@ -15,7 +17,9 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
   @doc """
   Starts waiting sandboxes, oldest first, for as long as the one at the front of
   the line fits in what is unreserved. A younger one never starts ahead of an
-  older one, even when it would fit.
+  older one, even when it would fit. An agent whose backend is signed out is
+  passed over and keeps its place: it would only start to fail, so it waits for
+  someone to sign the backend in, and holds nobody behind it up meanwhile.
 
   One pass at a time on this machine, so two never hand out the same CPU. It must
   run outside any transaction, so it sees only committed rows. `:own` names a row
@@ -60,6 +64,9 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
 
   defp admit_next(%OsProcess{} = os_process, {free, results}, capacity, own) do
     cond do
+      held?(os_process) ->
+        {:cont, {free, results}}
+
       os_process.reserved_cpus > capacity.cpus or os_process.reserved_memory_gb > capacity.memory_gb ->
         {:cont, {free, Map.put(results, os_process.id, refuse(os_process, capacity, own))}}
 
@@ -71,6 +78,9 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
         {:halt, {free, results}}
     end
   end
+
+  defp held?(%OsProcess{kind: :agent, run: %Run{role: %Role{backend: %Backend{status: :signed_out}}}}), do: true
+  defp held?(_os_process), do: false
 
   defp mark_waiting(%OsProcess{id: id, status: :waiting_for_resources, run: %Run{} = run}, results)
        when not is_map_key(results, id) do

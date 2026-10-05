@@ -260,10 +260,10 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
 
     expect(Tools, :run_agent, fn _backend, _argv, opts ->
       send(test, {:dir, opts[:cd]})
-      {:error, {:exit, 1}}
+      {:error, {:exit, 1, ""}}
     end)
 
-    assert {:error, {:exit, 1}} = Learnings.extract_task_learnings(failing)
+    assert {:error, {:exit, 1, nil}} = Learnings.extract_task_learnings(failing)
     assert_received {:dir, failed_dir}
     refute File.exists?(failed_dir)
   end

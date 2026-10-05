@@ -99,6 +99,7 @@ defmodule RailWeb.LearningsLive do
       projects={@projects}
       theme={@theme}
       show_project_switcher={@show_project_switcher}
+      lost_backends={@lost_backends}
     >
       <div id="learnings-page" data-qa="learnings-page" class="-m-6 h-[calc(100%+3rem)] flex min-h-0">
         <.learnings_queue

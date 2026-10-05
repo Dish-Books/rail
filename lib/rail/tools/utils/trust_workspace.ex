@@ -10,10 +10,10 @@ defmodule Rail.Tools.Utils.TrustWorkspace do
   Rail's agents never see that dialog, and until a workspace is trusted Claude
   Code ignores the permissions its `.claude/settings.json` allows. Trust has to
   land in the backend's config directory, not the one the CLI uses outside Rail,
-  so accepting it by hand never reaches the agents. Other backends have no such
-  dialog and are left alone, as is a config that already trusts every directory.
+  so accepting it by hand never reaches the agents. A config that already trusts
+  every directory is left alone.
   """
-  def trust_workspace(%Backend{name: :claude} = backend, paths) do
+  def trust_workspace(%Backend{} = backend, paths) do
     config_path = Path.join(Backend.config_dir(backend), ".claude.json")
     config = read_config(config_path)
 
@@ -25,8 +25,6 @@ defmodule Rail.Tools.Utils.TrustWorkspace do
     if projects != config["projects"], do: write_config(config_path, Map.put(config, "projects", projects))
     :ok
   end
-
-  def trust_workspace(%Backend{}, _paths), do: :ok
 
   # A missing or unreadable config starts empty: the CLI fills in the rest on
   # its first run.

@@ -1,42 +1,29 @@
 defmodule Rail.Tools.Actions.BuildArgs do
   @moduledoc false
 
-  alias Rail.Tools.Schemas.Backend
-
   @default_effort "high"
 
   @doc """
-  Builds the command-line arguments list for the specified backend.
+  Builds the command-line arguments list for a Claude Code run.
 
   Enforces exact flag order, read-only mode permissions, and resume flags per spec 03 §2.
 
   Options:
-  - `:backend`: the `%Backend{}` the runs on
   - `:prompt`: string prompt
   - `:model`: model name string
   - `:reasoning_effort` or `:effort`: `"high" | "medium" | "low"` (default `"high"`)
   - `:read_only`: boolean (default `false`)
-  - `:system_prompt`: string (Claude only, included when non-empty) — appended to
+  - `:system_prompt`: string (included when non-empty) — appended to
     Claude Code's own system prompt rather than replacing it, which is what teaches
     the agent its tools (deferred MCP tools included)
-  - `:conversation_id`, `:conversation`, or `:resume`: session id for resumption
-  - `:agents`: subagents as `%{name:, description:, prompt:, model:}` maps (Claude only, one `--agents` flag)
-  - `:work_dir` or `:working_directory`: directory for `--add-dir` (Agy only)
-  - `:log_file`, `:log_path`, or `:agy_log_path`: path for `--log-file` (Agy only)
+  - `:conversation_id` or `:resume`: session id for resumption
+  - `:agents`: subagents as `%{name:, description:, prompt:, model:}` maps, passed as one `--agents` flag
   """
   def build_args(opts) when is_list(opts) do
     build_args(Map.new(opts))
   end
 
   def build_args(opts) when is_map(opts) do
-    if claude?(opts[:backend]) do
-      build_claude_args(opts)
-    else
-      build_agy_args(opts)
-    end
-  end
-
-  defp build_claude_args(opts) do
     prompt = opts[:prompt] || ""
     model = opts[:model] || ""
     effort = opts[:reasoning_effort] || opts[:effort] || @default_effort
@@ -108,58 +95,4 @@ defmodule Rail.Tools.Actions.BuildArgs do
 
     ["--mcp-config", Jason.encode!(config), "--strict-mcp-config", "--allowedTools", "mcp__rail"]
   end
-
-  defp build_agy_args(opts) do
-    prompt = opts[:prompt] || ""
-    model = opts[:model] || ""
-    effort = opts[:reasoning_effort] || opts[:effort] || @default_effort
-    read_only = Map.get(opts, :read_only, false)
-    mode = if read_only, do: "plan", else: "accept-edits"
-    work_dir = opts[:work_dir] || opts[:working_directory]
-    log_file = opts[:log_file] || opts[:log_path] || opts[:agy_log_path]
-    conversation_id = opts[:conversation_id] || opts[:conversation] || opts[:resume]
-
-    ["-p", prompt, "--model", model, "--effort", effort] ++
-      agy_permission_flags(read_only) ++
-      ["--mode", mode, "--output-format", "stream-json"] ++
-      agy_add_dir_flags(work_dir) ++
-      agy_log_file_flags(log_file) ++
-      agy_conversation_flags(conversation_id)
-  end
-
-  defp agy_permission_flags(true), do: []
-  defp agy_permission_flags(false), do: ["--dangerously-skip-permissions"]
-
-  defp agy_add_dir_flags(work_dir) when is_binary(work_dir) do
-    if String.trim(work_dir) == "" do
-      []
-    else
-      ["--add-dir", work_dir]
-    end
-  end
-
-  defp agy_add_dir_flags(_other), do: []
-
-  defp agy_log_file_flags(log_file) when is_binary(log_file) do
-    if String.trim(log_file) == "" do
-      []
-    else
-      ["--log-file", log_file]
-    end
-  end
-
-  defp agy_log_file_flags(_other), do: []
-
-  defp agy_conversation_flags(conversation_id) when is_binary(conversation_id) do
-    if String.trim(conversation_id) == "" do
-      []
-    else
-      ["--conversation", conversation_id]
-    end
-  end
-
-  defp agy_conversation_flags(_other), do: []
-
-  defp claude?(%Backend{name: name}), do: name == :claude
-  defp claude?(_other_backend), do: false
 end

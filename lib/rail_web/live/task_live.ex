@@ -121,6 +121,7 @@ defmodule RailWeb.TaskLive do
       projects={@projects}
       theme={@theme}
       show_project_switcher={@show_project_switcher}
+      lost_backends={@lost_backends}
     >
       <div id="task-page" data-qa="task-page" class="contents">
         <div

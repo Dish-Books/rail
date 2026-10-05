@@ -29,6 +29,7 @@ defmodule RailWeb.Layouts do
   attr :projects, :list, required: true
   attr :theme, :string, required: true
   attr :show_project_switcher, :boolean, required: true
+  attr :lost_backends, :list, default: [], doc: "backends that lost their sign-in with nobody signing them out"
 
   slot :inner_block, required: true
 
@@ -51,6 +52,22 @@ defmodule RailWeb.Layouts do
           theme={@theme}
           show_project_switcher={@show_project_switcher}
         />
+
+        <div
+          :for={backend <- @lost_backends}
+          id={"lost-backend-banner-#{backend.id}"}
+          data-qa="lost_backend_banner"
+          role="alert"
+          class="flex items-center space-x-3 px-6 py-2.5 border-b border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200 text-sm font-medium"
+        >
+          <.icon name="pi-warning" class="h-4.5 w-4.5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <span>
+            The {backend.label || backend.name} backend lost its sign-in. Runs on it are held until someone <.link
+              navigate={~p"/settings/backends"}
+              class="underline"
+            >signs it in again</.link>.
+          </span>
+        </div>
 
         <main class="flex-1 overflow-y-auto p-6" id="main-content">
           {render_slot(@inner_block)}

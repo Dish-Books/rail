@@ -230,7 +230,7 @@ defmodule RailWeb.TaskLiveTest do
         task_id: task.id,
         role_id: engineer.id,
         status: :finished,
-        error: "agy reported ERROR: Eligibility check failed",
+        error: "claude reported ERROR: Eligibility check failed",
         started_at: DateTime.utc_now()
       })
 

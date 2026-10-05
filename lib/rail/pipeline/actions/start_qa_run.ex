@@ -43,8 +43,6 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
     prompt =
       Pipeline.build_prompt(
         task: task,
-        backend: role.backend,
-        role_instructions: role.system_prompt,
         context_snippet: brief(task, run),
         pending_answer: run.pending_answer,
         conversation_id: run.conversation_id
@@ -52,7 +50,6 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
 
     args =
       Tools.build_args(
-        backend: role.backend,
         prompt: prompt,
         model: role.model,
         reasoning_effort: role.reasoning_effort || "high",
@@ -71,7 +68,7 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
     String.trim("""
     QA the change described below by driving the running application. #{workspace(task)}
 
-    You are testing it, not changing it: write no application code and no tests, fix nothing you find, and never run a git command that writes - no commit, no push, no fetch, no branch, no checkout, no stash. Reading the tree with git is how you know what changed.
+    You are testing it, not changing it: write no application code and no tests, fix nothing you find, and leave to Rail the git it does itself - no commit, no push, no merge, no rebase, nor anything like them that writes history or moves the branch. Any other git command is yours to run. Reading the tree with git is how you know what changed.
 
     Nothing under #{scratch_path} is part of the change. It is your workspace, and Rail keeps it out of the commit. It survives between turns and between passes, so keep the scripts and data you set up there and re-run them; `/tmp`, and anything you started, such as a server, do not.
 

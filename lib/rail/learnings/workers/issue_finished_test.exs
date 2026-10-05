@@ -29,9 +29,9 @@ defmodule Rail.Learnings.Workers.IssueFinishedTest do
   end
 
   test "a failed pass is retried", %{task: task} do
-    expect(Tools, :run_agent, fn _backend, _argv, _opts -> {:error, {:exit, 1}} end)
+    expect(Tools, :run_agent, fn _backend, _argv, _opts -> {:error, {:exit, 1, ""}} end)
 
-    assert {:error, {:exit, 1}} = perform_job(IssueFinished, %{issue_id: task.issue_id})
+    assert {:error, {:exit, 1, nil}} = perform_job(IssueFinished, %{issue_id: task.issue_id})
   end
 
   test "an issue with no task, or that is gone, runs nothing", %{project: project} do

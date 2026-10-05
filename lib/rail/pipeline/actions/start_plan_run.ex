@@ -23,7 +23,6 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools
-  alias Rail.Tools.Schemas.Backend
 
   @doc """
   Creates the task for an issue at Plan and starts its run, or spawns a Plan run `enter_stage/3`
@@ -73,21 +72,17 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     task = Repo.preload(task, [issue: [comments: :replies]], force: true)
     File.mkdir_p!(Path.join(task.scratch_path, "design"))
     subagents = plan_subagents(task)
-    claude? = match?(%Backend{name: :claude}, role.backend)
 
     prompt =
       Pipeline.build_prompt(
         task: task,
-        backend: role.backend,
-        role_instructions: role.system_prompt,
-        context_snippet: brief(task, run, subagents, claude?),
+        context_snippet: brief(task, run),
         pending_answer: run.pending_answer,
         conversation_id: run.conversation_id
       )
 
     args =
       Tools.build_args(
-        backend: role.backend,
         prompt: prompt,
         model: role.model,
         reasoning_effort: role.reasoning_effort || "high",
@@ -100,9 +95,9 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     Tools.start_os_process(run, args)
   end
 
-  defp brief(%Task{issue: %Issue{} = issue} = task, %Run{} = run, subagents, claude?) do
+  defp brief(%Task{issue: %Issue{} = issue} = task, %Run{} = run) do
     String.trim("""
-    You lead Rail's Plan step for the issue below: one conversation that ends with the ticket, the design options when the change has a screen, and the implementation plan, each saved with Rail's tools and approved by the human with one click. #{who_works(claude?)} You change nothing in the worktree yourself.
+    You lead Rail's Plan step for the issue below: one conversation that ends with the ticket, the design options when the change has a screen, and the implementation plan, each saved with Rail's tools and approved by the human with one click. Product, Designer and Architect are your subagents, and each saves its own output: hand each its work with the Task tool, naming it, and never save anything yourself. You change nothing in the worktree yourself.
 
     How the Plan step works:
 
@@ -129,16 +124,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     Every comment on the issue, oldest first. This is the whole discussion; do not look for more.
 
     #{format_comments(issue.comments)}
-    #{inline_subagents(subagents, claude?)}
     """)
-  end
-
-  defp who_works(true) do
-    "Product, Designer and Architect are your subagents, and each saves its own output: hand each its work with the Task tool, naming it, and never save anything yourself."
-  end
-
-  defp who_works(false) do
-    "Your backend runs no subagents, so you do Product's, Designer's and Architect's work yourself, in turn, following each one's instructions at the end of this brief."
   end
 
   # A turn after a deploy or a retry picks up from whatever is on disk, not from the start.
@@ -162,14 +148,5 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     if lines == [],
       do: "Nothing is saved yet.",
       else: "Already saved, so carry on from it rather than starting over:\n\n" <> Enum.join(lines, "\n")
-  end
-
-  defp inline_subagents(_subagents, true), do: ""
-
-  defp inline_subagents(subagents, false) do
-    "\n" <>
-      Enum.map_join(subagents, "\n\n", fn subagent ->
-        "<subagent name=\"#{subagent.name}\">\n#{subagent.prompt}\n</subagent>"
-      end)
   end
 end

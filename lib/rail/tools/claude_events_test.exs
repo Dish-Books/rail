@@ -277,6 +277,10 @@ defmodule Rail.Tools.ClaudeEventsTest do
     assert ClaudeEvents.reported_failure?(state)
     refute ClaudeEvents.success?(state)
     assert state.result_error == "claude reported error_max_turns: Ran out of turns"
+    refute state.authentication_failed
+
+    refused = Map.put(event, "error", "authentication_failed")
+    assert %ClaudeEvents{authentication_failed: true} = ClaudeEvents.handle_event(ClaudeEvents.new(), refused)
 
     assert Enum.take(state.logs, -2) == [
              "[error] claude reported error_max_turns: Ran out of turns",

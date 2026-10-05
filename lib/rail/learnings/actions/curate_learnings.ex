@@ -80,10 +80,14 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
         {:ok, digest(project, Repo.reload!(pass), since, folded)}
 
       {:error, reason} ->
-        failed = pass |> Ecto.Changeset.change(error: inspect(reason)) |> Repo.update!()
+        failed = pass |> Ecto.Changeset.change(error: error_message(reason)) |> Repo.update!()
         {:error, {reason, failed}}
     end
   end
+
+  defp error_message({:exit, code, nil}), do: "Curator exited with code #{code}."
+  defp error_message({:exit, code, reason}), do: "Curator exited with code #{code}: #{reason}"
+  defp error_message(reason), do: inspect(reason)
 
   defp run(%Project{} = project, %CuratorPass{} = pass, since, checkout) do
     observations =

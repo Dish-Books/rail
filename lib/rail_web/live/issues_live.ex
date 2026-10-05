@@ -53,6 +53,7 @@ defmodule RailWeb.IssuesLive do
       projects={@projects}
       theme={@theme}
       show_project_switcher={@show_project_switcher}
+      lost_backends={@lost_backends}
     >
       <div id="issues-view" data-qa="issues-view" class="space-y-6">
         <!-- Header row: Title + Subtitle on Left, Sync and New Issue buttons on Right -->

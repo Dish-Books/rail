@@ -198,15 +198,10 @@ defmodule Rail.Triage.Actions.TriageThread do
 
   defp agent(%Thread{} = thread, role, worktree, token) do
     prompt =
-      Pipeline.build_prompt(
-        backend: role.backend,
-        role_instructions: role.system_prompt,
-        context_snippet: brief(thread, role)
-      )
+      Pipeline.build_prompt(context_snippet: brief(thread, role))
 
     args =
       Tools.build_args(
-        backend: role.backend,
         prompt: prompt,
         model: role.model,
         reasoning_effort: to_string(role.reasoning_effort || :high),
@@ -244,9 +239,21 @@ defmodule Rail.Triage.Actions.TriageThread do
   end
 
   defp error_message(:no_role), do: "This project has no Triage role."
-  defp error_message({:exit, code}), do: "Triage exited with code #{code}."
+
+  defp error_message({:exit, code, output}) do
+    case Tools.agent_failure_reason(output) do
+      reason when is_binary(reason) -> "Triage exited with code #{code}: #{reason}"
+      nil -> "Triage exited with code #{code}."
+    end
+  end
+
   defp error_message(:timeout), do: "Triage was still running after 30 minutes, so it was stopped."
   defp error_message(:dispatch_disabled), do: "Dispatch is switched off, so triage did not run."
+
+  defp error_message(:backend_signed_out),
+    do:
+      "The Triage role's backend is signed out, so triage did not run. Sign it in under Settings → Backends, then retry."
+
   defp error_message(:unreadable), do: "Triage finished without writing a result Rail could read."
   defp error_message({:slack, reason}), do: "Could not read the thread from Slack: #{reason}"
   defp error_message(reason) when is_binary(reason), do: reason

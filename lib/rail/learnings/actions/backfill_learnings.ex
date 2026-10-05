@@ -51,7 +51,7 @@ defmodule Rail.Learnings.Actions.BackfillLearnings do
     folder = String.replace(clone_path, ~r/[^A-Za-z0-9]/, "-")
 
     dirs =
-      for %Backend{name: :claude} = backend <- Tools.list_backends(),
+      for %Backend{} = backend <- Tools.list_backends(),
           do: Path.join([Backend.config_dir(backend), "projects", folder, "memory"])
 
     Enum.reduce(dirs, 0, fn dir, imported ->

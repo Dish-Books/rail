@@ -2,8 +2,7 @@ defmodule Rail.Tools.ToolSummarizer do
   @moduledoc """
   Summarizes tool call inputs into compact strings for log transcript lines.
 
-  Prioritizes common file, command, query, and path parameters across Claude and Agy,
-  falling back to a comma-separated key list when none match.
+  Prioritizes common file, command, query, and path parameters, falling back to a comma-separated key list when none match.
   """
 
   @prioritized_keys [
@@ -12,14 +11,7 @@ defmodule Rail.Tools.ToolSummarizer do
     "command",
     "pattern",
     "query",
-    "url",
-    "AbsolutePath",
-    "TargetFile",
-    "CommandLine",
-    "Pattern",
-    "Query",
-    "SearchDirectory",
-    "DirectoryPath"
+    "url"
   ]
 
   @key_pairs Enum.map(@prioritized_keys, fn key -> {key, String.to_atom(key)} end)

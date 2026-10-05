@@ -46,8 +46,6 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     prompt =
       Pipeline.build_prompt(
         task: task,
-        backend: role.backend,
-        role_instructions: role.system_prompt,
         context_snippet: brief(task, run),
         pending_answer: run.pending_answer,
         conversation_id: run.conversation_id
@@ -55,7 +53,6 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
 
     args =
       Tools.build_args(
-        backend: role.backend,
         prompt: prompt,
         model: role.model,
         reasoning_effort: role.reasoning_effort || "high",
@@ -71,7 +68,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     String.trim("""
     Review the change described below. #{workspace(task)}
 
-    You are reading it, not changing it: write no application code and no tests, and never run a git command that writes - no commit, no push, no fetch, no branch, no checkout, no stash. Reading the tree with git is exactly what you are here for.
+    You are reading it, not changing it: write no application code and no tests, and leave to Rail the git it does itself - no commit, no push, no merge, no rebase, nor anything like them that writes history or moves the branch. Any other git command is yours to run. Reading the tree with git is exactly what you are here for.
 
     Do not run the project's test suite, its coverage run or its linters. Those are the engineer's to have passed before the change reached you, they take minutes you would spend not reading, and a number out of one of them is not a finding. Run a single targeted check only where it settles a question you cannot answer by reading, and say in the finding what you ran.
 

@@ -2,6 +2,7 @@ defmodule Rail.Tools.Actions.RunAgentTest do
   # Dispatch is switched off application-wide in one test, so nothing may run beside it.
   use Rail.DataCase, async: false
 
+  alias Rail.Repo
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
 
@@ -16,6 +17,7 @@ defmodule Rail.Tools.Actions.RunAgentTest do
     #!/bin/sh
     case "$1" in
       fail) echo "broke"; exit 3 ;;
+      refused) echo '{"type":"result","is_error":true,"error":"authentication_failed","result":"Invalid bearer token"}'; exit 1 ;;
       hang) sleep 5 ;;
       *) echo "$CLAUDE_CONFIG_DIR|$RAIL_MCP_TOKEN|$(pwd)" ;;
     esac
@@ -44,10 +46,38 @@ defmodule Rail.Tools.Actions.RunAgentTest do
   end
 
   test "a non-zero exit, or no agent to run, is an error", %{backend: backend, dir: dir} do
-    assert {:error, {:exit, 3}} = Tools.run_agent(backend, ["fail"], cd: dir, timeout: 5_000)
+    assert {:error, {:exit, 3, "broke\n"}} = Tools.run_agent(backend, ["fail"], cd: dir, timeout: 5_000)
 
     missing = %{backend | executable_path: Path.join(dir, "no-such-agent")}
     assert {:error, %ErlangError{original: :enoent}} = Tools.run_agent(missing, [], cd: dir, timeout: 5_000)
+  end
+
+  test "runs nothing on a backend that is signed out", %{backend: backend, dir: dir} do
+    reject(&Tools.run/3)
+
+    assert {:error, :backend_signed_out} =
+             Tools.run_agent(%{backend | status: :signed_out}, [], cd: dir, timeout: 5_000)
+  end
+
+  test "a token Claude refuses signs the backend out once, so nothing more is started on it", %{
+    backend: %Backend{executable_path: script},
+    dir: dir
+  } do
+    scope = system_scope()
+    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: script})
+    {:ok, backend} = Tools.set_backend_token(scope, backend, "tok")
+
+    assert {:error, {:exit, 1, output}} = Tools.run_agent(backend, ["refused"], cd: dir, timeout: 5_000)
+    assert Tools.agent_failure_reason(output) =~ "Invalid bearer token. Sign the backend in again"
+
+    assert %Backend{status: :signed_out, session_lost_at: %DateTime{} = lost_at, unavailable_reason: reason} =
+             Repo.get!(Backend, backend.id)
+
+    assert reason =~ "Claude rejected the token."
+
+    # A pass that started before the refusal was recorded changes nothing when it is refused too.
+    assert {:error, {:exit, 1, _output}} = Tools.run_agent(backend, ["refused"], cd: dir, timeout: 5_000)
+    assert %Backend{session_lost_at: ^lost_at} = Repo.get!(Backend, backend.id)
   end
 
   test "an agent still running at the timeout is stopped", %{backend: backend, dir: dir} do

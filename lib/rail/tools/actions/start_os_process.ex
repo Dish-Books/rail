@@ -130,8 +130,8 @@ defmodule Rail.Tools.Actions.StartOsProcess do
   # trust to the repository it belongs to.
   defp launch_spec(backend, argv, stream_path, %Task{project: %Project{} = project} = task, token) do
     trust_workspace(backend, [project.clone_path, task.worktree_path])
-    {args, stdin_path} = prompt_on_stdin(backend, argv, stream_path)
-    args = system_prompt_in_file(backend, args, stream_path)
+    {args, stdin_path} = prompt_on_stdin(argv, stream_path)
+    args = system_prompt_in_file(args, stream_path)
 
     %{
       "executable" => backend.executable_path,
@@ -151,20 +151,20 @@ defmodule Rail.Tools.Actions.StartOsProcess do
   # --print flag, and with no prompt argument it reads the prompt from stdin.
   # The file sits beside the run's stream, so what the agent was sent can be read
   # back later.
-  defp prompt_on_stdin(%Backend{name: :claude}, ["-p", prompt | rest], stream_path) when is_binary(prompt) do
+  defp prompt_on_stdin(["-p", prompt | rest], stream_path) when is_binary(prompt) do
     prompt_path = "#{stream_path}.prompt"
     File.write!(prompt_path, prompt)
     {["-p" | rest], prompt_path}
   end
 
-  defp prompt_on_stdin(_backend, argv, _stream_path), do: {argv, nil}
+  defp prompt_on_stdin(argv, _stream_path), do: {argv, nil}
 
   # The role's prompt goes in a file for the same reason, and for one more: in
   # argv it is in the agent's command line, where `pgrep -f` reads it. A demo
   # prompt that says `mix phx.server` made the agent's own process match the
   # `pgrep -f "mix phx.server"` it ran to stop its server in the worktree, so it
   # killed itself and the run ended "Exited with code 143".
-  defp system_prompt_in_file(%Backend{name: :claude}, args, stream_path) do
+  defp system_prompt_in_file(args, stream_path) do
     case Enum.split_while(args, &(&1 != "--append-system-prompt")) do
       {before, ["--append-system-prompt", system_prompt | rest]} ->
         system_prompt_path = "#{stream_path}.system-prompt"
@@ -175,6 +175,4 @@ defmodule Rail.Tools.Actions.StartOsProcess do
         args
     end
   end
-
-  defp system_prompt_in_file(_backend, args, _stream_path), do: args
 end

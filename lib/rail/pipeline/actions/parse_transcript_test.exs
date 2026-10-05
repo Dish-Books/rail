@@ -35,7 +35,7 @@ defmodule Rail.Pipeline.Actions.ParseTranscriptTest do
       "[human] Please address these points:",
       "- Item 1",
       "- Item 2",
-      "[run] agy pid 4321 in /tmp",
+      "[run] claude pid 4321 in /tmp",
       "I have addressed both items."
     ]
 
@@ -45,7 +45,7 @@ defmodule Rail.Pipeline.Actions.ParseTranscriptTest do
     assert comment.content == "Please address these points:\n- Item 1\n- Item 2"
 
     assert event.author == :event
-    assert event.content == "[run] agy pid 4321 in /tmp"
+    assert event.content == "[run] claude pid 4321 in /tmp"
 
     assert reply.author == :role
     assert reply.content == "I have addressed both items."

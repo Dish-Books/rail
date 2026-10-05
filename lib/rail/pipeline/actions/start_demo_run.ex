@@ -45,8 +45,6 @@ defmodule Rail.Pipeline.Actions.StartDemoRun do
     prompt =
       Pipeline.build_prompt(
         task: task,
-        backend: role.backend,
-        role_instructions: role.system_prompt,
         context_snippet: brief(task),
         pending_answer: run.pending_answer,
         conversation_id: run.conversation_id
@@ -54,7 +52,6 @@ defmodule Rail.Pipeline.Actions.StartDemoRun do
 
     args =
       Tools.build_args(
-        backend: role.backend,
         prompt: prompt,
         model: role.model,
         reasoning_effort: role.reasoning_effort || "high",
@@ -70,7 +67,7 @@ defmodule Rail.Pipeline.Actions.StartDemoRun do
     String.trim("""
     Record a walkthrough of the change described below, by driving the running application. #{workspace(task)}
 
-    You are showing it, not changing it: write no application code and no tests, fix nothing, and never run a git command that writes - no commit, no push, no fetch, no branch, no checkout, no stash. Reading the tree with git is how you know what changed.
+    You are showing it, not changing it: write no application code and no tests, fix nothing, and leave to Rail the git it does itself - no commit, no push, no merge, no rebase, nor anything like them that writes history or moves the branch. Any other git command is yours to run. Reading the tree with git is how you know what changed.
 
     Nothing under #{scratch_path} is part of the change. It is your workspace, and Rail keeps it out of the commit. It survives between turns, so keep the scripts that seed your starting state there and make them re-runnable: a retake is then one command. `/tmp`, and anything you started, do not survive.
 
