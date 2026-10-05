@@ -66,7 +66,8 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
       assert prompt =~ "`request_merge` asks Rail to merge main into a clean worktree"
       refute prompt =~ "<<'MSG'"
       refute prompt =~ commits_dir
-      assert prompt =~ "Never run git."
+      assert prompt =~ "Git is yours to use, except for what Rail does for you."
+      assert prompt =~ "No commit, no push, no merge, no rebase"
       assert prompt =~ "Your worktree is #{task.worktree_path}"
       assert prompt =~ "The branch #{task.worktree_name} is already checked out"
       assert prompt =~ "its base is main on remote `origin`"
