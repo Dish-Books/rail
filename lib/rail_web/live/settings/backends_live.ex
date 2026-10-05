@@ -22,7 +22,7 @@ defmodule RailWeb.Settings.BackendsLive do
       |> assign(:now, DateTime.utc_now())
       |> assign(:saved_backend, nil)
       |> assign(:save_error, nil)
-      |> assign(:logins, %{})
+      |> assign(:token_error, nil)
       |> assign(:expanded, MapSet.new())
       |> load_backends()
 
@@ -57,6 +57,7 @@ defmodule RailWeb.Settings.BackendsLive do
       projects={@projects}
       theme={@theme}
       show_project_switcher={@show_project_switcher}
+      lost_backends={@lost_backends}
     >
       <div class="max-w-[90rem] mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-10" id="backends-settings">
         <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
@@ -95,36 +96,15 @@ defmodule RailWeb.Settings.BackendsLive do
               <span>Refresh quotas</span>
             </.button>
 
-            <div class="relative" phx-click-away={JS.hide(to: "#add-backend-menu")}>
-              <.button
-                variant="primary"
-                id="add-backend-button"
-                data-qa="add_backend_button"
-                phx-click={JS.toggle(to: "#add-backend-menu")}
-              >
-                <.icon name="pi-plus" class="h-4 w-4" />
-                <span>Add backend</span>
-              </.button>
-
-              <div
-                id="add-backend-menu"
-                class="hidden absolute right-0 z-10 mt-2 w-48 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 py-1 shadow-lg"
-              >
-                <button
-                  :for={name <- Backend.names()}
-                  type="button"
-                  phx-click={
-                    JS.push("add_backend", value: %{name: name}) |> JS.hide(to: "#add-backend-menu")
-                  }
-                  id={"add-backend-#{name}"}
-                  data-qa={"add_backend_#{name}"}
-                  class="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
-                >
-                  <.icon name={backend_icon(name)} class="h-4 w-4" />
-                  {display_name(name)}
-                </button>
-              </div>
-            </div>
+            <.button
+              variant="primary"
+              id="add-backend-claude"
+              data-qa="add_backend_claude"
+              phx-click="add_backend"
+            >
+              <.icon name="pi-plus" class="h-4 w-4" />
+              <span>Add backend</span>
+            </.button>
           </div>
         </div>
 
@@ -156,9 +136,7 @@ defmodule RailWeb.Settings.BackendsLive do
           >
             <% draft = Map.fetch!(@drafts, key) %>
             <% account = Map.get(@accounts, key) %>
-            <% login = Map.get(@logins, key) %>
             <% expanded = MapSet.member?(@expanded, key) %>
-            <% can_sign_in = draft["name"] == :claude and not is_nil(account) %>
             <% needs_sign_in = needs_sign_in?(account) %>
 
             <div
@@ -283,7 +261,7 @@ defmodule RailWeb.Settings.BackendsLive do
                   id={"no-quota-windows-#{key}"}
                   class="text-sm text-slate-500 dark:text-slate-400"
                 >
-                  No quota windows reported
+                  A token cannot read quotas
                 </p>
 
                 <p
@@ -291,30 +269,8 @@ defmodule RailWeb.Settings.BackendsLive do
                   id={"quotas-unavailable-#{key}"}
                   class="text-sm text-slate-500 dark:text-slate-400"
                 >
-                  Quotas unavailable until sign-in
+                  Needs a token
                 </p>
-
-                <.button
-                  :if={
-                    can_sign_in and account.status != :ready and
-                      (is_nil(login) or login.step == :failed)
-                  }
-                  class="text-indigo-600 dark:text-indigo-300"
-                  phx-click="start_login"
-                  phx-value-key={key}
-                  id={"start-login-#{key}"}
-                  data-qa={"start_login_#{key}"}
-                >
-                  Sign in
-                </.button>
-
-                <span
-                  :if={login && login.step == :starting}
-                  id={"login-starting-#{key}"}
-                  class="text-sm text-slate-500 dark:text-slate-400"
-                >
-                  Starting sign-in…
-                </span>
 
                 <% badge = !needs_sign_in && status_badge(account && account.status) %>
                 <span
@@ -342,74 +298,51 @@ defmodule RailWeb.Settings.BackendsLive do
                 <p>{account.unavailable_reason || default_reason(account.status)}</p>
               </div>
 
-              <div
-                :if={can_sign_in and login != nil}
-                id={"login-#{key}"}
-                class="space-y-3 rounded-lg border border-indigo-200 dark:border-indigo-400/30 bg-indigo-50/60 dark:bg-indigo-400/10 p-4 text-sm"
+              <form
+                :if={account}
+                phx-change="change_token"
+                phx-submit="save_token"
+                id={"token-form-#{key}"}
+                class="space-y-2 rounded-lg border border-indigo-200 dark:border-indigo-400/30 bg-indigo-50/60 dark:bg-indigo-400/10 p-4 text-sm"
               >
-                <.form
-                  :if={login.step in [:awaiting_code, :submitting]}
-                  for={%{}}
-                  phx-change="change_login_code"
-                  phx-submit="submit_login_code"
-                  id={"login-code-form-#{key}"}
-                  class="space-y-3"
-                >
-                  <input type="hidden" name="key" value={key} />
-                  <p class="text-slate-700 dark:text-slate-200">
-                    A browser window should have opened to sign in, and this card updates
-                    once it is done. If none opened,
-                    <a
-                      href={login.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      id={"login-url-#{key}"}
-                      class="font-semibold text-indigo-600 dark:text-indigo-300 hover:underline"
+                <input type="hidden" name="key" value={key} />
+                <label class={@field_label} for={"token-#{key}"}>Token</label>
+                <p class="text-slate-700 dark:text-slate-200" id={"token-help-#{key}"}>
+                  {token_help(account)}
+                </p>
+                <div class="flex flex-col sm:flex-row sm:items-center gap-2">
+                  <input
+                    type="password"
+                    name="token"
+                    id={"token-#{key}"}
+                    data-qa={"token_#{key}"}
+                    autocomplete="off"
+                    placeholder="sk-ant-oat01-…"
+                    class={[@field, "font-mono"]}
+                  />
+                  <div class="flex items-center gap-2">
+                    <.button type="submit" variant="primary" id={"save-token-#{key}"}>
+                      Save token
+                    </.button>
+                    <.button
+                      :if={account.oauth_token}
+                      variant="ghost"
+                      phx-click="remove_token"
+                      phx-value-key={key}
+                      id={"remove-token-#{key}"}
                     >
-                      open the sign-in page
-                    </a>
-                    and paste the code it shows you.
-                  </p>
-                  <div class="flex flex-col sm:flex-row sm:items-center gap-2">
-                    <input
-                      type="text"
-                      name="code"
-                      id={"login-code-#{key}"}
-                      data-qa={"login_code_#{key}"}
-                      value={login.code}
-                      autocomplete="off"
-                      placeholder="code"
-                      class={[@field, "font-mono"]}
-                    />
-                    <div class="flex items-center gap-2">
-                      <.button
-                        type="submit"
-                        variant="primary"
-                        id={"submit-login-code-#{key}"}
-                        disabled={login.step == :submitting}
-                      >
-                        {if login.step == :submitting, do: "Signing in…", else: "Finish sign-in"}
-                      </.button>
-                      <.button
-                        variant="ghost"
-                        phx-click="cancel_login"
-                        phx-value-key={key}
-                        id={"cancel-login-#{key}"}
-                      >
-                        Cancel
-                      </.button>
-                    </div>
+                      Remove token
+                    </.button>
                   </div>
-                </.form>
-
+                </div>
                 <p
-                  :if={login.error}
-                  id={"login-error-#{key}"}
+                  :if={match?({^key, _message}, @token_error)}
+                  id={"token-error-#{key}"}
                   class="text-red-700 dark:text-red-300"
                 >
-                  {login.error}
+                  {elem(@token_error, 1)}
                 </p>
-              </div>
+              </form>
 
               <form
                 phx-change="validate"
@@ -565,19 +498,6 @@ defmodule RailWeb.Settings.BackendsLive do
                 </div>
 
                 <div class="flex flex-wrap items-center gap-3 border-t border-slate-200 dark:border-slate-700/70 pt-6">
-                  <.button
-                    :if={
-                      can_sign_in and account.status == :ready and
-                        (is_nil(login) or login.step == :failed)
-                    }
-                    phx-click="logout"
-                    phx-value-key={key}
-                    id={"logout-#{key}"}
-                    data-qa={"logout_#{key}"}
-                  >
-                    Sign out
-                  </.button>
-
                   <div class="ml-auto flex items-center gap-3">
                     <span
                       :if={@saved_backend == key}
@@ -627,13 +547,12 @@ defmodule RailWeb.Settings.BackendsLive do
 
   # A new backend is only a draft until it is saved, keyed so it cannot collide
   # with a saved row's id, and shown open on top so it can be filled in.
-  def handle_event("add_backend", %{"name" => name}, socket) do
-    name = Enum.find(Backend.names(), &(to_string(&1) == name))
+  def handle_event("add_backend", _params, socket) do
     key = "new-#{System.unique_integer([:positive])}"
 
     socket =
       socket
-      |> assign(:drafts, Map.put(socket.assigns.drafts, key, new_draft(name)))
+      |> assign(:drafts, Map.put(socket.assigns.drafts, key, new_draft(:claude)))
       |> assign(:draft_keys, [key | socket.assigns.draft_keys])
       |> expand(key)
 
@@ -714,66 +633,22 @@ defmodule RailWeb.Settings.BackendsLive do
     end
   end
 
-  # The session is this view's, so leaving the page ends a sign-in left half done.
-  def handle_event("start_login", %{"key" => key}, socket) do
-    %{current_scope: scope, accounts: accounts} = socket.assigns
-    backend = Map.fetch!(accounts, key)
-    view = self()
-
-    socket =
-      socket
-      |> put_login(key, %{step: :starting, session: nil, url: nil, code: "", error: nil})
-      |> expand(key)
-      |> start_async({:start_login, key}, fn -> Tools.start_backend_login(scope, backend, view) end)
-
-    {:noreply, socket}
+  # The token stays in the browser until it is saved; typing only clears what
+  # was said about the last one.
+  def handle_event("change_token", _params, socket) do
+    {:noreply, assign(socket, :token_error, nil)}
   end
 
-  # Kept as typed, so a re-render while the code is being pasted cannot lose it.
-  def handle_event("change_login_code", %{"key" => key, "code" => code}, socket) do
-    {:noreply, put_login(socket, key, %{Map.fetch!(socket.assigns.logins, key) | code: code})}
-  end
-
-  def handle_event("submit_login_code", %{"key" => key, "code" => code}, socket) do
-    %{current_scope: scope, logins: logins} = socket.assigns
-    %{session: session} = login = Map.fetch!(logins, key)
-
-    # A signed-in account is only worth showing once its usage has been read.
-    submit = fn ->
-      with :ok <- Tools.submit_backend_login_code(scope, session, code), do: Tools.refresh_usage()
+  def handle_event("save_token", %{"key" => key, "token" => token}, socket) do
+    if String.trim(token) == "" do
+      {:noreply, assign(socket, :token_error, {key, "Paste the token first."})}
+    else
+      {:noreply, set_token(socket, key, token)}
     end
-
-    socket =
-      socket
-      |> put_login(key, %{login | step: :submitting, code: code, error: nil})
-      |> start_async({:submit_login_code, key}, submit)
-
-    {:noreply, socket}
   end
 
-  def handle_event("cancel_login", %{"key" => key}, socket) do
-    with %{session: session} when is_pid(session) <- socket.assigns.logins[key] do
-      Tools.cancel_backend_login(socket.assigns.current_scope, session)
-    end
-
-    {:noreply, assign(socket, :logins, Map.delete(socket.assigns.logins, key))}
-  end
-
-  def handle_event("logout", %{"key" => key}, socket) do
-    %{current_scope: scope, accounts: accounts} = socket.assigns
-
-    socket =
-      case Tools.logout_backend(scope, Map.fetch!(accounts, key)) do
-        {:ok, _signed_out} ->
-          socket
-          |> assign(:logins, Map.delete(socket.assigns.logins, key))
-          |> merge_backends(Tools.list_backends())
-
-        {:error, reason} ->
-          put_login(socket, key, %{step: :failed, session: nil, url: nil, code: "", error: login_error(reason)})
-      end
-
-    {:noreply, socket}
+  def handle_event("remove_token", %{"key" => key}, socket) do
+    {:noreply, set_token(socket, key, nil)}
   end
 
   def handle_event("refresh_quotas", _params, socket) do
@@ -795,27 +670,6 @@ defmodule RailWeb.Settings.BackendsLive do
     {:noreply, assign(socket, :now, DateTime.utc_now())}
   end
 
-  # The CLI finished signing in by itself, through the browser it opened, so
-  # there is no code to wait for: what is left is reading the account.
-  def handle_info({:backend_login_exited, session, result}, socket) do
-    case Enum.find(socket.assigns.logins, fn {_key, login} -> login.session == session end) do
-      {key, login} when result == :ok ->
-        socket =
-          socket
-          |> put_login(key, %{login | step: :submitting, error: nil})
-          |> start_async({:submit_login_code, key}, fn -> Tools.refresh_usage() end)
-
-        {:noreply, socket}
-
-      {key, _login} ->
-        {:error, reason} = result
-        {:noreply, put_login(socket, key, %{step: :failed, session: nil, url: nil, code: "", error: login_error(reason)})}
-
-      nil ->
-        {:noreply, socket}
-    end
-  end
-
   # The navigation hook subscribes this view to pipeline events it does not use.
   def handle_info(_message, socket) do
     {:noreply, socket}
@@ -835,27 +689,23 @@ defmodule RailWeb.Settings.BackendsLive do
     {:noreply, assign(socket, :is_refreshing, false)}
   end
 
-  def handle_async({:start_login, key}, {:ok, {:ok, %{session: session, url: url}}}, socket) do
-    {:noreply, put_login(socket, key, %{step: :awaiting_code, session: session, url: url, code: "", error: nil})}
-  end
+  # A token changes what every page's banner has to say, as well as this card.
+  defp set_token(socket, key, token) do
+    case Tools.set_backend_token(socket.assigns.current_scope, Map.fetch!(socket.assigns.accounts, key), token) do
+      {:ok, _backend} ->
+        backends = Tools.list_backends()
 
-  def handle_async({:start_login, key}, result, socket) do
-    {:noreply, put_login(socket, key, %{step: :failed, session: nil, url: nil, code: "", error: login_error(result)})}
-  end
+        socket
+        |> assign(:token_error, nil)
+        |> assign(:lost_backends, Enum.filter(backends, & &1.session_lost_at))
+        |> merge_backends(backends)
 
-  # A failed code leaves the CLI gone, so the next try starts a fresh sign-in.
-  def handle_async({:submit_login_code, key}, {:ok, {:ok, _refreshed}}, socket) do
-    socket =
-      socket
-      |> assign(:logins, Map.delete(socket.assigns.logins, key))
-      |> merge_backends(Tools.list_backends())
-      |> assign(:now, DateTime.utc_now())
+      {:error, :invalid_token} ->
+        assign(socket, :token_error, {key, "That is not a token: it has spaces in it."})
 
-    {:noreply, socket}
-  end
-
-  def handle_async({:submit_login_code, key}, result, socket) do
-    {:noreply, put_login(socket, key, %{step: :failed, session: nil, url: nil, code: "", error: login_error(result)})}
+      {:error, :not_authorized} ->
+        assign(socket, :token_error, {key, "You are not allowed to change a backend's token."})
+    end
   end
 
   defp save(scope, "new-" <> _draft, attrs), do: Tools.create_backend(scope, attrs)
@@ -938,15 +788,14 @@ defmodule RailWeb.Settings.BackendsLive do
 
   defp models_from_params(_other), do: []
 
-  defp put_login(socket, key, login), do: assign(socket, :logins, Map.put(socket.assigns.logins, key, login))
+  defp token_help(%Backend{oauth_token: nil}),
+    do: "Run `claude setup-token` on a machine with a browser, and paste the token it prints."
 
-  defp login_error({:ok, {:error, reason}}), do: login_error(reason)
-  defp login_error({:exit, _reason}), do: "Sign-in crashed. Try again."
-  defp login_error(:not_authorized), do: "You are not allowed to sign backends in or out."
-  defp login_error(:expired), do: "Sign-in expired. Try again."
-  defp login_error(:login_exited), do: "Sign-in ended before it finished. Try again."
-  defp login_error(reason) when is_binary(reason), do: "Sign-in failed: #{reason}"
-  defp login_error(reason), do: "Sign-in failed: #{inspect(reason)}"
+  defp token_help(%Backend{session_lost_at: %DateTime{}}),
+    do: "Claude rejected this token. Run `claude setup-token` again, and paste the new token."
+
+  defp token_help(%Backend{}),
+    do: "Signed in with a token from `claude setup-token`, which lasts a year. Paste a new one to replace it."
 
   defp changeset_message(changeset) do
     changeset
@@ -955,12 +804,8 @@ defmodule RailWeb.Settings.BackendsLive do
   end
 
   defp display_name(:claude), do: "Claude Code"
-  defp display_name(:agy), do: "Antigravity CLI"
-  defp display_name(other), do: other |> to_string() |> String.capitalize()
 
   defp backend_icon(:claude), do: "pi-terminal-window"
-  defp backend_icon(:agy), do: "pi-arrow-up"
-  defp backend_icon(_other), do: "pi-diamond"
 
   defp account_subtitle(nil), do: "Not saved yet"
   defp account_subtitle(%Backend{account_label: label}) when label not in [nil, ""], do: label

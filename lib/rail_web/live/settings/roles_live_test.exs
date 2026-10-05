@@ -29,10 +29,10 @@ defmodule RailWeb.Settings.RolesLiveTest do
         models: [%{id: "claude-sonnet-5", display_name: "claude-sonnet-5"}]
       })
 
-    {:ok, agy_backend} =
+    {:ok, bare_backend} =
       Rail.Tools.create_backend(Rail.Scope.for_system(), %{
-        name: :agy,
-        executable_path: "/usr/local/bin/agy"
+        name: :claude,
+        executable_path: "/usr/local/bin/claude"
       })
 
     admin_conn = log_in_user(conn, admin_user)
@@ -54,7 +54,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
       admin_user: admin_user,
       regular_conn: regular_conn,
       claude_backend: claude_backend,
-      agy_backend: agy_backend
+      bare_backend: bare_backend
     }
   end
 
@@ -130,7 +130,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert_redirect(view, ~p"/project-selection?#{[project_id: project2.id, return_to: "/settings/roles"]}")
   end
 
-  test "creates a new role with stage binding", %{agy_backend: agy_backend, admin_conn: conn} do
+  test "creates a new role with stage binding", %{bare_backend: bare_backend, admin_conn: conn} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Roles Live Project 13003",
@@ -162,24 +162,24 @@ defmodule RailWeb.Settings.RolesLiveTest do
 
     # Two backends of one kind are told apart by their label.
     assert has_element?(view, "#role-backend-select option", "Claude Code (claude -p) · work")
-    assert has_element?(view, "#role-backend-select option", "Antigravity (agy -p)")
+    assert has_element?(view, "#role-backend-select option[value='#{bare_backend.id}']", "Claude Code (claude -p)")
 
     # Validate form change with backend change
     view
     |> element("#role-backend-select")
-    |> render_change(%{"role" => %{"backend_id" => agy_backend.id}})
+    |> render_change(%{"role" => %{"backend_id" => bare_backend.id}})
 
     view
     |> element("#role-form")
     |> render_change(%{
       "role" => %{
-        "backend_id" => agy_backend.id,
-        "model_choice" => "gemini-ultra-custom"
+        "backend_id" => bare_backend.id,
+        "model_choice" => "claude-custom"
       }
     })
 
-    # agy has no configured models, so the chosen model stays selectable on its own
-    assert has_element?(view, "#role-model-select option[value='gemini-ultra-custom']")
+    # The backend has no configured models, so the chosen model stays selectable on its own
+    assert has_element?(view, "#role-model-select option[value='claude-custom']")
 
     # Models are managed in backend settings
     assert has_element?(view, "#manage-models-link")
@@ -192,8 +192,8 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "name" => "Product Lead",
         "description" => "Owns specs",
         "stage" => "product",
-        "backend_id" => agy_backend.id,
-        "model_choice" => "gemini-3.8-flash-high",
+        "backend_id" => bare_backend.id,
+        "model_choice" => "claude-haiku-5",
         "reasoning_effort" => "medium",
         "system_prompt" => "",
         "max_concurrent" => "2"
@@ -210,8 +210,8 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "name" => "Product Lead",
         "description" => "Owns specs",
         "stage" => "product",
-        "backend_id" => agy_backend.id,
-        "model_choice" => "gemini-3.8-flash-high",
+        "backend_id" => bare_backend.id,
+        "model_choice" => "claude-haiku-5",
         "reasoning_effort" => "medium",
         "system_prompt" => "You are product lead.",
         "max_concurrent" => "2"
@@ -732,7 +732,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     refute has_element?(view, "#bound-role-name-review")
   end
 
-  test "copies roles from another project", %{agy_backend: agy_backend, admin_conn: conn, admin_user: admin_user} do
+  test "copies roles from another project", %{bare_backend: bare_backend, admin_conn: conn, admin_user: admin_user} do
     scope = Rail.Scope.for_user(admin_user)
 
     {:ok, source_project} =
@@ -756,8 +756,8 @@ defmodule RailWeb.Settings.RolesLiveTest do
              Roles.create_role(scope, source_project, %{
                name: "Demo Recorder Role",
                stage: :demo,
-               backend_id: agy_backend.id,
-               model: "gemini-3.8-flash-high",
+               backend_id: bare_backend.id,
+               model: "claude-haiku-5",
                system_prompt: "Record demos"
              })
 
@@ -905,7 +905,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
   end
 
   test "renders available models dropdown and validates name in create modal", %{
-    agy_backend: agy_backend,
+    bare_backend: bare_backend,
     claude_backend: claude_backend,
     admin_conn: conn,
     admin_user: _admin_user
@@ -966,7 +966,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     })
 
     # Switching to a backend with no configured row yields no models
-    render_hook(view, "change_backend", %{"role" => %{"backend_id" => agy_backend.id}})
+    render_hook(view, "change_backend", %{"role" => %{"backend_id" => bare_backend.id}})
     refute has_element?(view, "#role-model-select option[value='claude-sonnet-5']")
   end
 
@@ -1060,15 +1060,12 @@ defmodule RailWeb.Settings.RolesLiveTest do
         clone_path: "/tmp/repos/roles-live-13021"
       })
 
-    {:ok, _codex_backend} =
-      Rail.Tools.create_backend(Rail.Scope.for_system(), %{name: :codex, executable_path: "/usr/local/bin/codex"})
-
     assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
 
     send(view.pid, :unrelated_pipeline_event)
 
     view |> element("#assign-stage-button-product") |> render_click()
-    assert has_element?(view, "#role-backend-select option", "codex")
+    assert has_element?(view, "#role-backend-select option", "Claude Code (claude -p)")
 
     render_hook(view, "validate_role", %{
       "role" => %{"backend_id" => claude_backend.id, "model_choice" => "claude-sonnet-5"}

@@ -1,6 +1,8 @@
 defmodule Rail.Tools.Actions.StartOsProcessTest do
   use Rail.DataCase, async: true
 
+  import Rail.Tools.Utils.AdmitSandboxes
+
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -297,8 +299,7 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
     assert File.read!(system_prompt_path) == "Start it with mix phx.server."
   end
 
-  test "leaves the prompt in argv for other backends", %{backend: backend, run: run} do
-    backend |> Ecto.Changeset.change(name: :agy) |> Repo.update!()
+  test "leaves argv alone when it carries no prompt", %{run: run} do
     test_pid = self()
 
     expect(Tools, :spawn_os_process, fn _executable, args, opts ->
@@ -308,9 +309,9 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
 
     expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
 
-    {:ok, _os_process} = Tools.start_os_process(run, ["-p", "the prompt", "--model", "gemini"])
+    {:ok, _os_process} = Tools.start_os_process(run, ["--model", "claude-opus-5-5", "--version"])
 
-    assert_received {:spawned, ["-p", "the prompt", "--model", "gemini"], opts}
+    assert_received {:spawned, ["--model", "claude-opus-5-5", "--version"], opts}
     refute Keyword.has_key?(opts, :stdin_path)
   end
 
@@ -363,6 +364,30 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
     assert is_port(opts[:port])
 
     Tools.terminate_os_process(os_process.os_pid, grace_period: 100)
+  end
+
+  test "a turn on a signed-out backend is held in line, and starts once the backend is signed in", %{
+    backend: backend,
+    run: run
+  } do
+    signed_out = Repo.update!(Backend.usage_changeset(backend, %{status: :signed_out}))
+
+    assert {:ok, %OsProcess{id: held_id, status: :waiting_for_resources, os_pid: nil}} =
+             Tools.start_os_process(run, ["2"])
+
+    assert :waiting = run.id |> then(&Repo.get!(Run, &1)) |> Run.state()
+
+    assert [
+             "[rail] Turn 1 is held, because the claude backend is signed out. " <>
+               "It starts on its own once someone signs it in under Settings → Backends."
+           ] = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
+
+    Repo.update!(Backend.usage_changeset(signed_out, %{status: :ready}))
+    expect(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:ok, nil, 4242} end)
+    expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
+
+    assert %{^held_id => {:ok, %OsProcess{status: :running}}} = admit_sandboxes()
+    assert %Run{status: :running} = Repo.get!(Run, run.id)
   end
 
   describe "on a machine with too little free" do

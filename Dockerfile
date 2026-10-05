@@ -109,10 +109,9 @@ RUN groupadd -g 1000 rail && \
 USER rail
 WORKDIR /home/rail
 
-# Agent CLIs and mise, from their official installers, into ~/.local/bin.
+# Claude Code and mise, from their official installers, into ~/.local/bin.
 RUN curl -fsSL https://mise.run | sh \
-  && curl -fsSL https://claude.ai/install.sh | bash \
-  && curl -fsSL https://chatgpt.com/codex/install.sh | sh
+  && curl -fsSL https://claude.ai/install.sh | bash
 
 # prek on PATH, not only through mise. A pre-push hook calls prek by the path it
 # was installed from, and falls back to a bare `prek` when that path is gone -

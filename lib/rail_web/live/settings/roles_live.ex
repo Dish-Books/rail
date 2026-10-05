@@ -9,10 +9,7 @@ defmodule RailWeb.Settings.RolesLive do
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
 
-  @default_models %{
-    claude: "claude-opus-5-5",
-    agy: "gemini-3.8-flash-high"
-  }
+  @default_model "claude-opus-5-5"
 
   def mount(_params, _session, socket) do
     projects = Projects.list_projects(socket.assigns.current_scope)
@@ -71,6 +68,7 @@ defmodule RailWeb.Settings.RolesLive do
       projects={@projects}
       theme={@theme}
       show_project_switcher={@show_project_switcher}
+      lost_backends={@lost_backends}
     >
       <div class="max-w-[90rem] mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-10" id="roles-settings">
         <div>
@@ -1146,27 +1144,19 @@ defmodule RailWeb.Settings.RolesLive do
 
   defp backend_by_id(_backends, _id), do: nil
 
-  # Backends list alphabetically, so the first row is not the one a new role should
-  # start on. Claude is the default where it is configured.
-  defp default_backend(backends) do
-    Enum.find(backends, &(&1.name == :claude)) || List.first(backends)
-  end
+  # A new role starts on the first backend listed.
+  defp default_backend(backends), do: List.first(backends)
 
   defp models_for(%Backend{models: models}), do: models || []
   defp models_for(_unconfigured), do: []
 
-  defp default_model_for(%Backend{name: name}), do: @default_models[name]
+  defp default_model_for(%Backend{}), do: @default_model
   defp default_model_for(_unconfigured), do: nil
 
   # Two backends of one kind are told apart by what the user called them, then
   # by the account signed in.
-  defp backend_label(%Backend{name: name} = backend) do
-    kind =
-      case name do
-        :claude -> "Claude Code (claude -p)"
-        :agy -> "Antigravity (agy -p)"
-        other -> to_string(other)
-      end
+  defp backend_label(%Backend{} = backend) do
+    kind = "Claude Code (claude -p)"
 
     case Enum.find([backend.label, backend.account_label], &(&1 not in [nil, ""])) do
       account when is_binary(account) -> "#{kind} · #{account}"

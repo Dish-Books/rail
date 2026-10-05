@@ -61,11 +61,4 @@ defmodule Rail.Tools.Utils.TrustWorkspaceTest do
 
     assert File.read!(config_path) == content
   end
-
-  test "writes nothing for a CLI without a trust dialog" do
-    backend = %Backend{id: "bkd_codex_#{System.unique_integer([:positive])}", name: :codex}
-
-    assert :ok = trust_workspace(backend, ["/repo"])
-    refute File.exists?(Backend.config_dir(backend))
-  end
 end

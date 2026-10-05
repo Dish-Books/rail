@@ -21,6 +21,7 @@ defmodule Rail.Tools.Follower do
   import Rail.Tools.Utils.ParseLine
   import Rail.Tools.Utils.PumpStream
   import Rail.Tools.Utils.ReadExitFile
+  import Rail.Tools.Utils.RejectToken
   import Rail.Tools.Utils.RemoveSandbox
   import Rail.Tools.Utils.SandboxState
 
@@ -339,6 +340,8 @@ defmodule Rail.Tools.Follower do
     case Repo.get(OsProcess, state.os_process_id) do
       %OsProcess{} = os_process ->
         {exit_code, error} = settle_exit(state, os_process, event_state, raw_stderr)
+        # Before the line moves, so nothing waiting on the same backend starts only to fail too.
+        if Map.get(event_state, :authentication_failed, false), do: reject_run_token(state.run_id)
 
         {:ok, updated_os_process} =
           os_process
@@ -375,6 +378,11 @@ defmodule Rail.Tools.Follower do
       nil ->
         {nil, %{state | file_offset: final_offset, pending_events: [], event_state: event_state}}
     end
+  end
+
+  defp reject_run_token(run_id) do
+    %Run{role: %{backend: backend}} = Run |> Repo.get!(run_id) |> Repo.preload(role: :backend)
+    reject_token(backend)
   end
 
   # 124, as `timeout(1)` has it: what ran out was time, not a stop someone asked for.

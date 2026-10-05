@@ -12,20 +12,10 @@ defmodule Rail.Tools.ToolSummarizerTest do
     assert ToolSummarizer.summarize_tool_input(%{"url" => "https://example.com"}) == "https://example.com"
   end
 
-  test "summarizes Agy capitalized keys" do
-    assert ToolSummarizer.summarize_tool_input(%{"AbsolutePath" => "/repo/file.dart"}) == "/repo/file.dart"
-    assert ToolSummarizer.summarize_tool_input(%{"TargetFile" => "/repo/target.ex"}) == "/repo/target.ex"
-    assert ToolSummarizer.summarize_tool_input(%{"CommandLine" => "git status"}) == "git status"
-    assert ToolSummarizer.summarize_tool_input(%{"Pattern" => "*.ex"}) == "*.ex"
-    assert ToolSummarizer.summarize_tool_input(%{"Query" => "search text"}) == "search text"
-    assert ToolSummarizer.summarize_tool_input(%{"SearchDirectory" => "/tmp/dir"}) == "/tmp/dir"
-    assert ToolSummarizer.summarize_tool_input(%{"DirectoryPath" => "/var/log"}) == "/var/log"
-  end
-
   test "supports atom keys" do
     assert ToolSummarizer.summarize_tool_input(%{file_path: "/lib/atom.ex"}) == "/lib/atom.ex"
     assert ToolSummarizer.summarize_tool_input(%{command: "echo 1"}) == "echo 1"
-    assert ToolSummarizer.summarize_tool_input(%{TargetFile: "/repo/target.ex"}) == "/repo/target.ex"
+    assert ToolSummarizer.summarize_tool_input(%{url: "https://example.com"}) == "https://example.com"
   end
 
   test "skips nil prioritized values in string and atom maps" do
@@ -37,7 +27,7 @@ defmodule Rail.Tools.ToolSummarizerTest do
   end
 
   test "summarizes with 2-arity tool_name and params" do
-    assert ToolSummarizer.summarize_tool_input("view_file", %{"AbsolutePath" => "/repo/main.dart"}) ==
+    assert ToolSummarizer.summarize_tool_input("Read", %{"file_path" => "/repo/main.dart"}) ==
              "/repo/main.dart"
 
     assert ToolSummarizer.summarize_tool_input(:run_command, %{"command" => "mix compile"}) ==

@@ -6,7 +6,9 @@ defmodule Rail.Tools.Schemas.Backend do
   """
   use Rail.Schema
 
-  @names [:claude, :agy, :codex]
+  alias Rail.Types.EncryptedBinary
+
+  @names [:claude]
   @statuses [:not_configured, :signed_out, :unavailable, :ready]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "bkd"}
@@ -27,6 +29,13 @@ defmodule Rail.Tools.Schemas.Backend do
     field :account_detail, :string
     field :fetched_at, :utc_datetime_usec
     field :unavailable_reason, :string
+    # The long-lived token `claude setup-token` issues, handed to the CLI as
+    # CLAUDE_CODE_OAUTH_TOKEN. Nothing refreshes or rotates it, so no CLI can lose it.
+    field :oauth_token, EncryptedBinary, redact: true
+    # When the backend stopped being signed in with nobody having signed it out:
+    # its token was rejected, or a probe found a ready one signed out. Cleared
+    # once its token is replaced or removed.
+    field :session_lost_at, :utc_datetime_usec
 
     # A group of quota limits the CLI reported, with the windows it measured
     # them over carried in `details`.
@@ -42,7 +51,15 @@ defmodule Rail.Tools.Schemas.Backend do
 
   @config_fields [:name, :label, :executable_path]
   @required_config_fields [:name, :executable_path]
-  @usage_fields [:name, :status, :account_label, :account_detail, :fetched_at, :unavailable_reason]
+  @usage_fields [
+    :name,
+    :status,
+    :account_label,
+    :account_detail,
+    :fetched_at,
+    :unavailable_reason,
+    :session_lost_at
+  ]
 
   @doc "Returns the backends that can be configured."
   def names, do: @names
@@ -52,11 +69,9 @@ defmodule Rail.Tools.Schemas.Backend do
 
   @doc """
   Returns the environment variable a backend's CLI reads its config directory
-  from, or nil when it has none.
+  from.
   """
   def env_var(:claude), do: "CLAUDE_CONFIG_DIR"
-  def env_var(:codex), do: "CODEX_HOME"
-  def env_var(_name), do: nil
 
   @doc """
   Returns the directory a backend's CLI keeps its signed-in account in. It is
@@ -79,6 +94,14 @@ defmodule Rail.Tools.Schemas.Backend do
     |> update_change(:label, &String.trim/1)
     |> validate_required(@required_config_fields)
     |> cast_embed(:models, with: &model_changeset/2)
+  end
+
+  @doc """
+  Builds a changeset that replaces the backend's token, or removes it with nil.
+  A new token has not been rejected yet, so the lost session is forgotten.
+  """
+  def token_changeset(backend, token) do
+    change(backend, oauth_token: token, session_lost_at: nil)
   end
 
   @doc """
