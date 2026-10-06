@@ -5,6 +5,9 @@ defmodule RailWeb.Live.PlanStage do
 
   Everything here is read off scratch and the runs whenever the page reloads it, so a save shows
   the moment it lands. The item open by default is whatever waits on the human; a click keeps theirs.
+
+  Once a design is picked the reader can comment on its elements while Plan can take a message. The mode and the
+  open comment box are this tab's alone; the comments are rows, and the conversation sends them.
   """
   use RailWeb, :live_component
 
@@ -13,12 +16,19 @@ defmodule RailWeb.Live.PlanStage do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
 
+  # Another of the reader's tabs saved, removed or sent plan comments. Only the markers moved.
   @impl true
+  def update(%{reload_comments: true}, socket) do
+    {:ok, assign_comments(socket)}
+  end
+
   def update(assigns, socket) do
     socket =
       socket
       |> assign(assigns)
       |> assign_new(:error, fn -> nil end)
+      |> assign_new(:commenting, fn -> false end)
+      |> assign_new(:draft, fn -> nil end)
       |> assign_new(:chosen_item, fn -> nil end)
       |> assign_new(:selected_key, fn -> nil end)
       |> assign_new(:diagram_views, fn -> %{change: :diagram, call_flow: :diagram} end)
@@ -142,6 +152,11 @@ defmodule RailWeb.Live.PlanStage do
                 running={@running}
                 pick_up={@pick_up}
                 can_pick={@can_pick}
+                comment_reason={@comment_reason}
+                commenting={@commenting}
+                draft={@draft}
+                markers={@markers}
+                user_id={@current_scope.user.id}
                 target={@myself}
               />
 
@@ -193,6 +208,94 @@ defmodule RailWeb.Live.PlanStage do
     socket.assigns.current_scope |> Pipeline.approve_plan(socket.assigns.run) |> respond(socket)
   end
 
+  def handle_event("toggle_commenting", _params, socket) do
+    socket =
+      if socket.assigns.comment_reason == nil and not socket.assigns.commenting,
+        do: assign(socket, :commenting, true),
+        else: socket |> assign(:commenting, false) |> assign(:draft, nil)
+
+    {:noreply, socket}
+  end
+
+  def handle_event("stop_commenting", _params, socket) do
+    socket = socket |> assign(:commenting, false) |> assign(:draft, nil)
+
+    {:noreply, socket}
+  end
+
+  # What a reload kept, taken only as a fresh toggle and click would be: on the pick, while Plan can take a message.
+  def handle_event("restore_commenting", params, socket) do
+    %{comment_reason: reason, design: design} = socket.assigns
+    kept = reason == nil && draft(params["draft"])
+
+    socket =
+      cond do
+        reason != nil ->
+          socket
+
+        match?(%{option_key: key} when key == design.picked, kept) ->
+          socket |> assign(:commenting, true) |> assign(:draft, kept)
+
+        kept == nil and params["draft"] == nil and params["commenting"] == true ->
+          assign(socket, :commenting, true)
+
+        true ->
+          socket
+      end
+
+    {:noreply, socket}
+  end
+
+  # The element comes from the page in the frame, so only its expected shape is taken; the changeset checks the rest.
+  def handle_event("select_element", params, socket) do
+    %{commenting: commenting, comment_reason: reason, design: design} = socket.assigns
+
+    socket =
+      case commenting and reason == nil and draft(Map.put(params, "option_key", design.picked)) do
+        %{} = draft -> assign(socket, :draft, draft)
+        _off_or_malformed -> socket
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("change_plan_comment", %{"body" => body}, %{assigns: %{draft: %{} = draft}} = socket) do
+    {:noreply, assign(socket, :draft, %{draft | body: body})}
+  end
+
+  def handle_event("change_plan_comment", _params, socket), do: {:noreply, socket}
+
+  def handle_event("cancel_plan_comment", _params, socket) do
+    {:noreply, assign(socket, :draft, nil)}
+  end
+
+  # A blank comment is refused and the box stays open on what was typed.
+  def handle_event("save_plan_comment", %{"body" => body}, %{assigns: %{draft: %{} = draft}} = socket) do
+    attrs = %{
+      target: :design,
+      body: body,
+      option_key: draft.option_key,
+      selector: draft.selector,
+      element_text: draft.text,
+      element_tag: draft.tag,
+      capture: %{html: draft.html, width: draft.width, height: draft.height}
+    }
+
+    case Pipeline.create_plan_comment(socket.assigns.current_scope, socket.assigns.run, attrs) do
+      {:ok, _comment} ->
+        socket = socket |> assign(:draft, nil) |> assign(:error, nil) |> assign_comments()
+        {:noreply, socket}
+
+      {:error, %Ecto.Changeset{}} ->
+        {:noreply, assign(socket, :draft, %{draft | body: body})}
+
+      {:error, reason} ->
+        socket |> assign(:draft, nil) |> then(&respond({:error, reason}, &1))
+    end
+  end
+
+  def handle_event("save_plan_comment", _params, socket), do: {:noreply, socket}
+
   def handle_event("diagram_view", %{"view" => view}, socket) do
     [diagram, shown] = String.split(view, ":")
     diagram = if diagram == "call_flow", do: :call_flow, else: :change
@@ -242,6 +345,11 @@ defmodule RailWeb.Live.PlanStage do
   attr :running, :boolean, required: true
   attr :pick_up, :string, required: true
   attr :can_pick, :boolean, required: true
+  attr :comment_reason, :string, default: nil, doc: "why commenting cannot be turned on, or nil when it can"
+  attr :commenting, :boolean, required: true
+  attr :draft, :map, default: nil, doc: "the element the comment box is open on, with what is typed so far"
+  attr :markers, :list, required: true
+  attr :user_id, :string, required: true
   attr :target, :any, required: true
 
   defp design_pane(assigns) do
@@ -377,25 +485,71 @@ defmodule RailWeb.Live.PlanStage do
       </div>
 
       <div id={"design-option-#{@option.key}"} data-qa="design_option" class="flex flex-col gap-6">
-        <div
-          id={"design-frame-#{@option.key}"}
-          phx-hook="DesignFrame"
-          class="relative w-full aspect-video overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white"
-        >
-          <iframe
-            :if={@option.html != nil}
-            id={"design-page-#{@option.key}-#{@option.html_version}"}
-            title={@option.title}
-            sandbox="allow-scripts"
-            src={~p"/tasks/#{@task.id}/design/#{@option.key}?v=#{@option.html_version}"}
-            class="absolute top-0 left-0 w-full h-full border-0"
+        <div class="flex flex-col gap-2.5">
+          <.design_comment_control
+            commenting={@commenting}
+            disabled_reason={@comment_reason}
+            target={@target}
           />
-          <p
-            :if={@option.html == nil}
-            class="absolute inset-0 flex items-center justify-center text-xs text-slate-400"
+
+          <div
+            id={"design-frame-#{@option.key}"}
+            phx-hook="DesignFrame"
+            data-comments={to_string(@picked != nil)}
+            data-commenting={to_string(@commenting)}
+            data-selected={@draft && @draft.selector}
+            data-draft={@draft && Jason.encode!(Map.delete(@draft, :body))}
+            data-draft-body={@draft && @draft.body}
+            data-markers={Jason.encode!(@markers)}
+            data-version={@option.html_version}
+            data-task-id={@task.id}
+            data-user-id={@user_id}
+            data-conversation="#conversation-tab-root"
+            class={[
+              "relative w-full aspect-video overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white",
+              @commenting &&
+                "ring-2 ring-blue-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-900 cursor-crosshair"
+            ]}
           >
-            This option has no page yet.
-          </p>
+            <iframe
+              :if={@option.html != nil}
+              id={"design-page-#{@option.key}-#{@option.html_version}"}
+              title={@option.title}
+              sandbox="allow-scripts"
+              src={frame_src(@task, @option, @picked)}
+              class="absolute top-0 left-0 w-full h-full border-0"
+            />
+            <p
+              :if={@option.html == nil}
+              class="absolute inset-0 flex items-center justify-center text-xs text-slate-400"
+            >
+              This option has no page yet.
+            </p>
+
+            <.comment_box
+              :if={@draft}
+              id={"plan-comment-form-#{draft_key(@draft)}"}
+              body_id={"plan-comment-body-#{draft_key(@draft)}"}
+              qa="plan_comment"
+              label={@draft.tag}
+              body={@draft.body}
+              submit="save_plan_comment"
+              change="change_plan_comment"
+              cancel="cancel_plan_comment"
+              target={@target}
+              class="absolute z-10 shadow-2xl"
+              style={box_style(@draft)}
+            >
+              <:heading>
+                <div class="flex items-center gap-1.5 px-1 pb-1.5 min-w-0 text-[11px] text-slate-500 dark:text-slate-400">
+                  <span class="shrink-0 font-semibold text-slate-700 dark:text-slate-200">
+                    {@draft.tag}
+                  </span>
+                  <span :if={@draft.text != ""} class="truncate">"{@draft.text}"</span>
+                </div>
+              </:heading>
+            </.comment_box>
+          </div>
         </div>
 
         <div>
@@ -633,7 +787,87 @@ defmodule RailWeb.Live.PlanStage do
     |> assign(:pick_up, pick_up(run))
     |> assign(:pending_text, pending_text(running, pick_up(run)))
     |> assign(:show_approve, approvable?(socket.assigns, ticket, design, plan))
+    |> assign(:comment_reason, comment_reason(design, run))
+    |> stop_commenting_unless_allowed()
+    |> assign_comments()
   end
+
+  defp assign_comments(socket) do
+    %{current_scope: scope, task: task, design: design} = socket.assigns
+    comments = Pipeline.list_plan_comments(scope, task)
+    picked = design && design.picked
+
+    markers =
+      for {comment, number} <- Enum.with_index(comments, 1),
+          comment.target == :design and comment.option_key == picked,
+          do: %{id: comment.id, number: number, selector: comment.selector}
+
+    socket
+    |> assign(:comments, comments)
+    |> assign(:markers, markers)
+  end
+
+  # Before a pick there is nothing to comment on, and the pick comes first.
+  defp comment_reason(%{picked: picked}, %Run{} = run) when is_binary(picked) do
+    if Run.can_chat?(run), do: nil, else: "Cannot chat with #{run.role.name} yet"
+  end
+
+  defp comment_reason(_no_pick, _run), do: "Pick a design to comment on it."
+
+  defp stop_commenting_unless_allowed(%{assigns: %{comment_reason: nil}} = socket), do: socket
+  defp stop_commenting_unless_allowed(socket), do: socket |> assign(:commenting, false) |> assign(:draft, nil)
+
+  defp frame_src(task, option, nil), do: ~p"/tasks/#{task.id}/design/#{option.key}?v=#{option.html_version}"
+
+  defp frame_src(task, option, _picked),
+    do: ~p"/tasks/#{task.id}/design/#{option.key}?v=#{option.html_version}&comments=1"
+
+  defp draft(
+         %{
+           "option_key" => key,
+           "selector" => selector,
+           "text" => text,
+           "tag" => tag,
+           "html" => html,
+           "width" => width,
+           "height" => height,
+           "x" => x,
+           "y" => y
+         } = params
+       )
+       when is_binary(key) and is_binary(selector) and is_binary(text) and is_binary(tag) and is_binary(html) and
+              is_integer(width) and is_integer(height) and is_integer(x) and is_integer(y) do
+    body = if is_binary(params["body"]), do: params["body"]
+
+    %{
+      option_key: key,
+      selector: selector,
+      text: text,
+      tag: tag,
+      html: html,
+      width: width,
+      height: height,
+      x: x,
+      y: y,
+      body: body
+    }
+  end
+
+  defp draft(_malformed), do: nil
+
+  # Named for its element, so a box on another element mounts afresh and takes the focus.
+  defp draft_key(draft), do: :erlang.phash2({draft.selector, draft.x, draft.y})
+
+  # Under the element, or above it when it sits low in the frame, in the page's own 1920x1080 coordinates.
+  defp box_style(draft) do
+    left = "left: clamp(8px, #{percent(draft.x, 1920)}%, calc(100% - 448px)); width: min(440px, calc(100% - 16px));"
+
+    if draft.y + draft.height > 1080 * 0.6,
+      do: "#{left} bottom: calc(#{percent(1080 - draft.y, 1080)}% + 10px);",
+      else: "#{left} top: calc(#{percent(draft.y + draft.height, 1080)}% + 10px);"
+  end
+
+  defp percent(value, whole), do: Float.round(value / whole * 100, 3)
 
   # Once the task has left Plan the page shows what the later stages were given.
   defp plan(%Task{stage: :plan} = task), do: {Pipeline.read_plan(task), false}
@@ -826,6 +1060,8 @@ defmodule RailWeb.Live.PlanStage do
   defp message_for(:design_not_found), do: "No design options are saved yet."
   defp message_for(:option_not_found), do: "That design option no longer exists."
   defp message_for(:chat_unavailable), do: "Plan cannot be messaged yet."
+  defp message_for(:design_not_picked), do: "Pick a design to comment on it."
+  defp message_for(:not_the_pick), do: "Only the picked design takes comments."
   # coveralls-ignore-start (a refusal nobody has written a sentence for yet)
   defp message_for(reason), do: "Could not update the plan: #{inspect(reason)}"
   # coveralls-ignore-stop

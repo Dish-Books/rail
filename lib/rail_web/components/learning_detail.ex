@@ -27,6 +27,7 @@ defmodule RailWeb.Components.LearningDetail do
       |> assign(:flagged, stats.pending_override != nil)
       |> assign(:byline, calculate_byline(assigns.learning))
       |> assign(:why, calculate_why(assigns.learning.why))
+      |> assign(:capture, calculate_capture(stats.sources))
       |> assign(:rows, rows)
       |> assign(:more, length(stats.suppressed_findings) - length(rows))
       |> assign(:source_count, length(stats.sources) + if(stats.activated_by, do: 1, else: 0))
@@ -104,10 +105,11 @@ defmodule RailWeb.Components.LearningDetail do
               class="text-[13.5px] leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words"
             >{elem(@why, 0)}</p>
             <pre
-              :if={elem(@why, 1)}
+              :if={elem(@why, 1) && !(@capture && elem(@why, 2))}
               phx-no-format
               class="font-mono text-xs leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 px-3 py-2"
             >{elem(@why, 1)}</pre>
+            <.element_preview :if={@capture} id="learning-element" capture={@capture} />
           </div>
 
           <div
@@ -307,14 +309,22 @@ defmodule RailWeb.Components.LearningDetail do
     """
   end
 
-  # A diff comment's rule quotes the code it was left on, which reads as code.
+  # A diff comment's rule quotes the code it was left on, which reads as code. A design comment's quotes the start
+  # of its element, which the element itself, drawn from its capture, stands in for.
   defp calculate_why(nil), do: nil
 
   defp calculate_why(why) do
-    case Regex.run(~r/\A(From a diff comment on [^\n]*)\n\n(.+)\z/s, why, capture: :all_but_first) do
-      [intro, block] -> {intro, block}
-      nil -> {why, nil}
+    case Regex.run(~r/\A(From a (diff|design) comment on [^\n]*)\n\n(.+)\z/s, why, capture: :all_but_first) do
+      [intro, kind, block] -> {intro, block, kind == "design"}
+      nil -> {why, nil, false}
     end
+  end
+
+  defp calculate_capture(sources) do
+    Enum.find_value(sources, fn
+      %Observation{source_kind: :design_comment, capture: %{"html" => html} = capture} when is_binary(html) -> capture
+      _other -> nil
+    end)
   end
 
   defp calculate_byline(%Learning{status: :retired, retired_at: at}), do: "retired #{calculate_date(at)}"

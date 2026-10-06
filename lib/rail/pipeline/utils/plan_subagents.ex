@@ -67,6 +67,7 @@ defmodule Rail.Pipeline.Utils.PlanSubagents do
     - Keep working files under #{dir} too. It survives between turns; `/tmp` does not.
     - The human picks one option. Rail records the pick in #{dir}/picked and deletes the options not picked; never write that file. After the pick only the picked option can be saved.
     - When Plan passes on a change to the ticket or the plan that changes a screen, update the options it affects, retake their screenshots and save them again before you finish.
+    - A comment on the design names its element by a CSS selector. Find the element with that selector, change the page, retake the screenshot and save under the same key. Keep the ids and structure of elements nobody commented on, so the other comments stay on their elements.
     - The rules this project has learned that bear on your output come in Plan's message; call knowledge_search for more.
     - End with what you saved and which option you would pick, and why. Put every question you could not close in that last message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, for Plan to ask the human.
     """)

@@ -9,11 +9,11 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
   """
 
   import Ecto.Query
+  import Rail.Pipeline.Utils.RecordImplementationPlan
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -36,7 +36,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
              {:ok, plan} <- plan(task),
              {:ok, design} <- design(task, plan),
              :ok <- publish(task, ticket, design) do
-          record(task, plan.content)
+          record_implementation_plan(task, plan.content)
           {:ok, run} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
           {:ok, task} = Pipeline.enter_stage(task, :engineer, start: false)
           {run, task}
@@ -118,14 +118,5 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
       {:ok, _issue} -> :ok
       {:error, reason} -> {:error, reason}
     end
-  end
-
-  # One plan per task, so approving again after a return to Plan replaces what was agreed before.
-  defp record(%Task{} = task, content) do
-    existing = Repo.get_by(ImplementationPlan, task_id: task.id) || %ImplementationPlan{}
-
-    existing
-    |> ImplementationPlan.changeset(%{task_id: task.id, content: content, captured_at: DateTime.utc_now()})
-    |> Repo.insert_or_update!()
   end
 end

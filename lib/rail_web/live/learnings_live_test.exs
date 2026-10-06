@@ -11,6 +11,8 @@ defmodule RailWeb.LearningsLiveTest do
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
+  alias Rail.Pipeline.Schemas.PlanComment
+  alias Rail.Pipeline.Schemas.PlanCommentCapture
   alias Rail.Repo
   alias Rail.Users
 
@@ -862,5 +864,55 @@ defmodule RailWeb.LearningsLiveTest do
     refute has_element?(view, "#learning-figures", "1 retrievals")
     assert has_element?(view, "#learning-why", "From a diff comment on lib/a.ex:")
     assert view |> element("#learning-why pre.font-mono") |> render() =~ "  + rows = build()\n&gt; + Repo.insert!(row)"
+  end
+
+  test "a rule from a design comment shows its source and its element in a sandboxed preview, never as markup", %{
+    conn: conn,
+    project: project,
+    user: user
+  } do
+    task = learnings_task(project, "LLV-10")
+    html = ~s{<h2 id="needs">Needs you <script>alert("x")</script><button onclick="go()">3</button></h2>}
+
+    comment = %PlanComment{
+      id: "pcm_llv_10",
+      target: :design,
+      user_id: user.id,
+      option_key: "waiting-lanes",
+      selector: "#needs",
+      element_text: "Needs you 3",
+      element_tag: "h2",
+      body: "Say how long the oldest one has waited.",
+      capture: %PlanCommentCapture{html: html, width: 180, height: 22}
+    }
+
+    {:ok, [rule]} = Learnings.record_corrections(task, [comment])
+
+    {:ok, view, page} = live(conn, ~p"/learnings/#{rule.id}")
+
+    assert has_element?(view, "#learning-rule", "Say how long the oldest one has waited.")
+    assert has_element?(view, "[data-qa=learning-status]", "Provisional")
+    assert has_element?(view, "#learning-detail", "Designer")
+    assert has_element?(view, "#learning-sources", "Design comment · Dana Okafor")
+    assert has_element?(view, ~s(#learning-sources a[href="/tasks/#{task.id}"]), "LLV-10")
+    assert has_element?(view, "#learning-why", ~s(From a design comment on waiting-lanes, `#needs` "Needs you 3":))
+    refute has_element?(view, "#learning-why pre")
+    assert has_element?(view, ~s(#learning-element iframe[sandbox=""][srcdoc]))
+
+    doc = Floki.parse_document!(page)
+    assert doc |> Floki.find("#learning-element iframe") |> Floki.attribute("srcdoc") == [html]
+    assert Floki.find(doc, "#learning-detail script") == []
+    assert Floki.find(doc, "#learning-detail button[onclick]") == []
+  end
+
+  test "a diff comment's rule still shows its code block and no preview", %{conn: conn, project: project} do
+    task = learnings_task(project, "LLV-11")
+    comment = %DiffComment{id: "dcm_llv_11", path: "lib/a.ex", line_text: "x", context_text: "> + x", body: "Name it"}
+    {:ok, [rule]} = Learnings.record_corrections(task, [comment])
+
+    {:ok, view, _html} = live(conn, ~p"/learnings/#{rule.id}")
+
+    assert has_element?(view, "#learning-why pre.font-mono", "> + x")
+    refute has_element?(view, "#learning-element")
   end
 end

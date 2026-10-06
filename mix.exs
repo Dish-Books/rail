@@ -113,6 +113,7 @@ defmodule Rail.MixProject do
         "cmd --cd assets pnpm install --frozen-lockfile",
         "tailwind rail --minify",
         "esbuild rail --minify",
+        "esbuild design_overlay --minify",
         "phx.digest"
       ]
     ]

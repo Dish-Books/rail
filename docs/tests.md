@@ -111,3 +111,9 @@ When checking the structure of a return value, put the expected fields directly 
 assert {:ok, %Project{id: ^project_id, name: "Rail Core"}} =
          Projects.get_project(scope, project_id)
 ```
+
+## JavaScript
+
+- Tests live in `assets/test/` as `*.test.js` and run with `pnpm test` from `assets`, on `node:test` and `node:assert/strict` with no other framework. CI runs them in the tooling lane, then `biome ci`.
+- A test imports from `../js/` and reaches only the functions a file exports, which are pure: anything that needs the browser takes it as an argument.
+- Browser globals and DOM nodes are stubbed with plain objects holding just the fields the function reads, and a stubbed global is restored in a `finally`.

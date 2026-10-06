@@ -1,8 +1,10 @@
 defmodule Rail.Pipeline.Actions.SavePlanTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Task
 
   setup do
@@ -106,5 +108,69 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
     assert %{design: ["cards is not a saved design option; it is one of rows, panel"]} = errors_on(unknown)
 
     assert %{content: "## Implementation plan\n\nGood.\n", design: %{key: "rows"}} = Pipeline.read_plan(task)
+  end
+
+  describe "once the plan is approved" do
+    setup %{project: project} do
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{"id" => "lin_save_plan_1", "identifier" => "SVP-2", "title" => "Save Plan"}
+            }
+          }
+        })
+      end)
+
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Save Plan"})
+      {:ok, task} = Pipeline.create_task(issue, :plan)
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+      approved_at = DateTime.shift(DateTime.utc_now(), minute: -1)
+
+      approve = fn ->
+        Repo.insert!(%ImplementationPlan{
+          task_id: task.id,
+          content: "## Implementation plan\n\nApproved.",
+          captured_at: approved_at
+        })
+      end
+
+      %{real_task: task, approve: approve, approved_at: approved_at}
+    end
+
+    test "a plan saved before approval leaves no approved plan", %{real_task: task} do
+      {:ok, _plan} = Pipeline.save_plan(task, %{plan: "## Implementation plan\n\nDraft."})
+
+      assert {:error, :not_found} = Pipeline.get_implementation_plan(task)
+    end
+
+    # Nothing is stubbed for Linear past the issue's creation, so any write to the issue would fail the test.
+    test "a plan saved after approval replaces the approved one without touching the issue", %{
+      real_task: task,
+      approve: approve,
+      approved_at: approved_at
+    } do
+      %{id: id} = approve.()
+      {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
+
+      {:ok, _plan} = Pipeline.save_plan(task, %{plan: "## Implementation plan\n\nRevised after approval."})
+
+      assert {:ok,
+              %ImplementationPlan{id: ^id, content: "## Implementation plan\n\nRevised after approval.", captured_at: at}} =
+               Pipeline.get_implementation_plan(task)
+
+      assert DateTime.after?(at, approved_at)
+    end
+
+    test "a plan saved after a return to Plan leaves the approved one as it was", %{real_task: task, approve: approve} do
+      %{id: id} = approve.()
+
+      {:ok, _plan} = Pipeline.save_plan(task, %{plan: "## Implementation plan\n\nBeing argued over."})
+
+      assert {:ok, %ImplementationPlan{id: ^id, content: "## Implementation plan\n\nApproved."}} =
+               Pipeline.get_implementation_plan(task)
+    end
   end
 end

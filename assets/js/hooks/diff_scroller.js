@@ -43,7 +43,7 @@ export const DiffScroller = {
     // card, so it drops its rounded corners. It sits a pixel above the scrollport
     // to be told: pinned is exactly when that pixel is clipped away.
     this.stuck = new IntersectionObserver(
-      entries => {
+      (entries) => {
         for (const entry of entries) entry.target.toggleAttribute("data-stuck", entry.intersectionRatio < 1);
       },
       { root: this.el, threshold: [1] }
@@ -69,7 +69,9 @@ export const DiffScroller = {
 
     // Turning wrap on or off re-flows every line without a patch, so the toolbar
     // says when, and the line the reader is on stays put.
-    this.holdForWrap = () => (this.anchor = this.currentAnchor());
+    this.holdForWrap = () => {
+      this.anchor = this.currentAnchor();
+    };
     this.restoreForWrap = () => this.restoreAnchor();
     window.addEventListener("diff:wrap-before", this.holdForWrap);
     window.addEventListener("diff:wrap-after", this.restoreForWrap);
@@ -152,7 +154,10 @@ export const DiffScroller = {
   },
 
   scrollTo(path) {
-    return this.jump(() => this.sectionFor(path), () => 0);
+    return this.jump(
+      () => this.sectionFor(path),
+      () => 0
+    );
   },
 
   scrollToComment(id) {

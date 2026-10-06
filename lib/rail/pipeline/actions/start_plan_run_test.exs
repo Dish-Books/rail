@@ -8,7 +8,11 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.AdvanceLinearState
+  alias Rail.Learnings
+  alias Rail.Learnings.Schemas.Learning
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.PlanComment
+  alias Rail.Pipeline.Schemas.PlanCommentCapture
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
@@ -105,6 +109,9 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
       assert prompt =~ "which one you recommend and why"
       assert prompt =~ "then to each other subagent whose output it affects"
       assert prompt =~ ~s(A pick arrives as a message that says only "I picked <title> \(<key>\).")
+      assert prompt =~ "Comments on the design arrive as one message, before or after approval"
+      assert prompt =~ "Hand them to Designer to revise the picked option under its key"
+      assert prompt =~ "A plan saved after approval replaces the one Engineer builds from next."
       assert prompt =~ "One round per turn."
       assert prompt =~ "Nothing is saved yet."
       assert prompt =~ "title: Attachments follow their source document"
@@ -184,6 +191,41 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     expect(Tools, :start_os_process, fn %Run{} = run, ["-p", prompt | _rest] ->
       assert prompt =~ "- Product: Copy says task, never ticket"
       refute prompt =~ "Engineers only"
+      {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_plan_run(issue)
+  end
+
+  test "a rule learned from a design comment on a large element carries no more than the start of its HTML", %{
+    project: project,
+    issue: issue
+  } do
+    stub_vertex(%{"source document" => vector([1.0])})
+    html = "<section>" <> String.duplicate("a", 2_000) <> "NEVER_IN_A_BRIEF" <> "</section>"
+
+    {:ok, [rule]} =
+      Learnings.record_corrections(learnings_task(project, "SPR-9"), [
+        %PlanComment{
+          id: "pcm_spr_1",
+          target: :design,
+          option_key: "lanes",
+          selector: "#lanes",
+          element_text: "Lanes",
+          element_tag: "section",
+          body: "Fewer lanes",
+          capture: %PlanCommentCapture{html: html, width: 1600, height: 900}
+        }
+      ])
+
+    Repo.update_all(from(l in Learning, where: l.id == ^rule.id),
+      set: [embedding: Pgvector.new(vector([1.0])), embedding_model: "gemini-embedding-001"]
+    )
+
+    expect(Tools, :start_os_process, fn %Run{} = run, ["-p", prompt | _rest] ->
+      assert prompt =~ "Design (provisional, from a recent correction): Fewer lanes"
+      assert prompt =~ String.slice(html, 0, 2_000)
+      refute prompt =~ "NEVER_IN_A_BRIEF"
       {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
     end)
 

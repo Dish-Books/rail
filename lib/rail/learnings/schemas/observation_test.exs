@@ -7,6 +7,7 @@ defmodule Rail.Learnings.Schemas.ObservationTest do
   test "every source kind reads as a label" do
     assert Enum.map(Observation.source_kinds(), &Observation.source_label/1) == [
              "Diff comment",
+             "Design comment",
              "Fix on a review finding",
              "Fix on a QA finding",
              "Answer",
@@ -26,5 +27,15 @@ defmodule Rail.Learnings.Schemas.ObservationTest do
   test "an observation needs a source kind and its text" do
     refute Observation.changeset(%Observation{}, %{}).valid?
     assert Observation.changeset(%Observation{}, %{source_kind: :extraction, text: "A lesson"}).valid?
+  end
+
+  test "an observation keeps a design comment's capture" do
+    capture = %{"html" => "<button>Answer</button>", "width" => 80, "height" => 30}
+
+    changeset =
+      Observation.changeset(%Observation{}, %{source_kind: :design_comment, text: "Open in place", capture: capture})
+
+    assert %Observation{source_kind: :design_comment, capture: ^capture} =
+             Ecto.Changeset.apply_action!(changeset, :insert)
   end
 end

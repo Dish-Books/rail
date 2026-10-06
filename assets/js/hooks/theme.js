@@ -48,8 +48,7 @@ export const Theme = {
   },
 
   toggleTheme() {
-    const next =
-      document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
 
     applyTheme(next);
     this.pushEvent("theme_changed", { theme: next });

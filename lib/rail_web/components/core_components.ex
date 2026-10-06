@@ -13,6 +13,8 @@ defmodule RailWeb.CoreComponents do
   defdelegate answer_field(assigns), to: Components.AnswerField
   defdelegate assignee(assigns), to: Components.IssueIcons
   defdelegate button(assigns), to: Components.Button
+  defdelegate comment_box(assigns), to: Components.CommentBox
+  defdelegate design_comment_control(assigns), to: Components.DesignCommentControl
   defdelegate diff_comment(assigns), to: Components.DiffComment
   defdelegate diff_comment_list(assigns), to: Components.DiffCommentList
   defdelegate diff_hunk(assigns), to: Components.DiffHunk
@@ -20,6 +22,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate diff_row(assigns), to: Components.DiffRow
   defdelegate diff_stat(assigns), to: Components.DiffStat
   defdelegate dispatch_banner(assigns), to: Components.DispatchBanner
+  defdelegate element_preview(assigns), to: Components.ElementPreview
   defdelegate icon(assigns), to: Components.Icon
   defdelegate in_progress_tasks(assigns), to: Components.InProgressTasks
   defdelegate input(assigns), to: Components.Input
@@ -35,6 +38,8 @@ defmodule RailWeb.CoreComponents do
   defdelegate markdown(assigns), to: Components.Markdown
   defdelegate nav(assigns), to: Components.Nav
   defdelegate overview_stats(assigns), to: Components.OverviewStats
+  defdelegate plan_comment_card(assigns), to: Components.PlanCommentCard
+  defdelegate plan_comment_tray(assigns), to: Components.PlanCommentTray
   defdelegate plan_diagram(assigns), to: Components.PlanDiagram
   defdelegate plan_sheet(assigns), to: Components.PlanSheet
   defdelegate priority_icon(assigns), to: Components.IssueIcons

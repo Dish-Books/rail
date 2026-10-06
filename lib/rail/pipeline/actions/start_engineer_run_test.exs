@@ -124,6 +124,37 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_engineer_run(run)
   end
 
+  test "a plan and a picked option revised after approval are what the next Engineer brief carries", %{
+    task: task,
+    run: run
+  } do
+    Repo.insert!(%ImplementationPlan{
+      task_id: task.id,
+      content: "## Implementation plan\n\nAs approved.",
+      captured_at: DateTime.utc_now()
+    })
+
+    design_dir = Path.join(task.scratch_path, "design")
+    File.mkdir_p!(design_dir)
+    File.write!(Path.join(design_dir, "manifest.json"), ~s({"options": [{"key": "cards", "title": "Cards"}]}))
+    File.write!(Path.join(design_dir, "cards.html"), "<h1>As approved</h1>")
+    File.write!(Path.join(design_dir, "picked"), "cards")
+
+    {:ok, _plan} = Pipeline.save_plan(task, %{plan: "## Implementation plan\n\nRevised for the comments."})
+    File.write!(Path.join(design_dir, "cards.html"), "<h1>Revised for the comments</h1>")
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
+      assert ["-p", prompt | _rest] = argv
+      assert prompt =~ "Revised for the comments."
+      assert prompt =~ "<h1>Revised for the comments</h1>"
+      refute prompt =~ "As approved"
+
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_engineer_run(run)
+  end
+
   # Product can approve straight past design, which leaves nothing on disk to read.
   test "says nothing about a design when there is none", %{task: task, run: run} do
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->

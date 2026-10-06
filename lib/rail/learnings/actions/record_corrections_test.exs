@@ -7,6 +7,8 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Learnings.Workers.EmbedLearning
   alias Rail.Pipeline.Schemas.DiffComment
+  alias Rail.Pipeline.Schemas.PlanComment
+  alias Rail.Pipeline.Schemas.PlanCommentCapture
   alias Rail.Pipeline.Schemas.QaFinding
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.ReviewFinding
@@ -126,6 +128,77 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
 
     assert {:ok, []} = Learnings.record_corrections(task, records)
     assert 4 == Repo.aggregate(from(o in Observation, where: o.task_id == ^task.id), :count)
+  end
+
+  test "a design comment becomes a Design rule for Designer whose reason names its element and quotes its start", %{
+    task: %{id: task_id} = task,
+    user_id: user_id
+  } do
+    html = ~s(<h2 id="needs">Needs you <span>3</span></h2>) <> String.duplicate("x", 2_500)
+
+    comment = %PlanComment{
+      id: "pcm_rc_1",
+      target: :design,
+      user_id: user_id,
+      option_key: "waiting-lanes",
+      selector: "#needs",
+      element_text: "Needs you 3",
+      element_tag: "h2",
+      body: "Say how long the oldest one has waited.",
+      capture: %PlanCommentCapture{html: html, width: 180, height: 22}
+    }
+
+    why =
+      ~s(From a design comment on waiting-lanes, `#needs` "Needs you 3":\n\n```html\n) <>
+        String.slice(html, 0, 2_000) <> "\n<!-- Rail cut the element's HTML here, at 2,000 characters. -->\n```"
+
+    assert {:ok,
+            [
+              %Learning{
+                id: rule_id,
+                status: :provisional,
+                kind: :design,
+                roles: [:design],
+                rule: "Say how long the oldest one has waited.",
+                why: ^why
+              }
+            ]} = Learnings.record_corrections(task, [comment])
+
+    assert [
+             %Observation{
+               source_kind: :design_comment,
+               source_id: "pcm_rc_1",
+               actor_id: ^user_id,
+               task_id: ^task_id,
+               text: "Say how long the oldest one has waited.",
+               capture: %{"html" => ^html, "width" => 180, "height" => 22},
+               learning_id: ^rule_id
+             }
+           ] = Repo.all(from o in Observation, where: o.task_id == ^task_id)
+
+    assert {:ok, []} = Learnings.record_corrections(task, [comment])
+  end
+
+  test "a design comment on an element with no text names its tag, and a short element is quoted whole", %{task: task} do
+    comment = %PlanComment{
+      id: "pcm_rc_2",
+      target: :design,
+      option_key: "waiting-lanes",
+      selector: "#lane > span:nth-child(2)",
+      element_text: "",
+      element_tag: "span",
+      body: "Drop the dot.",
+      capture: %PlanCommentCapture{html: "<span></span>", width: 10, height: 10}
+    }
+
+    assert {:ok,
+            [
+              %Learning{
+                why:
+                  "From a design comment on waiting-lanes, `#lane > span:nth-child(2)` <span>:\n\n```html\n<span></span>\n```"
+              }
+            ]} =
+             Learnings.record_corrections(task, [comment])
   end
 
   test "a comment saved before blocks were kept is quoted by its line", %{task: task} do

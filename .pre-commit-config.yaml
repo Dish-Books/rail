@@ -7,7 +7,7 @@ repos:
   - repo: local
     hooks:
       - id: prelude
-        name: "prelude: receipt check, postgres, deps"
+        name: "prelude: receipt check, postgres, deps, assets"
         entry: scripts/ci-lanes.sh prelude
         language: system
         stages: [pre-push]
@@ -25,6 +25,14 @@ repos:
       - id: lane-tests
         name: "tests with coverage"
         entry: scripts/ci-lanes.sh lane tests
+        language: system
+        stages: [pre-push]
+        priority: 1
+        pass_filenames: false
+
+      - id: lane-tooling
+        name: "tooling: assets test, biome"
+        entry: scripts/ci-lanes.sh lane tooling
         language: system
         stages: [pre-push]
         priority: 1

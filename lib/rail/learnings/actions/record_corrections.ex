@@ -12,6 +12,7 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline.Schemas.DiffComment
+  alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.QaFinding
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.ReviewFinding
@@ -19,8 +20,8 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
   alias Rail.Repo
 
   @doc """
-  Records `records`, diff comments, Fix findings and answered questions of
-  `task`. Returns `{:ok, learnings}`, the provisional rules it added.
+  Records `records`, diff and plan comments, Fix findings and answered questions
+  of `task`. Returns `{:ok, learnings}`, the provisional rules it added.
   """
   def record_corrections(%Task{id: task_id, project_id: project_id}, records) when is_list(records) do
     suggested = suggested_answers(records)
@@ -68,6 +69,18 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
       actor_id: comment.user_id,
       text: comment.body,
       excerpt: block(comment)
+    }
+  end
+
+  # A design comment keeps its element whole for the Learnings page to draw; its rule carries only the start of it.
+  defp observation(%PlanComment{target: :design, capture: capture} = comment, _suggested) do
+    %{
+      source_kind: :design_comment,
+      source_id: comment.id,
+      actor_id: comment.user_id,
+      text: comment.body,
+      excerpt: element_block(comment),
+      capture: %{"html" => capture.html, "width" => capture.width, "height" => capture.height}
     }
   end
 
@@ -120,6 +133,15 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
     }
   end
 
+  defp rule(%PlanComment{target: :design} = comment, _observation) do
+    %{
+      kind: :design,
+      roles: [:design],
+      rule: clip(comment.body),
+      why: "From a design comment on #{comment.option_key}, #{element_line(comment)}:\n\n#{element_block(comment)}"
+    }
+  end
+
   defp rule(%ReviewFinding{} = finding, _observation) do
     where = if finding.file, do: " on #{finding.file}", else: ""
     Map.merge(%{kind: :convention, roles: [:engineer, :review]}, finding_rule(finding, "Raised in review#{where}"))
@@ -147,6 +169,15 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
 
   defp block(%DiffComment{context_text: context}) when is_binary(context) and context != "", do: context
   defp block(%DiffComment{line_text: line}), do: line
+
+  defp element_line(%PlanComment{element_text: "", element_tag: tag} = comment), do: "`#{comment.selector}` <#{tag}>"
+  defp element_line(%PlanComment{} = comment), do: ~s(`#{comment.selector}` "#{comment.element_text}")
+
+  # Enough of the element for an agent to recognize it, without crowding every brief the rule reaches.
+  defp element_block(%PlanComment{capture: %{html: html}}) do
+    cut = if String.length(html) > 2_000, do: "\n<!-- Rail cut the element's HTML here, at 2,000 characters. -->"
+    "```html\n#{clip(html)}#{cut}\n```"
+  end
 
   defp clip(text), do: String.slice(text, 0, 2_000)
 end
