@@ -529,7 +529,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
     end
 
     test "keeps another project's issue, one written since the start, and one changed while Linear was asked", %{
-      project: %{id: project_id} = project,
+      project: %{id: project_id, clone_path: clone_path} = project,
       insert: insert,
       last_page: last_page,
       lookups: lookups,
@@ -557,7 +557,13 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
         |> Repo.insert!()
 
       %Issue{id: webhooked_id} = webhooked = insert.("lin_webhooked", :todo)
-      {:ok, _task} = Pipeline.create_task(webhooked, :plan)
+      {:ok, %Task{id: webhooked_task_id} = webhooked_task} = Pipeline.create_task(webhooked, :plan)
+      worktree_path = Path.join(System.tmp_dir!(), "rail_spared_wt_#{System.unique_integer([:positive])}")
+      git!(clone_path, ["worktree", "add", "-b", "spared-branch", worktree_path])
+
+      {:ok, _task} =
+        Pipeline.update_task(webhooked_task, %{worktree_name: "spared-branch", worktree_path: worktree_path})
+
       %Issue{id: claimed_id} = claimed = insert.("lin_claimed", :todo)
       started_at = DateTime.to_iso8601(DateTime.utc_now())
       %Issue{id: fresh_id} = insert.("lin_fresh", :triage)
@@ -590,6 +596,8 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
       assert %Issue{id: ^other_id} = Repo.get(Issue, other_id)
       assert %Issue{id: ^fresh_id} = Repo.get(Issue, fresh_id)
       assert %Issue{id: ^webhooked_id, title: "Rewritten meanwhile"} = Repo.get(Issue, webhooked_id)
+      assert %Task{id: ^webhooked_task_id} = Repo.get(Task, webhooked_task_id)
+      assert File.dir?(worktree_path)
       assert %Issue{id: ^claimed_id} = Repo.get(Issue, claimed_id)
     end
 

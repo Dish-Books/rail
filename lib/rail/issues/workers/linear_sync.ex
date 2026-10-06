@@ -125,24 +125,28 @@ defmodule Rail.Issues.Workers.LinearSync do
 
     {with_task, without_task} = Enum.split_with(stale, &elem(&1, 2))
 
-    # Linear is asked outside any transaction, so the delete re-checks what it was decided on.
+    # Linear is asked outside any transaction, so what goes is re-read before any task is discarded.
     with {:ok, gone_ids} <- Enum.reduce_while(with_task, {:ok, []}, &gone_from_linear(project, &1, &2)) do
       without_task_ids = Enum.map(without_task, &elem(&1, 0))
 
+      doomed_ids =
+        Repo.all(
+          from(i in Issue,
+            as: :issue,
+            where: i.project_id == ^project_id and i.updated_at < ^since,
+            where:
+              i.id in ^gone_ids or
+                (i.id in ^without_task_ids and not exists(from(t in Task, where: t.issue_id == parent_as(:issue).id))),
+            select: i.id
+          )
+        )
+
       # Their runs and files go first: the rows that lead to them are deleted with the issue.
-      from(t in Task, where: t.issue_id in ^gone_ids and is_nil(t.cleaned_up_at))
+      from(t in Task, where: t.issue_id in ^doomed_ids and is_nil(t.cleaned_up_at))
       |> Repo.all()
       |> Enum.each(&(:ok = Pipeline.discard_task(&1)))
 
-      Repo.delete_all(
-        from(i in Issue,
-          as: :issue,
-          where: i.project_id == ^project_id and i.updated_at < ^since,
-          where:
-            i.id in ^gone_ids or
-              (i.id in ^without_task_ids and not exists(from(t in Task, where: t.issue_id == parent_as(:issue).id)))
-        )
-      )
+      Repo.delete_all(from(i in Issue, where: i.project_id == ^project_id and i.id in ^doomed_ids))
 
       :ok
     end
