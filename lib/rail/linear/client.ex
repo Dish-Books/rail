@@ -46,6 +46,8 @@ defmodule Rail.Linear.Client do
   branchName
   url
   completedAt
+  archivedAt
+  trashed
   """
 
   @comment_fields """
@@ -137,14 +139,20 @@ defmodule Rail.Linear.Client do
   end
 
   @doc """
-  Fetches one page of the issues on the project's team, found by its key, each
-  with its first comments. Pass `after:` the previous page's
-  `pageInfo.endCursor` to continue.
+  Fetches one page of the issues on the project's team, found by its key,
+  archived ones included and oldest first, each with its first comments. Pass
+  `after:` the previous page's `pageInfo.endCursor` to continue.
   """
   def issues(%Project{} = project, opts \\ []) do
     query = """
     query Issues($teamKey: String!, $first: Int!, $after: String) {
-      issues(first: $first, after: $after, filter: {team: {key: {eq: $teamKey}}}) {
+      issues(
+        first: $first
+        after: $after
+        includeArchived: true
+        orderBy: createdAt
+        filter: {team: {key: {eq: $teamKey}}}
+      ) {
         nodes {
           #{@issue_fields}
           comments(first: #{@comments_per_issue}) {

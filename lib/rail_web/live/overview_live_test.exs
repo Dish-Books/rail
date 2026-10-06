@@ -51,6 +51,70 @@ defmodule RailWeb.OverviewLiveTest do
     assert has_element?(view, "#theme-toggle-button")
   end
 
+  test "a task leaves without a reload when Linear deletes its issue, and stays when Linear archives it", %{
+    conn: conn,
+    project: project
+  } do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_overview_live_removed",
+        login: "overview_live_user_removed",
+        email: "overview_live_user_removed@example.com",
+        admin: true
+      })
+
+    user |> Ecto.Changeset.change(linear_user_id: "lin_usr_overview_removed") |> Repo.update!()
+    {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+
+    [deleted_task, archived_task] =
+      for external_id <- ["lin_overview_deleted", "lin_overview_archived"] do
+        {:ok, task} =
+          %Issue{}
+          |> Issue.linear_changeset(%{
+            project_id: project.id,
+            external_id: external_id,
+            identifier: external_id,
+            title: external_id,
+            state: :in_progress,
+            owner_user_id: user.id
+          })
+          |> Repo.insert!()
+          |> Repo.preload(:project)
+          |> Pipeline.create_task(:engineer)
+
+        task
+      end
+
+    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/")
+    assert has_element?(view, "#in-progress-task-#{deleted_task.id}")
+    assert has_element?(view, "#in-progress-task-#{archived_task.id}")
+
+    assert {:ok, %Issue{}} =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Issue",
+               "action" => "remove",
+               "data" => %{"id" => "lin_overview_deleted"}
+             })
+
+    assert {:ok, %Issue{}} =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Issue",
+               "action" => "update",
+               "data" => %{
+                 "id" => "lin_overview_archived",
+                 "teamId" => "lin_team_id",
+                 "identifier" => "lin_overview_archived",
+                 "title" => "lin_overview_archived",
+                 "assigneeId" => "lin_usr_overview_removed",
+                 "state" => %{"id" => "st_in_progress", "name" => "In Progress", "type" => "started"},
+                 "archivedAt" => "2026-10-06T10:00:00.000Z"
+               }
+             })
+
+    refute has_element?(view, "#in-progress-task-#{deleted_task.id}")
+    assert has_element?(view, "#in-progress-task-#{archived_task.id}")
+  end
+
   test "project switcher displays active projects count and sends a pick to be stored", %{
     conn: conn
   } do

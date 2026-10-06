@@ -7,6 +7,10 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.LinearSync
   alias Rail.Issues.Workers.SyncIssue
+  alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects
+  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Users
 
@@ -33,7 +37,11 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
 
     Req.Test.expect(Rail.Linear, fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn)
-      assert %{"teamKey" => "TST", "after" => nil} = Jason.decode!(body)["variables"]
+      assert %{"query" => query, "variables" => %{"teamKey" => "TST", "after" => nil}} = Jason.decode!(body)
+      assert query =~ "includeArchived: true"
+      assert query =~ "orderBy: createdAt"
+      assert query =~ "archivedAt"
+      assert query =~ "trashed"
 
       Req.Test.json(conn, %{
         "data" => %{
@@ -67,7 +75,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
       })
     end)
 
-    assert :ok = perform_job(LinearSync, %{project_id: project.id})
+    assert :ok = perform_job(LinearSync, %{project_id: project.id, started_at: "2026-10-06T10:00:00.000000Z"})
 
     assert %Issue{
              id: ^existing_id,
@@ -90,7 +98,10 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
              url: "https://linear.app/issue/SPI-2"
            } = Repo.get_by(Issue, external_id: "lin_new")
 
-    assert_enqueued(worker: LinearSync, args: %{project_id: project_id, cursor: "cursor_2"})
+    assert_enqueued(
+      worker: LinearSync,
+      args: %{project_id: project_id, cursor: "cursor_2", started_at: "2026-10-06T10:00:00.000000Z"}
+    )
 
     # Pulling from Linear is not a change to push back to it.
     refute_enqueued(worker: SyncIssue)
@@ -264,13 +275,344 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
     assert %{issues: [], total: 0} = Issues.list_issues(project_id: project.id)
   end
 
-  test "a Linear failure fails the job so the page is retried", %{project: project} do
+  test "a Linear failure fails the job so the page is retried, removing and announcing nothing", %{
+    project: %{id: project_id} = project
+  } do
+    %Issue{id: issue_id} =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project_id,
+        external_id: "lin_unlisted",
+        identifier: "SPI-60",
+        title: "Not listed yet",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+
     Req.Test.expect(Rail.Linear, fn conn ->
       conn |> Plug.Conn.put_status(500) |> Req.Test.json(%{"error" => "Linear Server Down"})
     end)
 
     assert {:error, {:linear_api_error, 500, %{"error" => "Linear Server Down"}}} =
-             perform_job(LinearSync, %{project_id: project.id})
+             perform_job(LinearSync, %{
+               project_id: project.id,
+               cursor: "cursor_last",
+               started_at: DateTime.to_iso8601(DateTime.utc_now())
+             })
+
+    assert %Issue{id: ^issue_id} = Repo.get(Issue, issue_id)
+    refute_receive {:issues_synced, ^project_id}, 50
+  end
+
+  describe "the last page" do
+    setup %{project: project} do
+      insert = fn external_id, state ->
+        %Issue{}
+        |> Issue.linear_changeset(%{
+          project_id: project.id,
+          external_id: external_id,
+          identifier: external_id,
+          title: external_id,
+          state: state
+        })
+        |> Repo.insert!()
+        |> Repo.preload(:project)
+      end
+
+      last_page = fn nodes ->
+        Req.Test.expect(Rail.Linear, fn conn ->
+          Req.Test.json(conn, %{
+            "data" => %{
+              "issues" => %{"nodes" => nodes, "pageInfo" => %{"hasNextPage" => false, "endCursor" => nil}}
+            }
+          })
+        end)
+      end
+
+      # Each issue Rail looks up answers from `responses`, whatever order they are asked in.
+      lookups = fn responses ->
+        Req.Test.expect(Rail.Linear, map_size(responses), fn conn ->
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+          %{"query" => "query Issue" <> _rest, "variables" => %{"id" => id}} = Jason.decode!(body)
+
+          case Map.fetch!(responses, id) do
+            respond when is_function(respond, 0) -> Req.Test.json(conn, respond.())
+            response -> Req.Test.json(conn, response)
+          end
+        end)
+      end
+
+      not_found = %{"errors" => [%{"message" => "Entity not found: Issue"}], "data" => nil}
+
+      %{insert: insert, last_page: last_page, lookups: lookups, not_found: not_found}
+    end
+
+    test "an issue with no task the pages no longer list is removed without asking Linear, then announced", %{
+      project: %{id: project_id},
+      insert: insert,
+      last_page: last_page
+    } do
+      %Issue{id: gone_id} = insert.("lin_gone", :todo)
+      %Issue{id: listed_id} = insert.("lin_listed", :todo)
+      started_at = DateTime.to_iso8601(DateTime.utc_now())
+      Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+
+      last_page.([%{"id" => "lin_listed", "identifier" => "SPI-61", "title" => "Listed", "archivedAt" => nil}])
+
+      assert :ok = perform_job(LinearSync, %{project_id: project_id, cursor: "cursor_last", started_at: started_at})
+
+      assert Repo.get(Issue, gone_id) == nil
+      assert %Issue{id: ^listed_id, title: "Listed"} = Repo.get(Issue, listed_id)
+      assert_receive {:issues_synced, ^project_id}
+    end
+
+    test "an issue with a task the pages no longer list is kept when Linear finds it on another team", %{
+      project: %{id: project_id},
+      insert: insert,
+      last_page: last_page,
+      lookups: lookups
+    } do
+      %Issue{id: moved_id} = moved = insert.("lin_moved", :in_progress)
+      {:ok, %Task{id: task_id}} = Pipeline.create_task(moved, :engineer)
+      started_at = DateTime.to_iso8601(DateTime.utc_now())
+
+      last_page.([])
+
+      lookups.(%{
+        "lin_moved" => %{
+          "data" => %{"issue" => %{"id" => "lin_moved", "trashed" => nil, "team" => %{"id" => "lin_team_other"}}}
+        }
+      })
+
+      assert :ok = perform_job(LinearSync, %{project_id: project_id, cursor: "cursor_last", started_at: started_at})
+
+      assert %Issue{id: ^moved_id, project_id: ^project_id, identifier: "lin_moved"} = Repo.get(Issue, moved_id)
+      assert %Task{issue_id: ^moved_id} = Repo.get(Task, task_id)
+    end
+
+    test "an issue with a task is removed with it when Linear reports it trashed or not found", %{
+      project: %{id: project_id},
+      insert: insert,
+      last_page: last_page,
+      lookups: lookups,
+      not_found: not_found
+    } do
+      tasks =
+        for external_id <- ["lin_trashed", "lin_not_found", "lin_null"] do
+          {:ok, %Task{} = task} = external_id |> insert.(:todo) |> Pipeline.create_task(:plan)
+          task
+        end
+
+      started_at = DateTime.to_iso8601(DateTime.utc_now())
+      last_page.([])
+
+      lookups.(%{
+        "lin_trashed" => %{"data" => %{"issue" => %{"id" => "lin_trashed", "trashed" => true}}},
+        "lin_not_found" => not_found,
+        "lin_null" => %{"data" => %{"issue" => nil}}
+      })
+
+      assert :ok = perform_job(LinearSync, %{project_id: project_id, cursor: "cursor_last", started_at: started_at})
+
+      assert [] = Repo.all(from(i in Issue, where: i.project_id == ^project_id))
+      assert [] = Repo.all(from(t in Task, where: t.id in ^Enum.map(tasks, & &1.id)))
+    end
+
+    test "a lookup that fails any other way fails the job, removing and announcing nothing", %{
+      project: %{id: project_id},
+      insert: insert,
+      last_page: last_page,
+      lookups: lookups
+    } do
+      %Issue{id: tasked_id} = tasked = insert.("lin_limited", :todo)
+      {:ok, _task} = Pipeline.create_task(tasked, :plan)
+      %Issue{id: untasked_id} = insert.("lin_untasked", :todo)
+      started_at = DateTime.to_iso8601(DateTime.utc_now())
+      Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+
+      last_page.([])
+      lookups.(%{"lin_limited" => %{"errors" => [%{"message" => "Rate limit exceeded"}]}})
+
+      assert {:error, {:linear_graphql_error, [%{"message" => "Rate limit exceeded"}]}} =
+               perform_job(LinearSync, %{project_id: project_id, cursor: "cursor_last", started_at: started_at})
+
+      assert %Issue{id: ^tasked_id} = Repo.get(Issue, tasked_id)
+      assert %Issue{id: ^untasked_id} = Repo.get(Issue, untasked_id)
+      refute_receive {:issues_synced, ^project_id}, 50
+    end
+
+    test "an archived node is written only with a task, and the one without is removed", %{
+      project: %{id: project_id},
+      insert: insert,
+      last_page: last_page
+    } do
+      %Issue{id: kept_id} = kept = insert.("lin_archived_kept", :in_review)
+      {:ok, %Task{id: task_id}} = Pipeline.create_task(kept, :review)
+      %Issue{id: dropped_id} = insert.("lin_archived_dropped", :done)
+      started_at = DateTime.to_iso8601(DateTime.utc_now())
+
+      archived = fn external_id ->
+        %{
+          "id" => external_id,
+          "identifier" => external_id,
+          "title" => "Archived #{external_id}",
+          "state" => %{"id" => "st_done", "name" => "Done", "type" => "completed"},
+          "archivedAt" => "2026-10-06T09:00:00.000Z",
+          "trashed" => nil
+        }
+      end
+
+      last_page.([archived.("lin_archived_kept"), archived.("lin_archived_dropped"), archived.("lin_archived_new")])
+
+      assert :ok = perform_job(LinearSync, %{project_id: project_id, cursor: "cursor_last", started_at: started_at})
+
+      assert %Issue{id: ^kept_id, title: "Archived lin_archived_kept", state: :done} = Repo.get(Issue, kept_id)
+      assert %Task{issue_id: ^kept_id} = Repo.get(Task, task_id)
+      assert Repo.get(Issue, dropped_id) == nil
+      assert Repo.get_by(Issue, external_id: "lin_archived_new") == nil
+    end
+
+    test "a trashed node is never written, and with a task it is removed with it", %{
+      project: %{id: project_id},
+      insert: insert,
+      last_page: last_page,
+      lookups: lookups
+    } do
+      %Issue{id: trashed_id} = trashed = insert.("lin_in_trash", :todo)
+      {:ok, %Task{id: task_id}} = Pipeline.create_task(trashed, :plan)
+      started_at = DateTime.to_iso8601(DateTime.utc_now())
+
+      trashed_node = fn external_id ->
+        %{
+          "id" => external_id,
+          "identifier" => external_id,
+          "title" => "Renamed in the trash",
+          "archivedAt" => "2026-10-06T09:00:00.000Z",
+          "trashed" => true
+        }
+      end
+
+      last_page.([trashed_node.("lin_in_trash"), trashed_node.("lin_trashed_new")])
+      lookups.(%{"lin_in_trash" => %{"data" => %{"issue" => trashed_node.("lin_in_trash")}}})
+
+      assert :ok = perform_job(LinearSync, %{project_id: project_id, cursor: "cursor_last", started_at: started_at})
+
+      assert Repo.get(Issue, trashed_id) == nil
+      assert Repo.get(Task, task_id) == nil
+      assert Repo.get_by(Issue, external_id: "lin_trashed_new") == nil
+    end
+
+    test "keeps another project's issue, one written since the start, and one changed while Linear was asked", %{
+      project: %{id: project_id} = project,
+      insert: insert,
+      last_page: last_page,
+      lookups: lookups,
+      not_found: not_found
+    } do
+      {:ok, %Project{id: other_project_id}} =
+        Projects.create_project(system_scope(), %{
+          name: "Other Sync Project",
+          github_repo: "org/other-sync",
+          github_installation_id: 12_953,
+          linear_team_key: "OSY",
+          default_branch: "main",
+          clone_path: "/tmp/repos/other-sync"
+        })
+
+      %Issue{id: other_id} =
+        %Issue{}
+        |> Issue.linear_changeset(%{
+          project_id: other_project_id,
+          external_id: "lin_other_project",
+          identifier: "OSY-1",
+          title: "Someone else's",
+          state: :todo
+        })
+        |> Repo.insert!()
+
+      %Issue{id: webhooked_id} = webhooked = insert.("lin_webhooked", :todo)
+      {:ok, _task} = Pipeline.create_task(webhooked, :plan)
+      %Issue{id: claimed_id} = claimed = insert.("lin_claimed", :todo)
+      started_at = DateTime.to_iso8601(DateTime.utc_now())
+      %Issue{id: fresh_id} = insert.("lin_fresh", :triage)
+      {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+
+      last_page.([])
+
+      # While Linear is asked about one issue, a webhook rewrites it and a task starts on the other.
+      lookups.(%{
+        "lin_webhooked" => fn ->
+          {:ok, %Issue{}} =
+            Issues.handle_linear_webhook(workspace, %{
+              "type" => "Issue",
+              "action" => "update",
+              "data" => %{
+                "id" => "lin_webhooked",
+                "teamId" => "lin_team_id",
+                "identifier" => "lin_webhooked",
+                "title" => "Rewritten meanwhile"
+              }
+            })
+
+          {:ok, _task} = Pipeline.create_task(claimed, :plan)
+          not_found
+        end
+      })
+
+      assert :ok = perform_job(LinearSync, %{project_id: project_id, cursor: "cursor_last", started_at: started_at})
+
+      assert %Issue{id: ^other_id} = Repo.get(Issue, other_id)
+      assert %Issue{id: ^fresh_id} = Repo.get(Issue, fresh_id)
+      assert %Issue{id: ^webhooked_id, title: "Rewritten meanwhile"} = Repo.get(Issue, webhooked_id)
+      assert %Issue{id: ^claimed_id} = Repo.get(Issue, claimed_id)
+    end
+
+    test "a sync whose only page is empty, or a job with no start time, removes nothing", %{
+      project: %{id: project_id},
+      insert: insert,
+      last_page: last_page
+    } do
+      %Issue{id: issue_id} = insert.("lin_unlisted_kept", :todo)
+      started_at = DateTime.to_iso8601(DateTime.utc_now())
+      Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+
+      last_page.([])
+      assert :ok = perform_job(LinearSync, %{project_id: project_id, started_at: started_at})
+      assert_receive {:issues_synced, ^project_id}
+
+      last_page.([])
+      assert :ok = perform_job(LinearSync, %{project_id: project_id, cursor: "cursor_last"})
+      assert_receive {:issues_synced, ^project_id}
+
+      assert %Issue{id: ^issue_id} = Repo.get(Issue, issue_id)
+    end
+
+    test "a done issue Linear still lists unarchived stays, under Show finished", %{
+      project: %{id: project_id},
+      insert: insert,
+      last_page: last_page
+    } do
+      %Issue{id: done_id} = insert.("lin_done", :done)
+      started_at = DateTime.to_iso8601(DateTime.utc_now())
+
+      last_page.([
+        %{
+          "id" => "lin_done",
+          "identifier" => "lin_done",
+          "title" => "Shipped",
+          "state" => %{"id" => "st_done", "name" => "Done", "type" => "completed"},
+          "archivedAt" => nil,
+          "trashed" => false
+        }
+      ])
+
+      assert :ok = perform_job(LinearSync, %{project_id: project_id, cursor: "cursor_last", started_at: started_at})
+
+      assert %{issues: [%Issue{id: ^done_id, state: :done}]} =
+               Issues.list_issues(project_id: project_id, show_finished: true)
+    end
   end
 
   test "a project that is gone needs no sync" do

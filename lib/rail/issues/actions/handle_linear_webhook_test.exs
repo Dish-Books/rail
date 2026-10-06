@@ -7,6 +7,8 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Learnings.Workers.IssueFinished
+  alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -156,22 +158,223 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
              })
   end
 
-  test "an issue remove deletes the row, and one Rail never had is fine", %{project: project, workspace: workspace} do
-    %Issue{}
-    |> Issue.linear_changeset(%{
-      project_id: project.id,
-      external_id: "lin_wh_3",
-      identifier: "HWH-3",
-      title: "Doomed",
-      state: :triage
-    })
-    |> Repo.insert!()
+  test "an issue remove deletes the row and its task, broadcasts, and a second remove is a no-op", %{
+    project: project,
+    workspace: workspace
+  } do
+    %Issue{id: issue_id} =
+      issue =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_wh_3",
+        identifier: "HWH-3",
+        title: "Doomed",
+        state: :triage
+      })
+      |> Repo.insert!()
+
+    {:ok, %Task{id: task_id}} = issue |> Repo.preload(:project) |> Pipeline.create_task(:plan)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
 
     remove = %{"type" => "Issue", "action" => "remove", "data" => %{"id" => "lin_wh_3"}}
 
-    assert {:ok, %Issue{}} = Issues.handle_linear_webhook(workspace, remove)
-    assert Repo.get_by(Issue, external_id: "lin_wh_3") == nil
+    assert {:ok, %Issue{id: ^issue_id}} = Issues.handle_linear_webhook(workspace, remove)
+    assert_receive {:issue_changed, ^issue_id}
+    assert Repo.get(Issue, issue_id) == nil
+    assert Repo.get(Task, task_id) == nil
+
     assert :ok = Issues.handle_linear_webhook(workspace, remove)
+    refute_receive {:issue_changed, ^issue_id}, 50
+  end
+
+  test "an update marked trashed deletes the issue and its task, whatever team it names", %{
+    project: project,
+    workspace: workspace
+  } do
+    %Issue{id: issue_id} =
+      issue =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_wh_trash",
+        identifier: "HWH-30",
+        title: "Trashed",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    {:ok, %Task{id: task_id}} = issue |> Repo.preload(:project) |> Pipeline.create_task(:plan)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+
+    # Trashed wins over archived, so the task does not keep it.
+    assert {:ok, %Issue{id: ^issue_id}} =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Issue",
+               "action" => "update",
+               "data" => %{
+                 "id" => "lin_wh_trash",
+                 "teamId" => "lin_team_unclaimed",
+                 "identifier" => "HWH-30",
+                 "title" => "Trashed",
+                 "trashed" => true,
+                 "archivedAt" => "2026-10-06T10:00:00.000Z"
+               }
+             })
+
+    assert_receive {:issue_changed, ^issue_id}
+    assert Repo.get(Issue, issue_id) == nil
+    assert Repo.get(Task, task_id) == nil
+  end
+
+  test "an archive deletes an issue with no task and broadcasts, and inserts nothing for one Rail never had", %{
+    project: project,
+    workspace: workspace
+  } do
+    %Issue{id: issue_id} =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_wh_archived",
+        identifier: "HWH-31",
+        title: "Archived",
+        state: :done
+      })
+      |> Repo.insert!()
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+
+    archive = fn external_id ->
+      Issues.handle_linear_webhook(workspace, %{
+        "type" => "Issue",
+        "action" => "update",
+        "data" => %{
+          "id" => external_id,
+          "teamId" => "lin_team_id",
+          "identifier" => "HWH-31",
+          "title" => "Archived",
+          "state" => %{"id" => "st_done", "name" => "Done", "type" => "completed"},
+          "archivedAt" => "2026-10-06T10:00:00.000Z",
+          "trashed" => nil
+        }
+      })
+    end
+
+    assert {:ok, %Issue{id: ^issue_id}} = archive.("lin_wh_archived")
+    assert_receive {:issue_changed, ^issue_id}
+    assert Repo.get(Issue, issue_id) == nil
+
+    assert :ok = archive.("lin_wh_never_had")
+    assert Repo.get_by(Issue, external_id: "lin_wh_never_had") == nil
+  end
+
+  test "an archive keeps an issue with a task, even a cleaned-up one, and upserts it as any update", %{
+    project: project,
+    workspace: workspace
+  } do
+    insert = fn external_id ->
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: external_id,
+        identifier: external_id,
+        title: "Kept",
+        state: :in_review
+      })
+      |> Repo.insert!()
+      |> Repo.preload(:project)
+    end
+
+    %Issue{id: live_id} = live = insert.("lin_wh_kept")
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(live, :engineer)
+
+    %Issue{id: cleaned_id} = cleaned = insert.("lin_wh_kept_cleaned")
+    {:ok, task} = Pipeline.create_task(cleaned, :merged)
+    {:ok, _cleaned_task} = Pipeline.update_task(task, %{cleaned_up_at: DateTime.utc_now()})
+
+    archive = fn external_id ->
+      Issues.handle_linear_webhook(workspace, %{
+        "type" => "Issue",
+        "action" => "update",
+        "data" => %{
+          "id" => external_id,
+          "teamId" => "lin_team_id",
+          "identifier" => external_id,
+          "title" => "Kept and closed",
+          "state" => %{"id" => "st_done", "name" => "Done", "type" => "completed"},
+          "archivedAt" => "2026-10-06T10:00:00.000Z"
+        }
+      })
+    end
+
+    assert {:ok, %Issue{id: ^live_id, title: "Kept and closed", state: :done}} = archive.("lin_wh_kept")
+    assert {:ok, %Issue{id: ^cleaned_id, state: :done}} = archive.("lin_wh_kept_cleaned")
+    assert %Task{issue_id: ^live_id} = Repo.get(Task, task_id)
+
+    assert %{issues: [%Issue{id: ^cleaned_id}, %Issue{id: ^live_id}]} =
+             Issues.list_issues(project_id: project.id, show_finished: true)
+  end
+
+  test "an update moving an issue with a task to a team no project is on leaves it as it was", %{
+    project: %Project{id: project_id},
+    workspace: workspace
+  } do
+    %Issue{id: issue_id} =
+      issue =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project_id,
+        external_id: "lin_wh_moved",
+        identifier: "HWH-32",
+        title: "Moved",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    {:ok, _task} = issue |> Repo.preload(:project) |> Pipeline.create_task(:plan)
+
+    assert :ok =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Issue",
+               "action" => "update",
+               "data" => %{
+                 "id" => "lin_wh_moved",
+                 "teamId" => "lin_team_elsewhere",
+                 "identifier" => "ELS-1",
+                 "title" => "Moved away",
+                 "archivedAt" => "2026-10-06T10:00:00.000Z"
+               }
+             })
+
+    assert %Issue{id: ^issue_id, project_id: ^project_id, identifier: "HWH-32"} = Repo.get(Issue, issue_id)
+  end
+
+  test "a remove for an issue on a project outside the workspace leaves it in place", %{workspace: workspace} do
+    {:ok, %Project{id: other_project_id}} =
+      Projects.create_project(system_scope(), %{
+        name: "Unlinked Project",
+        github_repo: "org/unlinked",
+        github_installation_id: 12_952,
+        linear_team_key: "UNL",
+        default_branch: "main",
+        clone_path: "/tmp/repos/unlinked"
+      })
+
+    %Issue{id: issue_id} =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: other_project_id,
+        external_id: "lin_wh_elsewhere",
+        identifier: "UNL-1",
+        title: "Not this workspace's",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    remove = %{"type" => "Issue", "action" => "remove", "data" => %{"id" => "lin_wh_elsewhere"}}
+
+    assert :ok = Issues.handle_linear_webhook(workspace, remove)
+    assert %Issue{id: ^issue_id} = Repo.get(Issue, issue_id)
   end
 
   test "an issue goes to the project on its team when the workspace has several", %{

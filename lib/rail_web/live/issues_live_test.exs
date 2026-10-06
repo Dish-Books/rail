@@ -767,6 +767,186 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view_all, "[data-qa='issue-title']", "Synced")
   end
 
+  test "an issue Linear deletes leaves every open list and its priority count, with its task's link", %{
+    conn: conn,
+    project: project
+  } do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_removed",
+        login: "issues_live_user_removed",
+        email: "issues_live_user_removed@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
+    {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+
+    [doomed, kept] =
+      for external_id <- ["lin_removed", "lin_still_here"] do
+        %Issue{}
+        |> Issue.changeset(%{
+          project_id: project.id,
+          external_id: external_id,
+          identifier: external_id,
+          title: external_id,
+          priority: :high,
+          state: :todo
+        })
+        |> Repo.insert!()
+        |> Repo.preload(:project)
+      end
+
+    {:ok, _task} = Pipeline.create_task(doomed, :plan)
+
+    assert {:ok, first_tab, _html} = live(authed_conn, ~p"/issues")
+    assert {:ok, second_tab, _html} = live(authed_conn, ~p"/issues")
+    assert has_element?(first_tab, "#task-link-#{doomed.id}")
+    assert has_element?(first_tab, "#filter-priority-high", "High (2)")
+
+    assert {:ok, %Issue{}} =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Issue",
+               "action" => "remove",
+               "data" => %{"id" => "lin_removed"}
+             })
+
+    for view <- [first_tab, second_tab] do
+      refute has_element?(view, "#issue-card-#{doomed.id}")
+      refute has_element?(view, "#task-link-#{doomed.id}")
+      assert has_element?(view, "#issue-card-#{kept.id}")
+      assert has_element?(view, "#filter-priority-high", "High (1)")
+    end
+  end
+
+  test "an archive drops a done issue with no task from Show finished, and leaves one with a task", %{
+    conn: conn,
+    project: project
+  } do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_archived",
+        login: "issues_live_user_archived",
+        email: "issues_live_user_archived@example.com",
+        admin: true
+      })
+
+    {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+
+    [untasked, tasked] =
+      for external_id <- ["lin_archived_untasked", "lin_archived_tasked"] do
+        %Issue{}
+        |> Issue.changeset(%{
+          project_id: project.id,
+          external_id: external_id,
+          identifier: external_id,
+          title: external_id,
+          state: :done
+        })
+        |> Repo.insert!()
+        |> Repo.preload(:project)
+      end
+
+    {:ok, task} = Pipeline.create_task(tasked, :merged)
+
+    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/issues?finished=true")
+    assert has_element?(view, "#issue-card-#{untasked.id}")
+
+    for external_id <- ["lin_archived_untasked", "lin_archived_tasked"] do
+      Issues.handle_linear_webhook(workspace, %{
+        "type" => "Issue",
+        "action" => "update",
+        "data" => %{
+          "id" => external_id,
+          "teamId" => "lin_team_id",
+          "identifier" => external_id,
+          "title" => external_id,
+          "state" => %{"id" => "st_done", "name" => "Done", "type" => "completed"},
+          "archivedAt" => "2026-10-06T10:00:00.000Z"
+        }
+      })
+    end
+
+    refute has_element?(view, "#issue-card-#{untasked.id}")
+    assert has_element?(view, "#issue-card-#{tasked.id}")
+    assert has_element?(view, "#task-link-#{tasked.id}[href='/tasks/#{task.id}']")
+  end
+
+  test "a finished sync drops an issue Linear no longer lists, and keeps one with a task Linear moved", %{
+    conn: conn
+  } do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_pruned",
+        login: "issues_live_user_pruned",
+        email: "issues_live_user_pruned@example.com",
+        admin: true
+      })
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_pruned"}]}}})
+    end)
+
+    # A project nobody else syncs, since every Issues page hears every sync finish.
+    {:ok, %Project{id: project_id} = sync_project} =
+      Projects.create_project(system_scope(), %{
+        name: "Pruned Project",
+        github_repo: "example/pruned",
+        github_installation_id: 556,
+        linear_team_key: "PRU",
+        default_branch: "main",
+        clone_path: "/tmp/pruned",
+        linear_workspace_id: "lw_test_seed"
+      })
+
+    [gone, moved] =
+      for external_id <- ["lin_pruned_gone", "lin_pruned_moved"] do
+        %Issue{}
+        |> Issue.changeset(%{
+          project_id: project_id,
+          external_id: external_id,
+          identifier: external_id,
+          title: external_id,
+          state: :todo
+        })
+        |> Repo.insert!()
+        |> Map.put(:project, sync_project)
+      end
+
+    {:ok, task} = Pipeline.create_task(moved, :plan)
+
+    assert {:ok, view, _html} =
+             live(init_test_session(log_in_user(conn, user), %{selected_project_id: project_id}), ~p"/issues")
+
+    view |> element("#sync-issues-button") |> render_click()
+    assert [%Oban.Job{args: args}] = all_enqueued(worker: LinearSync, args: %{project_id: project_id})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issues" => %{
+            "nodes" => [%{"id" => "lin_pruned_listed", "identifier" => "PRU-3", "title" => "Still listed"}],
+            "pageInfo" => %{"hasNextPage" => false, "endCursor" => nil}
+          }
+        }
+      })
+    end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{"issue" => %{"id" => "lin_pruned_moved", "team" => %{"id" => "lin_team_elsewhere"}}}
+      })
+    end)
+
+    assert :ok = perform_job(LinearSync, args)
+
+    assert has_element?(view, "#sync-issues-button", "Sync Issues")
+    refute has_element?(view, "#issue-card-#{gone.id}")
+    assert has_element?(view, "[data-qa='issue-title']", "Still listed")
+    assert has_element?(view, "#issue-card-#{moved.id}")
+    assert has_element?(view, "#task-link-#{moved.id}[href='/tasks/#{task.id}']")
+  end
+
   test "searches issues from the URL and pages through them", %{conn: conn, project: %Project{id: project_id}} do
     {:ok, user} =
       Users.register_oauth_user(%{
