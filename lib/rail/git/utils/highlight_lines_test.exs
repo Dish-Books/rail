@@ -11,7 +11,8 @@ defmodule Rail.Git.Utils.HighlightLinesTest do
     assert [opening, atom, closing] =
              highlight_lines(["defmodule Thing do", "  :ok", "end"], "lib/rail/thing.ex")
 
-    assert opening =~ ~s(class="l-keyword")
+    # Lumis fetches its queries at runtime, and newer ones call `defmodule` a function keyword.
+    assert opening =~ ~r/class="l-keyword[-"]/
     assert opening =~ "Thing"
     assert atom =~ ":ok"
     assert closing =~ "end"
