@@ -37,6 +37,7 @@ defmodule Rail.Triage do
   defdelegate read_triage(thread), to: Actions.ReadTriage
   defdelegate sync_triage(thread, result, item_keys_in_scope), to: Actions.SyncTriage
   defdelegate get_triage_thread(scope, id), to: Actions.GetTriageThread
+  defdelegate get_triage_image(scope, message_id, file_id), to: Actions.GetTriageImage
   defdelegate create_triage_issue(scope, item, attrs), to: Actions.CreateTriageIssue
   defdelegate post_triage_reply(scope, item, attrs), to: Actions.PostTriageReply
   defdelegate add_triage_note(scope, item, attrs), to: Actions.AddTriageNote

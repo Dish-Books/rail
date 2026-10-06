@@ -522,4 +522,354 @@ defmodule RailWeb.TriageLiveTest do
     view |> form("#reply-form-#{bug.id}") |> render_submit()
     assert has_element?(view, "#triage-item-#{bug.id}[data-state='settled']", "Created TRI-77")
   end
+
+  describe "images a message came with" do
+    setup %{workspace: workspace, channel: channel, thread: thread} do
+      {:ok, _thread} =
+        Triage.handle_slack_event(
+          workspace,
+          slack_message_event(channel, %{
+            "subtype" => "file_share",
+            "ts" => "1790000100.000200",
+            "thread_ts" => thread.external_id,
+            "text" => "Here is what I see",
+            "files" => [
+              %{
+                "id" => "F_ONE",
+                "name" => "one.png",
+                "mimetype" => "image/png",
+                "url_private" => "https://files.slack.com/files-pri/T1-F_ONE/one.png"
+              },
+              %{"id" => "F_HIDDEN", "file_access" => "check_file_info"},
+              %{
+                "id" => "F_TWO",
+                "name" => "two.png",
+                "mimetype" => "image/png",
+                "url_private" => "https://files.slack.com/files-pri/T1-F_TWO/two.png"
+              },
+              %{
+                "id" => "F_THREE",
+                "name" => "three.png",
+                "mimetype" => "image/png",
+                "url_private" => "https://files.slack.com/files-pri/T1-F_THREE/three.png"
+              },
+              %{"id" => "F_DOC", "name" => "notes.pdf", "mimetype" => "application/pdf"}
+            ]
+          })
+        )
+
+      {:ok, _thread} =
+        Triage.handle_slack_event(
+          workspace,
+          slack_message_event(channel, %{
+            "subtype" => "file_share",
+            "ts" => "1790000200.000300",
+            "thread_ts" => thread.external_id,
+            "text" => "One more",
+            "files" => [
+              %{
+                "id" => "F_FOUR",
+                "name" => "four.png",
+                "mimetype" => "image/png",
+                "url_private" => "https://files.slack.com/files-pri/T1-F_FOUR/four.png"
+              }
+            ]
+          })
+        )
+
+      {:ok, %Thread{messages: [first, shots, single]}} = Triage.get_triage_thread(system_scope(), thread.id)
+
+      %{first: first, shots: shots, single: single}
+    end
+
+    test "each message shows its own images as tiles under its text, in Slack's order", %{
+      conn: conn,
+      thread: thread,
+      first: first,
+      shots: shots,
+      single: single
+    } do
+      {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
+
+      tiles =
+        view
+        |> element("#triage-message-#{shots.id} #triage-images-#{shots.id}")
+        |> render()
+        |> Floki.parse_fragment!()
+        |> Floki.find("[data-qa^='triage-image']:not([data-qa*='-loading']):not([data-qa*='-failed'])")
+        |> Enum.map(&(&1 |> Floki.attribute("id") |> List.first()))
+
+      assert tiles == [
+               "triage-image-#{shots.id}-F_ONE",
+               "triage-image-#{shots.id}-F_HIDDEN",
+               "triage-image-#{shots.id}-F_TWO",
+               "triage-image-#{shots.id}-F_THREE"
+             ]
+
+      assert has_element?(view, "#triage-image-#{shots.id}-F_ONE", "one.png")
+      assert has_element?(view, "#triage-image-#{shots.id}-F_THREE", "three.png")
+      refute has_element?(view, "#triage-thread", "notes.pdf")
+      assert has_element?(view, "#triage-message-#{single.id} #triage-image-#{single.id}-F_FOUR")
+      refute has_element?(view, "#triage-images-#{first.id}")
+      refute has_element?(view, "#triage-message-#{first.id} [data-qa='triage-image']")
+    end
+
+    test "a tile is a button labeled for its image, loaded from Rail, pulsing until the browser marks it", %{
+      conn: conn,
+      thread: thread,
+      shots: shots
+    } do
+      {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
+      tile = "#triage-image-#{shots.id}-F_TWO"
+
+      assert has_element?(view, "#{tile}[phx-hook='ImageFallback'][data-image='loading']")
+
+      assert has_element?(
+               view,
+               "#{tile} button#triage-image-open-#{shots.id}-F_TWO[aria-label='Enlarge two.png'][phx-click='open_image']"
+             )
+
+      assert has_element?(view, ~s(#{tile} img[src="/triage/messages/#{shots.id}/images/F_TWO"][loading="lazy"]))
+      assert has_element?(view, "#{tile} [data-qa='triage-image-loading'].motion-safe\\:animate-pulse")
+
+      assert has_element?(
+               view,
+               "#{tile} [data-qa='triage-image-failed'][title='Rail could not load two.png.']",
+               "Rail could not load it."
+             )
+
+      assert has_element?(view, "#{tile} [data-qa='triage-image-failed']", "two.png")
+      refute has_element?(view, "#{tile} [data-qa='triage-image-failed'][phx-click]")
+    end
+
+    test "a file Slack withheld is an unnamed placeholder that opens nothing", %{
+      conn: conn,
+      thread: thread,
+      shots: shots
+    } do
+      {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
+      withheld = "#triage-image-#{shots.id}-F_HIDDEN"
+
+      assert has_element?(view, withheld, "A file was attached that Rail cannot see.")
+      refute has_element?(view, "#{withheld} img")
+      refute has_element?(view, "#{withheld} button")
+      refute has_element?(view, "#{withheld}[phx-click]")
+      refute has_element?(view, "[aria-label='Enlarge ']")
+
+      render_hook(view, "open_image", %{"message_id" => shots.id, "file_id" => "F_HIDDEN"})
+      refute has_element?(view, "#triage-image-view")
+
+      render_hook(view, "open_image", %{"message_id" => shots.id, "file_id" => "F_DOC"})
+      refute has_element?(view, "#triage-image-view")
+    end
+
+    test "a tile opens the image in a dialog over the page, loading from Rail, and it closes", %{
+      conn: conn,
+      thread: thread,
+      shots: shots
+    } do
+      {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
+
+      view |> element("#triage-image-open-#{shots.id}-F_ONE") |> render_click()
+
+      assert has_element?(view, "#triage-image-panel[role='dialog'][aria-modal='true'][aria-label='one.png']")
+      assert has_element?(view, "#triage-image-name", "one.png")
+      assert has_element?(view, "#triage-image-close[aria-label='Close']")
+
+      assert has_element?(
+               view,
+               ~s(a#triage-image-original[href="/triage/messages/#{shots.id}/images/F_ONE"][target="_blank"]),
+               "Open original"
+             )
+
+      assert has_element?(view, "#triage-image-original.group-has-\\[\\[data-image\\=failed\\]\\]\\/panel\\:hidden")
+      assert has_element?(view, "#triage-thread")
+      assert has_element?(view, "#triage-items")
+
+      picture = "#triage-image-picture-F_ONE[phx-hook='ImageFallback'][data-image='loading']"
+      assert has_element?(view, picture)
+      refute has_element?(view, "#triage-image-picture-F_ONE[style]")
+      assert has_element?(view, "#{picture} [data-qa='triage-image-view-loading'].motion-safe\\:animate-pulse")
+      assert has_element?(view, "#{picture} [data-qa='triage-image-view-failed']", "Rail could not load one.png.")
+
+      assert view |> element("#{picture} img") |> render() =~
+               "hidden group-data-[image=loaded]/picture:block max-w-none h-auto w-[min(calc(var(--natural-width)*2px),100cqw,calc(100cqh*var(--natural-width)/var(--natural-height)))]"
+
+      assert view |> element("#triage-image-panel") |> render() =~ ~s(phx-click-away=)
+
+      view |> element("#triage-image-close") |> render_click()
+      refute has_element?(view, "#triage-image-view")
+
+      view |> element("#triage-image-open-#{shots.id}-F_ONE") |> render_click()
+      view |> element("#triage-image-view") |> render_keydown(%{"key" => "Escape"})
+      refute has_element?(view, "#triage-image-view")
+    end
+
+    test "Previous, Next and the arrow keys step through this message's images only, stopping at the ends", %{
+      conn: conn,
+      thread: thread,
+      shots: shots
+    } do
+      {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
+      view |> element("#triage-image-open-#{shots.id}-F_ONE") |> render_click()
+
+      panel_class =
+        view |> element("#triage-image-panel") |> render() |> Floki.parse_fragment!() |> Floki.attribute("class")
+
+      assert has_element?(view, "#triage-image-position[aria-live='polite']", "1 of 3")
+      assert has_element?(view, "#triage-image-previous[aria-disabled='true']")
+      assert has_element?(view, "#triage-image-next[aria-disabled='false']")
+      assert has_element?(view, "#triage-image-divider")
+
+      view |> element("#triage-image-previous") |> render_click()
+      assert has_element?(view, "#triage-image-position", "1 of 3")
+      assert has_element?(view, "#triage-image-name", "one.png")
+
+      view |> element("#triage-image-next") |> render_click()
+      assert has_element?(view, "#triage-image-position", "2 of 3")
+      assert has_element?(view, "#triage-image-name", "two.png")
+      assert has_element?(view, "#triage-image-picture-F_TWO[data-image='loading']")
+      refute has_element?(view, "#triage-image-picture-F_ONE")
+
+      view |> element("#triage-image-panel") |> render_keydown(%{"key" => "ArrowRight"})
+      assert has_element?(view, "#triage-image-position", "3 of 3")
+      assert has_element?(view, "#triage-image-name", "three.png")
+      assert has_element?(view, "#triage-image-next[aria-disabled='true']")
+
+      view |> element("#triage-image-next") |> render_click()
+      view |> element("#triage-image-panel") |> render_keydown(%{"key" => "ArrowRight"})
+      assert has_element?(view, "#triage-image-position", "3 of 3")
+      refute has_element?(view, "#triage-image-name", "four.png")
+
+      view |> element("#triage-image-panel") |> render_keydown(%{"key" => "a"})
+      assert has_element?(view, "#triage-image-position", "3 of 3")
+
+      assert view |> element("#triage-image-panel") |> render() |> Floki.parse_fragment!() |> Floki.attribute("class") ==
+               panel_class
+
+      view |> element("#triage-image-panel") |> render_keydown(%{"key" => "ArrowLeft"})
+      assert has_element?(view, "#triage-image-position", "2 of 3")
+      view |> element("#triage-image-previous") |> render_click()
+      assert has_element?(view, "#triage-image-position", "1 of 3")
+      view |> element("#triage-image-panel") |> render_keydown(%{"key" => "ArrowLeft"})
+      assert has_element?(view, "#triage-image-position", "1 of 3")
+    end
+
+    test "after stepping, every way of closing returns focus to the tile of the image on screen", %{
+      conn: conn,
+      thread: thread,
+      shots: shots
+    } do
+      {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
+      view |> element("#triage-image-open-#{shots.id}-F_ONE") |> render_click()
+      view |> element("#triage-image-next") |> render_click()
+      view |> element("#triage-image-next") |> render_click()
+
+      focus = "#triage-image-open-#{shots.id}-F_THREE"
+
+      for {selector, attribute} <- [
+            {"#triage-image-close", "phx-click"},
+            {"#triage-image-view", "phx-window-keydown"},
+            {"#triage-image-panel", "phx-click-away"}
+          ] do
+        [js] = view |> render() |> Floki.parse_document!() |> Floki.find(selector) |> Floki.attribute(attribute)
+        assert js =~ focus
+        assert js =~ "close_image"
+        refute js =~ "F_ONE"
+      end
+
+      assert has_element?(view, "#triage-image-view[phx-key='Escape']")
+    end
+
+    test "with no thread open, or nothing enlarged, image events change nothing", %{
+      conn: conn,
+      thread: thread,
+      shots: shots
+    } do
+      {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
+      render_hook(view, "step_image", %{"direction" => "next"})
+      render_hook(view, "image_key", %{"key" => "ArrowRight"})
+      refute has_element?(view, "#triage-image-view")
+
+      {:ok, view, _html} = live(conn, ~p"/triage/tth_missing")
+      render_hook(view, "open_image", %{"message_id" => shots.id, "file_id" => "F_ONE"})
+      refute has_element?(view, "#triage-image-view")
+    end
+
+    test "a message with one image shows no steps or position", %{conn: conn, thread: thread, single: single} do
+      {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
+      view |> element("#triage-image-open-#{single.id}-F_FOUR") |> render_click()
+
+      assert has_element?(view, "#triage-image-name", "four.png")
+      refute has_element?(view, "#triage-image-previous")
+      refute has_element?(view, "#triage-image-next")
+      refute has_element?(view, "#triage-image-position")
+      refute has_element?(view, "#triage-image-divider")
+    end
+
+    test "a thread update keeps the view on the same image, and opening another thread closes it", %{
+      conn: conn,
+      workspace: workspace,
+      channel: channel,
+      thread: thread,
+      shots: shots
+    } do
+      {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
+      view |> element("#triage-image-open-#{shots.id}-F_ONE") |> render_click()
+      view |> element("#triage-image-next") |> render_click()
+
+      {:ok, _thread} =
+        Triage.handle_slack_event(
+          workspace,
+          slack_message_event(channel, %{"ts" => "1790000300.000400", "thread_ts" => thread.external_id, "text" => "+1"})
+        )
+
+      send(view.pid, {:triage_changed, thread.id})
+      assert has_element?(view, "#triage-thread", "+1")
+      assert has_element?(view, "#triage-image-position", "2 of 3")
+      assert has_element?(view, "#triage-image-name", "two.png")
+
+      {:ok, other} =
+        Triage.handle_slack_event(workspace, slack_message_event(channel, %{"ts" => "1790000900.000100"}))
+
+      render_patch(view, ~p"/triage/#{other.id}")
+      refute has_element?(view, "#triage-image-view")
+    end
+
+    test "the page never carries Slack's file address or the bot token, and a new image shows without a reload", %{
+      conn: conn,
+      workspace: workspace,
+      channel: channel,
+      thread: thread
+    } do
+      {:ok, view, html} = live(conn, ~p"/triage/#{thread.id}")
+
+      refute html =~ "files.slack.com"
+      refute html =~ "xoxb-bot"
+
+      {:ok, _thread} =
+        Triage.handle_slack_event(
+          workspace,
+          slack_message_event(channel, %{
+            "subtype" => "file_share",
+            "ts" => "1790000400.000500",
+            "thread_ts" => thread.external_id,
+            "text" => "And now",
+            "files" => [
+              %{
+                "id" => "F_LIVE",
+                "name" => "live.png",
+                "mimetype" => "image/png",
+                "url_private" => "https://files.slack.com/files-pri/T1-F_LIVE/live.png"
+              }
+            ]
+          })
+        )
+
+      assert has_element?(view, "[aria-label='Enlarge live.png']")
+      view |> element("[aria-label='Enlarge live.png']") |> render_click()
+      refute render(view) =~ "files.slack.com"
+      refute render(view) =~ "xoxb-bot"
+    end
+  end
 end
