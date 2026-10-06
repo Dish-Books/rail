@@ -323,8 +323,38 @@ defmodule RailWeb.OverviewLiveTest do
     } do
       now = DateTime.utc_now()
 
-      {parent, [first, second, third]} =
-        split_task(project, "OVS-1", [{"OVS-2", []}, {"OVS-3", [1]}, {"OVS-4", []}], %{owner_user_id: user.id})
+      for {identifier, title} <- [
+            {"OVS-1", "Work on OVS-1"},
+            {"OVS-2", "Child OVS-2"},
+            {"OVS-3", "Child OVS-3"},
+            {"OVS-4", "Child OVS-4"}
+          ] do
+        Req.Test.expect(Rail.Linear, fn conn ->
+          Req.Test.json(conn, %{
+            "data" => %{
+              "issueCreate" => %{
+                "success" => true,
+                "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
+              }
+            }
+          })
+        end)
+      end
+
+      {:ok, parent_issue} =
+        Issues.create_issue(system_scope(), project, %{title: "Work on OVS-1", owner_user_id: user.id})
+
+      {:ok, parent} = Pipeline.create_task(parent_issue, :split)
+      parent = Repo.preload(parent, [:issue, :project])
+
+      [first, second, third] =
+        for {{identifier, builds_on}, number} <- Enum.with_index([{"OVS-2", []}, {"OVS-3", [1]}, {"OVS-4", []}], 1) do
+          attrs = %{title: "Child #{identifier}", parent: parent_issue, owner_user_id: user.id}
+          {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
+          part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
+          Repo.preload(child, [:issue, :project])
+        end
 
       Repo.insert!(%ImplementationPlan{task_id: parent.id, content: "## Implementation plan", captured_at: now})
 

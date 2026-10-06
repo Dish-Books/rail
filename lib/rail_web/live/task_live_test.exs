@@ -6827,8 +6827,37 @@ defmodule RailWeb.TaskLiveTest do
       roles = Map.new([:plan, :engineer, :review], &{&1, elem(Roles.get_role(project_id: project.id, stage: &1), 1)})
 
       # 1 waits on a person, 2 waits on 1, 3 failed.
-      {parent, [first, second, third] = children} =
-        split_task(project, "TLV-10", [{"TLV-11", []}, {"TLV-12", [1]}, {"TLV-13", []}])
+      for {identifier, title} <- [
+            {"TLV-10", "Work on TLV-10"},
+            {"TLV-11", "Child TLV-11"},
+            {"TLV-12", "Child TLV-12"},
+            {"TLV-13", "Child TLV-13"}
+          ] do
+        Req.Test.expect(Rail.Linear, fn conn ->
+          Req.Test.json(conn, %{
+            "data" => %{
+              "issueCreate" => %{
+                "success" => true,
+                "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
+              }
+            }
+          })
+        end)
+      end
+
+      {:ok, parent_issue} = Issues.create_issue(system_scope(), project, %{title: "Work on TLV-10"})
+      {:ok, parent} = Pipeline.create_task(parent_issue, :split)
+      parent = Repo.preload(parent, [:issue, :project])
+
+      [first, second, third] =
+        children =
+        for {{identifier, builds_on}, number} <- Enum.with_index([{"TLV-11", []}, {"TLV-12", [1]}, {"TLV-13", []}], 1) do
+          attrs = %{title: "Child #{identifier}", parent: parent_issue}
+          {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
+          part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
+          Repo.preload(child, [:issue, :project])
+        end
 
       on_exit(fn -> Enum.each([parent | children], &File.rm_rf(&1.scratch_path)) end)
 

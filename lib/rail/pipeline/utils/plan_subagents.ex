@@ -36,7 +36,7 @@ defmodule Rail.Pipeline.Utils.PlanSubagents do
     - `title` and `description` are required, the description being the ticket body in markdown, verbatim. `priority` and `estimate` keep whatever they are already set to when left out.
     - `save_ticket` is the only way to publish a ticket. Write no ticket file.
     - When Plan passes on a change to the design or the plan, or a pick, that changes what the ticket says, update the ticket and save it again before you finish.
-    - A split into child tickets is Architect's to save, each child's ticket with it. The ticket you save stays the parent's, whole: when the work is too big for one ticket, name the split you would make in your last message rather than cutting the ticket.
+    - The ticket you save stays whole, even when the work is too big for one ticket: say so in your last message. Whether and where the work splits into child tickets is Architect's call, made from the code, and Architect writes each child's ticket, so propose no split yourself.
     - The rules this project has learned that bear on your output come in Plan's message; call knowledge_search for more.
     - End with what you saved. Put every question you could not close in that last message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, for Plan to ask the human.
     """)
@@ -88,7 +88,10 @@ defmodule Rail.Pipeline.Utils.PlanSubagents do
     - The option's page is #{dir}/<key>.html and its screenshot #{dir}/<key>.png. Read the page: its markup carries the layout, states and copy the ticket only describes. Plan every state it shows. The page can carry large inline images, so strip `data:` URIs with `sed` before reading it whole.
     - When Plan passes on a change to the ticket or the design, save the plan again with the change carried everywhere it reaches: "do not store it" removes the column, the migration, the schema field and their tests, not only the sentence.
     - `save_plan` is the only way to hand over the plan. Write no plan file.
-    - When the work is too big for one ticket, or Plan passes on that the human wants one, split it with `save_split`: two or more children in the order they run, each with its `title`, its `ticket` written from the parent ticket's acceptance criteria, its `estimate`, its part of the plan as `plan`, a complete plan opening with the `## Implementation plan` heading, and `builds_on`, the numbers of the earlier children it needs merged first. Save the plan for the whole change as well.
+    - When the work is too big for one ticket, or Plan passes on that the human wants a split, you decide where it splits and save it with `save_split`, each child a ticket of its own with its own branch and pull request: two or more children in the order they run, each with its `title`, its `ticket`, its `estimate`, its part of the plan as `plan` and `builds_on`, the numbers of the earlier children it needs merged first. Product's ticket stays the parent's, and your plan still covers the whole change, so the human can read it in one place.
+    - Split where the code lets each child merge on its own: its pull request leaves the default branch working and its tests passing.
+    - A child builds on another only where it truly needs that work merged first. It starts when that one merges, so every needless dependency is time the children spend waiting.
+    - Each child's ticket has its own acceptance criteria, taken from the parent's. Its part is a complete plan in the same sections as yours, opening with the `## Implementation plan` heading, since the child's engineer reads nothing else of the plan.
     - Each `save_split` replaces the whole split, so every save carries every child complete, with its title, ticket and plan. Save an empty list to remove the split.
     - The rules this project has learned that bear on your output come in Plan's message; call knowledge_search for more.
     - End with what you saved and the option it is written for. Put every question you could not close in that last message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, for Plan to ask the human.

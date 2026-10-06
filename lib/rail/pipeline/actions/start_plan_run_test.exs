@@ -178,7 +178,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
       assert prompt =~ "- The human picked rows."
       assert prompt =~ "- The plan, written for rows."
       assert prompt =~ "- A split into 2: 1. Deploys; 2. QA on them."
-      assert prompt =~ "have Architect propose one and save it with `save_split`"
+      assert prompt =~ "have Architect decide where it splits and save it with `save_split`"
       assert "--agents" in argv
       {:ok, %OsProcess{run: spawned}}
     end)

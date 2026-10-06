@@ -7,21 +7,24 @@ defmodule Rail.Pipeline.Actions.CreateChildTaskTest do
   alias Rail.Pipeline.Schemas.Task
 
   setup %{project: project} do
-    {parent, []} = split_task(project, "CCT-1", [])
+    for {id, identifier} <- [{"lin_cct_parent", "CCT-1"}, {"lin_cct_child", "CCT-2"}] do
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{"id" => id, "identifier" => identifier, "title" => identifier}
+            }
+          }
+        })
+      end)
+    end
+
+    {:ok, parent_issue} = Issues.create_issue(system_scope(), project, %{title: "The parent"})
+    {:ok, parent} = Pipeline.create_task(parent_issue, :split)
     on_exit(fn -> File.rm_rf(parent.scratch_path) end)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_cct_child", "identifier" => "CCT-2", "title" => "The child"}
-          }
-        }
-      })
-    end)
-
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "The child", parent: parent.issue})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "The child", parent: parent_issue})
 
     %{parent: parent, issue: issue}
   end
@@ -72,7 +75,7 @@ defmodule Rail.Pipeline.Actions.CreateChildTaskTest do
       })
     end)
 
-    {:ok, again} = Issues.create_issue(system_scope(), project, %{title: "Again", parent: parent.issue})
+    {:ok, again} = Issues.create_issue(system_scope(), project, %{title: "Again"})
 
     assert {:error, changeset} =
              Pipeline.create_child_task(parent, again, %{number: 1, builds_on: [], plan: "## Implementation plan"})

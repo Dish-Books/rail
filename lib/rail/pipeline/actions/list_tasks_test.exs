@@ -246,10 +246,32 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
   end
 
   test "the parent filter keeps only that parent's children, in their order", %{project: project} do
-    {parent, [%Task{id: first_id} = first, %Task{id: second_id}]} =
-      split_task(project, "LTS-10", [{"LTS-11", []}, {"LTS-12", []}])
+    parent = learnings_task(project, "LTS-10", :split)
+    other = learnings_task(project, "LTS-20", :split)
 
-    {_other, [_other_child]} = split_task(project, "LTS-20", [{"LTS-21", []}])
+    for identifier <- ["LTS-11", "LTS-12", "LTS-21"] do
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => identifier}
+            }
+          }
+        })
+      end)
+    end
+
+    [%Task{id: first_id} = first, %Task{id: second_id}, _other_child] =
+      for {owner, number} <- [{parent, 1}, {parent, 2}, {other, 1}] do
+        {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Child", parent: owner.issue})
+
+        {:ok, child} =
+          Pipeline.create_child_task(owner, issue, %{number: number, builds_on: [], plan: "## Implementation plan"})
+
+        child
+      end
+
     {:ok, _moved} = Pipeline.update_task(first, %{split_position: 3})
 
     assert [%Task{id: ^second_id}, %Task{id: ^first_id}] = Pipeline.list_tasks(parent_task_id: parent.id)

@@ -7,6 +7,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Learnings.Workers.IssueFinished
+  alias Rail.Pipeline
   alias Rail.Pipeline.Workers.AdvanceSplit
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
@@ -330,7 +331,31 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
     end
 
     test "a split child completing queues its parent's next step", %{project: project, update: update} do
-      {parent, [child]} = split_task(project, "HWH-10", [{"HWH-11", []}])
+      for {identifier, title} <- [{"HWH-10", "Work on HWH-10"}, {"HWH-11", "Child HWH-11"}] do
+        Req.Test.expect(Rail.Linear, fn conn ->
+          Req.Test.json(conn, %{
+            "data" => %{
+              "issueCreate" => %{
+                "success" => true,
+                "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
+              }
+            }
+          })
+        end)
+      end
+
+      {:ok, parent_issue} = Issues.create_issue(system_scope(), project, %{title: "Work on HWH-10"})
+      {:ok, parent} = Pipeline.create_task(parent_issue, :split)
+      parent = Repo.preload(parent, [:issue, :project])
+
+      [child] =
+        for {{identifier, builds_on}, number} <- Enum.with_index([{"HWH-11", []}], 1) do
+          attrs = %{title: "Child #{identifier}", parent: parent_issue}
+          {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
+          part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
+          Repo.preload(child, [:issue, :project])
+        end
 
       assert {:ok, %Issue{state: :done}} = update.(child.issue.external_id, "completed")
       assert_enqueued(worker: AdvanceSplit, args: %{parent_task_id: parent.id})

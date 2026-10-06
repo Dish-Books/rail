@@ -2,6 +2,7 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.AdvanceLinearState
   alias Rail.Pipeline
@@ -17,8 +18,38 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
     stub(Rail.Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
 
     # 1 and 2 start at once; 3 waits on both; 4 on 1 alone.
-    {parent, children} =
-      split_task(project, "ASP-1", [{"ASP-2", []}, {"ASP-3", []}, {"ASP-4", [1, 2]}, {"ASP-5", [1]}])
+    for {identifier, title} <- [
+          {"ASP-1", "Work on ASP-1"},
+          {"ASP-2", "Child ASP-2"},
+          {"ASP-3", "Child ASP-3"},
+          {"ASP-4", "Child ASP-4"},
+          {"ASP-5", "Child ASP-5"}
+        ] do
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
+            }
+          }
+        })
+      end)
+    end
+
+    {:ok, parent_issue} = Issues.create_issue(system_scope(), project, %{title: "Work on ASP-1"})
+    {:ok, parent} = Pipeline.create_task(parent_issue, :split)
+    parent = Repo.preload(parent, [:issue, :project])
+
+    children =
+      for {{identifier, builds_on}, number} <-
+            Enum.with_index([{"ASP-2", []}, {"ASP-3", []}, {"ASP-4", [1, 2]}, {"ASP-5", [1]}], 1) do
+        attrs = %{title: "Child #{identifier}", parent: parent_issue}
+        {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
+        part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+        {:ok, child} = Pipeline.create_child_task(parent, issue, part)
+        Repo.preload(child, [:issue, :project])
+      end
 
     merge = fn %Task{issue: issue} ->
       issue |> Issue.linear_changeset(%{state: :done, completed_at: DateTime.utc_now(:second)}) |> Repo.update!()
