@@ -392,8 +392,16 @@ defmodule RailWeb.Components.TriageItem do
   attr :item_id, :string, required: true
   attr :issue, Issue, required: true
 
-  # Triage only points to the issue page, so starting a task stays where Start at Plan is.
+  # Triage only points to the issue page, so starting a task stays where Start at Plan is. A closed
+  # issue has nothing to start there, so it shows its state instead.
   defp created(assigns) do
+    finished = Issue.finished_state?(assigns.issue.state)
+
+    assigns =
+      assigns
+      |> assign(:show_start, !assigns.issue.task and not finished)
+      |> assign(:show_state, !assigns.issue.task and finished)
+
     ~H"""
     <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-slate-800 dark:text-slate-200">
       <.icon name="pi-check-circle-fill" class="size-4 text-emerald-500" />
@@ -416,7 +424,7 @@ defmodule RailWeb.Components.TriageItem do
         <.icon name="pi-git-branch" class="size-3.5" />{Task.stage_label(@issue.task.stage)}
       </.link>
       <span
-        :if={!@issue.task}
+        :if={@show_start}
         id={"triage-item-not-started-#{@item_id}"}
         class="ml-auto inline-flex flex-wrap items-center gap-x-1.5 min-w-0 text-xs"
       >
@@ -428,6 +436,13 @@ defmodule RailWeb.Components.TriageItem do
         >
           Start on the issue page<.icon name="pi-arrow-right" class="size-3.5" />
         </.link>
+      </span>
+      <span
+        :if={@show_state}
+        id={"triage-item-issue-state-#{@item_id}"}
+        class="ml-auto text-xs text-slate-500 dark:text-slate-400"
+      >
+        {Issue.state_label(@issue.state)}
       </span>
     </p>
     """

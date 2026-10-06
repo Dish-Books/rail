@@ -241,6 +241,51 @@ defmodule RailWeb.TriageLiveTest do
     refute has_element?(view, "#triage-item-start-#{bug.id}")
   end
 
+  test "a created issue closed before anyone starts it shows its state, not an offer to start it", %{
+    conn: conn,
+    thread: %Thread{items: [bug, _request]} = thread
+  } do
+    {:ok, view, _html} = live(conn, ~p"/triage")
+    Req.Test.allow(Rail.Linear, self(), view.pid)
+    Req.Test.allow(Rail.Slack, self(), view.pid)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_tri_214",
+              "identifier" => "TRI-214",
+              "title" => "Approve leaves tasks at Design",
+              "url" => "https://linear.app/acme/issue/TRI-214",
+              "state" => %{"id" => "st_tri", "name" => "Triage", "type" => "triage"}
+            }
+          }
+        }
+      })
+    end)
+
+    Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790000500.000100"}))
+
+    view
+    |> form("#reply-form-#{bug.id}", %{"item" => %{"reply_text" => "Fixed soon. Filed as {issue link}."}})
+    |> render_change()
+
+    view |> form("#issue-form-#{bug.id}") |> render_submit()
+    assert has_element?(view, "#triage-item-start-#{bug.id}")
+
+    %Item{created_issue_id: issue_id} = Repo.get!(Item, bug.id)
+    Repo.update_all(from(i in Issue, where: i.id == ^issue_id), set: [state: :canceled])
+    Phoenix.PubSub.broadcast(Rail.PubSub, "triage", {:triage_changed, thread.id})
+
+    assert has_element?(view, "#triage-item-issue-state-#{bug.id}", "Canceled")
+    assert has_element?(view, "#triage-item-issue-#{bug.id}[href='/issues/#{issue_id}']", "TRI-214")
+    refute has_element?(view, "#triage-item-start-#{bug.id}")
+    refute has_element?(view, "#triage-item-not-started-#{bug.id}")
+    refute has_element?(view, "#triage-item-task-#{bug.id}")
+  end
+
   test "an accept that fails says why on its item", %{conn: conn, thread: %Thread{items: [bug, _request]}} do
     {:ok, view, _html} = live(conn, ~p"/triage")
 
