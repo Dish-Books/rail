@@ -929,6 +929,23 @@ defmodule RailWeb.TaskLiveTest do
     assert {:ok, %Task{cleaned_up_at: %DateTime{}}} = Pipeline.get_task(task.id)
   end
 
+  test "cleaning up warns when Linear has not marked the issue done", %{conn: conn, task: task, issue: issue} do
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    assert has_element?(
+             view,
+             "#cleanup-task[data-confirm='TLV-1 is not marked done in Linear. Clean up this task anyway? Its worktree and scratch files will be deleted.']"
+           )
+
+    issue |> Issue.linear_changeset(%{state: :done}) |> Repo.update!()
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    assert has_element?(
+             view,
+             "#cleanup-task[data-confirm='Clean up this task? Its worktree and scratch files will be deleted.']"
+           )
+  end
+
   # The worktree this would delete is the one every run on the task is working
   # in, so nothing is released while any of them is still in it.
   test "a task with something running cannot be cleaned up", %{conn: conn, task: task, run: run} do
@@ -7158,6 +7175,28 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
       assert has_element?(view, "#claim-task")
+    end
+
+    test "a split is cleaned up from its parent, which warns until Linear has marked every child done", %{
+      conn: conn,
+      parent: parent,
+      first: first,
+      second: second,
+      third: third
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-11")
+      refute has_element?(view, "#cleanup-task")
+
+      first.issue |> Issue.linear_changeset(%{state: :done}) |> Repo.update!()
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
+
+      assert view |> element("#cleanup-task") |> render() =~
+               "2 of 3 children are not marked done in Linear: TLV-12, TLV-13. Clean up this task and all of its children anyway?"
+
+      for child <- [second, third], do: child.issue |> Issue.linear_changeset(%{state: :done}) |> Repo.update!()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
+      assert view |> element("#cleanup-task") |> render() =~ "Clean up this task and its 3 children?"
     end
 
     test "a task with no split has no Children tab and no switcher", %{conn: conn, task: task} do

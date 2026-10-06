@@ -49,6 +49,67 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     assert {:error, :task_busy} = Pipeline.cleanup_task(task)
   end
 
+  describe "a split parent" do
+    setup %{project: project} do
+      for {identifier, title} <- [{"CLT-10", "Work on CLT-10"}, {"CLT-11", "Child CLT-11"}, {"CLT-12", "Child CLT-12"}] do
+        Req.Test.expect(Rail.Linear, fn conn ->
+          Req.Test.json(conn, %{
+            "data" => %{
+              "issueCreate" => %{
+                "success" => true,
+                "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
+              }
+            }
+          })
+        end)
+      end
+
+      {:ok, parent_issue} = Issues.create_issue(system_scope(), project, %{title: "Work on CLT-10"})
+      {:ok, parent} = Pipeline.create_task(parent_issue, :split)
+      parent = Repo.preload(parent, [:issue, :project])
+
+      children =
+        for {{identifier, builds_on}, number} <- Enum.with_index([{"CLT-11", []}, {"CLT-12", [1]}], 1) do
+          attrs = %{title: "Child #{identifier}", parent: parent_issue}
+          {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
+          part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
+          Repo.preload(child, [:issue, :project])
+        end
+
+      for child <- children, do: File.mkdir_p!(child.scratch_path)
+
+      %{parent: parent, children: children}
+    end
+
+    test "takes every child with it", %{parent: parent, children: children} do
+      assert {:ok, %Task{cleaned_up_at: %DateTime{}}} = Pipeline.cleanup_task(parent)
+
+      for child <- children do
+        assert %Task{cleaned_up_at: %DateTime{}} = Repo.reload!(child)
+        refute File.exists?(child.scratch_path)
+      end
+    end
+
+    test "is refused, and cleans nothing, while a child is still working", %{
+      parent: parent,
+      children: [first, second],
+      engineer_role: engineer_role
+    } do
+      {:ok, _running} =
+        Pipeline.create_run(%{
+          task_id: second.id,
+          role_id: engineer_role.id,
+          status: :running,
+          started_at: DateTime.utc_now()
+        })
+
+      assert {:error, :task_busy} = Pipeline.cleanup_task(parent)
+
+      for task <- [parent, first, second], do: assert(%Task{cleaned_up_at: nil} = Repo.reload!(task))
+    end
+  end
+
   test "a cleaned-up task tells whoever is watching the pipeline", %{task: %Task{id: task_id} = task} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
 

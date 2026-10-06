@@ -315,7 +315,7 @@ defmodule RailWeb.OverviewLiveTest do
       %{conn: log_in_user(conn, user), user: user, project: project, roles: roles, rival: rival, task_for: task_for}
     end
 
-    test "a split parent cleaned up is still in progress once while its children are unmerged", %{
+    test "cleaning up a split parent takes its children out of In progress with it", %{
       conn: conn,
       user: user,
       project: project
@@ -352,8 +352,8 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/")
 
-      assert has_element?(view, "#in-progress-count", "1 task")
-      assert has_element?(view, "#in-progress-task-#{parent.id}", "0 of 2 merged")
+      assert has_element?(view, "#in-progress-count", "0 tasks")
+      refute has_element?(view, "#in-progress-task-#{parent.id}")
     end
 
     test "a split parent is in progress once, a mark per child, its children waiting on the user in Up next", %{

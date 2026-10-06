@@ -22,6 +22,7 @@ defmodule RailWeb.TaskLive do
   import RailWeb.Utils.HandleIssueEvent
 
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Learnings
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Learnings.Schemas.Observation
@@ -102,6 +103,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:header_status, nil)
       |> assign(:child_of, nil)
       |> assign(:split_points, nil)
+      |> assign(:cleanup_confirm, nil)
 
     # A stage moved from another page or by a run finishing is what keeps this one current.
     if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
@@ -175,7 +177,7 @@ defmodule RailWeb.TaskLive do
           <:actions>
             <.claim_button task={@task} />
             <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
-            <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
+            <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
           </:actions>
           <:sidebar>
             <.conversation_sidebar
@@ -208,7 +210,7 @@ defmodule RailWeb.TaskLive do
           <:actions>
             <.claim_button task={@task} />
             <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
-            <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
+            <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
           </:actions>
           <:sidebar>
             <.conversation_sidebar
@@ -241,7 +243,7 @@ defmodule RailWeb.TaskLive do
           <:actions>
             <.claim_button task={@task} />
             <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
-            <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
+            <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
           </:actions>
           <:sidebar>
             <.conversation_sidebar
@@ -273,7 +275,7 @@ defmodule RailWeb.TaskLive do
           <:actions>
             <.claim_button task={@task} />
             <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
-            <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
+            <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
           </:actions>
           <:sidebar>
             <.conversation_sidebar
@@ -305,7 +307,7 @@ defmodule RailWeb.TaskLive do
           <:actions>
             <.claim_button task={@task} />
             <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
-            <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
+            <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
           </:actions>
           <:sidebar>
             <.conversation_sidebar
@@ -336,7 +338,7 @@ defmodule RailWeb.TaskLive do
           <:actions>
             <.claim_button task={@task} />
             <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
-            <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
+            <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
           </:actions>
           <.issue_view
             issue={@issue}
@@ -362,7 +364,7 @@ defmodule RailWeb.TaskLive do
           </:meta>
           <:actions>
             <.claim_button task={@task} />
-            <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
+            <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
           </:actions>
           <.split_board statuses={@statuses} parent_id={@parent.id} />
         </.task_layout>
@@ -383,7 +385,7 @@ defmodule RailWeb.TaskLive do
           <:actions>
             <.claim_button task={@task} />
             <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
-            <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
+            <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
           </:actions>
           <div
             id="role-no-work"
@@ -638,17 +640,18 @@ defmodule RailWeb.TaskLive do
 
   attr :task, :any, required: true
   attr :cleaning_up, :boolean, required: true
+  attr :confirm, :string, required: true
 
-  # A cleaned-up task is history: there is nothing left on disk to clean.
+  # A cleaned-up task is history: there is nothing left on disk to clean. A child goes with its parent.
   defp cleanup_button(assigns) do
     ~H"""
     <button
-      :if={@task.cleaned_up_at == nil}
+      :if={@task.cleaned_up_at == nil and @task.parent_task_id == nil}
       type="button"
       id="cleanup-task"
       data-qa="cleanup_task"
       phx-click="cleanup"
-      data-confirm="Clean up this task? Its worktree and scratch files will be deleted."
+      data-confirm={@confirm}
       disabled={@cleaning_up}
       class="px-4 py-2 rounded-lg border border-red-300 dark:border-red-800 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 cursor-pointer disabled:opacity-50"
     >
@@ -1057,8 +1060,9 @@ defmodule RailWeb.TaskLive do
   end
 
   # Where a split parent or a child of one stands, said in the header in place of a stage.
-  defp assign_family(%{assigns: %{parent: nil}} = socket, _task) do
+  defp assign_family(%{assigns: %{parent: nil}} = socket, %Task{} = task) do
     socket
+    |> assign(:cleanup_confirm, cleanup_confirm(task.issue, []))
     |> assign(:show_switcher, false)
     |> assign(:header_status, nil)
     |> assign(:child_of, nil)
@@ -1086,6 +1090,7 @@ defmodule RailWeb.TaskLive do
       end
 
     socket
+    |> assign(:cleanup_confirm, cleanup_confirm(parent.issue, Enum.map(statuses, & &1.task.issue)))
     |> assign(:show_switcher, false)
     |> assign(:header_status, status)
     |> assign(:child_of, nil)
@@ -1100,6 +1105,7 @@ defmodule RailWeb.TaskLive do
         do: %{label: status.label, icon: status.icon, class: status.text_class}
 
     socket
+    |> assign(:cleanup_confirm, nil)
     |> assign(:show_switcher, true)
     |> assign(:header_status, header_status)
     |> assign(:child_of, %{
@@ -1109,6 +1115,26 @@ defmodule RailWeb.TaskLive do
       waiting_on: status.waiting_on
     })
     |> assign(:split_points, nil)
+  end
+
+  # Cleaning up work Linear has not marked done is usually a mistake, so the confirmation says so.
+  defp cleanup_confirm(%Issue{state: :done}, []),
+    do: "Clean up this task? Its worktree and scratch files will be deleted."
+
+  defp cleanup_confirm(%Issue{identifier: identifier}, []) do
+    "#{identifier} is not marked done in Linear. Clean up this task anyway? Its worktree and scratch files will be deleted."
+  end
+
+  defp cleanup_confirm(%Issue{}, children) do
+    case Enum.reject(children, &(&1.state == :done)) do
+      [] ->
+        "Clean up this task and its #{length(children)} children? Their worktrees and scratch files will be deleted."
+
+      open ->
+        "#{length(open)} of #{length(children)} children are not marked done in Linear: " <>
+          "#{Enum.map_join(open, ", ", & &1.identifier)}. Clean up this task and all of its children anyway? " <>
+          "Their worktrees and scratch files will be deleted."
+    end
   end
 
   # A child's tabs are its parent's page, so the child goes in the URL with the tab.
