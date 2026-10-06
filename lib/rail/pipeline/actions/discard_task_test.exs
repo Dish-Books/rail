@@ -29,15 +29,16 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
     {:ok, %Run{id: running_id}} =
       Pipeline.create_run(%{task_id: task_id, role_id: engineer.id, status: :running, started_at: DateTime.utc_now()})
 
-    {:ok, _failed} =
+    {:ok, %Run{id: failed_id}} =
       Pipeline.create_run(%{task_id: task_id, role_id: engineer.id, status: :failed, started_at: DateTime.utc_now()})
 
-    expect(Pipeline, :stop_run, fn scope, %Run{id: ^running_id} = run ->
-      Mimic.call_original(Pipeline, :stop_run, [scope, run])
-    end)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{running_id}")
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{failed_id}")
 
     assert :ok = Pipeline.discard_task(task)
 
+    assert_receive {:run_changed, ^running_id}
+    refute_receive {:run_changed, ^failed_id}, 50
     assert %Task{id: ^task_id, cleaned_up_at: nil} = Repo.get(Task, task_id)
   end
 
