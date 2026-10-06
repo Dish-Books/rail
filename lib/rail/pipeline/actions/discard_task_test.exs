@@ -90,8 +90,6 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
       %{id: "dem_discard", task_id: task_id, recorded_at: now, outcome: "passed", inserted_at: now, updated_at: now}
     ])
 
-    Phoenix.PubSub.subscribe(Rail.PubSub, "sandboxes")
-
     assert :ok = Pipeline.discard_task(task)
 
     assert Repo.get(Run, run_id) == nil
@@ -100,7 +98,6 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
     assert [] = Repo.all(from(d in "designs", where: d.task_id == ^task_id, select: d.id))
     assert [] = Repo.all(from(d in "demos", where: d.task_id == ^task_id, select: d.id))
     assert %Run{id: ^other_run_id} = Repo.get(Run, other_run_id)
-    assert_receive :sandboxes_changed
   end
 
   # Its own project, because the worktree is removed from a real clone.

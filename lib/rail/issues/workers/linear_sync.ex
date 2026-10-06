@@ -142,12 +142,13 @@ defmodule Rail.Issues.Workers.LinearSync do
         )
 
       # Every task, cleaned up or not, is discarded first: its runs have no foreign key to go with it.
-      from(t in Task, where: t.issue_id in ^doomed_ids)
-      |> Repo.all()
-      |> Enum.each(&(:ok = Pipeline.discard_task(&1)))
+      tasks = Repo.all(from(t in Task, where: t.issue_id in ^doomed_ids))
+      Enum.each(tasks, &(:ok = Pipeline.discard_task(&1)))
 
       Repo.delete_all(from(i in Issue, where: i.project_id == ^project_id and i.id in ^doomed_ids))
 
+      # Sent only now, so nothing reloads while a task is still there without its issue.
+      if tasks != [], do: Phoenix.PubSub.broadcast(Rail.PubSub, "sandboxes", :sandboxes_changed)
       :ok
     end
   end

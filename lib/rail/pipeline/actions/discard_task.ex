@@ -15,7 +15,8 @@ defmodule Rail.Pipeline.Actions.DiscardTask do
 
   @doc """
   Stops every running run on `task` the way the Stop button does, removes its
-  files, then deletes its runs, designs and demos. Nothing is stamped on the task row.
+  files, then deletes its runs, designs and demos. Nothing is stamped on the task row,
+  and the caller announces the change once the task's issue is deleted too.
   """
   def discard_task(%Task{id: task_id} = task) do
     task = Repo.preload(task, :runs, force: true)
@@ -34,6 +35,6 @@ defmodule Rail.Pipeline.Actions.DiscardTask do
         Repo.delete_all(from(d in "demos", where: d.task_id == ^task_id))
       end)
 
-    Phoenix.PubSub.broadcast(Rail.PubSub, "sandboxes", :sandboxes_changed)
+    :ok
   end
 end

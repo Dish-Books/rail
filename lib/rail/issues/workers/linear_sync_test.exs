@@ -442,6 +442,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
         })
 
       started_at = DateTime.to_iso8601(DateTime.utc_now())
+      Phoenix.PubSub.subscribe(Rail.PubSub, "sandboxes")
       last_page.([])
 
       lookups.(%{
@@ -457,6 +458,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
       refute File.exists?(worktree_path)
       assert "" = git!(clone_path, ["branch", "--list", "pruned-branch"])
       assert Repo.get(Run, run_id) == nil
+      assert_receive :sandboxes_changed
     end
 
     test "a lookup that fails any other way fails the job, removing and announcing nothing", %{

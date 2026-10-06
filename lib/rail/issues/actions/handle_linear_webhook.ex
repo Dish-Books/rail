@@ -122,16 +122,24 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
   defp delete_issue(projects, external_id) do
     project_ids = Enum.map(projects, & &1.id)
 
-    from(t in Task,
-      join: i in assoc(t, :issue),
-      where: i.external_id == ^external_id and i.project_id in ^project_ids
-    )
-    |> Repo.all()
-    |> Enum.each(&(:ok = Pipeline.discard_task(&1)))
+    tasks =
+      Repo.all(
+        from(t in Task,
+          join: i in assoc(t, :issue),
+          where: i.external_id == ^external_id and i.project_id in ^project_ids
+        )
+      )
 
-    delete_and_broadcast(
-      from(i in Issue, where: i.external_id == ^external_id and i.project_id in ^project_ids, select: i)
-    )
+    Enum.each(tasks, &(:ok = Pipeline.discard_task(&1)))
+
+    result =
+      delete_and_broadcast(
+        from(i in Issue, where: i.external_id == ^external_id and i.project_id in ^project_ids, select: i)
+      )
+
+    # Sent only now, so nothing reloads while a task is still there without its issue.
+    if tasks != [], do: Phoenix.PubSub.broadcast(Rail.PubSub, "sandboxes", :sandboxes_changed)
+    result
   end
 
   defp delete_issue_without_task(projects, external_id) do

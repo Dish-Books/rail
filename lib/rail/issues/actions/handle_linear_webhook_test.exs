@@ -191,11 +191,14 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
       end
 
     Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+    Phoenix.PubSub.subscribe(Rail.PubSub, "sandboxes")
 
     remove = %{"type" => "Issue", "action" => "remove", "data" => %{"id" => "lin_wh_3"}}
 
     assert {:ok, %Issue{id: ^issue_id}} = Issues.handle_linear_webhook(workspace, remove)
     assert_receive {:issue_changed, ^issue_id}
+    # Its turns are gone, and Sandboxes hears so only once the issue is too.
+    assert_receive :sandboxes_changed
     assert Repo.get(Issue, issue_id) == nil
     assert Repo.get(Task, task_id) == nil
     # Runs have no foreign key to their task, a cleaned-up one's included.
