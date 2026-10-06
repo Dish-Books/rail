@@ -50,12 +50,15 @@ defmodule RailWeb.Components.TriageItem do
       id={"triage-item-#{@item.id}"}
       data-qa="triage-item"
       data-state="settled"
+      phx-mounted={JS.ignore_attributes(["open"])}
       class="group rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/30 text-[12.5px]"
     >
       <summary class="flex items-center gap-2.5 px-4 py-2.5 cursor-pointer list-none">
         <.position position={@item.position} />
         <.triage_verdict kind={@item.kind} />
-        <span class="font-semibold truncate text-slate-900 dark:text-slate-100">{@item.title}</span>
+        <span class="min-w-0 flex-auto font-semibold truncate text-slate-900 dark:text-slate-100">
+          {@item.title}
+        </span>
         <.triage_verdict kind={@item.kind} verdict={@item.verdict} />
         <span
           :if={@item.existing_issue}
@@ -70,9 +73,9 @@ defmodule RailWeb.Components.TriageItem do
             @item.existing_issue.state
           )}
         </span>
-        <span class="ml-auto whitespace-nowrap inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-          <.icon name="pi-check-circle-fill" class="size-3.5" />
-          <span :if={@posted_by}>
+        <span class="ml-auto min-w-0 inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+          <.icon name="pi-check-circle-fill" class="size-3.5 shrink-0" />
+          <span :if={@posted_by} class="truncate">
             Reply posted by {@posted_by} at
             <.local_time id={"reply-posted-time-#{@item.id}"} at={@item.reply_posted_at} />
           </span>
@@ -95,7 +98,7 @@ defmodule RailWeb.Components.TriageItem do
         <p
           :if={@error || @item.error}
           id={"triage-item-error-#{@item.id}"}
-          class="text-xs text-red-600 dark:text-red-400"
+          class="text-xs break-words text-red-600 dark:text-red-400"
         >
           {@error || @item.error}
         </p>
@@ -369,7 +372,7 @@ defmodule RailWeb.Components.TriageItem do
           <p
             :if={@error}
             id={"triage-item-error-#{@item.id}"}
-            class="text-xs text-red-600 dark:text-red-400"
+            class="text-xs break-words text-red-600 dark:text-red-400"
           >
             {@error}
           </p>
@@ -405,12 +408,12 @@ defmodule RailWeb.Components.TriageItem do
     ~H"""
     <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-slate-800 dark:text-slate-200">
       <.icon name="pi-check-circle-fill" class="size-4 text-emerald-500" />
-      <span class="whitespace-nowrap">
+      <span class="min-w-0">
         Created
         <.link
           navigate={~p"/issues/#{@issue.id}"}
           id={"triage-item-issue-#{@item_id}"}
-          class="whitespace-nowrap font-mono text-blue-600 dark:text-blue-400 hover:underline rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900"
+          class="break-all font-mono text-blue-600 dark:text-blue-400 hover:underline rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900"
         >
           {@issue.identifier}
         </.link>

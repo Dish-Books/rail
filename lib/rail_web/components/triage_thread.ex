@@ -37,7 +37,7 @@ defmodule RailWeb.Components.TriageThread do
     <section
       id="triage-thread"
       data-qa="triage-thread"
-      class="w-[470px] shrink-0 flex flex-col border-r border-slate-200 dark:border-slate-700 min-h-0"
+      class="flex-[0_1_470px] min-w-[300px] flex flex-col border-r border-slate-200 dark:border-slate-700 min-h-0"
     >
       <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-700">
         <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">

@@ -232,6 +232,8 @@ defmodule RailWeb.TriageLiveTest do
     assert has_element?(view, "#triage-item-start-#{bug.id}[href='/issues/#{issue_id}']", "Start on the issue page")
     refute has_element?(view, "#triage-item-task-#{bug.id}")
     refute has_element?(view, "#triage-items button", "Start")
+    # The browser owns whether the item is open, so a reload that brings the chip leaves it open.
+    assert has_element?(view, ~s(#triage-item-#{bug.id}[phx-mounted*='"ignore_attrs",{"attrs":["open"]}']))
 
     {:ok, %Task{id: task_id}} = Pipeline.create_task(Repo.preload(Repo.get!(Issue, issue_id), :project), :plan)
     Phoenix.PubSub.broadcast(Rail.PubSub, "pipeline", {:pipeline_changed, task_id})

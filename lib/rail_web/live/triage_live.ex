@@ -98,7 +98,11 @@ defmodule RailWeb.TriageLive do
           note={@note}
         />
 
-        <section :if={@thread} id="triage-items" class="flex-1 min-w-0 flex flex-col min-h-0">
+        <section
+          :if={@thread}
+          id="triage-items"
+          class="flex-1 min-w-[min(560px,calc(100%-630px))] flex flex-col min-h-0"
+        >
           <div class="flex items-center gap-3 px-6 py-3 border-b border-slate-200 dark:border-slate-700">
             <span class="text-sm font-bold text-slate-900 dark:text-slate-100">
               {length(@thread.items)} {if length(@thread.items) == 1, do: "item", else: "items"}
