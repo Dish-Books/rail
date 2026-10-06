@@ -4,6 +4,9 @@ defmodule RailWeb.TriageLiveTest do
   import Ecto.Query
   import Phoenix.LiveViewTest
 
+  alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Triage
@@ -142,22 +145,11 @@ defmodule RailWeb.TriageLiveTest do
   test "creating the issue and posting a reply settle their items, and the posts show as yours via Rail", %{
     conn: conn,
     user: user,
-    project: project,
     thread: %Thread{items: [bug, request]}
   } do
-    {:ok, _product} =
-      Rail.Roles.create_role(system_scope(), project, %{
-        stage: :plan,
-        name: "Product",
-        model: "claude-opus-5-5",
-        system_prompt: "You write tickets.",
-        cli: :claude
-      })
-
     {:ok, view, _html} = live(conn, ~p"/triage")
     Req.Test.allow(Rail.Linear, self(), view.pid)
     Req.Test.allow(Rail.Slack, self(), view.pid)
-    Req.Test.allow(Rail.GitHub.Client, self(), view.pid)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -190,7 +182,6 @@ defmodule RailWeb.TriageLiveTest do
     assert has_element?(view, "#triage-item-#{bug.id}[data-state='settled']", "Created TRI-214")
     assert has_element?(view, "#triage-item-posted-#{bug.id}", "Fixed soon. Filed as TRI-214.")
     refute has_element?(view, "#triage-item-#{bug.id}", "{issue link}")
-    assert has_element?(view, "#triage-item-task-#{bug.id}", "Plan")
 
     view |> form("#reply-form-#{request.id}") |> render_submit()
     assert has_element?(view, "#triage-item-#{request.id}[data-state='settled']", "Reply posted by Michael")
@@ -199,6 +190,55 @@ defmodule RailWeb.TriageLiveTest do
     assert has_element?(view, "#triage-thread [data-qa='triage-message']", user.slack_name)
     assert has_element?(view, "#triage-thread [data-qa='via-rail']", "via Rail")
     assert has_element?(view, "#triage-filter-done", "Done · 1")
+  end
+
+  test "a created issue points to its issue page until its task starts, then shows the task's stage", %{
+    conn: conn,
+    thread: %Thread{items: [bug, _request]}
+  } do
+    {:ok, view, _html} = live(conn, ~p"/triage")
+    Req.Test.allow(Rail.Linear, self(), view.pid)
+    Req.Test.allow(Rail.Slack, self(), view.pid)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_tri_214",
+              "identifier" => "TRI-214",
+              "title" => "Approve leaves tasks at Design",
+              "url" => "https://linear.app/acme/issue/TRI-214",
+              "state" => %{"id" => "st_tri", "name" => "Triage", "type" => "triage"}
+            }
+          }
+        }
+      })
+    end)
+
+    Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790000500.000100"}))
+
+    view
+    |> form("#reply-form-#{bug.id}", %{"item" => %{"reply_text" => "Fixed soon. Filed as {issue link}."}})
+    |> render_change()
+
+    view |> form("#issue-form-#{bug.id}") |> render_submit()
+
+    %Item{created_issue_id: issue_id} = Repo.get!(Item, bug.id)
+    assert has_element?(view, "#triage-item-#{bug.id}[data-state='settled']", "Created TRI-214")
+    assert has_element?(view, "#triage-item-issue-#{bug.id}[href='/issues/#{issue_id}']", "TRI-214")
+    assert has_element?(view, "#triage-item-not-started-#{bug.id}", "Not started.")
+    assert has_element?(view, "#triage-item-start-#{bug.id}[href='/issues/#{issue_id}']", "Start on the issue page")
+    refute has_element?(view, "#triage-item-task-#{bug.id}")
+    refute has_element?(view, "#triage-items button", "Start")
+
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(Repo.preload(Repo.get!(Issue, issue_id), :project), :plan)
+    Phoenix.PubSub.broadcast(Rail.PubSub, "pipeline", {:pipeline_changed, task_id})
+
+    assert has_element?(view, "#triage-item-task-#{bug.id}[href='/tasks/#{task_id}']", "Plan")
+    refute has_element?(view, "#triage-item-not-started-#{bug.id}")
+    refute has_element?(view, "#triage-item-start-#{bug.id}")
   end
 
   test "an accept that fails says why on its item", %{conn: conn, thread: %Thread{items: [bug, _request]}} do
@@ -216,7 +256,12 @@ defmodule RailWeb.TriageLiveTest do
     thread: %Thread{items: [bug, _request]}
   } do
     {:ok, view, _html} = live(conn, ~p"/triage")
-    assert has_element?(view, "#issue-line-#{bug.id}", "starts Product · link posted in thread")
+
+    assert has_element?(
+             view,
+             "#issue-line-#{bug.id}",
+             "waits for Start at Plan on its issue page · link posted in thread"
+           )
 
     {:ok, _project} =
       Projects.update_project(system_scope(), project, %{
@@ -231,8 +276,14 @@ defmodule RailWeb.TriageLiveTest do
         ]
       })
 
-    assert has_element?(view, "#issue-line-#{bug.id}", "starts Product · no link posted, external channel")
+    assert has_element?(
+             view,
+             "#issue-line-#{bug.id}",
+             "waits for Start at Plan on its issue page · no link posted, external channel"
+           )
+
     refute has_element?(view, "#issue-line-#{bug.id}", "link posted in thread")
+    refute has_element?(view, "#triage-items", "starts Product")
 
     refusal = "This reply cannot link the issue in an external channel. Take out {issue link} to post it."
     view |> form("#reply-form-#{bug.id}") |> render_submit()
@@ -503,13 +554,16 @@ defmodule RailWeb.TriageLiveTest do
       })
     end)
 
-    stub(Rail.Pipeline, :start_task, fn _issue, :plan -> {:ok, :started} end)
     Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => false, "error" => "not_in_channel"}))
 
     view |> form("#issue-form-#{bug.id}") |> render_submit()
 
+    %Item{created_issue_id: issue_id} = Repo.get!(Item, bug.id)
     assert has_element?(view, "#triage-item-#{bug.id}[data-state='open']", "Created TRI-77")
+    assert has_element?(view, "#triage-item-issue-#{bug.id}[href='/issues/#{issue_id}']", "TRI-77")
+    assert has_element?(view, "#triage-item-start-#{bug.id}[href='/issues/#{issue_id}']", "Start on the issue page")
     assert has_element?(view, "#triage-item-error-#{bug.id}", "could not post in Slack")
+    refute has_element?(view, "#triage-item-#{bug.id}", "Plan did not start")
     assert has_element?(view, "#reply-form-#{bug.id}")
 
     Req.Test.expect(Rail.Slack, fn conn ->
