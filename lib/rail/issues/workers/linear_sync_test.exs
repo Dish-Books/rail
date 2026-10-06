@@ -275,39 +275,24 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
     assert %{issues: [], total: 0} = Issues.list_issues(project_id: project.id)
   end
 
-  test "a Linear failure fails the job so the page is retried, removing and announcing nothing", %{
-    project: %{id: project_id} = project
-  } do
-    %Issue{id: issue_id} =
-      %Issue{}
-      |> Issue.linear_changeset(%{
-        project_id: project_id,
-        external_id: "lin_unlisted",
-        identifier: "SPI-60",
-        title: "Not listed yet",
-        state: :todo
-      })
-      |> Repo.insert!()
-
-    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      conn |> Plug.Conn.put_status(500) |> Req.Test.json(%{"error" => "Linear Server Down"})
-    end)
-
-    assert {:error, {:linear_api_error, 500, %{"error" => "Linear Server Down"}}} =
-             perform_job(LinearSync, %{
-               project_id: project.id,
-               cursor: "cursor_last",
-               started_at: DateTime.to_iso8601(DateTime.utc_now())
-             })
-
-    assert %Issue{id: ^issue_id} = Repo.get(Issue, issue_id)
-    refute_receive {:issues_synced, ^project_id}, 50
-  end
-
   describe "the last page" do
-    setup %{project: project} do
+    # Every finished sync of the seeded project reaches every subscriber, so these sync their own.
+    setup do
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_sync"}]}}})
+      end)
+
+      {:ok, project} =
+        Projects.create_project(system_scope(), %{
+          name: "Last Page Project",
+          github_repo: "org/last-page",
+          github_installation_id: 12_954,
+          linear_team_key: "LPG",
+          default_branch: "main",
+          clone_path: "/tmp/repos/last-page",
+          linear_workspace_id: "lw_test_seed"
+        })
+
       insert = fn external_id, state ->
         %Issue{}
         |> Issue.linear_changeset(%{
@@ -346,7 +331,38 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
 
       not_found = %{"errors" => [%{"message" => "Entity not found: Issue"}], "data" => nil}
 
-      %{insert: insert, last_page: last_page, lookups: lookups, not_found: not_found}
+      %{project: project, insert: insert, last_page: last_page, lookups: lookups, not_found: not_found}
+    end
+
+    test "a Linear failure fails the job so the page is retried, removing and announcing nothing", %{
+      project: %{id: project_id} = project
+    } do
+      %Issue{id: issue_id} =
+        %Issue{}
+        |> Issue.linear_changeset(%{
+          project_id: project_id,
+          external_id: "lin_unlisted",
+          identifier: "SPI-60",
+          title: "Not listed yet",
+          state: :todo
+        })
+        |> Repo.insert!()
+
+      Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+
+      Req.Test.expect(Rail.Linear, fn conn ->
+        conn |> Plug.Conn.put_status(500) |> Req.Test.json(%{"error" => "Linear Server Down"})
+      end)
+
+      assert {:error, {:linear_api_error, 500, %{"error" => "Linear Server Down"}}} =
+               perform_job(LinearSync, %{
+                 project_id: project.id,
+                 cursor: "cursor_last",
+                 started_at: DateTime.to_iso8601(DateTime.utc_now())
+               })
+
+      assert %Issue{id: ^issue_id} = Repo.get(Issue, issue_id)
+      refute_receive {:issues_synced, ^project_id}, 50
     end
 
     test "an issue with no task the pages no longer list is removed without asking Linear, then announced", %{
@@ -550,7 +566,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
               "action" => "update",
               "data" => %{
                 "id" => "lin_webhooked",
-                "teamId" => "lin_team_id",
+                "teamId" => "lin_team_sync",
                 "identifier" => "lin_webhooked",
                 "title" => "Rewritten meanwhile"
               }
