@@ -4,7 +4,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
 
   The row is written with `Issue.linear_changeset/2`: the change came from
   Linear, so nothing is pushed back to it. An update that finishes an open issue
-  is handed to Learnings, which only queues its work.
+  is handed to Learnings and the pipeline, which only queue their work.
   """
 
   import Ecto.Query
@@ -14,6 +14,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
   alias Rail.Learnings
+  alias Rail.Pipeline
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -41,7 +42,11 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
         existing = Repo.get_by(Issue, external_id: external_id) || %Issue{}
 
         with {:ok, issue} <- existing |> Issue.linear_changeset(attrs) |> Repo.insert_or_update() do
-          if finished?(action, existing, issue), do: {:ok, _job} = Learnings.handle_issue_finished(issue)
+          if finished?(action, existing, issue) do
+            {:ok, _job} = Learnings.handle_issue_finished(issue)
+            Pipeline.handle_issue_finished(issue)
+          end
+
           Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id})
           {:ok, issue}
         end

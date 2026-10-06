@@ -23,6 +23,9 @@ defmodule RailWeb.Utils.StageLabel do
   # No role runs at merged, so there is no run to say anything; the task is done.
   def stage_label(%Task{stage: :merged}, _run), do: "Merged"
 
+  # A split parent's work is its children's, so all it says of itself is that its plan was approved.
+  def stage_label(%Task{stage: :split}, _run), do: "Plan approved"
+
   # Read off its status before the state it shares with a run waiting for a sandbox.
   def stage_label(%Task{stage: stage}, %Run{status: :waiting_for_usage}),
     do: "#{Task.stage_label(stage)} waiting for usage"

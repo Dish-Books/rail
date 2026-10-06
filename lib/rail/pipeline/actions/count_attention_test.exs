@@ -149,4 +149,43 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
 
     assert Pipeline.count_attention() == 0
   end
+
+  test "each child of a split waiting on a person counts once, a failed one too, and the parent never", %{
+    project: project,
+    roles: roles
+  } do
+    now = DateTime.utc_now()
+
+    {parent, [blocked, failed, _waiting]} =
+      split_task(project, "ATT-SPL", [{"ATT-S1", []}, {"ATT-S2", []}, {"ATT-S3", [1]}])
+
+    # The parent's own Plan run, latched done at approval.
+    {:ok, _plan} =
+      Pipeline.create_run(%{
+        task_id: parent.id,
+        role_id: roles[:plan].id,
+        status: :finished,
+        stage_outcome: :done,
+        started_at: now
+      })
+
+    {:ok, _blocked} =
+      Pipeline.create_run(%{
+        task_id: blocked.id,
+        role_id: roles[:engineer].id,
+        status: :blocked_on_input,
+        started_at: now
+      })
+
+    {:ok, _failed} =
+      Pipeline.create_run(%{
+        task_id: failed.id,
+        role_id: roles[:engineer].id,
+        status: :failed,
+        error: "It broke.",
+        started_at: now
+      })
+
+    assert Pipeline.count_attention(project_id: [project.id]) == 2
+  end
 end

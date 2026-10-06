@@ -2,6 +2,8 @@ defmodule RailWeb.OverviewLive do
   @moduledoc false
   use RailWeb, :live_view
 
+  import RailWeb.Utils.ChildStatus
+
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -155,10 +157,20 @@ defmodule RailWeb.OverviewLive do
     user_id = socket.assigns.current_scope.user.id
     # A nil owner means no filter, so the own view must always name the user.
     owner_user_id = if everyone, do: nil, else: user_id
-    preload = [:role, :questions, task: [:project, :issue]]
+    preload = [:role, :questions, task: [:project, :issue, parent_task: :issue]]
 
     runs = Pipeline.list_runs(project_id: project_id, owner_user_id: owner_user_id, preload: preload)
-    tasks = Pipeline.list_tasks(project_id: project_id, owner_user_id: owner_user_id, preload: [:project, :issue])
+
+    tasks =
+      Pipeline.list_tasks(
+        project_id: project_id,
+        owner_user_id: owner_user_id,
+        preload: [:project, :issue, :implementation_plan, runs: [:role, :questions]]
+      )
+
+    # A split is one piece of work, so its children are read through their parent.
+    {children, tasks} = Enum.split_with(tasks, &is_binary(&1.parent_task_id))
+    children = Enum.group_by(children, & &1.parent_task_id)
 
     # The stat and the list both read this one list, so they cannot disagree.
     in_progress =
@@ -193,8 +205,8 @@ defmodule RailWeb.OverviewLive do
     |> assign(:waiting, waiting)
     |> assign(:sandboxes, sandboxes)
     |> assign(:stats, stats(in_progress, completed, waiting_on_user, sandboxes.waiting, now))
-    |> assign(:activity, activity(runs, completed, DateTime.shift(now, day: -1)))
-    |> assign(:in_progress_groups, build_in_progress_groups(in_progress, stage_runs, user_id, now))
+    |> assign(:activity, activity(runs, completed, splits(tasks, children), DateTime.shift(now, day: -1)))
+    |> assign(:in_progress_groups, build_in_progress_groups(in_progress, stage_runs, children, user_id, now))
     |> assign(:throughput, throughput(completed, DateTime.to_date(now)))
     |> assign(:dispatch_disabled, Application.get_env(:rail, :no_dispatch, false))
     # The rail badge sits beside these stats, so it comes from the same reload.
@@ -274,7 +286,7 @@ defmodule RailWeb.OverviewLive do
 
   # Every run says when it started and, once it is not working, how it ended; an
   # issue says when it shipped. The feed is those moments, newest first.
-  defp activity(runs, completed, since) do
+  defp activity(runs, completed, splits, since) do
     shipped =
       for issue <- completed do
         %{id: "shipped-#{issue.id}", at: issue.completed_at, actor: nil, text: "#{issue.identifier} shipped"}
@@ -283,6 +295,7 @@ defmodule RailWeb.OverviewLive do
     runs
     |> Enum.flat_map(&run_activity/1)
     |> Enum.concat(shipped)
+    |> Enum.concat(splits)
     |> Enum.filter(&DateTime.after?(&1.at, since))
     |> Enum.sort_by(& &1.at, {:desc, DateTime})
     |> Enum.take(@activity_limit)
@@ -316,9 +329,21 @@ defmodule RailWeb.OverviewLive do
   defp questions(%Run{questions: [_one]}), do: "a question"
   defp questions(%Run{questions: questions}), do: "#{length(questions)} questions"
 
-  defp build_in_progress_groups(in_progress, stage_runs, user_id, now) do
+  # A split is split when its plan was approved, which is when its children were made.
+  defp splits(tasks, children) do
+    for %{implementation_plan: %{captured_at: at}} = task <- tasks, split = children[task.id] do
+      %{id: "split-#{task.id}", at: at, actor: nil, text: "#{task.issue.identifier} split into #{length(split)}"}
+    end
+  end
+
+  defp build_in_progress_groups(in_progress, stage_runs, children, user_id, now) do
     in_progress
-    |> Enum.map(&build_in_progress_entry(&1, Map.get(stage_runs, &1.id), user_id, now))
+    |> Enum.map(fn task ->
+      case children[task.id] do
+        split when is_list(split) -> build_split_entry(task, split, user_id, now)
+        nil -> build_in_progress_entry(task, Map.get(stage_runs, task.id), user_id, now)
+      end
+    end)
     |> Enum.sort_by(& &1.changed_at, DateTime)
     |> Enum.sort_by(&Map.fetch!(@attention_rank, &1.state))
     |> Enum.group_by(& &1.task.project)
@@ -346,6 +371,27 @@ defmodule RailWeb.OverviewLive do
       is_waiting: state in [:done, :blocked] and task.issue.owner_user_id == user_id,
       changed_at: changed_at,
       age: format_age(DateTime.diff(now, changed_at))
+    }
+  end
+
+  # A split parent waits on the viewer when any of its children does, and stands as long as its oldest child.
+  defp build_split_entry(task, children, user_id, now) do
+    statuses = Enum.map(children, &child_status(&1, children))
+    waiting = Enum.count(statuses, & &1.needs_attention)
+    is_waiting = waiting > 0 and task.issue.owner_user_id == user_id
+
+    %{
+      task: task,
+      state: if(waiting > 0, do: :done, else: :running),
+      label: if(waiting > 0, do: "#{waiting} need you", else: "Plan approved"),
+      style: %{
+        icon: "pi-arrows-split",
+        text_class: if(waiting > 0, do: "text-amber-700 dark:text-amber-300", else: "text-slate-500 dark:text-slate-400")
+      },
+      is_waiting: is_waiting,
+      changed_at: task.updated_at,
+      age: format_age(DateTime.diff(now, task.updated_at)),
+      children: statuses
     }
   end
 end

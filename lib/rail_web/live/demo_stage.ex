@@ -57,6 +57,7 @@ defmodule RailWeb.Live.DemoStage do
         title={@task.issue.title}
         flush
       >
+        <:breadcrumb :if={@breadcrumb != []}>{render_slot(@breadcrumb)}</:breadcrumb>
         <:tabs>{render_slot(@tabs)}</:tabs>
 
         <:actions>

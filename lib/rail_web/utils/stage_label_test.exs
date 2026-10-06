@@ -13,6 +13,7 @@ defmodule RailWeb.Utils.StageLabelTest do
   test "a merged task says it merged, whatever its last run did" do
     assert stage_label(%Task{stage: :merged}, nil) == "Merged"
     assert stage_label(%Task{stage: :merged}, %Run{status: :finished, stage_outcome: :done}) == "Merged"
+    assert stage_label(%Task{stage: :split}, %Run{status: :finished, stage_outcome: :done}) == "Plan approved"
   end
 
   test "a stage that has not started is queued for it" do

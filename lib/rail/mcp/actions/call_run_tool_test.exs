@@ -243,6 +243,19 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
       assert {:ok, %{"content" => [%{"text" => "Plan saved, written for no design option yet." <> _rest}]}} =
                Mcp.call_run_tool(context.(:plan), "save_plan", %{"plan" => "## Implementation plan\n\nDo it."})
 
+      children = [
+        %{"title" => "One", "ticket" => "T1.", "plan" => "## Implementation plan\n\nOne."},
+        %{"title" => "Two", "ticket" => "T2.", "plan" => "## Implementation plan\n\nTwo.", "builds_on" => [1]}
+      ]
+
+      assert {:ok, %{"content" => [%{"text" => "Split saved into 2 children." <> _rest}]}} =
+               Mcp.call_run_tool(context.(:plan), "save_split", %{"children" => children})
+
+      assert {:error, {:refused, "Refused, nothing saved. children 2 plan: is required."}} =
+               Mcp.call_run_tool(context.(:plan), "save_split", %{
+                 "children" => [hd(children), Map.delete(List.last(children), "plan")]
+               })
+
       assert {:ok, %{"content" => [%{"text" => "Verdict saved: Passed." <> _rest}]}} =
                Mcp.call_run_tool(context.(:qa), "save_verdict", %{"verdict" => "pass", "summary" => "Works."})
 

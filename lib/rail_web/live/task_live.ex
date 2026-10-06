@@ -9,12 +9,16 @@ defmodule RailWeb.TaskLive do
   takes the page over. A role that has not run has nothing to read, so it has no
   tab until it does.
 
+  A split parent's page adds a Children tab, a board of its children, right after Plan. A child is shown
+  on its parent's page, named in the URL, with the same tab and a switcher to its siblings.
+
   The page owns what the components cannot: the subscriptions. A LiveComponent
   may not subscribe, so log lines arrive here and are forwarded to the
   conversation, and a saved output to the open stage, with `send_update/2`.
   """
   use RailWeb, :live_view
 
+  import RailWeb.Utils.ChildStatus
   import RailWeb.Utils.HandleIssueEvent
 
   alias Rail.Issues
@@ -47,6 +51,7 @@ defmodule RailWeb.TaskLive do
   @frame_interval_ms 250
 
   @issue_tab "issue"
+  @children_tab "children"
 
   # What the Issue tab's owner menu and comments raise, handled as the issue page handles them.
   @issue_events ["assign", "filter_assignees", "draft_comment", "comment"]
@@ -86,6 +91,17 @@ defmodule RailWeb.TaskLive do
       |> assign(:cleaning_up, false)
       |> assign(:focus_file, nil)
       |> assign(:engineer_tab, nil)
+      |> assign(:url_id, nil)
+      |> assign(:child, nil)
+      |> assign(:parent, nil)
+      |> assign(:statuses, [])
+      |> assign(:family_ids, MapSet.new())
+      |> assign(:family_issue_ids, MapSet.new())
+      |> assign(:watching_issues, false)
+      |> assign(:show_switcher, false)
+      |> assign(:header_status, nil)
+      |> assign(:child_of, nil)
+      |> assign(:split_points, nil)
 
     # A stage moved from another page or by a run finishing is what keeps this one current.
     if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
@@ -94,9 +110,14 @@ defmodule RailWeb.TaskLive do
   end
 
   def handle_params(%{"id" => task_id} = params, _uri, socket) do
+    # The board is the parent's, so a child named beside it is left for the board.
+    child = if params["tab"] != @children_tab, do: params["child"]
+
     socket =
       socket
+      |> assign(:url_id, task_id)
       |> assign(:task_id, task_id)
+      |> assign(:child, child)
       |> assign(:url_tab, params["tab"])
       |> assign(:selected_tab, params["tab"])
       |> assign(:focus_file, params["file"])
@@ -144,7 +165,12 @@ defmodule RailWeb.TaskLive do
           stage_run={@stage_run}
           line={@line}
           approvable={@approvable}
+          status={@header_status}
+          child_of={@child_of}
         >
+          <:breadcrumb :if={@show_switcher}>
+            <.child_switcher statuses={@statuses} current_id={@task.id} parent={@parent} />
+          </:breadcrumb>
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
@@ -175,6 +201,9 @@ defmodule RailWeb.TaskLive do
           current_scope={@current_scope}
           focus_file={@focus_file}
         >
+          <:breadcrumb :if={@show_switcher}>
+            <.child_switcher statuses={@statuses} current_id={@task.id} parent={@parent} />
+          </:breadcrumb>
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
@@ -205,6 +234,9 @@ defmodule RailWeb.TaskLive do
           current_scope={@current_scope}
           engineer_tab={@engineer_tab}
         >
+          <:breadcrumb :if={@show_switcher}>
+            <.child_switcher statuses={@statuses} current_id={@task.id} parent={@parent} />
+          </:breadcrumb>
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
@@ -234,6 +266,9 @@ defmodule RailWeb.TaskLive do
           approvable={@approvable}
           current_scope={@current_scope}
         >
+          <:breadcrumb :if={@show_switcher}>
+            <.child_switcher statuses={@statuses} current_id={@task.id} parent={@parent} />
+          </:breadcrumb>
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
@@ -263,6 +298,9 @@ defmodule RailWeb.TaskLive do
           approvable={@approvable}
           current_scope={@current_scope}
         >
+          <:breadcrumb :if={@show_switcher}>
+            <.child_switcher statuses={@statuses} current_id={@task.id} parent={@parent} />
+          </:breadcrumb>
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
@@ -289,7 +327,11 @@ defmodule RailWeb.TaskLive do
           stage_run={@stage_run}
           line={@line}
           title={@task.issue.title}
+          status={@header_status}
         >
+          <:breadcrumb :if={@show_switcher}>
+            <.child_switcher statuses={@statuses} current_id={@task.id} parent={@parent} />
+          </:breadcrumb>
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
@@ -306,13 +348,36 @@ defmodule RailWeb.TaskLive do
         </.task_layout>
 
         <.task_layout
+          :if={@task != nil and @pane == :children}
+          task={@task}
+          stage_run={@stage_run}
+          line={@line}
+          title={@task.issue.title}
+          status={@header_status}
+        >
+          <:tabs><.task_tabs tabs={@tabs} /></:tabs>
+          <:meta>
+            <span :if={@split_points} id="split-points">{@split_points}</span>
+          </:meta>
+          <:actions>
+            <.claim_button task={@task} />
+            <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
+          </:actions>
+          <.split_board statuses={@statuses} parent_id={@parent.id} />
+        </.task_layout>
+
+        <.task_layout
           :if={@task != nil and @pane == :none}
           task={@task}
           run={@selected_run}
           stage_run={@stage_run}
           line={@line}
           title={@task.issue.title}
+          status={@header_status}
         >
+          <:breadcrumb :if={@show_switcher}>
+            <.child_switcher statuses={@statuses} current_id={@task.id} parent={@parent} />
+          </:breadcrumb>
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
@@ -346,8 +411,13 @@ defmodule RailWeb.TaskLive do
     {:noreply, handle_issue_event(event, params, socket, &refresh_task/1)}
   end
 
+  # The board is the parent's, so a child's Children tab goes back to it.
+  def handle_event("select_tab", %{"tab" => @children_tab}, socket) do
+    {:noreply, push_patch(socket, to: ~p"/tasks/#{socket.assigns.parent.id}?tab=#{@children_tab}")}
+  end
+
   def handle_event("select_tab", %{"tab" => tab}, socket) do
-    {:noreply, push_patch(socket, to: ~p"/tasks/#{socket.assigns.task_id}?tab=#{tab}")}
+    {:noreply, push_patch(socket, to: task_path(socket, tab))}
   end
 
   def handle_event("cleanup", _params, socket) do
@@ -379,7 +449,7 @@ defmodule RailWeb.TaskLive do
       end
 
     # The merge is the engineer's work, and its tab is where it shows.
-    {:noreply, push_patch(socket, to: ~p"/tasks/#{socket.assigns.task_id}?tab=#{socket.assigns.engineer_tab}")}
+    {:noreply, push_patch(socket, to: task_path(socket, socket.assigns.engineer_tab))}
   end
 
   def handle_info({:run_events, run_id, events}, socket) do
@@ -450,7 +520,23 @@ defmodule RailWeb.TaskLive do
     {:noreply, refresh_task(socket)}
   end
 
-  def handle_info({:pipeline_changed, _other_task_id}, socket), do: {:noreply, socket}
+  # A split's parent and children are one page, so a move in any of them redraws it.
+  def handle_info({:pipeline_changed, task_id}, socket) do
+    if MapSet.member?(socket.assigns.family_ids, task_id),
+      do: {:noreply, refresh_task(socket)},
+      else: {:noreply, socket}
+  end
+
+  # A child's issue completing in Linear is what merges it.
+  def handle_info({:issue_changed, issue_id}, socket) do
+    if MapSet.member?(socket.assigns.family_issue_ids, issue_id),
+      do: {:noreply, refresh_task(socket)},
+      else: {:noreply, socket}
+  end
+
+  def handle_info({event, _id}, socket) when event in [:issue_created, :issue_comments_changed, :issues_synced] do
+    {:noreply, socket}
+  end
 
   # An agent saved a ticket, an option, a plan, a finding or a picture, in this
   # task, while its run is still going.
@@ -638,17 +724,52 @@ defmodule RailWeb.TaskLive do
 
   # A task in a project the user cannot access reads the same as one that is gone.
   defp refresh_task(socket) do
-    with {:ok, task} <- Pipeline.get_task(socket.assigns.task_id),
+    with {:ok, task} <- Pipeline.get_task(socket.assigns.url_id),
          true <- Scope.can_access_project?(socket.assigns.current_scope, task.project_id) do
-      socket
-      |> load_assignees(task)
-      |> apply_task(task)
-      |> watch_diff_comments(task)
-      |> watch_outputs(task)
-      |> sync_tab_url()
+      show_task(socket, task)
     else
       _missing -> assign(socket, :task, nil)
     end
+  end
+
+  # Every link to a child, its own included, lands on its parent's page with it selected.
+  defp show_task(socket, %Task{parent_task_id: parent_id, issue: issue}) when is_binary(parent_id) do
+    params = Enum.reject([child: issue.identifier, tab: socket.assigns.url_tab], fn {_key, value} -> is_nil(value) end)
+    push_patch(socket, to: ~p"/tasks/#{parent_id}?#{params}")
+  end
+
+  defp show_task(socket, %Task{} = task) do
+    children =
+      Pipeline.list_tasks(
+        parent_task_id: task.id,
+        include_cleaned_up: true,
+        preload: [:project, :issue, runs: [:role, :questions]]
+      )
+
+    shown = Enum.find(children, task, &(&1.issue.identifier == socket.assigns.child))
+
+    socket
+    |> assign(:parent, if(children != [], do: Map.put(task, :children, children)))
+    |> assign(:statuses, Enum.map(children, &child_status(&1, children)))
+    |> assign(:task_id, shown.id)
+    |> watch_family(task, children)
+    |> load_assignees(shown)
+    |> apply_task(shown)
+    |> watch_diff_comments(shown)
+    |> watch_outputs(shown)
+    |> sync_tab_url()
+  end
+
+  # A split's parent hears every child's stage and issue, and a child hears its siblings'.
+  defp watch_family(socket, %Task{} = parent, children) do
+    if connected?(socket) and children != [] and not socket.assigns.watching_issues do
+      Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+    end
+
+    socket
+    |> assign(:family_ids, MapSet.new([parent | children], & &1.id))
+    |> assign(:family_issue_ids, MapSet.new(children, & &1.issue_id))
+    |> assign(:watching_issues, socket.assigns.watching_issues or (connected?(socket) and children != []))
   end
 
   # The owner menu offers only people who can open the task, read once per project rather than per refresh.
@@ -661,7 +782,7 @@ defmodule RailWeb.TaskLive do
   defp apply_task(socket, %Task{} = task) do
     roles = if task.project_id, do: Rail.Roles.list_roles(task.project_id), else: []
     started = started_roles(roles, task)
-    {role, selected_run} = select_tab(started, task, socket.assigns.selected_tab, socket.assigns.tab_stage)
+    {role, selected_run, children?} = selected(socket, started, task)
 
     asked = Pipeline.list_questions(task, order_by: [asc: :inserted_at, asc: :id])
     questions = Enum.filter(asked, &(&1.status == :pending))
@@ -671,16 +792,26 @@ defmodule RailWeb.TaskLive do
     |> assign(:task, task)
     |> assign(:page_title, task.issue.title)
     |> assign(:roles_map, Map.new(roles, &{&1.id, &1}))
-    |> assign(:selected_tab, (role && role.id) || @issue_tab)
+    |> assign(:selected_tab, tab_id(children?, role))
     |> assign(:tab_stage, task.stage)
     |> assign(:selected_role, role)
     |> assign(:selected_run, selected_run)
     |> assign(:stage_run, stage_run(started, task))
     |> assign(:line, line(stage_run(started, task)))
     |> assign(:conversation_run, selected_run)
-    |> assign(:pane, pane(role))
+    |> assign(:pane, if(children?, do: :children, else: pane(role)))
     |> assign(:approvable, approvable?(role, task, selected_run))
-    |> assign(:tabs, build_tabs(task, started, role, questions))
+    |> assign(
+      :tabs,
+      family_tabs(
+        build_tabs(task, started, role, questions),
+        task,
+        socket.assigns.parent,
+        socket.assigns.statuses,
+        children?
+      )
+    )
+    |> assign_family(task)
     |> assign(:engineer_tab, engineer_tab(started))
     |> assign(:subscribed_run_ids, sync_run_subscriptions(socket, task.runs))
     |> assign(:watched_browser_task_id, watch_browser(socket, task, role, selected_run))
@@ -735,10 +866,38 @@ defmodule RailWeb.TaskLive do
   # A role with no run has nothing to read, so it is not a tab yet, unless its
   # stage is where the task is: demo is entered without starting, and its tab is
   # where the human decides whether it runs at all.
-  defp started_roles(roles, %Task{runs: runs, stage: stage}) do
+  defp selected(socket, started, %Task{} = task) do
+    tab = socket.assigns.selected_tab
+    # Moving between a parent and its children is a new task on the page, not one that moved stage.
+    tab_stage = if match?(%Task{id: id} when id == task.id, socket.assigns.task), do: socket.assigns.tab_stage
+
+    if children_tab?(socket.assigns.parent, task, tab, tab_stage, socket.assigns.url_tab) do
+      {nil, nil, true}
+    else
+      {role, run} = select_tab(started, task, tab, tab_stage)
+      {role, run, false}
+    end
+  end
+
+  defp tab_id(true, _role), do: @children_tab
+  defp tab_id(false, %Role{id: id}), do: id
+  defp tab_id(false, nil), do: @issue_tab
+
+  # A split parent opens on its board, and comes to it when approval splits it.
+  defp children_tab?(%Task{id: id}, %Task{id: id} = task, tab, tab_stage, url_tab) do
+    tab == @children_tab or (tab == nil and url_tab == nil) or (tab_stage != nil and tab_stage != task.stage)
+  end
+
+  defp children_tab?(_parent, _task, _tab, _tab_stage, _url_tab), do: false
+
+  # A child never runs Plan, but its Plan tab is where its approved part is read.
+  defp started_roles(roles, %Task{runs: runs, stage: stage} = task) do
     roles
     |> Enum.map(&{&1, role_run(runs, &1)})
-    |> Enum.reject(fn {role, run} -> run == nil and not (role.stage == :demo and stage == :demo) end)
+    |> Enum.reject(fn {role, run} ->
+      run == nil and not (role.stage == :demo and stage == :demo) and
+        not (role.stage == :plan and is_binary(task.parent_task_id))
+    end)
   end
 
   # The tab in the URL is the one to open. Without one, it is the role for the
@@ -794,8 +953,8 @@ defmodule RailWeb.TaskLive do
     socket
   end
 
-  defp sync_tab_url(%{assigns: %{selected_tab: tab, task_id: task_id}} = socket) do
-    push_patch(socket, to: ~p"/tasks/#{task_id}?tab=#{tab}")
+  defp sync_tab_url(%{assigns: %{selected_tab: tab}} = socket) do
+    push_patch(socket, to: task_path(socket, tab))
   end
 
   # A finding names a file, and the diff that file changed in is the engineer's
@@ -823,6 +982,7 @@ defmodule RailWeb.TaskLive do
 
     issue_tab = %{
       id: @issue_tab,
+      stage: nil,
       label: "Linear Issue",
       sublabel: task.issue.identifier,
       tone: :issue,
@@ -834,6 +994,7 @@ defmodule RailWeb.TaskLive do
       Enum.map(started, fn {role, run} ->
         %{
           id: role.id,
+          stage: role.stage,
           label: role.name,
           sublabel: role_status_label(role, run, task),
           tone: tab_tone(run),
@@ -844,6 +1005,109 @@ defmodule RailWeb.TaskLive do
 
     [issue_tab | role_tabs]
   end
+
+  # The Children tab comes right after Plan, on the parent and on every child.
+  defp family_tabs(tabs, _task, nil, _statuses, _children?), do: tabs
+
+  defp family_tabs(tabs, %Task{} = task, %Task{} = parent, statuses, children?) do
+    count = length(statuses)
+    merged = Enum.count(statuses, &(&1.state == :merged))
+    waiting = Enum.count(statuses, & &1.needs_attention)
+
+    children_tab = %{
+      id: @children_tab,
+      stage: nil,
+      label: "Children",
+      sublabel: "#{merged} of #{count} merged",
+      tone:
+        cond do
+          waiting > 0 -> :blocked
+          merged == count -> :done
+          Enum.any?(statuses, &(&1.state == :running)) -> :running
+          true -> :idle
+        end,
+      badge: waiting,
+      selected?: children?
+    }
+
+    plan_sublabel =
+      if task.id == parent.id,
+        do: "approved, split into #{count}",
+        else: "approved in #{parent.issue.identifier}"
+
+    tabs =
+      Enum.map(tabs, fn
+        %{stage: :plan} = tab -> %{tab | sublabel: plan_sublabel, tone: :done}
+        %{id: @issue_tab} = tab -> %{tab | selected?: tab.selected? and not children?}
+        tab -> tab
+      end)
+
+    plan_at = Enum.find_index(tabs, &(&1.stage == :plan)) || 0
+
+    List.insert_at(tabs, plan_at + 1, children_tab)
+  end
+
+  # Where a split parent or a child of one stands, said in the header in place of a stage.
+  defp assign_family(%{assigns: %{parent: nil}} = socket, _task) do
+    socket
+    |> assign(:show_switcher, false)
+    |> assign(:header_status, nil)
+    |> assign(:child_of, nil)
+    |> assign(:split_points, nil)
+  end
+
+  defp assign_family(%{assigns: %{parent: %Task{id: id} = parent, statuses: statuses}} = socket, %Task{id: id}) do
+    waiting = Enum.count(statuses, & &1.needs_attention)
+    points = statuses |> Enum.map(&(&1.task.issue.estimate || 0)) |> Enum.sum()
+
+    status =
+      cond do
+        waiting > 0 ->
+          %{
+            label: "#{waiting} #{if waiting == 1, do: "child needs", else: "children need"} you",
+            icon: "pi-arrows-split",
+            class: "text-amber-700 dark:text-amber-300"
+          }
+
+        parent.stage == :merged ->
+          %{label: "Merged", icon: "pi-git-merge-fill", class: "text-emerald-600 dark:text-emerald-400"}
+
+        true ->
+          %{label: "Plan approved", icon: "pi-arrows-split", class: "text-slate-500 dark:text-slate-400"}
+      end
+
+    socket
+    |> assign(:show_switcher, false)
+    |> assign(:header_status, status)
+    |> assign(:child_of, nil)
+    |> assign(:split_points, if(points > 0, do: "#{points} #{if points == 1, do: "point", else: "points"}"))
+  end
+
+  defp assign_family(%{assigns: %{parent: %Task{} = parent, statuses: statuses}} = socket, %Task{id: id}) do
+    status = Enum.find(statuses, &(&1.task.id == id))
+
+    header_status =
+      if status.state == :waiting_on,
+        do: %{label: status.label, icon: status.icon, class: status.text_class}
+
+    socket
+    |> assign(:show_switcher, true)
+    |> assign(:header_status, header_status)
+    |> assign(:child_of, %{
+      parent: parent,
+      position: status.task.split_position,
+      total: length(statuses),
+      waiting_on: status.waiting_on
+    })
+    |> assign(:split_points, nil)
+  end
+
+  # A child's tabs are its parent's page, so the child goes in the URL with the tab.
+  defp task_path(%{assigns: %{parent: %Task{id: parent_id}, task: %Task{id: id} = task}}, tab) when parent_id != id do
+    ~p"/tasks/#{parent_id}?child=#{task.issue.identifier}&tab=#{tab}"
+  end
+
+  defp task_path(%{assigns: %{url_id: url_id}}, tab), do: ~p"/tasks/#{url_id}?tab=#{tab}"
 
   # A run waiting for usage reads apart from one waiting for a sandbox.
   defp tab_tone(%Run{status: :waiting_for_usage}), do: :waiting_for_usage

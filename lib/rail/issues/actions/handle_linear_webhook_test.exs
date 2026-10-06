@@ -7,6 +7,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Learnings.Workers.IssueFinished
+  alias Rail.Pipeline.Workers.AdvanceSplit
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -328,6 +329,13 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
       assert [_once] = all_enqueued(worker: IssueFinished, args: %{issue_id: issue_id})
     end
 
+    test "a split child completing queues its parent's next step", %{project: project, update: update} do
+      {parent, [child]} = split_task(project, "HWH-10", [{"HWH-11", []}])
+
+      assert {:ok, %Issue{state: :done}} = update.(child.issue.external_id, "completed")
+      assert_enqueued(worker: AdvanceSplit, args: %{parent_task_id: parent.id})
+    end
+
     test "an update between two open states or two finished states does not", %{update: update, insert: insert} do
       insert.("lin_fin_2", :todo)
       insert.("lin_fin_3", :done)
@@ -336,6 +344,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
       assert {:ok, %Issue{state: :canceled}} = update.("lin_fin_3", "canceled")
 
       refute_enqueued(worker: IssueFinished)
+      refute_enqueued(worker: AdvanceSplit)
     end
   end
 end

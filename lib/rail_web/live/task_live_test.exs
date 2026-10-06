@@ -6820,4 +6820,266 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "#likely-answer", "Blue, to match the review tab.")
     end
   end
+
+  describe "a split" do
+    setup %{project: project, run: run} do
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      roles = Map.new([:plan, :engineer, :review], &{&1, elem(Roles.get_role(project_id: project.id, stage: &1), 1)})
+
+      # 1 waits on a person, 2 waits on 1, 3 failed.
+      {parent, [first, second, third] = children} =
+        split_task(project, "TLV-10", [{"TLV-11", []}, {"TLV-12", [1]}, {"TLV-13", []}])
+
+      on_exit(fn -> Enum.each([parent | children], &File.rm_rf(&1.scratch_path)) end)
+
+      {:ok, _plan} = Pipeline.update_run(run, %{task_id: parent.id})
+
+      {:ok, first_run} =
+        Pipeline.create_run(%{
+          task_id: first.id,
+          role_id: roles[:engineer].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.utc_now()
+        })
+
+      {:ok, _failed} =
+        Pipeline.create_run(%{
+          task_id: third.id,
+          role_id: roles[:engineer].id,
+          status: :failed,
+          error: "Chrome could not reach it",
+          started_at: DateTime.utc_now()
+        })
+
+      %{parent: parent, first: first, second: second, third: third, roles: roles, first_run: first_run}
+    end
+
+    test "the parent opens on its Children tab, right after Plan, its badge counting the children waiting on a person",
+         %{conn: conn, parent: parent, roles: roles} do
+      assert {:ok, view, html} = live(conn, ~p"/tasks/#{parent.id}")
+
+      assert ["task-tab-issue", "task-tab-#{roles[:plan].id}", "task-tab-children"] ==
+               html |> Floki.parse_document!() |> Floki.find("[role='tab']") |> Floki.attribute("id")
+
+      assert has_element?(view, "#task-tab-children[aria-selected='true']", "0 of 3 merged")
+      assert has_element?(view, "#task-tab-issue[aria-selected='false']")
+      assert has_element?(view, "#task-tab-children [data-qa='task-tab-badge']", "2")
+      assert has_element?(view, "#task-tab-#{roles[:plan].id}", "approved, split into 3")
+      assert has_element?(view, "[data-qa='task_status_chip']", "2 children need you")
+      refute has_element?(view, "[data-qa='task_branch_name']")
+      refute has_element?(view, "#child-switcher")
+    end
+
+    test "each row says where its child stands, and its action opens that child's tab", %{
+      conn: conn,
+      parent: parent,
+      first: first,
+      roles: roles
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
+
+      assert has_element?(view, "#split-row-TLV-11", "Child TLV-11")
+      assert has_element?(view, "#split-row-TLV-11", "starts at once")
+      assert has_element?(view, "#split-row-TLV-11 [data-qa='split-row-line']", "Diff ready for review")
+      assert has_element?(view, "#split-row-TLV-12", "after TLV-11")
+      assert has_element?(view, "#split-row-TLV-12[data-state='waiting_on']", "Starts when TLV-11 merges")
+      assert has_element?(view, "#split-row-TLV-13[data-state='failed']", "Engineer failed: Chrome could not reach it")
+      assert has_element?(view, "#split-row-TLV-13 [data-qa='split-row-badge']")
+
+      view |> element("#split-action-TLV-11", "Review the diff") |> render_click()
+
+      assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-11&tab=#{roles[:engineer].id}")
+      assert has_element?(view, "[data-qa='task_detail_title']", "Child TLV-11")
+      assert has_element?(view, "#task-tab-#{roles[:engineer].id}[aria-selected='true']")
+      assert has_element?(view, "[data-qa='task_branch_name']", first.worktree_name)
+    end
+
+    test "a child's own path lands on its parent's with it selected, and a reload keeps it", %{
+      conn: conn,
+      parent: parent,
+      second: second
+    } do
+      to = ~p"/tasks/#{parent.id}?child=TLV-12"
+      assert {:error, {:live_redirect, %{to: ^to}}} = live(conn, ~p"/tasks/#{second.id}")
+
+      assert {:ok, view, _html} = live(conn, to)
+      assert has_element?(view, "[data-qa='task_detail_title']", "Child TLV-12")
+    end
+
+    test "a waiting child shows only Issue, Plan and Children, its approved part and no conversation or branch", %{
+      conn: conn,
+      parent: parent,
+      roles: roles
+    } do
+      assert {:ok, view, html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-12")
+
+      assert ["task-tab-issue", "task-tab-#{roles[:plan].id}", "task-tab-children"] ==
+               html |> Floki.parse_document!() |> Floki.find("[role='tab']") |> Floki.attribute("id")
+
+      assert has_element?(view, "#task-tab-#{roles[:plan].id}[aria-selected='true']", "approved in TLV-10")
+      assert has_element?(view, "[data-qa='task_status_chip']", "Waiting on TLV-11")
+      refute has_element?(view, "[data-qa='task_branch_name']")
+      refute has_element?(view, "#task-conversation-column")
+      assert has_element?(view, "#child-plan-approved", "Approved in TLV-10 · part 2 of 3")
+      assert has_element?(view, "#child-plan-waiting", "Starts when TLV-11 merges.")
+      assert has_element?(view, "#child-plan", "Part 2.")
+      refute has_element?(view, "#approve-plan")
+    end
+
+    test "a child's Children tab goes back to its parent's board", %{conn: conn, parent: parent} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-11")
+
+      view |> element("#task-tab-children") |> render_click()
+
+      assert_patch(view, ~p"/tasks/#{parent.id}?tab=children")
+      assert has_element?(view, "#split-board")
+      assert has_element?(view, "[data-qa='task_detail_title']", "Work on TLV-10")
+    end
+
+    test "the switcher lists every child with where it stands, and steps to its neighbors", %{
+      conn: conn,
+      parent: parent
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-12")
+
+      assert has_element?(view, "#child-switcher-button", "2 of 3")
+      assert has_element?(view, "#child-switcher-TLV-11", "Review the diff")
+      assert has_element?(view, "#child-switcher-TLV-12[aria-current='true']", "Waiting on TLV-11")
+      assert has_element?(view, "#child-switcher-TLV-13", "Engineer failed")
+      assert has_element?(view, "#child-switcher-all", "All children of TLV-10")
+      assert has_element?(view, "#child-switcher-waiting", "2 other children need you")
+
+      view |> element("a#child-next") |> render_click()
+      assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-13")
+      refute has_element?(view, "a#child-next")
+      assert has_element?(view, "span#child-next[aria-disabled='true']")
+
+      view |> element("a#child-previous") |> render_click()
+      assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-12")
+    end
+
+    test "a selected child offers Update branch, and its tabs keep it in the URL", %{
+      conn: conn,
+      parent: parent,
+      first: first,
+      roles: roles
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-11")
+
+      assert has_element?(view, "#update-branch")
+      assert has_element?(view, "#child-switcher")
+
+      expect(Pipeline, :update_branch, fn _scope, %Task{id: id} = task ->
+        assert id == first.id
+        {:ok, task}
+      end)
+
+      view |> element("#update-branch") |> render_click()
+      assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-11&tab=#{roles[:engineer].id}")
+
+      view |> element("#task-tab-issue") |> render_click()
+      assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-11&tab=issue")
+    end
+
+    test "a child moving on or merging updates its row without a reload", %{
+      conn: conn,
+      parent: parent,
+      first: first,
+      first_run: first_run
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
+
+      {:ok, _running} = Pipeline.update_run(first_run, %{status: :running, stage_outcome: :in_progress})
+      send(view.pid, {:pipeline_changed, first.id})
+      assert has_element?(view, "#split-row-TLV-11[data-state='running']")
+
+      first.issue |> Issue.linear_changeset(%{state: :done, completed_at: DateTime.utc_now(:second)}) |> Repo.update!()
+      send(view.pid, {:issue_changed, first.issue_id})
+      assert has_element?(view, "#split-row-TLV-11[data-state='merged']", "Merged")
+      assert has_element?(view, "#task-tab-children", "1 of 3 merged")
+
+      send(view.pid, {:pipeline_changed, "tsk_elsewhere"})
+      send(view.pid, {:issue_changed, "iss_elsewhere"})
+      send(view.pid, {:issue_created, "iss_elsewhere"})
+      assert has_element?(view, "#split-board")
+    end
+
+    test "a parent whose children have all merged reads Merged", %{conn: conn, parent: parent} do
+      {:ok, _merged} = Pipeline.update_task(parent, %{stage: :merged})
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
+
+      assert has_element?(view, "[data-qa='task_status_chip']", "2 children need you")
+
+      for child <- Pipeline.list_tasks(parent_task_id: parent.id, preload: [:issue]) do
+        child.issue |> Issue.linear_changeset(%{completed_at: DateTime.utc_now(:second)}) |> Repo.update!()
+      end
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
+      assert has_element?(view, "[data-qa='task_status_chip']", "Merged")
+      assert has_element?(view, "#task-tab-children", "3 of 3 merged")
+    end
+
+    test "the switcher sits above a child's title on every tab it has", %{
+      conn: conn,
+      parent: parent,
+      first: first,
+      project: project
+    } do
+      for stage <- [:review, :qa, :demo, :debugger] do
+        {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
+
+        {:ok, _run} =
+          Pipeline.create_run(%{task_id: first.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
+
+        assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-11&tab=#{role.id}")
+        assert has_element?(view, "#task-tab-#{role.id}[aria-selected='true']")
+        assert has_element?(view, "#child-switcher", "1 of 3")
+      end
+    end
+
+    test "with nobody waiting the parent reads Plan approved, its Children tab toned by what its children do", %{
+      conn: conn,
+      parent: parent,
+      first_run: first_run,
+      third: third
+    } do
+      third_run = Repo.get_by!(Run, task_id: third.id)
+      {:ok, _running} = Pipeline.update_run(first_run, %{status: :running, stage_outcome: :in_progress})
+      {:ok, _waiting} = Pipeline.update_run(third_run, %{status: :waiting_for_resources, error: nil})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
+      assert has_element?(view, "[data-qa='task_status_chip']", "Plan approved")
+      assert has_element?(view, "#task-tab-children [data-tone='running']")
+      refute has_element?(view, "#task-tab-children [data-qa='task-tab-badge']")
+
+      {:ok, _waiting} = Pipeline.update_run(first_run, %{status: :waiting_for_resources})
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
+      assert has_element?(view, "#task-tab-children [data-tone='idle']")
+    end
+
+    test "a child's pending questions are counted on its row and in the switcher", %{
+      conn: conn,
+      parent: parent,
+      first_run: first_run
+    } do
+      {:ok, blocked} = Pipeline.update_run(first_run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+      blocked = Repo.preload(blocked, task: :issue)
+      {:ok, _question} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which region?"})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
+      assert has_element?(view, "#split-row-TLV-11 [data-qa='split-row-badge']", "1")
+      assert has_element?(view, "#split-action-TLV-11", "Answer")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-12")
+      assert has_element?(view, "#child-switcher-TLV-11 [aria-label='1 waiting on you']", "1")
+    end
+
+    test "a task with no split has no Children tab and no switcher", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      refute has_element?(view, "#task-tab-children")
+      refute has_element?(view, "#child-switcher")
+    end
+  end
 end

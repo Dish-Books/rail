@@ -244,4 +244,14 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     assert [%Task{id: ^task_id}] = Pipeline.list_tasks(issue_id: task.issue_id)
   end
+
+  test "the parent filter keeps only that parent's children, in their order", %{project: project} do
+    {parent, [%Task{id: first_id} = first, %Task{id: second_id}]} =
+      split_task(project, "LTS-10", [{"LTS-11", []}, {"LTS-12", []}])
+
+    {_other, [_other_child]} = split_task(project, "LTS-20", [{"LTS-21", []}])
+    {:ok, _moved} = Pipeline.update_task(first, %{split_position: 3})
+
+    assert [%Task{id: ^second_id}, %Task{id: ^first_id}] = Pipeline.list_tasks(parent_task_id: parent.id)
+  end
 end

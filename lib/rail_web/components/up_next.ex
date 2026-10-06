@@ -63,6 +63,9 @@ defmodule RailWeb.Components.UpNext do
               </span>
               <span class="font-mono text-xs text-slate-600 dark:text-slate-400 truncate">
                 {@featured.task.issue.identifier} · {@featured.role.name}
+                <span :if={parent_identifier(@featured)} class="text-slate-500 dark:text-slate-400">
+                  in {parent_identifier(@featured)}
+                </span>
               </span>
             </div>
 
@@ -98,6 +101,13 @@ defmodule RailWeb.Components.UpNext do
           {run.task.issue.title} ·
           <span class="text-slate-500 dark:text-slate-400">{detail(run, @picking)}</span>
         </span>
+        <span
+          :if={parent_identifier(run)}
+          data-qa="up-next-parent"
+          class="shrink-0 font-mono text-xs text-slate-500 dark:text-slate-400"
+        >
+          in {parent_identifier(run)}
+        </span>
         <span class="shrink-0 text-sm font-semibold text-blue-600 dark:text-blue-400 group-hover:underline">
           {verb(run, @picking)}
         </span>
@@ -105,6 +115,10 @@ defmodule RailWeb.Components.UpNext do
     </div>
     """
   end
+
+  # A child of a split is named with its parent, which is what the person planned.
+  defp parent_identifier(%Run{task: %Task{parent_task: %Task{issue: %{identifier: identifier}}}}), do: identifier
+  defp parent_identifier(%Run{}), do: nil
 
   # The demo is what the merge is decided on, so a change ready for it opens there.
   defp destination(run) do

@@ -98,6 +98,15 @@ Every name is real: an existing module or function exactly as the code defines i
 
 One conditional section is allowed, **`### Assumptions`**, for defaults you took that a human might veto. Flat bullets, one line each.
 
+## A split
+
+When the work is too big for one ticket, or the human asks for one, split it into children, each a ticket of its own with its own branch and pull request. Product writes the parent ticket; you write each child's ticket from the parent's acceptance criteria, together with its part of the plan, and save the whole split with `save_split`.
+
+- Each child is mergeable on its own: its pull request leaves the default branch working and its tests passing.
+- A child builds on another only where it truly needs that work merged first. A child that builds on another starts when that one merges, so every needless dependency is time the children spend waiting.
+- Write each child's title, ticket and part of the plan before you save the split. Its ticket has its own acceptance criteria, taken from the parent's, and its part is a complete plan in the same sections as the one above, opening with the `## Implementation plan` heading, since the child's engineer reads nothing else of the plan.
+- The parent's plan still covers the whole change, so the human can read it in one place.
+
 ### Rules
 
 - Sized to the ticket. A one-file change gets a short plan; padding it out does not make it a better one.

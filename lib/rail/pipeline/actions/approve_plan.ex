@@ -1,14 +1,16 @@
 defmodule Rail.Pipeline.Actions.ApprovePlan do
   @moduledoc """
   Approves the Plan step in one go: the ticket and the picked design are published to the issue, the
-  plan is recorded as the one the engineer builds from, and the task moves to Engineer.
+  plan is recorded as the one the engineer builds from, and the task moves to Engineer. With a split
+  saved, each child becomes a Linear sub-issue with a task of its own instead, and the parent moves to Split.
 
-  Approving is a one-way door. The task row is locked and Engineer claimed inside the same transaction,
-  so a second click or a second tab waits on the lock, then finds the task at Engineer and is refused
-  before anything is published again.
+  Approving is a one-way door. The task row is locked and the next stage claimed inside the same
+  transaction, so a second click or a second tab waits on the lock, then finds the task moved on and is
+  refused before anything is published or created again.
   """
 
   import Ecto.Query
+  import Rail.Pipeline.Utils.BroadcastPipelineChanged
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
@@ -20,7 +22,8 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
   alias Rail.Scope
 
   @doc """
-  Approves what the Plan `run` saved and enters Engineer.
+  Approves what the Plan `run` saved and enters Engineer, or with a split, starts each child that
+  builds on no other.
 
   Returns `{:ok, run}`, the run latched done.
   """
@@ -35,20 +38,35 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
              {:ok, ticket} <- ticket(task),
              {:ok, plan} <- plan(task),
              {:ok, design} <- design(task, plan),
-             :ok <- publish(task, ticket, design) do
+             :ok <- publish(task, ticket, design),
+             {:ok, children} <- create_children(scope, task, Pipeline.read_split(task)) do
           record(task, plan.content)
           {:ok, run} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
-          {:ok, task} = Pipeline.enter_stage(task, :engineer, start: false)
-          {run, task}
+          {:ok, task} = Pipeline.enter_stage(task, if(children == [], do: :engineer, else: :split), start: false)
+          {run, task, children}
         else
           {:error, reason} -> Repo.rollback(reason)
         end
       end)
 
     # Started only once the move is committed, so the engineer's spawn reads the task at Engineer.
-    with {:ok, {run, task}} <- result,
-         {:ok, _started} <- Pipeline.enter_stage(task, :engineer) do
-      {:ok, run}
+    case result do
+      {:ok, {run, task, []}} ->
+        with {:ok, _started} <- Pipeline.enter_stage(task, :engineer), do: {:ok, run}
+
+      # The move to Split was broadcast inside the transaction, so a page that read it then missed the children.
+      {:ok, {run, task, children}} ->
+        broadcast_pipeline_changed(task)
+
+        for child <- children do
+          Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, child.issue_id})
+          if child.builds_on == [], do: {:ok, _started} = Pipeline.enter_stage(child, :engineer)
+        end
+
+        {:ok, run}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -118,6 +136,34 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
       {:ok, _issue} -> :ok
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  defp create_children(%Scope{}, %Task{}, nil), do: {:ok, []}
+
+  # In order, so a child's sub-issue is never made before the ones it builds on.
+  defp create_children(%Scope{} = scope, %Task{issue: %Issue{} = parent_issue} = task, %{children: children}) do
+    children
+    |> Enum.reduce_while({:ok, []}, fn child, {:ok, created} ->
+      attrs = %{
+        title: child.title,
+        description: child.ticket,
+        estimate: child.estimate,
+        priority: parent_issue.priority,
+        owner_user_id: parent_issue.owner_user_id,
+        parent: parent_issue
+      }
+
+      with {:ok, issue} <- Issues.create_issue(scope, task.project, attrs),
+           {:ok, child_task} <- Pipeline.create_child_task(task, issue, child) do
+        {:cont, {:ok, [child_task | created]}}
+      else
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+    |> then(fn
+      {:ok, created} -> {:ok, Enum.reverse(created)}
+      {:error, reason} -> {:error, reason}
+    end)
   end
 
   # One plan per task, so approving again after a return to Plan replaces what was agreed before.

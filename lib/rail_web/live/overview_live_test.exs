@@ -8,6 +8,7 @@ defmodule RailWeb.OverviewLiveTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.DetectedQuestion
+  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -311,7 +312,58 @@ defmodule RailWeb.OverviewLiveTest do
         Repo.preload(task, :issue)
       end
 
-      %{conn: log_in_user(conn, user), project: project, roles: roles, rival: rival, task_for: task_for}
+      %{conn: log_in_user(conn, user), user: user, project: project, roles: roles, rival: rival, task_for: task_for}
+    end
+
+    test "a split parent is in progress once, a mark per child, its children waiting on the user in Up next", %{
+      conn: conn,
+      user: user,
+      project: project,
+      roles: roles
+    } do
+      now = DateTime.utc_now()
+
+      {parent, [first, second, third]} =
+        split_task(project, "OVS-1", [{"OVS-2", []}, {"OVS-3", [1]}, {"OVS-4", []}], %{owner_user_id: user.id})
+
+      Repo.insert!(%ImplementationPlan{task_id: parent.id, content: "## Implementation plan", captured_at: now})
+
+      {:ok, _done} =
+        Pipeline.create_run(%{
+          task_id: first.id,
+          role_id: roles[:engineer].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: now
+        })
+
+      {:ok, _failed} =
+        Pipeline.create_run(%{
+          task_id: third.id,
+          role_id: roles[:engineer].id,
+          status: :failed,
+          error: "It broke.",
+          started_at: now
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#in-progress-count", "1 task")
+      assert has_element?(view, "#in-progress-task-#{parent.id}[href='/tasks/#{parent.id}']", "2 need you")
+      assert has_element?(view, "#in-progress-task-#{parent.id}", "0 of 3 merged")
+
+      assert has_element?(
+               view,
+               "#in-progress-task-#{parent.id} [data-qa='in-progress-child'][title='OVS-3: Waiting on OVS-2']"
+             )
+
+      assert view |> render() |> Floki.parse_document!() |> Floki.find("[data-qa='in-progress-child']") |> length() == 3
+      assert has_element?(view, "#in-progress-task-#{parent.id}[class*='amber']")
+
+      for child <- [first, second, third], do: refute(has_element?(view, "#in-progress-task-#{child.id}"))
+
+      assert has_element?(view, "#up-next", "in OVS-1")
+      assert has_element?(view, "#activity-feed", "OVS-1 split into 3")
     end
 
     test "opens on the user's own work, and switches to everyone's and back", %{
