@@ -7,6 +7,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
   prompt file. Given an issue this creates the task too, and queues the ticket's move to In Progress.
   """
 
+  import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.FormatComments
   import Rail.Pipeline.Utils.FormatTicket
   import Rail.Pipeline.Utils.LearningsBrief
@@ -37,6 +38,8 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     {:ok, %Role{} = role} = Roles.get_role(project_id: project.id, stage: :plan)
 
     with {:ok, {run, worktree_path}} <- record_run(issue, project, role) do
+      # Pages showing whether an issue has a task, such as Triage, learn of it here.
+      broadcast_pipeline_changed(run)
       spawn_os_process(%{run | role: role}, worktree_path)
     end
   end

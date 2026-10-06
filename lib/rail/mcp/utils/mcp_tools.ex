@@ -295,7 +295,8 @@ defmodule Rail.Mcp.Utils.McpTools do
       "description" =>
         "Save the implementation plan. The panel shows it as soon as it is saved, so save from the first " <>
           "draft and again after every review comment: each save replaces the plan in full. It must open with " <>
-          "the `## Implementation plan` heading. Name the design option it is written for; approval needs " <>
+          "the `## Implementation plan` heading and hold the `###` sections your brief lists, in order; a save " <>
+          "whose sections are off is refused with what to fix. Name the design option it is written for; approval needs " <>
           "the plan saved for the option the human picked.",
       "inputSchema" => %{
         "type" => "object",

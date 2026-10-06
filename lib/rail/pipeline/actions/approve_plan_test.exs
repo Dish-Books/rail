@@ -11,6 +11,25 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
+  # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
+  @plan """
+  ## Implementation plan
+
+  ### Approach
+
+  Extend the module.
+
+  No diagrams: one module changes.
+
+  ### File-level changes
+
+  - `lib/rail.ex`: extends the module.
+
+  ### Verification
+
+  - `lib/rail_test.exs`: covers the extension.
+  """
+
   setup %{project: project} do
     roles =
       Map.new([:plan, :engineer], fn stage ->
@@ -35,7 +54,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Approved title", description: "The approved ticket body."})
-    {:ok, _plan} = Pipeline.save_plan(task, %{plan: "## Implementation plan\n\n### Approach\nExtend the module.\n"})
+    {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan})
 
     {:ok, run} =
       Pipeline.create_run(%{
@@ -107,7 +126,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
     assert %Run{status: :running} = Repo.get_by(Run, task_id: task.id, role_id: roles[:engineer].id)
     assert %Issue{title: "Approved title", description: "The approved ticket body."} = Repo.get!(Issue, task.issue_id)
 
-    assert %ImplementationPlan{content: "## Implementation plan\n\n### Approach\nExtend the module.\n"} =
+    assert %ImplementationPlan{content: @plan} =
              Repo.get_by(ImplementationPlan, task_id: task.id)
   end
 
@@ -118,7 +137,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
     uploaded: uploaded
   } do
     picked.()
-    {:ok, _plan} = Pipeline.save_plan(task, %{plan: "## Implementation plan\n\nFor the table.", design: "table"})
+    {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan, design: "table"})
     uploaded.()
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(system_scope(), run)
@@ -166,7 +185,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
 
   test "a stale or missing screenshot is not published", %{task: task, run: run, picked: picked, design_dir: dir} do
     picked.()
-    {:ok, _plan} = Pipeline.save_plan(task, %{plan: "## Implementation plan\n\nFor the table.", design: "table"})
+    {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan, design: "table"})
 
     File.touch!(Path.join(dir, "table.html"), System.os_time(:second) + 60)
     assert {:error, :stale_screenshot} = Pipeline.approve_plan(system_scope(), run)
@@ -179,7 +198,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
 
   test "an upload Linear refuses leaves the task at Plan with nothing recorded", %{task: task, run: run, picked: picked} do
     picked.()
-    {:ok, _plan} = Pipeline.save_plan(task, %{plan: "## Implementation plan\n\nFor the table.", design: "table"})
+    {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan, design: "table"})
     Req.Test.expect(Rail.Linear, &Req.Test.json(&1, %{"data" => %{"fileUpload" => %{"success" => false}}}))
 
     assert {:error, _reason} = Pipeline.approve_plan(system_scope(), run)
