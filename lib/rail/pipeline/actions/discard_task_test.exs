@@ -42,8 +42,8 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
     assert %Task{id: ^task_id, cleaned_up_at: nil} = Repo.get(Task, task_id)
   end
 
-  # Runs, designs and demos have no foreign key to tasks, so nothing else would take them.
-  test "deletes the task's runs with their processes and events, and its designs and demos", %{project: project} do
+  # Runs have no foreign key to tasks, so nothing else would take them.
+  test "deletes the task's runs with their processes and events", %{project: project} do
     [{:ok, %Task{id: task_id} = task}, {:ok, %Task{id: other_task_id}}] =
       for external_id <- ["lin_discard_rows", "lin_discard_neighbor"] do
         %Issue{}
@@ -82,21 +82,11 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
 
     Pipeline.append_run_events(run_id, nil, ["working on it"])
 
-    Repo.insert_all("designs", [
-      %{id: "des_discard", task_id: task_id, canvas_url: "/canvas", inserted_at: now, updated_at: now}
-    ])
-
-    Repo.insert_all("demos", [
-      %{id: "dem_discard", task_id: task_id, recorded_at: now, outcome: "passed", inserted_at: now, updated_at: now}
-    ])
-
     assert :ok = Pipeline.discard_task(task)
 
     assert Repo.get(Run, run_id) == nil
     assert Repo.get(OsProcess, os_process_id) == nil
     assert [] = Repo.all(from(e in RunEvent, where: e.run_id == ^run_id))
-    assert [] = Repo.all(from(d in "designs", where: d.task_id == ^task_id, select: d.id))
-    assert [] = Repo.all(from(d in "demos", where: d.task_id == ^task_id, select: d.id))
     assert %Run{id: ^other_run_id} = Repo.get(Run, other_run_id)
   end
 

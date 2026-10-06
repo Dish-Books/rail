@@ -15,7 +15,7 @@ defmodule Rail.Pipeline.Actions.DiscardTask do
 
   @doc """
   Stops every running run on `task` the way the Stop button does, removes its
-  files, then deletes its runs, designs and demos. Nothing is stamped on the task row,
+  files, then deletes its runs. Nothing is stamped on the task row,
   and the caller announces the change once the task's issue is deleted too.
   """
   def discard_task(%Task{id: task_id} = task) do
@@ -27,13 +27,8 @@ defmodule Rail.Pipeline.Actions.DiscardTask do
 
     remove_task_files(task)
 
-    # None of these has a foreign key to tasks; a run's processes, events and questions cascade from it.
-    {:ok, _deleted} =
-      Repo.transaction(fn ->
-        Repo.delete_all(from(r in Run, where: r.task_id == ^task_id))
-        Repo.delete_all(from(d in "designs", where: d.task_id == ^task_id))
-        Repo.delete_all(from(d in "demos", where: d.task_id == ^task_id))
-      end)
+    # Runs have no foreign key to tasks; a run's processes, events and questions cascade from it.
+    Repo.delete_all(from(r in Run, where: r.task_id == ^task_id))
 
     :ok
   end
