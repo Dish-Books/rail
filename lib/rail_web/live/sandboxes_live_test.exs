@@ -133,6 +133,7 @@ defmodule RailWeb.SandboxesLiveTest do
       conn: log_in_user(conn, user),
       user: user,
       engineer: engineer,
+      run_on: run_on,
       sandbox: sandbox,
       now: now,
       building_issue: building_issue,
@@ -149,6 +150,33 @@ defmodule RailWeb.SandboxesLiveTest do
       killed_otherwise: killed_otherwise,
       never_started: never_started
     }
+  end
+
+  test "a turn whose issue Linear deletes leaves an open page, and the page still loads", %{
+    conn: conn,
+    project: project,
+    run_on: run_on,
+    sandbox: sandbox
+  } do
+    {run, issue} = run_on.("Deleted in Linear mid-turn")
+    %OsProcess{id: sandbox_id} = sandbox.(run, %{})
+    {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+
+    {:ok, view, _html} = live(conn, ~p"/sandboxes")
+    assert has_element?(view, "#running-#{sandbox_id}")
+
+    assert {:ok, %Issue{}} =
+             Rail.Issues.handle_linear_webhook(workspace, %{
+               "type" => "Issue",
+               "action" => "remove",
+               "data" => %{"id" => issue.external_id}
+             })
+
+    refute has_element?(view, "#running-#{sandbox_id}")
+    refute has_element?(view, "#ended-#{sandbox_id}")
+
+    {:ok, reloaded, _html} = live(conn, ~p"/sandboxes")
+    refute has_element?(reloaded, "#ended-#{sandbox_id}")
   end
 
   test "is a destination of its own, and says what a sandbox is", %{conn: conn} do

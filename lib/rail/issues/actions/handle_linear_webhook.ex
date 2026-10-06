@@ -118,13 +118,13 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
     end
   end
 
-  # Its runs and files go first: the rows that lead to them are deleted with the issue.
+  # Every task, cleaned up or not, is discarded first: its runs have no foreign key to go with it.
   defp delete_issue(projects, external_id) do
     project_ids = Enum.map(projects, & &1.id)
 
     from(t in Task,
       join: i in assoc(t, :issue),
-      where: i.external_id == ^external_id and i.project_id in ^project_ids and is_nil(t.cleaned_up_at)
+      where: i.external_id == ^external_id and i.project_id in ^project_ids
     )
     |> Repo.all()
     |> Enum.each(&(:ok = Pipeline.discard_task(&1)))

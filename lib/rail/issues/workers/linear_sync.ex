@@ -141,8 +141,8 @@ defmodule Rail.Issues.Workers.LinearSync do
           )
         )
 
-      # Their runs and files go first: the rows that lead to them are deleted with the issue.
-      from(t in Task, where: t.issue_id in ^doomed_ids and is_nil(t.cleaned_up_at))
+      # Every task, cleaned up or not, is discarded first: its runs have no foreign key to go with it.
+      from(t in Task, where: t.issue_id in ^doomed_ids)
       |> Repo.all()
       |> Enum.each(&(:ok = Pipeline.discard_task(&1)))
 

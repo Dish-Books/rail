@@ -8,10 +8,12 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Learnings.Workers.IssueFinished
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Users
 
   setup %{project: project} do
@@ -174,7 +176,20 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
       })
       |> Repo.insert!()
 
-    {:ok, %Task{id: task_id}} = issue |> Repo.preload(:project) |> Pipeline.create_task(:plan)
+    issue = Repo.preload(issue, :project)
+    {:ok, earlier} = Pipeline.create_task(issue, :merged)
+    {:ok, %Task{id: earlier_id}} = Pipeline.update_task(earlier, %{cleaned_up_at: DateTime.utc_now()})
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue, :plan)
+    {:ok, plan} = Roles.get_role(project_id: project.id, stage: :plan)
+
+    runs =
+      for id <- [earlier_id, task_id] do
+        {:ok, %Run{id: run_id}} =
+          Pipeline.create_run(%{task_id: id, role_id: plan.id, status: :finished, started_at: DateTime.utc_now()})
+
+        run_id
+      end
+
     Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
 
     remove = %{"type" => "Issue", "action" => "remove", "data" => %{"id" => "lin_wh_3"}}
@@ -183,6 +198,8 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
     assert_receive {:issue_changed, ^issue_id}
     assert Repo.get(Issue, issue_id) == nil
     assert Repo.get(Task, task_id) == nil
+    # Runs have no foreign key to their task, a cleaned-up one's included.
+    assert [] = Repo.all(from(r in Run, where: r.id in ^runs))
 
     assert :ok = Issues.handle_linear_webhook(workspace, remove)
     refute_receive {:issue_changed, ^issue_id}, 50

@@ -4,6 +4,7 @@ defmodule Rail.Pipeline.Actions.DiscardTask do
   task whose row is about to be deleted with its issue.
   """
 
+  import Ecto.Query
   import Rail.Pipeline.Utils.RemoveTaskFiles
 
   alias Rail.Pipeline
@@ -13,10 +14,10 @@ defmodule Rail.Pipeline.Actions.DiscardTask do
   alias Rail.Scope
 
   @doc """
-  Stops every running run on `task` the way the Stop button does, then removes
-  its files. Nothing is stamped on the row, since it is about to go.
+  Stops every running run on `task` the way the Stop button does, removes its
+  files, then deletes its runs, designs and demos. Nothing is stamped on the task row.
   """
-  def discard_task(%Task{} = task) do
+  def discard_task(%Task{id: task_id} = task) do
     task = Repo.preload(task, :runs, force: true)
 
     for run <- task.runs, Run.running?(run) do
@@ -24,5 +25,15 @@ defmodule Rail.Pipeline.Actions.DiscardTask do
     end
 
     remove_task_files(task)
+
+    # None of these has a foreign key to tasks; a run's processes, events and questions cascade from it.
+    {:ok, _deleted} =
+      Repo.transaction(fn ->
+        Repo.delete_all(from(r in Run, where: r.task_id == ^task_id))
+        Repo.delete_all(from(d in "designs", where: d.task_id == ^task_id))
+        Repo.delete_all(from(d in "demos", where: d.task_id == ^task_id))
+      end)
+
+    Phoenix.PubSub.broadcast(Rail.PubSub, "sandboxes", :sandboxes_changed)
   end
 end

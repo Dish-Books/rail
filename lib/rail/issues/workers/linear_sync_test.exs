@@ -8,10 +8,12 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
   alias Rail.Issues.Workers.LinearSync
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Users
 
   setup %{project: project} do
@@ -277,7 +279,10 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
 
   describe "the last page" do
     # Every finished sync of the seeded project reaches every subscriber, so these sync their own.
-    setup do
+    setup %{project: seeded} do
+      # Roles come with the seeded project only.
+      {:ok, plan} = Roles.get_role(project_id: seeded.id, stage: :plan)
+
       Req.Test.expect(Rail.Linear, fn conn ->
         Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_sync"}]}}})
       end)
@@ -331,7 +336,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
 
       not_found = %{"errors" => [%{"message" => "Entity not found: Issue"}], "data" => nil}
 
-      %{project: project, insert: insert, last_page: last_page, lookups: lookups, not_found: not_found}
+      %{project: project, plan: plan, insert: insert, last_page: last_page, lookups: lookups, not_found: not_found}
     end
 
     test "a Linear failure fails the job so the page is retried, removing and announcing nothing", %{
@@ -410,6 +415,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
 
     test "an issue with a task is removed with it and its worktree when Linear reports it trashed or not found", %{
       project: %{id: project_id, clone_path: clone_path},
+      plan: plan,
       insert: insert,
       last_page: last_page,
       lookups: lookups,
@@ -424,8 +430,16 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
       worktree_path = Path.join(System.tmp_dir!(), "rail_pruned_wt_#{System.unique_integer([:positive])}")
       git!(clone_path, ["worktree", "add", "-b", "pruned-branch", worktree_path])
 
-      {:ok, _task} =
+      {:ok, %Task{id: pruned_task_id}} =
         Pipeline.update_task(hd(tasks), %{worktree_name: "pruned-branch", worktree_path: worktree_path})
+
+      {:ok, %Run{id: run_id}} =
+        Pipeline.create_run(%{
+          task_id: pruned_task_id,
+          role_id: plan.id,
+          status: :running,
+          started_at: DateTime.utc_now()
+        })
 
       started_at = DateTime.to_iso8601(DateTime.utc_now())
       last_page.([])
@@ -442,6 +456,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
       assert [] = Repo.all(from(t in Task, where: t.id in ^Enum.map(tasks, & &1.id)))
       refute File.exists?(worktree_path)
       assert "" = git!(clone_path, ["branch", "--list", "pruned-branch"])
+      assert Repo.get(Run, run_id) == nil
     end
 
     test "a lookup that fails any other way fails the job, removing and announcing nothing", %{
