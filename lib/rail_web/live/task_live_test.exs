@@ -2166,10 +2166,11 @@ defmodule RailWeb.TaskLiveTest do
       view |> form("[data-qa='plan_comment_form']", %{"body" => "Unpicked under me."}) |> render_submit()
       assert has_element?(view, "#plan-error", "Pick a design to comment on it.")
 
-      # With no pick the page stopped commenting; once the pick is read again it can be turned back on.
+      # A page opened once the pick is back can comment again.
       File.write!(Path.join(dir, "picked"), "waiting-lanes")
-      send(view.pid, {:output_saved, task.id})
-      view |> element("#design-comment-toggle[aria-pressed='false']") |> render_click()
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#plan-item-design") |> render_click()
+      view |> element("#design-comment-toggle") |> render_click()
       view |> with_target("#plan-stage") |> render_hook("select_element", element)
       Repo.update_all(from(r in Run, where: r.id == ^run.id), set: [conversation_id: nil])
       view |> form("[data-qa='plan_comment_form']", %{"body" => "Too late."}) |> render_submit()
