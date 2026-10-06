@@ -179,6 +179,22 @@ defmodule RailWeb.SandboxesLiveTest do
     refute has_element?(reloaded, "#ended-#{sandbox_id}")
   end
 
+  test "a turn whose task is gone shows no row, and the page still loads", %{
+    conn: conn,
+    now: now,
+    run_on: run_on,
+    sandbox: sandbox
+  } do
+    {%{task_id: task_id} = run, _issue} = run_on.("Orphaned by an earlier delete")
+    %OsProcess{id: sandbox_id} = sandbox.(run, %{status: :finished, ended_at: DateTime.shift(now, minute: -5)})
+
+    # Runs have no foreign key to their task, so a task deleted on its own leaves them behind.
+    Repo.delete!(%Task{id: task_id})
+
+    {:ok, view, _html} = live(conn, ~p"/sandboxes")
+    refute has_element?(view, "#ended-#{sandbox_id}")
+  end
+
   test "is a destination of its own, and says what a sandbox is", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/sandboxes")
 
