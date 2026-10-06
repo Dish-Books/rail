@@ -1,7 +1,7 @@
 defmodule RailWeb.Components.TriageThread do
   @moduledoc """
-  The middle pane of the triage page: the Slack thread, each passage marked by
-  the item it raised, and the notes people have left on its items. Notes go to
+  The middle pane of the triage page: the Slack thread with its images, each passage
+  marked by the item it raised, and the notes people have left on its items. Notes go to
   the next pass and never to Slack; replies are what go to Slack.
   """
   use RailWeb, :html
@@ -112,6 +112,17 @@ defmodule RailWeb.Components.TriageThread do
                 class={["text-inherit rounded px-0.5", mark]}
               >{text}</mark><span :if={!mark}>{text}</span></span>
             </p>
+            <div
+              :if={entry.message.images != []}
+              id={"triage-images-#{entry.message.id}"}
+              class="mt-2 flex flex-wrap gap-2"
+            >
+              <.triage_image
+                :for={image <- entry.message.images}
+                message_id={entry.message.id}
+                image={image}
+              />
+            </div>
             <p :if={entry.chips != []} class="mt-1 flex flex-wrap items-center gap-1.5">
               <span
                 :for={chip <- entry.chips}
