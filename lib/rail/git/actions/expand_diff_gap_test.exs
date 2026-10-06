@@ -41,7 +41,7 @@ defmodule Rail.Git.Actions.ExpandDiffGapTest do
     File.write!(Path.join(task.worktree_path, "thing.ex"), "defmodule Thing do\n  :ok\nend\n")
 
     assert {"thing.ex:0", [%{html: html}]} = Git.expand_diff_gap(task, "thing.ex", 0, 1, 1)
-    assert html =~ ~s(class="l-keyword")
+    assert html =~ ~s(class="l-keyword)
   end
 
   test "a gap inside a heredoc that opens above it is colored as the heredoc", %{task: task} do
