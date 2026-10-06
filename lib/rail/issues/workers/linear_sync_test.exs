@@ -289,7 +289,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
           github_installation_id: 12_954,
           linear_team_key: "LPG",
           default_branch: "main",
-          clone_path: "/tmp/repos/last-page",
+          clone_path: create_temp_git_repo(prefix: "rail_last_page"),
           linear_workspace_id: "lw_test_seed"
         })
 
@@ -408,8 +408,8 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
       assert %Task{issue_id: ^moved_id} = Repo.get(Task, task_id)
     end
 
-    test "an issue with a task is removed with it when Linear reports it trashed or not found", %{
-      project: %{id: project_id},
+    test "an issue with a task is removed with it and its worktree when Linear reports it trashed or not found", %{
+      project: %{id: project_id, clone_path: clone_path},
       insert: insert,
       last_page: last_page,
       lookups: lookups,
@@ -420,6 +420,12 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
           {:ok, %Task{} = task} = external_id |> insert.(:todo) |> Pipeline.create_task(:plan)
           task
         end
+
+      worktree_path = Path.join(System.tmp_dir!(), "rail_pruned_wt_#{System.unique_integer([:positive])}")
+      git!(clone_path, ["worktree", "add", "-b", "pruned-branch", worktree_path])
+
+      {:ok, _task} =
+        Pipeline.update_task(hd(tasks), %{worktree_name: "pruned-branch", worktree_path: worktree_path})
 
       started_at = DateTime.to_iso8601(DateTime.utc_now())
       last_page.([])
@@ -434,6 +440,8 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
 
       assert [] = Repo.all(from(i in Issue, where: i.project_id == ^project_id))
       assert [] = Repo.all(from(t in Task, where: t.id in ^Enum.map(tasks, & &1.id)))
+      refute File.exists?(worktree_path)
+      assert "" = git!(clone_path, ["branch", "--list", "pruned-branch"])
     end
 
     test "a lookup that fails any other way fails the job, removing and announcing nothing", %{

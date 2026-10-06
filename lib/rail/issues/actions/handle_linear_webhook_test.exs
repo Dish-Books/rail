@@ -188,6 +188,59 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
     refute_receive {:issue_changed, ^issue_id}, 50
   end
 
+  # Its own project, because the worktree is removed from a real clone.
+  test "a remove takes its task's worktree, branch and scratch folder with it", %{workspace: %{id: workspace_id}} do
+    clone_path = create_temp_git_repo(prefix: "rail_wh_remove_main")
+    worktree_path = Path.join(System.tmp_dir!(), "rail_wh_remove_wt_#{System.unique_integer([:positive])}")
+    git!(clone_path, ["worktree", "add", "-b", "wh-remove-branch", worktree_path])
+    scratch_dir = Path.join(System.tmp_dir!(), "rail_wh_remove_scratch_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(scratch_dir)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_wh_remove"}]}}})
+    end)
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Webhook Remove Project",
+        github_repo: "org/wh-remove",
+        github_installation_id: 12_955,
+        linear_team_key: "WHR",
+        default_branch: "main",
+        clone_path: clone_path,
+        linear_workspace_id: workspace_id
+      })
+
+    {:ok, task} =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_wh_remove_files",
+        identifier: "WHR-1",
+        title: "Removed with its worktree",
+        state: :in_progress
+      })
+      |> Repo.insert!()
+      |> Repo.preload(:project)
+      |> Pipeline.create_task(:engineer)
+
+    {:ok, _task} =
+      Pipeline.update_task(task, %{
+        worktree_name: "wh-remove-branch",
+        worktree_path: worktree_path,
+        scratch_path: scratch_dir
+      })
+
+    {:ok, workspace} = Projects.get_linear_workspace(id: workspace_id)
+    remove = %{"type" => "Issue", "action" => "remove", "data" => %{"id" => "lin_wh_remove_files"}}
+
+    assert {:ok, %Issue{}} = Issues.handle_linear_webhook(workspace, remove)
+
+    refute File.exists?(worktree_path)
+    refute File.exists?(scratch_dir)
+    assert "" = git!(clone_path, ["branch", "--list", "wh-remove-branch"])
+  end
+
   test "an update marked trashed deletes the issue and its task, whatever team it names", %{
     project: project,
     workspace: workspace

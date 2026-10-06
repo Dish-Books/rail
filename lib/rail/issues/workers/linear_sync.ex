@@ -27,6 +27,7 @@ defmodule Rail.Issues.Workers.LinearSync do
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
   alias Rail.Linear.Client, as: Linear
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -127,6 +128,11 @@ defmodule Rail.Issues.Workers.LinearSync do
     # Linear is asked outside any transaction, so the delete re-checks what it was decided on.
     with {:ok, gone_ids} <- Enum.reduce_while(with_task, {:ok, []}, &gone_from_linear(project, &1, &2)) do
       without_task_ids = Enum.map(without_task, &elem(&1, 0))
+
+      # Their runs and files go first: the rows that lead to them are deleted with the issue.
+      from(t in Task, where: t.issue_id in ^gone_ids and is_nil(t.cleaned_up_at))
+      |> Repo.all()
+      |> Enum.each(&(:ok = Pipeline.discard_task(&1)))
 
       Repo.delete_all(
         from(i in Issue,

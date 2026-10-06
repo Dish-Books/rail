@@ -14,6 +14,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
   alias Rail.Learnings
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
@@ -44,7 +45,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
       when action in ["create", "update"] and is_binary(archived_at) do
     if Repo.exists?(from(t in Task, join: i in assoc(t, :issue), where: i.external_id == ^external_id)),
       do: upsert_issue(projects, action, data),
-      else: delete_issue(projects, external_id, without_task: true)
+      else: delete_issue_without_task(projects, external_id)
   end
 
   def handle_linear_webhook(%LinearWorkspace{projects: projects}, %{
@@ -117,22 +118,37 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
     end
   end
 
-  # One statement, so a second remove or a task started meanwhile finds nothing to delete.
-  defp delete_issue(projects, external_id, opts \\ []) do
+  # Its runs and files go first: the rows that lead to them are deleted with the issue.
+  defp delete_issue(projects, external_id) do
     project_ids = Enum.map(projects, & &1.id)
 
-    query =
+    from(t in Task,
+      join: i in assoc(t, :issue),
+      where: i.external_id == ^external_id and i.project_id in ^project_ids and is_nil(t.cleaned_up_at)
+    )
+    |> Repo.all()
+    |> Enum.each(&(:ok = Pipeline.discard_task(&1)))
+
+    delete_and_broadcast(
+      from(i in Issue, where: i.external_id == ^external_id and i.project_id in ^project_ids, select: i)
+    )
+  end
+
+  defp delete_issue_without_task(projects, external_id) do
+    project_ids = Enum.map(projects, & &1.id)
+
+    delete_and_broadcast(
       from(i in Issue,
         as: :issue,
         where: i.external_id == ^external_id and i.project_id in ^project_ids,
+        where: not exists(from(t in Task, where: t.issue_id == parent_as(:issue).id)),
         select: i
       )
+    )
+  end
 
-    query =
-      if opts[:without_task],
-        do: where(query, not exists(from(t in Task, where: t.issue_id == parent_as(:issue).id))),
-        else: query
-
+  # One statement, so a second remove or a task started meanwhile finds nothing to delete.
+  defp delete_and_broadcast(query) do
     case Repo.delete_all(query) do
       {1, [issue]} ->
         Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id})
