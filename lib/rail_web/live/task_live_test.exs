@@ -26,6 +26,25 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
+  # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
+  @plan """
+  ## Implementation plan
+
+  ### Approach
+
+  Extend the module.
+
+  No diagrams: one module changes.
+
+  ### File-level changes
+
+  - `lib/rail.ex`: extends the module.
+
+  ### Verification
+
+  - `lib/rail_test.exs`: covers the extension.
+  """
+
   setup %{conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
@@ -1322,7 +1341,10 @@ defmodule RailWeb.TaskLiveTest do
 
       save_plan = fn design ->
         {:ok, _plan} =
-          Pipeline.save_plan(task, %{plan: "## Implementation plan\n\nFor #{design || "nobody"}.", design: design})
+          Pipeline.save_plan(task, %{
+            plan: String.replace(@plan, "Extend the module.", "For #{design || "nobody"}."),
+            design: design
+          })
       end
 
       %{
@@ -1514,8 +1536,8 @@ defmodule RailWeb.TaskLiveTest do
       assert %Issue{title: "Sandboxes show usage", description: description} = Repo.get!(Issue, task.issue_id)
       assert description =~ "## Design: Table"
 
-      assert %ImplementationPlan{content: "## Implementation plan\n\nFor table.\n"} =
-               Repo.get_by(ImplementationPlan, task_id: task.id)
+      assert %ImplementationPlan{content: content} = Repo.get_by(ImplementationPlan, task_id: task.id)
+      assert content =~ "For table."
     end
 
     test "an Approve clicked on a page that has not caught up is refused, and the page catches up", %{

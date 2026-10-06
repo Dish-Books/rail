@@ -9,6 +9,25 @@ defmodule Rail.Pipeline.Utils.PlanRunFinishedTest do
   alias Rail.Repo
   alias Rail.Roles
 
+  # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
+  @plan """
+  ## Implementation plan
+
+  ### Approach
+
+  Extend the module.
+
+  No diagrams: one module changes.
+
+  ### File-level changes
+
+  - `lib/rail.ex`: extends the module.
+
+  ### Verification
+
+  - `lib/rail_test.exs`: covers the extension.
+  """
+
   setup %{project: project} do
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
@@ -48,7 +67,7 @@ defmodule Rail.Pipeline.Utils.PlanRunFinishedTest do
     end
 
     ticket = fn -> {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Plan Finished", description: "Body."}) end
-    plan = fn -> {:ok, _plan} = Pipeline.save_plan(task, %{plan: "## Implementation plan\n\nDo it."}) end
+    plan = fn -> {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan}) end
 
     %{run: Repo.preload(run, [:task, :role]), options: options, ticket: ticket, plan: plan, design_dir: design_dir}
   end

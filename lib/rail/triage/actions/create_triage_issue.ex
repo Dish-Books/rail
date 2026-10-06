@@ -1,7 +1,7 @@
 defmodule Rail.Triage.Actions.CreateTriageIssue do
   @moduledoc """
-  Accepts an item's proposed issue: creates it with the person's edits, starts
-  its Plan step, and posts its link in the thread as them, unless the channel is external.
+  Accepts an item's proposed issue: creates it with the person's edits and posts its link
+  in the thread as them, unless the channel is external. Its task waits for Start at Plan.
   """
 
   import Ecto.Query
@@ -15,7 +15,6 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Pipeline
   alias Rail.Repo
   alias Rail.Scope
   alias Rail.Triage.Schemas.Item
@@ -35,9 +34,8 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
          {:ok, issue} <- create(scope, item, drafted) do
       # The post honors the channel as it was checked, and the row keeps its draft until what was posted replaces it.
       item = %{Repo.reload!(item) | thread: item.thread}
-      started = plan(issue)
       posted = post(scope, item, drafted, issue)
-      {:ok, item} = item |> Ecto.Changeset.change(Map.merge(started, posted)) |> Repo.update()
+      {:ok, item} = item |> Ecto.Changeset.change(posted) |> Repo.update()
       {:ok, _thread} = settle_thread(item.thread)
       {:ok, item}
     end
@@ -82,13 +80,6 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
       {:error, reason} ->
         Repo.update_all(from(i in Item, where: i.id == ^item.id), set: [issue_created_by_id: nil])
         {:error, reason}
-    end
-  end
-
-  defp plan(%Issue{} = issue) do
-    case Pipeline.start_task(issue, :plan) do
-      {:ok, _task} -> %{error: nil}
-      {:error, reason} -> %{error: "Created #{issue.identifier}, but Plan did not start: #{inspect(reason)}"}
     end
   end
 

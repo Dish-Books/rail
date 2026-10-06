@@ -36,6 +36,7 @@ defmodule RailWeb.TriageLive do
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Rail.PubSub, "triage")
       Phoenix.PubSub.subscribe(Rail.PubSub, "projects")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
     end
 
     socket =
@@ -99,7 +100,11 @@ defmodule RailWeb.TriageLive do
           note={@note}
         />
 
-        <section :if={@thread} id="triage-items" class="flex-1 min-w-0 flex flex-col min-h-0">
+        <section
+          :if={@thread}
+          id="triage-items"
+          class="flex-1 min-w-[min(560px,calc(100%-630px))] flex flex-col min-h-0"
+        >
           <div class="flex items-center gap-3 px-6 py-3 border-b border-slate-200 dark:border-slate-700">
             <span class="text-sm font-bold text-slate-900 dark:text-slate-100">
               {length(@thread.items)} {if length(@thread.items) == 1, do: "item", else: "items"}
@@ -279,6 +284,9 @@ defmodule RailWeb.TriageLive do
 
   # A project's name and its channels' switches show on the open thread.
   def handle_info({:project_changed, _project_id}, socket), do: {:noreply, load(socket)}
+
+  # A task started from an issue page, or one changing stage, shows on the item that created its issue.
+  def handle_info({:pipeline_changed, _task_id}, socket), do: {:noreply, load(socket)}
 
   # The navigation hook and the issue dialog broadcast things this page has no use for.
   def handle_info(_message, socket), do: {:noreply, socket}
