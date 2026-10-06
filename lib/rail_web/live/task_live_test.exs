@@ -2148,7 +2148,21 @@ defmodule RailWeb.TaskLiveTest do
 
       low = %{element | "y" => 900, "height" => 60}
       view |> with_target("#plan-stage") |> render_hook("select_element", low)
-      assert view |> element("[data-qa='plan_comment_form']") |> render() =~ "bottom: calc("
+      assert view |> element("[data-qa='plan_comment_form']") |> render() =~ "bottom: calc(16.667% + 10px)"
+
+      # An element covering the frame from its top has no room above or below, so the box opens inside it.
+      tall = %{element | "y" => 0, "height" => 1080}
+      view |> with_target("#plan-stage") |> render_hook("select_element", tall)
+      style = view |> element("[data-qa='plan_comment_form']") |> render()
+      assert style =~ "top: calc(0.0% + 10px)"
+      refute style =~ "bottom: calc("
+
+      scrolled = %{element | "y" => -400, "height" => 1300}
+      view |> with_target("#plan-stage") |> render_hook("select_element", scrolled)
+      assert view |> element("[data-qa='plan_comment_form']") |> render() =~ "top: calc(0.0% + 10px)"
+
+      view |> with_target("#plan-stage") |> render_hook("select_element", element)
+      assert view |> element("[data-qa='plan_comment_form']") |> render() =~ "top: calc(10.185% + 10px)"
 
       File.write!(
         Path.join(dir, "manifest.json"),

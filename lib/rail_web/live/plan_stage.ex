@@ -858,16 +858,20 @@ defmodule RailWeb.Live.PlanStage do
   # Named for its element, so a box on another element mounts afresh and takes the focus.
   defp draft_key(draft), do: :erlang.phash2({draft.selector, draft.x, draft.y})
 
-  # Under the element, or above it when it sits low in the frame, in the page's own 1920x1080 coordinates.
+  # Under the element when there is room below it, above it when there is room above, and otherwise, for an element
+  # covering most of the frame, inside it near the element's top, so the frame never clips the box.
   defp box_style(draft) do
     left = "left: clamp(8px, #{percent(draft.x, 1920)}%, calc(100% - 448px)); width: min(440px, calc(100% - 16px));"
 
-    if draft.y + draft.height > 1080 * 0.6,
-      do: "#{left} bottom: calc(#{percent(1080 - draft.y, 1080)}% + 10px);",
-      else: "#{left} top: calc(#{percent(draft.y + draft.height, 1080)}% + 10px);"
+    cond do
+      draft.y + draft.height <= 1080 * 0.6 -> "#{left} top: calc(#{percent(draft.y + draft.height, 1080)}% + 10px);"
+      draft.y >= 1080 * 0.4 -> "#{left} bottom: calc(#{percent(1080 - draft.y, 1080)}% + 10px);"
+      true -> "#{left} top: calc(#{percent(draft.y, 1080)}% + 10px);"
+    end
   end
 
-  defp percent(value, whole), do: Float.round(value / whole * 100, 3)
+  # Clamped, so an element scrolled partly out of the frame cannot push the box out of it.
+  defp percent(value, whole), do: (value / whole * 100) |> max(0.0) |> min(100.0) |> Float.round(3)
 
   # Once the task has left Plan the page shows what the later stages were given.
   defp plan(%Task{stage: :plan} = task), do: {Pipeline.read_plan(task), false}
