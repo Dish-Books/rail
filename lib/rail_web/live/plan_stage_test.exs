@@ -131,6 +131,29 @@ defmodule RailWeb.Live.PlanStageTest do
     assert has_element?(view, "#approve-plan")
   end
 
+  test "each card says what its own child builds on, which its lane alone would not", %{
+    conn: conn,
+    task: task,
+    child: child
+  } do
+    {:ok, _split} =
+      Pipeline.save_split(task, %{
+        "children" => [
+          child.(1, "One", 1, []),
+          child.(2, "Two", 1, []),
+          child.(3, "Three", 1, [1]),
+          child.(4, "Four", 1, [2])
+        ]
+      })
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    assert has_element?(view, "[data-qa='plan_split_round']", "After 1 and 2")
+    assert has_element?(view, "#plan-split-child-1-order", "starts at once")
+    assert view |> element("#plan-split-child-3-order") |> render() =~ ~r/>\s*after 1\s*</
+    assert view |> element("#plan-split-child-4-order") |> render() =~ ~r/>\s*after 2\s*</
+  end
+
   test "a new save shows in the lanes without a reload", %{conn: conn, task: task, child: child} do
     {:ok, _split} = Pipeline.save_split(task, %{"children" => [child.(1, "One", 1, []), child.(2, "Two", 1, [])]})
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")

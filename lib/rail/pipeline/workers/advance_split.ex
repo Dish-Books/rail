@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Workers.AdvanceSplit do
   @moduledoc """
-  Starts each waiting child once the children it builds on have merged, and moves the parent to Merged
-  with its last child. One job per parent at a time, so a merge heard while it runs makes it look again.
+  Starts each child with no run once every child it builds on has merged, and moves the parent to Merged
+  with its last. One job per parent, retried if it dies, and run again when a merge lands while it runs.
   """
   use Oban.Worker,
     queue: :issues,
@@ -24,7 +24,8 @@ defmodule Rail.Pipeline.Workers.AdvanceSplit do
     children = children(parent)
     merged = merged(children)
 
-    for %Task{runs: [], cleaned_up_at: nil, builds_on: [_first | _rest] = builds_on} = child <- children,
+    for %Task{runs: [], cleaned_up_at: nil, builds_on: builds_on} = child <- children,
+        not MapSet.member?(merged, child.split_position),
         Enum.all?(builds_on, &MapSet.member?(merged, &1)) do
       {:ok, _started} = Pipeline.enter_stage(child, :engineer)
     end

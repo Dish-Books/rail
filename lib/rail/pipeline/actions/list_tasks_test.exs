@@ -275,5 +275,6 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     {:ok, _moved} = Pipeline.update_task(first, %{split_position: 3})
 
     assert [%Task{id: ^second_id}, %Task{id: ^first_id}] = Pipeline.list_tasks(parent_task_id: parent.id)
+    assert [%Task{id: ^first_id}] = Pipeline.list_tasks(ids: [first_id])
   end
 end

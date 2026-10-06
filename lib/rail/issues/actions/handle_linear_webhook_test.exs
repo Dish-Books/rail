@@ -158,6 +158,52 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
              })
   end
 
+  test "an assignee change on a split parent reaches its children", %{project: project, workspace: workspace} do
+    {:ok, %{id: user_id} = user} =
+      Users.register_oauth_user(%{github_id: "gh_wh_parent", login: "wh_parent", email: "wh_parent@example.com"})
+
+    user |> Ecto.Changeset.change(linear_user_id: "lin_usr_wh_parent") |> Repo.update!()
+
+    for {identifier, title} <- [{"HWH-30", "Work on HWH-30"}, {"HWH-31", "Child HWH-31"}] do
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
+            }
+          }
+        })
+      end)
+    end
+
+    {:ok, parent_issue} = Issues.create_issue(system_scope(), project, %{title: "Work on HWH-30"})
+    {:ok, parent} = Pipeline.create_task(parent_issue, :split)
+    parent = Repo.preload(parent, [:issue, :project])
+
+    [child] =
+      for {{identifier, builds_on}, number} <- Enum.with_index([{"HWH-31", []}], 1) do
+        attrs = %{title: "Child #{identifier}", parent: parent_issue}
+        {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
+        part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+        {:ok, child} = Pipeline.create_child_task(parent, issue, part)
+        Repo.preload(child, [:issue, :project])
+      end
+
+    data = %{
+      "id" => parent_issue.external_id,
+      "teamId" => "lin_team_id",
+      "identifier" => "HWH-30",
+      "title" => "Work on HWH-30",
+      "assigneeId" => "lin_usr_wh_parent"
+    }
+
+    assert {:ok, %Issue{owner_user_id: ^user_id}} =
+             Issues.handle_linear_webhook(workspace, %{"type" => "Issue", "action" => "update", "data" => data})
+
+    assert %Issue{owner_user_id: ^user_id} = Repo.reload!(child.issue)
+  end
+
   test "an issue remove deletes the row, and one Rail never had is fine", %{project: project, workspace: workspace} do
     %Issue{}
     |> Issue.linear_changeset(%{
@@ -174,6 +220,44 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
     assert {:ok, %Issue{}} = Issues.handle_linear_webhook(workspace, remove)
     assert Repo.get_by(Issue, external_id: "lin_wh_3") == nil
     assert :ok = Issues.handle_linear_webhook(workspace, remove)
+  end
+
+  test "a remove for a split parent's issue leaves the parent and its children in place", %{
+    project: project,
+    workspace: workspace
+  } do
+    for {identifier, title} <- [{"HWH-20", "Work on HWH-20"}, {"HWH-21", "Child HWH-21"}] do
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
+            }
+          }
+        })
+      end)
+    end
+
+    {:ok, parent_issue} = Issues.create_issue(system_scope(), project, %{title: "Work on HWH-20"})
+    {:ok, parent} = Pipeline.create_task(parent_issue, :split)
+    parent = Repo.preload(parent, [:issue, :project])
+
+    [child] =
+      for {{identifier, builds_on}, number} <- Enum.with_index([{"HWH-21", []}], 1) do
+        attrs = %{title: "Child #{identifier}", parent: parent_issue}
+        {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
+        part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+        {:ok, child} = Pipeline.create_child_task(parent, issue, part)
+        Repo.preload(child, [:issue, :project])
+      end
+
+    remove = %{"type" => "Issue", "action" => "remove", "data" => %{"id" => parent_issue.external_id}}
+
+    assert :ok = Issues.handle_linear_webhook(workspace, remove)
+    assert Repo.reload(parent_issue)
+    assert Repo.reload(parent)
+    assert Repo.reload(child)
   end
 
   test "an issue goes to the project on its team when the workspace has several", %{

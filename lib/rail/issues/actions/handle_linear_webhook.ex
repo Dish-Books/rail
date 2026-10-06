@@ -15,10 +15,13 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Learnings
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Users.Schemas.User
+
+  require Logger
 
   @doc """
   Applies `payload` for `workspace`, its projects preloaded. Issue creates and
@@ -42,6 +45,10 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
         existing = Repo.get_by(Issue, external_id: external_id) || %Issue{}
 
         with {:ok, issue} <- existing |> Issue.linear_changeset(attrs) |> Repo.insert_or_update() do
+          # A child's owner is its parent's, so a new owner on a split parent reaches its children.
+          if is_binary(existing.id) and existing.owner_user_id != issue.owner_user_id,
+            do: {:ok, _children} = Pipeline.share_owner_with_children(issue)
+
           if finished?(action, existing, issue) do
             {:ok, _job} = Learnings.handle_issue_finished(issue)
             Pipeline.handle_issue_finished(issue)
@@ -62,7 +69,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
         "data" => %{"id" => external_id}
       }) do
     case Repo.get_by(Issue, external_id: external_id) do
-      %Issue{} = issue -> Repo.delete(issue)
+      %Issue{} = issue -> delete_issue(issue)
       nil -> :ok
     end
   end
@@ -98,6 +105,19 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
   end
 
   def handle_linear_webhook(%LinearWorkspace{}, _payload), do: :ok
+
+  # A split parent's issue keeps its row: deleting it would take the children's tasks, mid-work, with it.
+  defp delete_issue(%Issue{id: issue_id} = issue) do
+    split? =
+      Repo.exists?(from(c in Task, join: p in Task, on: c.parent_task_id == p.id, where: p.issue_id == ^issue_id))
+
+    if split? do
+      Logger.warning("Linear removed #{issue.identifier}, which Rail split into child tasks, so Rail keeps it")
+      :ok
+    else
+      Repo.delete(issue)
+    end
+  end
 
   defp finished?("update", %Issue{id: id, state: was}, %Issue{state: now}) when is_binary(id),
     do: not Issue.finished_state?(was) and Issue.finished_state?(now)

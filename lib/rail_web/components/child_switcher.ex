@@ -46,7 +46,7 @@ defmodule RailWeb.Components.ChildSwitcher do
           class="hidden absolute left-0 top-full mt-2 w-[440px] max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-1.5 shadow-xl z-50"
         >
           <.link
-            patch={~p"/tasks/#{@parent.id}?tab=children"}
+            phx-click={pick(~p"/tasks/#{@parent.id}?tab=children")}
             id="child-switcher-all"
             class="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-[13px] font-semibold text-slate-700 dark:text-slate-200"
           >
@@ -56,7 +56,7 @@ defmodule RailWeb.Components.ChildSwitcher do
           <div class="h-px my-1 bg-slate-200 dark:bg-slate-700" />
           <.link
             :for={status <- @statuses}
-            patch={~p"/tasks/#{@parent.id}?child=#{status.identifier}"}
+            phx-click={pick(~p"/tasks/#{@parent.id}?child=#{status.identifier}")}
             id={"child-switcher-#{status.identifier}"}
             data-qa="child-switcher-item"
             aria-current={to_string(status.task.id == @current_id)}
@@ -116,6 +116,9 @@ defmodule RailWeb.Components.ChildSwitcher do
     </div>
     """
   end
+
+  # A patch keeps what JS did to the page, so the menu is closed on the way.
+  defp pick(path), do: [to: "#child-switcher-menu"] |> JS.hide() |> JS.patch(path)
 
   attr :to, :string, default: nil
   attr :id, :string, required: true

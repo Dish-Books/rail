@@ -6936,6 +6936,32 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='task_detail_title']", "Child TLV-12")
     end
 
+    test "a link to a file on a child's own path keeps the file on the way to its parent's", %{
+      conn: conn,
+      parent: parent,
+      first: first,
+      roles: roles
+    } do
+      remote = create_temp_git_repo(prefix: "rail_git_remote", initial_commit: false)
+      git!(remote, ["config", "receive.denyCurrentBranch", "ignore"])
+      repo = create_temp_git_repo()
+      git!(repo, ["remote", "add", "origin", remote])
+      git!(repo, ["push", "origin", "main"])
+      git!(repo, ["checkout", "-b", "feature"])
+      File.write!(Path.join(repo, "shipped.ex"), "committed\n")
+      git!(repo, ["add", "."])
+      git!(repo, ["commit", "-m", "the engineer's work"])
+      {:ok, _child} = Pipeline.update_task(first, %{worktree_path: repo})
+
+      to = ~p"/tasks/#{parent.id}?child=TLV-11&tab=#{roles[:engineer].id}&file=shipped.ex"
+
+      assert {:error, {:live_redirect, %{to: ^to}}} =
+               live(conn, ~p"/tasks/#{first.id}?tab=#{roles[:engineer].id}&file=shipped.ex")
+
+      assert {:ok, view, _html} = live(conn, to)
+      assert has_element?(view, "#diff-scroller[data-scroll-to='shipped.ex']")
+    end
+
     test "a waiting child shows only Issue, Plan and Children, its approved part and no conversation or branch", %{
       conn: conn,
       parent: parent,
@@ -6978,6 +7004,17 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#child-switcher-TLV-13", "Engineer failed")
       assert has_element?(view, "#child-switcher-all", "All children of TLV-10")
       assert has_element?(view, "#child-switcher-waiting", "2 other children need you")
+
+      view |> element("#child-switcher-TLV-11") |> render_click()
+      assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-11")
+      assert has_element?(view, "#child-switcher-button", "1 of 3")
+
+      view |> element("#child-switcher-all") |> render_click()
+      assert_patch(view, ~p"/tasks/#{parent.id}?tab=children")
+      assert has_element?(view, "#split-board")
+
+      view |> element("#split-open-TLV-12") |> render_click()
+      assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-12")
 
       view |> element("a#child-next") |> render_click()
       assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-13")
@@ -7102,6 +7139,25 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-12")
       assert has_element?(view, "#child-switcher-TLV-11 [aria-label='1 waiting on you']", "1")
+    end
+
+    test "an unowned child is owned through its parent: no Claim, and its owner cannot be changed", %{
+      conn: conn,
+      parent: parent,
+      first: first,
+      scope: scope
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-11&tab=issue")
+
+      refute has_element?(view, "#claim-task")
+      assert has_element?(view, "#issue-owner", "Unassigned")
+      refute has_element?(view, "#issue-owner-menu")
+
+      render_hook(view, "assign", %{"user_id" => scope.user.id})
+      assert %Issue{owner_user_id: nil} = Repo.reload!(first.issue)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
+      assert has_element?(view, "#claim-task")
     end
 
     test "a task with no split has no Children tab and no switcher", %{conn: conn, task: task} do

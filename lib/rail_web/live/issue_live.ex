@@ -53,6 +53,9 @@ defmodule RailWeb.IssueLive do
         assignees={@assignees}
         assignee_query={@assignee_query}
         comment_nonce={@comment_nonce}
+        owner_editable={
+          not match?(%{task: %Task{parent_task_id: parent_id}} when is_binary(parent_id), @issue)
+        }
       />
     </Layouts.app>
     """

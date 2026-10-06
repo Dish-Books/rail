@@ -344,6 +344,7 @@ defmodule RailWeb.TaskLive do
             assignee_query={@assignee_query}
             comment_nonce={@comment_nonce}
             show_task={false}
+            owner_editable={@task.parent_task_id == nil}
           />
         </.task_layout>
 
@@ -434,8 +435,12 @@ defmodule RailWeb.TaskLive do
   def handle_event("claim", _params, socket) do
     socket =
       case Issues.claim_issue(socket.assigns.current_scope, socket.assigns.task.issue) do
-        {:ok, _issue} -> socket
-        {:error, reason} -> put_flash(socket, :error, claim_error(reason))
+        {:ok, issue} ->
+          {:ok, _children} = Pipeline.share_owner_with_children(issue)
+          socket
+
+        {:error, reason} ->
+          put_flash(socket, :error, claim_error(reason))
       end
 
     {:noreply, refresh_task(socket)}
@@ -612,11 +617,14 @@ defmodule RailWeb.TaskLive do
 
   attr :task, :any, required: true
 
-  # Nobody owns an issue until somebody claims it.
+  # Nobody owns an issue until somebody claims it, and a child of a split is owned through its parent.
   defp claim_button(assigns) do
     ~H"""
     <button
-      :if={@task.cleaned_up_at == nil and @task.issue.owner_user_id == nil}
+      :if={
+        @task.cleaned_up_at == nil and @task.issue.owner_user_id == nil and
+          @task.parent_task_id == nil
+      }
       type="button"
       id="claim-task"
       data-qa="claim_task"
@@ -734,7 +742,8 @@ defmodule RailWeb.TaskLive do
 
   # Every link to a child, its own included, lands on its parent's page with it selected.
   defp show_task(socket, %Task{parent_task_id: parent_id, issue: issue}) when is_binary(parent_id) do
-    params = Enum.reject([child: issue.identifier, tab: socket.assigns.url_tab], fn {_key, value} -> is_nil(value) end)
+    params = [child: issue.identifier, tab: socket.assigns.url_tab, file: socket.assigns.focus_file]
+    params = Enum.reject(params, fn {_key, value} -> is_nil(value) end)
     push_patch(socket, to: ~p"/tasks/#{parent_id}?#{params}")
   end
 

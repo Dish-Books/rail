@@ -2,7 +2,8 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
   @moduledoc """
   Approves the Plan step in one go: the ticket and the picked design are published to the issue, the
   plan is recorded as the one the engineer builds from, and the task moves to Engineer. With a split
-  saved, each child becomes a Linear sub-issue with a task of its own instead, and the parent moves to Split.
+  saved, each child becomes a Linear sub-issue with a task of its own instead, the parent moves to Split,
+  and an `AdvanceSplit` job committed with them starts the children, so they start even if the caller dies.
 
   Approving is a one-way door. The task row is locked and the next stage claimed inside the same
   transaction, so a second click or a second tab waits on the lock, then finds the task moved on and is
@@ -18,12 +19,13 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
   alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Workers.AdvanceSplit
   alias Rail.Repo
   alias Rail.Scope
 
   @doc """
-  Approves what the Plan `run` saved and enters Engineer, or with a split, starts each child that
-  builds on no other.
+  Approves what the Plan `run` saved and enters Engineer, or with a split, queues the start of each
+  child that builds on no other.
 
   Returns `{:ok, run}`, the run latched done.
   """
@@ -43,6 +45,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
           record(task, plan.content)
           {:ok, run} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
           {:ok, task} = Pipeline.enter_stage(task, if(children == [], do: :engineer, else: :split), start: false)
+          if children != [], do: {:ok, _job} = %{parent_task_id: task.id} |> AdvanceSplit.new() |> Oban.insert()
           {run, task, children}
         else
           {:error, reason} -> Repo.rollback(reason)
@@ -58,10 +61,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
       {:ok, {run, task, children}} ->
         broadcast_pipeline_changed(task)
 
-        for child <- children do
-          Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, child.issue_id})
-          if child.builds_on == [], do: {:ok, _started} = Pipeline.enter_stage(child, :engineer)
-        end
+        for child <- children, do: Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, child.issue_id})
 
         {:ok, run}
 

@@ -1,5 +1,6 @@
 defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   use Rail.DataCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Git
   alias Rail.Issues
@@ -8,6 +9,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Workers.AdvanceSplit
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
@@ -254,7 +256,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
       %{created: created}
     end
 
-    test "it publishes the parent, opens a sub-issue and a task per child, and starts only those that build on nothing",
+    test "it publishes the parent, opens a sub-issue and a task per child, and queues the start of those that build on nothing",
          %{task: %Task{id: task_id} = task, roles: roles, run: run, created: created} do
       engineer_id = roles[:engineer].id
 
@@ -287,6 +289,13 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
 
       assert %Task{stage: :split} = Repo.reload!(task)
       assert %Issue{title: "Approved title"} = Repo.get!(Issue, task.issue_id)
+
+      # Nothing starts in the caller: the job committed with the children does.
+      assert [%Task{runs: []}, %Task{runs: []}, %Task{runs: []}] =
+               Pipeline.list_tasks(parent_task_id: task.id, preload: [:runs])
+
+      assert_enqueued(worker: AdvanceSplit, args: %{parent_task_id: task_id})
+      assert :ok = perform_job(AdvanceSplit, %{parent_task_id: task_id})
 
       assert [
                %Task{

@@ -161,16 +161,7 @@ defmodule RailWeb.OverviewLive do
 
     runs = Pipeline.list_runs(project_id: project_id, owner_user_id: owner_user_id, preload: preload)
 
-    tasks =
-      Pipeline.list_tasks(
-        project_id: project_id,
-        owner_user_id: owner_user_id,
-        preload: [:project, :issue, :implementation_plan, runs: [:role, :questions]]
-      )
-
-    # A split is one piece of work, so its children are read through their parent.
-    {children, tasks} = Enum.split_with(tasks, &is_binary(&1.parent_task_id))
-    children = Enum.group_by(children, & &1.parent_task_id)
+    {tasks, children} = load_tasks(project_id, owner_user_id)
 
     # The stat and the list both read this one list, so they cannot disagree.
     in_progress =
@@ -211,6 +202,19 @@ defmodule RailWeb.OverviewLive do
     |> assign(:dispatch_disabled, Application.get_env(:rail, :no_dispatch, false))
     # The rail badge sits beside these stats, so it comes from the same reload.
     |> assign(:attention_count, Pipeline.count_attention(project_id: Scope.project_ids(socket.assigns.current_scope)))
+  end
+
+  # A split is one piece of work, so its children are read through their parent, cleaned up or not.
+  defp load_tasks(project_id, owner_user_id) do
+    preload = [:project, :issue, :implementation_plan, runs: [:role, :questions]]
+    tasks = Pipeline.list_tasks(project_id: project_id, owner_user_id: owner_user_id, preload: preload)
+    {children, tasks} = Enum.split_with(tasks, &is_binary(&1.parent_task_id))
+    children = Enum.group_by(children, & &1.parent_task_id)
+
+    case Map.keys(children) -- Enum.map(tasks, & &1.id) do
+      [] -> {tasks, children}
+      missing -> {tasks ++ Pipeline.list_tasks(ids: missing, include_cleaned_up: true, preload: preload), children}
+    end
   end
 
   # An earlier run at the task's stage has been retried, and one at another stage

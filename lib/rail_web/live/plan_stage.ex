@@ -615,6 +615,14 @@ defmodule RailWeb.Live.PlanStage do
                 <.icon name="pi-triangle" class="size-[11px] text-slate-500" />{child.estimate}
               </span>
             </div>
+            <p
+              id={"plan-split-child-#{child.number}-order"}
+              class="text-[11.5px] text-slate-500 dark:text-slate-400"
+            >
+              {if child.builds_on == [],
+                do: "starts at once",
+                else: "after " <> join_and(child.builds_on)}
+            </p>
             <p class="text-[12.5px] leading-relaxed text-slate-600 dark:text-slate-300 line-clamp-2 wrap-break-word">
               {first_paragraph(child.ticket)}
             </p>

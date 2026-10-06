@@ -315,6 +315,47 @@ defmodule RailWeb.OverviewLiveTest do
       %{conn: log_in_user(conn, user), user: user, project: project, roles: roles, rival: rival, task_for: task_for}
     end
 
+    test "a split parent cleaned up is still in progress once while its children are unmerged", %{
+      conn: conn,
+      user: user,
+      project: project
+    } do
+      for {identifier, title} <- [{"OVC-1", "Work on OVC-1"}, {"OVC-2", "Child OVC-2"}, {"OVC-3", "Child OVC-3"}] do
+        Req.Test.expect(Rail.Linear, fn conn ->
+          Req.Test.json(conn, %{
+            "data" => %{
+              "issueCreate" => %{
+                "success" => true,
+                "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
+              }
+            }
+          })
+        end)
+      end
+
+      {:ok, parent_issue} =
+        Issues.create_issue(system_scope(), project, %{title: "Work on OVC-1", owner_user_id: user.id})
+
+      {:ok, parent} = Pipeline.create_task(parent_issue, :split)
+      parent = Repo.preload(parent, [:issue, :project])
+
+      [_first, _second] =
+        for {{identifier, builds_on}, number} <- Enum.with_index([{"OVC-2", []}, {"OVC-3", [1]}], 1) do
+          attrs = %{title: "Child #{identifier}", parent: parent_issue, owner_user_id: user.id}
+          {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
+          part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
+          Repo.preload(child, [:issue, :project])
+        end
+
+      {:ok, _cleaned} = Pipeline.cleanup_task(parent)
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#in-progress-count", "1 task")
+      assert has_element?(view, "#in-progress-task-#{parent.id}", "0 of 2 merged")
+    end
+
     test "a split parent is in progress once, a mark per child, its children waiting on the user in Up next", %{
       conn: conn,
       user: user,

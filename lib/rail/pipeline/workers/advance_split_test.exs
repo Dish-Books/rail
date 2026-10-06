@@ -82,6 +82,17 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
     assert %Task{stage: :split} = Repo.reload!(parent)
   end
 
+  test "a child that builds on nothing and has no run is started, as approval leaves it", %{
+    parent: parent,
+    children: [first, second, third, _fourth]
+  } do
+    assert :ok = perform_job(AdvanceSplit, %{parent_task_id: parent.id})
+
+    assert [%Run{}] = Repo.preload(first, :runs, force: true).runs
+    assert [%Run{}] = Repo.preload(second, :runs, force: true).runs
+    assert [] = Repo.preload(third, :runs, force: true).runs
+  end
+
   test "a child that already has a run is not started again", %{
     parent: parent,
     children: [first, _second, _third, fourth],

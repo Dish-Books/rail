@@ -47,6 +47,7 @@ defmodule Rail.Pipeline do
   defdelegate save_split(task, attrs), to: Actions.SaveSplit
   defdelegate create_child_task(parent, issue, child), to: Actions.CreateChildTask
   defdelegate handle_issue_finished(issue), to: Actions.HandleIssueFinished
+  defdelegate share_owner_with_children(issue), to: Actions.ShareOwnerWithChildren
 
   defdelegate start_engineer_run(run), to: Actions.StartEngineerRun
   defdelegate end_turn_and_commit(task, os_process, message), to: Actions.EndTurnAndCommit

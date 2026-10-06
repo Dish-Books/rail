@@ -19,6 +19,8 @@ defmodule RailWeb.Components.IssueView do
   attr :assignee_query, :string, required: true
   attr :comment_nonce, :integer, required: true
   attr :show_task, :boolean, default: true
+  # A child of a split is owned through its parent, so its owner is read here, not changed.
+  attr :owner_editable, :boolean, default: true
 
   def issue_view(assigns) do
     ~H"""
@@ -155,7 +157,22 @@ defmodule RailWeb.Components.IssueView do
               <span>{Issue.priority_label(@issue.priority)}</span>
             </div>
 
-            <div class="relative" phx-click-away={JS.hide(to: "#issue-owner-menu")}>
+            <div
+              :if={!@owner_editable}
+              id="issue-owner"
+              data-qa="issue-owner"
+              class="flex items-center gap-2.5"
+            >
+              <.assignee user={@issue.owner_user} />
+              <span :if={@issue.owner_user}>{user_name(@issue.owner_user)}</span>
+              <span :if={!@issue.owner_user} class="text-slate-400 dark:text-slate-500">Unassigned</span>
+            </div>
+
+            <div
+              :if={@owner_editable}
+              class="relative"
+              phx-click-away={JS.hide(to: "#issue-owner-menu")}
+            >
               <button
                 type="button"
                 id="issue-owner"
