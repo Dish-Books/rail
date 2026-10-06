@@ -20,6 +20,25 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
   alias Rail.Tools.Schemas.OsProcess
 
   # Its own project, because starting a run adds a worktree to a real clone.
+  # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
+  @plan """
+  ## Implementation plan
+
+  ### Approach
+
+  Extend the module.
+
+  No diagrams: one module changes.
+
+  ### File-level changes
+
+  - `lib/rail.ex`: extends the module.
+
+  ### Verification
+
+  - `lib/rail_test.exs`: covers the extension.
+  """
+
   setup %{project: %{linear_workspace_id: workspace_id}} do
     scope = system_scope()
     clone_path = create_temp_git_repo()
@@ -174,7 +193,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     end
 
     File.write!(Path.join(design, "picked"), "rows")
-    {:ok, _plan} = Pipeline.save_plan(task, %{plan: "## Implementation plan\n\nDo it.", design: "rows"})
+    {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan, design: "rows"})
 
     {:ok, %Run{id: run_id} = run} = Pipeline.start_or_resume_run(task, role, worktree_path)
 
