@@ -108,6 +108,24 @@ defmodule RailWeb.Live.PlanStageTest do
     %{conn: log_in_user(conn, user), task: task, child: child}
   end
 
+  test "an approved plan reads as approved, with no conversation left to change it", %{
+    conn: conn,
+    task: task,
+    child: child
+  } do
+    {:ok, _split} = Pipeline.save_split(task, %{"children" => [child.(1, "One", 1, []), child.(2, "Two", 1, [1])]})
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    assert has_element?(view, "#task-conversation-column")
+
+    {:ok, task} = Pipeline.update_task(task, %{stage: :split})
+    Repo.insert!(%ImplementationPlan{task_id: task.id, content: @plan, captured_at: DateTime.utc_now()})
+    {:ok, plan_role} = Roles.get_role(project_id: task.project_id, stage: :plan)
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{plan_role.id}")
+    assert has_element?(view, "#plan-approved", "Plan approved")
+    refute has_element?(view, "#task-conversation-column")
+  end
+
   test "with no split the Split item reads Not split and Approve shows as today", %{conn: conn, task: task} do
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 

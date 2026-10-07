@@ -194,7 +194,8 @@ defmodule RailWeb.Live.PlanStage do
           </div>
         </div>
 
-        <:sidebar :if={!@child_of}>{render_slot(@sidebar)}</:sidebar>
+        <%!-- Once approved, the plan is what was approved: there is no conversation left to change it. --%>
+        <:sidebar :if={!@child_of and not @approved}>{render_slot(@sidebar)}</:sidebar>
       </.task_layout>
     </div>
     """
@@ -1005,7 +1006,7 @@ defmodule RailWeb.Live.PlanStage do
     |> assign(:pick_up, pick_up(run))
     |> assign(:pending_text, pending_text(running, pick_up(run)))
     |> assign(:show_approve, approvable?(socket.assigns, ticket, design, plan))
-    |> assign(:comment_reason, comment_reason(design, run))
+    |> assign(:comment_reason, comment_reason(design, run, approved))
     |> stop_commenting_unless_allowed()
     |> assign_comments()
   end
@@ -1025,12 +1026,15 @@ defmodule RailWeb.Live.PlanStage do
     |> assign(:markers, markers)
   end
 
+  # Comments go to Plan through its conversation, which an approved plan no longer has.
+  defp comment_reason(_design, _run, true), do: "The plan is approved, so the design takes no more comments."
+
   # Before a pick there is nothing to comment on, and the pick comes first.
-  defp comment_reason(%{picked: picked}, %Run{} = run) when is_binary(picked) do
+  defp comment_reason(%{picked: picked}, %Run{} = run, false) when is_binary(picked) do
     if Run.can_chat?(run), do: nil, else: "Cannot chat with #{run.role.name} yet"
   end
 
-  defp comment_reason(_no_pick, _run), do: "Pick a design to comment on it."
+  defp comment_reason(_no_pick, _run, false), do: "Pick a design to comment on it."
 
   defp stop_commenting_unless_allowed(%{assigns: %{comment_reason: nil}} = socket), do: socket
   defp stop_commenting_unless_allowed(socket), do: socket |> assign(:commenting, false) |> assign(:draft, nil)

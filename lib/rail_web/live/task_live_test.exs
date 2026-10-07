@@ -2270,47 +2270,24 @@ defmodule RailWeb.TaskLiveTest do
       view |> with_target("#conversation-tab-root") |> render_click("remove_plan_comment", %{"id" => id})
     end
 
-    test "with the task at Engineer, a sent comment resumes Plan, and a plan Plan revises shows on the Plan item", %{
+    # The approved plan is what Engineer builds from, so there is no conversation left to comment through.
+    test "with the task at Engineer, the Plan tab reads as approved, with no conversation and comments off", %{
       conn: conn,
       task: task,
       run: run,
-      pick: pick,
-      element: element
+      pick: pick
     } do
       pick.()
-
-      {:ok, _plan} =
-        Pipeline.save_plan(task, %{
-          plan: String.replace(@plan, "Extend the module.", "As approved."),
-          design: "waiting-lanes"
-        })
-
+      {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan, design: "waiting-lanes"})
       {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
-
-      Repo.insert!(%ImplementationPlan{
-        task_id: task.id,
-        content: "## Implementation plan\n\nAs approved.",
-        captured_at: DateTime.utc_now()
-      })
+      Repo.insert!(%ImplementationPlan{task_id: task.id, content: @plan, captured_at: DateTime.utc_now()})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{run.role_id}")
       view |> element("#plan-item-design") |> render_click()
-      view |> element("#design-comment-toggle") |> render_click()
-      view |> with_target("#plan-stage") |> render_hook("select_element", element)
-      view |> form("[data-qa='plan_comment_form']", %{"body" => "Drop this."}) |> render_submit()
-      view |> element("#send-plan-comments") |> render_click()
 
-      assert Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "1 comment on the design"))
-
-      {:ok, _plan} =
-        Pipeline.save_plan(task, %{
-          plan: String.replace(@plan, "Extend the module.", "Revised for the comment."),
-          design: "waiting-lanes"
-        })
-
-      _settled = render(view)
-      view |> element("#plan-item-plan") |> render_click()
-      assert has_element?(view, "#plan-plan", "Revised for the comment.")
+      refute has_element?(view, "#task-conversation-column")
+      assert has_element?(view, "#design-comment-toggle[disabled]")
+      assert has_element?(view, "#plan-stage", "The plan is approved, so the design takes no more comments.")
     end
 
     test "a comment the design or the chat moved under says why it was not saved", %{
