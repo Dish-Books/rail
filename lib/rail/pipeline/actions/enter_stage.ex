@@ -12,7 +12,7 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   concluded and then calls this if that conclusion means moving; the move is
   never a side effect of a process exiting.
 
-  Entering a stage also moves the task's Linear ticket forward to match it.
+  Entering a stage also moves the task's ticket forward in its tracker to match it.
   """
 
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
@@ -29,9 +29,9 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools
 
-  # The stages a Linear ticket's status follows; the rest leave it where it is.
+  # The stages a ticket's tracker status follows; the rest leave it where it is.
   # Only a split parent enters `:merged`, once its last child has, and its ticket is then Done.
-  @linear_stages [:plan, :engineer, :review, :merged]
+  @tracked_stages [:plan, :engineer, :review, :merged]
 
   @doc """
   Enters `stage` on `task` and spawns the role that works it, `Task.role_stage/1`'s.
@@ -56,12 +56,12 @@ defmodule Rail.Pipeline.Actions.EnterStage do
     result
   end
 
-  # The stage and the job that moves its Linear ticket land together or not at all.
+  # The stage and the job that moves its ticket land together or not at all.
   defp claim_stage(%Task{} = task, stage) do
     Repo.transaction(fn ->
       task = task |> Task.changeset(%{stage: stage}) |> Repo.update!()
 
-      if stage in @linear_stages do
+      if stage in @tracked_stages do
         {:ok, _job} = Issues.advance_issue_state(Repo.preload(task, :issue).issue)
       end
 

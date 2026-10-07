@@ -5,7 +5,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Issues.Workers.AdvanceLinearState
+  alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Issues.Workers.LinearSync
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline
@@ -121,7 +121,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
     [%Issue{id: unowned_id} = unowned, owned, left_alone] =
       for {key, owner_user_id} <- [{"unowned", nil}, {"owned", user_id}, {"left_alone", nil}] do
         %Issue{}
-        |> Issue.linear_changeset(%{
+        |> Issue.tracker_changeset(%{
           project_id: project.id,
           external_id: "lin_sync_#{key}",
           identifier: "SPO-#{key}",
@@ -155,8 +155,8 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
 
     assert :ok = perform_job(LinearSync, %{project_id: project.id})
 
-    assert %Issue{owner_user_id: ^user_id, linear_updated_at: ~U[2026-10-08 15:00:00.250000Z]} = Repo.reload!(unowned)
-    assert [%Oban.Job{args: %{"issue_id" => ^unowned_id}}] = all_enqueued(worker: AdvanceLinearState)
+    assert %Issue{owner_user_id: ^user_id, external_updated_at: ~U[2026-10-08 15:00:00.250000Z]} = Repo.reload!(unowned)
+    assert [%Oban.Job{args: %{"issue_id" => ^unowned_id}}] = all_enqueued(worker: AdvanceTrackerState)
   end
 
   test "writes each issue's comments with replies threaded by Rail id, and re-syncs in place", %{project: project} do
@@ -290,7 +290,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
   } do
     %Issue{id: issue_id} =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_was_backlog",
         identifier: "SPI-50",
@@ -350,7 +350,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
 
       insert = fn external_id, state ->
         %Issue{}
-        |> Issue.linear_changeset(%{
+        |> Issue.tracker_changeset(%{
           project_id: project.id,
           external_id: external_id,
           identifier: external_id,
@@ -394,7 +394,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
     } do
       %Issue{id: issue_id} =
         %Issue{}
-        |> Issue.linear_changeset(%{
+        |> Issue.tracker_changeset(%{
           project_id: project_id,
           external_id: "lin_unlisted",
           identifier: "SPI-60",
@@ -643,7 +643,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
 
       %Issue{id: other_id} =
         %Issue{}
-        |> Issue.linear_changeset(%{
+        |> Issue.tracker_changeset(%{
           project_id: other_project_id,
           external_id: "lin_other_project",
           identifier: "OSY-1",

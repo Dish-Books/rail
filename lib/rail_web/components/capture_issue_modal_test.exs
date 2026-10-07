@@ -375,5 +375,20 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     })
 
     assert has_element?(view, "#capture-error-banner", ":not_authorized")
+
+    for {reason, message} <- [
+          github_issues_permission_missing: "The GitHub App needs Issues: read and write on this repository",
+          github_issues_disabled: "Issues are turned off on this repository"
+        ] do
+      expect(Rail.Issues, :create_issue, fn _scope, _project, _attrs -> {:error, reason} end)
+
+      render_submit(element(view, "#capture-issue-form"), %{
+        "title" => "Testing GitHub error",
+        "project_id" => project.id,
+        "priority" => "medium"
+      })
+
+      assert has_element?(view, "#capture-error-banner", message)
+    end
   end
 end

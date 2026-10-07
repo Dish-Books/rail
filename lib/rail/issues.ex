@@ -1,10 +1,10 @@
 defmodule Rail.Issues do
   @moduledoc """
-  Context boundary for Linear-backed issues.
+  Context boundary for issues, tracked in Linear or GitHub Issues.
 
   Local edits write the issue and `Rail.Issues.Workers.SyncIssue` pushes them to
-  Linear. Writes reach Linear as the workspace, except a comment, which goes out
-  as the scope's user so it carries their name.
+  the tracker, through the project's `Rail.Issues.Tracker`. Each tracker tells Rail
+  about its own changes through a webhook.
   """
 
   alias Rail.Issues.Actions
@@ -22,4 +22,6 @@ defmodule Rail.Issues do
   defdelegate upload_asset(target, filename, content_type, data_binary), to: Actions.UploadAsset
   defdelegate get_asset(issue, path), to: Actions.GetAsset
   defdelegate comment(scope, issue, attrs), to: Actions.Comment
+  defdelegate set_up_tracker(project), to: Actions.SetUpTracker
+  defdelegate handle_github_webhook(project, event, payload), to: Actions.HandleGithubWebhook
 end

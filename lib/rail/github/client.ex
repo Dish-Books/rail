@@ -217,6 +217,156 @@ defmodule Rail.GitHub.Client do
     end
   end
 
+  @doc """
+  Opens an issue in `repo` from the attrs GitHub takes: `title`, `body`, `labels` and `assignees`.
+  """
+  def create_issue(token, repo, attrs, opts \\ []) do
+    opts
+    |> build_req()
+    |> Req.post(url: "/repos/#{repo}/issues", auth: {:bearer, token}, headers: headers(), json: attrs)
+    |> issues_result(201)
+  end
+
+  @doc """
+  Fetches issue `number` in `repo`, labels and assignees included.
+  """
+  def get_issue(token, repo, number, opts \\ []) do
+    opts
+    |> build_req()
+    |> Req.get(url: "/repos/#{repo}/issues/#{number}", auth: {:bearer, token}, headers: headers())
+    |> issues_result(200)
+  end
+
+  @doc """
+  Edits issue `number`. Never pass `labels` or `assignees`: each replaces the whole list.
+  """
+  def update_issue(token, repo, number, attrs, opts \\ []) do
+    opts
+    |> build_req()
+    |> Req.patch(url: "/repos/#{repo}/issues/#{number}", auth: {:bearer, token}, headers: headers(), json: attrs)
+    |> issues_result(200)
+  end
+
+  @doc """
+  One page of `repo`'s issues, as `params` (`state`, `since`, `page`, ...) select them. Pull requests come too.
+  """
+  def list_issues(token, repo, params, opts \\ []) do
+    opts
+    |> build_req()
+    |> Req.get(
+      url: "/repos/#{repo}/issues",
+      params: Keyword.merge([sort: "updated", direction: "asc", per_page: 100], params),
+      auth: {:bearer, token},
+      headers: headers()
+    )
+    |> issues_result(200)
+  end
+
+  @doc """
+  Adds the logins to issue `number`'s assignees, leaving the others.
+  """
+  def add_assignees(token, repo, number, logins, opts \\ []) do
+    opts
+    |> build_req()
+    |> Req.post(
+      url: "/repos/#{repo}/issues/#{number}/assignees",
+      auth: {:bearer, token},
+      headers: headers(),
+      json: %{assignees: logins}
+    )
+    |> issues_result(201)
+  end
+
+  @doc """
+  Removes the logins from issue `number`'s assignees, leaving the others.
+  """
+  def remove_assignees(token, repo, number, logins, opts \\ []) do
+    opts
+    |> build_req()
+    |> Req.delete(
+      url: "/repos/#{repo}/issues/#{number}/assignees",
+      auth: {:bearer, token},
+      headers: headers(),
+      json: %{assignees: logins}
+    )
+    |> issues_result(200)
+  end
+
+  @doc """
+  Adds labels to issue `number`, leaving the ones it has.
+  """
+  def add_labels(token, repo, number, names, opts \\ []) do
+    opts
+    |> build_req()
+    |> Req.post(
+      url: "/repos/#{repo}/issues/#{number}/labels",
+      auth: {:bearer, token},
+      headers: headers(),
+      json: %{labels: names}
+    )
+    |> issues_result(200)
+  end
+
+  @doc """
+  Takes label `name` off issue `number`. One it does not have is already off.
+  """
+  def remove_label(token, repo, number, name, opts \\ []) do
+    opts
+    |> build_req()
+    |> Req.delete(
+      url: "/repos/#{repo}/issues/#{number}/labels/#{URI.encode(name, &URI.char_unreserved?/1)}",
+      auth: {:bearer, token},
+      headers: headers()
+    )
+    |> case do
+      {:ok, %{status: 404}} -> {:ok, []}
+      result -> issues_result(result, 200)
+    end
+  end
+
+  @doc """
+  Makes a label in `repo` from `name`, `color` and `description`. One that already exists is left as it is.
+  """
+  def create_label(token, repo, attrs, opts \\ []) do
+    opts
+    |> build_req()
+    |> Req.post(url: "/repos/#{repo}/labels", auth: {:bearer, token}, headers: headers(), json: attrs)
+    |> case do
+      {:ok, %{status: 422, body: %{"errors" => [%{"code" => "already_exists"} | _rest]}}} -> {:ok, :already_exists}
+      result -> issues_result(result, 201)
+    end
+  end
+
+  @doc """
+  Comments on issue `number`.
+  """
+  def create_issue_comment(token, repo, number, body, opts \\ []) do
+    opts
+    |> build_req()
+    |> Req.post(
+      url: "/repos/#{repo}/issues/#{number}/comments",
+      auth: {:bearer, token},
+      headers: headers(),
+      json: %{body: body}
+    )
+    |> issues_result(201)
+  end
+
+  @doc """
+  One page of the comments on every issue and pull request in `repo`, oldest change first.
+  """
+  def list_repo_issue_comments(token, repo, params, opts \\ []) do
+    opts
+    |> build_req()
+    |> Req.get(
+      url: "/repos/#{repo}/issues/comments",
+      params: Keyword.merge([sort: "updated", direction: "asc", per_page: 100], params),
+      auth: {:bearer, token},
+      headers: headers()
+    )
+    |> issues_result(200)
+  end
+
   defp paginate(token, url, opts, page \\ 1, acc \\ []) do
     opts
     |> build_req()
@@ -228,6 +378,16 @@ defmodule Rail.GitHub.Client do
       {:error, reason} -> {:error, reason}
     end
   end
+
+  # An App never granted Issues, and a repository with Issues turned off, each need a person to act.
+  defp issues_result({:ok, %{status: status, body: body}}, status), do: {:ok, body}
+
+  defp issues_result({:ok, %{status: 403, body: %{"message" => "Resource not accessible by integration"}}}, _expected),
+    do: {:error, :github_issues_permission_missing}
+
+  defp issues_result({:ok, %{status: 410}}, _expected), do: {:error, :github_issues_disabled}
+  defp issues_result({:ok, %{status: status, body: body}}, _expected), do: {:error, {:github_api_error, status, body}}
+  defp issues_result({:error, reason}, _expected), do: {:error, reason}
 
   defp app_id do
     case config()[:app_id] do

@@ -37,7 +37,7 @@ defmodule RailWeb.Hooks.NavHookTest do
 
     issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_nav_hook_1",
         identifier: "TST-1",
@@ -48,7 +48,7 @@ defmodule RailWeb.Hooks.NavHookTest do
 
     other_issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: other_project.id,
         external_id: "lin_nav_hook_2",
         identifier: "OTH-1",

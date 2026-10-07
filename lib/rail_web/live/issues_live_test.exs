@@ -34,7 +34,7 @@ defmodule RailWeb.IssuesLiveTest do
 
     assert has_element?(view, "#issues-view")
     assert has_element?(view, "#issues-title", "Issues")
-    assert has_element?(view, "#issues-subtitle", "Linear issues across all projects")
+    assert has_element?(view, "#issues-subtitle", "Issues across all projects")
     assert has_element?(view, "#sync-issues-button", "Sync Issues")
     assert has_element?(view, "#new-issue-button", "New Issue")
 
@@ -464,7 +464,7 @@ defmodule RailWeb.IssuesLiveTest do
 
     duplicate_issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_issues_live_13208",
         identifier: "FIN-3",
@@ -510,7 +510,7 @@ defmodule RailWeb.IssuesLiveTest do
 
     issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_issues_live_dup",
         identifier: "FIN-4",
@@ -550,7 +550,7 @@ defmodule RailWeb.IssuesLiveTest do
     # Linear's Todo is an unstarted state, which Rail keeps as :backlog.
     issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_issues_live_label",
         identifier: "FIN-5",
@@ -745,9 +745,33 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#task-link-#{issue.id}", "Ready to merge")
   end
 
+  test "a GitHub project's issues are titled by its tracker and key", %{conn: conn, github_project: project} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_gh",
+        login: "issues_live_gh",
+        email: "ilg@example.com",
+        admin: true
+      })
+
+    conn = conn |> log_in_user(user) |> init_test_session(%{selected_project_id: project.id})
+
+    github_issue(project, %{
+      number: 5,
+      identifier: "tgh#5",
+      title: "From GitHub",
+      url: "https://github.com/example/test-gh/issues/5"
+    })
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues")
+    assert has_element?(view, "#issues-subtitle", "GitHub issues in tgh (Test GitHub Project)")
+    assert has_element?(view, "[data-qa='issue-external-link'][title='Open issue in GitHub']")
+  end
+
   test "sync_issues button triggers sync on current project or all projects", %{
     conn: conn,
-    project: %Project{id: seeded_id}
+    project: %Project{id: seeded_id},
+    github_project: %Project{id: seeded_github_id}
   } do
     {:ok, user} =
       Users.register_oauth_user(%{
@@ -800,6 +824,7 @@ defmodule RailWeb.IssuesLiveTest do
 
     send(view_all.pid, {:issues_synced, project_id})
     send(view_all.pid, {:issues_synced, seeded_id})
+    send(view_all.pid, {:issues_synced, seeded_github_id})
     assert has_element?(view_all, "#sync-issues-button", "Sync Issues")
 
     # A comment changes nothing a row shows.
@@ -1088,6 +1113,6 @@ defmodule RailWeb.IssuesLiveTest do
     assert {:ok, view_bad, _html} =
              live(init_test_session(authed_conn, %{selected_project_id: "prj_nonexistent"}), ~p"/issues")
 
-    assert has_element?(view_bad, "#issues-subtitle", "Linear issues across all projects")
+    assert has_element?(view_bad, "#issues-subtitle", "Issues across all projects")
   end
 end

@@ -8,7 +8,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Issues.Workers.AdvanceLinearState
+  alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Learnings
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Pipeline
@@ -172,7 +172,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     assert File.dir?(worktree_path)
     assert File.dir?(Path.join(scratch_path, "design"))
     assert [%Run{role_id: ^role_id}] = Repo.all(from r in Run, where: r.task_id == ^task_id)
-    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: issue_id})
+    assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: issue_id})
     assert_received {:pipeline_changed, ^task_id}
   end
 
@@ -193,7 +193,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     refute_received {:pipeline_changed, ^task_id}
     refute Repo.exists?(from t in Task, where: t.issue_id == ^issue.id)
     refute Repo.exists?(Run)
-    refute_enqueued(worker: AdvanceLinearState)
+    refute_enqueued(worker: AdvanceTrackerState)
   end
 
   test "given a run it spawns that run, its brief carrying what is already saved", %{

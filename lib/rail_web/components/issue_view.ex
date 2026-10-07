@@ -262,12 +262,12 @@ defmodule RailWeb.Components.IssueView do
               href={@issue.url}
               target="_blank"
               rel="noopener noreferrer"
-              id="issue-linear-link"
-              data-qa="issue-linear-link"
+              id="issue-tracker-link"
+              data-qa="issue-tracker-link"
               class="flex items-center gap-2.5 text-slate-900 dark:text-slate-100 hover:underline"
             >
               <.icon name="pi-arrow-square-out" class="h-4 w-4 text-slate-500 dark:text-slate-400" />
-              <span>Open in Linear</span>
+              <span>Open in {Issue.tracker_label(@issue.tracker)}</span>
             </a>
 
             <button
@@ -370,7 +370,7 @@ defmodule RailWeb.Components.IssueView do
 
   defp by_time(comments), do: Enum.sort_by(comments, & &1.inserted_at, DateTime)
 
-  # Someone who never joined Rail is shown as Linear names them.
+  # Someone who never joined Rail is shown as the tracker names them.
   defp comment_author(%{author_user: %{} = user}), do: user
 
   defp comment_author(comment) do

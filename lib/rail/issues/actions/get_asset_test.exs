@@ -68,4 +68,8 @@ defmodule Rail.Issues.Actions.GetAssetTest do
 
     assert {:error, :no_workspace_token} = Issues.get_asset(issue, "ws/img/screenshot.png")
   end
+
+  test "get_asset/2 has nothing to fetch for a GitHub issue", %{github_project: project} do
+    assert {:error, :unsupported} = Issues.get_asset(github_issue(project), "any/path.png")
+  end
 end

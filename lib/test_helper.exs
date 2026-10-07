@@ -1,3 +1,6 @@
+alias Rail.Issues.Tracker
+alias Rail.Issues.Tracker.GithubMock
+alias Rail.Issues.Tracker.LinearMock
 alias Rail.Projects.Schemas.LinearWorkspace
 alias Rail.Projects.Schemas.Project
 alias Rail.Roles.Schemas.Role
@@ -49,6 +52,15 @@ Mimic.copy(Rail.Tools.Browser)
 Mimic.copy(Rail.Tools.BrowserSession)
 Mimic.copy(Rail.Tools.FollowerSupervisor)
 
+# Each tracker goes through a mock of its behaviour; Rail.DataCase stubs it with the real one.
+Mox.defmock(LinearMock, for: Tracker)
+Mox.defmock(GithubMock, for: Tracker)
+
+Application.put_env(:rail, :issue_trackers, %{
+  linear: LinearMock,
+  github: GithubMock
+})
+
 # Ensure that all Req calls are mocked by default
 Req.default_options(adapter: fn req -> raise "Unmocked call to #{req.url}" end)
 
@@ -96,6 +108,22 @@ project =
     upsert
   )
 
+# The same, tracked in GitHub Issues instead of Linear.
+github_project =
+  Rail.Repo.insert!(
+    %Project{
+      id: "prj_test_seed_github",
+      name: "Test GitHub Project",
+      github_repo: "example/test-gh",
+      github_installation_id: 1,
+      default_branch: "main",
+      tracker: :github,
+      key: "tgh",
+      clone_path: "/tmp/repos/test-gh"
+    },
+    upsert
+  )
+
 # Signed in and offering the seeded roles' model, so their runs have an account to be placed on.
 Rail.Repo.insert!(
   %Backend{
@@ -108,11 +136,12 @@ Rail.Repo.insert!(
   upsert
 )
 
-Enum.each(Role.canonical_stages(), fn stage ->
+for {seeded, prefix} <- [{project, "rol_test_seed"}, {github_project, "rol_test_seed_gh"}],
+    stage <- Role.canonical_stages() do
   Rail.Repo.insert!(
     %Role{
-      id: "rol_test_seed_#{stage}",
-      project_id: project.id,
+      id: "#{prefix}_#{stage}",
+      project_id: seeded.id,
       cli: :claude,
       stage: stage,
       name: "#{stage} role",
@@ -121,8 +150,9 @@ Enum.each(Role.canonical_stages(), fn stage ->
     },
     upsert
   )
-end)
+end
 
 :persistent_term.put({RailTest, :project}, %{project | linear_workspace: workspace})
+:persistent_term.put({RailTest, :github_project}, github_project)
 
 Ecto.Adapters.SQL.Sandbox.mode(Rail.Repo, :manual)

@@ -1,15 +1,11 @@
 defmodule Rail.Issues.Actions.SyncIssues do
   @moduledoc false
 
-  alias Rail.Issues.Workers.LinearSync
+  alias Rail.Issues.Tracker
+  alias Rail.Projects.Schemas.Project
 
   @doc """
-  Queues a pull of `project`'s issues from Linear; the worker pages through them.
-  Every page carries the time it was asked for, which the last page prunes against.
+  Queues a full pull of `project`'s issues from its tracker; the worker pages through them.
   """
-  def sync_issues(project) do
-    %{project_id: project.id, started_at: DateTime.utc_now()}
-    |> LinearSync.new()
-    |> Oban.insert()
-  end
+  def sync_issues(%Project{} = project), do: Tracker.tracker(project).sync_issues(project)
 end

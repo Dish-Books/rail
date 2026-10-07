@@ -2,6 +2,7 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.SyncIssue
@@ -52,7 +53,7 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
   end
 
   test "editing a Duplicate issue leaves its Linear state alone", %{issue: issue} do
-    issue = issue |> Issue.linear_changeset(%{state: :duplicate, state_name: "Duplicate"}) |> Repo.update!()
+    issue = issue |> Issue.tracker_changeset(%{state: :duplicate, state_name: "Duplicate"}) |> Repo.update!()
     {:ok, issue} = Issues.update_issue(issue, %{title: "Renamed"})
 
     # Pinned so a stateId in the input fails the match.
@@ -195,5 +196,196 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
     end)
 
     assert :ok = perform_job(SyncIssue, %{issue_id: issue.id, fields: ["estimate"]})
+  end
+
+  describe "a GitHub issue" do
+    setup %{github_project: project} do
+      %{github: github_issue(project, %{number: 7, state: :triage, title: "Before"})}
+    end
+
+    test "sends only the title and body that changed, never its labels or assignees", %{github: issue} do
+      {:ok, issue} = Issues.update_issue(issue, %{title: "After", description: "Body"})
+
+      Req.Test.expect(Client, 2, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"POST", "/app/installations/1/access_tokens"} ->
+            Req.Test.json(conn, %{"token" => "ghs_token"})
+
+          {"PATCH", "/repos/example/test-gh/issues/7"} ->
+            {:ok, body, conn} = Plug.Conn.read_body(conn)
+            assert %{"title" => "After", "body" => "Body"} == Jason.decode!(body)
+            Req.Test.json(conn, github_issue_json(%{"number" => 7}))
+        end
+      end)
+
+      assert :ok = perform_job(SyncIssue, %{issue_id: issue.id, fields: ["title", "description"]})
+    end
+
+    test "moves its status label, taking off the old one and reopening it if closed", %{github: issue} do
+      {:ok, issue} = Issues.update_issue(issue, %{state: :todo})
+
+      live =
+        github_issue_json(%{
+          "number" => 7,
+          "state" => "closed",
+          "labels" => [%{"name" => "rail: triage"}, %{"name" => "bug"}]
+        })
+
+      Req.Test.expect(Client, 5, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+        case {conn.method, conn.request_path} do
+          {"POST", "/app/installations/1/access_tokens"} ->
+            Req.Test.json(conn, %{"token" => "ghs_token"})
+
+          {"GET", "/repos/example/test-gh/issues/7"} ->
+            Req.Test.json(conn, live)
+
+          {"PATCH", "/repos/example/test-gh/issues/7"} ->
+            assert %{"state" => "open", "state_reason" => "reopened"} == Jason.decode!(body)
+            Req.Test.json(conn, live)
+
+          {"POST", "/repos/example/test-gh/issues/7/labels"} ->
+            assert %{"labels" => ["rail: todo"]} == Jason.decode!(body)
+            Req.Test.json(conn, [])
+
+          {"DELETE", "/repos/example/test-gh/issues/7/labels/rail%3A%20triage"} ->
+            Req.Test.json(conn, [])
+        end
+      end)
+
+      assert :ok = perform_job(SyncIssue, %{issue_id: issue.id, fields: ["state"]})
+    end
+
+    test "closes it with the reason that matches, leaving its labels", %{github: issue} do
+      for {state, reason} <- [done: "completed", canceled: "not_planned", duplicate: "duplicate"] do
+        {:ok, issue} = Issues.update_issue(issue, %{state: state})
+
+        Req.Test.expect(Client, 3, fn conn ->
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+          case {conn.method, conn.request_path} do
+            {"POST", "/app/installations/1/access_tokens"} ->
+              Req.Test.json(conn, %{"token" => "ghs_token"})
+
+            {"GET", "/repos/example/test-gh/issues/7"} ->
+              Req.Test.json(conn, github_issue_json(%{"number" => 7}))
+
+            {"PATCH", "/repos/example/test-gh/issues/7"} ->
+              assert %{"state" => "closed", "state_reason" => ^reason} = Jason.decode!(body)
+              Req.Test.json(conn, github_issue_json(%{"number" => 7}))
+          end
+        end)
+
+        assert :ok = perform_job(SyncIssue, %{issue_id: issue.id, fields: ["state"]})
+      end
+    end
+
+    test "swaps its priority label", %{github: issue} do
+      {:ok, issue} = Issues.update_issue(issue, %{priority: :urgent})
+      live = github_issue_json(%{"number" => 7, "labels" => [%{"name" => "rail: priority medium"}]})
+
+      Req.Test.expect(Client, 4, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+        case {conn.method, conn.request_path} do
+          {"POST", "/app/installations/1/access_tokens"} ->
+            Req.Test.json(conn, %{"token" => "ghs_token"})
+
+          {"GET", "/repos/example/test-gh/issues/7"} ->
+            Req.Test.json(conn, live)
+
+          {"POST", "/repos/example/test-gh/issues/7/labels"} ->
+            assert %{"labels" => ["rail: priority urgent"]} == Jason.decode!(body)
+            Req.Test.json(conn, [])
+
+          {"DELETE", "/repos/example/test-gh/issues/7/labels/rail%3A%20priority%20medium"} ->
+            conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{})
+        end
+      end)
+
+      assert :ok = perform_job(SyncIssue, %{issue_id: issue.id, fields: ["priority"]})
+    end
+
+    test "unassigns only the owner Rail had and assigns the new one", %{github: issue} do
+      [before, later] =
+        Enum.map(["gh-before", "gh-later"], fn login ->
+          {:ok, user} =
+            Users.register_oauth_user(%{github_id: "gh_#{login}", login: login, email: "#{login}@example.com"})
+
+          user
+        end)
+
+      {:ok, issue} = Issues.update_issue(issue, %{owner_user_id: before.id})
+      {:ok, issue} = Issues.update_issue(issue, %{owner_user_id: later.id})
+
+      Req.Test.expect(Client, 3, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+        case {conn.method, conn.request_path} do
+          {"POST", "/app/installations/1/access_tokens"} ->
+            Req.Test.json(conn, %{"token" => "ghs_token"})
+
+          {"DELETE", "/repos/example/test-gh/issues/7/assignees"} ->
+            assert %{"assignees" => ["gh-before"]} == Jason.decode!(body)
+            Req.Test.json(conn, %{})
+
+          {"POST", "/repos/example/test-gh/issues/7/assignees"} ->
+            assert %{"assignees" => ["gh-later"]} == Jason.decode!(body)
+            conn |> Plug.Conn.put_status(201) |> Req.Test.json(%{})
+        end
+      end)
+
+      assert :ok =
+               perform_job(SyncIssue, %{issue_id: issue.id, fields: ["owner_user_id"], previous_owner_user_id: before.id})
+
+      {:ok, issue} = Issues.update_issue(issue, %{owner_user_id: nil})
+
+      Req.Test.expect(Client, 2, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"POST", "/app/installations/1/access_tokens"} -> Req.Test.json(conn, %{"token" => "ghs_token"})
+          {"DELETE", "/repos/example/test-gh/issues/7/assignees"} -> Req.Test.json(conn, %{})
+        end
+      end)
+
+      assert :ok =
+               perform_job(SyncIssue, %{issue_id: issue.id, fields: ["owner_user_id"], previous_owner_user_id: later.id})
+    end
+
+    test "an open issue moving between open states only has its labels moved", %{github: issue} do
+      {:ok, issue} = Issues.update_issue(issue, %{state: :in_progress})
+      live = github_issue_json(%{"number" => 7, "labels" => [%{"name" => "rail: triage"}]})
+
+      Req.Test.expect(Client, 4, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"POST", "/app/installations/1/access_tokens"} ->
+            Req.Test.json(conn, %{"token" => "ghs_token"})
+
+          {"GET", "/repos/example/test-gh/issues/7"} ->
+            Req.Test.json(conn, live)
+
+          {"POST", "/repos/example/test-gh/issues/7/labels"} ->
+            Req.Test.json(conn, [])
+
+          {"DELETE", "/repos/example/test-gh/issues/7/labels/rail%3A%20triage"} ->
+            conn |> Plug.Conn.put_status(500) |> Req.Test.json(%{})
+        end
+      end)
+
+      assert {:error, {:github_api_error, 500, _body}} = perform_job(SyncIssue, %{issue_id: issue.id, fields: ["state"]})
+    end
+
+    test "fails the job with GitHub's error, for Oban to retry", %{github: issue} do
+      {:ok, issue} = Issues.update_issue(issue, %{state: :todo})
+
+      Req.Test.expect(Client, 2, fn conn ->
+        case conn.request_path do
+          "/app/installations/1/access_tokens" -> Req.Test.json(conn, %{"token" => "ghs_token"})
+          "/repos/example/test-gh/issues/7" -> conn |> Plug.Conn.put_status(410) |> Req.Test.json(%{})
+        end
+      end)
+
+      assert {:error, :github_issues_disabled} = perform_job(SyncIssue, %{issue_id: issue.id, fields: ["state"]})
+    end
   end
 end

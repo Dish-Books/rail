@@ -44,6 +44,41 @@ defmodule Rail.Projects.Schemas.ProjectTest do
     assert get_field(changeset, :active) == true
   end
 
+  test "a GitHub project needs no Linear team, and is keyed by its repo's name unless given one" do
+    attrs = %{
+      name: "Foo",
+      github_repo: "example/foo",
+      github_installation_id: 1,
+      default_branch: "main",
+      clone_path: "/tmp/foo",
+      tracker: :github
+    }
+
+    assert %Ecto.Changeset{valid?: true} = changeset = Project.changeset(%Project{}, attrs)
+    assert get_field(changeset, :key) == "foo"
+    assert get_field(Project.changeset(%Project{}, Map.put(attrs, :key, "pst")), :key) == "pst"
+  end
+
+  test "a key is short and made of letters, digits, - and _" do
+    changeset = Project.changeset(%Project{tracker: :github}, %{key: "foo#1"})
+    assert %{key: ["use letters, digits, - and _"]} = errors_on(changeset)
+
+    changeset = Project.changeset(%Project{tracker: :github}, %{key: String.duplicate("k", 21)})
+    assert %{key: ["should be at most 20 character(s)"]} = errors_on(changeset)
+  end
+
+  test "the database refuses a Linear project with no team key" do
+    assert_raise Ecto.ConstraintError, ~r/linear_projects_have_team_key/, fn ->
+      Repo.insert!(%Project{
+        name: "No Team",
+        github_repo: "example/no-team-#{System.unique_integer([:positive])}",
+        github_installation_id: 1,
+        default_branch: "main",
+        clone_path: "/tmp/no-team"
+      })
+    end
+  end
+
   test "changeset enforces uniqueness on github_repo" do
     repo = "example/repo-#{System.unique_integer([:positive])}"
 

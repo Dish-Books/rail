@@ -742,7 +742,8 @@ defmodule RailWeb.TaskLive do
     do: socket
 
   defp load_assignees(socket, %Task{} = task),
-    do: assign(socket, :assignees, Users.list_linear_users(project_id: task.project_id))
+    do:
+      assign(socket, :assignees, Users.list_assignable_users(project_id: task.project_id, tracker: task.project.tracker))
 
   defp apply_task(socket, %Task{} = task) do
     roles = if task.project_id, do: Rail.Roles.list_roles(task.project_id), else: []
@@ -942,7 +943,7 @@ defmodule RailWeb.TaskLive do
     issue_tab = %{
       id: @issue_tab,
       stage: nil,
-      label: "Linear Issue",
+      label: "Issue",
       sublabel: task.issue.identifier,
       tone: :issue,
       badge: 0,

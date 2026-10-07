@@ -20,7 +20,7 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
   alias Rail.Triage.Schemas.Item
 
   @doc """
-  Nothing is created unless the person can post in the thread. Once Linear has
+  Nothing is created unless the person can post in the thread. Once the tracker has
   the issue it stays, so a later failure is kept on the item rather than undone.
   """
   def create_triage_issue(%Scope{user: %{id: user_id}} = scope, %Item{id: item_id}, attrs) do

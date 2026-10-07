@@ -334,10 +334,10 @@ defmodule RailWeb.Components.Nav do
                   <span class="truncate">{project.name}</span>
                 </div>
                 <span
-                  :if={project.linear_team_key}
+                  :if={project.key || project.linear_team_key}
                   class="text-[10px] font-mono text-slate-500 dark:text-slate-400 shrink-0 ml-2"
                 >
-                  {project.linear_team_key}
+                  {project.key || project.linear_team_key}
                 </span>
               </button>
             </div>

@@ -63,8 +63,10 @@ defmodule Rail.Pipeline.Utils.OpenPullRequest do
     end
   end
 
-  defp body(%Issue{url: url}) do
+  # `Closes #N` closes a GitHub issue when the pull request merges into the default branch, as Rail's do.
+  defp body(%Issue{url: url} = issue) do
     ready = "Opened by Rail as a draft. It is marked ready for review once the change is ready to merge."
-    if is_binary(url), do: "#{url}\n\n#{ready}", else: ready
+    closes = if issue.tracker == :github, do: "Closes ##{issue.number}\n\n", else: ""
+    if is_binary(url), do: "#{closes}#{url}\n\n#{ready}", else: closes <> ready
   end
 end

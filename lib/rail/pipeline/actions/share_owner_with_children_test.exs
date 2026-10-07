@@ -4,7 +4,7 @@ defmodule Rail.Pipeline.Actions.ShareOwnerWithChildrenTest do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Issues.Workers.AdvanceLinearState
+  alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Pipeline
   alias Rail.Scope
   alias Rail.Users
@@ -54,7 +54,7 @@ defmodule Rail.Pipeline.Actions.ShareOwnerWithChildrenTest do
 
     for child <- [first, second] do
       assert %Issue{owner_user_id: ^owner_id} = Repo.reload!(child.issue)
-      assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: child.issue_id})
+      assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: child.issue_id})
     end
 
     assert {:ok, []} = Pipeline.share_owner_with_children(claimed)

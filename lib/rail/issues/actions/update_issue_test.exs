@@ -4,7 +4,7 @@ defmodule Rail.Issues.Actions.UpdateIssueTest do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Issues.Workers.AdvanceLinearState
+  alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Users
 
@@ -66,15 +66,15 @@ defmodule Rail.Issues.Actions.UpdateIssueTest do
       end)
 
     {:ok, _issue} = Issues.update_issue(issue, %{title: "Still nobody's"})
-    refute_enqueued(worker: AdvanceLinearState)
+    refute_enqueued(worker: AdvanceTrackerState)
 
     {:ok, owned} = Issues.update_issue(issue, %{owner_user_id: first.id})
-    assert [%Oban.Job{id: job_id}] = all_enqueued(worker: AdvanceLinearState, args: %{issue_id: issue.id})
+    assert [%Oban.Job{id: job_id}] = all_enqueued(worker: AdvanceTrackerState, args: %{issue_id: issue.id})
 
     # Already owned, so its status has not been held back: a new owner or none queues nothing more.
     Repo.delete!(%Oban.Job{id: job_id})
     {:ok, handed_on} = Issues.update_issue(owned, %{owner_user_id: second.id})
     {:ok, _unowned} = Issues.update_issue(handed_on, %{owner_user_id: nil})
-    refute_enqueued(worker: AdvanceLinearState)
+    refute_enqueued(worker: AdvanceTrackerState)
   end
 end
