@@ -46,6 +46,16 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
     %{task: task, scratch: scratch, write_options: write_options}
   end
 
+  test "a No diagrams: line run into the Approach paragraph is refused, since the plan would not lay out", %{
+    task: task
+  } do
+    plan = String.replace(@plan, "Extend the module.\n\nNo diagrams:", "Extend the module.\nNo diagrams:")
+
+    assert {:error, changeset} = Pipeline.save_plan(task, %{plan: plan})
+    assert %{plan: ["`No diagrams:` must start a paragraph of its own, after a blank line"]} = errors_on(changeset)
+    assert Pipeline.read_plan(task) == nil
+  end
+
   test "a plan under the heading is written where read_plan reads it, and broadcast", %{task: %{id: task_id} = task} do
     assert {:ok, %{content: @plan, design: nil}} = Pipeline.save_plan(task, %{plan: @plan})
 

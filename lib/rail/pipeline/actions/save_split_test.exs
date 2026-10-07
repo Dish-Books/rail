@@ -129,6 +129,21 @@ defmodule Rail.Pipeline.Actions.SaveSplitTest do
     refute_received {:output_saved, ^task_id}
   end
 
+  test "a child's part whose No diagrams: line runs into the paragraph above is refused naming it", %{
+    task: task,
+    children: [first, second] = children
+  } do
+    {:ok, _saved} = Pipeline.save_split(task, %{"children" => children})
+    run_on = String.replace(@part, "Build it.\n\nNo diagrams:", "Build it.\nNo diagrams:")
+
+    assert {:error, changeset} = Pipeline.save_split(task, %{"children" => [first, %{second | "plan" => run_on}]})
+
+    assert %{children: [%{}, %{plan: ["`No diagrams:` must start a paragraph of its own, after a blank line"]}]} =
+             errors_on(changeset)
+
+    assert %{children: [%{plan: @part}, %{plan: @part}]} = Pipeline.read_split(task)
+  end
+
   test "a child whose builds_on is null builds on nothing, so the split reads back whole", %{
     task: task,
     children: [first, second]

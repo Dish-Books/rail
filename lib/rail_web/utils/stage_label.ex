@@ -34,8 +34,12 @@ defmodule RailWeb.Utils.StageLabel do
       |> Enum.filter(&(&1.split_position in task.builds_on and is_nil(&1.issue.completed_at)))
       |> Enum.split_with(&(&1.issue.state in [:canceled, :duplicate]))
 
+    present = MapSet.new(siblings, & &1.split_position)
+    removed = for position <- task.builds_on, not MapSet.member?(present, position), do: "child #{position}"
+    blocked_by = Enum.map(canceled, & &1.issue.identifier) ++ removed
+
     cond do
-      canceled != [] -> "Blocked by #{Enum.map_join(canceled, ", ", & &1.issue.identifier)}"
+      blocked_by != [] -> "Blocked by #{Enum.join(blocked_by, ", ")}"
       open != [] -> "Waiting on #{Enum.map_join(open, ", ", & &1.issue.identifier)}"
       true -> "Queued for #{Task.stage_label(task.stage)}"
     end

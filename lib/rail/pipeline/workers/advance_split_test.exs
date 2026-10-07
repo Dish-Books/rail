@@ -9,6 +9,7 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.AdvanceSplit
+  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
@@ -151,6 +152,22 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
     cancel.(fourth)
     assert :ok = perform_job(AdvanceSplit, %{parent_task_id: parent.id})
     assert %Task{stage: :merged} = Repo.reload!(parent)
+  end
+
+  test "a child building on a sibling whose issue Linear removed is never started, and the parent stays open", %{
+    project: project,
+    parent: parent,
+    children: [first, second, third, _fourth],
+    merge: merge
+  } do
+    {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+    remove = %{"type" => "Issue", "action" => "remove", "data" => %{"id" => second.issue.external_id}}
+    assert {:ok, _removed} = Issues.handle_linear_webhook(workspace, remove)
+    merge.(first)
+
+    assert :ok = perform_job(AdvanceSplit, %{parent_task_id: parent.id})
+    assert [] = Repo.preload(third, :runs, force: true).runs
+    assert %Task{stage: :split} = Repo.reload!(parent)
   end
 
   test "looks again when another child merged while it ran", %{

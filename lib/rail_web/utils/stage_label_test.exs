@@ -19,6 +19,7 @@ defmodule RailWeb.Utils.StageLabelTest do
     assert stage_label(child.([1, 3]), nil) == "Waiting on SPL-1"
     assert stage_label(child.([1, 2]), nil) == "Blocked by SPL-2"
     assert stage_label(child.([3]), nil) == "Queued for Engineer"
+    assert stage_label(child.([1, 4]), nil) == "Blocked by child 4"
   end
 
   test "no task at all is something waiting on you" do

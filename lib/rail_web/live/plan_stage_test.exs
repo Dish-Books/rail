@@ -177,6 +177,43 @@ defmodule RailWeb.Live.PlanStageTest do
     refute has_element?(view, "#plan-split-child-detail")
   end
 
+  test "a prose-only part with No diagrams: on its own renders its card and opens as a sheet", %{
+    conn: conn,
+    task: task,
+    child: child
+  } do
+    prose = %{
+      "title" => "Prompt",
+      "ticket" => "The prompt says more.",
+      "plan" => """
+      ## Implementation plan
+
+      ### Approach
+
+      Only the architect prompt changes.
+
+      No diagrams: nothing but prose changes.
+
+      ### File-level changes
+
+      - `.rail/prompts/architect.md`: says more.
+
+      ### Verification
+
+      - `lib/rail/pipeline/utils/plan_subagents_test.exs`: still passes.
+      """
+    }
+
+    {:ok, _split} = Pipeline.save_split(task, %{"children" => [child.(1, "One", 1, []), prose]})
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    assert has_element?(view, "#plan-split-child-1", "One")
+    assert has_element?(view, "#plan-split-child-2", ".rail/prompts/architect.md")
+
+    view |> element("#plan-split-child-2-open") |> render_click()
+    assert has_element?(view, "#plan-split-child-detail #plan-sheet", ".rail/prompts/architect.md")
+  end
+
   test "each card says what its own child builds on, which its lane alone would not", %{
     conn: conn,
     task: task,
