@@ -1387,6 +1387,7 @@ defmodule RailWeb.TaskLiveTest do
         _settled = render(view)
         assert has_element?(view, "#plan-item-ticket-status", "4 criteria · saved")
         assert has_element?(view, "#plan-item-ticket-saved[phx-hook='LocalTime']")
+        assert has_element?(view, "#plan-item-ticket[aria-current='true']")
       end
 
       save_options.(["cards"])
@@ -1394,11 +1395,14 @@ defmodule RailWeb.TaskLiveTest do
       for view <- [one, two] do
         _settled = render(view)
         assert has_element?(view, "#plan-item-design-status", "1 of 3 saved")
-        assert has_element?(view, "#plan-item-design[aria-current='true']")
-        assert has_element?(view, "#design-tab-cards", "Cards")
-        assert has_element?(view, "#design-tab-building-2", "Being built")
-        assert has_element?(view, "#pick-design-cards[disabled]")
+        assert has_element?(view, "#plan-item-ticket[aria-current='true']")
+        assert has_element?(view, "[data-qa='plan_ticket']", "Slow.")
       end
+
+      two |> element("#plan-item-design") |> render_click()
+      assert has_element?(two, "#design-tab-cards", "Cards")
+      assert has_element?(two, "#design-tab-building-2", "Being built")
+      assert has_element?(two, "#pick-design-cards[disabled]")
 
       save_plan.(nil)
 
@@ -1407,6 +1411,45 @@ defmodule RailWeb.TaskLiveTest do
         assert has_element?(view, "#plan-item-plan-status", "saved")
         refute has_element?(view, "#approve-plan")
       end
+
+      assert has_element?(one, "#plan-item-ticket[aria-current='true']")
+      assert has_element?(two, "#plan-item-design[aria-current='true']")
+    end
+
+    test "a run starting, stopping or failing leaves the open item where it was", %{
+      conn: conn,
+      task: task,
+      run: run,
+      save_ticket: save_ticket
+    } do
+      {:ok, working} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#plan-item-ticket[aria-current='true']")
+
+      save_ticket.()
+      _settled = render(view)
+      assert has_element?(view, "#plan-item-design-status", "Not saved yet")
+      assert has_element?(view, "#plan-item-ticket[aria-current='true']")
+
+      {:ok, stopped} = Pipeline.update_run(working, %{status: :finished})
+      send(view.pid, {:run_changed, run.id})
+
+      assert has_element?(view, "#plan-item-ticket[aria-current='true']")
+      refute has_element?(view, "#plan-item-plan[aria-current='true']")
+
+      {:ok, restarted} = Pipeline.update_run(stopped, %{status: :running})
+      send(view.pid, {:run_changed, run.id})
+
+      assert has_element?(view, "#plan-item-ticket[aria-current='true']")
+      refute has_element?(view, "#plan-item-design[aria-current='true']")
+
+      {:ok, _failed} = Pipeline.update_run(restarted, %{status: :finished, error: "Plan ran out of turns."})
+      send(view.pid, {:run_changed, run.id})
+
+      assert has_element?(view, "[data-qa='task_status_chip']", "Plan failed")
+      assert has_element?(view, "#plan-item-ticket[aria-current='true']")
+      assert has_element?(view, "[data-qa='plan_ticket']", "Slow.")
     end
 
     test "Use this design picks at Plan, and the message says only what was picked", %{
@@ -1437,12 +1480,67 @@ defmodule RailWeb.TaskLiveTest do
       assert File.read!(Path.join(dir, "picked")) == "table"
       assert Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ ~r/^\[human:[^\]]+\] I picked Table \(table\)\.$/))
       assert has_element?(view, "#plan-item-design-status", "Picked: Table")
-
-      view |> element("#plan-item-design") |> render_click()
+      assert has_element?(view, "#plan-item-design[aria-current='true']")
       assert has_element?(view, "#design-option-table", "Picked")
       assert has_element?(view, "#design-costs", "Busy at 1280px")
       assert has_element?(view, "#design-assumptions", "Ten per page.")
       refute has_element?(view, "[role='tablist'][aria-label='Design options']")
+    end
+
+    test "a pick of another option than the plan's keeps Design open while Plan revises", %{
+      conn: conn,
+      task: task,
+      save_ticket: save_ticket,
+      save_options: save_options,
+      save_plan: save_plan
+    } do
+      save_ticket.()
+      save_options.(["cards", "table", "timeline"])
+      save_plan.("cards")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#plan-item-design[aria-current='true']")
+
+      view |> element("#design-tab-table") |> render_click()
+      view |> element("#pick-design-table") |> render_click()
+
+      assert has_element?(view, "#plan-item-design[aria-current='true']")
+      assert has_element?(view, "#design-option-table", "Picked")
+      assert has_element?(view, "#plan-item-plan-status", "Revising for the pick")
+      refute has_element?(view, "#plan-item-plan[aria-current='true']")
+    end
+
+    test "each click opens its item, and coming back to the tab opens what waits on the human", %{
+      conn: conn,
+      task: task,
+      role: role,
+      save_ticket: save_ticket,
+      save_options: save_options
+    } do
+      save_ticket.()
+      save_options.(["cards", "table", "timeline"])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#plan-item-design[aria-current='true']")
+
+      view |> element("#plan-item-ticket") |> render_click()
+      assert has_element?(view, "#plan-item-ticket[aria-current='true']")
+      assert has_element?(view, "[data-qa='plan_ticket']", "Slow.")
+
+      view |> element("#plan-item-design") |> render_click()
+      assert has_element?(view, "#plan-item-design[aria-current='true']")
+      assert has_element?(view, "#design-tab-cards", "Cards")
+
+      view |> element("#plan-item-plan") |> render_click()
+      assert has_element?(view, "#plan-item-plan[aria-current='true']")
+      assert has_element?(view, "#plan-plan-pending")
+
+      view |> element("#task-tab-issue") |> render_click()
+      refute has_element?(view, "[data-qa='plan-stage']")
+
+      view |> element("#task-tab-#{role.id}") |> render_click()
+      assert has_element?(view, "#plan-item-design[aria-current='true']")
+      assert has_element?(view, "#plan-item-design-status", "Pick one of 3")
     end
 
     test "a pick of another option than the plan's says it is being revised, and offers no Approve", %{
