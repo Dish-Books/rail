@@ -6,6 +6,7 @@ defmodule RailWeb.TriageLive do
   alias Rail.Scope
   alias Rail.Triage
   alias Rail.Triage.Schemas.Item
+  alias Rail.Triage.Schemas.Message
   alias Rail.Triage.Schemas.Note
   alias Rail.Triage.Schemas.Thread
 
@@ -35,6 +36,7 @@ defmodule RailWeb.TriageLive do
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Rail.PubSub, "triage")
       Phoenix.PubSub.subscribe(Rail.PubSub, "projects")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
     end
 
     socket =
@@ -60,6 +62,7 @@ defmodule RailWeb.TriageLive do
       |> assign(:item_errors, %{})
       |> assign(:drafts, %{})
       |> assign(:note, Ecto.Changeset.change(%Note{}))
+      |> assign(:open_image, nil)
       |> load()
 
     {:noreply, socket}
@@ -97,7 +100,11 @@ defmodule RailWeb.TriageLive do
           note={@note}
         />
 
-        <section :if={@thread} id="triage-items" class="flex-1 min-w-0 flex flex-col min-h-0">
+        <section
+          :if={@thread}
+          id="triage-items"
+          class="flex-1 min-w-[min(560px,calc(100%-630px))] flex flex-col min-h-0"
+        >
           <div class="flex items-center gap-3 px-6 py-3 border-b border-slate-200 dark:border-slate-700">
             <span class="text-sm font-bold text-slate-900 dark:text-slate-100">
               {length(@thread.items)} {if length(@thread.items) == 1, do: "item", else: "items"}
@@ -179,6 +186,14 @@ defmodule RailWeb.TriageLive do
         </section>
       </div>
     </Layouts.app>
+
+    <.triage_image_view
+      :if={@open_image}
+      message_id={@open_image.message_id}
+      image={@open_image.image}
+      position={@open_image.position}
+      count={@open_image.count}
+    />
     """
   end
 
@@ -253,10 +268,25 @@ defmodule RailWeb.TriageLive do
     {:noreply, load(socket)}
   end
 
+  def handle_event("open_image", %{"message_id" => message_id, "file_id" => file_id}, socket) do
+    {:noreply, assign(socket, :open_image, resolve_image(socket.assigns.thread, message_id, file_id, 0))}
+  end
+
+  def handle_event("step_image", %{"direction" => "next"}, socket), do: {:noreply, step_image(socket, 1)}
+  def handle_event("step_image", %{"direction" => "previous"}, socket), do: {:noreply, step_image(socket, -1)}
+  def handle_event("image_key", %{"key" => "ArrowRight"}, socket), do: {:noreply, step_image(socket, 1)}
+  def handle_event("image_key", %{"key" => "ArrowLeft"}, socket), do: {:noreply, step_image(socket, -1)}
+  def handle_event("image_key", _other_key, socket), do: {:noreply, socket}
+
+  def handle_event("close_image", _params, socket), do: {:noreply, assign(socket, :open_image, nil)}
+
   def handle_info({:triage_changed, _thread_id}, socket), do: {:noreply, load(socket)}
 
   # A project's name and its channels' switches show on the open thread.
   def handle_info({:project_changed, _project_id}, socket), do: {:noreply, load(socket)}
+
+  # A task started from an issue page, or one changing stage, shows on the item that created its issue.
+  def handle_info({:pipeline_changed, _task_id}, socket), do: {:noreply, load(socket)}
 
   # The navigation hook and the issue dialog broadcast things this page has no use for.
   def handle_info(_message, socket), do: {:noreply, socket}
@@ -289,6 +319,7 @@ defmodule RailWeb.TriageLive do
       end
 
     drafts = kept_drafts(socket.assigns.drafts, thread)
+    open = socket.assigns.open_image
 
     socket
     |> assign(:now, DateTime.utc_now())
@@ -303,6 +334,29 @@ defmodule RailWeb.TriageLive do
     |> assign(:show_dismiss, thread != nil and thread.status != :done)
     |> assign(:show_triaging, thread != nil and thread.status == :triaging and thread.items == [])
     |> assign(:show_no_response, show_no_response?(thread))
+    |> assign(:open_image, open && resolve_image(thread, open.message_id, open.image.external_id, 0))
+  end
+
+  defp step_image(%{assigns: %{open_image: %{message_id: message_id, image: image}}} = socket, step),
+    do: assign(socket, :open_image, resolve_image(socket.assigns.thread, message_id, image.external_id, step))
+
+  defp step_image(socket, _step), do: socket
+
+  # Opening, stepping and every reload go through here: only files with an address count,
+  # a step never leaves the message or runs past either end, and a file that is gone closes the view.
+  defp resolve_image(nil, _message_id, _file_id, _step), do: nil
+
+  defp resolve_image(%Thread{messages: messages}, message_id, file_id, step) do
+    images =
+      messages
+      |> Enum.find(%Message{}, &(&1.id == message_id))
+      |> Map.fetch!(:images)
+      |> Enum.filter(&is_binary(&1.url))
+
+    index = Enum.find_index(images, &(&1.external_id == file_id))
+    index = if index && (index + step) in 0..(length(images) - 1)//1, do: index + step, else: index
+
+    if index, do: %{message_id: message_id, image: Enum.at(images, index), position: index + 1, count: length(images)}
   end
 
   defp show_no_response?(%Thread{items: [], error: nil, no_response_reason: reason}), do: is_binary(reason)

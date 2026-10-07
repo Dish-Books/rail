@@ -8,6 +8,7 @@ defmodule RailWeb.IssueLiveTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Workers.LinearSync
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -539,6 +540,57 @@ defmodule RailWeb.IssueLiveTest do
 
     send(view.pid, {:issues_synced, project.id})
     assert has_element?(view, "#issue-title", "After sync")
+  end
+
+  test "an open page goes back to Issues once Linear deletes its issue, by webhook or by a sync", %{
+    conn: conn,
+    project: project
+  } do
+    {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+
+    [deleted, pruned] =
+      for {external_id, identifier} <- [{"lin_page_deleted", "IPG-31"}, {"lin_page_pruned", "IPG-32"}] do
+        %Issue{}
+        |> Issue.linear_changeset(%{
+          project_id: project.id,
+          external_id: external_id,
+          identifier: identifier,
+          title: "Doomed #{identifier}",
+          state: :todo
+        })
+        |> Repo.insert!()
+        |> Repo.preload(:project)
+      end
+
+    {:ok, _task} = Pipeline.create_task(deleted, :plan)
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/IPG-31")
+
+    assert {:ok, %Issue{}} =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Issue",
+               "action" => "remove",
+               "data" => %{"id" => "lin_page_deleted"}
+             })
+
+    assert %{"error" => "Issue not found"} = assert_redirect(view, ~p"/issues")
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{pruned.identifier}")
+    started_at = DateTime.to_iso8601(DateTime.utc_now())
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issues" => %{
+            "nodes" => [%{"id" => "lin_page_listed", "identifier" => "IPG-33", "title" => "Still listed"}],
+            "pageInfo" => %{"hasNextPage" => false, "endCursor" => nil}
+          }
+        }
+      })
+    end)
+
+    assert :ok = perform_job(LinearSync, %{project_id: project.id, started_at: started_at})
+    assert %{"error" => "Issue not found"} = assert_redirect(view, ~p"/issues")
   end
 
   test "an unknown issue goes back to the list", %{conn: conn} do

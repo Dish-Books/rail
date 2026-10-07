@@ -26,52 +26,45 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
   @doc """
   Applies `payload` for `workspace`, its projects preloaded. Issue creates and
   updates are upserted onto the project on the issue's team and broadcast as
-  `{:issue_changed, issue_id}` on `"issues"`, removes delete the issue, and
-  anything else, including a team no project is on, is ignored.
+  `{:issue_changed, issue_id}` on `"issues"`. A remove or a trash deletes the
+  issue and its task, and so does an archive when no task references it, both
+  broadcast the same way. Anything else, including a team no project is on, is ignored.
   """
   def handle_linear_webhook(%LinearWorkspace{projects: projects}, %{
         "type" => "Issue",
         "action" => action,
-        "data" => %{"id" => external_id, "teamId" => team_id} = data
+        "data" => %{"id" => external_id, "trashed" => true}
       })
       when action in ["create", "update"] do
-    case Enum.find(projects, &(&1.linear_team_id == team_id)) do
-      %Project{id: project_id} ->
-        attrs =
-          data
-          |> format_linear_issue()
-          |> Map.merge(%{project_id: project_id, owner_user_id: owner_user_id(data["assigneeId"])})
-
-        existing = Repo.get_by(Issue, external_id: external_id) || %Issue{}
-
-        with {:ok, issue} <- existing |> Issue.linear_changeset(attrs) |> Repo.insert_or_update() do
-          # A child's owner is its parent's, so a new owner on a split parent reaches its children.
-          if is_binary(existing.id) and existing.owner_user_id != issue.owner_user_id,
-            do: {:ok, _children} = Pipeline.share_owner_with_children(issue)
-
-          if finished?(action, existing, issue) do
-            {:ok, _job} = Learnings.handle_issue_finished(issue)
-            Pipeline.handle_issue_finished(issue)
-          end
-
-          Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id})
-          {:ok, issue}
-        end
-
-      nil ->
-        :ok
-    end
+    delete_issue(projects, external_id)
   end
 
-  def handle_linear_webhook(%LinearWorkspace{}, %{
+  def handle_linear_webhook(%LinearWorkspace{projects: projects}, %{
+        "type" => "Issue",
+        "action" => action,
+        "data" => %{"id" => external_id, "archivedAt" => archived_at} = data
+      })
+      when action in ["create", "update"] and is_binary(archived_at) do
+    if Repo.exists?(from(t in Task, join: i in assoc(t, :issue), where: i.external_id == ^external_id)),
+      do: upsert_issue(projects, action, data),
+      else: delete_issue_without_task(projects, external_id)
+  end
+
+  def handle_linear_webhook(%LinearWorkspace{projects: projects}, %{
+        "type" => "Issue",
+        "action" => action,
+        "data" => %{"id" => _external_id, "teamId" => _team_id} = data
+      })
+      when action in ["create", "update"] do
+    upsert_issue(projects, action, data)
+  end
+
+  def handle_linear_webhook(%LinearWorkspace{projects: projects}, %{
         "type" => "Issue",
         "action" => "remove",
         "data" => %{"id" => external_id}
       }) do
-    case Repo.get_by(Issue, external_id: external_id) do
-      %Issue{} = issue -> delete_issue(issue)
-      nil -> :ok
-    end
+    delete_issue(projects, external_id)
   end
 
   def handle_linear_webhook(%LinearWorkspace{}, %{
@@ -106,16 +99,101 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
 
   def handle_linear_webhook(%LinearWorkspace{}, _payload), do: :ok
 
-  # A split parent's issue keeps its row: deleting it would take the children's tasks, mid-work, with it.
-  defp delete_issue(%Issue{id: issue_id} = issue) do
+  defp upsert_issue(projects, action, %{"id" => external_id} = data) do
+    case Enum.find(projects, &(&1.linear_team_id == data["teamId"])) do
+      %Project{id: project_id} ->
+        attrs =
+          data
+          |> format_linear_issue()
+          |> Map.merge(%{project_id: project_id, owner_user_id: owner_user_id(data["assigneeId"])})
+
+        existing = Repo.get_by(Issue, external_id: external_id) || %Issue{}
+
+        with {:ok, issue} <- existing |> Issue.linear_changeset(attrs) |> Repo.insert_or_update() do
+          # A child's owner is its parent's, so a new owner on a split parent reaches its children.
+          if is_binary(existing.id) and existing.owner_user_id != issue.owner_user_id,
+            do: {:ok, _children} = Pipeline.share_owner_with_children(issue)
+
+          if finished?(action, existing, issue) do
+            {:ok, _job} = Learnings.handle_issue_finished(issue)
+            Pipeline.handle_issue_finished(issue)
+          end
+
+          Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id})
+          {:ok, issue}
+        end
+
+      nil ->
+        :ok
+    end
+  end
+
+  # Every task, cleaned up or not, is discarded first: its runs have no foreign key to go with it.
+  # A split parent's issue keeps its row, since deleting it would take the children's tasks with it.
+  defp delete_issue(projects, external_id) do
+    project_ids = Enum.map(projects, & &1.id)
+
     split? =
-      Repo.exists?(from(c in Task, join: p in Task, on: c.parent_task_id == p.id, where: p.issue_id == ^issue_id))
+      Repo.exists?(
+        from(c in Task,
+          join: p in Task,
+          on: c.parent_task_id == p.id,
+          join: i in assoc(p, :issue),
+          where: i.external_id == ^external_id and i.project_id in ^project_ids
+        )
+      )
 
     if split? do
-      Logger.warning("Linear removed #{issue.identifier}, which Rail split into child tasks, so Rail keeps it")
+      Logger.warning("Linear removed #{external_id}, which Rail split into child tasks, so Rail keeps it")
       :ok
     else
-      Repo.delete(issue)
+      discard_and_delete(project_ids, external_id)
+    end
+  end
+
+  defp discard_and_delete(project_ids, external_id) do
+    tasks =
+      Repo.all(
+        from(t in Task,
+          join: i in assoc(t, :issue),
+          where: i.external_id == ^external_id and i.project_id in ^project_ids
+        )
+      )
+
+    Enum.each(tasks, &(:ok = Pipeline.discard_task(&1)))
+
+    result =
+      delete_and_broadcast(
+        from(i in Issue, where: i.external_id == ^external_id and i.project_id in ^project_ids, select: i)
+      )
+
+    # Sent only now, so nothing reloads while a task is still there without its issue.
+    if tasks != [], do: Phoenix.PubSub.broadcast(Rail.PubSub, "sandboxes", :sandboxes_changed)
+    result
+  end
+
+  defp delete_issue_without_task(projects, external_id) do
+    project_ids = Enum.map(projects, & &1.id)
+
+    delete_and_broadcast(
+      from(i in Issue,
+        as: :issue,
+        where: i.external_id == ^external_id and i.project_id in ^project_ids,
+        where: not exists(from(t in Task, where: t.issue_id == parent_as(:issue).id)),
+        select: i
+      )
+    )
+  end
+
+  # One statement, so a second remove or a task started meanwhile finds nothing to delete.
+  defp delete_and_broadcast(query) do
+    case Repo.delete_all(query) do
+      {1, [issue]} ->
+        Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id})
+        {:ok, issue}
+
+      {0, []} ->
+        :ok
     end
   end
 

@@ -12,6 +12,25 @@ defmodule RailWeb.Live.PlanStageTest do
   alias Rail.Scope
   alias Rail.Users
 
+  # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
+  @plan """
+  ## Implementation plan
+
+  ### Approach
+
+  All of it.
+
+  No diagrams: one module changes.
+
+  ### File-level changes
+
+  - `lib/rail.ex`: does all of it.
+
+  ### Verification
+
+  - `lib/rail_test.exs`: covers all of it.
+  """
+
   setup %{conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
@@ -49,7 +68,7 @@ defmodule RailWeb.Live.PlanStageTest do
       })
 
     {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Previews", description: "## Acceptance criteria\n\n- One\n"})
-    {:ok, _plan} = Pipeline.save_plan(task, %{plan: "## Implementation plan\n\nAll of it."})
+    {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan})
 
     child = fn number, title, estimate, builds_on ->
       %{

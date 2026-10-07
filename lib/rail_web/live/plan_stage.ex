@@ -4,7 +4,7 @@ defmodule RailWeb.Live.PlanStage do
   one beside it, and the one Approve in the header. A child of a split shows only its approved part.
 
   Everything here is read off scratch and the runs whenever the page reloads it, so a save shows
-  the moment it lands. The item open by default is whatever waits on the human; a click keeps theirs.
+  the moment it lands. What waits on the human opens when the step opens, and only a click changes it after.
   """
   use RailWeb, :live_component
 
@@ -19,7 +19,6 @@ defmodule RailWeb.Live.PlanStage do
       socket
       |> assign(assigns)
       |> assign_new(:error, fn -> nil end)
-      |> assign_new(:chosen_item, fn -> nil end)
       |> assign_new(:selected_key, fn -> nil end)
       |> assign_new(:diagram_views, fn -> %{change: :diagram, call_flow: :diagram} end)
       |> assign_new(:open_child, fn -> nil end)
@@ -188,12 +187,7 @@ defmodule RailWeb.Live.PlanStage do
 
   @impl true
   def handle_event("select_item", %{"item" => item}, socket) when item in ["ticket", "design", "plan", "split"] do
-    socket =
-      socket
-      |> assign(:chosen_item, item)
-      |> assign(:selected_item, item)
-
-    {:noreply, socket}
+    {:noreply, assign(socket, :selected_item, item)}
   end
 
   def handle_event("select_option", %{"key" => key}, socket) do
@@ -858,7 +852,7 @@ defmodule RailWeb.Live.PlanStage do
     |> assign(:selected_key, selected_key)
     |> assign(:option, shown_option(design, selected_key))
     |> assign(:items, items)
-    |> assign(:selected_item, socket.assigns.chosen_item || default_item(items, ticket, plan, split))
+    |> assign_new(:selected_item, fn -> default_item(items, ticket, plan, split) end)
     |> assign(:banner, banner(plan, picked, running))
     |> assign(:pick_up, pick_up(run))
     |> assign(:pending_text, pending_text(running, pick_up(run)))

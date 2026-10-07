@@ -159,7 +159,11 @@ defmodule RailWeb.OverviewLive do
     owner_user_id = if everyone, do: nil, else: user_id
     preload = [:role, :questions, task: [:project, :issue, parent_task: :issue]]
 
-    runs = Pipeline.list_runs(project_id: project_id, owner_user_id: owner_user_id, preload: preload)
+    # A reload that overlaps an issue's deletion can read a task or run whose issue is already gone.
+    runs =
+      [project_id: project_id, owner_user_id: owner_user_id, preload: preload]
+      |> Pipeline.list_runs()
+      |> Enum.filter(&match?(%{task: %{issue: %{}}}, &1))
 
     {tasks, children} = load_tasks(project_id, owner_user_id)
 
@@ -207,7 +211,12 @@ defmodule RailWeb.OverviewLive do
   # A split is one piece of work, so its children are read through their parent, which they are cleaned up with.
   defp load_tasks(project_id, owner_user_id) do
     preload = [:project, :issue, :implementation_plan, runs: [:role, :questions]]
-    tasks = Pipeline.list_tasks(project_id: project_id, owner_user_id: owner_user_id, preload: preload)
+
+    tasks =
+      [project_id: project_id, owner_user_id: owner_user_id, preload: preload]
+      |> Pipeline.list_tasks()
+      |> Enum.filter(&match?(%{issue: %{}}, &1))
+
     {children, tasks} = Enum.split_with(tasks, &is_binary(&1.parent_task_id))
     {tasks, Enum.group_by(children, & &1.parent_task_id)}
   end

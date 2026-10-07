@@ -5,8 +5,12 @@ defmodule Rail.Issues.Workers.LinearSync do
   Each job fetches a page of issues with their comments, writes them together,
   and queues the next page behind it, so a team with thousands of issues is
   never one long request and a failure retries only the page it happened on.
-  When the last page lands, `{:issues_synced, project_id}` goes out on the
+  When the last page lands, the project's issues no page wrote since the sync
+  was asked for are pruned, and `{:issues_synced, project_id}` goes out on the
   `"issues"` topic.
+
+  An archived issue is kept only while a Rail task references it, and a trashed
+  one never is: Linear has deleted it.
 
   Rows are written straight to the tables rather than through the changesets:
   this is Linear telling us what it has, and nothing here should be pushed back.
@@ -23,6 +27,8 @@ defmodule Rail.Issues.Workers.LinearSync do
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
   alias Rail.Linear.Client, as: Linear
+  alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Users.Schemas.User
@@ -50,26 +56,126 @@ defmodule Rail.Issues.Workers.LinearSync do
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"project_id" => project_id} = args}) do
     case Repo.get(Project, project_id) do
-      %Project{} = project -> sync_page(project, args["cursor"])
+      %Project{} = project -> sync_page(project, args["cursor"], args["started_at"])
       nil -> :ok
     end
   end
 
-  defp sync_page(%Project{} = project, cursor) do
+  defp sync_page(%Project{} = project, cursor, started_at) do
     with {:ok, %{"issues" => %{"nodes" => nodes} = issues}} <- Linear.issues(project, after: cursor),
-         {:ok, :ok} <- Repo.transaction(fn -> upsert(project, nodes) end) do
-      continue(project, issues["pageInfo"])
+         {:ok, :ok} <- Repo.transaction(fn -> upsert(project, written(nodes)) end) do
+      # An empty first and only page is likelier a wrong team key than a team with nothing left.
+      prune_since = if cursor == nil and nodes == [], do: nil, else: started_at
+      continue(project, issues["pageInfo"], started_at, prune_since)
     end
   end
 
-  defp continue(%Project{id: project_id}, %{"hasNextPage" => true, "endCursor" => cursor}) do
-    with {:ok, _job} <- %{project_id: project_id, cursor: cursor} |> new() |> Oban.insert() do
+  defp continue(%Project{id: project_id}, %{"hasNextPage" => true, "endCursor" => cursor}, started_at, _prune_since) do
+    with {:ok, _job} <- %{project_id: project_id, cursor: cursor, started_at: started_at} |> new() |> Oban.insert() do
       :ok
     end
   end
 
-  defp continue(%Project{id: project_id}, _last_page) do
-    Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issues_synced, project_id})
+  defp continue(%Project{id: project_id} = project, _last_page, _started_at, prune_since) do
+    with :ok <- prune(project, prune_since) do
+      Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issues_synced, project_id})
+    end
+  end
+
+  defp written(nodes) do
+    archived = for %{"archivedAt" => at} = node <- nodes, is_binary(at), node["trashed"] != true, do: node["id"]
+    with_task = external_ids_with_task(archived)
+
+    Enum.filter(nodes, fn node ->
+      cond do
+        node["trashed"] == true -> false
+        is_binary(node["archivedAt"]) -> MapSet.member?(with_task, node["id"])
+        true -> true
+      end
+    end)
+  end
+
+  defp external_ids_with_task([]), do: MapSet.new()
+
+  defp external_ids_with_task(external_ids) do
+    from(t in Task,
+      join: i in Issue,
+      on: i.id == t.issue_id,
+      where: i.external_id in ^external_ids,
+      select: i.external_id
+    )
+    |> Repo.all()
+    |> MapSet.new()
+  end
+
+  # A job queued before syncs were stamped has no start to prune against.
+  defp prune(_project, nil), do: :ok
+
+  defp prune(%Project{id: project_id} = project, started_at) do
+    {:ok, since, _offset} = DateTime.from_iso8601(started_at)
+
+    stale =
+      Repo.all(
+        from(i in Issue,
+          as: :issue,
+          where: i.project_id == ^project_id and i.updated_at < ^since,
+          select: {i.id, i.external_id, exists(from(t in Task, where: t.issue_id == parent_as(:issue).id))}
+        )
+      )
+
+    {with_task, without_task} = Enum.split_with(stale, &elem(&1, 2))
+
+    # Linear is asked outside any transaction, so what goes is re-read before any task is discarded.
+    with {:ok, gone_ids} <- Enum.reduce_while(with_task, {:ok, []}, &gone_from_linear(project, &1, &2)) do
+      without_task_ids = Enum.map(without_task, &elem(&1, 0))
+
+      doomed_ids =
+        Repo.all(
+          from(i in Issue,
+            as: :issue,
+            where: i.project_id == ^project_id and i.updated_at < ^since,
+            where:
+              i.id in ^gone_ids or
+                (i.id in ^without_task_ids and not exists(from(t in Task, where: t.issue_id == parent_as(:issue).id))),
+            # A split parent's issue stays, as the webhook keeps it: its children's tasks would go with it.
+            where:
+              not exists(
+                from(c in Task, join: p in Task, on: c.parent_task_id == p.id, where: p.issue_id == parent_as(:issue).id)
+              ),
+            select: i.id
+          )
+        )
+
+      # Every task, cleaned up or not, is discarded first: its runs have no foreign key to go with it.
+      tasks = Repo.all(from(t in Task, where: t.issue_id in ^doomed_ids))
+      Enum.each(tasks, &(:ok = Pipeline.discard_task(&1)))
+
+      Repo.delete_all(from(i in Issue, where: i.project_id == ^project_id and i.id in ^doomed_ids))
+
+      # Sent only now, so nothing reloads while a task is still there without its issue.
+      if tasks != [], do: Phoenix.PubSub.broadcast(Rail.PubSub, "sandboxes", :sandboxes_changed)
+      :ok
+    end
+  end
+
+  # A task's issue the pages missed may only have moved team, so only trashed or not found removes it.
+  defp gone_from_linear(%Project{} = project, {id, external_id, _with_task}, {:ok, gone_ids}) do
+    case Linear.issue(project, external_id) do
+      {:ok, %{"issue" => %{"trashed" => true}}} ->
+        {:cont, {:ok, [id | gone_ids]}}
+
+      {:ok, %{"issue" => %{}}} ->
+        {:cont, {:ok, gone_ids}}
+
+      {:ok, %{"issue" => nil}} ->
+        {:cont, {:ok, [id | gone_ids]}}
+
+      {:error, {:linear_graphql_error, [%{"message" => "Entity not found" <> _what} | _rest]}} ->
+        {:cont, {:ok, [id | gone_ids]}}
+
+      {:error, _reason} = error ->
+        {:halt, error}
+    end
   end
 
   defp upsert(_project, []), do: :ok

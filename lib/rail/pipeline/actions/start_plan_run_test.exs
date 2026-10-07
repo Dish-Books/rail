@@ -4,6 +4,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
 
   import Ecto.Query
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
@@ -19,6 +20,25 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
   alias Rail.Tools.Schemas.OsProcess
 
   # Its own project, because starting a run adds a worktree to a real clone.
+  # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
+  @plan """
+  ## Implementation plan
+
+  ### Approach
+
+  Extend the module.
+
+  No diagrams: one module changes.
+
+  ### File-level changes
+
+  - `lib/rail.ex`: extends the module.
+
+  ### Verification
+
+  - `lib/rail_test.exs`: covers the extension.
+  """
+
   setup %{project: %{linear_workspace_id: workspace_id}} do
     scope = system_scope()
     clone_path = create_temp_git_repo()
@@ -86,6 +106,8 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     roles: %{plan: %Role{id: role_id}},
     issue: %Issue{id: issue_id} = issue
   } do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+
     Repo.insert!(%Comment{
       issue_id: issue_id,
       external_id: "lin_comment_start_plan",
@@ -128,13 +150,24 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     assert File.dir?(Path.join(scratch_path, "design"))
     assert [%Run{role_id: ^role_id}] = Repo.all(from r in Run, where: r.task_id == ^task_id)
     assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: issue_id})
+    assert_received {:pipeline_changed, ^task_id}
   end
 
-  test "a worktree that cannot be made leaves no task", %{project: project, issue: issue} do
+  test "a worktree that cannot be made leaves no task and broadcasts nothing", %{project: project, issue: issue} do
     File.rm_rf!(Path.join(project.clone_path, ".git"))
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+    test_pid = self()
+
+    # The task is rolled back, so its id is only known from the attempt at its worktree.
+    stub(Git, :get_or_create_worktree, fn project, task ->
+      send(test_pid, {:worktree_for, task.id})
+      call_original(Git, :get_or_create_worktree, [project, task])
+    end)
 
     assert {:error, {:worktree_failed, _reason}} = Pipeline.start_plan_run(issue)
 
+    assert_received {:worktree_for, task_id}
+    refute_received {:pipeline_changed, ^task_id}
     refute Repo.exists?(from t in Task, where: t.issue_id == ^issue.id)
     refute Repo.exists?(Run)
     refute_enqueued(worker: AdvanceLinearState)
@@ -160,7 +193,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     end
 
     File.write!(Path.join(design, "picked"), "rows")
-    {:ok, _plan} = Pipeline.save_plan(task, %{plan: "## Implementation plan\n\nDo it.", design: "rows"})
+    {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan, design: "rows"})
 
     {:ok, _split} =
       Pipeline.save_split(task, %{

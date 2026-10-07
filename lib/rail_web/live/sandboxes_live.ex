@@ -384,8 +384,15 @@ defmodule RailWeb.SandboxesLive do
         %{cpus: capacity.cpus - capacity.reserved_cpus, memory_gb: capacity.memory_gb - capacity.reserved_memory_gb}
 
     # The stats count the whole machine, but a row shows only a project the user can access,
-    # and a waiting row keeps its place in the whole line.
-    visible? = &Scope.can_access_project?(socket.assigns.current_scope, &1.run.task.project_id)
+    # and a waiting row keeps its place in the whole line. One read part-way through a task's
+    # deletion, or left behind by one, has no whole row to show.
+    visible? = fn
+      %OsProcess{id: id, run: %{os_processes: turns, task: %{project_id: project_id, issue: %{}}}} ->
+        Enum.any?(turns, &(&1.id == id)) and Scope.can_access_project?(socket.assigns.current_scope, project_id)
+
+      %OsProcess{} ->
+        false
+    end
 
     socket
     |> assign(:now, now)

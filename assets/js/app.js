@@ -22,6 +22,7 @@ import { CurrentInView } from "./hooks/current_in_view";
 import { ScrollSelectedTab } from "./hooks/scroll_selected_tab";
 import { PlanDiagram } from "./hooks/plan_diagram";
 import { PlanLinks } from "./hooks/plan_links";
+import { ImageFallback } from "./hooks/image_fallback";
 
 const Hooks = {
   DesignFrame,
@@ -42,7 +43,8 @@ const Hooks = {
   CurrentInView,
   ScrollSelectedTab,
   PlanDiagram,
-  PlanLinks
+  PlanLinks,
+  ImageFallback
 };
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content");
