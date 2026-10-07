@@ -1,7 +1,7 @@
 defmodule RailWeb.Utils.ChildStatus do
   @moduledoc """
-  Where one child of a split stands among its siblings: merged once Linear completed its issue, canceled
-  once Linear canceled it, waiting while a sibling it builds on has not merged, and otherwise as its run.
+  Where one child of a split stands among its siblings: merged or canceled as Linear has it, blocked by a
+  canceled sibling it builds on, waiting while one has not merged, and otherwise as its stage's run.
   """
 
   import RailWeb.Utils.FormatAge
@@ -26,10 +26,10 @@ defmodule RailWeb.Utils.ChildStatus do
     earlier = for position <- child.builds_on, sibling = by_position[position], do: sibling
     run = stage_run(child)
 
-    waiting_on =
-      if issue.completed_at == nil and child.runs == [],
-        do: for(%Task{issue: %Issue{completed_at: nil}} = sibling <- earlier, do: sibling.issue.identifier),
-        else: []
+    unstarted? = issue.completed_at == nil and child.runs == []
+    {canceled, open} = earlier |> Enum.filter(&is_nil(&1.issue.completed_at)) |> Enum.split_with(&canceled?/1)
+    waiting_on = if unstarted?, do: Enum.map(open, & &1.issue.identifier), else: []
+    blocked_by = if unstarted?, do: Enum.map(canceled, & &1.issue.identifier), else: []
 
     base = %{
       task: child,
@@ -41,6 +41,7 @@ defmodule RailWeb.Utils.ChildStatus do
     cond do
       issue.completed_at != nil -> Map.merge(base, merged(child))
       issue.state in [:canceled, :duplicate] -> Map.merge(base, canceled(issue))
+      blocked_by != [] -> Map.merge(base, blocked(blocked_by))
       waiting_on != [] -> Map.merge(base, waiting(waiting_on))
       true -> Map.merge(base, working(child, run))
     end
@@ -91,6 +92,33 @@ defmodule RailWeb.Utils.ChildStatus do
       badge: nil,
       line: "#{label} in Linear",
       line_class: "text-slate-600 dark:text-slate-300",
+      action: nil
+    }
+  end
+
+  # It builds on work that will never merge, so only its owner canceling it too lets the split finish.
+  defp blocked(blocked_by) do
+    chip = %{label: "Blocked", icon: "pi-warning-circle", class: @amber}
+    were = if length(blocked_by) == 1, do: "was", else: "were"
+
+    %{
+      state: :blocked_by_canceled,
+      label: "Blocked by #{Enum.join(blocked_by, ", ")}",
+      icon: "pi-warning-circle",
+      text_class: "text-amber-700 dark:text-amber-300",
+      cells:
+        Enum.map(
+          @stages,
+          &if(&1 == :engineer,
+            do: %{stage: &1, mark: :current, chip: chip},
+            else: %{stage: &1, mark: :pending, chip: nil}
+          )
+        ),
+      merged: %{mark: :pending, chip: nil},
+      needs_attention: true,
+      badge: :dot,
+      line: "#{join_and(blocked_by)} #{were} canceled, so this will not start; cancel it in Linear to finish the split",
+      line_class: "text-amber-700 dark:text-amber-300",
       action: nil
     }
   end
@@ -210,6 +238,8 @@ defmodule RailWeb.Utils.ChildStatus do
     |> Enum.filter(&(&1.role.stage == stage))
     |> Enum.max_by(&(&1.started_at || &1.inserted_at), DateTime, fn -> nil end)
   end
+
+  defp canceled?(%Task{issue: %Issue{state: state}}), do: state in [:canceled, :duplicate]
 
   defp join_and([one]), do: one
   defp join_and(names), do: Enum.join(Enum.drop(names, -1), ", ") <> " and " <> List.last(names)

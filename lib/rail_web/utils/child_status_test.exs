@@ -68,6 +68,28 @@ defmodule RailWeb.Utils.ChildStatusTest do
            } = child_status(canceled, [canceled])
   end
 
+  test "a child with no run building on a canceled sibling is blocked by it, and flagged to its owner", %{
+    child: child
+  } do
+    first = child.(1, [])
+    second = child.(2, issue: %Issue{identifier: "SPL-2", state: :canceled})
+    third = child.(3, builds_on: [1, 2])
+
+    assert %{
+             state: :blocked_by_canceled,
+             label: "Blocked by SPL-2",
+             icon: "pi-warning-circle",
+             needs_attention: true,
+             badge: :dot,
+             action: nil,
+             waiting_on: ["SPL-1"],
+             line: "SPL-2 was canceled, so this will not start; cancel it in Linear to finish the split",
+             cells: [%{stage: :engineer, mark: :current, chip: %{label: "Blocked"}} | _rest]
+           } = child_status(third, [first, second, third])
+
+    assert %{state: :waiting_on, waiting_on: ["SPL-1", "SPL-2"]} = child_status(third, [first, child.(2, []), third])
+  end
+
   test "a child with no run and an unmerged earlier sibling waits on it in slate, in the Engineer column", %{
     child: child,
     now: now

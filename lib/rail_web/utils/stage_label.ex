@@ -26,17 +26,18 @@ defmodule RailWeb.Utils.StageLabel do
   # A split parent's work is its children's, so all it says of itself is that its plan was approved.
   def stage_label(%Task{stage: :split}, _run), do: "Plan approved"
 
-  # A child of a split with no run is not next in line while a sibling it builds on is unmerged.
-  # Read only where the page loaded the parent's children, so a row never asks for them itself.
+  # A child of a split with no run is not next in line while a sibling it builds on is unmerged, and
+  # never starts while one is canceled. Read only where the page loaded the parent's children.
   def stage_label(%Task{runs: [], parent_task: %Task{children: [_first | _rest] = siblings}} = task, nil) do
-    waiting_on =
-      for %Task{split_position: position, issue: %{completed_at: nil, identifier: identifier}} <- siblings,
-          position in task.builds_on,
-          do: identifier
+    {canceled, open} =
+      siblings
+      |> Enum.filter(&(&1.split_position in task.builds_on and is_nil(&1.issue.completed_at)))
+      |> Enum.split_with(&(&1.issue.state in [:canceled, :duplicate]))
 
-    case waiting_on do
-      [] -> "Queued for #{Task.stage_label(task.stage)}"
-      identifiers -> "Waiting on #{Enum.join(identifiers, ", ")}"
+    cond do
+      canceled != [] -> "Blocked by #{Enum.map_join(canceled, ", ", & &1.issue.identifier)}"
+      open != [] -> "Waiting on #{Enum.map_join(open, ", ", & &1.issue.identifier)}"
+      true -> "Queued for #{Task.stage_label(task.stage)}"
     end
   end
 

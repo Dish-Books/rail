@@ -12,6 +12,25 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
+  # The smallest part of a plan the structure allows, trimmed as a save trims it.
+  @part String.trim("""
+        ## Implementation plan
+
+        ### Approach
+
+        Build it.
+
+        No diagrams: one module changes.
+
+        ### File-level changes
+
+        - `lib/rail.ex`: builds it.
+
+        ### Verification
+
+        - `lib/rail_test.exs`: covers it.
+        """)
+
   # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
   @plan """
   ## Implementation plan
@@ -263,8 +282,8 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
                Mcp.call_run_tool(context.(:plan), "save_plan", %{"plan" => @plan})
 
       children = [
-        %{"title" => "One", "ticket" => "T1.", "plan" => "## Implementation plan\n\nOne."},
-        %{"title" => "Two", "ticket" => "T2.", "plan" => "## Implementation plan\n\nTwo.", "builds_on" => [1]}
+        %{"title" => "One", "ticket" => "T1.", "plan" => @part},
+        %{"title" => "Two", "ticket" => "T2.", "plan" => @part, "builds_on" => [1]}
       ]
 
       assert {:ok, %{"content" => [%{"text" => "Split saved into 2 children." <> _rest}]}} =

@@ -7,13 +7,32 @@ defmodule Rail.Mcp.Utils.RunToolSaveSplitTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
 
+  # The smallest part of a plan the structure allows, trimmed as a save trims it.
+  @part String.trim("""
+        ## Implementation plan
+
+        ### Approach
+
+        Build it.
+
+        No diagrams: one module changes.
+
+        ### File-level changes
+
+        - `lib/rail.ex`: builds it.
+
+        ### Verification
+
+        - `lib/rail_test.exs`: covers it.
+        """)
+
   setup do
     scratch = Path.join(System.tmp_dir!(), "rt_save_split_#{System.unique_integer([:positive])}")
     on_exit(fn -> File.rm_rf(scratch) end)
 
     children = [
-      %{"title" => "One", "ticket" => "T1.", "plan" => "## Implementation plan\n\nOne."},
-      %{"title" => "Two", "ticket" => "T2.", "plan" => "## Implementation plan\n\nTwo.", "builds_on" => [1]}
+      %{"title" => "One", "ticket" => "T1.", "plan" => @part},
+      %{"title" => "Two", "ticket" => "T2.", "plan" => @part, "builds_on" => [1]}
     ]
 
     %{task: %Task{id: "tsk_rt_split", scratch_path: scratch, issue: %Issue{identifier: "RTS-1"}}, children: children}

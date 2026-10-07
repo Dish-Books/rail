@@ -5,6 +5,8 @@ defmodule Rail.Pipeline.Schemas.Split do
   """
   use Rail.Schema
 
+  alias Rail.Pipeline.Schemas.ImplementationPlan
+
   @heading ~r/\A## Implementation plan\s*(\n|\z)/
 
   @primary_key false
@@ -45,6 +47,7 @@ defmodule Rail.Pipeline.Schemas.Split do
     |> validate_format(:title, ~r/\A[^\n]*\z/, message: "must be one line")
     |> validate_number(:estimate, greater_than_or_equal_to: 0, message: "must be zero or more")
     |> validate_format(:plan, @heading, message: "must open with the `## Implementation plan` heading")
+    |> ImplementationPlan.validate_structure(:plan)
     |> validate_change(:builds_on, fn :builds_on, builds_on ->
       # Positions count from 1, and a child builds only on the ones before it.
       if Enum.all?(builds_on, &(&1 in 1..index//1)),

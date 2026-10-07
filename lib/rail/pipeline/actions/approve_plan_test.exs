@@ -14,6 +14,25 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
+  # The smallest part of a plan the structure allows, trimmed as a save trims it.
+  @part String.trim("""
+        ## Implementation plan
+
+        ### Approach
+
+        Build it.
+
+        No diagrams: one module changes.
+
+        ### File-level changes
+
+        - `lib/rail.ex`: builds it.
+
+        ### Verification
+
+        - `lib/rail_test.exs`: covers it.
+        """)
+
   # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
   @plan """
   ## Implementation plan
@@ -242,15 +261,15 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
       {:ok, _split} =
         Pipeline.save_split(task, %{
           "children" => [
-            %{"title" => "First", "ticket" => "Ticket one.", "estimate" => 3, "plan" => "## Implementation plan\n\nOne."},
+            %{"title" => "First", "ticket" => "Ticket one.", "estimate" => 3, "plan" => @part},
             %{
               "title" => "Second",
               "ticket" => "Ticket two.",
               "estimate" => 2,
-              "plan" => "## Implementation plan\n\nTwo.",
+              "plan" => @part,
               "builds_on" => [1]
             },
-            %{"title" => "Third", "ticket" => "Ticket three.", "plan" => "## Implementation plan\n\nThree."}
+            %{"title" => "Third", "ticket" => "Ticket three.", "plan" => @part}
           ]
         })
 
@@ -323,7 +342,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
                  builds_on: [],
                  issue: %Issue{identifier: "APP-2", state: :todo},
                  runs: [%Run{role_id: ^engineer_id}],
-                 implementation_plan: %ImplementationPlan{content: "## Implementation plan\n\nOne."}
+                 implementation_plan: %ImplementationPlan{content: @part}
                },
                %Task{stage: :engineer, split_position: 2, builds_on: [1], runs: []},
                %Task{stage: :engineer, split_position: 3, runs: [%Run{role_id: ^engineer_id}]}

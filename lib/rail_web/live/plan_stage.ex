@@ -645,7 +645,7 @@ defmodule RailWeb.Live.PlanStage do
             <p class="text-[11.5px] text-slate-500 dark:text-slate-400">
               {count_label(criteria(child.ticket), "criterion", "criteria")}
             </p>
-            <div :if={child.first_file} class="pt-2 border-t border-slate-200 dark:border-slate-800">
+            <div class="pt-2 border-t border-slate-200 dark:border-slate-800">
               <p class="font-mono text-[11.5px] text-slate-700 dark:text-slate-300 truncate">
                 {child.first_file.path}
               </p>
@@ -691,16 +691,10 @@ defmodule RailWeb.Live.PlanStage do
             Part of the plan
           </p>
           <.plan_sheet
-            :if={@open_sheet}
             sheet={@open_sheet}
             diagram_views={@diagram_views}
             event="diagram_view"
             target={@target}
-          />
-          <.markdown
-            :if={@open_sheet == nil}
-            content={@open.plan}
-            class="text-[15px] leading-relaxed"
           />
         </div>
       </section>
@@ -987,11 +981,10 @@ defmodule RailWeb.Live.PlanStage do
 
   defp first_paragraph(ticket), do: ticket |> String.split(~r/\n\s*\n/, parts: 2) |> hd()
 
+  # A saved part passed the same section check as the plan, so it always lays out as a sheet.
   defp first_file(plan) do
-    case build_plan_sheet(plan) do
-      %{files: [first | rest]} -> %{path: first.path, more: length(rest)}
-      _no_sheet -> nil
-    end
+    %{files: [first | rest]} = build_plan_sheet(plan)
+    %{path: first.path, more: length(rest)}
   end
 
   defp files(%{files: files}), do: "#{length(files)} #{if length(files) == 1, do: "file", else: "files"}"

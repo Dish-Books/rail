@@ -1144,7 +1144,7 @@ defmodule RailWeb.TaskLive do
     status = Enum.find(statuses, &(&1.task.id == id))
 
     header_status =
-      if status.state == :waiting_on,
+      if status.state in [:waiting_on, :blocked_by_canceled],
         do: %{label: status.label, icon: status.icon, class: status.text_class}
 
     socket

@@ -3,8 +3,23 @@ defmodule RailWeb.Utils.StageLabelTest do
 
   import RailWeb.Utils.StageLabel
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+
+  test "a child of a split with no run reads what its earlier siblings hold it on" do
+    siblings = [
+      %Task{split_position: 1, issue: %Issue{identifier: "SPL-1", state: :in_progress}},
+      %Task{split_position: 2, issue: %Issue{identifier: "SPL-2", state: :canceled}},
+      %Task{split_position: 3, issue: %Issue{identifier: "SPL-3", state: :done, completed_at: ~U[2026-10-07 10:00:00Z]}}
+    ]
+
+    child = &%Task{stage: :engineer, runs: [], builds_on: &1, parent_task: %Task{children: siblings}}
+
+    assert stage_label(child.([1, 3]), nil) == "Waiting on SPL-1"
+    assert stage_label(child.([1, 2]), nil) == "Blocked by SPL-2"
+    assert stage_label(child.([3]), nil) == "Queued for Engineer"
+  end
 
   test "no task at all is something waiting on you" do
     assert stage_label(nil, nil) == "Waiting on you"

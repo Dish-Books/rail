@@ -82,6 +82,8 @@ defmodule RailWeb.Live.PlanStageTest do
 
         Part #{number}.
 
+        No diagrams: one module changes.
+
         ### File-level changes
 
         - `lib/rail/part_#{number}.ex`: does part #{number}.
@@ -94,6 +96,10 @@ defmodule RailWeb.Live.PlanStageTest do
         ```elixir
         def part(x)
         ```
+
+        ### Verification
+
+        - `lib/rail/part_#{number}_test.exs`: covers part #{number}.
         """,
         "builds_on" => builds_on
       }
@@ -204,7 +210,7 @@ defmodule RailWeb.Live.PlanStageTest do
         "children" => [
           child.(1, "One", 1, []),
           child.(2, "Two", 1, [1]),
-          %{"title" => "Three", "ticket" => "Three.", "plan" => "## Implementation plan\n\nJust this."}
+          child.(3, "Three", nil, [])
         ]
       })
 
@@ -214,7 +220,7 @@ defmodule RailWeb.Live.PlanStageTest do
     assert has_element?(view, "#plan-item-split-status", "3 children · 2 points")
 
     view |> element("#plan-split-child-3-open") |> render_click()
-    assert has_element?(view, "#plan-split-child-detail", "Just this.")
+    assert has_element?(view, "#plan-split-child-detail", "lib/rail/part_3_more.ex")
   end
 
   test "a child's Plan tab shows its approved part as a sheet, under a notice naming every child it waits on", %{

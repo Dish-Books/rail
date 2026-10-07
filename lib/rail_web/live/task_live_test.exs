@@ -7329,6 +7329,21 @@ defmodule RailWeb.TaskLiveTest do
       assert view |> element("#cleanup-task") |> render() =~ "Clean up this task and its 3 children?"
     end
 
+    test "a child building on a canceled sibling reads Blocked by it, on its row and in its header", %{
+      conn: conn,
+      parent: parent,
+      first: first
+    } do
+      first.issue |> Issue.linear_changeset(%{state: :canceled}) |> Repo.update!()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
+      assert has_element?(view, "#split-row-TLV-12[data-state='blocked_by_canceled']", "TLV-11 was canceled")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-12")
+      assert has_element?(view, "[data-qa='task_status_chip']", "Blocked by TLV-11")
+      refute has_element?(view, "[data-qa='task_branch_name']")
+    end
+
     test "a task with no split has no Children tab and no switcher", %{conn: conn, task: task} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 

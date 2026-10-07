@@ -5,6 +5,25 @@ defmodule Rail.Pipeline.Actions.SaveSplitTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
 
+  # The smallest part of a plan the structure allows, trimmed as a save trims it.
+  @part String.trim("""
+        ## Implementation plan
+
+        ### Approach
+
+        Build it.
+
+        No diagrams: one module changes.
+
+        ### File-level changes
+
+        - `lib/rail.ex`: builds it.
+
+        ### Verification
+
+        - `lib/rail_test.exs`: covers it.
+        """)
+
   setup do
     scratch = Path.join(System.tmp_dir!(), "save_split_#{System.unique_integer([:positive])}")
     on_exit(fn -> File.rm_rf(scratch) end)
@@ -22,13 +41,13 @@ defmodule Rail.Pipeline.Actions.SaveSplitTest do
         "title" => "Preview deploys",
         "ticket" => "Deploys.",
         "estimate" => 3,
-        "plan" => "## Implementation plan\n\nOne."
+        "plan" => @part
       },
       %{
         "title" => "QA on previews",
         "ticket" => "QA.",
         "estimate" => 2,
-        "plan" => "## Implementation plan\n\nTwo.",
+        "plan" => @part,
         "builds_on" => [1]
       }
     ]
@@ -44,7 +63,7 @@ defmodule Rail.Pipeline.Actions.SaveSplitTest do
             %{
               children: [
                 %{number: 1, title: "Preview deploys", ticket: "Deploys.", estimate: 3, builds_on: []},
-                %{number: 2, title: "QA on previews", plan: "## Implementation plan\n\nTwo.", builds_on: [1]}
+                %{number: 2, title: "QA on previews", plan: @part, builds_on: [1]}
               ],
               saved_at: %DateTime{}
             }} = Pipeline.save_split(task, %{"children" => children})
@@ -91,6 +110,23 @@ defmodule Rail.Pipeline.Actions.SaveSplitTest do
     end
 
     assert Pipeline.read_split(task) == nil
+  end
+
+  test "a child's part of the plan whose sections are off is refused naming it, and the last save stays", %{
+    task: %{id: task_id} = task,
+    children: [first, second] = children
+  } do
+    {:ok, _saved} = Pipeline.save_split(task, %{"children" => children})
+    assert_received {:output_saved, ^task_id}
+
+    off = String.replace(@part, "### Approach", "A sentence first.\n\n### Approach")
+    assert {:error, changeset} = Pipeline.save_split(task, %{"children" => [first, %{second | "plan" => off}]})
+
+    assert %{children: [%{}, %{plan: ["has text between `## Implementation plan` and `### Approach`" <> _rest]}]} =
+             errors_on(changeset)
+
+    assert %{children: [%{plan: @part}, %{plan: @part}]} = Pipeline.read_split(task)
+    refute_received {:output_saved, ^task_id}
   end
 
   test "a child whose builds_on is null builds on nothing, so the split reads back whole", %{

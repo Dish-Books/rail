@@ -134,6 +134,25 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
     assert [] = Repo.preload(first, :runs, force: true).runs
   end
 
+  test "a child building on a canceled sibling is not started, and the parent waits until it is canceled too", %{
+    parent: parent,
+    children: [first, second, third, fourth],
+    merge: merge
+  } do
+    cancel = &(&1.issue |> Issue.linear_changeset(%{state: :canceled}) |> Repo.update!())
+    cancel.(first)
+    merge.(second)
+    merge.(third)
+
+    assert :ok = perform_job(AdvanceSplit, %{parent_task_id: parent.id})
+    assert [] = Repo.preload(fourth, :runs, force: true).runs
+    assert %Task{stage: :split} = Repo.reload!(parent)
+
+    cancel.(fourth)
+    assert :ok = perform_job(AdvanceSplit, %{parent_task_id: parent.id})
+    assert %Task{stage: :merged} = Repo.reload!(parent)
+  end
+
   test "looks again when another child merged while it ran", %{
     parent: parent,
     children: [first, second | _rest],
