@@ -86,6 +86,16 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
     assert ["[human] One line"] = Enum.map(Pipeline.list_run_events(run), & &1.line)
   end
 
+  test "a plan revision is logged as Rail's note, not a person's", %{idle: idle} do
+    {:ok, run} = idle.() |> Run.changeset(%{status: :running}) |> Repo.update()
+
+    assert {:ok, :queued, %Run{}} =
+             Pipeline.send_message(system_scope(), run, "The plan changed.\nIn full:", from: :plan_revision)
+
+    assert ["[plan revised] The plan changed.", "[plan revised] In full:"] =
+             Enum.map(Pipeline.list_run_events(run), & &1.line)
+  end
+
   test "a working run that has not recorded its conversation yet still queues", %{task: task, role: role} do
     {:ok, run} =
       Pipeline.create_run(%{

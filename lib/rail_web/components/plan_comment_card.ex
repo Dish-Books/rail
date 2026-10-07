@@ -8,6 +8,7 @@ defmodule RailWeb.Components.PlanCommentCard do
   attr :id, :string, required: true
   attr :sender, :string, required: true
   attr :round, :map, required: true, doc: "the message as `PlanComment.parse_message/1` reads it"
+  attr :identifier, :string, default: nil, doc: "the issue's identifier, beside the ticket's section"
 
   def plan_comment_card(assigns) do
     ~H"""
@@ -20,23 +21,36 @@ defmodule RailWeb.Components.PlanCommentCard do
         <.icon name="pi-user" class="h-3 w-3 shrink-0" />
         <span data-qa="human-bubble-sender" class="shrink-0 whitespace-nowrap">{@sender}</span>
         <span class="min-w-0 truncate font-normal">
-          · {@round.count} {if @round.count == 1, do: "comment", else: "comments"} on the design
+          · {@round.count} {if @round.count == 1, do: "comment", else: "comments"} on {@round.groups}
         </span>
       </div>
-      <div :for={section <- @round.sections}>
+      <div :for={section <- @round.sections} data-qa="plan_comment_card_section">
         <p class="pt-1.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300 truncate">
-          {section.title} <span class="font-mono font-normal text-slate-500">{section.key}</span>
+          {section.title}
+          <span class="font-mono font-normal text-slate-500">
+            {if section.target == :ticket, do: @identifier, else: section.key}
+          </span>
         </p>
         <div :for={comment <- section.comments} class="flex items-start gap-2 px-1.5 py-1 rounded-md">
           <span class="mt-0.5 size-[18px] shrink-0 grid place-items-center rounded-full bg-slate-700 text-white text-[10px] font-bold">
             {comment.number}
           </span>
           <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-1.5 min-w-0 font-mono text-[10.5px] text-slate-500 dark:text-slate-400">
+            <div
+              :if={section.target == :design}
+              class="flex items-center gap-1.5 min-w-0 font-mono text-[10.5px] text-slate-500 dark:text-slate-400"
+            >
               <span class="truncate" title={comment.selector}>{comment.selector}</span>
               <span class="shrink-0 max-w-[45%] truncate font-sans">
                 {if comment.tag, do: "<#{comment.tag}>", else: ~s("#{comment.text}")}
               </span>
+            </div>
+            <div
+              :if={section.target != :design}
+              class="flex items-center gap-1.5 min-w-0 font-mono text-[10.5px] text-slate-500 dark:text-slate-400"
+            >
+              <span class="truncate">{comment.label}</span>
+              <span class="shrink-0 max-w-[45%] truncate font-sans" title={comment.text}>"{comment.text}"</span>
             </div>
             <p
               phx-no-format

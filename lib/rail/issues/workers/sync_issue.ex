@@ -6,6 +6,9 @@ defmodule Rail.Issues.Workers.SyncIssue do
   those. Nothing is read back and nothing else is written, so an edit somebody
   made in Linear to a field this change did not touch is still there afterwards.
   Rail is not the owner of the ticket; it is one of two writers.
+
+  An estimate goes in a mutation of its own after the rest, since a team whose scale refuses it, or that has
+  estimates off, would otherwise refuse the whole change.
   """
   use Oban.Worker, queue: :issues, max_attempts: 5
 
@@ -27,11 +30,14 @@ defmodule Rail.Issues.Workers.SyncIssue do
   end
 
   defp push(%Issue{project: %Project{} = project} = issue, fields) do
-    case linear_attrs(issue, project, fields) do
-      attrs when map_size(attrs) == 0 -> :ok
-      attrs -> update_linear(project, issue, attrs)
+    {estimate, rest} = issue |> linear_attrs(project, fields) |> Map.split(["estimate"])
+
+    with :ok <- update_linear(project, issue, rest) do
+      update_linear(project, issue, estimate)
     end
   end
+
+  defp update_linear(_project, _issue, input) when map_size(input) == 0, do: :ok
 
   defp update_linear(%Project{} = project, %Issue{} = issue, input) do
     case Linear.update_issue(project, issue.external_id, input) do

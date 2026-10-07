@@ -2,7 +2,10 @@ defmodule RailWeb.Components.PlanDiagramTest do
   use ExUnit.Case, async: true
 
   import Phoenix.LiveViewTest
+  import RailTest.Helpers
+  import RailWeb.Utils.BuildPlanSheet
 
+  alias Rail.Pipeline.Schemas.PlanComment
   alias RailWeb.Components.PlanDiagram
 
   test "draws a card the hook fills in, with its source as text and full screen hidden until the browser has it" do
@@ -11,7 +14,14 @@ defmodule RailWeb.Components.PlanDiagramTest do
     html =
       (&PlanDiagram.plan_diagram/1)
       |> render_component(
-        diagram: %{kind: :change, source: source, type_label: "Flowchart", caption: "Flowchart"},
+        diagram: %{
+          kind: :change,
+          source: source,
+          type_label: "Flowchart",
+          caption: "Flowchart",
+          source_lines: [],
+          nodes: []
+        },
         view: :diagram,
         event: "diagram_view"
       )
@@ -43,7 +53,9 @@ defmodule RailWeb.Components.PlanDiagramTest do
           kind: :call_flow,
           source: "sequenceDiagram\n  A->>B: hi\n",
           type_label: "Sequence diagram",
-          caption: "From A to B"
+          caption: "From A to B",
+          source_lines: [],
+          nodes: []
         },
         view: :source,
         event: "diagram_view",
@@ -64,7 +76,14 @@ defmodule RailWeb.Components.PlanDiagramTest do
 
     html =
       render_component(&PlanDiagram.plan_diagram/1,
-        diagram: %{kind: :change, source: source, type_label: "Flowchart", caption: "<b>caption</b>"},
+        diagram: %{
+          kind: :change,
+          source: source,
+          type_label: "Flowchart",
+          caption: "<b>caption</b>",
+          source_lines: [],
+          nodes: []
+        },
         view: :diagram,
         event: "diagram_view"
       )
@@ -82,7 +101,14 @@ defmodule RailWeb.Components.PlanDiagramTest do
       for source <- ["flowchart LR\n  A --> B\n", "flowchart LR\n  A --> C\n"] do
         (&PlanDiagram.plan_diagram/1)
         |> render_component(
-          diagram: %{kind: :change, source: source, type_label: "Flowchart", caption: "Flowchart"},
+          diagram: %{
+            kind: :change,
+            source: source,
+            type_label: "Flowchart",
+            caption: "Flowchart",
+            source_lines: [],
+            nodes: []
+          },
           view: :diagram,
           event: "diagram_view"
         )
@@ -92,5 +118,48 @@ defmodule RailWeb.Components.PlanDiagramTest do
 
     assert [[first], [second]] = ids
     assert first != second
+  end
+
+  test "Source view numbers each line, the hook gets the nodes and which have comments, and a node's cards go under
+        the figure naming it" do
+    %{diagrams: [diagram | _call_flow]} = build_plan_sheet(sheet_plan())
+    [_rs, %{key: key} = pipeline | _nodes] = diagram.nodes
+
+    comment = %PlanComment{
+      id: "pcm_node",
+      target: :plan,
+      element_kind: :node,
+      element_label: "Change diagram node",
+      element_text: "P",
+      body: "Name it Pipeline."
+    }
+
+    html =
+      (&PlanDiagram.plan_diagram/1)
+      |> render_component(
+        diagram: diagram,
+        view: :source,
+        event: "diagram_view",
+        offered: true,
+        placed: %{pipeline.key => [{comment, 3}]}
+      )
+      |> Floki.parse_fragment!()
+
+    assert [figure] = Floki.find(html, "figure")
+    assert [nodes] = Floki.attribute(figure, "data-nodes")
+
+    assert [%{"id" => "RS", "commented" => false}, %{"id" => "P", "commented" => true, "key" => ^key}, %{"id" => "SB"}] =
+             Jason.decode!(nodes)
+
+    assert Floki.attribute(figure, "data-offered") == ["true"]
+    assert [pre] = Floki.find(html, "pre[data-diagram-source]")
+    assert Floki.text(pre) == diagram.source
+
+    assert ["1", "2", "3", "4", "5"] =
+             html |> Floki.find("[data-qa='line_number']") |> Enum.map(&String.trim(Floki.text(&1)))
+
+    assert length(Floki.find(html, "[data-qa='line_comment_add']")) == 5
+    assert Floki.text(Floki.find(html, "[data-qa='document_comment_line']")) =~ "Node P"
+    assert Floki.text(html) =~ "Name it Pipeline."
   end
 end

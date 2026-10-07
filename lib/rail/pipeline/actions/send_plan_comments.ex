@@ -31,7 +31,7 @@ defmodule Rail.Pipeline.Actions.SendPlanComments do
         set: [status: :queued, updated_at: DateTime.utc_now()]
       )
 
-    comments = Enum.sort_by(comments, &{DateTime.to_unix(&1.inserted_at, :microsecond), &1.id})
+    comments = PlanComment.calculate_round(comments)
     task = Repo.get!(Task, task_id)
 
     with [_first | _rest] <- comments,

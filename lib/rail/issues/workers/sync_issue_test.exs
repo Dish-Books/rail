@@ -146,4 +146,54 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
 
     assert :ok = perform_job(SyncIssue, %{issue_id: issue.id, fields: ["title"]})
   end
+
+  test "a changed estimate goes in a mutation of its own after the rest", %{issue: issue} do
+    {:ok, issue} = Issues.update_issue(issue, %{title: "New title", estimate: 3})
+    test_pid = self()
+
+    Req.Test.expect(Rail.Linear, 2, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      send(test_pid, {:input, Jason.decode!(body)["variables"]["input"]})
+      Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
+    end)
+
+    assert :ok = perform_job(SyncIssue, %{issue_id: issue.id, fields: ["title", "estimate"]})
+    assert_received {:input, %{"title" => "New title"} = first}
+    assert_received {:input, %{"estimate" => 3} = second}
+    refute Map.has_key?(first, "estimate")
+    refute Map.has_key?(second, "title")
+  end
+
+  test "the title still lands when Linear refuses the estimate", %{issue: issue} do
+    {:ok, issue} = Issues.update_issue(issue, %{title: "New title", estimate: 7})
+    test_pid = self()
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      send(test_pid, {:landed, Jason.decode!(body)["variables"]["input"]})
+      Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
+    end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => false}}})
+    end)
+
+    assert {:error, {:linear_mutation_failed, "issueUpdate"}} =
+             perform_job(SyncIssue, %{issue_id: issue.id, fields: ["title", "estimate"]})
+
+    assert_received {:landed, %{"title" => "New title"}}
+  end
+
+  test "an estimate alone is one mutation", %{issue: issue} do
+    {:ok, issue} = Issues.update_issue(issue, %{estimate: 2})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"input" => %{"estimate" => 2} = input} = Jason.decode!(body)["variables"]
+      assert map_size(input) == 1
+      Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
+    end)
+
+    assert :ok = perform_job(SyncIssue, %{issue_id: issue.id, fields: ["estimate"]})
+  end
 end

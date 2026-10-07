@@ -14,6 +14,8 @@ defmodule Rail.Learnings.Schemas.Observation do
   @source_kinds [
     :diff_comment,
     :design_comment,
+    :ticket_comment,
+    :plan_comment,
     :review_finding,
     :qa_finding,
     :answer,
@@ -70,6 +72,8 @@ defmodule Rail.Learnings.Schemas.Observation do
 
   def source_label(:diff_comment), do: "Diff comment"
   def source_label(:design_comment), do: "Design comment"
+  def source_label(:ticket_comment), do: "Ticket comment"
+  def source_label(:plan_comment), do: "Plan comment"
   def source_label(:review_finding), do: "Fix on a review finding"
   def source_label(:qa_finding), do: "Fix on a QA finding"
   def source_label(:answer), do: "Answer"

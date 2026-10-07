@@ -443,6 +443,12 @@ defmodule RailWeb.TaskLive do
     {:noreply, socket}
   end
 
+  # The Plan stage found which of the reader's ticket and plan comments no longer have their line; the tray marks them.
+  def handle_info({:plan_comments_lifted, ids}, socket) do
+    send_update(RunConversation, id: "run-conversation", lifted_plan_comments: ids)
+    {:noreply, socket}
+  end
+
   # A queued message went out, or came back, on its own time.
   def handle_info({:run_changed, _run_id}, socket) do
     {:noreply, refresh_task(socket)}

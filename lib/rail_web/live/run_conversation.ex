@@ -11,6 +11,7 @@ defmodule RailWeb.Live.RunConversation do
 
   import Rail.Pipeline.Utils.DrivingLine
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Run
@@ -49,6 +50,11 @@ defmodule RailWeb.Live.RunConversation do
   # Another of the reader's tabs saved, removed or sent plan comments.
   def update(%{reload_plan_comments: true}, socket) do
     {:ok, assign_plan_comments(socket)}
+  end
+
+  def update(%{lifted_plan_comments: ids}, socket) do
+    socket = socket |> assign_defaults() |> assign(:lifted_comments, ids)
+    {:ok, socket}
   end
 
   def update(assigns, socket) do
@@ -212,6 +218,8 @@ defmodule RailWeb.Live.RunConversation do
             :if={not @show_raw_log}
             comments={@plan_comments}
             missing={@missing_anchors}
+            changed={@lifted_comments}
+            past_plan={@task.stage != :plan}
             open={@tray_open}
             can_send={Run.can_chat?(@selected_run)}
             plan_running={Run.running?(@selected_run)}
@@ -255,6 +263,7 @@ defmodule RailWeb.Live.RunConversation do
       assigns
       |> assign(:messages, assigns.turns)
       |> assign(:has_messages, assigns.turns != [])
+      |> assign(:identifier, identifier(assigns.task))
 
     ~H"""
     <div id="chat-pane-root" data-qa="chat-pane" class="flex flex-col flex-1 min-h-0">
@@ -288,6 +297,7 @@ defmodule RailWeb.Live.RunConversation do
               roles_map={@roles_map}
               expanded_activities={@expanded_activities}
               worktree_path={@task.worktree_path}
+              identifier={@identifier}
               usage_wait={@usage_wait}
               target={@target}
             />
@@ -308,6 +318,7 @@ defmodule RailWeb.Live.RunConversation do
   attr :roles_map, :map, default: %{}
   attr :expanded_activities, MapSet, required: true
   attr :worktree_path, :string, required: true
+  attr :identifier, :string, default: nil, doc: "the issue's identifier, which a round's ticket section shows"
   attr :usage_wait, :map, default: nil
   attr :target, :any, required: true
 
@@ -374,7 +385,13 @@ defmodule RailWeb.Live.RunConversation do
         <.usage_card :if={@show_usage_card} wait={@usage_wait} target={@target} />
       <% :human -> %>
         <%!-- A round of plan comments reads back into the card it was sent from. --%>
-        <.plan_comment_card :if={@round} id={"msg-#{@idx}"} sender={@sender} round={@round} />
+        <.plan_comment_card
+          :if={@round}
+          id={"msg-#{@idx}"}
+          sender={@sender}
+          round={@round}
+          identifier={@identifier}
+        />
         <!-- 4.8 _HumanBubble (right-aligned, plain selectable text, NOT markdown) -->
         <div
           :if={!@round}
@@ -391,6 +408,30 @@ defmodule RailWeb.Live.RunConversation do
             phx-no-format
             class="text-[13px] whitespace-pre-wrap wrap-break-word select-text leading-relaxed"
           >{String.trim(@text)}</div>
+        </div>
+      <% :revision -> %>
+        <!-- Where Rail passed on what Plan revised after approval, drawn as the boundary a turn is. -->
+        <div
+          id={"msg-#{@idx}"}
+          data-qa="revision-divider"
+          class="flex items-center gap-3 text-[11px] text-slate-400 dark:text-slate-500"
+        >
+          <span class="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+          <span class="min-w-0 inline-flex items-center gap-1 text-blue-600 dark:text-blue-400">
+            <.icon name="pi-arrow-bend-up-right" class="size-3 shrink-0" />
+            <span class="truncate">{@text}</span>
+            <span class="shrink-0">·</span>
+            <span
+              id={"revision-time-#{@idx}"}
+              phx-hook="LocalTime"
+              data-at={DateTime.to_iso8601(@msg.at)}
+              data-qa="revision-time"
+              class="shrink-0 font-mono"
+            >
+              {Calendar.strftime(@msg.at, "%H:%M")}
+            </span>
+          </span>
+          <span class="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
         </div>
       <% :reminder -> %>
         <!-- What Rail sent the agent on its own: the human bubble's shape, because
@@ -1262,8 +1303,12 @@ defmodule RailWeb.Live.RunConversation do
     |> assign_new(:usage_wait, fn -> nil end)
     |> assign_new(:plan_comments, fn -> [] end)
     |> assign_new(:missing_anchors, fn -> [] end)
+    |> assign_new(:lifted_comments, fn -> [] end)
     |> assign_new(:tray_open, fn -> true end)
   end
+
+  defp identifier(%{issue: %Issue{identifier: identifier}}), do: identifier
+  defp identifier(_no_issue), do: nil
 
   # Only the Plan run's conversation is where plan comments wait to be sent.
   defp assign_plan_comments(%{assigns: %{current_scope: %{user: %{}} = scope, task: task}} = socket) do

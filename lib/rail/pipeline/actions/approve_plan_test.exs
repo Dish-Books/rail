@@ -10,6 +10,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
+  alias Rail.Users
 
   # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
   @plan """
@@ -254,5 +255,53 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   test "a user without the project cannot approve it", %{task: task, run: run} do
     assert {:error, :not_found} = Pipeline.approve_plan(user_scope(project_ids: []), run)
     assert %Task{stage: :plan} = Repo.reload!(task)
+  end
+
+  test "the ticket's priority and estimate go to the issue with its title and description", %{task: task, run: run} do
+    {:ok, _ticket} =
+      Pipeline.save_ticket(task, %{
+        title: "Approved title",
+        description: "The approved ticket body.",
+        priority: :high,
+        estimate: 3
+      })
+
+    assert {:ok, %Run{}} = Pipeline.approve_plan(system_scope(), run)
+
+    assert %Issue{title: "Approved title", description: "The approved ticket body.", priority: :high, estimate: 3} =
+             Repo.get!(Issue, task.issue_id)
+  end
+
+  test "an approval clears the revision stamps and leaves unsent comments unsent", %{task: task, run: run} do
+    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_app_ada", login: "ada", email: "ada@example.com"})
+    ada = user_scope(user: ada)
+
+    {:ok, %{id: comment_id}} =
+      Pipeline.create_plan_comment(ada, run, %{
+        target: :ticket,
+        element_kind: :title,
+        element_label: "Title",
+        element_occurrence: 1,
+        element_text: "Approved title",
+        body: "Shorter."
+      })
+
+    stamped = DateTime.utc_now()
+
+    Repo.insert!(%ImplementationPlan{
+      task_id: task.id,
+      content: "## Implementation plan\n\nEarlier.",
+      captured_at: stamped,
+      plan_revised_at: stamped,
+      ticket_revised_at: stamped,
+      announced_at: stamped
+    })
+
+    assert {:ok, %Run{}} = Pipeline.approve_plan(system_scope(), run)
+
+    assert %ImplementationPlan{plan_revised_at: nil, ticket_revised_at: nil, announced_at: nil} =
+             Repo.get_by(ImplementationPlan, task_id: task.id)
+
+    assert [%{id: ^comment_id, status: :unsent}] = Pipeline.list_plan_comments(ada, task)
   end
 end

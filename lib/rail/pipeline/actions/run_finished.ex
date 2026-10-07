@@ -20,7 +20,8 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   unlatches it, which is why nothing here moves a task: a stage's own finish
   does, when what it concluded leaves nobody anything to decide. The one
   exception is an engineer turn past Engineer that changed the tree, which sends
-  the task back there.
+  the task back there. A Plan turn after approval moves nothing either: what it
+  revised goes to the issue and to Engineer.
   """
 
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
@@ -157,6 +158,17 @@ defmodule Rail.Pipeline.Actions.RunFinished do
     end
 
     run
+  end
+
+  # A turn after approval passes on what it saved, however it ended, and the later stages build from that.
+  defp finish(%Run{role: %Role{stage: :plan}, task: %Task{stage: stage}} = run, %OsProcess{} = os_process, _opts)
+       when stage in [:engineer, :review, :qa, :demo] do
+    _asked = register_asked_questions(os_process, run)
+
+    case Pipeline.apply_plan_revision(run) do
+      {:ok, _plan} -> run
+      {:error, reason} -> fail(run, "Could not pass on the revision: #{inspect(reason)}")
+    end
   end
 
   defp finish(%Run{} = run, %OsProcess{} = os_process, opts) do

@@ -201,6 +201,56 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
              Learnings.record_corrections(task, [comment])
   end
 
+  test "a ticket comment becomes a Product rule and a plan comment an Architect rule, each quoting its line", %{
+    task: %{id: task_id} = task,
+    user_id: user_id
+  } do
+    ticket = %PlanComment{
+      id: "pcm_rc_ticket",
+      target: :ticket,
+      user_id: user_id,
+      element_kind: :list_item,
+      element_label: "Criterion 2",
+      element_occurrence: 1,
+      element_text: "A page that never goes idle starts recording after 10 seconds.",
+      body: "Make it 5 seconds."
+    }
+
+    plan = %{
+      ticket
+      | id: "pcm_rc_plan",
+        target: :plan,
+        element_kind: :file,
+        element_label: "File 1",
+        element_text: "lib/rail/qa/actions/start_recording.ex",
+        body: "Wait on page-loading-stop."
+    }
+
+    assert {:ok,
+            [
+              %Learning{
+                status: :provisional,
+                kind: :product,
+                roles: [:product],
+                rule: "Make it 5 seconds.",
+                why:
+                  "From a ticket comment on Criterion 2:\n\n> A page that never goes idle starts recording after 10 seconds."
+              },
+              %Learning{
+                status: :provisional,
+                kind: :convention,
+                roles: [:architect],
+                rule: "Wait on page-loading-stop.",
+                why: "From a plan comment on File 1:\n\n> lib/rail/qa/actions/start_recording.ex"
+              }
+            ]} = Learnings.record_corrections(task, [ticket, plan])
+
+    assert [
+             %Observation{source_kind: :plan_comment, excerpt: "lib/rail/qa/actions/start_recording.ex"},
+             %Observation{source_kind: :ticket_comment, source_id: "pcm_rc_ticket", actor_id: ^user_id}
+           ] = Repo.all(from o in Observation, where: o.task_id == ^task_id, order_by: o.source_kind)
+  end
+
   test "a comment saved before blocks were kept is quoted by its line", %{task: task} do
     comment = %DiffComment{id: "dcm_rc_old", path: "a.ex", line_text: "old line", context_text: "", body: "Rename it"}
 

@@ -40,6 +40,7 @@ defmodule Rail.Pipeline do
   defdelegate read_plan(task), to: Actions.ReadPlan
   defdelegate save_plan(task, attrs), to: Actions.SavePlan
   defdelegate get_implementation_plan(task), to: Actions.GetImplementationPlan
+  defdelegate apply_plan_revision(run), to: Actions.ApplyPlanRevision
 
   defdelegate start_engineer_run(run), to: Actions.StartEngineerRun
   defdelegate end_turn_and_commit(task, os_process, message), to: Actions.EndTurnAndCommit

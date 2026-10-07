@@ -46,6 +46,14 @@ defmodule Rail.Pipeline.Utils.PlanSubagentsTest do
     assert architect =~ "or leave them until the human picks"
     assert architect =~ "Name the option the plan is written for as `design`"
     assert architect =~ "save the plan again with the change carried everywhere it reaches"
+
+    for prompt <- [product, architect] do
+      assert prompt =~ "names its line by a label and quotes it. Answer it by changing that line"
+      assert prompt =~ "leave every line nobody commented on reading exactly as it did"
+    end
+
+    assert product =~ "A comment on the ticket names its line"
+    assert architect =~ "A comment on the plan names its line"
   end
 
   test "a role's description describes its subagent, and its name stands in when it has none", %{

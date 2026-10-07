@@ -16,6 +16,10 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
 
     field :content, :string
     field :captured_at, :utc_datetime_usec
+    # Set after approval: when Plan last saved the plan or a ticket that reached the issue, and last told Engineer.
+    field :plan_revised_at, :utc_datetime_usec
+    field :ticket_revised_at, :utc_datetime_usec
+    field :announced_at, :utc_datetime_usec
 
     timestamps()
   end
@@ -23,7 +27,10 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
   @cast_fields [
     :task_id,
     :content,
-    :captured_at
+    :captured_at,
+    :plan_revised_at,
+    :ticket_revised_at,
+    :announced_at
   ]
 
   @required_fields [

@@ -57,6 +57,40 @@ function literalLabels(source) {
   return source.replace(/"[^"\n]*"/g, (label) => label.replaceAll("<", "#lt;").replaceAll(">", "#gt;"));
 }
 
+// Which drawn element each node is. A sequence diagram's participant carries its id as data-id; a flowchart's
+// g.node does not in Mermaid 11.17, but its DOM id is "<svg id>-flowchart-<node id>-<counter>".
+export function findNodes(svg, svgId, ids) {
+  const wanted = new Set(ids);
+  const found = new Map();
+  const prefix = `${svgId}-flowchart-`;
+
+  for (const element of svg.querySelectorAll("g.node")) {
+    if (!element.id.startsWith(prefix)) continue;
+    const id = element.id.slice(prefix.length).replace(/-\d+$/, "");
+    if (wanted.has(id) && !found.has(id)) found.set(id, element);
+  }
+
+  for (const element of svg.querySelectorAll('[data-et="participant"][data-id]')) {
+    const id = element.getAttribute("data-id");
+    if (wanted.has(id) && !found.has(id)) found.set(id, element);
+  }
+
+  return found;
+}
+
+// The node's top right corner in the layer's coordinates, the + overlapping it as it does a line's gutter.
+export function cornerOf(nodeRect, layerRect) {
+  return { left: Math.round(nodeRect.right - layerRect.left - 12), top: Math.round(nodeRect.top - layerRect.top - 8) };
+}
+
+// A node with a comment has its shape outlined amber, as a commented code line has its number.
+export function outline(element, commented) {
+  const shape = element.querySelector("rect, polygon, path, circle, ellipse");
+  if (!shape) return;
+  shape.style.stroke = commented ? "#f59e0b" : "";
+  shape.style.strokeWidth = commented ? "2px" : "";
+}
+
 let mermaidLoad;
 
 // A tab still on the app.js from before a deploy asks for a chunk that is gone, so
@@ -84,8 +118,14 @@ export const PlanDiagram = {
       this.fullscreen.addEventListener("click", this.openFullscreen);
     }
 
-    this.fitFullscreen = () => this.sizeForFullscreen();
+    this.fitFullscreen = () => {
+      this.sizeForFullscreen();
+      this.placeNodes();
+    };
     document.addEventListener("fullscreenchange", this.fitFullscreen);
+
+    this.resizeObserver = new ResizeObserver(() => this.placeNodes());
+    this.resizeObserver.observe(this.el.querySelector("[data-diagram-canvas]"));
 
     this.themeObserver = new MutationObserver(() => this.draw());
     this.themeObserver.observe(document.documentElement, { attributeFilter: ["data-theme"] });
@@ -93,8 +133,15 @@ export const PlanDiagram = {
     this.draw();
   },
 
+  // Comments came or went, or commenting opened or closed, so the + and the outlines are placed again.
+  updated() {
+    this.placeNodes();
+  },
+
   destroyed() {
     this.themeObserver?.disconnect();
+    this.resizeObserver?.disconnect();
+    this.nodeListeners?.abort();
     this.fullscreen?.removeEventListener("click", this.openFullscreen);
     document.removeEventListener("fullscreenchange", this.fitFullscreen);
   },
@@ -115,6 +162,7 @@ export const PlanDiagram = {
       const { svg } = await mermaid.render(`${this.el.id}-svg`, drawable);
       canvas.innerHTML = svg;
       this.sizeForFullscreen();
+      this.placeNodes();
     } catch (error) {
       // Mermaid's first line names only the line number; its second quotes the source there.
       const [first, excerpt] = String(error?.message ?? error).split("\n");
@@ -133,5 +181,62 @@ export const PlanDiagram = {
     const natural = svg.viewBox.baseVal.width;
     const wide = document.fullscreenElement === this.el && natural > canvas.clientWidth;
     svg.style.width = wide ? `${natural}px` : "";
+  },
+
+  // A + on the corner of each node a reader can comment on, shown while the node or the + is pointed at or focused.
+  placeNodes() {
+    const layer = this.el.querySelector("[data-diagram-nodes]");
+    const svg = this.el.querySelector("[data-diagram-canvas] svg");
+    this.nodeListeners?.abort();
+    this.nodeListeners = new AbortController();
+    const signal = this.nodeListeners.signal;
+    layer.replaceChildren();
+    if (!svg) return;
+
+    const nodes = JSON.parse(this.el.dataset.nodes || "[]");
+    const found = findNodes(
+      svg,
+      svg.id,
+      nodes.map((node) => node.id)
+    );
+    const offered = this.el.dataset.offered === "true";
+    const layerRect = layer.getBoundingClientRect();
+
+    for (const node of nodes) {
+      const element = found.get(node.id);
+      if (!element) continue;
+      outline(element, node.commented);
+      if (!offered) continue;
+
+      const button = document.createElement("button");
+      const { left, top } = cornerOf(element.getBoundingClientRect(), layerRect);
+      button.type = "button";
+      button.textContent = "+";
+      button.className = "line-comment-add pointer-events-auto";
+      button.dataset.qa = "node_comment_add";
+      button.setAttribute("aria-label", `Comment on node ${node.id}`);
+      button.style.left = `${left}px`;
+      button.style.top = `${top}px`;
+
+      const show = () => {
+        button.style.opacity = "1";
+      };
+      const hide = () =>
+        setTimeout(() => {
+          if (!button.matches(":hover, :focus-visible")) button.style.opacity = "";
+        }, 200);
+      element.addEventListener("mouseenter", show, { signal });
+      element.addEventListener("mouseleave", hide, { signal });
+      button.addEventListener("mouseleave", hide, { signal });
+      button.addEventListener(
+        "click",
+        () => this.pushEventTo(this.el, "open_document_comment", { doc: "plan", key: node.key }),
+        {
+          signal
+        }
+      );
+
+      layer.append(button);
+    }
   }
 };

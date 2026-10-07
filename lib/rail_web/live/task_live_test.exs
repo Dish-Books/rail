@@ -4,6 +4,7 @@ defmodule RailWeb.TaskLiveTest do
   import Ecto.Query
   import Mimic
   import Phoenix.LiveViewTest
+  import RailWeb.Utils.BuildDocumentBlocks
 
   alias Phoenix.Socket.Message
   alias Rail.Git
@@ -1807,17 +1808,17 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "#plan-item-plan-status", "files · saved")
       assert has_element?(view, "#plan-plan #plan-sheet")
-      refute has_element?(view, "figure pre[data-diagram-source]:not(.hidden)")
+      refute has_element?(view, "figure [data-qa='plan_diagram_source']:not(.hidden)")
 
       view |> element("button[phx-value-view='change:source']") |> render_click()
-      assert has_element?(view, "figure[id^='plan-diagram-change-'] pre[data-diagram-source]:not(.hidden)")
+      assert has_element?(view, "figure[id^='plan-diagram-change-'] [data-qa='plan_diagram_source']:not(.hidden)")
 
       view |> element("button[phx-value-view='call_flow:source']") |> render_click()
-      assert has_element?(view, "figure[id^='plan-diagram-call_flow-'] pre[data-diagram-source]:not(.hidden)")
+      assert has_element?(view, "figure[id^='plan-diagram-call_flow-'] [data-qa='plan_diagram_source']:not(.hidden)")
 
       view |> element("button[phx-value-view='change:diagram']") |> render_click()
       view |> element("button[phx-value-view='call_flow:diagram']") |> render_click()
-      refute has_element?(view, "figure pre[data-diagram-source]:not(.hidden)")
+      refute has_element?(view, "figure [data-qa='plan_diagram_source']:not(.hidden)")
     end
 
     test "after approval the tab shows the plan as approved, not what scratch says now", %{
@@ -2360,6 +2361,331 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "[data-qa='plan_comment_form']")
       view |> with_target("#plan-stage") |> render_click("save_plan_comment", %{"body" => "No box."})
       view |> with_target("#plan-stage") |> render_click("change_plan_comment", %{"body" => "No box."})
+    end
+  end
+
+  describe "comments on the ticket and the plan" do
+    setup %{task: task, run: run} do
+      {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+      {:ok, run} = Pipeline.update_run(run, %{conversation_id: "sess_document_comments"})
+      dir = Path.join(task.scratch_path, "design")
+      File.mkdir_p!(dir)
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+
+      File.write!(Path.join(dir, "waiting-lanes.html"), ~s(<label id="group-by-project">Group by project</label>))
+      File.write!(Path.join(dir, "waiting-lanes.png"), "png bytes")
+      File.write!(Path.join(dir, "manifest.json"), ~s({"options": [{"key": "waiting-lanes", "title": "Lanes"}]}))
+      File.write!(Path.join(dir, "picked"), "waiting-lanes")
+
+      description = """
+      QA starts recording at first paint.
+
+      ## Acceptance criteria
+
+      - A recording starts on the loaded page.
+      - A page that never goes idle starts after 10 seconds.
+
+      | Page | Cap |
+      |------|-----|
+      | Overview | 5 s |
+
+      ```
+      settle_cap_ms: 10_000
+      ```
+      """
+
+      {:ok, _ticket} =
+        Pipeline.save_ticket(task, %{title: "Recordings settle", description: description, priority: :medium, estimate: 3})
+
+      {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan, design: "waiting-lanes"})
+
+      design = %{
+        target: :design,
+        option_key: "waiting-lanes",
+        selector: "#group-by-project",
+        element_text: "Group by project",
+        element_tag: "label",
+        capture: %{html: ~s(<label id="group-by-project">Group by project</label>), width: 160, height: 20},
+        body: "Name the request."
+      }
+
+      key = fn label ->
+        Enum.find(build_document_blocks(description), &(&1.label == label)).key
+      end
+
+      %{task: task, run: run, design: design, description: description, key: key}
+    end
+
+    test "the title, priority, estimate and every description line draw a +, and neither document has a Comment control",
+         %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#plan-item-ticket") |> render_click()
+
+      labels =
+        view
+        |> render()
+        |> Floki.parse_document!()
+        |> Floki.attribute("#plan-ticket [data-qa='line_comment_add']", "aria-label")
+
+      assert labels == [
+               "Comment on Title",
+               "Comment on Priority",
+               "Comment on Estimate",
+               "Comment on Paragraph 1",
+               "Comment on Heading 1",
+               "Comment on Criterion 1",
+               "Comment on Criterion 2",
+               "Comment on Table header",
+               "Comment on Table row 1",
+               "Comment on Code line 1"
+             ]
+
+      assert has_element?(view, "#plan-ticket-priority", "Medium")
+      assert has_element?(view, "#plan-ticket-estimate", "3 Points")
+      refute has_element?(view, "#design-comment-toggle")
+
+      view |> element("#plan-item-plan") |> render_click()
+      assert has_element?(view, "#plan-sheet button[aria-label='Comment on Approach']")
+      assert has_element?(view, "#plan-sheet button[aria-label='Comment on File 1']")
+      refute has_element?(view, "#design-comment-toggle")
+    end
+
+    test "after a design comment, a comment on a criterion is card 2 under it and 2 in the tray, a second stacks as 3,
+          and a teammate sees their own + but none of it",
+         %{conn: conn, task: task, scope: scope, run: run, design: design, key: key} do
+      {:ok, _design} = Pipeline.create_plan_comment(scope, run, design)
+      criterion = key.("Criterion 2")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#plan-item-ticket") |> render_click()
+      view |> element("#line-ticket-#{criterion} [data-qa='line_comment_add']") |> render_click()
+
+      assert has_element?(
+               view,
+               "#line-ticket-#{criterion} + [data-qa='line_comments'] form[data-qa='document_comment_form']"
+             )
+
+      view |> form("[data-qa='document_comment_form']", %{"body" => "  "}) |> render_submit()
+      assert has_element?(view, "[data-qa='document_comment_form']")
+
+      view |> form("[data-qa='document_comment_form']", %{"body" => "Make it 5."}) |> render_submit()
+      refute has_element?(view, "[data-qa='document_comment_form']")
+
+      under = "#line-ticket-#{criterion} + [data-qa='line_comments']"
+      assert has_element?(view, "#{under} [data-qa='document_comment_number'][aria-label='Comment 2']")
+      assert has_element?(view, "#plan-comment-tray [data-qa='plan_comment_row']:nth-child(2)", "Criterion 2")
+
+      view |> element("#line-ticket-#{criterion} [data-qa='line_comment_add']") |> render_click()
+      view |> form("[data-qa='document_comment_form']", %{"body" => "And say so."}) |> render_submit()
+      assert has_element?(view, "#{under} [data-qa='document_comment']:nth-child(2) [aria-label='Comment 3']")
+
+      view |> element("#plan-item-design") |> render_click()
+      assert has_element?(view, "#design-comment-toggle")
+
+      {:ok, someone} =
+        Users.register_oauth_user(%{github_id: "gh_task_live_doc", login: "someone_doc", email: "doc@example.com"})
+
+      {:ok, someone} = Users.update_user(system_scope(), someone, %{project_ids: [task.project_id]})
+      assert {:ok, theirs, _html} = live(log_in_user(build_conn(), someone), ~p"/tasks/#{task.id}")
+      theirs |> element("#plan-item-ticket") |> render_click()
+      assert has_element?(theirs, "#line-ticket-#{criterion} [data-qa='line_comment_add']")
+      refute has_element?(theirs, "[data-qa='document_comment']")
+      refute has_element?(theirs, "#plan-comment-tray")
+    end
+
+    test "one Send posts one card grouped under the design, the ticket and the plan, and every tab empties", %{
+      conn: conn,
+      task: task,
+      scope: scope,
+      run: run,
+      design: design,
+      key: key
+    } do
+      {:ok, _design} = Pipeline.create_plan_comment(scope, run, design)
+
+      assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}")
+      one |> element("#plan-item-ticket") |> render_click()
+      one |> element("#line-ticket-#{key.("Criterion 1")} [data-qa='line_comment_add']") |> render_click()
+      one |> form("[data-qa='document_comment_form']", %{"body" => "Which page?"}) |> render_submit()
+      one |> element("#plan-item-plan") |> render_click()
+      one |> element("#plan-sheet button[aria-label='Comment on File 1']") |> render_click()
+      one |> form("[data-qa='document_comment_form']", %{"body" => "Wait on page-loading-stop."}) |> render_submit()
+
+      two |> element("#plan-item-plan") |> render_click()
+      _settled = render(two)
+      assert has_element?(two, "#plan-sheet [data-qa='document_comment']", "Wait on page-loading-stop.")
+
+      one |> element("#send-plan-comments") |> render_click()
+
+      assert has_element?(one, "[data-qa='plan_comment_card']", "3 comments on the design, the ticket and the plan")
+      assert has_element?(one, "[data-qa='plan_comment_card']", "Which page?")
+
+      for view <- [one, two] do
+        _settled = render(view)
+        refute has_element?(view, "#plan-comment-tray")
+        refute has_element?(view, "[data-qa='document_comment']")
+      end
+    end
+
+    test "a resave that changes a commented paragraph moves its comment to the top, changed, and leaves the others",
+         %{conn: conn, task: task, key: key, description: description} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#plan-item-ticket") |> render_click()
+      view |> element("#line-ticket-#{key.("Paragraph 1")} [data-qa='line_comment_add']") |> render_click()
+      view |> form("[data-qa='document_comment_form']", %{"body" => "Say which pages."}) |> render_submit()
+      view |> element("#line-ticket-#{key.("Criterion 1")} [data-qa='line_comment_add']") |> render_click()
+      view |> form("[data-qa='document_comment_form']", %{"body" => "Kept."}) |> render_submit()
+
+      {:ok, _ticket} =
+        Pipeline.save_ticket(task, %{
+          title: "Recordings settle",
+          description: String.replace(description, "at first paint", "the moment the browser paints")
+        })
+
+      _settled = render(view)
+      _settled = render(view)
+
+      assert has_element?(view, "#ticket-changed-comments [data-lifted='true']", "Say which pages.")
+      assert has_element?(view, "#ticket-changed-comments [data-qa='document_comment_quote']", "at first paint")
+      assert has_element?(view, "#line-ticket-#{key.("Criterion 1")} + [data-qa='line_comments']", "Kept.")
+      assert has_element?(view, "#plan-comment-tray [data-qa='plan_comment_changed']")
+      assert has_element?(view, "#plan-comment-tray [data-qa='plan_comment_row'][data-found='false']", "Paragraph 1")
+    end
+
+    test "typing in a line's box keeps it, Remove on a card takes it away, and a box Plan can no longer take closes", %{
+      conn: conn,
+      task: task,
+      run: run,
+      key: key
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#plan-item-ticket") |> render_click()
+      view |> element("#line-ticket-#{key.("Criterion 1")} [data-qa='line_comment_add']") |> render_click()
+      view |> form("[data-qa='document_comment_form']", %{"body" => "Half a"}) |> render_change()
+      assert has_element?(view, "[data-qa='document_comment_body']", "Half a")
+
+      view |> form("[data-qa='document_comment_form']", %{"body" => "Gone soon."}) |> render_submit()
+      view |> element("[data-qa='document_comment_remove']") |> render_click()
+      refute has_element?(view, "[data-qa='document_comment']")
+      refute has_element?(view, "#plan-comment-tray")
+
+      view |> with_target("#plan-stage") |> render_click("remove_plan_comment", %{"id" => "pcm_already_gone"})
+      refute has_element?(view, "[data-qa='document_comment']")
+
+      for {item, add} <- [
+            {"#plan-item-ticket", "#line-ticket-#{key.("Criterion 1")} [data-qa='line_comment_add']"},
+            {"#plan-item-plan", "#plan-sheet button[aria-label='Comment on Approach']"}
+          ] do
+        view |> element(item) |> render_click()
+        view |> element(add) |> render_click()
+        assert has_element?(view, "[data-qa='document_comment_form']")
+
+        Repo.update_all(from(r in Run, where: r.id == ^run.id), set: [conversation_id: nil])
+        send(view.pid, {:pipeline_changed, task.id})
+        refute has_element?(view, "[data-qa='document_comment_form']")
+        Repo.update_all(from(r in Run, where: r.id == ^run.id), set: [conversation_id: "sess_document_comments"])
+        send(view.pid, {:pipeline_changed, task.id})
+      end
+    end
+
+    test "a comment Plan can no longer take when it is saved says why", %{conn: conn, task: task, run: run, key: key} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#plan-item-ticket") |> render_click()
+      view |> element("#line-ticket-#{key.("Criterion 1")} [data-qa='line_comment_add']") |> render_click()
+      Repo.update_all(from(r in Run, where: r.id == ^run.id), set: [conversation_id: nil])
+
+      view |> form("[data-qa='document_comment_form']", %{"body" => "Too late."}) |> render_submit()
+
+      assert has_element?(view, "#plan-error", "Plan cannot be messaged yet.")
+      refute has_element?(view, "[data-qa='document_comment_form']")
+    end
+
+    test "with no conversation no line offers a +, and the tray keeps its comments without Send", %{
+      conn: conn,
+      task: task,
+      scope: scope,
+      run: run,
+      design: design
+    } do
+      {:ok, _design} = Pipeline.create_plan_comment(scope, run, design)
+      Repo.update_all(from(r in Run, where: r.id == ^run.id), set: [conversation_id: nil])
+      {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Recordings settle", description: "Short.", estimate: 1})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#plan-item-ticket") |> render_click()
+
+      assert has_element?(view, "#plan-ticket-estimate", "1 Point")
+      refute has_element?(view, "[data-qa='line_comment_add']")
+      assert has_element?(view, "#plan-comment-tray")
+      refute has_element?(view, "#send-plan-comments")
+
+      view |> with_target("#plan-stage") |> render_click("open_document_comment", %{"doc" => "ticket", "key" => "x"})
+      refute has_element?(view, "[data-qa='document_comment_form']")
+    end
+
+    test "after approval a comment on the ticket still saves and Send resumes Plan", %{
+      conn: conn,
+      task: task,
+      run: run,
+      key: key
+    } do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
+      Repo.insert!(%ImplementationPlan{task_id: task.id, content: @plan, captured_at: DateTime.utc_now()})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{run.role_id}")
+      view |> element("#plan-item-ticket") |> render_click()
+      view |> element("#line-ticket-#{key.("Criterion 2")} [data-qa='line_comment_add']") |> render_click()
+      view |> form("[data-qa='document_comment_form']", %{"body" => "Say whether it counts."}) |> render_submit()
+
+      assert has_element?(
+               view,
+               "#plan-comment-tray-hint",
+               "Plan has finished. Sending resumes it, and Engineer gets what it saves."
+             )
+
+      view |> element("#plan-item-plan") |> render_click()
+      assert has_element?(view, "#plan-sheet button[aria-label='Comment on Approach']")
+
+      view |> element("#send-plan-comments") |> render_click()
+      assert Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "1 comment on the ticket"))
+    end
+
+    test "once a revising Plan turn ends, the banner, the revised items and the divider show without a reload", %{
+      conn: conn,
+      task: task,
+      run: run
+    } do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
+      approved_at = DateTime.shift(DateTime.utc_now(), minute: -2)
+      Repo.insert!(%ImplementationPlan{task_id: task.id, content: @plan, captured_at: approved_at})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{run.role_id}")
+      view |> element("#plan-item-plan") |> render_click()
+      refute has_element?(view, "#plan-revised")
+
+      {:ok, _plan} =
+        Pipeline.save_plan(task, %{
+          plan: String.replace(@plan, "Extend the module.", "Extend it twice."),
+          design: "waiting-lanes"
+        })
+
+      {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Recordings settle sooner", description: "Five seconds."})
+      {:ok, _applied} = Pipeline.apply_plan_revision(run)
+
+      _settled = render(view)
+
+      assert has_element?(
+               view,
+               "#plan-revised",
+               "after approval. Engineer, Code Reviewer, QA and Demo Presenter build from this plan."
+             )
+
+      assert has_element?(view, "#plan-revised-at[phx-hook='LocalTime']")
+      assert has_element?(view, "#plan-item-plan-status", "revised")
+      assert has_element?(view, "#plan-item-ticket-status", "revised")
+      assert has_element?(view, "[data-qa='revision-divider']", "Plan and ticket revised, ticket to Linear")
     end
   end
 

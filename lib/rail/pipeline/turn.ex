@@ -28,6 +28,8 @@ defmodule Rail.Pipeline.Turn do
   A `:human` turn carries the `sender_id` of the person who sent it, or `nil` for
   lines logged before senders were recorded and for those Rail wrote for a human.
 
+  `:revision` is where Rail passed on what Plan revised after approval: `content` says what went where, `at` when.
+
   `:subagent` is a helper the role handed work to: `label` is its type, `content` the description it was
   given, `turns` its own transcript and `status` whether it is `:running`, `:done` or `:failed`.
   """
@@ -42,7 +44,17 @@ defmodule Rail.Pipeline.Turn do
             status: nil
 
   @type t :: %__MODULE__{
-          author: :human | :role | :activity | :driving | :event | :turn_start | :command | :reminder | :subagent,
+          author:
+            :human
+            | :role
+            | :activity
+            | :driving
+            | :event
+            | :turn_start
+            | :command
+            | :reminder
+            | :revision
+            | :subagent,
           content: String.t(),
           label: String.t() | nil,
           at: DateTime.t() | nil,

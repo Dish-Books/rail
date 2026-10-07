@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.ApprovePlan do
   @moduledoc """
-  Approves the Plan step in one go: the ticket and the picked design are published to the issue, the
+  Approves the Plan step in one go: the ticket, with its priority and estimate, and the picked design are published
+  to the issue, the
   plan is recorded as the one the engineer builds from, and the task moves to Engineer.
 
   Approving is a one-way door. The task row is locked and Engineer claimed inside the same transaction,
@@ -36,7 +37,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
              {:ok, plan} <- plan(task),
              {:ok, design} <- design(task, plan),
              :ok <- publish(task, ticket, design) do
-          record_implementation_plan(task, plan.content)
+          record_implementation_plan(task, plan.content, false)
           {:ok, run} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
           {:ok, task} = Pipeline.enter_stage(task, :engineer, start: false)
           {run, task}
@@ -99,7 +100,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
 
   # One write carries the ticket and the design. Linear hears about it from the sync that write enqueues.
   defp publish(%Task{issue: %Issue{} = issue}, ticket, nil) do
-    update_issue(issue, %{title: ticket.title, description: ticket.description})
+    update_issue(issue, ticket_attrs(ticket, ticket.description))
   end
 
   defp publish(%Task{issue: %Issue{} = issue} = task, ticket, {option, screenshot}) do
@@ -109,8 +110,16 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
       description = String.trim(ticket.description || "")
       description = if description == "", do: section, else: description <> "\n\n" <> section
 
-      update_issue(issue, %{title: ticket.title, description: description})
+      update_issue(issue, ticket_attrs(ticket, description))
     end
+  end
+
+  # A priority or estimate the ticket could not be read with is left as the issue has it.
+  defp ticket_attrs(ticket, description) do
+    Map.reject(
+      %{title: ticket.title, description: description, priority: ticket.priority, estimate: ticket.estimate},
+      fn {_field, value} -> is_nil(value) end
+    )
   end
 
   defp update_issue(%Issue{} = issue, attrs) do

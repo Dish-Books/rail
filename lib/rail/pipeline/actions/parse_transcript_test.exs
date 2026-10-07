@@ -116,6 +116,26 @@ defmodule Rail.Pipeline.Actions.ParseTranscriptTest do
                "[answered from past answers] You asked: X?",
                "[answered from past answers] Answered by Rail."
              ])
+
+    assert [%Turn{author: :reminder, label: "plan revised", content: "The plan changed.\n## Plan"}] =
+             Pipeline.parse_transcript(["[plan revised] The plan changed.", "[plan revised] ## Plan"])
+  end
+
+  test "a revision divider is a turn of its own, with its time and what went where" do
+    assert [
+             %Turn{author: :human, content: "Fix it."},
+             %Turn{
+               author: :revision,
+               content: "Plan and ticket to Engineer, ticket to Linear",
+               at: ~U[2026-10-07 15:04:00Z]
+             },
+             %Turn{author: :event, content: "[plan revision soon] Not a divider."}
+           ] =
+             Pipeline.parse_transcript([
+               "[human] Fix it.",
+               "[plan revision 2026-10-07T15:04:00Z] Plan and ticket to Engineer, ticket to Linear",
+               "[plan revision soon] Not a divider."
+             ])
   end
 
   test "consecutive tool lines group into one activity block" do

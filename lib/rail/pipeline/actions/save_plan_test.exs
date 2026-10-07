@@ -322,7 +322,7 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
     end
 
     # Nothing is stubbed for Linear past the issue's creation, so any write to the issue would fail the test.
-    test "a plan saved after approval replaces the approved one without touching the issue", %{
+    test "a plan saved after approval replaces the approved one, stamped as a revision, without touching the issue", %{
       real_task: task,
       approve: approve,
       approved_at: approved_at
@@ -334,7 +334,13 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
       {:ok, _plan} = Pipeline.save_plan(task, %{plan: revised})
       revised = String.trim(revised)
 
-      assert {:ok, %ImplementationPlan{id: ^id, content: ^revised, captured_at: at}} =
+      assert {:ok,
+              %ImplementationPlan{
+                id: ^id,
+                content: ^revised,
+                captured_at: ^approved_at,
+                plan_revised_at: %DateTime{} = at
+              }} =
                Pipeline.get_implementation_plan(task)
 
       assert DateTime.after?(at, approved_at)
