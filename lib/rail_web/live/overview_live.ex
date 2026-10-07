@@ -83,7 +83,7 @@ defmodule RailWeb.OverviewLive do
             <h2 class="mb-3 text-xs font-medium uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
               Up next
             </h2>
-            <.up_next runs={@waiting} />
+            <.up_next runs={@waiting} blocked={@blocked} />
           </section>
 
           <section id="since-yesterday-section">
@@ -173,16 +173,12 @@ defmodule RailWeb.OverviewLive do
 
     stage_runs = latest_stage_runs(runs)
 
-    # A task waits on a human once, whatever its stage: the run of the stage it is
-    # in is the one thing to do about it.
-    waiting =
-      stage_runs
-      |> Map.values()
-      |> Enum.filter(&Run.needs_attention?/1)
-      |> Enum.sort_by(&Run.waiting_since/1, DateTime)
+    waiting = waiting_runs(stage_runs)
 
     # Waiting on you is the user's own in either view; Up next follows the view.
     waiting_on_user = Enum.filter(waiting, &(&1.task.issue.owner_user_id == user_id))
+    blocked = blocked_children(in_progress, children)
+    blocked_on_user = Enum.count(blocked, &(&1.status.task.issue.owner_user_id == user_id))
 
     # Shipped means Linear completed the issue. Sixty days covers this month's
     # count and the month it is compared with.
@@ -198,8 +194,9 @@ defmodule RailWeb.OverviewLive do
 
     socket
     |> assign(:waiting, waiting)
+    |> assign(:blocked, blocked)
     |> assign(:sandboxes, sandboxes)
-    |> assign(:stats, stats(in_progress, completed, waiting_on_user, sandboxes.waiting, now))
+    |> assign(:stats, stats(in_progress, completed, {waiting_on_user, blocked_on_user}, sandboxes.waiting, now))
     |> assign(:activity, activity(runs, completed, splits(tasks, children), DateTime.shift(now, day: -1)))
     |> assign(:in_progress_groups, build_in_progress_groups(in_progress, stage_runs, children, user_id, now))
     |> assign(:throughput, throughput(completed, DateTime.to_date(now)))
@@ -258,7 +255,7 @@ defmodule RailWeb.OverviewLive do
     }
   end
 
-  defp stats(in_progress, completed, waiting, waiting_for_resources, now) do
+  defp stats(in_progress, completed, {waiting, blocked}, waiting_for_resources, now) do
     shipped = shipped_between(completed, DateTime.shift(now, day: -30), now)
     prior = shipped_between(completed, DateTime.shift(now, day: -60), DateTime.shift(now, day: -30))
 
@@ -266,7 +263,7 @@ defmodule RailWeb.OverviewLive do
       in_progress: length(in_progress),
       shipped: shipped,
       shipped_delta: shipped - prior,
-      waiting: length(waiting),
+      waiting: length(waiting) + blocked,
       oldest_waiting: oldest_waiting(waiting, now),
       waiting_for_resources: length(waiting_for_resources),
       oldest_waiting_for_resources: oldest_in_line(waiting_for_resources, now)
@@ -340,8 +337,32 @@ defmodule RailWeb.OverviewLive do
   # A split is split when its plan was approved, which is when its children were made.
   defp splits(tasks, children) do
     for %{implementation_plan: %{captured_at: at}} = task <- tasks, split = children[task.id] do
-      %{id: "split-#{task.id}", at: at, actor: nil, text: "#{task.issue.identifier} split into #{length(split)}"}
+      %{
+        id: "split-#{task.id}",
+        at: at,
+        actor: nil,
+        text: "#{task.issue.identifier} split into #{split |> Enum.map(& &1.split_position) |> Enum.max()}"
+      }
     end
+  end
+
+  # A task waits on a human once, whatever its stage: the run of the stage it is
+  # in is the one thing to do about it.
+  defp waiting_runs(stage_runs) do
+    stage_runs
+    |> Map.values()
+    |> Enum.filter(&Run.needs_attention?/1)
+    |> Enum.sort_by(&Run.waiting_since/1, DateTime)
+  end
+
+  # A child that a canceled or deleted sibling keeps from starting has no run to wait with, so it is listed apart.
+  defp blocked_children(in_progress, children) do
+    for parent <- in_progress,
+        split = children[parent.id],
+        is_list(split),
+        status <- Enum.map(split, &child_status(&1, split)),
+        status.state == :blocked_by_canceled,
+        do: %{status: status, parent: parent}
   end
 
   defp build_in_progress_groups(in_progress, stage_runs, children, user_id, now) do

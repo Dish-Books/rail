@@ -7344,6 +7344,26 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "[data-qa='task_branch_name']")
     end
 
+    test "a child removed in Linear leaves the split counted as it was approved", %{
+      conn: conn,
+      project: project,
+      parent: parent,
+      first: first,
+      roles: roles
+    } do
+      {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+      remove = %{"type" => "Issue", "action" => "remove", "data" => %{"id" => first.issue.external_id}}
+      assert {:ok, _removed} = Issues.handle_linear_webhook(workspace, remove)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
+      assert has_element?(view, "#split-row-TLV-12", "after child 1")
+      refute has_element?(view, "#split-row-TLV-12", "starts at once")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-13&tab=#{roles[:plan].id}")
+      assert has_element?(view, "#child-plan-approved", "part 3 of 3")
+      assert has_element?(view, "#child-switcher-button", "3 of 3")
+    end
+
     test "a task with no split has no Children tab and no switcher", %{conn: conn, task: task} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 

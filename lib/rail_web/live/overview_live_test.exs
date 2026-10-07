@@ -435,6 +435,54 @@ defmodule RailWeb.OverviewLiveTest do
       %{conn: log_in_user(conn, user), user: user, project: project, roles: roles, rival: rival, task_for: task_for}
     end
 
+    test "a child blocked by a canceled sibling is in Up next and counted as waiting on its owner", %{
+      conn: conn,
+      user: user,
+      project: project
+    } do
+      for {identifier, title} <- [{"OVB-1", "Work on OVB-1"}, {"OVB-2", "Child OVB-2"}, {"OVB-3", "Child OVB-3"}] do
+        Req.Test.expect(Rail.Linear, fn conn ->
+          Req.Test.json(conn, %{
+            "data" => %{
+              "issueCreate" => %{
+                "success" => true,
+                "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
+              }
+            }
+          })
+        end)
+      end
+
+      {:ok, parent_issue} =
+        Issues.create_issue(system_scope(), project, %{title: "Work on OVB-1", owner_user_id: user.id})
+
+      {:ok, parent} = Pipeline.create_task(parent_issue, :split)
+      parent = Repo.preload(parent, [:issue, :project])
+
+      [first, blocked] =
+        for {{identifier, builds_on}, number} <- Enum.with_index([{"OVB-2", []}, {"OVB-3", [1]}], 1) do
+          attrs = %{title: "Child #{identifier}", parent: parent_issue, owner_user_id: user.id}
+          {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
+          part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
+          Repo.preload(child, [:issue, :project])
+        end
+
+      first.issue |> Issue.linear_changeset(%{state: :canceled}) |> Repo.update!()
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(
+               view,
+               "#up-next-blocked-#{blocked.id}[href='/tasks/#{parent.id}?child=OVB-3']",
+               "OVB-2 was canceled, so this will not start"
+             )
+
+      assert has_element?(view, "#up-next-blocked-#{blocked.id}", "in OVB-1")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")
+      refute has_element?(view, "#up-next-empty")
+    end
+
     test "someone else's split says its children need attention, not you, in Everyone", %{
       conn: conn,
       rival: rival,
@@ -609,6 +657,14 @@ defmodule RailWeb.OverviewLiveTest do
       for child <- [first, second, third], do: refute(has_element?(view, "#in-progress-task-#{child.id}"))
 
       assert has_element?(view, "#up-next", "in OVS-1")
+      assert has_element?(view, "#activity-feed", "OVS-1 split into 3")
+
+      # A child deleted in Linear does not shrink the split the person approved.
+      {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+      remove = %{"type" => "Issue", "action" => "remove", "data" => %{"id" => second.issue.external_id}}
+      assert {:ok, _removed} = Issues.handle_linear_webhook(workspace, remove)
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
       assert has_element?(view, "#activity-feed", "OVS-1 split into 3")
     end
 

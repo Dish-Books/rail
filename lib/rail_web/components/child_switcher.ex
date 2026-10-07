@@ -19,7 +19,7 @@ defmodule RailWeb.Components.ChildSwitcher do
     assigns =
       assigns
       |> assign(:current, current)
-      |> assign(:position, index + 1)
+      |> assign(:total, assigns.statuses |> Enum.map(& &1.task.split_position) |> Enum.max())
       |> assign(:previous, if(index > 0, do: Enum.at(assigns.statuses, index - 1)))
       |> assign(:next, Enum.at(assigns.statuses, index + 1))
       |> assign(:others_waiting, Enum.count(assigns.statuses, &(&1.needs_attention and &1.task.id != assigns.current_id)))
@@ -39,7 +39,7 @@ defmodule RailWeb.Components.ChildSwitcher do
           class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 text-xs font-medium text-slate-900 dark:text-slate-100 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         >
           <span class="font-mono">{@current.identifier}</span>
-          <span class="text-slate-500 dark:text-slate-400">{@position} of {length(@statuses)}</span>
+          <span class="text-slate-500 dark:text-slate-400">{@current.task.split_position} of {@total}</span>
           <.icon name="pi-caret-up-down" class="size-3.5 text-slate-500" />
         </button>
 

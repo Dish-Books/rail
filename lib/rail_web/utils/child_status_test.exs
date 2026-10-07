@@ -102,6 +102,7 @@ defmodule RailWeb.Utils.ChildStatusTest do
              needs_attention: true,
              badge: :dot,
              waiting_on: ["SPL-1"],
+             after: ["SPL-1", "child 2"],
              line: "child 2 was removed in Linear, so this will not start; cancel it in Linear to finish the split"
            } = child_status(third, [first, third])
   end

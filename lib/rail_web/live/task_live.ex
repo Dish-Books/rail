@@ -1080,7 +1080,7 @@ defmodule RailWeb.TaskLive do
 
     plan_sublabel =
       if task.id == parent.id,
-        do: "approved, split into #{count}",
+        do: "approved, split into #{split_total(statuses)}",
         else: "approved in #{parent.issue.identifier}"
 
     tabs =
@@ -1155,7 +1155,7 @@ defmodule RailWeb.TaskLive do
     |> assign(:child_of, %{
       parent: parent,
       position: status.task.split_position,
-      total: length(statuses),
+      total: split_total(statuses),
       waiting_on: status.waiting_on
     })
     |> assign(:split_points, nil)
@@ -1163,6 +1163,9 @@ defmodule RailWeb.TaskLive do
 
   # "You" is said only to the split's owner, which every child shares.
   defp viewer_owns?(socket, %Task{issue: issue}), do: issue.owner_user_id == socket.assigns.current_scope.user.id
+
+  # A split is as big as it was approved, so a child deleted in Linear since does not shrink it.
+  defp split_total(statuses), do: statuses |> Enum.map(& &1.task.split_position) |> Enum.max()
 
   # Cleaning up work Linear has not marked done is usually a mistake, so the confirmation says so.
   defp cleanup_confirm(%Issue{state: :done}, []),

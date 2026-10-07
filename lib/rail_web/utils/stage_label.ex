@@ -29,14 +29,15 @@ defmodule RailWeb.Utils.StageLabel do
   # A child of a split with no run is not next in line while a sibling it builds on is unmerged, and
   # never starts while one is canceled. Read only where the page loaded the parent's children.
   def stage_label(%Task{runs: [], parent_task: %Task{children: [_first | _rest] = siblings}} = task, nil) do
-    {canceled, open} =
-      siblings
-      |> Enum.filter(&(&1.split_position in task.builds_on and is_nil(&1.issue.completed_at)))
-      |> Enum.split_with(&(&1.issue.state in [:canceled, :duplicate]))
+    open =
+      Enum.filter(
+        siblings,
+        &(&1.split_position in task.builds_on and is_nil(&1.issue.completed_at) and
+            &1.issue.state not in [:canceled, :duplicate])
+      )
 
-    present = MapSet.new(siblings, & &1.split_position)
-    removed = for position <- task.builds_on, not MapSet.member?(present, position), do: "child #{position}"
-    blocked_by = Enum.map(canceled, & &1.issue.identifier) ++ removed
+    {canceled, removed} = Task.split_blockers(task, siblings)
+    blocked_by = canceled ++ removed
 
     cond do
       blocked_by != [] -> "Blocked by #{Enum.join(blocked_by, ", ")}"

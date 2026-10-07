@@ -178,7 +178,7 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
     {:ok, parent} = Pipeline.create_task(parent_issue, :split)
     parent = Repo.preload(parent, [:issue, :project])
 
-    [blocked, failed, _waiting] =
+    [blocked, failed, waiting] =
       for {{identifier, builds_on}, number} <- Enum.with_index([{"ATT-S1", []}, {"ATT-S2", []}, {"ATT-S3", [1]}], 1) do
         attrs = %{title: "Child #{identifier}", parent: parent_issue}
         {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
@@ -215,5 +215,12 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
       })
 
     assert Pipeline.count_attention(project_id: [project.id]) == 2
+
+    # Canceling the first takes it off its owner's list, and blocks the third, which builds on it.
+    blocked.issue |> Issue.linear_changeset(%{state: :canceled}) |> Repo.update!()
+    assert Pipeline.count_attention(project_id: [project.id]) == 2
+
+    waiting.issue |> Issue.linear_changeset(%{state: :canceled}) |> Repo.update!()
+    assert Pipeline.count_attention(project_id: [project.id]) == 1
   end
 end

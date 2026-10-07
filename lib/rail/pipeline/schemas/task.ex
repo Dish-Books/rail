@@ -148,6 +148,22 @@ defmodule Rail.Pipeline.Schemas.Task do
     File.regular?(Path.join([scratch_path, "demo", "demo.webm"]))
   end
 
+  @doc """
+  The siblings a child of a split builds on that will never merge: `{canceled, removed}`, the canceled
+  ones by identifier and those deleted in Linear, task and all, as `child N`. Needs the siblings' issues.
+  """
+  def split_blockers(%__MODULE__{builds_on: builds_on}, siblings) do
+    by_position = Map.new(siblings, &{&1.split_position, &1})
+
+    canceled =
+      for position <- builds_on,
+          %__MODULE__{issue: %Issue{completed_at: nil, state: state} = issue} <- [by_position[position]],
+          state in [:canceled, :duplicate],
+          do: issue.identifier
+
+    {canceled, for(position <- builds_on, not Map.has_key?(by_position, position), do: "child #{position}")}
+  end
+
   def stage_label(:plan), do: "Plan"
   def stage_label(:engineer), do: "Engineer"
   def stage_label(:review), do: "Review"

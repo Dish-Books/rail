@@ -27,16 +27,14 @@ defmodule RailWeb.Utils.ChildStatus do
     run = stage_run(child)
 
     unstarted? = issue.completed_at == nil and child.runs == []
-    {canceled, open} = earlier |> Enum.filter(&is_nil(&1.issue.completed_at)) |> Enum.split_with(&canceled?/1)
+    open = Enum.filter(earlier, &(is_nil(&1.issue.completed_at) and not canceled?(&1)))
     waiting_on = if unstarted?, do: Enum.map(open, & &1.issue.identifier), else: []
-    # A sibling whose issue was deleted in Linear took its task with it, and will never merge either.
-    removed = for position <- child.builds_on, not Map.has_key?(by_position, position), do: "child #{position}"
-    blocked_by = if unstarted?, do: {Enum.map(canceled, & &1.issue.identifier), removed}, else: {[], []}
+    blocked_by = if unstarted?, do: Task.split_blockers(child, siblings), else: {[], []}
 
     base = %{
       task: child,
       identifier: issue.identifier,
-      after: Enum.map(earlier, & &1.issue.identifier),
+      after: Enum.map(child.builds_on, &if(sibling = by_position[&1], do: sibling.issue.identifier, else: "child #{&1}")),
       waiting_on: waiting_on
     }
 

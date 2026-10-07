@@ -12,7 +12,8 @@ defmodule Rail.Pipeline.Actions.ListTasks do
   `:project_id` takes one id or a list, where an empty list matches nothing.
   `:owner_user_id` keeps the tasks whose issue that user owns, so an unowned issue's tasks drop out.
   `:issue_id` keeps one issue's tasks.
-  `:parent_task_id` keeps one split's children, in their order unless `:order_by` says otherwise.
+  `:parent_task_id` keeps one split's children, in their order unless `:order_by` says otherwise, and
+  `split_child: true` every child of every split.
   Cleaned-up tasks are left out unless `include_cleaned_up: true`.
   """
   def list_tasks(opts \\ []) do
@@ -26,6 +27,7 @@ defmodule Rail.Pipeline.Actions.ListTasks do
     |> filter_owner(opts[:owner_user_id])
     |> filter_issue(opts[:issue_id])
     |> filter_parent(opts[:parent_task_id])
+    |> filter_split_child(opts[:split_child])
     |> filter_stage(opts[:stage])
     |> filter_cleaned_up(opts[:include_cleaned_up])
     |> Repo.all()
@@ -59,6 +61,9 @@ defmodule Rail.Pipeline.Actions.ListTasks do
     do: where(query, [task: t], t.parent_task_id == ^parent_task_id)
 
   defp filter_parent(query, nil), do: query
+
+  defp filter_split_child(query, true), do: where(query, [task: t], not is_nil(t.parent_task_id))
+  defp filter_split_child(query, nil), do: query
 
   defp filter_stage(query, nil), do: query
 

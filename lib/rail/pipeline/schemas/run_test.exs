@@ -353,4 +353,17 @@ defmodule Rail.Pipeline.Schemas.RunTest do
 
     refute Run.needs_attention?(failed)
   end
+
+  test "a task whose issue Linear canceled or marked duplicate needs nobody, however its run ended" do
+    for state <- [:canceled, :duplicate] do
+      failed = %Run{
+        status: :finished,
+        error: "It went wrong",
+        role: %Role{stage: :engineer},
+        task: %Task{stage: :engineer, merged_at: nil, issue: %Issue{state: state}}
+      }
+
+      refute Run.needs_attention?(failed)
+    end
+  end
 end
