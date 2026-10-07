@@ -48,6 +48,22 @@ defmodule RailWeb.DesignControllerTest do
     assert get_resp_header(conn, "cache-control") == ["private, no-store"]
   end
 
+  test "asked with comments=1, the page ends with the overlay's script under the same sandbox", %{conn: conn, task: task} do
+    conn = get(conn, ~p"/tasks/#{task.id}/design/cards?v=abc&comments=1")
+
+    assert html_response(conn, 200) ==
+             ~s(<h1>Cards</h1><script src="/assets/design_overlay.js" data-rail-overlay></script>\n)
+
+    assert get_resp_header(conn, "content-security-policy") == ["sandbox allow-scripts"]
+    assert get_resp_header(conn, "cache-control") == ["private, no-store"]
+  end
+
+  test "asked without comments=1, as Open asks, the page is served exactly as saved", %{conn: conn, task: task} do
+    for query <- [%{}, %{"comments" => "0"}, %{"comments" => "true"}] do
+      assert conn |> get(~p"/tasks/#{task.id}/design/cards?#{query}") |> html_response(200) == "<h1>Cards</h1>"
+    end
+  end
+
   test "a page asked for at an earlier version is served as it is now", %{conn: conn, task: task, design_dir: dir} do
     %{options: [%{html_version: before}]} = Pipeline.read_design(task)
     File.write!(Path.join(dir, "cards.html"), "<h1>Cards, without the links</h1>")

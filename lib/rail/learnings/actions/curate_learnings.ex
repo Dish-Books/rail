@@ -33,6 +33,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
 
   @sighting_nouns %{
     diff_comment: {"diff comment", "diff comments"},
+    design_comment: {"design comment", "design comments"},
     review_finding: {"Fix decision", "Fix decisions"},
     qa_finding: {"Fix decision", "Fix decisions"},
     answer: {"answer", "answers"},
@@ -44,6 +45,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
 
   @source_phrases %{
     diff_comment: "a diff comment",
+    design_comment: "a design comment",
     review_finding: "a Fix in review",
     qa_finding: "a Fix in QA",
     answer: "an answer"

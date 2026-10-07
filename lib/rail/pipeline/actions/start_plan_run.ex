@@ -117,6 +117,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     - Whenever the human asks for a change, hand it to the subagent that owns that output, and then to each other subagent whose output it affects, so the ticket, the design and the plan agree before your turn ends.
     - A pick arrives as a message that says only "I picked <title> (<key>)." Have Architect fill in or revise the screen-specific parts of the plan for that option and save it naming its key, and have Product update the ticket if the pick changes it. If the plan is already written for the pick, say it stands.
     - Rail records the pick in #{Path.join([task.scratch_path, "design", "picked"])} and deletes the options not picked; nobody writes that file. Approval needs a ticket, a plan, and, when there are options, a pick with the plan saved for it. With a split saved, approval makes each child a sub-issue with a task of its own.
+    - Comments on the design arrive as one message, before or after approval, naming each element of the picked option by its CSS selector with what it says and the comment. Hand them to Designer to revise the picked option under its key, then to Architect or Product if the plan or the ticket must change. A plan saved after approval replaces the one Engineer builds from next.
 
     Questions:
 

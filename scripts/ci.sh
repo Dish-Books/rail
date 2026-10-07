@@ -75,9 +75,9 @@ lane_dev() {
   # CI serves no page, so this is the only place a broken bundle would show.
   sub_gate "assets" bash -c '
     set -e
-    (cd assets && pnpm install --frozen-lockfile)
     mix esbuild.install --if-missing
-    mix esbuild rail --minify'
+    mix esbuild rail --minify
+    mix esbuild design_overlay --minify'
 }
 
 lane_tests() {
@@ -89,6 +89,11 @@ lane_tests() {
     mix ecto.migrate --quiet
     mix coveralls.json --warnings-as-errors
     scripts/ci-coverage-100.sh cover/excoveralls.json app'
+}
+
+# No mix: the assets' own tests and Biome.
+lane_tooling() {
+  sub_gate "biome" bash -c 'cd assets && pnpm test && pnpm exec biome ci .'
 }
 
 lane_credo() {
@@ -104,7 +109,7 @@ lane_credo() {
     ../scripts/ci-coverage-100.sh cover/excoveralls.json credo/'
 }
 
-LANES="dev tests credo"
+LANES="dev tests tooling credo"
 
 # The gate set, as `receipt id:display label`. The summary, the completeness check
 # and the receipt's gate list all derive from it.
@@ -116,11 +121,14 @@ deps.audit:deps.audit
 sobelow:sobelow
 assets:assets
 tests:tests
+biome:biome
 credo_subproject:credo/ subproject'
 
 # ── serial prelude ──────────────────────────────────────────────────────────
 wait_for_postgres
 mix deps.get
+# Here rather than in a gate, so the dev lane's assets gate and the tooling lane never install at once.
+(cd assets && pnpm install --frozen-lockfile)
 
 # ── run ─────────────────────────────────────────────────────────────────────
 if [[ $SERIAL -eq 1 ]]; then

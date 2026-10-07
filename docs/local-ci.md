@@ -8,11 +8,12 @@ mise run ci
 
 | Lane | Gates |
 |---|---|
-| dev (`_build/dev`) | compile (clean, no warnings) → format, credo, deps.audit, sobelow, assets |
+| dev (`_build/dev`) | compile (clean, no warnings) → format, credo, deps.audit, sobelow, assets (the app bundle and the design overlay) |
 | test (`_build/test`) | ecto.create/migrate, tests with coverage held at 100% |
+| tooling (no mix) | biome: the assets' tests (`pnpm test`), then `biome ci` |
 | `credo/` | the subproject's own gates, coverage held at 100% |
 
-The lanes run in parallel after a serial prelude that waits for Postgres at `DB_HOST`/`DB_PORT` and runs `deps.get`. A failing gate doesn't stop the others, so one pass shows everything that is broken.
+The lanes run in parallel after a serial prelude that waits for Postgres at `DB_HOST`/`DB_PORT`, runs `deps.get` and installs the assets' packages. A failing gate doesn't stop the others, so one pass shows everything that is broken.
 
 `--fast` skips the clean rebuild and writes no receipt. `--no-push` keeps the receipt local. `--serial` runs the lanes one at a time.
 

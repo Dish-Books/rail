@@ -2,9 +2,13 @@ defmodule Rail.Pipeline.Actions.SavePlan do
   @moduledoc """
   Checks a plan the architect saved and writes it where `read_plan/1` reads it, with the
   design option it was written for beside it, so that option is still named after the pick deletes it.
+
+  A plan saved once the task has left Plan with an approved plan replaces that one, so the next Engineer run
+  builds from the revision. Nothing is published to the issue again.
   """
 
   import Ecto.Changeset
+  import Rail.Pipeline.Utils.RecordImplementationPlan
   import Rail.Pipeline.Utils.WriteScratchFile
 
   alias Rail.Issues.Schemas.Issue
@@ -42,6 +46,12 @@ defmodule Rail.Pipeline.Actions.SavePlan do
 
         nil ->
           File.rm(design_path(dir, identifier))
+      end
+
+      # Read as it is now: the Architect may have been handed the work before the approval landed.
+      with %Task{stage: stage} = now when stage != :plan <- Repo.get(Task, task.id),
+           {:ok, _approved} <- Pipeline.get_implementation_plan(now) do
+        record_implementation_plan(now, saved.plan)
       end
 
       Pipeline.broadcast_output_saved(task)

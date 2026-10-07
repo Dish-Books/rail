@@ -155,50 +155,17 @@ defmodule RailWeb.Live.DiffFile do
 
     ~H"""
     <div class="diff-comment-row">
-      <form
+      <.comment_box
         id={"diff-comment-form-#{@key}"}
-        data-qa="diff_comment_form"
-        phx-submit="save_diff_comment"
-        phx-change="change_diff_comment"
-        phx-target={@target}
-        class="max-w-[760px] rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-2 shadow-xs"
-      >
-        <textarea
-          id={"diff-comment-body-#{@key}"}
-          name="body"
-          data-qa="diff_comment_body"
-          aria-label={"Comment on line #{@draft.line}"}
-          phx-mounted={JS.focus()}
-          phx-keydown="cancel_diff_comment"
-          phx-key="Escape"
-          phx-target={@target}
-          phx-debounce="300"
-          phx-no-format
-          class="block w-full min-h-[52px] resize-y px-3 py-2 text-sm leading-[18px] rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-600 dark:focus:border-blue-500 focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500"
-        >{@draft[:body]}</textarea>
-
-        <div class="mt-1.5 flex items-center gap-2">
-          <span class="pl-1 text-[11px] text-slate-500 dark:text-slate-400">
-            Only you see this until you send it.
-          </span>
-          <button
-            type="button"
-            phx-click="cancel_diff_comment"
-            phx-target={@target}
-            data-qa="diff_comment_cancel"
-            class="ml-auto px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            data-qa="diff_comment_save"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 shadow-xs cursor-pointer"
-          >
-            <.icon name="pi-check" class="size-4" />Save comment
-          </button>
-        </div>
-      </form>
+        body_id={"diff-comment-body-#{@key}"}
+        qa="diff_comment"
+        label={"line #{@draft.line}"}
+        body={@draft[:body]}
+        submit="save_diff_comment"
+        change="change_diff_comment"
+        cancel="cancel_diff_comment"
+        target={@target}
+      />
     </div>
     """
   end

@@ -2,30 +2,30 @@ import "phoenix_html";
 import { Socket } from "phoenix";
 import { LiveSocket } from "phoenix_live_view";
 import topbar from "../vendor/topbar";
-
-import { Theme } from "./hooks/theme";
-import { Shortcuts } from "./hooks/shortcuts";
-import { Elapsed } from "./hooks/elapsed";
+import { BrowserScreencast } from "./hooks/browser_screencast";
 import { ChatAutoscroll } from "./hooks/chat_autoscroll";
 import { ChatComposer } from "./hooks/chat_composer";
+import { CopyText } from "./hooks/copy_text";
+import { CurrentInView } from "./hooks/current_in_view";
+import { DemoCaptions } from "./hooks/demo_captions";
+import { DesignFrame, ElementPreview } from "./hooks/design_frame";
 import { DiffScroller } from "./hooks/diff_scroller";
 import { DiffSection } from "./hooks/diff_section";
 import { DiffWrap } from "./hooks/diff_wrap";
-import { CopyText } from "./hooks/copy_text";
+import { Elapsed } from "./hooks/elapsed";
+import { ImageFallback } from "./hooks/image_fallback";
 import { JumpToLine } from "./hooks/jump_to_line";
-import { LocalTime } from "./hooks/local_time";
 import { LocalResetTime } from "./hooks/local_reset_time";
-import { DesignFrame } from "./hooks/design_frame";
-import { BrowserScreencast } from "./hooks/browser_screencast";
-import { DemoCaptions } from "./hooks/demo_captions";
-import { CurrentInView } from "./hooks/current_in_view";
-import { ScrollSelectedTab } from "./hooks/scroll_selected_tab";
+import { LocalTime } from "./hooks/local_time";
 import { PlanDiagram } from "./hooks/plan_diagram";
 import { PlanLinks } from "./hooks/plan_links";
-import { ImageFallback } from "./hooks/image_fallback";
+import { ScrollSelectedTab } from "./hooks/scroll_selected_tab";
+import { Shortcuts } from "./hooks/shortcuts";
+import { Theme } from "./hooks/theme";
 
 const Hooks = {
   DesignFrame,
+  ElementPreview,
   Theme,
   Shortcuts,
   Elapsed,

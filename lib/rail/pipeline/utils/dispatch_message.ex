@@ -12,6 +12,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   degrades to a message that is still queued rather than one that is lost.
   """
 
+  import Rail.Pipeline.Utils.DeliverPlanComments
   import Rail.Pipeline.Utils.PlanSubagents
   import Rail.Pipeline.Utils.PrepareWorktree
   import Rail.Pipeline.Utils.StartWorktreeSetup
@@ -36,6 +37,9 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   should pass.
   """
   def dispatch_message(%Run{} = run, opts \\ []) do
+    # Plan comments queued in the message count as sent the moment it goes out, as one sent at once does.
+    :ok = deliver_plan_comments(run)
+
     if Keyword.get(opts, :async, true) do
       caller = self()
 

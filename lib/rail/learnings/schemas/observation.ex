@@ -13,6 +13,7 @@ defmodule Rail.Learnings.Schemas.Observation do
 
   @source_kinds [
     :diff_comment,
+    :design_comment,
     :review_finding,
     :qa_finding,
     :answer,
@@ -31,6 +32,8 @@ defmodule Rail.Learnings.Schemas.Observation do
     field :text, :string
     field :excerpt, :string
     field :abandoned, :boolean, default: false
+    # A design comment's element as it was captured, its HTML and box, for the Learnings page to draw.
+    field :capture, :map
 
     belongs_to :project, Project
     belongs_to :task, Task
@@ -56,7 +59,8 @@ defmodule Rail.Learnings.Schemas.Observation do
       :text,
       :excerpt,
       :abandoned,
-      :learning_id
+      :learning_id,
+      :capture
     ])
     |> validate_required([:source_kind, :text])
     |> unique_constraint([:project_id, :source_kind, :source_id])
@@ -65,6 +69,7 @@ defmodule Rail.Learnings.Schemas.Observation do
   def source_kinds, do: @source_kinds
 
   def source_label(:diff_comment), do: "Diff comment"
+  def source_label(:design_comment), do: "Design comment"
   def source_label(:review_finding), do: "Fix on a review finding"
   def source_label(:qa_finding), do: "Fix on a QA finding"
   def source_label(:answer), do: "Answer"

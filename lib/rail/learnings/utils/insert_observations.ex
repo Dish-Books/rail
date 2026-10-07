@@ -16,7 +16,8 @@ defmodule Rail.Learnings.Utils.InsertObservations do
     :text,
     :excerpt,
     :abandoned,
-    :learning_id
+    :learning_id,
+    :capture
   ]
 
   @doc """
