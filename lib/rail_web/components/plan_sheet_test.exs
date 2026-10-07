@@ -3,7 +3,7 @@ defmodule RailWeb.Components.PlanSheetTest do
 
   import Phoenix.LiveViewTest
   import RailTest.Helpers
-  import RailWeb.Utils.BuildPlanSheet
+  import RailWeb.Helpers, only: [build_plan_sheet: 1]
 
   alias RailWeb.Components.PlanSheet
 

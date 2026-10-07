@@ -20,6 +20,9 @@ defmodule Rail.Pipeline do
   will watch two minutes of video and open nothing else. It is where a task
   stops: nothing moves it on from there yet.
 
+  Plan can also end with a split: approval then makes each child an issue and a task of its own at
+  Engineer, and parks the parent at Split until the last child merges.
+
   Merge is a stage a task can reach and nothing drives or reaches: a task put
   there parks there.
   """
@@ -40,6 +43,11 @@ defmodule Rail.Pipeline do
   defdelegate read_plan(task), to: Actions.ReadPlan
   defdelegate save_plan(task, attrs), to: Actions.SavePlan
   defdelegate get_implementation_plan(task), to: Actions.GetImplementationPlan
+  defdelegate read_split(task), to: Actions.ReadSplit
+  defdelegate save_split(task, attrs), to: Actions.SaveSplit
+  defdelegate create_child_task(parent, issue, child), to: Actions.CreateChildTask
+  defdelegate handle_issue_finished(issue), to: Actions.HandleIssueFinished
+  defdelegate share_owner_with_children(issue), to: Actions.ShareOwnerWithChildren
 
   defdelegate start_engineer_run(run), to: Actions.StartEngineerRun
   defdelegate end_turn_and_commit(task, os_process, message), to: Actions.EndTurnAndCommit

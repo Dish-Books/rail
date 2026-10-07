@@ -149,4 +149,78 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
 
     assert Pipeline.count_attention() == 0
   end
+
+  test "each child of a split waiting on a person counts once, a failed one too, and the parent never", %{
+    project: project,
+    roles: roles
+  } do
+    now = DateTime.utc_now()
+
+    for {identifier, title} <- [
+          {"ATT-SPL", "Work on ATT-SPL"},
+          {"ATT-S1", "Child ATT-S1"},
+          {"ATT-S2", "Child ATT-S2"},
+          {"ATT-S3", "Child ATT-S3"}
+        ] do
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
+            }
+          }
+        })
+      end)
+    end
+
+    {:ok, parent_issue} = Issues.create_issue(system_scope(), project, %{title: "Work on ATT-SPL"})
+    {:ok, parent} = Pipeline.create_task(parent_issue, :split)
+    parent = Repo.preload(parent, [:issue, :project])
+
+    [blocked, failed, waiting] =
+      for {{identifier, builds_on}, number} <- Enum.with_index([{"ATT-S1", []}, {"ATT-S2", []}, {"ATT-S3", [1]}], 1) do
+        attrs = %{title: "Child #{identifier}", parent: parent_issue}
+        {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
+        part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+        {:ok, child} = Pipeline.create_child_task(parent, issue, part)
+        Repo.preload(child, [:issue, :project])
+      end
+
+    # The parent's own Plan run, latched done at approval.
+    {:ok, _plan} =
+      Pipeline.create_run(%{
+        task_id: parent.id,
+        role_id: roles[:plan].id,
+        status: :finished,
+        stage_outcome: :done,
+        started_at: now
+      })
+
+    {:ok, _blocked} =
+      Pipeline.create_run(%{
+        task_id: blocked.id,
+        role_id: roles[:engineer].id,
+        status: :blocked_on_input,
+        started_at: now
+      })
+
+    {:ok, _failed} =
+      Pipeline.create_run(%{
+        task_id: failed.id,
+        role_id: roles[:engineer].id,
+        status: :failed,
+        error: "It broke.",
+        started_at: now
+      })
+
+    assert Pipeline.count_attention(project_id: [project.id]) == 2
+
+    # Canceling the first takes it off its owner's list, and blocks the third, which builds on it.
+    blocked.issue |> Issue.linear_changeset(%{state: :canceled}) |> Repo.update!()
+    assert Pipeline.count_attention(project_id: [project.id]) == 2
+
+    waiting.issue |> Issue.linear_changeset(%{state: :canceled}) |> Repo.update!()
+    assert Pipeline.count_attention(project_id: [project.id]) == 1
+  end
 end

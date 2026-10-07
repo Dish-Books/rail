@@ -461,6 +461,35 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
       assert_receive :sandboxes_changed
     end
 
+    test "a split parent Linear reports trashed is kept, with its children", %{
+      project: %{id: project_id},
+      insert: insert,
+      last_page: last_page,
+      lookups: lookups
+    } do
+      {:ok, %Task{id: parent_id} = parent} = "lin_split_parent" |> insert.(:in_progress) |> Pipeline.create_task(:split)
+      child_issue = insert.("lin_split_child", :todo)
+
+      {:ok, %Task{id: child_id}} =
+        Pipeline.create_child_task(parent, child_issue, %{number: 1, builds_on: [], plan: "## Implementation plan"})
+
+      started_at = DateTime.to_iso8601(DateTime.utc_now())
+      last_page.([])
+
+      lookups.(%{
+        "lin_split_parent" => %{"data" => %{"issue" => %{"id" => "lin_split_parent", "trashed" => true}}},
+        "lin_split_child" => %{
+          "data" => %{"issue" => %{"id" => "lin_split_child", "trashed" => nil, "team" => %{"id" => "lin_team_other"}}}
+        }
+      })
+
+      assert :ok = perform_job(LinearSync, %{project_id: project_id, cursor: "cursor_last", started_at: started_at})
+
+      assert %Issue{} = Repo.get_by(Issue, external_id: "lin_split_parent")
+      assert %Task{} = Repo.get(Task, parent_id)
+      assert %Task{parent_task_id: ^parent_id} = Repo.get(Task, child_id)
+    end
+
     test "a lookup that fails any other way fails the job, removing and announcing nothing", %{
       project: %{id: project_id},
       insert: insert,

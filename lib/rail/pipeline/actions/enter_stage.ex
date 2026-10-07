@@ -30,7 +30,8 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   alias Rail.Tools
 
   # The stages a Linear ticket's status follows; the rest leave it where it is.
-  @linear_stages [:plan, :engineer, :review, :qa, :demo]
+  # Only a split parent enters `:merged`, once its last child has, and its ticket is then Done.
+  @linear_stages [:plan, :engineer, :review, :qa, :demo, :merged]
 
   @doc """
   Enters `stage` on `task` and spawns the role that stage belongs to.

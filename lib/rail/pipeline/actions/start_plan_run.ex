@@ -107,7 +107,8 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     1. Product first. Hand it the issue, its comments and anything the human has said, and have it save the ticket with `save_ticket`.
     2. Once the ticket is saved, hand it to Designer and Architect at once rather than one after the other. Designer only when the change has a screen: have it save three options with `save_design_option`. When nothing anyone sees changes there are no options: skip Designer and say so in one line.
     3. Architect does not wait for the design: have it plan everything that does not hang on the screen from the ticket. Once the options are saved, have it either write the screen-specific details for the option you recommend, naming that option when it saves with `save_plan`, or leave them until the pick. Never have it plan for all three.
-    4. End the turn by saying what is saved and, when there are options, which one you recommend and why, in a sentence or two. The human picks in Rail, not in the chat.
+    4. When the work is too big for one ticket, or the human asks for a split, have Architect decide where it splits and save it with `save_split`: children in order, each with its title, ticket, estimate, part of the plan and the earlier children it builds on. Product keeps writing the parent ticket. Hand every change to the split, adding, dropping, merging or reordering children, to Architect.
+    5. End the turn by saying what is saved and, when there are options, which one you recommend and why, in a sentence or two. The human picks in Rail, not in the chat.
 
     When you hand a subagent its work, include every rule from the rules section of this brief that bears on its output, word for word. A subagent sees only what you write it.
 
@@ -115,8 +116,8 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
 
     - Whenever the human asks for a change, hand it to the subagent that owns that output, and then to each other subagent whose output it affects, so the ticket, the design and the plan agree before your turn ends.
     - A pick arrives as a message that says only "I picked <title> (<key>)." Have Architect fill in or revise the screen-specific parts of the plan for that option and save it naming its key, and have Product update the ticket if the pick changes it. If the plan is already written for the pick, say it stands.
-    - Rail records the pick in #{Path.join([task.scratch_path, "design", "picked"])} and deletes the options not picked; nobody writes that file. Approval needs a ticket, a plan, and, when there are options, a pick with the plan saved for it.
-    - Comments on the design arrive as one message, before or after approval, naming each element of the picked option by its CSS selector with what it says and the comment. Hand them to Designer to revise the picked option under its key, then to Architect or Product if the plan or the ticket must change. A plan saved after approval replaces the one Engineer builds from next.
+    - Rail records the pick in #{Path.join([task.scratch_path, "design", "picked"])} and deletes the options not picked; nobody writes that file. Approval needs a ticket, a plan, and, when there are options, a pick with the plan saved for it. With a split saved, approval makes each child a sub-issue with a task of its own.
+    - Comments on the design arrive as one message before approval, naming each element of the picked option by its CSS selector with what it says and the comment. Hand them to Designer to revise the picked option under its key, then to Architect or Product if the plan or the ticket must change.
 
     Questions:
 
@@ -138,6 +139,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     ticket = Pipeline.read_ticket(task)
     design = Pipeline.read_design(task, pages: false)
     plan = Pipeline.read_plan(task)
+    split = Pipeline.read_split(task)
 
     lines =
       Enum.filter(
@@ -146,7 +148,9 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
           design && design.options != [] &&
             "- Design options: #{Enum.map_join(design.options, ", ", &"#{&1.title} (#{&1.key})")}",
           design && design.picked && "- The human picked #{design.picked}.",
-          plan && "- The plan, written for #{if plan.design, do: plan.design.key, else: "no design option"}."
+          plan && "- The plan, written for #{if plan.design, do: plan.design.key, else: "no design option"}.",
+          split &&
+            "- A split into #{length(split.children)}: #{Enum.map_join(split.children, "; ", &"#{&1.number}. #{&1.title}")}."
         ],
         &is_binary/1
       )

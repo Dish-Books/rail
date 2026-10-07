@@ -208,8 +208,17 @@ defmodule RailWeb.Live.RunConversation do
             </button>
           </div>
 
+          <p
+            :if={@closed and not @show_raw_log}
+            id="conversation-closed"
+            data-qa="conversation_closed"
+            class="shrink-0 px-5 py-4 border-t border-slate-200 dark:border-slate-700 text-[13px] text-slate-500 dark:text-slate-400"
+          >
+            The plan is approved, so this conversation is closed.
+          </p>
+
           <.plan_comment_tray
-            :if={not @show_raw_log}
+            :if={not @show_raw_log and not @closed}
             comments={@plan_comments}
             missing={@missing_anchors}
             open={@tray_open}
@@ -219,7 +228,7 @@ defmodule RailWeb.Live.RunConversation do
           />
 
           <.composer
-            :if={not @show_raw_log}
+            :if={not @show_raw_log and not @closed}
             task={@task}
             run={@selected_run}
             role={selected_role(@selected_run, @roles_map)}
@@ -1107,6 +1116,12 @@ defmodule RailWeb.Live.RunConversation do
     {:noreply, assign(socket, :expanded_activities, expanded)}
   end
 
+  # A page drawn before the plan was approved can still send these, and a closed conversation takes none.
+  def handle_event(event, _params, %{assigns: %{closed: true}} = socket)
+      when event in ["send_chat", "send_plan_comments", "stop_and_send_message", "retry_run"] do
+    {:noreply, socket}
+  end
+
   def handle_event("chat_input_change", params, socket) do
     {:noreply, assign(socket, :chat_input, Map.get(params, "message") || "")}
   end
@@ -1263,6 +1278,7 @@ defmodule RailWeb.Live.RunConversation do
     |> assign_new(:plan_comments, fn -> [] end)
     |> assign_new(:missing_anchors, fn -> [] end)
     |> assign_new(:tray_open, fn -> true end)
+    |> assign_new(:closed, fn -> false end)
   end
 
   # Only the Plan run's conversation is where plan comments wait to be sent.

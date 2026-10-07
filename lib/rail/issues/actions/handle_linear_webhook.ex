@@ -4,7 +4,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
 
   The row is written with `Issue.linear_changeset/2`: the change came from
   Linear, so nothing is pushed back to it. An update that finishes an open issue
-  is handed to Learnings, which only queues its work.
+  is handed to Learnings and the pipeline, which only queue their work.
   """
 
   import Ecto.Query
@@ -20,6 +20,8 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Users.Schemas.User
+
+  require Logger
 
   @doc """
   Applies `payload` for `workspace`, its projects preloaded. Issue creates and
@@ -108,7 +110,15 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
         existing = Repo.get_by(Issue, external_id: external_id) || %Issue{}
 
         with {:ok, issue} <- existing |> Issue.linear_changeset(attrs) |> Repo.insert_or_update() do
-          if finished?(action, existing, issue), do: {:ok, _job} = Learnings.handle_issue_finished(issue)
+          # A child's owner is its parent's, so a new owner on a split parent reaches its children.
+          if is_binary(existing.id) and existing.owner_user_id != issue.owner_user_id,
+            do: {:ok, _children} = Pipeline.share_owner_with_children(issue)
+
+          if finished?(action, existing, issue) do
+            {:ok, _job} = Learnings.handle_issue_finished(issue)
+            Pipeline.handle_issue_finished(issue)
+          end
+
           Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id})
           {:ok, issue}
         end
@@ -119,9 +129,29 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
   end
 
   # Every task, cleaned up or not, is discarded first: its runs have no foreign key to go with it.
+  # A split parent's issue keeps its row, since deleting it would take the children's tasks with it.
   defp delete_issue(projects, external_id) do
     project_ids = Enum.map(projects, & &1.id)
 
+    split? =
+      Repo.exists?(
+        from(c in Task,
+          join: p in Task,
+          on: c.parent_task_id == p.id,
+          join: i in assoc(p, :issue),
+          where: i.external_id == ^external_id and i.project_id in ^project_ids
+        )
+      )
+
+    if split? do
+      Logger.warning("Linear removed #{external_id}, which Rail split into child tasks, so Rail keeps it")
+      :ok
+    else
+      discard_and_delete(project_ids, external_id)
+    end
+  end
+
+  defp discard_and_delete(project_ids, external_id) do
     tasks =
       Repo.all(
         from(t in Task,

@@ -168,7 +168,8 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
              "QA",
              "Demo",
              "Merged",
-             "Debugger"
+             "Debugger",
+             "Split"
            ]
 
     assert is_nil(Task.stage_label(:nonsense))
@@ -181,5 +182,20 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     assert Task.cast_stage(:nonsense) == :error
     assert Task.cast_stage("nonsense") == :error
     assert Task.cast_stage(123) == :error
+  end
+
+  test "a child builds only on the children before it", %{task: task} do
+    assert %{valid?: true} = Task.changeset(task, %{split_position: 3, builds_on: [1, 2]})
+
+    assert %{builds_on: ["must name only earlier children"]} =
+             errors_on(Task.changeset(task, %{split_position: 2, builds_on: [2]}))
+
+    assert %{builds_on: ["must name only earlier children"]} =
+             errors_on(Task.changeset(task, %{split_position: 2, builds_on: [3]}))
+
+    assert %{builds_on: ["must name only earlier children"]} =
+             errors_on(Task.changeset(task, %{split_position: 2, builds_on: [0]}))
+
+    assert %{split_position: ["must be greater than 0"]} = errors_on(Task.changeset(task, %{split_position: 0}))
   end
 end

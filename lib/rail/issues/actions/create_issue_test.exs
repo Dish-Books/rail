@@ -4,6 +4,7 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
+  alias Rail.Users
 
   test "create_issue/2 opens the ticket in triage with the title and description given", %{
     project: %{id: project_id} = project
@@ -63,6 +64,69 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
              })
 
     assert_receive {:issue_created, ^issue_id}
+  end
+
+  test "create_issue/2 opens a sub-issue in Todo under its parent, with its estimate and its owner assigned", %{
+    project: project
+  } do
+    {:ok, %{id: owner_id} = owner} =
+      Users.register_oauth_user(%{github_id: "gh_sub_issue_owner", login: "sub_owner", email: "sub_owner@example.com"})
+
+    owner |> Ecto.Changeset.change(linear_user_id: "lin_usr_sub_owner") |> Repo.update!()
+    parent = %Issue{external_id: "lin_parent_1"}
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert %{
+               "input" => %{
+                 "title" => "A child",
+                 "parentId" => "lin_parent_1",
+                 "estimate" => 3,
+                 "assigneeId" => "lin_usr_sub_owner",
+                 "stateId" => "st_todo"
+               }
+             } = Jason.decode!(body)["variables"]
+
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_child_1", "identifier" => "ENG-310", "title" => "A child", "estimate" => 3}
+          }
+        }
+      })
+    end)
+
+    assert {:ok, %Issue{state: :todo, state_name: "Todo", estimate: 3, owner_user_id: ^owner_id}} =
+             Issues.create_issue(system_scope(), project, %{
+               title: "A child",
+               estimate: 3,
+               owner_user_id: owner.id,
+               parent: parent
+             })
+  end
+
+  test "create_issue/2 leaves an owner who never linked Linear unassigned there", %{project: project} do
+    {:ok, owner} =
+      Users.register_oauth_user(%{github_id: "gh_unlinked_owner", login: "unlinked", email: "unlinked@example.com"})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      refute Map.has_key?(Jason.decode!(body)["variables"]["input"], "assigneeId")
+
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_captured_9", "identifier" => "ENG-309", "title" => "Unlinked"}
+          }
+        }
+      })
+    end)
+
+    assert {:ok, %Issue{state: :triage}} =
+             Issues.create_issue(system_scope(), project, %{title: "Unlinked", owner_user_id: owner.id})
   end
 
   test "create_issue/2 defaults to medium priority and sends Linear none", %{project: project} do

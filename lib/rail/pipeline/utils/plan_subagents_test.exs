@@ -46,6 +46,12 @@ defmodule Rail.Pipeline.Utils.PlanSubagentsTest do
     assert architect =~ "or leave them until the human picks"
     assert architect =~ "Name the option the plan is written for as `design`"
     assert architect =~ "save the plan again with the change carried everywhere it reaches"
+    assert architect =~ "you decide where it splits and save it with `save_split`"
+    assert architect =~ "Plan the split on purpose, before you write the parts, as vertical slices"
+    assert architect =~ "none is reworked by a later one, and none carries a temporary stand-in"
+    assert architect =~ "A child builds on another only where it truly needs that work merged first"
+    assert architect =~ "every save carries every child complete, with its title, ticket and plan"
+    assert product =~ "Whether and where the work splits into child tickets is Architect's call"
   end
 
   test "a role's description describes its subagent, and its name stands in when it has none", %{

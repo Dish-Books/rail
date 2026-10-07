@@ -322,7 +322,7 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
 
   test "never reopens a ticket that is Done or Canceled", %{issue: issue, task: task, nodes: nodes, states: states} do
     for finished <- ["st_done", "st_canceled"],
-        stage <- [:plan, :engineer, :review, :qa, :demo] do
+        stage <- [:plan, :engineer, :review, :qa, :demo, :merged] do
       {:ok, _task} = Pipeline.update_task(task, %{stage: stage})
 
       Req.Test.expect(Rail.Linear, fn conn ->
@@ -390,8 +390,32 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
     assert :ok = perform_job(AdvanceLinearState, %{issue_id: issue.id})
   end
 
-  test "a task at a stage the ticket does not follow leaves Linear untouched", %{issue: issue, task: task} do
+  test "a split parent at Merged moves its ticket to the first completed state", %{
+    issue: issue,
+    task: task,
+    nodes: nodes,
+    states: states
+  } do
     {:ok, _task} = Pipeline.update_task(task, %{stage: :merged})
+    nodes = [%{"id" => "st_shipped", "name" => "Shipped", "type" => "completed", "position" => 1.0} | nodes]
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{"issue" => %{"state" => states["st_in_review"], "team" => %{"states" => %{"nodes" => nodes}}}}
+      })
+    end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"input" => %{"stateId" => "st_done"}} = Jason.decode!(body)["variables"]
+      Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
+    end)
+
+    assert :ok = perform_job(AdvanceLinearState, %{issue_id: issue.id})
+  end
+
+  test "a task at a stage the ticket does not follow leaves Linear untouched", %{issue: issue, task: task} do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :split})
 
     # No Linear mock is queued, so a request would raise.
     assert :ok = perform_job(AdvanceLinearState, %{issue_id: issue.id})

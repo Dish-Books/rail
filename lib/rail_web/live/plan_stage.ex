@@ -1,7 +1,7 @@
 defmodule RailWeb.Live.PlanStage do
   @moduledoc """
-  The Plan step: the ticket, the design options and the plan, a list of three with the selected one
-  beside it in today's ticket, design and plan views, and the one Approve in the header.
+  The Plan step: the ticket, the design options, the plan and the split, a list of four with the selected
+  one beside it, and the one Approve in the header. A child of a split shows only its approved part.
 
   Everything here is read off scratch and the runs whenever the page reloads it, so a save shows
   the moment it lands. What waits on the human opens when the step opens, and only a click changes it after.
@@ -31,6 +31,7 @@ defmodule RailWeb.Live.PlanStage do
       |> assign_new(:draft, fn -> nil end)
       |> assign_new(:selected_key, fn -> nil end)
       |> assign_new(:diagram_views, fn -> %{change: :diagram, call_flow: :diagram} end)
+      |> assign_new(:open_child, fn -> nil end)
       |> load()
 
     {:ok, socket}
@@ -46,8 +47,10 @@ defmodule RailWeb.Live.PlanStage do
         stage_run={@stage_run}
         line={@line}
         title={@task.issue.title}
+        status={@status}
         flush
       >
+        <:breadcrumb :if={@breadcrumb != []}>{render_slot(@breadcrumb)}</:breadcrumb>
         <:tabs>{render_slot(@tabs)}</:tabs>
 
         <:actions>
@@ -82,7 +85,16 @@ defmodule RailWeb.Live.PlanStage do
           </p>
         </:alerts>
 
-        <div class="@container h-full">
+        <.child_plan_pane
+          :if={@child_of}
+          child_of={@child_of}
+          plan={@plan}
+          sheet={@sheet}
+          diagram_views={@diagram_views}
+          target={@myself}
+        />
+
+        <div :if={!@child_of} class="@container h-full">
           <div class="h-full flex flex-col @5xl:flex-row">
             <nav
               id="plan-items"
@@ -170,18 +182,26 @@ defmodule RailWeb.Live.PlanStage do
                 diagram_views={@diagram_views}
                 target={@myself}
               />
+
+              <.split_pane
+                :if={@selected_item == "split"}
+                split={@split}
+                open_child={@open_child}
+                diagram_views={@diagram_views}
+                target={@myself}
+              />
             </div>
           </div>
         </div>
 
-        <:sidebar>{render_slot(@sidebar)}</:sidebar>
+        <:sidebar :if={!@child_of}>{render_slot(@sidebar)}</:sidebar>
       </.task_layout>
     </div>
     """
   end
 
   @impl true
-  def handle_event("select_item", %{"item" => item}, socket) when item in ["ticket", "design", "plan"] do
+  def handle_event("select_item", %{"item" => item}, socket) when item in ["ticket", "design", "plan", "split"] do
     {:noreply, assign(socket, :selected_item, item)}
   end
 
@@ -200,6 +220,12 @@ defmodule RailWeb.Live.PlanStage do
 
   def handle_event("approve", _params, socket) do
     socket.assigns.current_scope |> Pipeline.approve_plan(socket.assigns.run) |> respond(socket)
+  end
+
+  # A card opens to its child's whole ticket and part of the plan; opening it again closes it.
+  def handle_event("open_child", %{"number" => number}, socket) do
+    number = String.to_integer(number)
+    {:noreply, assign(socket, :open_child, if(socket.assigns.open_child == number, do: nil, else: number))}
   end
 
   def handle_event("toggle_commenting", _params, socket) do
@@ -687,6 +713,202 @@ defmodule RailWeb.Live.PlanStage do
     """
   end
 
+  attr :split, :any, required: true
+  attr :open_child, :integer, default: nil
+  attr :diagram_views, :map, default: %{}
+  attr :target, :any, default: nil
+
+  defp split_pane(%{split: nil} = assigns) do
+    ~H"""
+    <div
+      id="plan-split-none"
+      data-qa="plan_split_none"
+      class="flex flex-col items-center text-center max-w-md mx-auto py-14"
+    >
+      <div class="flex items-center justify-center size-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 ring-1 ring-slate-200 dark:ring-slate-700">
+        <.icon name="pi-arrows-split" class="size-7" />
+      </div>
+      <h2 class="mt-5 text-base font-semibold text-slate-900 dark:text-slate-100">Not split</h2>
+      <p class="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+        Approve makes one task, which moves to Engineer. Ask Plan for a split when the work is too big for one ticket.
+      </p>
+    </div>
+    """
+  end
+
+  defp split_pane(assigns) do
+    children = Enum.map(assigns.split.children, &Map.put(&1, :first_file, first_file(&1.plan)))
+    open = Enum.find(assigns.split.children, &(&1.number == assigns.open_child))
+
+    assigns =
+      assigns
+      |> assign(:rounds, rounds(children))
+      |> assign(:open, open)
+      |> assign(:open_sheet, open && build_plan_sheet(open.plan))
+
+    ~H"""
+    <div id="plan-split" data-qa="plan_split" class="@container">
+      <div class="flex items-baseline gap-3 mb-4">
+        <h2 class="text-xl font-bold text-slate-900 dark:text-slate-100">
+          Split into {length(@split.children)} children
+        </h2>
+        <span class="text-sm text-slate-500 dark:text-slate-400">
+          {points(@split.children)} · {length(@rounds)} {if length(@rounds) == 1,
+            do: "round",
+            else: "rounds"}
+        </span>
+      </div>
+
+      <div class="grid @3xl:grid-cols-3 gap-5 items-start">
+        <div :for={{label, children} <- @rounds} data-qa="plan_split_round" class="min-w-0 space-y-2">
+          <p class="px-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            {label}
+          </p>
+          <div
+            :for={child <- children}
+            id={"plan-split-child-#{child.number}"}
+            data-qa="plan_split_child"
+            class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/60 p-3.5 space-y-2.5 min-w-0"
+          >
+            <div class="flex items-start gap-2.5">
+              <span class="flex items-center justify-center size-6 shrink-0 rounded-full bg-slate-100 dark:bg-slate-800 font-mono text-xs text-slate-600 dark:text-slate-300">
+                {child.number}
+              </span>
+              <p class="min-w-0 flex-1 text-[13.5px] font-semibold leading-snug text-slate-900 dark:text-slate-100 wrap-break-word">
+                {child.title}
+              </p>
+              <span
+                :if={child.estimate}
+                title="Estimate"
+                class="shrink-0 inline-flex items-center gap-1 h-6 px-2 rounded-full border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300"
+              >
+                <.icon name="pi-triangle" class="size-[11px] text-slate-500" />{child.estimate}
+              </span>
+            </div>
+            <p
+              id={"plan-split-child-#{child.number}-order"}
+              class="text-[11.5px] text-slate-500 dark:text-slate-400"
+            >
+              {if child.builds_on == [],
+                do: "starts at once",
+                else: "after " <> join_and(child.builds_on)}
+            </p>
+            <p class="text-[12.5px] leading-relaxed text-slate-600 dark:text-slate-300 line-clamp-2 wrap-break-word">
+              {first_paragraph(child.ticket)}
+            </p>
+            <p class="text-[11.5px] text-slate-500 dark:text-slate-400">
+              {count_label(criteria(child.ticket), "criterion", "criteria")}
+            </p>
+            <div class="pt-2 border-t border-slate-200 dark:border-slate-800">
+              <p class="font-mono text-[11.5px] text-slate-700 dark:text-slate-300 truncate">
+                {child.first_file.path}
+              </p>
+              <p :if={child.first_file.more > 0} class="font-mono text-[11.5px] text-slate-500">
+                + {child.first_file.more} more
+              </p>
+            </div>
+            <button
+              type="button"
+              id={"plan-split-child-#{child.number}-open"}
+              aria-expanded={to_string(@open_child == child.number)}
+              aria-controls="plan-split-child-detail"
+              phx-click="open_child"
+              phx-value-number={child.number}
+              phx-target={@target}
+              class="text-[12.5px] font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+            >
+              {if @open_child == child.number,
+                do: "Hide the ticket and plan",
+                else: "Read the ticket and plan"}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <section
+        :if={@open}
+        id="plan-split-child-detail"
+        data-qa="plan_split_child_detail"
+        class="mt-6 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/60 p-5 space-y-6 select-text"
+      >
+        <h3 class="text-lg font-bold text-slate-900 dark:text-slate-100 wrap-break-word">
+          {@open.number}. {@open.title}
+        </h3>
+        <div>
+          <p class="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Ticket
+          </p>
+          <.markdown content={@open.ticket} class="text-[15px] leading-relaxed" />
+        </div>
+        <div>
+          <p class="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Part of the plan
+          </p>
+          <.plan_sheet
+            sheet={@open_sheet}
+            diagram_views={@diagram_views}
+            event="diagram_view"
+            target={@target}
+          />
+        </div>
+      </section>
+    </div>
+    """
+  end
+
+  attr :child_of, :map, required: true
+  attr :plan, :any, required: true
+  attr :sheet, :any, required: true
+  attr :diagram_views, :map, required: true
+  attr :target, :any, required: true
+
+  # A child never runs Plan: its plan is the part of its parent's it was approved with.
+  defp child_plan_pane(assigns) do
+    ~H"""
+    <div id="child-plan" data-qa="child_plan" class="h-full overflow-y-auto px-6 py-6">
+      <div
+        :if={@child_of.waiting_on != []}
+        id="child-plan-waiting"
+        data-qa="child_plan_waiting"
+        class="mb-5 flex items-center gap-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 px-4 py-2.5 text-[13px] text-slate-600 dark:text-slate-300"
+      >
+        <.icon name="pi-clock" class="size-4 text-slate-500" />
+        <span class="min-w-0 wrap-break-word">
+          Starts when
+          <span :for={{identifier, index} <- Enum.with_index(@child_of.waiting_on)}>
+            <span :if={index > 0}>{if index == length(@child_of.waiting_on) - 1,
+              do: " and ",
+              else: ", "}</span><.link
+              patch={~p"/tasks/#{@child_of.parent.id}?child=#{identifier}"}
+              class="font-mono font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+            >{identifier}</.link>
+          </span>
+          {if length(@child_of.waiting_on) == 1, do: "merges", else: "merge"}.
+        </span>
+      </div>
+
+      <p
+        id="child-plan-approved"
+        class="mb-4 inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400"
+      >
+        <.icon name="pi-check-circle" class="size-4" />
+        Approved in {@child_of.parent.issue.identifier} · part {@child_of.position} of {@child_of.total}
+      </p>
+
+      <div :if={@plan} class={["select-text", @sheet == nil && "max-w-3xl"]}>
+        <.plan_sheet
+          :if={@sheet}
+          sheet={@sheet}
+          diagram_views={@diagram_views}
+          event="diagram_view"
+          target={@target}
+        />
+        <.markdown :if={@sheet == nil} content={@plan.content} class="text-[15px] leading-relaxed" />
+      </div>
+    </div>
+    """
+  end
+
   attr :id, :string, required: true
   attr :icon, :string, required: true
   attr :running, :boolean, required: true
@@ -760,15 +982,17 @@ defmodule RailWeb.Live.PlanStage do
     ticket = Pipeline.read_ticket(task)
     design = Pipeline.read_design(task)
     {plan, approved} = plan(task)
+    split = Pipeline.read_split(task)
     running = Run.running?(run)
     picked = design && Enum.find(design.options, &(&1.key == design.picked))
     selected_key = selected_key(design, socket.assigns.selected_key)
-    items = items(ticket, design, picked, plan, running)
+    items = items(ticket, design, picked, plan, split, running)
 
     socket
     |> assign(:ticket, ticket)
     |> assign(:design, design)
     |> assign(:plan, plan)
+    |> assign(:split, split)
     |> assign(:sheet, plan && build_plan_sheet(plan.content))
     |> assign(:approved, approved)
     |> assign(:running, running)
@@ -776,12 +1000,12 @@ defmodule RailWeb.Live.PlanStage do
     |> assign(:selected_key, selected_key)
     |> assign(:option, shown_option(design, selected_key))
     |> assign(:items, items)
-    |> assign_new(:selected_item, fn -> default_item(items, ticket, plan) end)
+    |> assign_new(:selected_item, fn -> default_item(items, ticket, plan, split) end)
     |> assign(:banner, banner(plan, picked, running))
     |> assign(:pick_up, pick_up(run))
     |> assign(:pending_text, pending_text(running, pick_up(run)))
     |> assign(:show_approve, approvable?(socket.assigns, ticket, design, plan))
-    |> assign(:comment_reason, comment_reason(design, run))
+    |> assign(:comment_reason, comment_reason(design, run, approved))
     |> stop_commenting_unless_allowed()
     |> assign_comments()
   end
@@ -801,12 +1025,15 @@ defmodule RailWeb.Live.PlanStage do
     |> assign(:markers, markers)
   end
 
+  # Comments go to Plan through its conversation, which an approved plan no longer has.
+  defp comment_reason(_design, _run, true), do: "The plan is approved, so the design takes no more comments."
+
   # Before a pick there is nothing to comment on, and the pick comes first.
-  defp comment_reason(%{picked: picked}, %Run{} = run) when is_binary(picked) do
+  defp comment_reason(%{picked: picked}, %Run{} = run, false) when is_binary(picked) do
     if Run.can_chat?(run), do: nil, else: "Cannot chat with #{run.role.name} yet"
   end
 
-  defp comment_reason(_no_pick, _run), do: "Pick a design to comment on it."
+  defp comment_reason(_no_pick, _run, false), do: "Pick a design to comment on it."
 
   defp stop_commenting_unless_allowed(%{assigns: %{comment_reason: nil}} = socket), do: socket
   defp stop_commenting_unless_allowed(socket), do: socket |> assign(:commenting, false) |> assign(:draft, nil)
@@ -894,14 +1121,15 @@ defmodule RailWeb.Live.PlanStage do
       end
   end
 
-  defp items(ticket, design, picked, plan, running) do
+  defp items(ticket, design, picked, plan, split, running) do
     options = if design, do: design.options, else: []
     plan_sheet = plan && build_plan_sheet(plan.content)
 
     [
       ticket_item(ticket, running),
       design_item(options, picked, plan, running),
-      plan_item(plan, plan_sheet, picked, running)
+      plan_item(plan, plan_sheet, picked, running),
+      split_item(split)
     ]
   end
 
@@ -955,6 +1183,51 @@ defmodule RailWeb.Live.PlanStage do
     %{id: "plan", label: "Plan", icon: "pi-list-checks", line: line, saved_at: saved_at, tone: tone}
   end
 
+  defp split_item(nil) do
+    %{id: "split", label: "Split", icon: "pi-arrows-split", line: "Not split: one task", saved_at: nil, tone: :skipped}
+  end
+
+  defp split_item(%{children: children, saved_at: saved_at}) do
+    line = "#{length(children)} children · #{points(children)}"
+    %{id: "split", label: "Split", icon: "pi-arrows-split", line: line, saved_at: saved_at, tone: :done}
+  end
+
+  defp points(children) do
+    children |> Enum.map(&(&1.estimate || 0)) |> Enum.sum() |> count_label("point", "points")
+  end
+
+  defp count_label(count, one, many), do: "#{count} #{if count == 1, do: one, else: many}"
+
+  # Each child sits in the round after the latest of the ones it builds on, so a lane starts together.
+  defp rounds(children) do
+    round_of =
+      Enum.reduce(children, %{}, fn child, rounds ->
+        Map.put(rounds, child.number, Enum.max(Enum.map(child.builds_on, &(rounds[&1] + 1)), fn -> 0 end))
+      end)
+
+    children
+    |> Enum.group_by(&round_of[&1.number])
+    |> Enum.sort()
+    |> Enum.map(fn
+      {0, lane} ->
+        {"Starts at once", lane}
+
+      {_round, lane} ->
+        {"After " <> (lane |> Enum.flat_map(& &1.builds_on) |> Enum.uniq() |> Enum.sort() |> join_and()), lane}
+    end)
+  end
+
+  defp join_and([one]), do: "#{one}"
+  defp join_and(numbers), do: Enum.join(Enum.drop(numbers, -1), ", ") <> " and #{List.last(numbers)}"
+
+  defp first_paragraph(ticket), do: ticket |> String.split(~r/\n\s*\n/, parts: 2) |> hd()
+
+  # A saved part passed the same section check as the plan, so it always lays out as a sheet.
+  defp first_file(plan) do
+    %{files: [first | rest]} = build_plan_sheet(plan)
+    %{path: first.path, more: length(rest)}
+  end
+
   defp files(%{files: files}), do: "#{length(files)} #{if length(files) == 1, do: "file", else: "files"}"
   defp files(nil), do: nil
 
@@ -969,7 +1242,7 @@ defmodule RailWeb.Live.PlanStage do
   end
 
   # What waits on the human opens first: a pick, then whatever Plan is working on or stopped short of.
-  defp default_item(items, ticket, plan) do
+  defp default_item(items, ticket, plan, split) do
     by_id = Map.new(items, &{&1.id, &1})
 
     cond do
@@ -977,6 +1250,7 @@ defmodule RailWeb.Live.PlanStage do
       by_id["plan"].tone in [:working, :stale] -> "plan"
       ticket == nil -> "ticket"
       by_id["design"].tone == :working -> "design"
+      split != nil -> "split"
       plan != nil and by_id["design"].tone == :skipped -> "ticket"
       true -> "plan"
     end

@@ -1,6 +1,7 @@
 defmodule RailWeb.Components.InProgressTasks do
   @moduledoc """
-  Every task in progress and where it stands, grouped by project. Each links to its task.
+  Every task in progress and where it stands, grouped by project. Each links to its task, and a split
+  parent shows each child's state in order with how many have merged.
   """
   use RailWeb, :html
 
@@ -78,6 +79,24 @@ defmodule RailWeb.Components.InProgressTasks do
                   class="shrink-0 font-mono text-slate-500 dark:text-slate-400"
                 >
                   {entry.age}
+                </span>
+              </span>
+              <span
+                :if={entry[:children]}
+                data-qa="in-progress-children"
+                class="mt-1.5 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"
+              >
+                <span class="flex flex-wrap items-center gap-1">
+                  <span
+                    :for={child <- entry.children}
+                    data-qa="in-progress-child"
+                    title={"#{child.identifier}: #{child.label}"}
+                  >
+                    <.icon name={child.icon} class={["size-[13px]", child.text_class]} />
+                  </span>
+                </span>
+                <span class="ml-auto shrink-0">
+                  {Enum.count(entry.children, &(&1.state == :merged))} of {length(entry.children)} merged
                 </span>
               </span>
             </span>

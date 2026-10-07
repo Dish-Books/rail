@@ -605,6 +605,54 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#task-link-#{issue.id}[href='/tasks/#{task.id}']")
   end
 
+  test "a child of a split that waits on a sibling reads Waiting on it, here and on its own page", %{
+    conn: conn,
+    project: project
+  } do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_split",
+        login: "issues_live_user_split",
+        email: "issues_live_user_split@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
+
+    for {identifier, title} <- [{"ISW-1", "Work on ISW-1"}, {"ISW-2", "Child ISW-2"}, {"ISW-3", "Child ISW-3"}] do
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
+            }
+          }
+        })
+      end)
+    end
+
+    {:ok, parent_issue} = Issues.create_issue(system_scope(), project, %{title: "Work on ISW-1"})
+    {:ok, parent} = Pipeline.create_task(parent_issue, :split)
+    parent = Repo.preload(parent, [:issue, :project])
+
+    [%{issue: first_issue}, %{issue: waiting_issue}] =
+      for {{identifier, builds_on}, number} <- Enum.with_index([{"ISW-2", []}, {"ISW-3", [1]}], 1) do
+        attrs = %{title: "Child #{identifier}", parent: parent_issue}
+        {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
+        part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+        {:ok, child} = Pipeline.create_child_task(parent, issue, part)
+        Repo.preload(child, [:issue, :project])
+      end
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
+    assert has_element?(view, "#task-link-#{waiting_issue.id}", "Waiting on ISW-2")
+    assert has_element?(view, "#task-link-#{first_issue.id}", "Queued for Engineer")
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/issues/ISW-3")
+    assert has_element?(view, "#issue-task-link", "Waiting on ISW-2")
+  end
+
   test "a row reads the latest run at the task's stage, not one it retried", %{conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{

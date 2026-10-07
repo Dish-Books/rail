@@ -4,6 +4,7 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
   Releases local disk resources when a task is completed or being torn down.
   """
 
+  import Ecto.Query
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.RemoveTaskFiles
 
@@ -16,14 +17,17 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
   questions are kept as history.
 
   Every run on the task has to be stopped, not just the one for the stage it sits
-  at: the worktree this deletes is the one all of them are working in.
+  at: the worktree this deletes is the one all of them are working in. A split parent
+  takes its children with it, so none is left behind once their parent is gone.
   """
   def cleanup_task(%Task{} = task) do
     task = Repo.preload(task, :runs, force: true)
+    children = Repo.all(from(t in Task, where: t.parent_task_id == ^task.id and is_nil(t.cleaned_up_at), preload: :runs))
 
-    if Task.running?(task) do
+    if Enum.any?([task | children], &Task.running?/1) do
       {:error, :task_busy}
     else
+      Enum.each(children, &execute_cleanup/1)
       execute_cleanup(task)
     end
   end

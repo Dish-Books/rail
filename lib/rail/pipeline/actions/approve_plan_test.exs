@@ -1,15 +1,37 @@
 defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   use Rail.DataCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Workers.AdvanceSplit
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
+
+  # The smallest part of a plan the structure allows, trimmed as a save trims it.
+  @part String.trim("""
+        ## Implementation plan
+
+        ### Approach
+
+        Build it.
+
+        No diagrams: one module changes.
+
+        ### File-level changes
+
+        - `lib/rail.ex`: builds it.
+
+        ### Verification
+
+        - `lib/rail_test.exs`: covers it.
+        """)
 
   # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
   @plan """
@@ -254,5 +276,130 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   test "a user without the project cannot approve it", %{task: task, run: run} do
     assert {:error, :not_found} = Pipeline.approve_plan(user_scope(project_ids: []), run)
     assert %Task{stage: :plan} = Repo.reload!(task)
+  end
+
+  describe "with a split saved" do
+    setup %{task: task} do
+      stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+
+      {:ok, _split} =
+        Pipeline.save_split(task, %{
+          "children" => [
+            %{"title" => "First", "ticket" => "Ticket one.", "estimate" => 3, "plan" => @part},
+            %{
+              "title" => "Second",
+              "ticket" => "Ticket two.",
+              "estimate" => 2,
+              "plan" => @part,
+              "builds_on" => [1]
+            },
+            %{"title" => "Third", "ticket" => "Ticket three.", "plan" => @part}
+          ]
+        })
+
+      created = fn children ->
+        for {title, number} <- children do
+          Req.Test.expect(Rail.Linear, fn conn ->
+            {:ok, body, conn} = Plug.Conn.read_body(conn)
+            assert %{"title" => ^title, "parentId" => "lin_approve_plan_1"} = Jason.decode!(body)["variables"]["input"]
+
+            Req.Test.json(conn, %{
+              "data" => %{
+                "issueCreate" => %{
+                  "success" => true,
+                  "issue" => %{"id" => "lin_child_#{number}", "identifier" => "APP-#{number}", "title" => title}
+                }
+              }
+            })
+          end)
+        end
+      end
+
+      %{created: created}
+    end
+
+    test "it publishes the parent, opens a sub-issue and a task per child, and queues the start of those that build on nothing",
+         %{task: %Task{id: task_id} = task, roles: roles, run: run, created: created} do
+      engineer_id = roles[:engineer].id
+
+      Req.Test.expect(Rail.Linear, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+        assert %{
+                 "title" => "First",
+                 "description" => "Ticket one.",
+                 "estimate" => 3,
+                 "parentId" => "lin_approve_plan_1",
+                 "stateId" => "st_todo"
+               } = Jason.decode!(body)["variables"]["input"]
+
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{"id" => "lin_child_2", "identifier" => "APP-2", "title" => "First"}
+            }
+          }
+        })
+      end)
+
+      created.([{"Second", 3}, {"Third", 4}])
+      Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+
+      assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(system_scope(), run)
+
+      assert %Task{stage: :split} = Repo.reload!(task)
+      assert %Issue{title: "Approved title"} = Repo.get!(Issue, task.issue_id)
+
+      # Nothing starts in the caller: the job committed with the children does.
+      assert [%Task{runs: []}, %Task{runs: []}, %Task{runs: []}] =
+               Pipeline.list_tasks(parent_task_id: task.id, preload: [:runs])
+
+      assert_enqueued(worker: AdvanceSplit, args: %{parent_task_id: task_id})
+      assert :ok = perform_job(AdvanceSplit, %{parent_task_id: task_id})
+
+      assert [
+               %Task{
+                 stage: :engineer,
+                 split_position: 1,
+                 builds_on: [],
+                 issue: %Issue{identifier: "APP-2", state: :todo},
+                 runs: [%Run{role_id: ^engineer_id}],
+                 implementation_plan: %ImplementationPlan{content: @part}
+               },
+               %Task{stage: :engineer, split_position: 2, builds_on: [1], runs: []},
+               %Task{stage: :engineer, split_position: 3, runs: [%Run{role_id: ^engineer_id}]}
+             ] = Pipeline.list_tasks(parent_task_id: task.id, preload: [:issue, :runs, :implementation_plan])
+
+      for %Task{issue_id: child_issue_id} <- Pipeline.list_tasks(parent_task_id: task.id) do
+        assert_received {:issue_changed, ^child_issue_id}
+      end
+
+      assert_received {:pipeline_changed, ^task_id}
+    end
+
+    test "a second approval is refused before anything reaches Linear again", %{task: task, run: run, created: created} do
+      created.([{"First", 2}, {"Second", 3}, {"Third", 4}])
+      assert {:ok, _approved} = Pipeline.approve_plan(system_scope(), run)
+
+      # No Linear stub is queued, so a second issueCreate would raise.
+      assert {:error, {:invalid_stage, :split}} = Pipeline.approve_plan(system_scope(), run)
+      assert length(Pipeline.list_tasks(parent_task_id: task.id)) == 3
+    end
+
+    test "a sub-issue Linear refuses leaves the parent at Plan with no children", %{
+      task: task,
+      run: run,
+      created: created
+    } do
+      created.([{"First", 2}])
+      Req.Test.expect(Rail.Linear, &Req.Test.json(&1, %{"data" => %{"issueCreate" => %{"success" => false}}}))
+
+      assert {:error, {:linear_mutation_failed, "issueCreate"}} = Pipeline.approve_plan(system_scope(), run)
+      assert %Task{stage: :plan} = Repo.reload!(task)
+      assert Pipeline.list_tasks(parent_task_id: task.id) == []
+      refute Repo.get_by(ImplementationPlan, task_id: task.id)
+    end
   end
 end

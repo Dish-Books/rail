@@ -1,8 +1,55 @@
-defmodule RailWeb.Utils.BuildPlanSheetTest do
-  use ExUnit.Case, async: true
+defmodule Rail.Pipeline.Schemas.ImplementationPlanTest do
+  use Rail.DataCase, async: true
 
-  import RailTest.Helpers
-  import RailWeb.Utils.BuildPlanSheet
+  import Ecto.Changeset
+
+  alias Rail.Pipeline.Schemas.ImplementationPlan
+
+  # Prose only: Approach says there are no diagrams, and nothing else is needed.
+  @prose_only """
+  ## Implementation plan
+
+  ### Approach
+
+  Only the architect prompt changes.
+  No diagrams: nothing but prose changes.
+
+  ### File-level changes
+
+  - `.rail/prompts/architect.md`: says more.
+
+  ### Verification
+
+  - `lib/rail/pipeline/utils/plan_subagents_test.exs`: still passes.
+  """
+
+  describe "validate_structure/2" do
+    test "refuses a No diagrams: line run into the paragraph above it, which the sheet could not lay out" do
+      changeset =
+        {%{}, %{plan: :string}} |> cast(%{plan: @prose_only}, [:plan]) |> ImplementationPlan.validate_structure(:plan)
+
+      assert %{plan: ["`No diagrams:` must start a paragraph of its own, after a blank line"]} = errors_on(changeset)
+    end
+
+    test "accepts it as a paragraph of its own, and the plan then lays out as a sheet" do
+      plan = String.replace(@prose_only, "changes.\nNo diagrams:", "changes.\n\nNo diagrams:")
+      changeset = {%{}, %{plan: :string}} |> cast(%{plan: plan}, [:plan]) |> ImplementationPlan.validate_structure(:plan)
+
+      assert changeset.valid?
+      assert %{files: [%{path: ".rail/prompts/architect.md"}]} = ImplementationPlan.build_sheet(plan)
+    end
+
+    test "refuses whatever else the sheet cannot lay out, such as a code block among the file bullets" do
+      plan =
+        @prose_only
+        |> String.replace("changes.\nNo diagrams:", "changes.\n\nNo diagrams:")
+        |> String.replace("says more.\n", "says more.\n\n```elixir\ndef more, do: :ok\n```\n")
+
+      changeset = {%{}, %{plan: :string}} |> cast(%{plan: plan}, [:plan]) |> ImplementationPlan.validate_structure(:plan)
+
+      assert %{plan: ["does not lay out as a plan: " <> _how]} = errors_on(changeset)
+    end
+  end
 
   test "a full plan yields both diagrams with their source exactly as fenced" do
     change = """
@@ -25,7 +72,7 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
                  source: call_flow
                }
              ]
-           } = build_plan_sheet(sheet_plan())
+           } = ImplementationPlan.build_sheet(sheet_plan())
 
     assert approach =~ "Sending a task back is a stage move"
     refute approach =~ "Implementation plan"
@@ -55,7 +102,7 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
              verification: verification,
              assumptions: assumptions,
              rest: []
-           } = build_plan_sheet(sheet_plan())
+           } = ImplementationPlan.build_sheet(sheet_plan())
 
     assert String.starts_with?(new_action, "New action. Refuses unless the task is at `:review`")
     assert String.starts_with?(delegate, "Delegates `send_back_to_architect/2`")
@@ -75,7 +122,7 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
     assert %{
              files: [_action, %{path: "lib/rail/pipeline.ex", description: ""}],
              diagrams: [_change, %{caption: "From the Send back button to the tasks and runs tables"}]
-           } = build_plan_sheet(plan)
+           } = ImplementationPlan.build_sheet(plan)
   end
 
   test "a module whose file is not in File-level changes is marked unlisted" do
@@ -93,7 +140,7 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
       """)
 
     assert %{modules: [%{listed?: true}, %{listed?: true}, %{name: "Rail.Pipeline.Actions.EnterStage", listed?: false}]} =
-             build_plan_sheet(plan)
+             ImplementationPlan.build_sheet(plan)
   end
 
   test "a plan with no diagrams keeps the line saying why, and no Program design means no modules" do
@@ -122,7 +169,7 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
              modules: [],
              files: [%{path: "lib/rail/pipeline/actions/cleanup_task_test.exs"}],
              assumptions: nil
-           } = build_plan_sheet(plan)
+           } = ImplementationPlan.build_sheet(plan)
 
     refute approach =~ "No diagrams"
   end
@@ -138,7 +185,9 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
       ### Assumptions
       """)
 
-    assert %{diagrams: [%{kind: :change}, %{kind: :call_flow}], verification: verification} = build_plan_sheet(plan)
+    assert %{diagrams: [%{kind: :change}, %{kind: :call_flow}], verification: verification} =
+             ImplementationPlan.build_sheet(plan)
+
     assert verification =~ "```mermaid\nflowchart LR\n  A --> B\n```"
   end
 
@@ -147,7 +196,7 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
       String.replace(sheet_plan(), ~r/### Call flow\n.*?```\n/s, "### Call flow\n\nIt is one function call.\n")
 
     assert %{diagrams: [%{kind: :change}], rest: [%{title: "Call flow", body: "It is one function call."}]} =
-             build_plan_sheet(plan)
+             ImplementationPlan.build_sheet(plan)
   end
 
   test "a section the sheet does not know is kept, in order, under its own title" do
@@ -157,15 +206,15 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
       |> String.replace("### Assumptions", "### Risks\n\n| risk | odds |\n|---|---|\n| none | low |\n\n### Assumptions")
 
     assert %{rest: [%{title: "Rollout", body: "Ship it behind nothing."}, %{title: "Risks", body: risks}]} =
-             build_plan_sheet(plan)
+             ImplementationPlan.build_sheet(plan)
 
     assert risks =~ "| risk | odds |"
   end
 
   test "a plan without the sections the sheet needs is not a sheet" do
-    assert build_plan_sheet("## Implementation plan\n\n### Approach\nExtend the invoices module.\n") == nil
-    assert build_plan_sheet("## Implementation plan\n\n### File-level changes\n\n- `lib/a.ex`: a.\n") == nil
-    assert build_plan_sheet("Just prose, no sections at all.") == nil
+    assert ImplementationPlan.build_sheet("## Implementation plan\n\n### Approach\nExtend the invoices module.\n") == nil
+    assert ImplementationPlan.build_sheet("## Implementation plan\n\n### File-level changes\n\n- `lib/a.ex`: a.\n") == nil
+    assert ImplementationPlan.build_sheet("Just prose, no sections at all.") == nil
   end
 
   # The old prompt's three sections carry nothing that says whether code changes, so
@@ -192,7 +241,7 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
     - An empty vendor means every vendor.
     """
 
-    assert build_plan_sheet(plan) == nil
+    assert ImplementationPlan.build_sheet(plan) == nil
   end
 
   test "an empty Program design is still the new format, with no modules" do
@@ -201,18 +250,18 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
       |> String.replace(~r/### Change diagram.*?### File-level changes/s, "### File-level changes")
       |> String.replace(~r/### Program design.*?### Verification/s, "### Program design\n\n### Verification")
 
-    assert %{diagrams: [], no_diagrams: nil, modules: []} = sheet = build_plan_sheet(plan)
+    assert %{diagrams: [], no_diagrams: nil, modules: []} = sheet = ImplementationPlan.build_sheet(plan)
     refute Map.has_key?(sheet, :program_design?)
   end
 
   test "File-level changes that are not a list of files is not a sheet" do
     plan = String.replace(sheet_plan(), "### File-level changes\n", "### File-level changes\n\nTwo files change.\n")
 
-    assert build_plan_sheet(plan) == nil
+    assert ImplementationPlan.build_sheet(plan) == nil
 
     plan = String.replace(sheet_plan(), "- `lib/rail/pipeline.ex`: Delegates", "- The context module delegates")
 
-    assert build_plan_sheet(plan) == nil
+    assert ImplementationPlan.build_sheet(plan) == nil
   end
 
   # A checkbox is state the sheet has no place for, so the plan keeps it as markdown.
@@ -225,31 +274,32 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
       )
       |> String.replace("- `lib/rail/pipeline.ex`:", "- [x] `lib/rail/pipeline.ex`:")
 
-    assert build_plan_sheet(plan) == nil
+    assert ImplementationPlan.build_sheet(plan) == nil
   end
 
   test "a Program design module is named by its heading even without a code span" do
     plan = String.replace(sheet_plan(), "#### `Rail.Pipeline`\n", "#### The context module\n")
 
     assert %{modules: [_action, %{name: "The context module", new?: false, path: "lib/rail/pipeline.ex"}]} =
-             build_plan_sheet(plan)
+             ImplementationPlan.build_sheet(plan)
   end
 
   test "a module that names no file is unlisted" do
     plan = String.replace(sheet_plan(), "`lib/rail/pipeline.ex`\n\n```elixir", "```elixir")
 
-    assert %{modules: [_action, %{name: "Rail.Pipeline", path: nil, listed?: false}]} = build_plan_sheet(plan)
+    assert %{modules: [_action, %{name: "Rail.Pipeline", path: nil, listed?: false}]} =
+             ImplementationPlan.build_sheet(plan)
   end
 
   test "a Program design that is not one heading per module is not a sheet" do
     plan = String.replace(sheet_plan(), "### Program design\n", "### Program design\n\nTwo modules change.\n")
 
-    assert build_plan_sheet(plan) == nil
+    assert ImplementationPlan.build_sheet(plan) == nil
   end
 
   test "anything written above the first section is kept, without a title" do
     plan = String.replace(sheet_plan(), "### Approach", "A note before the plan.\n\n### Approach")
 
-    assert %{rest: [%{title: nil, body: "A note before the plan."}]} = build_plan_sheet(plan)
+    assert %{rest: [%{title: nil, body: "A note before the plan."}]} = ImplementationPlan.build_sheet(plan)
   end
 end

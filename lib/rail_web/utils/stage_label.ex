@@ -23,6 +23,29 @@ defmodule RailWeb.Utils.StageLabel do
   # No role runs at merged, so there is no run to say anything; the task is done.
   def stage_label(%Task{stage: :merged}, _run), do: "Merged"
 
+  # A split parent's work is its children's, so all it says of itself is that its plan was approved.
+  def stage_label(%Task{stage: :split}, _run), do: "Plan approved"
+
+  # A child of a split with no run is not next in line while a sibling it builds on is unmerged, and
+  # never starts while one is canceled. Read only where the page loaded the parent's children.
+  def stage_label(%Task{runs: [], parent_task: %Task{children: [_first | _rest] = siblings}} = task, nil) do
+    open =
+      Enum.filter(
+        siblings,
+        &(&1.split_position in task.builds_on and is_nil(&1.issue.completed_at) and
+            &1.issue.state not in [:canceled, :duplicate])
+      )
+
+    {canceled, removed} = Task.split_blockers(task, siblings)
+    blocked_by = canceled ++ removed
+
+    cond do
+      blocked_by != [] -> "Blocked by #{Enum.join(blocked_by, ", ")}"
+      open != [] -> "Waiting on #{Enum.map_join(open, ", ", & &1.issue.identifier)}"
+      true -> "Queued for #{Task.stage_label(task.stage)}"
+    end
+  end
+
   # Read off its status before the state it shares with a run waiting for a sandbox.
   def stage_label(%Task{stage: stage}, %Run{status: :waiting_for_usage}),
     do: "#{Task.stage_label(stage)} waiting for usage"

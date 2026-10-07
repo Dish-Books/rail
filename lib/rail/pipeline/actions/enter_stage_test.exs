@@ -72,8 +72,8 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
   test "every stage the ticket follows queues its Linear move", %{task: task} do
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 
-    for stage <- [:plan, :engineer, :review, :qa, :demo] do
-      assert {:ok, _run_or_task} = Pipeline.enter_stage(task, stage, start: stage != :demo)
+    for stage <- [:plan, :engineer, :review, :qa, :demo, :merged] do
+      assert {:ok, _run_or_task} = Pipeline.enter_stage(task, stage, start: stage not in [:demo, :merged])
       assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: task.issue_id})
 
       # Finish it, since a queued move would absorb the next stage's.
@@ -83,6 +83,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
 
   test "a stage off the pipeline's path leaves the ticket's status alone", %{task: task} do
     assert {:ok, %Task{stage: :debugger}} = Pipeline.enter_stage(task, :debugger, start: false)
+    assert {:ok, %Task{stage: :split}} = Pipeline.enter_stage(task, :split, start: false)
 
     refute_enqueued(worker: AdvanceLinearState)
   end
