@@ -57,7 +57,7 @@ defmodule RailWeb.Live.PlanStageTest do
     {:ok, task} = Pipeline.create_task(issue, :plan)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
-    {:ok, _run} =
+    {:ok, run} =
       Pipeline.create_run(%{
         task_id: task.id,
         role_id: role.id,
@@ -105,14 +105,18 @@ defmodule RailWeb.Live.PlanStageTest do
       }
     end
 
-    %{conn: log_in_user(conn, user), task: task, child: child}
+    %{conn: log_in_user(conn, user), user: user, task: task, run: run, child: child}
   end
 
-  test "an approved plan reads as approved, with no conversation left to change it", %{
+  test "an approved plan reads as approved, its conversation readable but closed", %{
     conn: conn,
+    user: user,
     task: task,
+    run: run,
     child: child
   } do
+    Pipeline.append_run_events(run.id, nil, ["[human:#{user.id}] Split the export from the import."])
+
     {:ok, _split} = Pipeline.save_split(task, %{"children" => [child.(1, "One", 1, []), child.(2, "Two", 1, [1])]})
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
     assert has_element?(view, "#task-conversation-column")
@@ -123,7 +127,13 @@ defmodule RailWeb.Live.PlanStageTest do
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{plan_role.id}")
     assert has_element?(view, "#plan-approved", "Plan approved")
-    refute has_element?(view, "#task-conversation-column")
+    assert has_element?(view, "#task-conversation-column #conversation-closed", "this conversation is closed")
+    assert has_element?(view, "#task-conversation-column", "Split the export from the import.")
+    refute has_element?(view, "#task-conversation-column textarea")
+
+    # A page drawn before approval can still send, and the closed conversation takes nothing.
+    view |> with_target("#conversation-tab-root") |> render_hook("send_chat", %{"message" => "Use semicolons."})
+    refute Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "Use semicolons."))
   end
 
   test "with no split the Split item reads Not split and Approve shows as today", %{conn: conn, task: task} do

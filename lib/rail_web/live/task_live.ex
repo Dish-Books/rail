@@ -193,6 +193,7 @@ defmodule RailWeb.TaskLive do
               round_questions={@round_questions}
               suggestions={@suggestions}
               conversation_run={@conversation_run}
+              closed={@task.stage != :plan}
             />
           </:sidebar>
         </.live_component>
@@ -713,6 +714,8 @@ defmodule RailWeb.TaskLive do
   attr :suggestions, :map, required: true
   attr :conversation_run, :any, required: true
   attr :current_scope, Scope, required: true
+  # Plan's conversation is read but closed once its plan is approved, so nothing can change what was approved.
+  attr :closed, :boolean, default: false
 
   # Questions sit above the conversation they came out of. Answering only records:
   # the round reaches the agent when the human says it is done.
@@ -737,6 +740,7 @@ defmodule RailWeb.TaskLive do
       stage_run={@conversation_run}
       roles_map={@roles_map}
       current_scope={@current_scope}
+      closed={@closed}
     />
     """
   end

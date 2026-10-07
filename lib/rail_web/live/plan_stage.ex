@@ -194,8 +194,7 @@ defmodule RailWeb.Live.PlanStage do
           </div>
         </div>
 
-        <%!-- Once approved, the plan is what was approved: there is no conversation left to change it. --%>
-        <:sidebar :if={!@child_of and not @approved}>{render_slot(@sidebar)}</:sidebar>
+        <:sidebar :if={!@child_of}>{render_slot(@sidebar)}</:sidebar>
       </.task_layout>
     </div>
     """

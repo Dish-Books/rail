@@ -2271,7 +2271,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     # The approved plan is what Engineer builds from, so there is no conversation left to comment through.
-    test "with the task at Engineer, the Plan tab reads as approved, with no conversation and comments off", %{
+    test "with the task at Engineer, the Plan tab reads as approved, its conversation closed and comments off", %{
       conn: conn,
       task: task,
       run: run,
@@ -2285,7 +2285,9 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{run.role_id}")
       view |> element("#plan-item-design") |> render_click()
 
-      refute has_element?(view, "#task-conversation-column")
+      assert has_element?(view, "#task-conversation-column #conversation-closed", "this conversation is closed")
+      refute has_element?(view, "#task-conversation-column textarea")
+      refute has_element?(view, "#send-plan-comments")
       assert has_element?(view, "#design-comment-toggle[disabled]")
       assert has_element?(view, "#plan-stage", "The plan is approved, so the design takes no more comments.")
     end
