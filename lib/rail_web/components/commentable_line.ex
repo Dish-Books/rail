@@ -251,7 +251,7 @@ defmodule RailWeb.Components.CommentableLine do
       phx-value-doc={@doc}
       phx-value-key={@line.key}
       phx-target={@target}
-      class={["line-comment-add group-hover/line:opacity-100", @class]}
+      class={["line-comment-add", @class]}
     >
       +
     </button>
