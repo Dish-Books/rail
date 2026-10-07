@@ -17,6 +17,9 @@ defmodule RailWeb.Components.UpNext do
   alias Rail.Roles.Schemas.Role
 
   attr :runs, :list, required: true
+  # Children of a split a canceled or deleted sibling keeps from starting: `%{status:, parent:}`, a
+  # `RailWeb.Utils.ChildStatus` map and the split's parent. They have no run, so they come apart.
+  attr :blocked, :list, default: []
 
   def up_next(assigns) do
     # Read once per render: whether a Plan run waits on a pick is a file on disk, not a field.
@@ -35,7 +38,7 @@ defmodule RailWeb.Components.UpNext do
     ~H"""
     <div id="up-next" data-qa="up-next" class="space-y-3">
       <p
-        :if={@runs == []}
+        :if={@runs == [] and @blocked == []}
         id="up-next-empty"
         class="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 px-5 py-6 text-sm text-center text-slate-500 dark:text-slate-400"
       >
@@ -63,6 +66,9 @@ defmodule RailWeb.Components.UpNext do
               </span>
               <span class="font-mono text-xs text-slate-600 dark:text-slate-400 truncate">
                 {@featured.task.issue.identifier} · {@featured.role.name}
+                <span :if={parent_identifier(@featured)} class="text-slate-500 dark:text-slate-400">
+                  in {parent_identifier(@featured)}
+                </span>
               </span>
             </div>
 
@@ -98,13 +104,46 @@ defmodule RailWeb.Components.UpNext do
           {run.task.issue.title} ·
           <span class="text-slate-500 dark:text-slate-400">{detail(run, @picking)}</span>
         </span>
+        <span
+          :if={parent_identifier(run)}
+          data-qa="up-next-parent"
+          class="shrink-0 font-mono text-xs text-slate-500 dark:text-slate-400"
+        >
+          in {parent_identifier(run)}
+        </span>
         <span class="shrink-0 text-sm font-semibold text-blue-600 dark:text-blue-400 group-hover:underline">
           {verb(run, @picking)}
+        </span>
+      </.link>
+
+      <.link
+        :for={%{status: status, parent: parent} <- @blocked}
+        navigate={~p"/tasks/#{parent.id}?child=#{status.identifier}"}
+        id={"up-next-blocked-#{status.task.id}"}
+        data-qa="up-next-row"
+        class="group flex items-center gap-4 rounded-xl border border-slate-200 dark:border-slate-700/70 bg-white dark:bg-slate-800/40 px-5 py-3.5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/70"
+      >
+        <span class="font-mono text-xs text-slate-500 dark:text-slate-400 shrink-0 w-16">
+          {status.identifier}
+        </span>
+        <span class="min-w-0 flex-1 truncate text-sm text-slate-900 dark:text-slate-100">
+          {status.task.issue.title} ·
+          <span class="text-amber-700 dark:text-amber-300">{status.line}</span>
+        </span>
+        <span class="shrink-0 font-mono text-xs text-slate-500 dark:text-slate-400">
+          in {parent.issue.identifier}
+        </span>
+        <span class="shrink-0 text-sm font-semibold text-blue-600 dark:text-blue-400 group-hover:underline">
+          Open
         </span>
       </.link>
     </div>
     """
   end
+
+  # A child of a split is named with its parent, which is what the person planned.
+  defp parent_identifier(%Run{task: %Task{parent_task: %Task{issue: %{identifier: identifier}}}}), do: identifier
+  defp parent_identifier(%Run{}), do: nil
 
   # The demo is what the merge is decided on, so a change ready for it opens there.
   defp destination(run) do

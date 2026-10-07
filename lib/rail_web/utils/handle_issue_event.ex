@@ -7,6 +7,9 @@ defmodule RailWeb.Utils.HandleIssueEvent do
   import Phoenix.LiveView, only: [put_flash: 3]
 
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Task
 
   # A page with no issue loaded, such as another tab of a task, has nothing to change.
   def handle_issue_event(_event, _params, %{assigns: %{issue: nil}} = socket, _reload), do: socket
@@ -14,6 +17,15 @@ defmodule RailWeb.Utils.HandleIssueEvent do
   def handle_issue_event("filter_assignees", %{"q" => query}, socket, _reload) do
     assign(socket, :assignee_query, query)
   end
+
+  # A child of a split has its parent's owner and no other.
+  def handle_issue_event(
+        "assign",
+        _params,
+        %{assigns: %{issue: %Issue{task: %Task{parent_task_id: parent_id}}}} = socket,
+        _reload
+      )
+      when is_binary(parent_id), do: socket
 
   def handle_issue_event("assign", %{"user_id" => ""}, socket, reload), do: assign_owner(socket, nil, reload)
 
@@ -36,8 +48,12 @@ defmodule RailWeb.Utils.HandleIssueEvent do
 
   defp assign_owner(%{assigns: %{issue: issue}} = socket, owner_user_id, reload) do
     case Issues.update_issue(issue, %{owner_user_id: owner_user_id}) do
-      {:ok, _issue} -> socket |> assign(:assignee_query, "") |> reload.()
-      {:error, _changeset} -> put_flash(socket, :error, "Could not change the assignee")
+      {:ok, issue} ->
+        {:ok, _children} = Pipeline.share_owner_with_children(issue)
+        socket |> assign(:assignee_query, "") |> reload.()
+
+      {:error, _changeset} ->
+        put_flash(socket, :error, "Could not change the assignee")
     end
   end
 

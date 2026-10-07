@@ -19,8 +19,7 @@ defmodule Rail.Pipeline.Actions.SendMessage do
   alias Rail.Scope
 
   @doc """
-  Sends `text` to `run` from the scope's user or, with `from: :past_answers`, from Rail answering out of past answers,
-  or with `from: :plan_revision`, from Rail passing on a plan or ticket revised after approval.
+  Sends `text` to `run` from the scope's user or, with `from: :past_answers`, from Rail answering out of past answers.
 
   Returns `{:ok, :sent, run}` when it went out, `{:ok, :queued, run}` when the
   agent is still working and it will go out when the turn ends.
@@ -67,7 +66,6 @@ defmodule Rail.Pipeline.Actions.SendMessage do
     tag =
       cond do
         from == :past_answers -> "[answered from past answers]"
-        from == :plan_revision -> "[plan revised]"
         scope.user -> "[human:#{scope.user.id}]"
         true -> "[human]"
       end

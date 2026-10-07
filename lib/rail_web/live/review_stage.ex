@@ -53,6 +53,7 @@ defmodule RailWeb.Live.ReviewStage do
         title={@task.issue.title}
         flush={@findings != []}
       >
+        <:breadcrumb :if={@breadcrumb != []}>{render_slot(@breadcrumb)}</:breadcrumb>
         <:tabs>{render_slot(@tabs)}</:tabs>
 
         <:actions>

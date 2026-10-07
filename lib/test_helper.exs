@@ -84,6 +84,7 @@ project =
       linear_state_ids: %{
         "triage" => "st_triage",
         "backlog" => "st_backlog",
+        "todo" => "st_todo",
         "in_progress" => "st_in_progress",
         "done" => "st_done",
         "canceled" => "st_canceled"

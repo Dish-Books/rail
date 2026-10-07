@@ -214,12 +214,20 @@ defmodule RailWeb.Live.RunConversation do
             </button>
           </div>
 
+          <p
+            :if={@closed and not @show_raw_log}
+            id="conversation-closed"
+            data-qa="conversation_closed"
+            class="shrink-0 px-5 py-4 border-t border-slate-200 dark:border-slate-700 text-[13px] text-slate-500 dark:text-slate-400"
+          >
+            The plan is approved, so this conversation is closed.
+          </p>
+
           <.plan_comment_tray
-            :if={not @show_raw_log}
+            :if={not @show_raw_log and not @closed}
             comments={@plan_comments}
             missing={@missing_anchors}
             changed={@lifted_comments}
-            past_plan={@task.stage != :plan}
             open={@tray_open}
             can_send={Run.can_chat?(@selected_run)}
             plan_running={Run.running?(@selected_run)}
@@ -227,7 +235,7 @@ defmodule RailWeb.Live.RunConversation do
           />
 
           <.composer
-            :if={not @show_raw_log}
+            :if={not @show_raw_log and not @closed}
             task={@task}
             run={@selected_run}
             role={selected_role(@selected_run, @roles_map)}
@@ -408,30 +416,6 @@ defmodule RailWeb.Live.RunConversation do
             phx-no-format
             class="text-[13px] whitespace-pre-wrap wrap-break-word select-text leading-relaxed"
           >{String.trim(@text)}</div>
-        </div>
-      <% :revision -> %>
-        <!-- Where Rail passed on what Plan revised after approval, drawn as the boundary a turn is. -->
-        <div
-          id={"msg-#{@idx}"}
-          data-qa="revision-divider"
-          class="flex items-center gap-3 text-[11px] text-slate-400 dark:text-slate-500"
-        >
-          <span class="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
-          <span class="min-w-0 inline-flex items-center gap-1 text-blue-600 dark:text-blue-400">
-            <.icon name="pi-arrow-bend-up-right" class="size-3 shrink-0" />
-            <span class="truncate">{@text}</span>
-            <span class="shrink-0">·</span>
-            <span
-              id={"revision-time-#{@idx}"}
-              phx-hook="LocalTime"
-              data-at={DateTime.to_iso8601(@msg.at)}
-              data-qa="revision-time"
-              class="shrink-0 font-mono"
-            >
-              {Calendar.strftime(@msg.at, "%H:%M")}
-            </span>
-          </span>
-          <span class="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
         </div>
       <% :reminder -> %>
         <!-- What Rail sent the agent on its own: the human bubble's shape, because
@@ -1148,6 +1132,12 @@ defmodule RailWeb.Live.RunConversation do
     {:noreply, assign(socket, :expanded_activities, expanded)}
   end
 
+  # A page drawn before the plan was approved can still send these, and a closed conversation takes none.
+  def handle_event(event, _params, %{assigns: %{closed: true}} = socket)
+      when event in ["send_chat", "send_plan_comments", "stop_and_send_message", "retry_run"] do
+    {:noreply, socket}
+  end
+
   def handle_event("chat_input_change", params, socket) do
     {:noreply, assign(socket, :chat_input, Map.get(params, "message") || "")}
   end
@@ -1305,6 +1295,7 @@ defmodule RailWeb.Live.RunConversation do
     |> assign_new(:missing_anchors, fn -> [] end)
     |> assign_new(:lifted_comments, fn -> [] end)
     |> assign_new(:tray_open, fn -> true end)
+    |> assign_new(:closed, fn -> false end)
   end
 
   defp identifier(%{issue: %Issue{identifier: identifier}}), do: identifier

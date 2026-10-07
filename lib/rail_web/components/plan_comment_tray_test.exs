@@ -173,20 +173,4 @@ defmodule RailWeb.Components.PlanCommentTrayTest do
     assert [number | _icons] = Floki.attribute(plan, "span[aria-hidden='true']", "class")
     assert number =~ "border-dashed"
   end
-
-  test "after approval, with Plan finished, the hint says sending resumes it and Engineer gets what it saves", %{
-    comments: comments
-  } do
-    html =
-      render_component(&PlanCommentTray.plan_comment_tray/1,
-        comments: comments,
-        can_send: true,
-        plan_running: false,
-        past_plan: true,
-        target: nil
-      )
-
-    assert html |> Floki.parse_fragment!() |> Floki.find("#plan-comment-tray-hint") |> Floki.text() =~
-             "Plan has finished. Sending resumes it, and Engineer gets what it saves."
-  end
 end

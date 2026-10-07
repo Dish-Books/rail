@@ -137,6 +137,11 @@ defmodule Rail.Issues.Workers.LinearSync do
             where:
               i.id in ^gone_ids or
                 (i.id in ^without_task_ids and not exists(from(t in Task, where: t.issue_id == parent_as(:issue).id))),
+            # A split parent's issue stays, as the webhook keeps it: its children's tasks would go with it.
+            where:
+              not exists(
+                from(c in Task, join: p in Task, on: c.parent_task_id == p.id, where: p.issue_id == parent_as(:issue).id)
+              ),
             select: i.id
           )
         )

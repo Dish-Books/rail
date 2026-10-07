@@ -6,12 +6,11 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
   alias Rail.Pipeline.Turn
 
   @human_prefix ~r/^\[human(?::([^\]\s]+))?\]\s*/
-  @reminder_prefix ~r/^\[(reminder \d+ of \d+|answered from past answers|plan revised)\]\s*/
-  @revision ~r/^\[plan revision (\S+)\] (.+)$/
+  @reminder_prefix ~r/^\[(reminder \d+ of \d+|answered from past answers)\]\s*/
   @subagent_call ~r/^\[subagent ([^\]\s]+)\] ([^·]*?)\s*·\s?(.*)$/
   @subagent_end ~r/^\[subagent end ([^\]\s]+)\]\s?(.*)$/
   @within ~r/^\[within ([^\]\s]+)\] (.*)$/
-  @system_prefix ~r/^\[(run|init|tool|tool error|result|rail|handoff|denied|recovered|error|rate limit|stderr|human|plan revision)(\s|\]|:)/
+  @system_prefix ~r/^\[(run|init|tool|tool error|result|rail|handoff|denied|recovered|error|rate limit|stderr|human)(\s|\]|:)/
 
   @doc """
   Reads a run's log lines back as a list of conversational turns.
@@ -163,13 +162,6 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
         |> flush_role()
         |> append_activity_line(line)
 
-      revision = revision(line) ->
-        state
-        |> flush_human()
-        |> flush_activity()
-        |> flush_role()
-        |> append_turn(revision)
-
       Regex.match?(@system_prefix, line) ->
         state
         |> flush_human()
@@ -182,16 +174,6 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
         |> flush_human()
         |> flush_activity()
         |> append_role_line(line)
-    end
-  end
-
-  # Where Rail passed on a revision after approval: the time it did, then what went where.
-  defp revision(line) do
-    with [_line, at, sentence] <- Regex.run(@revision, line),
-         {:ok, at, _offset} <- DateTime.from_iso8601(at) do
-      %Turn{author: :revision, content: sentence, at: at}
-    else
-      _not_a_divider -> nil
     end
   end
 

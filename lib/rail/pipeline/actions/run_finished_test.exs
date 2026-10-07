@@ -8,7 +8,6 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.DetectedQuestion
-  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.RunEvent
@@ -719,63 +718,6 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert %Task{stage: :plan} = Repo.reload!(task)
-  end
-
-  test "a Plan turn ending after approval passes on its revision, even failed or stopped", %{
-    task: task,
-    exited: exited
-  } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
-    now = DateTime.utc_now()
-
-    Repo.insert!(%ImplementationPlan{
-      task_id: task.id,
-      content: "## Implementation plan",
-      captured_at: now,
-      plan_revised_at: now
-    })
-
-    {run, os_process} = exited.(:plan, %{stage_outcome: :done})
-    {:ok, os_process} = os_process |> OsProcess.changeset(%{ended_reason: :stopped}) |> Repo.update()
-
-    assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 1})
-    assert %ImplementationPlan{announced_at: %DateTime{}} = Repo.get_by(ImplementationPlan, task_id: task.id)
-    assert [%RunEvent{line: "[plan revision " <> _divider}] = Pipeline.list_run_events(run)
-    assert %Task{stage: :engineer} = Repo.reload!(task)
-  end
-
-  test "a Plan turn ending at Plan passes nothing on", %{task: task, exited: exited} do
-    now = DateTime.utc_now()
-
-    Repo.insert!(%ImplementationPlan{
-      task_id: task.id,
-      content: "## Implementation plan",
-      captured_at: now,
-      plan_revised_at: now
-    })
-
-    {run, os_process} = exited.(:plan, %{stage_outcome: :done})
-
-    assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-    assert %ImplementationPlan{announced_at: nil} = Repo.get_by(ImplementationPlan, task_id: task.id)
-    assert Pipeline.list_run_events(run) == []
-  end
-
-  test "a revision the issue would not take is the Plan run's error", %{task: task, exited: exited} do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :review})
-
-    Repo.insert!(%ImplementationPlan{
-      task_id: task.id,
-      content: "## Implementation plan",
-      captured_at: DateTime.utc_now()
-    })
-
-    File.write!(Path.join([task.scratch_path, "tickets", "RUN-1.md"]), "---\ntitle: Revised\n---\n\nBody.\n")
-    expect(Issues, :update_issue, fn _issue, _attrs -> {:error, :linear_down} end)
-    {_run, os_process} = exited.(:plan, %{stage_outcome: :done})
-
-    assert {:ok, %Run{error: "Could not pass on the revision: :linear_down"}} =
-             Pipeline.run_finished(os_process, %{exit_code: 0})
   end
 
   test "an outcome that arrives with string keys settles the same way", %{exited: exited} do

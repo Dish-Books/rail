@@ -14,6 +14,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate assignee(assigns), to: Components.IssueIcons
   defdelegate button(assigns), to: Components.Button
   defdelegate changed_comments(assigns), to: Components.ChangedComments
+  defdelegate child_switcher(assigns), to: Components.ChildSwitcher
   defdelegate comment_box(assigns), to: Components.CommentBox
   defdelegate commentable_line(assigns), to: Components.CommentableLine
   defdelegate design_comment_control(assigns), to: Components.DesignCommentControl
@@ -53,6 +54,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate segmented_control(assigns), to: Components.SegmentedControl
   defdelegate settings_nav(assigns), to: Components.SettingsNav
   defdelegate side_sheet(assigns), to: Components.SideSheet
+  defdelegate split_board(assigns), to: Components.SplitBoard
   defdelegate status_icon(assigns), to: Components.IssueIcons
   defdelegate task_layout(assigns), to: Components.TaskLayout
   defdelegate task_tabs(assigns), to: Components.TaskTabs

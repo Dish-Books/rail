@@ -17,7 +17,11 @@ defmodule RailWeb.Components.TaskLayout do
   attr :line, :map, default: nil
   attr :title, :string, default: nil
   attr :flush, :boolean, default: false
+  # Said in place of the stage, `%{label:, icon:, class:}`, by a split parent or a child waiting on its
+  # siblings, neither of which has a branch to show yet.
+  attr :status, :map, default: nil
 
+  slot :breadcrumb
   slot :meta
   slot :tabs
   slot :actions
@@ -42,6 +46,8 @@ defmodule RailWeb.Components.TaskLayout do
           @tabs != [] && "bg-slate-50 dark:bg-slate-800/30"
         ]}
       >
+        {render_slot(@breadcrumb)}
+
         <div class="flex items-center gap-3 min-w-0">
           <.project_badge project={@task.project} />
           <h1
@@ -55,6 +61,16 @@ defmodule RailWeb.Components.TaskLayout do
 
         <div class="flex items-center flex-wrap gap-x-4 gap-y-2 text-sm text-slate-500 dark:text-slate-400">
           <span
+            :if={@status}
+            id="task-status-chip"
+            data-qa="task_status_chip"
+            class={["inline-flex items-center gap-1.5 font-semibold", @status.class]}
+          >
+            <.icon name={@status.icon} class="h-4 w-4" />
+            {@status.label}
+          </span>
+          <span
+            :if={!@status}
             id="task-status-chip"
             data-qa="task_status_chip"
             class={[
@@ -72,7 +88,14 @@ defmodule RailWeb.Components.TaskLayout do
           <span data-qa="task_issue_identifier" class="font-mono">
             {@task.issue.identifier}
           </span>
-          <span data-qa="task_branch_name" class="font-mono">{@task.worktree_name}</span>
+          <span
+            :if={!@status}
+            data-qa="task_branch_name"
+            class="font-mono truncate min-w-0 max-w-[26rem]"
+            title={@task.worktree_name}
+          >
+            {@task.worktree_name}
+          </span>
           <a
             :if={@task.pr_url}
             href={@task.pr_url}

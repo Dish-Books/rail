@@ -311,6 +311,50 @@ defmodule Rail.Mcp.Utils.McpTools do
         },
         "required" => ["plan"]
       }
+    },
+    %{
+      "name" => "save_split",
+      "description" =>
+        "Save a split of the work into child tickets, when it is too big for one. Each save replaces the whole " <>
+          "split, so save every child each time, in the order they should run. Every child needs its title, " <>
+          "its ticket and its part of the plan, or the save is refused naming the child and the field, and " <>
+          "the last good save stays. Save an empty list of children to remove the split.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{
+          "children" => %{
+            "type" => "array",
+            "description" =>
+              "Two or more children, in order. Approval makes each a Linear sub-issue with a task of its own.",
+            "items" => %{
+              "type" => "object",
+              "properties" => %{
+                "title" => %{"type" => "string", "description" => "The child's ticket title, one line."},
+                "ticket" => %{
+                  "type" => "string",
+                  "description" => "The child's ticket body in markdown, with its own acceptance criteria."
+                },
+                "estimate" => %{"type" => "integer", "description" => "Points, zero or more."},
+                "plan" => %{
+                  "type" => "string",
+                  "description" =>
+                    "The part of the plan this child builds, a complete plan in the same sections, opening " <>
+                      "with the `## Implementation plan` heading."
+                },
+                "builds_on" => %{
+                  "type" => "array",
+                  "items" => %{"type" => "integer"},
+                  "description" =>
+                    "The numbers of the earlier children, counted from 1, that must merge before this one starts. " <>
+                      "Empty when it can start at once."
+                }
+              },
+              "required" => ["title", "ticket", "plan"]
+            }
+          }
+        },
+        "required" => ["children"]
+      }
     }
   ]
 

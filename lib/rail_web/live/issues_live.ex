@@ -382,7 +382,7 @@ defmodule RailWeb.IssuesLive do
         priority: assigns.filter_priority,
         limit: @page_size,
         offset: offset,
-        preload: [:project, :owner_user, task: [runs: :role]]
+        preload: [:project, :owner_user, task: [runs: :role, parent_task: [children: :issue]]]
       )
 
     last_page = max(div(total + @page_size - 1, @page_size), 1)

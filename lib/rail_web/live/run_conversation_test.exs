@@ -236,48 +236,6 @@ defmodule RailWeb.Live.RunConversationTest do
     refute html =~ ~s(data-qa="human-bubble")
   end
 
-  test "the revision divider says what went where, with its time", %{task: task, roles: roles, roles_map: roles_map} do
-    {:ok, run} =
-      Pipeline.create_run(%{
-        task_id: task.id,
-        role_id: roles[:engineer].id,
-        status: :finished,
-        conversation_id: "conv_revised",
-        started_at: ~U[2026-09-09 10:00:00.000000Z]
-      })
-
-    Pipeline.append_run_events(run.id, nil, [
-      "Done: criterion 5 now says what it waits on.",
-      "[plan revision 2026-10-07T15:04:00Z] Plan and ticket to Engineer, ticket to Linear"
-    ])
-
-    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
-
-    assert [divider] = html |> Floki.parse_fragment!() |> Floki.find("[data-qa='revision-divider']")
-    assert Floki.text(divider) =~ "Plan and ticket to Engineer, ticket to Linear"
-    assert Floki.attribute(divider, "[data-qa='revision-time']", "data-at") == ["2026-10-07T15:04:00Z"]
-    assert Floki.attribute(divider, "[data-qa='revision-time']", "phx-hook") == ["LocalTime"]
-    assert Floki.text(Floki.find(divider, "[data-qa='revision-time']")) =~ "15:04"
-  end
-
-  test "a revised plan sent to Engineer reads as Rail's note", %{task: task, roles: roles, roles_map: roles_map} do
-    {:ok, run} =
-      Pipeline.create_run(%{
-        task_id: task.id,
-        role_id: roles[:engineer].id,
-        status: :finished,
-        conversation_id: "conv_note",
-        started_at: ~U[2026-09-09 10:00:00.000000Z]
-      })
-
-    Pipeline.append_run_events(run.id, nil, ["[plan revised] The plan changed after approval."])
-
-    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
-
-    assert [bubble] = html |> Floki.parse_fragment!() |> Floki.find("[data-qa='reminder-bubble']")
-    assert Floki.text(bubble) =~ ~r/Rail, automatically\s*· plan revised/
-  end
-
   test "a round Rail answered from past answers reads as Rail's, not as the viewer's", %{
     task: task,
     roles: roles,

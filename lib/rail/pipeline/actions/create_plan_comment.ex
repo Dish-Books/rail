@@ -2,7 +2,7 @@ defmodule Rail.Pipeline.Actions.CreatePlanComment do
   @moduledoc """
   Saves a comment on the Plan step's output, unsent, for the person writing it. A design comment is only for the
   picked option, a ticket or plan comment only once that document is saved, and any comment only while the Plan run
-  can take a message, as typing in its chat can, which it still can after approval.
+  can take a message, as typing in its chat can.
   """
 
   import Rail.Pipeline.Utils.BroadcastPlanComments

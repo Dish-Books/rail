@@ -177,21 +177,14 @@ defmodule Rail.Pipeline.Actions.CreatePlanCommentTest do
              Pipeline.create_plan_comment(ada, run, plan)
   end
 
-  test "after approval ticket and plan comments save while Plan can take a message, two on one line, and not once it cannot",
-       %{task: task, role: role, ada: ada} do
+  test "ticket and plan comments save while Plan can take a message, two on one line, and not once it cannot", %{
+    task: task,
+    role: role,
+    run: chatty,
+    ada: ada
+  } do
     {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Recordings", description: "Recordings open blank."})
     {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan})
-    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
-
-    {:ok, chatty} =
-      Pipeline.create_run(%{
-        task_id: task.id,
-        role_id: role.id,
-        status: :finished,
-        stage_outcome: :done,
-        conversation_id: "sess_after_approval",
-        started_at: DateTime.utc_now()
-      })
 
     {:ok, silent} =
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :finished, started_at: DateTime.utc_now()})

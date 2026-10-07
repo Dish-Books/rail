@@ -37,6 +37,7 @@ defmodule Rail.Pipeline.Utils.PlanSubagents do
     - `save_ticket` is the only way to publish a ticket. Write no ticket file.
     - When Plan passes on a change to the design or the plan, or a pick, that changes what the ticket says, update the ticket and save it again before you finish.
     - A comment on the ticket names its line by a label and quotes it. Answer it by changing that line, and leave every line nobody commented on reading exactly as it did, so the other comments stay under their lines.
+    - The ticket you save stays whole, even when the work is too big for one ticket: say so in your last message. Whether and where the work splits into child tickets is Architect's call, made from the code, and Architect writes each child's ticket, so propose no split yourself.
     - The rules this project has learned that bear on your output come in Plan's message; call knowledge_search for more.
     - End with what you saved. Put every question you could not close in that last message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, for Plan to ask the human.
     """)
@@ -90,6 +91,12 @@ defmodule Rail.Pipeline.Utils.PlanSubagents do
     - When Plan passes on a change to the ticket or the design, save the plan again with the change carried everywhere it reaches: "do not store it" removes the column, the migration, the schema field and their tests, not only the sentence.
     - `save_plan` is the only way to hand over the plan. Write no plan file.
     - A comment on the plan names its line by a label and quotes it. Answer it by changing that line, and leave every line nobody commented on reading exactly as it did, so the other comments stay under their lines.
+    - When the work is too big for one ticket, or Plan passes on that the human wants a split, you decide where it splits and save it with `save_split`, each child a ticket of its own with its own branch and pull request: two or more children in the order they run, each with its `title`, its `ticket`, its `estimate`, its part of the plan as `plan` and `builds_on`, the numbers of the earlier children it needs merged first. Product's ticket stays the parent's, and your plan still covers the whole change, so the human can read it in one place.
+    - Plan the split on purpose, before you write the parts, as vertical slices: each child ships a whole, working piece of the change through every layer it touches, and merges on its own with the default branch working and its tests passing.
+    - Order and cut the children so none is reworked by a later one, and none carries a temporary stand-in to tide it over until a sibling lands: no stubs, shims, placeholder screens, flags or half-wired states. Where a cut would need one, cut elsewhere or keep that work in one child.
+    - A child builds on another only where it truly needs that work merged first. It starts when that one merges, so every needless dependency is time the children spend waiting.
+    - Each child's ticket has its own acceptance criteria, taken from the parent's. Its part is a complete plan in the same sections as yours, opening with the `## Implementation plan` heading, since the child's engineer reads nothing else of the plan.
+    - Each `save_split` replaces the whole split, so every save carries every child complete, with its title, ticket and plan. Save an empty list to remove the split.
     - The rules this project has learned that bear on your output come in Plan's message; call knowledge_search for more.
     - End with what you saved and the option it is written for. Put every question you could not close in that last message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, for Plan to ask the human.
     """)

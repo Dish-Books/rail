@@ -8,7 +8,6 @@ defmodule RailWeb.Components.PlanCommentTray do
   attr :comments, :list, required: true, doc: "the reader's unsent comments in round order, numbered as their cards"
   attr :missing, :list, default: [], doc: "the ids of comments whose element the frame last could not find"
   attr :changed, :list, default: [], doc: "the ids of ticket and plan comments whose line no longer reads as it did"
-  attr :past_plan, :boolean, default: false, doc: "the task has left Plan, so what Plan saves goes on to Engineer"
   attr :open, :boolean, default: true
   attr :can_send, :boolean, required: true
   attr :plan_running, :boolean, required: true
@@ -53,7 +52,7 @@ defmodule RailWeb.Components.PlanCommentTray do
           phx-click="send_plan_comments"
           phx-disable-with="Sending…"
           phx-target={@target}
-          title={hint(@plan_running, @past_plan)}
+          title={hint(@plan_running)}
           class="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 shadow-xs whitespace-nowrap cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:opacity-50"
         >
           <.icon name="pi-paper-plane-tilt" class="size-4" />
@@ -139,7 +138,7 @@ defmodule RailWeb.Components.PlanCommentTray do
             @plan_running && "bg-green-500",
             not @plan_running && "bg-slate-400"
           ]} />
-          <span class="truncate">{hint(@plan_running, @past_plan)}</span>
+          <span class="truncate">{hint(@plan_running)}</span>
         </span>
       </div>
     </div>
@@ -149,9 +148,8 @@ defmodule RailWeb.Components.PlanCommentTray do
   defp element(%{target: :design, element_text: ""} = comment), do: "<#{comment.element_tag}>"
   defp element(comment), do: ~s("#{comment.element_text}")
 
-  defp hint(true, _past_plan), do: "Plan is working. These wait until its turn ends."
-  defp hint(false, true), do: "Plan has finished. Sending resumes it, and Engineer gets what it saves."
-  defp hint(false, false), do: "Plan is idle and starts on these at once."
+  defp hint(true), do: "Plan is working. These wait until its turn ends."
+  defp hint(false), do: "Plan is idle and starts on these at once."
 
   defp noun(1), do: " comment"
   defp noun(_count), do: " comments"

@@ -11,7 +11,7 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
   end
 
   test "each stage that writes something is offered exactly its own save tool", %{names: names} do
-    assert names[:plan] == ["save_ticket", "save_design_option", "save_plan", "knowledge_search"]
+    assert names[:plan] == ["save_ticket", "save_design_option", "save_plan", "save_split", "knowledge_search"]
     assert names[:engineer] == ["commit", "request_merge", "knowledge_search"]
     assert names[:review] == ["save_finding", "save_review", "knowledge_search"]
   end
@@ -74,5 +74,18 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
     for stage <- Role.canonical_stages() do
       assert Enum.any?(mcp_tools(%Role{stage: stage}), &(&1["name"] == "knowledge_search"))
     end
+  end
+
+  test "save_split takes every child at once, each needing its title, ticket and part of the plan" do
+    assert %{
+             "description" => description,
+             "inputSchema" => %{
+               "required" => ["children"],
+               "properties" => %{"children" => %{"items" => %{"required" => ["title", "ticket", "plan"]}}}
+             }
+           } = %Role{stage: :plan} |> mcp_tools() |> Enum.find(&(&1["name"] == "save_split"))
+
+    assert description =~ "Each save replaces the whole split"
+    assert description =~ "or the save is refused naming the child and the field"
   end
 end

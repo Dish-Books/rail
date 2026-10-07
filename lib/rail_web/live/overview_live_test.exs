@@ -8,6 +8,7 @@ defmodule RailWeb.OverviewLiveTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.DetectedQuestion
+  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -431,7 +432,240 @@ defmodule RailWeb.OverviewLiveTest do
         Repo.preload(task, :issue)
       end
 
-      %{conn: log_in_user(conn, user), project: project, roles: roles, rival: rival, task_for: task_for}
+      %{conn: log_in_user(conn, user), user: user, project: project, roles: roles, rival: rival, task_for: task_for}
+    end
+
+    test "a child blocked by a canceled sibling is in Up next and counted as waiting on its owner", %{
+      conn: conn,
+      user: user,
+      project: project
+    } do
+      for {identifier, title} <- [{"OVB-1", "Work on OVB-1"}, {"OVB-2", "Child OVB-2"}, {"OVB-3", "Child OVB-3"}] do
+        Req.Test.expect(Rail.Linear, fn conn ->
+          Req.Test.json(conn, %{
+            "data" => %{
+              "issueCreate" => %{
+                "success" => true,
+                "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
+              }
+            }
+          })
+        end)
+      end
+
+      {:ok, parent_issue} =
+        Issues.create_issue(system_scope(), project, %{title: "Work on OVB-1", owner_user_id: user.id})
+
+      {:ok, parent} = Pipeline.create_task(parent_issue, :split)
+      parent = Repo.preload(parent, [:issue, :project])
+
+      [first, blocked] =
+        for {{identifier, builds_on}, number} <- Enum.with_index([{"OVB-2", []}, {"OVB-3", [1]}], 1) do
+          attrs = %{title: "Child #{identifier}", parent: parent_issue, owner_user_id: user.id}
+          {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
+          part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
+          Repo.preload(child, [:issue, :project])
+        end
+
+      first.issue |> Issue.linear_changeset(%{state: :canceled}) |> Repo.update!()
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(
+               view,
+               "#up-next-blocked-#{blocked.id}[href='/tasks/#{parent.id}?child=OVB-3']",
+               "OVB-2 was canceled, so this will not start"
+             )
+
+      assert has_element?(view, "#up-next-blocked-#{blocked.id}", "in OVB-1")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")
+      refute has_element?(view, "#up-next-empty")
+    end
+
+    test "someone else's split says its children need attention, not you, in Everyone", %{
+      conn: conn,
+      rival: rival,
+      project: project,
+      roles: roles
+    } do
+      for {identifier, title} <- [{"OVR-1", "Work on OVR-1"}, {"OVR-2", "Child OVR-2"}, {"OVR-3", "Child OVR-3"}] do
+        Req.Test.expect(Rail.Linear, fn conn ->
+          Req.Test.json(conn, %{
+            "data" => %{
+              "issueCreate" => %{
+                "success" => true,
+                "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
+              }
+            }
+          })
+        end)
+      end
+
+      {:ok, parent_issue} =
+        Issues.create_issue(system_scope(), project, %{title: "Work on OVR-1", owner_user_id: rival.id})
+
+      {:ok, parent} = Pipeline.create_task(parent_issue, :split)
+      parent = Repo.preload(parent, [:issue, :project])
+
+      children =
+        for {{identifier, builds_on}, number} <- Enum.with_index([{"OVR-2", []}, {"OVR-3", []}], 1) do
+          attrs = %{title: "Child #{identifier}", parent: parent_issue, owner_user_id: rival.id}
+          {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
+          part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
+          Repo.preload(child, [:issue, :project])
+        end
+
+      assert {:ok, view, _html} = live(conn, ~p"/?everyone=true")
+      assert has_element?(view, "#in-progress-task-#{parent.id}", "Plan approved")
+
+      for child <- children do
+        {:ok, _failed} =
+          Pipeline.create_run(%{
+            task_id: child.id,
+            role_id: roles[:engineer].id,
+            status: :failed,
+            error: "It broke.",
+            started_at: DateTime.utc_now()
+          })
+      end
+
+      assert {:ok, view, _html} = live(conn, ~p"/?everyone=true")
+
+      assert has_element?(view, "#in-progress-task-#{parent.id}", "2 need attention")
+      refute has_element?(view, "#in-progress-task-#{parent.id}", "need you")
+      refute has_element?(view, "#in-progress-task-#{parent.id}[class*='amber']")
+    end
+
+    test "cleaning up a split parent takes its children out of In progress with it", %{
+      conn: conn,
+      user: user,
+      project: project
+    } do
+      for {identifier, title} <- [{"OVC-1", "Work on OVC-1"}, {"OVC-2", "Child OVC-2"}, {"OVC-3", "Child OVC-3"}] do
+        Req.Test.expect(Rail.Linear, fn conn ->
+          Req.Test.json(conn, %{
+            "data" => %{
+              "issueCreate" => %{
+                "success" => true,
+                "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
+              }
+            }
+          })
+        end)
+      end
+
+      {:ok, parent_issue} =
+        Issues.create_issue(system_scope(), project, %{title: "Work on OVC-1", owner_user_id: user.id})
+
+      {:ok, parent} = Pipeline.create_task(parent_issue, :split)
+      parent = Repo.preload(parent, [:issue, :project])
+
+      [_first, _second] =
+        for {{identifier, builds_on}, number} <- Enum.with_index([{"OVC-2", []}, {"OVC-3", [1]}], 1) do
+          attrs = %{title: "Child #{identifier}", parent: parent_issue, owner_user_id: user.id}
+          {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
+          part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
+          Repo.preload(child, [:issue, :project])
+        end
+
+      {:ok, _cleaned} = Pipeline.cleanup_task(parent)
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#in-progress-count", "0 tasks")
+      refute has_element?(view, "#in-progress-task-#{parent.id}")
+    end
+
+    test "a split parent is in progress once, a mark per child, its children waiting on the user in Up next", %{
+      conn: conn,
+      user: user,
+      project: project,
+      roles: roles
+    } do
+      now = DateTime.utc_now()
+
+      for {identifier, title} <- [
+            {"OVS-1", "Work on OVS-1"},
+            {"OVS-2", "Child OVS-2"},
+            {"OVS-3", "Child OVS-3"},
+            {"OVS-4", "Child OVS-4"}
+          ] do
+        Req.Test.expect(Rail.Linear, fn conn ->
+          Req.Test.json(conn, %{
+            "data" => %{
+              "issueCreate" => %{
+                "success" => true,
+                "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
+              }
+            }
+          })
+        end)
+      end
+
+      {:ok, parent_issue} =
+        Issues.create_issue(system_scope(), project, %{title: "Work on OVS-1", owner_user_id: user.id})
+
+      {:ok, parent} = Pipeline.create_task(parent_issue, :split)
+      parent = Repo.preload(parent, [:issue, :project])
+
+      [first, second, third] =
+        for {{identifier, builds_on}, number} <- Enum.with_index([{"OVS-2", []}, {"OVS-3", [1]}, {"OVS-4", []}], 1) do
+          attrs = %{title: "Child #{identifier}", parent: parent_issue, owner_user_id: user.id}
+          {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
+          part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
+          Repo.preload(child, [:issue, :project])
+        end
+
+      Repo.insert!(%ImplementationPlan{task_id: parent.id, content: "## Implementation plan", captured_at: now})
+
+      {:ok, _done} =
+        Pipeline.create_run(%{
+          task_id: first.id,
+          role_id: roles[:engineer].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: now
+        })
+
+      {:ok, _failed} =
+        Pipeline.create_run(%{
+          task_id: third.id,
+          role_id: roles[:engineer].id,
+          status: :failed,
+          error: "It broke.",
+          started_at: now
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#in-progress-count", "1 task")
+      assert has_element?(view, "#in-progress-task-#{parent.id}[href='/tasks/#{parent.id}']", "2 need you")
+      assert has_element?(view, "#in-progress-task-#{parent.id}", "0 of 3 merged")
+
+      assert has_element?(
+               view,
+               "#in-progress-task-#{parent.id} [data-qa='in-progress-child'][title='OVS-3: Waiting on OVS-2']"
+             )
+
+      assert view |> render() |> Floki.parse_document!() |> Floki.find("[data-qa='in-progress-child']") |> length() == 3
+      assert has_element?(view, "#in-progress-task-#{parent.id}[class*='amber']")
+
+      for child <- [first, second, third], do: refute(has_element?(view, "#in-progress-task-#{child.id}"))
+
+      assert has_element?(view, "#up-next", "in OVS-1")
+      assert has_element?(view, "#activity-feed", "OVS-1 split into 3")
+
+      # A child deleted in Linear does not shrink the split the person approved.
+      {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+      remove = %{"type" => "Issue", "action" => "remove", "data" => %{"id" => second.issue.external_id}}
+      assert {:ok, _removed} = Issues.handle_linear_webhook(workspace, remove)
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+      assert has_element?(view, "#activity-feed", "OVS-1 split into 3")
     end
 
     test "opens on the user's own work, and switches to everyone's and back", %{

@@ -88,6 +88,7 @@ defmodule RailWeb.Live.EngineerStage do
         title={@task.issue.title}
         flush={@work? or @loading?}
       >
+        <:breadcrumb :if={@breadcrumb != []}>{render_slot(@breadcrumb)}</:breadcrumb>
         <:tabs>{render_slot(@tabs)}</:tabs>
         <:actions>
           {render_slot(@actions)}

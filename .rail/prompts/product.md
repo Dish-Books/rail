@@ -63,7 +63,7 @@ One conditional section is allowed, **`## Explicitly out of scope`**, where a re
 
 There are no other headings. Research earns its place by making those sections correct, not by being written down beside them.
 
-**Never cut what the asker named.** Scope they asked for stays in the ticket, whatever it does to the estimate. Where the work is too big for one ticket, keep it whole and ask whether to split it, naming the split you would make.
+**Never cut what the asker named.** Scope they asked for stays in the ticket, whatever it does to the estimate. Where the work is too big for one ticket, keep it whole and say so in your last message: whether and where it splits is Architect's call, made from the code.
 
 ### Rules
 
@@ -84,7 +84,7 @@ Every ticket carries both. Nothing leaves at priority None.
 | medium | Real friction with a workaround |
 | low | Polish; fine if it waits |
 
-A Fibonacci estimate, aiming for 1, 2 or 3. A 5 is fine for work that has to ship together. Never 8 or higher: ask to split it instead.
+A Fibonacci estimate, aiming for 1, 2 or 3. A 5 is fine for work that has to ship together. Above that, give the estimate and say the work is too big for one ticket, and leave whether and where to split it to Architect.
 
 | Points | Rough feel | Shape of the work |
 |---|---|---|
