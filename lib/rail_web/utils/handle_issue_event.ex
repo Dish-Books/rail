@@ -29,7 +29,7 @@ defmodule RailWeb.Utils.HandleIssueEvent do
 
   def handle_issue_event("assign", %{"user_id" => ""}, socket, reload), do: assign_owner(socket, nil, reload)
 
-  # Only a user the menu offers: one with a linked Linear account who can open the issue.
+  # Only a user the menu offers: one the issue's tracker can assign who can open the issue.
   def handle_issue_event("assign", %{"user_id" => user_id}, socket, reload) do
     if Enum.any?(socket.assigns.assignees, &(&1.id == user_id)),
       do: assign_owner(socket, user_id, reload),

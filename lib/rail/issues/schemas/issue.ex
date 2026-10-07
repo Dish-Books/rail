@@ -3,7 +3,7 @@ defmodule Rail.Issues.Schemas.Issue do
   use Rail.Schema
 
   alias Rail.Issues.Schemas.Comment
-  alias Rail.Issues.Workers.AdvanceLinearState
+  alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
@@ -26,8 +26,12 @@ defmodule Rail.Issues.Schemas.Issue do
     field :branch_name, :string
     field :url, :string
     field :completed_at, :utc_datetime
-    # When Linear last changed the ticket, by its own clock. `updated_at` is when Rail last wrote the row.
-    field :linear_updated_at, :utc_datetime_usec
+    # Copied from the project when the issue is made, so it keeps talking to the tracker it came from.
+    field :tracker, Ecto.Enum, values: [:linear, :github], default: :linear
+    # GitHub's issue number, which its REST paths take; nil for Linear.
+    field :number, :integer
+    # The tracker's own updated_at: where a poll resumes, and how a stale webhook is told apart.
+    field :external_updated_at, :utc_datetime_usec
 
     belongs_to :project, Project
     belongs_to :owner_user, User
@@ -45,14 +49,16 @@ defmodule Rail.Issues.Schemas.Issue do
     :description,
     :estimate,
     :external_id,
+    :external_updated_at,
     :identifier,
-    :linear_updated_at,
+    :number,
     :owner_user_id,
     :priority,
     :project_id,
     :state_name,
     :state,
     :title,
+    :tracker,
     :url
   ]
 
@@ -66,19 +72,19 @@ defmodule Rail.Issues.Schemas.Issue do
 
   def changeset(issue, attrs) do
     issue
-    |> linear_changeset(attrs)
-    |> sync_to_linear()
+    |> tracker_changeset(attrs)
+    |> sync_to_tracker()
   end
 
   @doc """
-  A changeset for what Linear itself reports, such as a webhook. It is the same
-  as `changeset/2` except that nothing is queued to push back to Linear, since
-  Linear is where the change came from.
+  A changeset for what the tracker itself reports, such as a webhook or a poll. It is
+  the same as `changeset/2` except that nothing is queued to push back to the tracker,
+  since the tracker is where the change came from.
 
   Either one, on giving an unowned issue an owner, queues
-  `Rail.Issues.Workers.AdvanceLinearState` to catch its Linear status up with its task.
+  `Rail.Issues.Workers.AdvanceTrackerState` to catch its tracker status up with its task.
   """
-  def linear_changeset(issue, attrs) do
+  def tracker_changeset(issue, attrs) do
     issue
     |> cast(attrs, @cast_fields)
     |> validate_required(@required_fields)
@@ -97,6 +103,9 @@ defmodule Rail.Issues.Schemas.Issue do
   def priority_label(:medium), do: "Medium"
   def priority_label(:low), do: "Low"
   def priority_label(_other), do: nil
+
+  def tracker_label(:github), do: "GitHub"
+  def tracker_label(:linear), do: "Linear"
 
   def state_label(:backlog), do: "Backlog"
   def state_label(:triage), do: "Triage"
@@ -117,14 +126,15 @@ defmodule Rail.Issues.Schemas.Issue do
   def active?(state) when is_atom(state), do: state in [:triage, :backlog, :todo, :in_progress, :in_review]
   def active?(_other), do: false
 
-  # Every write goes up to Linear, so no caller can forget to say so. This runs
+  # Every write goes up to the tracker, so no caller can forget to say so. This runs
   # inside the write's own transaction, which is what makes the job and the row
   # land together or not at all. An insert has nothing to sync back: the ticket
-  # is opened in Linear first and the row is what came back from it.
-  defp sync_to_linear(%Ecto.Changeset{data: %__MODULE__{id: id}, changes: changes} = changeset)
+  # is opened in the tracker first and the row is what came back from it.
+  defp sync_to_tracker(%Ecto.Changeset{data: %__MODULE__{id: id}, changes: changes} = changeset)
        when is_binary(id) and changes != %{} do
     prepare_changes(changeset, fn prepared ->
-      %{issue_id: id, fields: Map.keys(prepared.changes)}
+      # GitHub unassigns by login, so the job carries who held the issue before.
+      %{issue_id: id, fields: Map.keys(prepared.changes), previous_owner_user_id: prepared.data.owner_user_id}
       |> SyncIssue.new()
       |> Oban.insert!()
 
@@ -132,9 +142,9 @@ defmodule Rail.Issues.Schemas.Issue do
     end)
   end
 
-  defp sync_to_linear(%Ecto.Changeset{} = changeset), do: changeset
+  defp sync_to_tracker(%Ecto.Changeset{} = changeset), do: changeset
 
-  # An unowned ticket's Linear status is held back while its task runs, so whatever
+  # An unowned ticket's tracker status is held back while its task runs, so whatever
   # gives it an owner also queues the move that catches it up. Here, for the same
   # reason as the sync above: no way of setting the owner can forget to.
   defp advance_when_claimed(
@@ -144,7 +154,7 @@ defmodule Rail.Issues.Schemas.Issue do
        when is_binary(id) and is_binary(owner_user_id) do
     prepare_changes(changeset, fn prepared ->
       %{issue_id: id}
-      |> AdvanceLinearState.new()
+      |> AdvanceTrackerState.new()
       |> Oban.insert!()
 
       prepared

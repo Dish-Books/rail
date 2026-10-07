@@ -26,9 +26,11 @@ config :rail, :git,
   bot_name: "Rail",
   bot_email: "rail[bot]@railai.dev"
 
+# With no webhook secret set, every GitHub delivery is refused rather than taken unsigned.
 config :rail, :github,
   app_id: get_env.("GITHUB_APP_ID", "test_app_id"),
-  private_key: get_env.("GITHUB_APP_PRIVATE_KEY", "test/support/fixtures/github_app.pem")
+  private_key: get_env.("GITHUB_APP_PRIVATE_KEY", "test/support/fixtures/github_app.pem"),
+  webhook_secret: get_env.("GITHUB_WEBHOOK_SECRET", if(config_env() == :test, do: "github_webhook_secret"))
 
 # Goth reads GOOGLE_APPLICATION_CREDENTIALS(_JSON), or the metadata server when neither is set.
 config :rail, :goth_enabled, config_env() == :prod or get_env.("ENABLE_GOTH", nil) == "true"

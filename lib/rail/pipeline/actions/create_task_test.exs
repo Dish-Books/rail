@@ -37,7 +37,7 @@ defmodule Rail.Pipeline.Actions.CreateTaskTest do
   end
 
   test "names the worktree after the issue's branch when it has one", %{issue: issue} do
-    issue = issue |> Issue.linear_changeset(%{branch_name: "michael/crt-1-fix"}) |> Repo.update!()
+    issue = issue |> Issue.tracker_changeset(%{branch_name: "michael/crt-1-fix"}) |> Repo.update!()
 
     assert {:ok, %Task{worktree_name: "michael/crt-1-fix"}} = Pipeline.create_task(issue, :engineer)
   end

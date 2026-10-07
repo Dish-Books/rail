@@ -165,6 +165,55 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     assert render(view) =~ repo
   end
 
+  test "a project tracked in GitHub Issues is made without any Linear fields", %{admin_conn: conn} do
+    assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+    view |> element("#new-project-button") |> render_click()
+
+    assert has_element?(view, "#project-linear-team-key-input")
+    refute has_element?(view, "#project-key-input")
+
+    view |> form("#project-form", %{"project" => %{"tracker" => "github"}}) |> render_change()
+
+    refute has_element?(view, "#project-linear-team-key-input")
+    refute has_element?(view, "#project-linear-workspace-input")
+    assert has_element?(view, "#project-key-input")
+
+    key = "gh-#{System.unique_integer([:positive])}"
+    repo = "example/#{key}"
+
+    view
+    |> form("#project-form", %{
+      "project" => %{
+        "name" => "GitHub Tracked",
+        "github_repo" => repo,
+        "github_installation_id" => "9989",
+        "default_branch" => "main",
+        "tracker" => "github",
+        "key" => "",
+        "clone_path" => "/tmp/ght"
+      }
+    })
+    |> render_submit()
+
+    refute has_element?(view, "#project-modal")
+
+    assert %Project{tracker: :github, key: ^key, linear_team_key: nil} =
+             project = Repo.get_by!(Project, github_repo: repo)
+
+    assert has_element?(view, "#project-team-key-#{project.id}", "(GitHub)")
+  end
+
+  test "a project with issues keeps its tracker, and says so", %{admin_conn: conn, github_project: project} do
+    github_issue(project)
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+    view |> element("#edit-project-#{project.id}") |> render_click()
+    view |> form("#project-form", %{"project" => %{"tracker" => "linear"}}) |> render_change()
+    view |> form("#project-form", %{"project" => %{"tracker" => "linear", "linear_team_key" => "TGH"}}) |> render_submit()
+
+    assert has_element?(view, "#project-tracker-error", "cannot change once the project has issues")
+  end
+
   test "opens edit project modal, changes active status and name, and updates project", %{
     admin_conn: conn,
     admin_user: admin

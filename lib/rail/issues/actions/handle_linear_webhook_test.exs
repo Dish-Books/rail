@@ -5,7 +5,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Issues.Workers.AdvanceLinearState
+  alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Learnings.Workers.IssueFinished
   alias Rail.Pipeline
@@ -64,7 +64,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
   } do
     %Issue{id: issue_id} =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_wh_2",
         identifier: "HWH-2",
@@ -98,7 +98,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
   } do
     %Issue{id: issue_id} =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_wh_dup",
         identifier: "HWH-9",
@@ -137,7 +137,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
 
     %Issue{id: issue_id} =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_wh_owner",
         identifier: "HWH-9",
@@ -156,7 +156,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
              })
 
     # It had no owner, so its Linear status was held back and now catches up with its task.
-    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: issue_id})
+    assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: issue_id})
 
     assert {:ok, %Issue{owner_user_id: nil}} =
              Issues.handle_linear_webhook(workspace, %{
@@ -217,8 +217,8 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
              Issues.handle_linear_webhook(workspace, %{"type" => "Issue", "action" => "update", "data" => data})
 
     assert %Issue{owner_user_id: ^user_id} = Repo.reload!(child.issue)
-    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: parent_issue.id})
-    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: child.issue_id})
+    assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: parent_issue.id})
+    assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: child.issue_id})
   end
 
   test "an issue update older than the one already applied is dropped, whichever arrives first", %{
@@ -232,7 +232,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
 
     %Issue{id: issue_id} =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_wh_order",
         identifier: "HWH-40",
@@ -263,7 +263,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
 
     refute_receive {:issue_changed, ^issue_id}
 
-    assert %Issue{state: :in_progress, owner_user_id: ^user_id, linear_updated_at: ~U[2026-10-08 15:00:00.250000Z]} =
+    assert %Issue{state: :in_progress, owner_user_id: ^user_id, external_updated_at: ~U[2026-10-08 15:00:00.250000Z]} =
              Repo.get!(Issue, issue_id)
 
     # The same event sent again, and one with no time on it, are still applied.
@@ -289,7 +289,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
     %Issue{id: issue_id} =
       issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_wh_3",
         identifier: "HWH-3",
@@ -355,7 +355,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
 
     {:ok, task} =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_wh_remove_files",
         identifier: "WHR-1",
@@ -390,7 +390,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
     %Issue{id: issue_id} =
       issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_wh_trash",
         identifier: "HWH-30",
@@ -428,7 +428,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
   } do
     %Issue{id: issue_id} =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_wh_archived",
         identifier: "HWH-31",
@@ -469,7 +469,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
   } do
     insert = fn external_id ->
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: external_id,
         identifier: external_id,
@@ -517,7 +517,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
     %Issue{id: issue_id} =
       issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project_id,
         external_id: "lin_wh_moved",
         identifier: "HWH-32",
@@ -557,7 +557,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
 
     %Issue{id: issue_id} =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: other_project_id,
         external_id: "lin_wh_elsewhere",
         identifier: "UNL-1",
@@ -671,7 +671,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
   test "comment creates, replies, updates and removes mirror onto the issue", %{project: project, workspace: workspace} do
     %Issue{id: issue_id} =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_wh_5",
         identifier: "HWH-5",
@@ -749,7 +749,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
 
       insert = fn external_id, state ->
         %Issue{}
-        |> Issue.linear_changeset(%{
+        |> Issue.tracker_changeset(%{
           project_id: project.id,
           external_id: external_id,
           identifier: "HWH-F",

@@ -24,7 +24,7 @@ defmodule Rail.Issues.Utils.UpsertLinearCommentTest do
 
     issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_upc_1",
         identifier: "UPC-1",

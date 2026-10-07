@@ -99,7 +99,7 @@ defmodule Rail.Pipeline.Workers.EncodeDemo do
     end
   end
 
-  # Linear keeps the video, since the scratch directory goes when the task is
+  # The tracker keeps the video, since the scratch directory goes when the task is
   # cleaned up; the pull request links to it for whoever reviews it there.
   defp publish(%Task{issue: %Issue{} = issue} = task, %Demo{} = demo) do
     %Project{} = project = Repo.get!(Project, task.project_id)

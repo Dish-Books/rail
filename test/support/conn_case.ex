@@ -23,6 +23,8 @@ defmodule RailWeb.ConnCase do
       @endpoint RailWeb.Endpoint
 
       setup :verify_on_exit!
+      setup {Mox, :verify_on_exit!}
+      setup {Rail.DataCase, :stub_trackers}
       setup {Rail.DataCase, :stub_agent_spawn}
       setup {Rail.DataCase, :stub_git_repo_check}
       setup {Rail.DataCase, :stub_worktree_slot}
@@ -44,6 +46,10 @@ defmodule RailWeb.ConnCase do
   setup tags do
     Rail.DataCase.setup_sandbox(tags)
     conn = Phoenix.ConnTest.init_test_session(Phoenix.ConnTest.build_conn(), %{})
-    {:ok, conn: conn, project: :persistent_term.get({RailTest, :project})}
+
+    {:ok,
+     conn: conn,
+     project: :persistent_term.get({RailTest, :project}),
+     github_project: :persistent_term.get({RailTest, :github_project})}
   end
 end

@@ -84,7 +84,7 @@ defmodule RailWeb.IssuesLive do
               data-qa="sync-issues-button"
               phx-click="sync_issues"
               disabled={@is_syncing}
-              title="Pulls issues from Linear"
+              title="Pulls issues from the tracker"
               class={[
                 "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-500 dark:border-slate-400 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer",
                 @is_syncing && "opacity-50 cursor-not-allowed"
@@ -349,7 +349,7 @@ defmodule RailWeb.IssuesLive do
   # Newest first, so a created issue lands at the top of the first page.
   def handle_info({:issue_created, _issue_id}, socket), do: {:noreply, reload_data(socket)}
 
-  # A change from Linear can move an issue in or out of the filters, finished ones included.
+  # A change from the tracker can move an issue in or out of the filters, finished ones included.
   def handle_info({:issue_changed, _issue_id}, socket), do: {:noreply, reload_data(socket)}
 
   def handle_info({:issue_comments_changed, _issue_id}, socket), do: {:noreply, socket}
@@ -364,9 +364,10 @@ defmodule RailWeb.IssuesLive do
 
   defp stage_run(nil), do: nil
 
-  defp project_subtitle(nil), do: "Linear issues across all projects"
+  defp project_subtitle(nil), do: "Issues across all projects"
 
-  defp project_subtitle(%{linear_team_key: key, name: name}), do: "Linear issues in #{key} (#{name})"
+  defp project_subtitle(%{tracker: tracker, name: name} = project),
+    do: "#{Issue.tracker_label(tracker)} issues in #{project.key || project.linear_team_key} (#{name})"
 
   # --- Private Helpers ---
 

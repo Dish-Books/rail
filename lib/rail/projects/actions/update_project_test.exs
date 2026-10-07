@@ -1,6 +1,7 @@
 defmodule Rail.Projects.Actions.UpdateProjectTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
@@ -28,6 +29,54 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                active: false,
                default_branch: "develop"
              })
+  end
+
+  test "a project's tracker and key are fixed once it has issues", %{github_project: github_project} do
+    admin_scope = Scope.for_user(%{admin: true})
+
+    assert {:ok, %Project{tracker: :linear} = project} =
+             Projects.create_project(admin_scope, %{
+               name: "Tracked",
+               github_repo: "example/tracked-#{System.unique_integer([:positive])}",
+               github_installation_id: 55_669,
+               linear_team_key: "TRK",
+               default_branch: "main",
+               clone_path: "/tmp/tracked"
+             })
+
+    assert {:ok, %Project{tracker: :github, key: "trk"} = project} =
+             Projects.update_project(admin_scope, project, %{tracker: "github", key: "trk"})
+
+    %Issue{}
+    |> Issue.changeset(%{
+      project_id: project.id,
+      external_id: "I_trk1",
+      identifier: "trk#1",
+      title: "One",
+      state: :backlog
+    })
+    |> Repo.insert!()
+
+    assert {:error, changeset} = Projects.update_project(admin_scope, project, %{tracker: "linear"})
+    assert %{tracker: ["cannot change once the project has issues"]} = errors_on(changeset)
+
+    assert {:error, changeset} = Projects.update_project(admin_scope, project, %{key: "other"})
+    assert %{tracker: ["cannot change once the project has issues"]} = errors_on(changeset)
+
+    assert {:ok, %Project{name: "Renamed"}} = Projects.update_project(admin_scope, project, %{name: "Renamed"})
+
+    assert {:error, changeset} =
+             Projects.create_project(admin_scope, %{
+               name: "Same Key",
+               github_repo: "example/same-key-#{System.unique_integer([:positive])}",
+               github_installation_id: 55_670,
+               tracker: "github",
+               key: github_project.key,
+               default_branch: "main",
+               clone_path: "/tmp/same-key"
+             })
+
+    assert %{key: ["has already been taken"]} = errors_on(changeset)
   end
 
   test "moving a project to another workspace looks its team up through that one" do

@@ -4,7 +4,7 @@ defmodule Rail.Issues.Actions.ClaimIssueTest do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Issues.Workers.AdvanceLinearState
+  alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Scope
   alias Rail.Users
@@ -12,7 +12,7 @@ defmodule Rail.Issues.Actions.ClaimIssueTest do
   setup %{project: project} do
     issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_claim",
         identifier: "CLM-1",
@@ -40,7 +40,7 @@ defmodule Rail.Issues.Actions.ClaimIssueTest do
   test "queues the move that catches the ticket's Linear status up", %{issue: issue, claimer: claimer} do
     {:ok, _claimed} = Issues.claim_issue(Scope.for_user(claimer), issue)
 
-    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: issue.id})
+    assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: issue.id})
   end
 
   test "refuses an issue somebody claimed since it was read", %{issue: issue, claimer: claimer, rival: rival} do
@@ -56,5 +56,24 @@ defmodule Rail.Issues.Actions.ClaimIssueTest do
 
     assert {:error, :linear_not_linked} = Issues.claim_issue(Scope.for_user(unlinked), issue)
     assert Repo.get!(Issue, issue.id).owner_user_id == nil
+  end
+
+  test "a GitHub issue is claimable without a Linear account, and catches its label up", %{github_project: project} do
+    {:ok, %{id: user_id} = user} =
+      Users.register_oauth_user(%{github_id: "gh_gh_claimer", login: "gh-claimer", email: "gh-claimer@example.com"})
+
+    issue = github_issue(project)
+
+    assert {:ok, %Issue{owner_user_id: ^user_id}} = Issues.claim_issue(Scope.for_user(user), issue)
+    assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: issue.id})
+  end
+
+  test "a user the issue's tracker cannot take as owner is told why, and nothing changes", %{github_project: project} do
+    {:ok, user} = Users.register_oauth_user(%{github_id: "gh_refused", login: "refused", email: "refused@example.com"})
+    issue = github_issue(project)
+    Mox.expect(Rail.Issues.Tracker.GithubMock, :check_assignable, fn %{id: _user_id} -> {:error, :not_on_github} end)
+
+    assert {:error, :not_on_github} = Issues.claim_issue(Scope.for_user(user), issue)
+    assert %Issue{owner_user_id: nil} = Repo.reload!(issue)
   end
 end

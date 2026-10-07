@@ -54,4 +54,8 @@ defmodule Rail.Issues.Actions.UploadAssetTest do
 
     assert {:error, :no_workspace_token} = Issues.upload_asset(project, "file.png", "image/png", "DATA")
   end
+
+  test "upload_asset/4 has nowhere to put a file for a GitHub project", %{github_project: project} do
+    assert {:error, :unsupported} = Issues.upload_asset(project, "shot.png", "image/png", <<1>>)
+  end
 end

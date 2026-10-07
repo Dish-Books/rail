@@ -16,7 +16,7 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
   setup %{project: project} do
     issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_start_task",
         identifier: "STK-1",
