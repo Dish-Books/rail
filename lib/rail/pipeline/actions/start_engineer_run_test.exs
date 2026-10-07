@@ -11,6 +11,25 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
+  # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
+  @plan """
+  ## Implementation plan
+
+  ### Approach
+
+  Extend the module.
+
+  No diagrams: one module changes.
+
+  ### File-level changes
+
+  - `lib/rail.ex`: extends the module.
+
+  ### Verification
+
+  - `lib/rail_test.exs`: covers the extension.
+  """
+
   setup %{project: project} do
     scope = system_scope()
 
@@ -117,6 +136,39 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
 
       # The design is read against the ticket, so it comes before it.
       assert :binary.match(prompt, "</design>") < :binary.match(prompt, "The ticket it was planned from")
+
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_engineer_run(run)
+  end
+
+  test "a plan and a picked option revised after approval are what the next Engineer brief carries", %{
+    task: task,
+    run: run
+  } do
+    Repo.insert!(%ImplementationPlan{
+      task_id: task.id,
+      content: "## Implementation plan\n\nAs approved.",
+      captured_at: DateTime.utc_now()
+    })
+
+    design_dir = Path.join(task.scratch_path, "design")
+    File.mkdir_p!(design_dir)
+    File.write!(Path.join(design_dir, "manifest.json"), ~s({"options": [{"key": "cards", "title": "Cards"}]}))
+    File.write!(Path.join(design_dir, "cards.html"), "<h1>As approved</h1>")
+    File.write!(Path.join(design_dir, "picked"), "cards")
+
+    {:ok, _plan} =
+      Pipeline.save_plan(task, %{plan: String.replace(@plan, "Extend the module.", "Revised for the comments.")})
+
+    File.write!(Path.join(design_dir, "cards.html"), "<h1>Revised for the comments</h1>")
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
+      assert ["-p", prompt | _rest] = argv
+      assert prompt =~ "Revised for the comments."
+      assert prompt =~ "<h1>Revised for the comments</h1>"
+      refute prompt =~ "As approved"
 
       {:ok, %OsProcess{run: spawned}}
     end)

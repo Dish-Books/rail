@@ -19,7 +19,7 @@ export const Shortcuts = {
       // Dialog submit shortcut: ⌘Enter / Ctrl+Enter
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
         const modal = document.querySelector("[data-qa='capture_dialog'], #new-issue-modal, #project-modal");
-        if (modal && modal.contains(e.target)) {
+        if (modal?.contains(e.target)) {
           e.preventDefault();
           const submitBtn = modal.querySelector("button[type='submit']");
           if (submitBtn) {

@@ -130,6 +130,30 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
              Repo.get_by(ImplementationPlan, task_id: task.id)
   end
 
+  test "approving again after a return to Plan replaces the plan Engineer builds from", %{
+    task: task,
+    roles: roles,
+    run: run
+  } do
+    {:ok, _run} = Pipeline.approve_plan(system_scope(), run)
+    Repo.update_all(from(r in Run, where: r.role_id == ^roles[:engineer].id), set: [status: :finished])
+    %ImplementationPlan{id: id, captured_at: first_at} = Repo.get_by(ImplementationPlan, task_id: task.id)
+    {:ok, task} = Pipeline.update_task(Repo.reload!(task), %{stage: :plan})
+    second = String.replace(@plan, "Extend the module.", "The second agreement.")
+    {:ok, _plan} = Pipeline.save_plan(task, %{plan: second})
+
+    assert {:ok, %Run{}} = Pipeline.approve_plan(system_scope(), run)
+
+    assert %ImplementationPlan{
+             id: ^id,
+             content: ^second,
+             captured_at: second_at
+           } =
+             Repo.get_by(ImplementationPlan, task_id: task.id)
+
+    assert DateTime.after?(second_at, first_at)
+  end
+
   test "with a pick it adds the picked design's section and screenshot to the ticket in one write", %{
     task: task,
     run: run,

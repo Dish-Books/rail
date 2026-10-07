@@ -1,6 +1,7 @@
 defmodule RailWeb.TaskLiveTest do
   use RailWeb.ConnCase, async: true
 
+  import Ecto.Query
   import Mimic
   import Phoenix.LiveViewTest
 
@@ -1914,6 +1915,451 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("#question-option-1") |> render_click()
       view |> element("#question-tab-1") |> render_click()
       assert has_element?(view, "#question-prompt", "How many per page?")
+    end
+  end
+
+  describe "comments on the picked design" do
+    setup %{task: task, run: run} do
+      {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+      {:ok, run} = Pipeline.update_run(run, %{conversation_id: "sess_plan_comments"})
+      dir = Path.join(task.scratch_path, "design")
+      File.mkdir_p!(dir)
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+
+      for key <- ["waiting-lanes", "one-queue"] do
+        File.write!(Path.join(dir, "#{key}.html"), ~s(<label id="group-by-project">Group by project</label>))
+        File.write!(Path.join(dir, "#{key}.png"), "png bytes")
+      end
+
+      File.write!(
+        Path.join(dir, "manifest.json"),
+        ~s({"options": [{"key": "waiting-lanes", "title": "Lanes by what they wait on"}, {"key": "one-queue", "title": "One queue"}]})
+      )
+
+      pick = fn ->
+        File.write!(
+          Path.join(dir, "manifest.json"),
+          ~s({"options": [{"key": "waiting-lanes", "title": "Lanes by what they wait on"}]})
+        )
+
+        File.rm!(Path.join(dir, "one-queue.html"))
+        File.write!(Path.join(dir, "picked"), "waiting-lanes")
+      end
+
+      element = %{
+        "selector" => "#group-by-project",
+        "text" => "Group by project",
+        "tag" => "label",
+        "html" => ~s(<label id="group-by-project">Group by project</label>),
+        "width" => 160,
+        "height" => 20,
+        "x" => 1300,
+        "y" => 90
+      }
+
+      %{task: task, run: run, dir: dir, pick: pick, element: element}
+    end
+
+    test "the Comment control sits above the frame, outside it, before and after a pick", %{
+      conn: conn,
+      task: task,
+      pick: pick
+    } do
+      for picked? <- [false, true] do
+        if picked?, do: pick.()
+        assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+        view |> element("#plan-item-design") |> render_click()
+
+        assert has_element?(view, "#design-comment-toggle")
+        refute has_element?(view, "[id^='design-frame-'] #design-comment-control")
+
+        html = view |> element("#design-frame-waiting-lanes") |> render()
+        assert html |> Floki.parse_fragment!() |> Floki.find("button, form, a") == []
+        assert :binary.match(render(view), "design-comment-control") < :binary.match(render(view), "design-frame-")
+      end
+    end
+
+    test "before a pick Comment is disabled with its reason, and nothing turns commenting on", %{
+      conn: conn,
+      task: task,
+      element: element
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#plan-item-design") |> render_click()
+
+      assert has_element?(view, "#design-comment-toggle[disabled]")
+      assert has_element?(view, "#design-comment-hint", "Pick a design to comment on it.")
+
+      view |> with_target("#plan-stage") |> render_click("toggle_commenting", %{})
+      view |> with_target("#plan-stage") |> render_hook("select_element", element)
+
+      assert has_element?(view, "#design-frame-waiting-lanes[data-commenting='false'][data-comments='false']")
+      refute has_element?(view, "[data-qa='plan_comment_form']")
+      refute has_element?(view, "#design-page-waiting-lanes-" <> "x")
+      refute render(view) =~ "comments=1"
+    end
+
+    test "after the pick a clicked element opens the comment box, and saving adds a marker and a row", %{
+      conn: conn,
+      task: task,
+      pick: pick,
+      element: element
+    } do
+      pick.()
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#plan-item-design") |> render_click()
+
+      assert has_element?(view, ~s(iframe[src*="comments=1"]))
+      refute has_element?(view, ~s(#open-design-waiting-lanes[href*="comments=1"]))
+
+      view |> with_target("#plan-stage") |> render_hook("select_element", element)
+      refute has_element?(view, "[data-qa='plan_comment_form']")
+
+      view |> element("#design-comment-toggle") |> render_click()
+      assert has_element?(view, "#design-comment-toggle[aria-pressed='true']", "Commenting")
+      assert has_element?(view, "#design-frame-waiting-lanes[data-commenting='true'].cursor-crosshair")
+
+      view |> with_target("#plan-stage") |> render_hook("select_element", element)
+      assert has_element?(view, "#design-frame-waiting-lanes [data-qa='plan_comment_form']", "Group by project")
+      assert has_element?(view, "#design-frame-waiting-lanes[data-selected='#group-by-project']")
+
+      view |> element("[data-qa='plan_comment_cancel']") |> render_click()
+      refute has_element?(view, "[data-qa='plan_comment_form']")
+
+      view |> with_target("#plan-stage") |> render_hook("select_element", element)
+      view |> form("[data-qa='plan_comment_form']", %{"body" => "   "}) |> render_submit()
+      assert has_element?(view, "[data-qa='plan_comment_form']")
+
+      view |> form("[data-qa='plan_comment_form']", %{"body" => "Turn this on by default."}) |> render_submit()
+      refute has_element?(view, "[data-qa='plan_comment_form']")
+
+      [frame] = view |> render() |> Floki.parse_document!() |> Floki.find("#design-frame-waiting-lanes")
+
+      assert [[%{"number" => 1, "selector" => "#group-by-project", "id" => "pcm_" <> _rest}]] =
+               frame |> Floki.attribute("data-markers") |> Enum.map(&Jason.decode!/1)
+
+      assert has_element?(view, "#plan-comment-tray [data-qa='plan_comment_row']", "Turn this on by default.")
+      assert has_element?(view, "#send-plan-comments", "Send 1")
+
+      view |> with_target("#plan-stage") |> render_hook("stop_commenting", %{})
+      assert has_element?(view, "#design-comment-toggle[aria-pressed='false']")
+    end
+
+    test "a kept state is taken back after a reload only on the pick while Plan can be messaged", %{
+      conn: conn,
+      task: task,
+      run: run,
+      pick: pick,
+      element: element
+    } do
+      kept = %{"commenting" => true, "draft" => Map.merge(element, %{"option_key" => "waiting-lanes", "body" => "Half"})}
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#plan-item-design") |> render_click()
+      view |> with_target("#plan-stage") |> render_hook("restore_commenting", kept)
+      refute has_element?(view, "[data-qa='plan_comment_form']")
+      assert has_element?(view, "#design-frame-waiting-lanes[data-commenting='false']")
+
+      pick.()
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#plan-item-design") |> render_click()
+      other = put_in(kept, ["draft", "option_key"], "one-queue")
+      view |> with_target("#plan-stage") |> render_hook("restore_commenting", other)
+      assert has_element?(view, "#design-frame-waiting-lanes[data-commenting='false']")
+
+      view |> with_target("#plan-stage") |> render_hook("restore_commenting", kept)
+      assert has_element?(view, "#design-frame-waiting-lanes[data-commenting='true']")
+      assert has_element?(view, "[data-qa='plan_comment_body']", "Half")
+      assert has_element?(view, "[data-qa='plan_comment_form']", "Group by project")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#plan-item-design") |> render_click()
+
+      view
+      |> with_target("#plan-stage")
+      |> render_hook("restore_commenting", %{"commenting" => true, "draft" => nil})
+
+      assert has_element?(view, "#design-frame-waiting-lanes[data-commenting='true']")
+
+      Repo.update_all(from(r in Run, where: r.id == ^run.id), set: [conversation_id: nil])
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#plan-item-design") |> render_click()
+      view |> with_target("#plan-stage") |> render_hook("restore_commenting", kept)
+      assert has_element?(view, "#design-frame-waiting-lanes[data-commenting='false']")
+      assert has_element?(view, "#design-comment-toggle[disabled]")
+      assert has_element?(view, "#design-comment-hint", "Cannot chat with plan role yet")
+    end
+
+    test "unsent comments are read again on a fresh mount, and another person never sees them", %{
+      conn: conn,
+      task: task,
+      scope: scope,
+      run: run,
+      pick: pick,
+      element: element
+    } do
+      pick.()
+
+      {:ok, %{id: id}} =
+        Pipeline.create_plan_comment(scope, run, %{
+          target: :design,
+          option_key: "waiting-lanes",
+          selector: element["selector"],
+          element_text: element["text"],
+          element_tag: element["tag"],
+          capture: %{html: element["html"], width: 160, height: 20},
+          body: "Turn this on by default."
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#plan-item-design") |> render_click()
+      assert has_element?(view, "#plan-comment-#{id}")
+      assert render(view) =~ id
+
+      {:ok, someone} =
+        Users.register_oauth_user(%{github_id: "gh_task_live_pcm", login: "someone_pcm", email: "pcm@example.com"})
+
+      {:ok, someone} = Users.update_user(system_scope(), someone, %{project_ids: [task.project_id]})
+      assert {:ok, theirs, _html} = live(log_in_user(build_conn(), someone), ~p"/tasks/#{task.id}")
+      theirs |> element("#plan-item-design") |> render_click()
+      refute has_element?(theirs, "#plan-comment-tray")
+      refute render(theirs) =~ id
+
+      view |> element("#send-plan-comments") |> render_click()
+      _settled = render(theirs)
+      refute has_element?(theirs, "#plan-comment-tray")
+      refute has_element?(theirs, ~s(#design-frame-waiting-lanes[data-markers*="#{id}"]))
+    end
+
+    test "Send posts one message that reads as a card, and every tab of the author's empties without a reload", %{
+      conn: conn,
+      task: task,
+      scope: scope,
+      run: run,
+      pick: pick,
+      element: element
+    } do
+      pick.()
+
+      attrs = %{
+        target: :design,
+        option_key: "waiting-lanes",
+        selector: element["selector"],
+        element_text: element["text"],
+        element_tag: element["tag"],
+        capture: %{html: element["html"], width: 160, height: 20},
+        body: "Turn this on by default."
+      }
+
+      {:ok, _first} = Pipeline.create_plan_comment(scope, run, attrs)
+      {:ok, %{id: gone_id}} = Pipeline.create_plan_comment(scope, run, %{attrs | selector: "#gone", body: "This went."})
+
+      assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}")
+      for view <- [one, two], do: view |> element("#plan-item-design") |> render_click()
+
+      one |> with_target("#conversation-tab-root") |> render_hook("plan_comment_anchors", %{"missing" => [gone_id]})
+      assert has_element?(one, "#plan-comment-#{gone_id}[data-found='false']", "No longer found")
+      assert has_element?(two, "#plan-comment-#{gone_id}[data-found='true']")
+
+      one |> element("#send-plan-comments") |> render_click()
+
+      assert has_element?(one, "[data-qa='plan_comment_card']", "2 comments on the design")
+      assert has_element?(one, "[data-qa='plan_comment_card']", "This went.")
+
+      for view <- [one, two] do
+        _settled = render(view)
+        refute has_element?(view, "#plan-comment-tray")
+        [frame] = view |> render() |> Floki.parse_document!() |> Floki.find("#design-frame-waiting-lanes")
+        assert Floki.attribute(frame, "data-markers") == ["[]"]
+      end
+
+      two |> with_target("#conversation-tab-root") |> render_click("send_plan_comments", %{})
+      assert Enum.count(Pipeline.list_run_events(run), &(&1.line =~ "comments on the design")) == 1
+    end
+
+    test "a round queued on a working Plan and then cancelled comes back to the tray, unlearned", %{
+      conn: conn,
+      task: task,
+      scope: scope,
+      run: run,
+      pick: pick,
+      element: element
+    } do
+      pick.()
+
+      {:ok, %{id: id}} =
+        Pipeline.create_plan_comment(scope, run, %{
+          target: :design,
+          option_key: "waiting-lanes",
+          selector: element["selector"],
+          element_text: element["text"],
+          element_tag: element["tag"],
+          capture: %{html: element["html"], width: 160, height: 20},
+          body: "Turn this on by default."
+        })
+
+      {:ok, _running} = Pipeline.update_run(run, %{status: :running})
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#plan-item-design") |> render_click()
+      assert has_element?(view, "#plan-comment-tray-hint", "Plan is working.")
+
+      view |> element("#send-plan-comments") |> render_click()
+      refute has_element?(view, "#plan-comment-tray")
+      assert has_element?(view, "#queued-banner", "1 comment on the design")
+
+      view |> element("#cancel-queued-message") |> render_click()
+
+      assert has_element?(view, "#plan-comment-#{id}", "Turn this on by default.")
+      refute has_element?(view, "#queued-banner")
+      assert view |> element("#chat-input") |> render() =~ ~r{<textarea[^>]*></textarea>}
+      assert [] = Repo.all(from o in Rail.Learnings.Schemas.Observation, where: o.task_id == ^task.id)
+    end
+
+    test "Remove takes a row and its marker away, also once the element is no longer found", %{
+      conn: conn,
+      task: task,
+      scope: scope,
+      run: run,
+      pick: pick
+    } do
+      pick.()
+
+      {:ok, %{id: id}} =
+        Pipeline.create_plan_comment(scope, run, %{
+          target: :design,
+          option_key: "waiting-lanes",
+          selector: "#gone",
+          element_text: "",
+          element_tag: "div",
+          capture: %{html: "<div></div>", width: 10, height: 10},
+          body: "Gone."
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#plan-item-design") |> render_click()
+      view |> with_target("#conversation-tab-root") |> render_hook("plan_comment_anchors", %{"missing" => [id]})
+      view |> with_target("#conversation-tab-root") |> render_hook("plan_comment_anchors", %{"missing" => "nonsense"})
+      assert has_element?(view, "#plan-comment-#{id}", "No longer found")
+
+      view |> element("#plan-comment-tray-fold") |> render_click()
+      refute has_element?(view, "#plan-comment-#{id}")
+      view |> element("#plan-comment-tray-fold") |> render_click()
+
+      view |> element("#remove-plan-comment-#{id}") |> render_click()
+      refute has_element?(view, "#plan-comment-tray")
+      assert Pipeline.list_plan_comments(scope, task) == []
+      view |> with_target("#conversation-tab-root") |> render_click("remove_plan_comment", %{"id" => id})
+    end
+
+    test "with the task at Engineer, a sent comment resumes Plan, and a plan Plan revises shows on the Plan item", %{
+      conn: conn,
+      task: task,
+      run: run,
+      pick: pick,
+      element: element
+    } do
+      pick.()
+
+      {:ok, _plan} =
+        Pipeline.save_plan(task, %{
+          plan: String.replace(@plan, "Extend the module.", "As approved."),
+          design: "waiting-lanes"
+        })
+
+      {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
+
+      Repo.insert!(%ImplementationPlan{
+        task_id: task.id,
+        content: "## Implementation plan\n\nAs approved.",
+        captured_at: DateTime.utc_now()
+      })
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{run.role_id}")
+      view |> element("#plan-item-design") |> render_click()
+      view |> element("#design-comment-toggle") |> render_click()
+      view |> with_target("#plan-stage") |> render_hook("select_element", element)
+      view |> form("[data-qa='plan_comment_form']", %{"body" => "Drop this."}) |> render_submit()
+      view |> element("#send-plan-comments") |> render_click()
+
+      assert Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "1 comment on the design"))
+
+      {:ok, _plan} =
+        Pipeline.save_plan(task, %{
+          plan: String.replace(@plan, "Extend the module.", "Revised for the comment."),
+          design: "waiting-lanes"
+        })
+
+      _settled = render(view)
+      view |> element("#plan-item-plan") |> render_click()
+      assert has_element?(view, "#plan-plan", "Revised for the comment.")
+    end
+
+    test "a comment the design or the chat moved under says why it was not saved", %{
+      conn: conn,
+      task: task,
+      run: run,
+      dir: dir,
+      pick: pick,
+      element: element
+    } do
+      pick.()
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#plan-item-design") |> render_click()
+      view |> element("#design-comment-toggle") |> render_click()
+      view |> with_target("#plan-stage") |> render_hook("select_element", element)
+      view |> with_target("#plan-stage") |> render_hook("select_element", %{"selector" => 7})
+      assert has_element?(view, "[data-qa='plan_comment_form']", "Group by project")
+      view |> form("[data-qa='plan_comment_form']", %{"body" => "Typing"}) |> render_change()
+
+      low = %{element | "y" => 900, "height" => 60}
+      view |> with_target("#plan-stage") |> render_hook("select_element", low)
+      assert view |> element("[data-qa='plan_comment_form']") |> render() =~ "bottom: calc(16.667% + 10px)"
+
+      # An element covering the frame from its top has no room above or below, so the box opens inside it.
+      tall = %{element | "y" => 0, "height" => 1080}
+      view |> with_target("#plan-stage") |> render_hook("select_element", tall)
+      style = view |> element("[data-qa='plan_comment_form']") |> render()
+      assert style =~ "top: calc(0.0% + 10px)"
+      refute style =~ "bottom: calc("
+
+      scrolled = %{element | "y" => -400, "height" => 1300}
+      view |> with_target("#plan-stage") |> render_hook("select_element", scrolled)
+      assert view |> element("[data-qa='plan_comment_form']") |> render() =~ "top: calc(0.0% + 10px)"
+
+      view |> with_target("#plan-stage") |> render_hook("select_element", element)
+      assert view |> element("[data-qa='plan_comment_form']") |> render() =~ "top: calc(10.185% + 10px)"
+
+      File.write!(
+        Path.join(dir, "manifest.json"),
+        ~s({"options": [{"key": "waiting-lanes", "title": "Lanes"}, {"key": "one-queue", "title": "One queue"}]})
+      )
+
+      File.write!(Path.join(dir, "picked"), "one-queue")
+      view |> form("[data-qa='plan_comment_form']", %{"body" => "Moved under me."}) |> render_submit()
+      assert has_element?(view, "#plan-error", "Only the picked design takes comments.")
+
+      File.write!(Path.join(dir, "picked"), "waiting-lanes")
+      _reread = render(view)
+      view |> with_target("#plan-stage") |> render_hook("select_element", element)
+      File.rm!(Path.join(dir, "picked"))
+      view |> form("[data-qa='plan_comment_form']", %{"body" => "Unpicked under me."}) |> render_submit()
+      assert has_element?(view, "#plan-error", "Pick a design to comment on it.")
+
+      # A page opened once the pick is back can comment again.
+      File.write!(Path.join(dir, "picked"), "waiting-lanes")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#plan-item-design") |> render_click()
+      view |> element("#design-comment-toggle") |> render_click()
+      view |> with_target("#plan-stage") |> render_hook("select_element", element)
+      Repo.update_all(from(r in Run, where: r.id == ^run.id), set: [conversation_id: nil])
+      view |> form("[data-qa='plan_comment_form']", %{"body" => "Too late."}) |> render_submit()
+
+      assert has_element?(view, "#plan-error", "Plan cannot be messaged yet.")
+      refute has_element?(view, "[data-qa='plan_comment_form']")
+      view |> with_target("#plan-stage") |> render_click("save_plan_comment", %{"body" => "No box."})
+      view |> with_target("#plan-stage") |> render_click("change_plan_comment", %{"body" => "No box."})
     end
   end
 

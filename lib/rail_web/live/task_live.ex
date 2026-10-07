@@ -432,6 +432,17 @@ defmodule RailWeb.TaskLive do
     {:noreply, socket}
   end
 
+  # The reader's unsent plan comments moved, in another tab or this one: the Plan stage
+  # draws their markers and the conversation their tray, and each reads its own.
+  def handle_info({:plan_comments_changed, task_id}, socket) do
+    with %{pane: :plan, task_id: ^task_id, selected_role: %Role{} = role} <- socket.assigns do
+      send_update(PlanStage, id: stage_component_id(role), reload_comments: true)
+      send_update(RunConversation, id: "run-conversation", reload_plan_comments: true)
+    end
+
+    {:noreply, socket}
+  end
+
   # A queued message went out, or came back, on its own time.
   def handle_info({:run_changed, _run_id}, socket) do
     {:noreply, refresh_task(socket)}
@@ -895,7 +906,8 @@ defmodule RailWeb.TaskLive do
   end
 
   # Sent and resolved comments are everyone's, so the task has a topic; unsent ones
-  # are the reader's alone, so every tab of theirs also hears their own topic.
+  # are the reader's alone, so every tab of theirs also hears their own topic. Plan
+  # comments are only ever unsent on the page, so they have only the reader's topic.
   defp watch_diff_comments(socket, %Task{id: task_id}) do
     watched = socket.assigns.watched_comments_task_id
     user_id = socket.assigns.current_scope.user.id
@@ -903,8 +915,10 @@ defmodule RailWeb.TaskLive do
     if connected?(socket) and watched != task_id do
       if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "diff_comments:#{watched}")
       if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "diff_comments:#{watched}:#{user_id}")
+      if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "plan_comments:#{watched}:#{user_id}")
       Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task_id}")
       Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task_id}:#{user_id}")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "plan_comments:#{task_id}:#{user_id}")
     end
 
     assign(socket, :watched_comments_task_id, if(connected?(socket), do: task_id, else: watched))

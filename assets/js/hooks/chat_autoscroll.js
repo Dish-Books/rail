@@ -15,7 +15,11 @@ export const ChatAutoscroll = {
     this.onRead = () => {
       this.reading = true;
       clearTimeout(this.readingTimer);
-      if (!this.pressed) this.readingTimer = setTimeout(() => (this.reading = false), 300);
+      if (!this.pressed) {
+        this.readingTimer = setTimeout(() => {
+          this.reading = false;
+        }, 300);
+      }
     };
 
     // A held scrollbar thumb or selection drag is the reader's for as long as it is held.

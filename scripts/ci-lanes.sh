@@ -37,7 +37,7 @@ STATE="_build/ci-lanes/$TREE"
 COVERED="$STATE/covered"
 
 # One per priority-1 hook in .pre-commit-config.yaml.
-LANES="dev tests credo"
+LANES="dev tests tooling credo"
 
 slug() { printf '%s' "$1" | tr -cs 'a-zA-Z0-9' '_'; }
 
@@ -117,9 +117,9 @@ lane_dev() {
   gate sobelow mix sobelow --skip --private
   # CI serves no page, so this is the only place a broken bundle would show.
   staged_gate assets \
-    "pnpm install" "cd assets && pnpm install --frozen-lockfile" \
     "esbuild.install" "mix esbuild.install --if-missing" \
-    "esbuild" "mix esbuild rail --minify"
+    "esbuild" "mix esbuild rail --minify" \
+    "esbuild overlay" "mix esbuild design_overlay --minify"
 }
 
 lane_tests() {
@@ -130,6 +130,13 @@ lane_tests() {
     "ecto.migrate" "mix ecto.migrate --quiet" \
     "coveralls" "mix coveralls.json --warnings-as-errors" \
     "coverage" "scripts/ci-coverage-100.sh cover/excoveralls.json app"
+}
+
+# No mix: the assets' own tests and Biome.
+lane_tooling() {
+  staged_gate biome \
+    "assets.test" "cd assets && pnpm test" \
+    "biome" "cd assets && pnpm exec biome ci ."
 }
 
 lane_credo() {
@@ -146,7 +153,7 @@ lane_credo() {
 # ── modes ───────────────────────────────────────────────────────────────────
 
 usage() {
-  echo "usage: ci-lanes.sh prelude | lane <dev|tests|credo> | receipt" >&2
+  echo "usage: ci-lanes.sh prelude | lane <dev|tests|tooling|credo> | receipt" >&2
   exit 2
 }
 
@@ -172,7 +179,10 @@ prelude)
   mkdir -p "$STATE"
   log="$STATE/prelude.log"
   : >"$log"
-  if ! step "$log" "postgres" wait_for_postgres || ! step "$log" "deps.get" mix deps.get; then
+  # pnpm install is here rather than in a gate, so the assets gate and the tooling lane never install at once.
+  if ! step "$log" "postgres" wait_for_postgres ||
+    ! step "$log" "deps.get" mix deps.get ||
+    ! step "$log" "pnpm install" bash -c 'cd assets && pnpm install --frozen-lockfile'; then
     cat "$log"
     exit 1
   fi

@@ -1245,4 +1245,151 @@ defmodule RailWeb.Live.RunConversationTest do
 
     assert html =~ ~s(id="retry-run")
   end
+
+  describe "plan comments" do
+    setup %{task: task, roles: roles} do
+      dir = Path.join(task.scratch_path, "design")
+      File.mkdir_p!(dir)
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+      File.write!(
+        Path.join(dir, "manifest.json"),
+        ~s({"options": [{"key": "waiting-lanes", "title": "Lanes by what they wait on"}]})
+      )
+
+      File.write!(Path.join(dir, "picked"), "waiting-lanes")
+
+      {:ok, plan} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:plan].id,
+          status: :finished,
+          stage_outcome: :done,
+          conversation_id: "conv_plan_comments",
+          started_at: DateTime.utc_now()
+        })
+
+      {:ok, reader} =
+        Rail.Users.register_oauth_user(%{github_id: "gh_cnv_pcm", login: "maya", name: "Maya", email: "m@example.com"})
+
+      scope = user_scope(user: reader)
+
+      {:ok, _comment} =
+        Pipeline.create_plan_comment(scope, plan, %{
+          target: :design,
+          option_key: "waiting-lanes",
+          selector: "#group-by-project",
+          element_text: "Group by project",
+          element_tag: "label",
+          capture: %{html: "<label>Group by project</label>", width: 160, height: 20},
+          body: "Turn this on by default."
+        })
+
+      %{plan: plan, scope: scope}
+    end
+
+    test "the reader's unsent comments wait above the composer on the Plan run, and on no other run", %{
+      task: task,
+      roles: roles,
+      roles_map: roles_map,
+      plan: plan,
+      scope: scope
+    } do
+      html =
+        render_component(RunConversation,
+          id: "conv",
+          task: task,
+          runs: [plan],
+          roles_map: roles_map,
+          current_scope: scope
+        )
+
+      doc = Floki.parse_fragment!(html)
+
+      assert doc |> Floki.find("#plan-comment-tray") |> Floki.text() =~ "Turn this on by default."
+      assert doc |> Floki.find("#send-plan-comments") |> Floki.text() =~ "Send 1"
+      assert :binary.match(html, "plan-comment-tray") < :binary.match(html, "composer-root")
+
+      {:ok, engineer} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:engineer].id,
+          status: :finished,
+          conversation_id: "conv_engineer_pcm",
+          started_at: DateTime.utc_now()
+        })
+
+      html =
+        render_component(RunConversation,
+          id: "conv",
+          task: task,
+          runs: [engineer],
+          roles_map: roles_map,
+          current_scope: scope
+        )
+
+      refute html =~ "plan-comment-tray"
+
+      html = render_component(RunConversation, id: "conv", task: task, runs: [plan], roles_map: roles_map)
+      refute html =~ "plan-comment-tray"
+    end
+
+    test "a sent round renders as a card under its sender, and a plain message as the plain bubble", %{
+      task: task,
+      roles_map: roles_map,
+      plan: plan,
+      scope: scope
+    } do
+      [comment] = Pipeline.list_plan_comments(scope, task)
+      message = Rail.Pipeline.Schemas.PlanComment.calculate_message([comment], Pipeline.read_design(task, pages: false))
+      tag = "[human:#{scope.user.id}]"
+      Pipeline.append_run_events(plan.id, nil, Enum.map(String.split(message, "\n"), &"#{tag} #{&1}"))
+      Pipeline.append_run_events(plan.id, nil, ["[rail] ok", "#{tag} 1 comment on the design, I think."])
+
+      html =
+        render_component(RunConversation,
+          id: "conv",
+          task: task,
+          runs: [plan],
+          roles_map: roles_map,
+          current_scope: scope
+        )
+
+      doc = Floki.parse_fragment!(html)
+
+      assert [card] = Floki.find(doc, "[data-qa='plan_comment_card']")
+      assert Floki.text(card) =~ "You"
+      assert Floki.text(card) =~ "1 comment on the design"
+      assert Floki.text(card) =~ "Lanes by what they wait on"
+      assert Floki.text(card) =~ "#group-by-project"
+      assert Floki.text(card) =~ "Turn this on by default."
+      assert [bubble] = Floki.find(doc, "[data-qa='human-bubble']")
+      assert Floki.text(bubble) =~ "1 comment on the design, I think."
+    end
+
+    test "where the Plan chat cannot take a message the rows stay with Remove, Send goes, and the banner says why", %{
+      task: task,
+      roles_map: roles_map,
+      plan: plan,
+      scope: scope
+    } do
+      Repo.update_all(from(r in Rail.Pipeline.Schemas.Run, where: r.id == ^plan.id), set: [conversation_id: nil])
+      plan = Repo.reload!(plan)
+
+      html =
+        render_component(RunConversation,
+          id: "conv",
+          task: task,
+          runs: [plan],
+          roles_map: roles_map,
+          current_scope: scope
+        )
+
+      assert html =~ "Turn this on by default."
+      assert html =~ "remove-plan-comment-"
+      refute html =~ "send-plan-comments"
+      assert html =~ ~s(id="unavailable-banner")
+      assert html =~ "has not started a conversation"
+    end
+  end
 end

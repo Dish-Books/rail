@@ -9,6 +9,13 @@ config :esbuild,
       ~w(js/app.js --bundle --splitting --format=esm --chunk-names=chunks/[name]-[hash] --target=es2020 --outdir=../priv/static/assets --external:/fonts/* --external:/images/*),
     cd: Path.expand("../assets", __DIR__),
     env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
+  ],
+  # The design page loads this as a classic script from Rail's origin; it starts the overlay only there.
+  design_overlay: [
+    args:
+      ~w(js/hooks/design_frame.js --bundle --format=iife --target=es2020 --outfile=../priv/static/assets/design_overlay.js),
+    cd: Path.expand("../assets", __DIR__),
+    env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
   ]
 
 config :logger, :default_formatter,

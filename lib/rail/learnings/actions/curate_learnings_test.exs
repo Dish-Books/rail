@@ -629,6 +629,59 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     assert text =~ "*Provisional since the last run 1:* from a diff comment on CUR-1"
   end
 
+  test "a pass over a provisional rule from a design comment names it as a design comment", %{
+    project: project,
+    tasks: [one | _rest]
+  } do
+    %{workspace: workspace} = connect_slack_channel(project)
+
+    {:ok, _project} =
+      Projects.update_project(system_scope(), project, %{
+        "learnings_slack_workspace_id" => workspace.id,
+        "learnings_channel_external_id" => "C_LEARN"
+      })
+
+    {:ok, [_provisional]} =
+      Learnings.record_corrections(one, [
+        %Rail.Pipeline.Schemas.PlanComment{
+          id: "pcm_cur",
+          target: :design,
+          option_key: "lanes",
+          selector: "#needs",
+          element_text: "Needs you",
+          element_tag: "h2",
+          body: "Say how long it waited",
+          capture: %Rail.Pipeline.Schemas.PlanCommentCapture{html: "<h2>Needs you</h2>", width: 90, height: 20}
+        }
+      ])
+
+    test = self()
+
+    Req.Test.stub(Rail.Slack, fn conn ->
+      case conn.request_path do
+        "/api/chat.postMessage" ->
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+          send(test, {:posted, Jason.decode!(body)["text"]})
+          Req.Test.json(conn, %{"ok" => true, "ts" => "1790000000.000902"})
+
+        "/api/chat.getPermalink" ->
+          Req.Test.json(conn, %{"ok" => true, "permalink" => "https://slack.example/p3"})
+      end
+    end)
+
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
+      send(test, {:read, File.read!(Path.join(opts[:cd], "observations.md"))})
+      File.write!(Path.join(opts[:cd], "result.json"), ~s({"outcomes": [], "proposals": []}))
+      {:ok, ""}
+    end)
+
+    assert {:ok, %CuratorPass{}} = Learnings.curate_learnings(project)
+    assert_received {:read, observations}
+    assert observations =~ "Design comment"
+    assert_received {:posted, text}
+    assert text =~ "*Provisional since the last run 1:* from a design comment on CUR-1"
+  end
+
   test "a third task's sighting linked to a pending add on a retired rule activates nothing", %{
     project: project,
     tasks: [one, two, three | _rest],

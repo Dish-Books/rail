@@ -12,6 +12,7 @@ defmodule RailWeb.Live.RunConversation do
   import Rail.Pipeline.Utils.DrivingLine
 
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Turn
   alias Rail.Tools
@@ -45,6 +46,11 @@ defmodule RailWeb.Live.RunConversation do
     end
   end
 
+  # Another of the reader's tabs saved, removed or sent plan comments.
+  def update(%{reload_plan_comments: true}, socket) do
+    {:ok, assign_plan_comments(socket)}
+  end
+
   def update(assigns, socket) do
     socket = assign_defaults(socket)
     runs = sort_runs(assigns.runs)
@@ -57,6 +63,7 @@ defmodule RailWeb.Live.RunConversation do
       |> assign(:selected_run, selected_run)
       |> assign_line(selected_run)
       |> assign_run_events(load_run_events(selected_run))
+      |> assign_plan_comments()
 
     {:ok, socket}
   end
@@ -201,6 +208,16 @@ defmodule RailWeb.Live.RunConversation do
             </button>
           </div>
 
+          <.plan_comment_tray
+            :if={not @show_raw_log}
+            comments={@plan_comments}
+            missing={@missing_anchors}
+            open={@tray_open}
+            can_send={Run.can_chat?(@selected_run)}
+            plan_running={Run.running?(@selected_run)}
+            target={@myself}
+          />
+
           <.composer
             :if={not @show_raw_log}
             task={@task}
@@ -307,6 +324,7 @@ defmodule RailWeb.Live.RunConversation do
       |> assign(:usage_waiting?, usage_waiting?)
       |> assign(:account, if(not usage_waiting?, do: turn_account(msg.process)))
       |> assign(:show_usage_card, usage_waiting? and match?(%{os_process: %{id: ^process_id}}, assigns.usage_wait))
+      |> assign(:round, msg.author == :human && PlanComment.parse_message(msg.content || ""))
 
     ~H"""
     <%= case @author do %>
@@ -355,8 +373,11 @@ defmodule RailWeb.Live.RunConversation do
         </div>
         <.usage_card :if={@show_usage_card} wait={@usage_wait} target={@target} />
       <% :human -> %>
+        <%!-- A round of plan comments reads back into the card it was sent from. --%>
+        <.plan_comment_card :if={@round} id={"msg-#{@idx}"} sender={@sender} round={@round} />
         <!-- 4.8 _HumanBubble (right-aligned, plain selectable text, NOT markdown) -->
         <div
+          :if={!@round}
           id={"msg-#{@idx}"}
           data-qa="human-bubble"
           class="w-fit max-w-[85%] ml-auto mt-3.5 px-3 py-2 rounded-xl rounded-br-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 space-y-1"
@@ -1105,6 +1126,7 @@ defmodule RailWeb.Live.RunConversation do
       socket
       |> assign(:chat_input, restore_draft(queued, socket.assigns.chat_input))
       |> select(run)
+      |> assign_plan_comments()
 
     {:noreply, socket}
   end
@@ -1121,6 +1143,43 @@ defmodule RailWeb.Live.RunConversation do
       {:noreply, socket}
     end
   end
+
+  def handle_event("toggle_plan_comment_tray", _params, socket) do
+    {:noreply, assign(socket, :tray_open, not socket.assigns.tray_open)}
+  end
+
+  # Read back rather than dropped from the list, since another tab may have sent it.
+  def handle_event("remove_plan_comment", %{"id" => id}, socket) do
+    case Enum.find(socket.assigns.plan_comments, &(&1.id == id)) do
+      %PlanComment{} = comment ->
+        {:ok, _removed} = Pipeline.delete_plan_comment(socket.assigns.current_scope, comment)
+        {:noreply, assign_plan_comments(socket)}
+
+      nil ->
+        {:noreply, socket}
+    end
+  end
+
+  # Nothing left to send is a second click or another tab having sent them, and a chat that closed says why in its
+  # own banner, so either way the tray is only read again.
+  def handle_event("send_plan_comments", _params, socket) do
+    case Pipeline.send_plan_comments(socket.assigns.current_scope, socket.assigns.selected_run) do
+      {:ok, _delivery, run} ->
+        send(self(), :task_changed)
+        socket = socket |> select(run) |> assign_plan_comments()
+        {:noreply, socket}
+
+      {:error, _reason} ->
+        {:noreply, assign_plan_comments(socket)}
+    end
+  end
+
+  # The frame reports which comments' elements it could not find on the page it loaded.
+  def handle_event("plan_comment_anchors", %{"missing" => missing}, socket) when is_list(missing) do
+    {:noreply, assign(socket, :missing_anchors, Enum.filter(missing, &is_binary/1))}
+  end
+
+  def handle_event("plan_comment_anchors", _params, socket), do: {:noreply, socket}
 
   def handle_event("stop_and_send_message", _params, socket) do
     run = socket.assigns.selected_run
@@ -1201,7 +1260,19 @@ defmodule RailWeb.Live.RunConversation do
     |> assign_new(:senders, fn -> %{} end)
     |> assign_new(:line, fn -> nil end)
     |> assign_new(:usage_wait, fn -> nil end)
+    |> assign_new(:plan_comments, fn -> [] end)
+    |> assign_new(:missing_anchors, fn -> [] end)
+    |> assign_new(:tray_open, fn -> true end)
   end
+
+  # Only the Plan run's conversation is where plan comments wait to be sent.
+  defp assign_plan_comments(%{assigns: %{current_scope: %{user: %{}} = scope, task: task}} = socket) do
+    if plan_run?(socket.assigns),
+      do: assign(socket, :plan_comments, Pipeline.list_plan_comments(scope, task)),
+      else: assign(socket, :plan_comments, [])
+  end
+
+  defp assign_plan_comments(socket), do: assign(socket, :plan_comments, [])
 
   # The log the component holds; the rendered lines and the turns read out of it
   # are both derived from it, so an appended batch only updates one list. The log
@@ -1240,6 +1311,8 @@ defmodule RailWeb.Live.RunConversation do
 
   defp plan_run?(%{selected_run: %Run{role_id: role_id}, roles_map: %{} = roles_map}),
     do: match?(%{stage: :plan}, roles_map[role_id])
+
+  defp plan_run?(_assigns), do: false
 
   # Only a Plan run that has stopped with no options saved had no screen; while it works the
   # Designer may still be on its way, so order of hand-offs proves nothing.

@@ -37,6 +37,9 @@ defmodule Rail.Pipeline.Utils.PlanSubagentsTest do
     assert designer =~ ~r/\AYou are the design agent./
     assert designer =~ "/tmp/rail/scratch/tsk_subagents/design/<key>.html"
     assert designer =~ "update the options it affects"
+    assert designer =~ "A comment on the design names its element by a CSS selector. Find the element with that selector"
+    assert designer =~ "save under the same key"
+    assert designer =~ "Keep the ids and structure of elements nobody commented on"
 
     assert architect =~ ~r/\AYou are the architect agent./
     assert architect =~ "Start as soon as the ticket is saved, while the Designer works"
