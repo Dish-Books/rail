@@ -5,6 +5,8 @@ defmodule RailWeb.Components.ElementPreviewTest do
 
   alias RailWeb.Components.ElementPreview
 
+  @reset "<style>html,body{margin:0;overflow:hidden}body>*:first-child{margin:0}</style>"
+
   test "renders one iframe with every sandbox restriction on, sized to the box and holding only the element" do
     capture = %{"html" => "<h2>Needs you <span>3</span></h2>", "width" => 180, "height" => 22}
     html = render_component(&ElementPreview.element_preview/1, id: "preview", capture: capture)
@@ -12,7 +14,7 @@ defmodule RailWeb.Components.ElementPreviewTest do
 
     assert [frame] = Floki.find(doc, "iframe")
     assert Floki.attribute(frame, "sandbox") == [""]
-    assert Floki.attribute(frame, "srcdoc") == ["<h2>Needs you <span>3</span></h2>"]
+    assert Floki.attribute(frame, "srcdoc") == [@reset <> "<h2>Needs you <span>3</span></h2>"]
     assert Floki.attribute(frame, "src") == []
     assert [fit] = Floki.find(doc, "[phx-hook='ElementPreview']")
     assert Floki.attribute(fit, "data-width") == ["180"]
@@ -34,7 +36,7 @@ defmodule RailWeb.Components.ElementPreviewTest do
     assert Floki.find(doc, "script") == []
     assert Floki.find(doc, "button") == []
     assert Floki.find(doc, "[onclick]") == []
-    assert doc |> Floki.find("iframe") |> Floki.attribute("srcdoc") == [hostile]
+    assert doc |> Floki.find("iframe") |> Floki.attribute("srcdoc") == [@reset <> hostile]
     refute html =~ "<script>"
   end
 end

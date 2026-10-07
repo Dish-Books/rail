@@ -85,8 +85,27 @@ export function cutHtml(html) {
   return html.slice(0, LIMITS.html) + CUT_MARK;
 }
 
+const UNSEEN = new Set(["script", "style", "template", "noscript"]);
+
+function seenText(node) {
+  if (node.nodeType === 3) return node.data;
+  if (UNSEEN.has(node.localName)) return "";
+  if (!node.childNodes) return node.textContent || "";
+  return Array.from(node.childNodes, seenText).join("");
+}
+
+// What a person sees the element say: never the source of a script or style inside it.
 export function elementText(element) {
-  return (element.textContent || "").split(/\s+/).filter(Boolean).join(" ").slice(0, LIMITS.text);
+  const text = typeof element.innerText === "string" ? element.innerText : seenText(element);
+  return text.split(/\s+/).filter(Boolean).join(" ").slice(0, LIMITS.text);
+}
+
+// A marker drawn in the mockup's own pixels shrinks with the frame, so it is drawn larger by as much, to stay about
+// 20px and readable on screen.
+export function markerBox(scale) {
+  const fit = typeof scale === "number" && Number.isFinite(scale) && scale > 0 ? Math.min(4, Math.max(0.05, scale)) : 1;
+  const size = 20 / fit;
+  return { size, font: 11 / fit, ring: 2 / fit, offset: size * 0.75 };
 }
 
 // What a comment keeps of its element: the element's own HTML and its box, and nothing else of the page.
@@ -201,7 +220,7 @@ export function shouldStartOverlay(script) {
 
 // --- Rail's page ---
 
-function frameState(el) {
+function frameState(el, scale) {
   let markers = [];
   try {
     markers = JSON.parse(el.dataset.markers || "[]");
@@ -215,7 +234,8 @@ function frameState(el) {
     commenting: el.dataset.commenting === "true",
     selected: el.dataset.selected || null,
     markers,
-    version: el.dataset.version || null
+    version: el.dataset.version || null,
+    scale
   };
 }
 
@@ -223,7 +243,11 @@ function frameState(el) {
 // reads the way its screenshot will; with comments on, it carries the mode, the clicks and the markers to the frame.
 export const DesignFrame = {
   mounted() {
-    this.observer = new ResizeObserver(() => this.fit());
+    // A new width is a new scale, which the markers are drawn for.
+    this.observer = new ResizeObserver(() => {
+      this.fit();
+      this.postState();
+    });
     this.observer.observe(this.el);
 
     this.onMessage = (event) => this.receive(event);
@@ -295,7 +319,7 @@ export const DesignFrame = {
 
   postState() {
     if (this.el.dataset.comments !== "true") return;
-    this.frame?.contentWindow?.postMessage(frameState(this.el), "*");
+    this.frame?.contentWindow?.postMessage(frameState(this.el, this.scale), "*");
   },
 
   receive(event) {
@@ -320,6 +344,7 @@ export const DesignFrame = {
     if (!frame) return;
 
     const scale = fitScale(this.el.clientWidth, VIEWPORT_WIDTH);
+    this.scale = scale;
     frame.style.width = `${VIEWPORT_WIDTH}px`;
     frame.style.height = `${VIEWPORT_HEIGHT}px`;
     frame.style.transformOrigin = "0 0";
@@ -383,7 +408,7 @@ function startOverlay(win) {
   const selectedOutline = root.querySelector("[data-kind='selected']");
   const markerLayer = root.querySelector(".markers");
 
-  let state = { commenting: false, selected: null, markers: [], version: null };
+  let state = { commenting: false, selected: null, markers: [], version: null, scale: 1 };
   let hovered = null;
   let lastMissing = null;
   let scheduled = false;
@@ -430,11 +455,16 @@ function startOverlay(win) {
       }
 
       const rect = element.getBoundingClientRect();
+      const box = markerBox(state.scale);
       const dot = doc.createElement("div");
       dot.className = "marker";
       dot.textContent = String(marker.number);
-      dot.style.left = `${Math.max(2, rect.left - 9)}px`;
-      dot.style.top = `${Math.max(2, rect.top - 9)}px`;
+      dot.style.width = `${box.size}px`;
+      dot.style.height = `${box.size}px`;
+      dot.style.fontSize = `${box.font}px`;
+      dot.style.boxShadow = `0 0 0 ${box.ring}px #fff, 0 ${box.ring}px ${3 * box.ring}px rgba(0, 0, 0, 0.5)`;
+      dot.style.left = `${Math.max(box.ring, rect.left - box.offset)}px`;
+      dot.style.top = `${Math.max(box.ring, rect.top - box.offset)}px`;
       markerLayer.append(dot);
     }
 
@@ -467,7 +497,8 @@ function startOverlay(win) {
       commenting: data.commenting === true,
       selected: typeof data.selected === "string" ? data.selected : null,
       markers,
-      version: typeof data.version === "string" ? data.version : null
+      version: typeof data.version === "string" ? data.version : null,
+      scale: data.scale
     };
     schedule();
   });

@@ -20,7 +20,7 @@ defmodule Rail.Pipeline.Actions.StopAndSendMessage do
   Stops `run` and immediately sends what was queued on it.
   """
   def stop_and_send_message(%Scope{} = scope, %Run{} = run, opts \\ []) do
-    {:ok, run, queued} = Pipeline.stop_run(scope, run, opts)
+    {:ok, run, queued} = Pipeline.stop_run(scope, run, Keyword.put(opts, :resending, true))
 
     case queued do
       text when is_binary(text) ->

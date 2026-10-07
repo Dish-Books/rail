@@ -900,7 +900,10 @@ defmodule RailWeb.LearningsLiveTest do
     assert has_element?(view, ~s(#learning-element iframe[sandbox=""][srcdoc]))
 
     doc = Floki.parse_document!(page)
-    assert doc |> Floki.find("#learning-element iframe") |> Floki.attribute("srcdoc") == [html]
+
+    assert doc |> Floki.find("#learning-element iframe") |> Floki.attribute("srcdoc") ==
+             ["<style>html,body{margin:0;overflow:hidden}body>*:first-child{margin:0}</style>" <> html]
+
     assert Floki.find(doc, "#learning-detail script") == []
     assert Floki.find(doc, "#learning-detail button[onclick]") == []
   end

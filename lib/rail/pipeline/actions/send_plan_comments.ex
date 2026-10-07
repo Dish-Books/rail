@@ -1,13 +1,14 @@
 defmodule Rail.Pipeline.Actions.SendPlanComments do
   @moduledoc """
-  Sends the plan comments a person has not sent yet to the Plan run as one message, as typing in its chat would,
-  and marks them sent. What was sent is learned from.
+  Sends the plan comments a person has not sent yet to the Plan run as one message, as typing in its chat would.
+
+  They are queued with the message and marked sent, and learned from, only as it goes out to Plan, so a queued round
+  that is cancelled comes back unsent.
   """
 
   import Ecto.Query
   import Rail.Pipeline.Utils.BroadcastPlanComments
 
-  alias Rail.Learnings
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Run
@@ -27,7 +28,7 @@ defmodule Rail.Pipeline.Actions.SendPlanComments do
     # transaction: the dispatch reads the run from another process, which would not see an uncommitted message.
     {_claimed, comments} =
       Repo.update_all(from(comment in mine, where: comment.status == :unsent, select: comment),
-        set: [status: :sent, updated_at: DateTime.utc_now()]
+        set: [status: :queued, updated_at: DateTime.utc_now()]
       )
 
     comments = Enum.sort_by(comments, &{DateTime.to_unix(&1.inserted_at, :microsecond), &1.id})
@@ -35,9 +36,9 @@ defmodule Rail.Pipeline.Actions.SendPlanComments do
 
     with [_first | _rest] <- comments,
          message = PlanComment.calculate_message(comments, Pipeline.read_design(task, pages: false)),
-         {:ok, _delivery, _run} = sent <- Pipeline.send_message(scope, run, message) do
-      {:ok, _learned} = Learnings.record_corrections(task, comments)
-      broadcast_plan_comments(task_id, user_id)
+         {:ok, delivery, _run} = sent <- Pipeline.send_message(scope, run, message) do
+      # One that went out told the author's tabs as it was delivered; a queued one has only left the tray.
+      if delivery == :queued, do: broadcast_plan_comments(task_id, user_id)
       sent
     else
       [] ->
@@ -46,7 +47,7 @@ defmodule Rail.Pipeline.Actions.SendPlanComments do
       {:error, reason} ->
         ids = Enum.map(comments, & &1.id)
 
-        Repo.update_all(from(comment in mine, where: comment.id in ^ids and comment.status == :sent),
+        Repo.update_all(from(comment in mine, where: comment.id in ^ids and comment.status == :queued),
           set: [status: :unsent, updated_at: DateTime.utc_now()]
         )
 

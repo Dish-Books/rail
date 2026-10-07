@@ -20,8 +20,8 @@ defmodule Rail.Pipeline.Schemas.PlanComment do
   schema "plan_comments" do
     field :target, Ecto.Enum, values: [:design]
     field :body, :string
-    # Left out of the changeset, so only the action that sends moves it.
-    field :status, Ecto.Enum, values: [:unsent, :sent], default: :unsent
+    # Left out of the changeset, so only sending moves it. Queued is in a message still waiting on a working Plan.
+    field :status, Ecto.Enum, values: [:unsent, :queued, :sent], default: :unsent
     field :option_key, :string
     # The overlay's own grammar: a plain id, then tags and positions, so it never needs quoting.
     field :selector, :string

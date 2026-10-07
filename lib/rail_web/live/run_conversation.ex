@@ -1126,6 +1126,7 @@ defmodule RailWeb.Live.RunConversation do
       socket
       |> assign(:chat_input, restore_draft(queued, socket.assigns.chat_input))
       |> select(run)
+      |> assign_plan_comments()
 
     {:noreply, socket}
   end

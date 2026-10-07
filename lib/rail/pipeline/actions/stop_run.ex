@@ -15,6 +15,7 @@ defmodule Rail.Pipeline.Actions.StopRun do
 
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.StopLiveProcess
+  import Rail.Pipeline.Utils.WithdrawPlanComments
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -23,7 +24,8 @@ defmodule Rail.Pipeline.Actions.StopRun do
 
   @doc """
   Stops `run` on behalf of `scope` and returns `{:ok, run, queued_text}`, where `queued_text` is the
-  message that had not been delivered yet, or `nil`.
+  message that had not been delivered yet, or `nil`. Plan comments queued in it go back to unsent and their rounds
+  out of that text, unless `resending: true` says the caller sends it straight back out.
   """
   def stop_run(%Scope{} = scope, %Run{} = run, opts \\ []) do
     run = Run |> Repo.get!(run.id) |> Repo.preload(:task)
@@ -37,6 +39,12 @@ defmodule Rail.Pipeline.Actions.StopRun do
     {:ok, drained} = run |> Run.changeset(%{pending_chat: nil}) |> Repo.update()
 
     stop_live_process(scope, drained, opts)
+
+    # A round of plan comments handed back goes back to the tray rather than the composer.
+    queued =
+      if is_binary(queued) and not Keyword.get(opts, :resending, false),
+        do: withdraw_plan_comments(run.task, queued),
+        else: queued
 
     {:ok, mark_stopped(%{drained | task: run.task}, was_running), queued}
   end

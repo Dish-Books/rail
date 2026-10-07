@@ -134,6 +134,69 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
              Pipeline.send_plan_comments(ada, running)
   end
 
+  test "a queued round is learned from only once it goes out, and cancelling it puts its comments back", %{
+    task: task,
+    run: run,
+    ada: ada,
+    attrs: attrs
+  } do
+    {:ok, %{id: id}} = Pipeline.create_plan_comment(ada, run, attrs)
+    {:ok, running} = Pipeline.update_run(run, %{status: :running})
+    Phoenix.PubSub.subscribe(Rail.PubSub, "plan_comments:#{task.id}:#{ada.user.id}")
+
+    assert {:ok, :queued, _run} = Pipeline.send_plan_comments(ada, running)
+    assert Pipeline.list_plan_comments(ada, task) == []
+    assert {:error, :nothing_to_send} = Pipeline.send_plan_comments(ada, running)
+    assert [] = Repo.all(from o in Observation, where: o.task_id == ^task.id)
+
+    assert {:ok, _stopped, nil} = Pipeline.stop_run(ada, running)
+
+    assert [%PlanComment{id: ^id, status: :unsent}] = Pipeline.list_plan_comments(ada, task)
+    assert [] = Repo.all(from o in Observation, where: o.task_id == ^task.id)
+    assert_receive {:plan_comments_changed, _task_id}
+  end
+
+  test "cancelling hands back what was typed alongside a queued round, and only that", %{
+    task: task,
+    run: run,
+    ada: ada,
+    grace: grace,
+    attrs: attrs
+  } do
+    {:ok, _adas} = Pipeline.create_plan_comment(ada, run, attrs)
+    {:ok, _graces} = Pipeline.create_plan_comment(grace, run, %{attrs | body: "Grace's"})
+    {:ok, running} = Pipeline.update_run(run, %{status: :running})
+    {:ok, :queued, _run} = Pipeline.send_message(ada, running, "Before the comments.")
+    {:ok, :queued, _run} = Pipeline.send_plan_comments(ada, running)
+    {:ok, :queued, _run} = Pipeline.send_plan_comments(grace, running)
+    {:ok, :queued, _run} = Pipeline.send_message(ada, running, "After them.")
+
+    assert {:ok, _stopped, "Before the comments.\n\nAfter them."} = Pipeline.stop_run(ada, running)
+    assert [%PlanComment{status: :unsent}] = Pipeline.list_plan_comments(ada, task)
+    assert [%PlanComment{status: :unsent, body: "Grace's"}] = Pipeline.list_plan_comments(grace, task)
+  end
+
+  test "a queued round is learned from when the queued message goes out", %{
+    task: %{id: task_id} = task,
+    run: run,
+    ada: ada,
+    attrs: attrs
+  } do
+    {:ok, %{id: id}} = Pipeline.create_plan_comment(ada, run, attrs)
+    {:ok, running} = Pipeline.update_run(run, %{status: :running})
+    {:ok, :queued, _run} = Pipeline.send_plan_comments(ada, running)
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    assert {:ok, :sent, _run} = Pipeline.stop_and_send_message(ada, running, async: false)
+
+    assert %PlanComment{status: :sent} = Repo.get!(PlanComment, id)
+
+    assert [%Observation{source_id: ^id, task_id: ^task_id}] =
+             Repo.all(from o in Observation, where: o.task_id == ^task.id)
+
+    assert Pipeline.list_plan_comments(ada, task) == []
+  end
+
   test "with the task at Engineer the message goes to the Plan run and resumes it", %{
     task: task,
     run: %{id: run_id} = run,

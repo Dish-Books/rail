@@ -5,12 +5,17 @@ defmodule RailWeb.Components.ElementPreview do
   """
   use RailWeb, :html
 
+  # Ahead of the element, so the browser's own margins cannot push it out of the box it was captured at.
+  @reset "<style>html,body{margin:0;overflow:hidden}body>*:first-child{margin:0}</style>"
+
   attr :id, :string, required: true
   attr :capture, :map, required: true, doc: "the element's `html`, `width` and `height`, as an observation keeps it"
   attr :class, :any, default: nil
 
   # The HTML only ever reaches the page as the srcdoc attribute's escaped value.
   def element_preview(assigns) do
+    assigns = assign(assigns, :reset, @reset)
+
     ~H"""
     <figure id={@id} data-qa="element_preview" class={["space-y-1.5 min-w-0", @class]}>
       <div class="max-w-full overflow-hidden">
@@ -27,7 +32,7 @@ defmodule RailWeb.Components.ElementPreview do
             id={"#{@id}-frame"}
             title="The element as it looked in the mockup"
             sandbox=""
-            srcdoc={@capture["html"]}
+            srcdoc={@reset <> @capture["html"]}
             tabindex="-1"
             class="absolute top-0 left-0 border-0 pointer-events-none"
             style={"width: #{@capture["width"]}px; height: #{@capture["height"]}px;"}

@@ -2059,6 +2059,44 @@ defmodule RailWeb.TaskLiveTest do
       assert Enum.count(Pipeline.list_run_events(run), &(&1.line =~ "comments on the design")) == 1
     end
 
+    test "a round queued on a working Plan and then cancelled comes back to the tray, unlearned", %{
+      conn: conn,
+      task: task,
+      scope: scope,
+      run: run,
+      pick: pick,
+      element: element
+    } do
+      pick.()
+
+      {:ok, %{id: id}} =
+        Pipeline.create_plan_comment(scope, run, %{
+          target: :design,
+          option_key: "waiting-lanes",
+          selector: element["selector"],
+          element_text: element["text"],
+          element_tag: element["tag"],
+          capture: %{html: element["html"], width: 160, height: 20},
+          body: "Turn this on by default."
+        })
+
+      {:ok, _running} = Pipeline.update_run(run, %{status: :running})
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#plan-item-design") |> render_click()
+      assert has_element?(view, "#plan-comment-tray-hint", "Plan is working.")
+
+      view |> element("#send-plan-comments") |> render_click()
+      refute has_element?(view, "#plan-comment-tray")
+      assert has_element?(view, "#queued-banner", "1 comment on the design")
+
+      view |> element("#cancel-queued-message") |> render_click()
+
+      assert has_element?(view, "#plan-comment-#{id}", "Turn this on by default.")
+      refute has_element?(view, "#queued-banner")
+      assert view |> element("#chat-input") |> render() =~ ~r{<textarea[^>]*></textarea>}
+      assert [] = Repo.all(from o in Rail.Learnings.Schemas.Observation, where: o.task_id == ^task.id)
+    end
+
     test "Remove takes a row and its marker away, also once the element is no longer found", %{
       conn: conn,
       task: task,

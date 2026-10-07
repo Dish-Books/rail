@@ -4,6 +4,7 @@ import {
   buildSelector,
   CUT_MARK,
   captureElement,
+  elementText,
   checkMessage,
   cutHtml,
   describeElement,
@@ -11,6 +12,7 @@ import {
   keepDraft,
   keyAction,
   LIMITS,
+  markerBox,
   previewScale,
   readDraft,
   resolveSelector,
@@ -136,6 +138,27 @@ describe("capture", () => {
 
     const element = node("div", { html: long, rect: { left: 0, top: 0, width: 0.2, height: 0 } });
     assert.deepEqual(captureElement(element), { html: cutHtml(long), width: 1, height: 1, x: 0, y: 0 });
+  });
+});
+
+describe("what an element says", () => {
+  const text = (data) => ({ nodeType: 3, data });
+  const element = (localName, childNodes) => ({ localName, childNodes, textContent: "never read" });
+
+  it("is the text a person sees, not the source of a script or style inside it", () => {
+    const widget = element("div", [
+      element("b", [text("Pay  now")]),
+      element("script", [text("document.title = 'x'")]),
+      element("style", [text(".q{color:red}")]),
+      element("template", [text("later")]),
+      element("noscript", [text("no js")])
+    ]);
+
+    assert.equal(elementText(widget), "Pay now");
+  });
+
+  it("is what the browser renders when it can say", () => {
+    assert.equal(elementText({ innerText: "Needs you\n3", textContent: "Needs you 3 .css{}" }), "Needs you 3");
   });
 });
 
@@ -296,6 +319,21 @@ describe("fitting", () => {
   it("scales an element preview down to fit and never past its own size", () => {
     assert.equal(previewScale(400, 800), 0.5);
     assert.equal(previewScale(1100, 180), 1);
+  });
+});
+
+describe("markers", () => {
+  it("are drawn larger by as much as the frame is scaled down, so each is about 20px on screen", () => {
+    for (const scale of [0.287, 0.466, 1]) {
+      const box = markerBox(scale);
+      assert.ok(Math.abs(box.size * scale - 20) < 0.001);
+      assert.ok(Math.abs(box.font * scale - 11) < 0.001);
+    }
+  });
+
+  it("are drawn at their own size for a scale that is missing or not a number", () => {
+    for (const scale of [undefined, null, "0.5", Number.NaN, 0, -1]) assert.equal(markerBox(scale).size, 20);
+    assert.equal(markerBox(0.001).size, 400);
   });
 });
 
