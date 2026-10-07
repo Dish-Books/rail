@@ -55,6 +55,8 @@ defmodule RailWeb.CoreComponents do
   defdelegate task_tabs(assigns), to: Components.TaskTabs
   defdelegate throughput_chart(assigns), to: Components.ThroughputChart
   defdelegate top_app_bar(assigns), to: Components.Nav
+  defdelegate triage_image(assigns), to: Components.TriageImage
+  defdelegate triage_image_view(assigns), to: Components.TriageImageView
   defdelegate triage_item(assigns), to: Components.TriageItem
   defdelegate triage_queue(assigns), to: Components.TriageQueue
   defdelegate triage_thread(assigns), to: Components.TriageThread

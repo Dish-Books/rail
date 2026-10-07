@@ -43,25 +43,22 @@ defmodule RailWeb.Components.TriageItem do
   end
 
   defp settled(assigns) do
-    item = assigns.item
-
-    assigns =
-      assigns
-      |> assign(:posted_by, posted_by(item))
-      |> assign(:created_line, created_line(item))
-      |> assign(:task, item.created_issue && item.created_issue.task)
+    assigns = assign(assigns, :posted_by, posted_by(assigns.item))
 
     ~H"""
     <details
       id={"triage-item-#{@item.id}"}
       data-qa="triage-item"
       data-state="settled"
+      phx-mounted={JS.ignore_attributes(["open"])}
       class="group rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/30 text-[12.5px]"
     >
       <summary class="flex items-center gap-2.5 px-4 py-2.5 cursor-pointer list-none">
         <.position position={@item.position} />
         <.triage_verdict kind={@item.kind} />
-        <span class="font-semibold truncate text-slate-900 dark:text-slate-100">{@item.title}</span>
+        <span class="min-w-0 flex-auto font-semibold truncate text-slate-900 dark:text-slate-100">
+          {@item.title}
+        </span>
         <.triage_verdict kind={@item.kind} verdict={@item.verdict} />
         <span
           :if={@item.existing_issue}
@@ -76,9 +73,9 @@ defmodule RailWeb.Components.TriageItem do
             @item.existing_issue.state
           )}
         </span>
-        <span class="ml-auto whitespace-nowrap inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-          <.icon name="pi-check-circle-fill" class="size-3.5" />
-          <span :if={@posted_by}>
+        <span class="ml-auto min-w-0 inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+          <.icon name="pi-check-circle-fill" class="size-3.5 shrink-0" />
+          <span :if={@posted_by} class="truncate">
             Reply posted by {@posted_by} at
             <.local_time id={"reply-posted-time-#{@item.id}"} at={@item.reply_posted_at} />
           </span>
@@ -86,21 +83,7 @@ defmodule RailWeb.Components.TriageItem do
         </span>
       </summary>
       <div class="px-4 pb-4 space-y-3">
-        <p
-          :if={@created_line}
-          class="flex items-center gap-2 text-[13px] text-slate-800 dark:text-slate-200"
-        >
-          <.icon name="pi-check-circle-fill" class="size-4 text-emerald-500" />
-          <span>{@created_line}</span>
-          <.link
-            :if={@task}
-            navigate={~p"/tasks/#{@task.id}"}
-            id={"triage-item-task-#{@item.id}"}
-            class="ml-auto inline-flex items-center gap-1.5 h-6 px-2 rounded-full border border-slate-300 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300"
-          >
-            <.icon name="pi-git-branch" class="size-3.5" />{Task.stage_label(@task.stage)}
-          </.link>
-        </p>
+        <.created :if={@item.created_issue} item_id={@item.id} issue={@item.created_issue} />
         <div
           :if={@item.reply_posted_at}
           id={"triage-item-posted-#{@item.id}"}
@@ -115,7 +98,7 @@ defmodule RailWeb.Components.TriageItem do
         <p
           :if={@error || @item.error}
           id={"triage-item-error-#{@item.id}"}
-          class="text-xs text-red-600 dark:text-red-400"
+          class="text-xs break-words text-red-600 dark:text-red-400"
         >
           {@error || @item.error}
         </p>
@@ -264,13 +247,7 @@ defmodule RailWeb.Components.TriageItem do
               <.icon name="pi-circle" class="size-3" />{Issue.state_label(@item.existing_issue.state)}
             </span>
           </p>
-          <p
-            :if={@item.created_issue}
-            class="flex items-center gap-2 text-[13px] text-slate-800 dark:text-slate-200"
-          >
-            <.icon name="pi-check-circle-fill" class="size-4 text-emerald-500" /> Created
-            <span class="font-mono text-blue-600 dark:text-blue-400">{@item.created_issue.identifier}</span>
-          </p>
+          <.created :if={@item.created_issue} item_id={@item.id} issue={@item.created_issue} />
 
           <.form
             :if={@show_issue_form}
@@ -322,7 +299,7 @@ defmodule RailWeb.Components.TriageItem do
                 id={"issue-line-#{@item.id}"}
                 class="flex-1 basis-40 min-w-0 text-[11px] text-slate-500 dark:text-slate-400"
               >
-                {@project_name} · starts Product · {@link_line}
+                {@project_name} · waits for Start at Plan on its issue page · {@link_line}
               </span>
               <.button
                 type="submit"
@@ -395,7 +372,7 @@ defmodule RailWeb.Components.TriageItem do
           <p
             :if={@error}
             id={"triage-item-error-#{@item.id}"}
-            class="text-xs text-red-600 dark:text-red-400"
+            class="text-xs break-words text-red-600 dark:text-red-400"
           >
             {@error}
           </p>
@@ -415,6 +392,65 @@ defmodule RailWeb.Components.TriageItem do
     """
   end
 
+  attr :item_id, :string, required: true
+  attr :issue, Issue, required: true
+
+  # Triage only points to the issue page, so starting a task stays where Start at Plan is. A closed
+  # issue has nothing to start there, so it shows its state instead.
+  defp created(assigns) do
+    finished = Issue.finished_state?(assigns.issue.state)
+
+    assigns =
+      assigns
+      |> assign(:show_start, !assigns.issue.task and not finished)
+      |> assign(:show_state, !assigns.issue.task and finished)
+
+    ~H"""
+    <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-slate-800 dark:text-slate-200">
+      <.icon name="pi-check-circle-fill" class="size-4 text-emerald-500" />
+      <span class="min-w-0">
+        Created
+        <.link
+          navigate={~p"/issues/#{@issue.id}"}
+          id={"triage-item-issue-#{@item_id}"}
+          class="break-all font-mono text-blue-600 dark:text-blue-400 hover:underline rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900"
+        >
+          {@issue.identifier}
+        </.link>
+      </span>
+      <.link
+        :if={@issue.task}
+        navigate={~p"/tasks/#{@issue.task.id}"}
+        id={"triage-item-task-#{@item_id}"}
+        class="ml-auto inline-flex items-center gap-1.5 h-6 px-2 rounded-full border border-slate-300 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 hover:border-slate-500 outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900"
+      >
+        <.icon name="pi-git-branch" class="size-3.5" />{Task.stage_label(@issue.task.stage)}
+      </.link>
+      <span
+        :if={@show_start}
+        id={"triage-item-not-started-#{@item_id}"}
+        class="ml-auto inline-flex flex-wrap items-center gap-x-1.5 min-w-0 text-xs"
+      >
+        <span class="text-slate-500 dark:text-slate-400">Not started.</span>
+        <.link
+          navigate={~p"/issues/#{@issue.id}"}
+          id={"triage-item-start-#{@item_id}"}
+          class="inline-flex items-center gap-1 font-semibold text-blue-600 dark:text-blue-400 hover:underline rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900"
+        >
+          Start on the issue page<.icon name="pi-arrow-right" class="size-3.5" />
+        </.link>
+      </span>
+      <span
+        :if={@show_state}
+        id={"triage-item-issue-state-#{@item_id}"}
+        class="ml-auto text-xs text-slate-500 dark:text-slate-400"
+      >
+        {Issue.state_label(@issue.state)}
+      </span>
+    </p>
+    """
+  end
+
   defp location(%{file: file, lines: lines}) when is_binary(lines), do: "#{file}:#{lines}"
   defp location(%{file: file}), do: file
 
@@ -422,7 +458,4 @@ defmodule RailWeb.Components.TriageItem do
     do: user.name || user.login
 
   defp posted_by(%Item{}), do: nil
-
-  defp created_line(%Item{created_issue: %Issue{identifier: identifier}}), do: "Created #{identifier}"
-  defp created_line(%Item{}), do: nil
 end

@@ -13,6 +13,7 @@ import { DiffScroller } from "./hooks/diff_scroller";
 import { DiffSection } from "./hooks/diff_section";
 import { DiffWrap } from "./hooks/diff_wrap";
 import { Elapsed } from "./hooks/elapsed";
+import { ImageFallback } from "./hooks/image_fallback";
 import { JumpToLine } from "./hooks/jump_to_line";
 import { LocalResetTime } from "./hooks/local_reset_time";
 import { LocalTime } from "./hooks/local_time";
@@ -42,7 +43,8 @@ const Hooks = {
   CurrentInView,
   ScrollSelectedTab,
   PlanDiagram,
-  PlanLinks
+  PlanLinks,
+  ImageFallback
 };
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content");

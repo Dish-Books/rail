@@ -1,7 +1,7 @@
 defmodule RailWeb.Components.TriageThread do
   @moduledoc """
-  The middle pane of the triage page: the Slack thread, each passage marked by
-  the item it raised, and the notes people have left on its items. Notes go to
+  The middle pane of the triage page: the Slack thread with its images, each passage
+  marked by the item it raised, and the notes people have left on its items. Notes go to
   the next pass and never to Slack; replies are what go to Slack.
   """
   use RailWeb, :html
@@ -37,7 +37,7 @@ defmodule RailWeb.Components.TriageThread do
     <section
       id="triage-thread"
       data-qa="triage-thread"
-      class="w-[470px] shrink-0 flex flex-col border-r border-slate-200 dark:border-slate-700 min-h-0"
+      class="flex-[0_1_470px] min-w-[300px] flex flex-col border-r border-slate-200 dark:border-slate-700 min-h-0"
     >
       <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-700">
         <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
@@ -112,6 +112,17 @@ defmodule RailWeb.Components.TriageThread do
                 class={["text-inherit rounded px-0.5", mark]}
               >{text}</mark><span :if={!mark}>{text}</span></span>
             </p>
+            <div
+              :if={entry.message.images != []}
+              id={"triage-images-#{entry.message.id}"}
+              class="mt-2 flex flex-wrap gap-2"
+            >
+              <.triage_image
+                :for={image <- entry.message.images}
+                message_id={entry.message.id}
+                image={image}
+              />
+            </div>
             <p :if={entry.chips != []} class="mt-1 flex flex-wrap items-center gap-1.5">
               <span
                 :for={chip <- entry.chips}

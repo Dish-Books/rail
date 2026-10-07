@@ -89,6 +89,7 @@ defmodule Rail.Pipeline do
   defdelegate update_task(task, attrs), to: Actions.UpdateTask
   defdelegate get_task(id), to: Actions.GetTask
   defdelegate cleanup_task(task), to: Actions.CleanupTask
+  defdelegate discard_task(task), to: Actions.DiscardTask
 
   defdelegate register_question(run, question), to: Actions.RegisterQuestion
   defdelegate answer_question(scope, question, answer), to: Actions.AnswerQuestion

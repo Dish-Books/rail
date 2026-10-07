@@ -157,8 +157,16 @@ defmodule RailWeb.OverviewLive do
     owner_user_id = if everyone, do: nil, else: user_id
     preload = [:role, :questions, task: [:project, :issue]]
 
-    runs = Pipeline.list_runs(project_id: project_id, owner_user_id: owner_user_id, preload: preload)
-    tasks = Pipeline.list_tasks(project_id: project_id, owner_user_id: owner_user_id, preload: [:project, :issue])
+    # A reload that overlaps an issue's deletion can read a task or run whose issue is already gone.
+    runs =
+      [project_id: project_id, owner_user_id: owner_user_id, preload: preload]
+      |> Pipeline.list_runs()
+      |> Enum.filter(&match?(%{task: %{issue: %{}}}, &1))
+
+    tasks =
+      [project_id: project_id, owner_user_id: owner_user_id, preload: [:project, :issue]]
+      |> Pipeline.list_tasks()
+      |> Enum.filter(&match?(%{issue: %{}}, &1))
 
     # The stat and the list both read this one list, so they cannot disagree.
     in_progress =

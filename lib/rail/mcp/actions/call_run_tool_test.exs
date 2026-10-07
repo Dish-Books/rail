@@ -12,6 +12,25 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
+  # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
+  @plan """
+  ## Implementation plan
+
+  ### Approach
+
+  Extend the module.
+
+  No diagrams: one module changes.
+
+  ### File-level changes
+
+  - `lib/rail.ex`: extends the module.
+
+  ### Verification
+
+  - `lib/rail_test.exs`: covers the extension.
+  """
+
   setup do
     id = System.unique_integer([:positive])
 
@@ -241,7 +260,7 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
                Mcp.call_run_tool(context.(:plan), "save_ticket", %{"title" => "One round", "description" => "Body."})
 
       assert {:ok, %{"content" => [%{"text" => "Plan saved, written for no design option yet." <> _rest}]}} =
-               Mcp.call_run_tool(context.(:plan), "save_plan", %{"plan" => "## Implementation plan\n\nDo it."})
+               Mcp.call_run_tool(context.(:plan), "save_plan", %{"plan" => @plan})
 
       assert {:ok, %{"content" => [%{"text" => "Verdict saved: Passed." <> _rest}]}} =
                Mcp.call_run_tool(context.(:qa), "save_verdict", %{"verdict" => "pass", "summary" => "Works."})

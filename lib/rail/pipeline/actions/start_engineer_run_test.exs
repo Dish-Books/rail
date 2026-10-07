@@ -11,6 +11,25 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
+  # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
+  @plan """
+  ## Implementation plan
+
+  ### Approach
+
+  Extend the module.
+
+  No diagrams: one module changes.
+
+  ### File-level changes
+
+  - `lib/rail.ex`: extends the module.
+
+  ### Verification
+
+  - `lib/rail_test.exs`: covers the extension.
+  """
+
   setup %{project: project} do
     scope = system_scope()
 
@@ -140,7 +159,9 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     File.write!(Path.join(design_dir, "cards.html"), "<h1>As approved</h1>")
     File.write!(Path.join(design_dir, "picked"), "cards")
 
-    {:ok, _plan} = Pipeline.save_plan(task, %{plan: "## Implementation plan\n\nRevised for the comments."})
+    {:ok, _plan} =
+      Pipeline.save_plan(task, %{plan: String.replace(@plan, "Extend the module.", "Revised for the comments.")})
+
     File.write!(Path.join(design_dir, "cards.html"), "<h1>Revised for the comments</h1>")
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->

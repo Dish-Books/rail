@@ -7,6 +7,25 @@ defmodule Rail.Mcp.Utils.RunToolSavePlanTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
 
+  # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
+  @plan """
+  ## Implementation plan
+
+  ### Approach
+
+  Extend the module.
+
+  No diagrams: one module changes.
+
+  ### File-level changes
+
+  - `lib/rail.ex`: extends the module.
+
+  ### Verification
+
+  - `lib/rail_test.exs`: covers the extension.
+  """
+
   setup do
     scratch = Path.join(System.tmp_dir!(), "rt_save_plan_#{System.unique_integer([:positive])}")
     on_exit(fn -> File.rm_rf(scratch) end)
@@ -16,9 +35,9 @@ defmodule Rail.Mcp.Utils.RunToolSavePlanTest do
 
   test "a save with no option says it names none yet", %{task: task} do
     assert {:ok, "Plan saved, written for no design option yet." <> _rest} =
-             run_tool_save_plan(task, %{"plan" => "## Implementation plan\n\nDo it."}, [])
+             run_tool_save_plan(task, %{"plan" => @plan}, [])
 
-    assert %{content: "## Implementation plan\n\nDo it.\n", design: nil} = Pipeline.read_plan(task)
+    assert %{content: @plan, design: nil} = Pipeline.read_plan(task)
   end
 
   test "a save for a saved option passes the key through and names the option", %{task: task, scratch: scratch} do
@@ -30,13 +49,13 @@ defmodule Rail.Mcp.Utils.RunToolSavePlanTest do
     )
 
     assert {:ok, "Plan saved for Charts in the row (rows)." <> _rest} =
-             run_tool_save_plan(task, %{"plan" => "## Implementation plan\n\nDo it.", "design" => "rows"}, [])
+             run_tool_save_plan(task, %{"plan" => @plan, "design" => "rows"}, [])
   end
 
   test "a refusal is passed back as the changeset naming the field", %{task: task} do
     assert {:error, %Ecto.Changeset{valid?: false}} = run_tool_save_plan(task, %{}, [])
 
     assert {:error, %Ecto.Changeset{errors: [design: _no_options]}} =
-             run_tool_save_plan(task, %{"plan" => "## Implementation plan\n\nDo it.", "design" => "rows"}, [])
+             run_tool_save_plan(task, %{"plan" => @plan, "design" => "rows"}, [])
   end
 end

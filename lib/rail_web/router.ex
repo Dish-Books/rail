@@ -90,6 +90,7 @@ defmodule RailWeb.Router do
     get "/settings", SettingsRedirectController, :index
     get "/project-selection", ProjectSelectionController, :select
     get "/issues/:issue_id/assets/*path", IssueAssetController, :show
+    get "/triage/messages/:message_id/images/:file_id", TriageImageController, :show
     get "/tasks/:task_id/design/:key", DesignController, :show
     get "/tasks/:task_id/design/:key/screenshot", DesignController, :screenshot
     get "/tasks/:task_id/demo/video", DemoController, :video
