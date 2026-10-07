@@ -379,13 +379,21 @@ defmodule RailWeb.OverviewLive do
     waiting = Enum.count(statuses, & &1.needs_attention)
     is_waiting = waiting > 0 and task.issue.owner_user_id == user_id
 
+    # "You" and amber are for the split's owner; anyone else is told it needs attention.
+    label =
+      cond do
+        is_waiting -> "#{waiting} need you"
+        waiting > 0 -> "#{waiting} need attention"
+        true -> "Plan approved"
+      end
+
     %{
       task: task,
       state: if(waiting > 0, do: :done, else: :running),
-      label: if(waiting > 0, do: "#{waiting} need you", else: "Plan approved"),
+      label: label,
       style: %{
         icon: "pi-arrows-split",
-        text_class: if(waiting > 0, do: "text-amber-700 dark:text-amber-300", else: "text-slate-500 dark:text-slate-400")
+        text_class: if(is_waiting, do: "text-amber-700 dark:text-amber-300", else: "text-slate-500 dark:text-slate-400")
       },
       is_waiting: is_waiting,
       changed_at: task.updated_at,

@@ -315,6 +315,61 @@ defmodule RailWeb.OverviewLiveTest do
       %{conn: log_in_user(conn, user), user: user, project: project, roles: roles, rival: rival, task_for: task_for}
     end
 
+    test "someone else's split says its children need attention, not you, in Everyone", %{
+      conn: conn,
+      rival: rival,
+      project: project,
+      roles: roles
+    } do
+      for {identifier, title} <- [{"OVR-1", "Work on OVR-1"}, {"OVR-2", "Child OVR-2"}, {"OVR-3", "Child OVR-3"}] do
+        Req.Test.expect(Rail.Linear, fn conn ->
+          Req.Test.json(conn, %{
+            "data" => %{
+              "issueCreate" => %{
+                "success" => true,
+                "issue" => %{"id" => "lin_#{identifier}", "identifier" => identifier, "title" => title}
+              }
+            }
+          })
+        end)
+      end
+
+      {:ok, parent_issue} =
+        Issues.create_issue(system_scope(), project, %{title: "Work on OVR-1", owner_user_id: rival.id})
+
+      {:ok, parent} = Pipeline.create_task(parent_issue, :split)
+      parent = Repo.preload(parent, [:issue, :project])
+
+      children =
+        for {{identifier, builds_on}, number} <- Enum.with_index([{"OVR-2", []}, {"OVR-3", []}], 1) do
+          attrs = %{title: "Child #{identifier}", parent: parent_issue, owner_user_id: rival.id}
+          {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
+          part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
+          Repo.preload(child, [:issue, :project])
+        end
+
+      assert {:ok, view, _html} = live(conn, ~p"/?everyone=true")
+      assert has_element?(view, "#in-progress-task-#{parent.id}", "Plan approved")
+
+      for child <- children do
+        {:ok, _failed} =
+          Pipeline.create_run(%{
+            task_id: child.id,
+            role_id: roles[:engineer].id,
+            status: :failed,
+            error: "It broke.",
+            started_at: DateTime.utc_now()
+          })
+      end
+
+      assert {:ok, view, _html} = live(conn, ~p"/?everyone=true")
+
+      assert has_element?(view, "#in-progress-task-#{parent.id}", "2 need attention")
+      refute has_element?(view, "#in-progress-task-#{parent.id}", "need you")
+      refute has_element?(view, "#in-progress-task-#{parent.id}[class*='amber']")
+    end
+
     test "cleaning up a split parent takes its children out of In progress with it", %{
       conn: conn,
       user: user,

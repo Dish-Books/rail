@@ -131,6 +131,27 @@ defmodule RailWeb.Live.PlanStageTest do
     assert has_element?(view, "#approve-plan")
   end
 
+  test "a card opens to its child's whole ticket and part of the plan, and closes again", %{
+    conn: conn,
+    task: task,
+    child: child
+  } do
+    {:ok, _split} = Pipeline.save_split(task, %{"children" => [child.(1, "One", 1, []), child.(2, "Two", 2, [1])]})
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    refute has_element?(view, "#plan-split-child-detail")
+
+    view |> element("#plan-split-child-2-open") |> render_click()
+
+    assert has_element?(view, "#plan-split-child-2-open[aria-expanded='true']")
+    assert has_element?(view, "#plan-split-child-detail", "Two for each branch.")
+    assert has_element?(view, "#plan-split-child-detail", "More detail.")
+    assert has_element?(view, "#plan-split-child-detail li", "Second")
+    assert has_element?(view, "#plan-split-child-detail #plan-sheet", "lib/rail/part_2_more.ex")
+
+    view |> element("#plan-split-child-2-open") |> render_click()
+    refute has_element?(view, "#plan-split-child-detail")
+  end
+
   test "each card says what its own child builds on, which its lane alone would not", %{
     conn: conn,
     task: task,
@@ -172,6 +193,9 @@ defmodule RailWeb.Live.PlanStageTest do
     assert has_element?(view, "#plan-split", "2 rounds")
     assert has_element?(view, "#plan-split-child-3", "Three")
     assert has_element?(view, "#plan-item-split-status", "3 children · 2 points")
+
+    view |> element("#plan-split-child-3-open") |> render_click()
+    assert has_element?(view, "#plan-split-child-detail", "Just this.")
   end
 
   test "a child's Plan tab shows its approved part as a sheet, under a notice naming every child it waits on", %{

@@ -26,6 +26,20 @@ defmodule RailWeb.Utils.StageLabel do
   # A split parent's work is its children's, so all it says of itself is that its plan was approved.
   def stage_label(%Task{stage: :split}, _run), do: "Plan approved"
 
+  # A child of a split with no run is not next in line while a sibling it builds on is unmerged.
+  # Read only where the page loaded the parent's children, so a row never asks for them itself.
+  def stage_label(%Task{runs: [], parent_task: %Task{children: [_first | _rest] = siblings}} = task, nil) do
+    waiting_on =
+      for %Task{split_position: position, issue: %{completed_at: nil, identifier: identifier}} <- siblings,
+          position in task.builds_on,
+          do: identifier
+
+    case waiting_on do
+      [] -> "Queued for #{Task.stage_label(task.stage)}"
+      identifiers -> "Waiting on #{Enum.join(identifiers, ", ")}"
+    end
+  end
+
   # Read off its status before the state it shares with a run waiting for a sandbox.
   def stage_label(%Task{stage: stage}, %Run{status: :waiting_for_usage}),
     do: "#{Task.stage_label(stage)} waiting for usage"

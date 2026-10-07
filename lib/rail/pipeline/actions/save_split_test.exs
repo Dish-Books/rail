@@ -93,6 +93,18 @@ defmodule Rail.Pipeline.Actions.SaveSplitTest do
     assert Pipeline.read_split(task) == nil
   end
 
+  test "a child whose builds_on is null builds on nothing, so the split reads back whole", %{
+    task: task,
+    children: [first, second]
+  } do
+    assert {:ok, %{children: [%{builds_on: []}, %{builds_on: []}]}} =
+             Pipeline.save_split(task, %{
+               "children" => [Map.put(first, "builds_on", nil), Map.put(second, "builds_on", nil)]
+             })
+
+    assert %{children: [%{builds_on: []}, %{builds_on: []}]} = Pipeline.read_split(task)
+  end
+
   test "an empty list removes the split", %{task: %{id: task_id} = task, children: children, path: path} do
     {:ok, _saved} = Pipeline.save_split(task, %{"children" => children})
     assert File.exists?(path)

@@ -101,7 +101,12 @@ defmodule RailWeb.IssueLive do
   def handle_info({:issue_created, _issue_id}, socket), do: {:noreply, socket}
 
   defp load_issue(socket, id) do
-    preload = [:project, :owner_user, task: [runs: :role], comments: [:author_user, replies: :author_user]]
+    preload = [
+      :project,
+      :owner_user,
+      task: [runs: :role, parent_task: [children: :issue]],
+      comments: [:author_user, replies: :author_user]
+    ]
 
     # An issue in a project the user cannot access is one that does not exist, as far as they can tell.
     with {:ok, issue} <- Issues.get_issue(id, preload: preload),

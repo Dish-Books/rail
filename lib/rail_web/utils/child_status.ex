@@ -1,7 +1,7 @@
 defmodule RailWeb.Utils.ChildStatus do
   @moduledoc """
-  Where one child of a split stands among its siblings: merged once Linear completed its issue, waiting
-  while it has no run and a sibling it builds on has not merged, and otherwise as its stage's run.
+  Where one child of a split stands among its siblings: merged once Linear completed its issue, canceled
+  once Linear canceled it, waiting while a sibling it builds on has not merged, and otherwise as its run.
   """
 
   import RailWeb.Utils.FormatAge
@@ -40,6 +40,7 @@ defmodule RailWeb.Utils.ChildStatus do
 
     cond do
       issue.completed_at != nil -> Map.merge(base, merged(child))
+      issue.state in [:canceled, :duplicate] -> Map.merge(base, canceled(issue))
       waiting_on != [] -> Map.merge(base, waiting(waiting_on))
       true -> Map.merge(base, working(child, run))
     end
@@ -63,6 +64,32 @@ defmodule RailWeb.Utils.ChildStatus do
       needs_attention: false,
       badge: nil,
       line: if(pr_number, do: "Merged · PR ##{pr_number}", else: "Merged"),
+      line_class: "text-slate-600 dark:text-slate-300",
+      action: nil
+    }
+  end
+
+  # Nobody will work on it again, so it waits on nobody and is never in the way of the split finishing.
+  defp canceled(%Issue{state: state}) do
+    label = Issue.state_label(state)
+
+    %{
+      state: :canceled,
+      label: label,
+      icon: "pi-x-circle",
+      text_class: @slate_text,
+      cells: Enum.map(@stages, &%{stage: &1, mark: :pending, chip: nil}),
+      merged: %{
+        mark: :current,
+        chip: %{
+          label: label,
+          icon: "pi-x-circle",
+          class: "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
+        }
+      },
+      needs_attention: false,
+      badge: nil,
+      line: "#{label} in Linear",
       line_class: "text-slate-600 dark:text-slate-300",
       action: nil
     }

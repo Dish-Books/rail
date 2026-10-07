@@ -47,6 +47,27 @@ defmodule RailWeb.Utils.ChildStatusTest do
            } = child_status(merged, [merged])
   end
 
+  test "a child canceled in Linear reads Canceled, with no badge, no action and nobody waited on", %{
+    child: child,
+    run: run
+  } do
+    canceled =
+      child.(1,
+        issue: %Issue{identifier: "SPL-1", state: :canceled},
+        runs: [run.(:engineer, status: :failed, error: "It broke.")]
+      )
+
+    assert %{
+             state: :canceled,
+             label: "Canceled",
+             needs_attention: false,
+             badge: nil,
+             action: nil,
+             line: "Canceled in Linear",
+             merged: %{chip: %{label: "Canceled"}}
+           } = child_status(canceled, [canceled])
+  end
+
   test "a child with no run and an unmerged earlier sibling waits on it in slate, in the Engineer column", %{
     child: child,
     now: now

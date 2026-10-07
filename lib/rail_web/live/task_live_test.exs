@@ -6902,7 +6902,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "the parent opens on its Children tab, right after Plan, its badge counting the children waiting on a person",
-         %{conn: conn, parent: parent, roles: roles} do
+         %{conn: conn, parent: parent, roles: roles, scope: scope} do
       assert {:ok, view, html} = live(conn, ~p"/tasks/#{parent.id}")
 
       assert ["task-tab-issue", "task-tab-#{roles[:plan].id}", "task-tab-children"] ==
@@ -6912,9 +6912,14 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#task-tab-issue[aria-selected='false']")
       assert has_element?(view, "#task-tab-children [data-qa='task-tab-badge']", "2")
       assert has_element?(view, "#task-tab-#{roles[:plan].id}", "approved, split into 3")
-      assert has_element?(view, "[data-qa='task_status_chip']", "2 children need you")
+      assert has_element?(view, "[data-qa='task_status_chip']", "2 children need attention")
       refute has_element?(view, "[data-qa='task_branch_name']")
       refute has_element?(view, "#child-switcher")
+
+      # Only the split's owner is told the children need them.
+      parent.issue |> Issue.linear_changeset(%{owner_user_id: scope.user.id}) |> Repo.update!()
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
+      assert has_element?(view, "[data-qa='task_status_chip']", "2 children need you")
     end
 
     test "each row says where its child stands, and its action opens that child's tab", %{
@@ -7011,7 +7016,8 @@ defmodule RailWeb.TaskLiveTest do
 
     test "the switcher lists every child with where it stands, and steps to its neighbors", %{
       conn: conn,
-      parent: parent
+      parent: parent,
+      scope: scope
     } do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-12")
 
@@ -7020,7 +7026,11 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#child-switcher-TLV-12[aria-current='true']", "Waiting on TLV-11")
       assert has_element?(view, "#child-switcher-TLV-13", "Engineer failed")
       assert has_element?(view, "#child-switcher-all", "All children of TLV-10")
-      assert has_element?(view, "#child-switcher-waiting", "2 other children need you")
+      assert has_element?(view, "#child-switcher-waiting[class*='slate']", "2 other children need attention")
+
+      parent.issue |> Issue.linear_changeset(%{owner_user_id: scope.user.id}) |> Repo.update!()
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-12")
+      assert has_element?(view, "#child-switcher-waiting[class*='amber']", "2 other children need you")
 
       view |> element("#child-switcher-TLV-11") |> render_click()
       assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-11")
@@ -7092,7 +7102,7 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, _merged} = Pipeline.update_task(parent, %{stage: :merged})
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
 
-      assert has_element?(view, "[data-qa='task_status_chip']", "2 children need you")
+      assert has_element?(view, "[data-qa='task_status_chip']", "2 children need attention")
 
       for child <- Pipeline.list_tasks(parent_task_id: parent.id, preload: [:issue]) do
         child.issue |> Issue.linear_changeset(%{completed_at: DateTime.utc_now(:second)}) |> Repo.update!()

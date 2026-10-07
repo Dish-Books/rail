@@ -39,6 +39,8 @@ defmodule Rail.Pipeline.Schemas.Split do
     |> update_change(:title, &String.trim/1)
     |> update_change(:ticket, &String.trim/1)
     |> update_change(:plan, &String.trim/1)
+    # An agent says "builds on nothing" as null as often as an empty list.
+    |> update_change(:builds_on, &(&1 || []))
     |> validate_required([:title, :ticket, :plan])
     |> validate_format(:title, ~r/\A[^\n]*\z/, message: "must be one line")
     |> validate_number(:estimate, greater_than_or_equal_to: 0, message: "must be zero or more")

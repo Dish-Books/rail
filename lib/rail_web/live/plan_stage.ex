@@ -22,6 +22,7 @@ defmodule RailWeb.Live.PlanStage do
       |> assign_new(:chosen_item, fn -> nil end)
       |> assign_new(:selected_key, fn -> nil end)
       |> assign_new(:diagram_views, fn -> %{change: :diagram, call_flow: :diagram} end)
+      |> assign_new(:open_child, fn -> nil end)
       |> load()
 
     {:ok, socket}
@@ -168,7 +169,13 @@ defmodule RailWeb.Live.PlanStage do
                 target={@myself}
               />
 
-              <.split_pane :if={@selected_item == "split"} split={@split} />
+              <.split_pane
+                :if={@selected_item == "split"}
+                split={@split}
+                open_child={@open_child}
+                diagram_views={@diagram_views}
+                target={@myself}
+              />
             </div>
           </div>
         </div>
@@ -204,6 +211,12 @@ defmodule RailWeb.Live.PlanStage do
 
   def handle_event("approve", _params, socket) do
     socket.assigns.current_scope |> Pipeline.approve_plan(socket.assigns.run) |> respond(socket)
+  end
+
+  # A card opens to its child's whole ticket and part of the plan; opening it again closes it.
+  def handle_event("open_child", %{"number" => number}, socket) do
+    number = String.to_integer(number)
+    {:noreply, assign(socket, :open_child, if(socket.assigns.open_child == number, do: nil, else: number))}
   end
 
   def handle_event("diagram_view", %{"view" => view}, socket) do
@@ -553,6 +566,9 @@ defmodule RailWeb.Live.PlanStage do
   end
 
   attr :split, :any, required: true
+  attr :open_child, :integer, default: nil
+  attr :diagram_views, :map, default: %{}
+  attr :target, :any, default: nil
 
   defp split_pane(%{split: nil} = assigns) do
     ~H"""
@@ -574,7 +590,13 @@ defmodule RailWeb.Live.PlanStage do
 
   defp split_pane(assigns) do
     children = Enum.map(assigns.split.children, &Map.put(&1, :first_file, first_file(&1.plan)))
-    assigns = assign(assigns, :rounds, rounds(children))
+    open = Enum.find(assigns.split.children, &(&1.number == assigns.open_child))
+
+    assigns =
+      assigns
+      |> assign(:rounds, rounds(children))
+      |> assign(:open, open)
+      |> assign(:open_sheet, open && build_plan_sheet(open.plan))
 
     ~H"""
     <div id="plan-split" data-qa="plan_split" class="@container">
@@ -637,9 +659,57 @@ defmodule RailWeb.Live.PlanStage do
                 + {child.first_file.more} more
               </p>
             </div>
+            <button
+              type="button"
+              id={"plan-split-child-#{child.number}-open"}
+              aria-expanded={to_string(@open_child == child.number)}
+              aria-controls="plan-split-child-detail"
+              phx-click="open_child"
+              phx-value-number={child.number}
+              phx-target={@target}
+              class="text-[12.5px] font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+            >
+              {if @open_child == child.number,
+                do: "Hide the ticket and plan",
+                else: "Read the ticket and plan"}
+            </button>
           </div>
         </div>
       </div>
+
+      <section
+        :if={@open}
+        id="plan-split-child-detail"
+        data-qa="plan_split_child_detail"
+        class="mt-6 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/60 p-5 space-y-6 select-text"
+      >
+        <h3 class="text-lg font-bold text-slate-900 dark:text-slate-100 wrap-break-word">
+          {@open.number}. {@open.title}
+        </h3>
+        <div>
+          <p class="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Ticket
+          </p>
+          <.markdown content={@open.ticket} class="text-[15px] leading-relaxed" />
+        </div>
+        <div>
+          <p class="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Part of the plan
+          </p>
+          <.plan_sheet
+            :if={@open_sheet}
+            sheet={@open_sheet}
+            diagram_views={@diagram_views}
+            event="diagram_view"
+            target={@target}
+          />
+          <.markdown
+            :if={@open_sheet == nil}
+            content={@open.plan}
+            class="text-[15px] leading-relaxed"
+          />
+        </div>
+      </section>
     </div>
     """
   end

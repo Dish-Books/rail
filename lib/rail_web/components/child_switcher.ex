@@ -9,6 +9,8 @@ defmodule RailWeb.Components.ChildSwitcher do
   attr :statuses, :list, required: true
   attr :current_id, :string, required: true
   attr :parent, :any, required: true
+  # Whether the viewer owns the split, so the others waiting are waiting on them.
+  attr :viewer_owns, :boolean, required: true
 
   def child_switcher(assigns) do
     index = Enum.find_index(assigns.statuses, &(&1.task.id == assigns.current_id))
@@ -109,9 +111,15 @@ defmodule RailWeb.Components.ChildSwitcher do
       <span
         :if={@others_waiting > 0}
         id="child-switcher-waiting"
-        class="ml-auto text-xs text-amber-700 dark:text-amber-300 shrink-0"
+        class={[
+          "ml-auto text-xs shrink-0",
+          @viewer_owns && "text-amber-700 dark:text-amber-300",
+          !@viewer_owns && "text-slate-500 dark:text-slate-400"
+        ]}
       >
-        {@others_waiting} other {if @others_waiting == 1, do: "child needs", else: "children need"} you
+        {@others_waiting} other {if @others_waiting == 1, do: "child needs", else: "children need"} {if @viewer_owns,
+          do: "you",
+          else: "attention"}
       </span>
     </div>
     """

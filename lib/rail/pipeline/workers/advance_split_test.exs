@@ -121,6 +121,19 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
     assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: parent.issue_id})
   end
 
+  test "a canceled child counts as settled, so the parent moves to Merged once the rest have merged", %{
+    parent: parent,
+    children: [first | rest],
+    merge: merge
+  } do
+    first.issue |> Issue.linear_changeset(%{state: :canceled}) |> Repo.update!()
+    Enum.each(rest, merge)
+
+    assert :ok = perform_job(AdvanceSplit, %{parent_task_id: parent.id})
+    assert %Task{stage: :merged} = Repo.reload!(parent)
+    assert [] = Repo.preload(first, :runs, force: true).runs
+  end
+
   test "looks again when another child merged while it ran", %{
     parent: parent,
     children: [first, second | _rest],

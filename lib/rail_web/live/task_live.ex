@@ -104,6 +104,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:child_of, nil)
       |> assign(:split_points, nil)
       |> assign(:cleanup_confirm, nil)
+      |> assign(:viewer_owns, false)
 
     # A stage moved from another page or by a run finishing is what keeps this one current.
     if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
@@ -171,7 +172,12 @@ defmodule RailWeb.TaskLive do
           child_of={@child_of}
         >
           <:breadcrumb :if={@show_switcher}>
-            <.child_switcher statuses={@statuses} current_id={@task.id} parent={@parent} />
+            <.child_switcher
+              statuses={@statuses}
+              current_id={@task.id}
+              parent={@parent}
+              viewer_owns={@viewer_owns}
+            />
           </:breadcrumb>
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
@@ -204,7 +210,12 @@ defmodule RailWeb.TaskLive do
           focus_file={@focus_file}
         >
           <:breadcrumb :if={@show_switcher}>
-            <.child_switcher statuses={@statuses} current_id={@task.id} parent={@parent} />
+            <.child_switcher
+              statuses={@statuses}
+              current_id={@task.id}
+              parent={@parent}
+              viewer_owns={@viewer_owns}
+            />
           </:breadcrumb>
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
@@ -237,7 +248,12 @@ defmodule RailWeb.TaskLive do
           engineer_tab={@engineer_tab}
         >
           <:breadcrumb :if={@show_switcher}>
-            <.child_switcher statuses={@statuses} current_id={@task.id} parent={@parent} />
+            <.child_switcher
+              statuses={@statuses}
+              current_id={@task.id}
+              parent={@parent}
+              viewer_owns={@viewer_owns}
+            />
           </:breadcrumb>
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
@@ -269,7 +285,12 @@ defmodule RailWeb.TaskLive do
           current_scope={@current_scope}
         >
           <:breadcrumb :if={@show_switcher}>
-            <.child_switcher statuses={@statuses} current_id={@task.id} parent={@parent} />
+            <.child_switcher
+              statuses={@statuses}
+              current_id={@task.id}
+              parent={@parent}
+              viewer_owns={@viewer_owns}
+            />
           </:breadcrumb>
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
@@ -301,7 +322,12 @@ defmodule RailWeb.TaskLive do
           current_scope={@current_scope}
         >
           <:breadcrumb :if={@show_switcher}>
-            <.child_switcher statuses={@statuses} current_id={@task.id} parent={@parent} />
+            <.child_switcher
+              statuses={@statuses}
+              current_id={@task.id}
+              parent={@parent}
+              viewer_owns={@viewer_owns}
+            />
           </:breadcrumb>
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
@@ -332,7 +358,12 @@ defmodule RailWeb.TaskLive do
           status={@header_status}
         >
           <:breadcrumb :if={@show_switcher}>
-            <.child_switcher statuses={@statuses} current_id={@task.id} parent={@parent} />
+            <.child_switcher
+              statuses={@statuses}
+              current_id={@task.id}
+              parent={@parent}
+              viewer_owns={@viewer_owns}
+            />
           </:breadcrumb>
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
@@ -379,7 +410,12 @@ defmodule RailWeb.TaskLive do
           status={@header_status}
         >
           <:breadcrumb :if={@show_switcher}>
-            <.child_switcher statuses={@statuses} current_id={@task.id} parent={@parent} />
+            <.child_switcher
+              statuses={@statuses}
+              current_id={@task.id}
+              parent={@parent}
+              viewer_owns={@viewer_owns}
+            />
           </:breadcrumb>
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
@@ -1075,11 +1111,18 @@ defmodule RailWeb.TaskLive do
 
     status =
       cond do
-        waiting > 0 ->
+        waiting > 0 and viewer_owns?(socket, parent) ->
           %{
             label: "#{waiting} #{if waiting == 1, do: "child needs", else: "children need"} you",
             icon: "pi-arrows-split",
             class: "text-amber-700 dark:text-amber-300"
+          }
+
+        waiting > 0 ->
+          %{
+            label: "#{waiting} #{if waiting == 1, do: "child needs", else: "children need"} attention",
+            icon: "pi-arrows-split",
+            class: "text-slate-500 dark:text-slate-400"
           }
 
         parent.stage == :merged ->
@@ -1106,6 +1149,7 @@ defmodule RailWeb.TaskLive do
 
     socket
     |> assign(:cleanup_confirm, nil)
+    |> assign(:viewer_owns, viewer_owns?(socket, parent))
     |> assign(:show_switcher, true)
     |> assign(:header_status, header_status)
     |> assign(:child_of, %{
@@ -1116,6 +1160,9 @@ defmodule RailWeb.TaskLive do
     })
     |> assign(:split_points, nil)
   end
+
+  # "You" is said only to the split's owner, which every child shares.
+  defp viewer_owns?(socket, %Task{issue: issue}), do: issue.owner_user_id == socket.assigns.current_scope.user.id
 
   # Cleaning up work Linear has not marked done is usually a mistake, so the confirmation says so.
   defp cleanup_confirm(%Issue{state: :done}, []),
