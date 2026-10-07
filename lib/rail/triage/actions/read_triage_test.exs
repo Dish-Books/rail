@@ -63,6 +63,30 @@ defmodule Rail.Triage.Actions.ReadTriageTest do
            } = Triage.read_triage(thread)
   end
 
+  test "keeps an issue estimate on the scale, and reads any other as none while keeping the draft", %{
+    thread: thread,
+    path: path
+  } do
+    items =
+      for {key, estimate} <- [{"on-scale", 3}, {"missing", nil}, {"off-scale", 13}, {"text", "3"}, {"float", 3.0}] do
+        issue = %{"title" => "Draft #{key}", "priority" => "high"}
+        issue = if estimate, do: Map.put(issue, "estimate", estimate), else: issue
+        %{"key" => key, "kind" => "bug", "title" => "T", "verdict" => "confirmed", "issue" => issue}
+      end
+
+    File.write!(path, Jason.encode!(%{"items" => items}))
+
+    assert %{
+             items: [
+               %{key: "on-scale", issue_title: "Draft on-scale", issue_estimate: 3},
+               %{key: "missing", issue_title: "Draft missing", issue_priority: "high", issue_estimate: nil},
+               %{key: "off-scale", issue_title: "Draft off-scale", issue_priority: "high", issue_estimate: nil},
+               %{key: "text", issue_title: "Draft text", issue_estimate: nil},
+               %{key: "float", issue_title: "Draft float", issue_estimate: nil}
+             ]
+           } = Triage.read_triage(thread)
+  end
+
   test "reads evidence lines given as text, a number or a range, and drops any other shape", %{
     thread: thread,
     path: path

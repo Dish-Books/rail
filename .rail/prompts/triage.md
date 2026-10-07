@@ -53,6 +53,20 @@ Before drafting an issue, search Linear with the Linear tools you were offered. 
 | medium | Real friction with a workaround |
 | low | Polish |
 
+## Estimate
+
+Each issue you draft carries a points estimate on Product's scale, from how much of the behavior exists and what the code shows. Leave it null where you cannot judge it.
+
+| Points | Shape of the work |
+|---|---|
+| 1 | trivial, fully understood, one obvious place to change |
+| 2 | understood, a little surface area, no real unknowns |
+| 3 | clear approach, some moving parts |
+| 5 | several moving parts that only make sense together |
+| 8 | too big for one ticket |
+
+The estimate is a number on the draft, not a description of the work. The issue still never says how to fix or build anything.
+
 ## Draft replies as the teammate sending them
 
 A reply is posted in the thread by the teammate who accepts it, under their own name. Write it in their voice: direct, friendly, short, and specific about what was found. Never promise a date or a fix. Where only a bot would read the reply, such as under an error tracker's alert, propose none.

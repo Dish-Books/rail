@@ -115,6 +115,8 @@ defmodule RailWeb.Components.TriageItem do
       |> assign(:show_issue_form, Item.issue_draft?(item) and is_nil(item.created_issue_id))
       |> assign(:show_reply_form, Item.reply_draft?(item) and is_nil(item.reply_posted_at))
       |> assign(:priorities, Enum.map(Issue.priorities(), &{Issue.priority_label(&1), &1}))
+      |> assign(:estimates, [{"No points", ""} | Enum.map(Item.estimates(), &{estimate_label(&1), &1})])
+      |> assign(:estimate, Ecto.Changeset.get_field(assigns.form, :issue_estimate))
       |> assign(:error, assigns.error || item.error)
       |> assign(
         :link_line,
@@ -295,6 +297,24 @@ defmodule RailWeb.Components.TriageItem do
                   Ecto.Changeset.get_field(@form, :issue_priority) || :medium
                 )}
               </select>
+              <span class="relative inline-flex items-center">
+                <.icon
+                  name="pi-triangle"
+                  class="pointer-events-none absolute left-2 size-3 text-slate-500 dark:text-slate-400"
+                />
+                <select
+                  id={"issue-estimate-#{@item.id}"}
+                  name="item[issue_estimate]"
+                  aria-label="Estimate"
+                  class={[
+                    "pl-6 py-1 text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900",
+                    @estimate && "text-slate-900 dark:text-slate-100",
+                    !@estimate && "text-slate-500 dark:text-slate-400"
+                  ]}
+                >
+                  {Phoenix.HTML.Form.options_for_select(@estimates, @estimate || "")}
+                </select>
+              </span>
               <span
                 id={"issue-line-#{@item.id}"}
                 class="flex-1 basis-40 min-w-0 text-[11px] text-slate-500 dark:text-slate-400"
@@ -450,6 +470,9 @@ defmodule RailWeb.Components.TriageItem do
     </p>
     """
   end
+
+  defp estimate_label(1), do: "1 point"
+  defp estimate_label(points), do: "#{points} points"
 
   defp location(%{file: file, lines: lines}) when is_binary(lines), do: "#{file}:#{lines}"
   defp location(%{file: file}), do: file

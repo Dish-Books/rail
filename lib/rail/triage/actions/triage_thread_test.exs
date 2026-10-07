@@ -6,6 +6,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
   alias Rail.Mcp.Schemas.McpConnection
   alias Rail.Projects
   alias Rail.Roles
+  alias Rail.Scope
   alias Rail.Tools
   alias Rail.Triage
   alias Rail.Triage.Schemas.Item
@@ -46,7 +47,8 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
       "issue" => %{
         "title" => "Approve leaves tasks at Design",
         "description" => "Root cause: ...",
-        "priority" => "urgent"
+        "priority" => "urgent",
+        "estimate" => 3
       },
       "reply" => "Thanks Priya, we reproduced this. Filed as {issue link}."
     }
@@ -59,7 +61,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
       "summary" => "Ordered by wait, but rows show none.",
       "evidence" => [%{"file" => "lib/up_next.ex", "lines" => "78", "excerpt" => "row", "holds" => false}],
       "assumptions" => [],
-      "issue" => %{"title" => "Show wait times", "description" => "...", "priority" => "low"},
+      "issue" => %{"title" => "Show wait times", "description" => "...", "priority" => "low", "estimate" => 2},
       "reply" => "Good call."
     }
 
@@ -71,7 +73,15 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     bug: bug,
     result_path: result_path
   } do
-    expect(Tools, :run_agent, fn _role, _argv, _opts ->
+    expect(Tools, :run_agent, fn _role, argv, _opts ->
+      assert Enum.any?(argv, &(&1 =~ ~s("priority": "medium", "estimate": 2})))
+
+      assert Enum.any?(
+               argv,
+               &(&1 =~ "`estimate` is the issue's points on Product's scale: 1, 2, 3 or 5, and 8" and
+                   &1 =~ "It is a number only, never a description of the work.")
+             )
+
       File.write!(result_path, Jason.encode!(%{"title" => "Tasks stuck at Design", "items" => [bug]}))
       {:ok, ""}
     end)
@@ -97,6 +107,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
                assumptions: [%Item.Assumption{text: "Billing is the BILL project.", corrected: false}],
                issue_title: "Approve leaves tasks at Design",
                issue_priority: :urgent,
+               issue_estimate: 3,
                reply_text: "Thanks Priya, we reproduced this. Filed as {issue link}.",
                created_issue_id: nil,
                reply_posted_at: nil
@@ -181,8 +192,16 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
 
     assert :ok = Triage.triage_thread(thread)
 
-    assert [%Item{existing_issue_id: ^issue_id, issue_title: nil, issue_description: nil, reply_text: "Good call."}] =
-             Repo.all(from i in Item, where: i.thread_id == ^thread_id)
+    assert [
+             %Item{
+               existing_issue_id: ^issue_id,
+               issue_title: nil,
+               issue_description: nil,
+               issue_priority: nil,
+               issue_estimate: nil,
+               reply_text: "Good call."
+             }
+           ] = Repo.all(from i in Item, where: i.thread_id == ^thread_id)
   end
 
   test "a pass in an ordinary channel drafts replies that link the issue with the placeholder", %{
@@ -690,7 +709,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
       rewritten =
         Map.merge(bug, %{
           "reply" => "Couldn't reproduce yet.",
-          "issue" => %{"title" => "Rail's new title", "description" => "New.", "priority" => "low"}
+          "issue" => %{"title" => "Rail's new title", "description" => "New.", "priority" => "low", "estimate" => 5}
         })
 
       File.write!(result_path, Jason.encode!(%{"items" => [rewritten]}))
@@ -704,9 +723,60 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
                reply_text: "Couldn't reproduce yet.",
                issue_title: "Rail's new title",
                issue_description: "New.",
-               issue_priority: :low
+               issue_priority: :low,
+               issue_estimate: 5
              }
            ] = Repo.all(from i in Item, where: i.thread_id == ^thread_id)
+  end
+
+  test "a later pass leaves the estimate an issue was created with, while its reply is still to post", %{
+    workspace: workspace,
+    channel: channel,
+    thread: %{id: thread_id} = thread,
+    bug: bug,
+    result_path: result_path
+  } do
+    %Thread{items: [item]} = triage_with(thread, %{"items" => [bug]})
+    user = slack_user(workspace.external_id)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_tri_301",
+              "identifier" => "TRI-301",
+              "title" => "Approve leaves tasks at Design",
+              "url" => "https://linear.app/acme/issue/TRI-301",
+              "state" => %{"id" => "st_tri", "name" => "Triage", "type" => "triage"}
+            }
+          }
+        }
+      })
+    end)
+
+    Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => false, "error" => "channel_not_found"}))
+
+    assert {:ok, %Item{created_issue_id: "iss_" <> _id, issue_estimate: 2, reply_posted_at: nil}} =
+             Triage.create_triage_issue(Scope.for_user(user), item, %{"issue_estimate" => "2"})
+
+    {:ok, thread} =
+      Triage.handle_slack_event(
+        workspace,
+        slack_message_event(channel, %{"ts" => "1790000100.000300", "thread_ts" => thread.external_id, "text" => "+1"})
+      )
+
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
+      redrafted = Map.merge(bug, %{"reply" => "Still on it.", "issue" => %{"title" => "Redrafted", "estimate" => 8}})
+      File.write!(result_path, Jason.encode!(%{"items" => [redrafted]}))
+      {:ok, ""}
+    end)
+
+    assert :ok = Triage.triage_thread(thread)
+
+    assert [%Item{issue_title: "Approve leaves tasks at Design", issue_estimate: 2, reply_text: "Still on it."}] =
+             Repo.all(from i in Item, where: i.thread_id == ^thread_id)
   end
 
   describe "images attached to messages" do

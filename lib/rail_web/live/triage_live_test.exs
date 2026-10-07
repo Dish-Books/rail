@@ -89,6 +89,7 @@ defmodule RailWeb.TriageLiveTest do
     assert has_element?(view, "#triage-verdict-#{bug.id}", "Confirmed")
     assert has_element?(view, "#triage-verdict-#{request.id}", "Partly built")
     assert has_element?(view, "#issue-title-#{bug.id}[value='Approve leaves tasks at Design']")
+    assert has_element?(view, "#issue-estimate-#{bug.id}.text-slate-500 option[value=''][selected]", "No points")
     assert has_element?(view, "#reply-text-#{request.id}", "Good call, Priya.")
     refute has_element?(view, "#issue-form-#{request.id}")
     assert has_element?(view, "#triage-item-#{request.id}", "Rows show no wait time.")
@@ -107,9 +108,10 @@ defmodule RailWeb.TriageLiveTest do
     |> form("#issue-form-#{bug.id}", %{"item" => %{"issue_title" => "Approve leaves tasks stuck at Design"}})
     |> render_change()
 
+    view |> form("#issue-form-#{bug.id}", %{"item" => %{"issue_estimate" => "2"}}) |> render_change()
     view |> form("#reply-form-#{request.id}", %{"item" => %{"reply_text" => "Good call."}}) |> render_change()
 
-    assert %Item{issue_title: "Approve leaves tasks at Design"} = Repo.get!(Item, bug.id)
+    assert %Item{issue_title: "Approve leaves tasks at Design", issue_estimate: nil} = Repo.get!(Item, bug.id)
     assert %Item{reply_text: "Good call, Priya."} = Repo.get!(Item, request.id)
     refute has_element?(view, "#triage-items", "Edited by")
 
@@ -121,6 +123,7 @@ defmodule RailWeb.TriageLiveTest do
 
     send(view.pid, {:triage_changed, thread.id})
     assert has_element?(view, ~s(#issue-title-#{bug.id}[value="Approve leaves tasks stuck at Design"]))
+    assert has_element?(view, "#issue-estimate-#{bug.id}.text-slate-900 option[value='2'][selected]", "2 points")
     assert has_element?(view, "#reply-text-#{request.id}", "Good call.")
 
     {:ok, fresh, _html} = live(conn, ~p"/triage/#{thread.id}")
@@ -135,11 +138,13 @@ defmodule RailWeb.TriageLiveTest do
       "reply" => "Rail's second thought."
     }
 
-    triage_with(Repo.get!(Thread, thread.id), %{"items" => [triage_bug(), rewritten]})
+    redrafted = triage_bug(%{"issue" => %{"title" => "Approve leaves tasks at Design", "estimate" => 8}})
+    triage_with(Repo.get!(Thread, thread.id), %{"items" => [redrafted, rewritten]})
     send(view.pid, {:triage_changed, thread.id})
 
     assert has_element?(view, "#reply-text-#{request.id}", "Rail's second thought.")
     assert has_element?(view, ~s(#issue-title-#{bug.id}[value="Approve leaves tasks stuck at Design"]))
+    assert has_element?(view, "#issue-estimate-#{bug.id} option[value='8'][selected]", "8 points")
   end
 
   test "creating the issue and posting a reply settle their items, and the posts show as yours via Rail", %{
@@ -152,6 +157,8 @@ defmodule RailWeb.TriageLiveTest do
     Req.Test.allow(Rail.Slack, self(), view.pid)
 
     Req.Test.expect(Rail.Linear, fn conn ->
+      assert %{"variables" => %{"input" => %{"estimate" => 5}}} = conn |> Req.Test.raw_body() |> Jason.decode!()
+
       Req.Test.json(conn, %{
         "data" => %{
           "issueCreate" => %{
@@ -175,11 +182,14 @@ defmodule RailWeb.TriageLiveTest do
     |> form("#reply-form-#{bug.id}", %{"item" => %{"reply_text" => "Fixed soon. Filed as {issue link}."}})
     |> render_change()
 
+    view |> form("#issue-form-#{bug.id}", %{"item" => %{"issue_estimate" => "5"}}) |> render_change()
+
     view
     |> form("#issue-form-#{bug.id}", %{"item" => %{"issue_title" => "Approve leaves tasks at Design, with no role"}})
     |> render_submit()
 
     assert has_element?(view, "#triage-item-#{bug.id}[data-state='settled']", "Created TRI-214")
+    assert %Item{created_issue: %Issue{estimate: 5}} = Item |> Repo.get!(bug.id) |> Repo.preload(:created_issue)
     assert has_element?(view, "#triage-item-posted-#{bug.id}", "Fixed soon. Filed as TRI-214.")
     refute has_element?(view, "#triage-item-#{bug.id}", "{issue link}")
 
@@ -190,6 +200,62 @@ defmodule RailWeb.TriageLiveTest do
     assert has_element?(view, "#triage-thread [data-qa='triage-message']", user.slack_name)
     assert has_element?(view, "#triage-thread [data-qa='via-rail']", "via Rail")
     assert has_element?(view, "#triage-filter-done", "Done · 1")
+  end
+
+  test "the agent's estimate shows right after Priority, and clearing it creates the issue with no points", %{
+    conn: conn,
+    workspace: workspace,
+    channel: channel
+  } do
+    {:ok, thread} =
+      Triage.handle_slack_event(
+        workspace,
+        slack_message_event(channel, %{"ts" => "1790008000.000100", "text" => "Stuck"})
+      )
+
+    bug = triage_bug(%{"reply" => nil, "issue" => %{"title" => "Stuck", "priority" => "high", "estimate" => 3}})
+    %Thread{items: [item]} = triage_with(thread, %{"items" => [bug]})
+
+    {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
+
+    assert has_element?(
+             view,
+             "#issue-priority-#{item.id} + span #issue-estimate-#{item.id}[aria-label='Estimate'] option[value='3'][selected]",
+             "3 points"
+           )
+
+    assert has_element?(view, "#issue-estimate-#{item.id}.text-slate-900")
+
+    Req.Test.allow(Rail.Linear, self(), view.pid)
+    Req.Test.allow(Rail.Slack, self(), view.pid)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert %{"variables" => %{"input" => input}} = conn |> Req.Test.raw_body() |> Jason.decode!()
+      refute Map.has_key?(input, "estimate")
+
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_tri_220",
+              "identifier" => "TRI-220",
+              "title" => "Stuck",
+              "url" => "https://linear.app/acme/issue/TRI-220",
+              "state" => %{"id" => "st_tri", "name" => "Triage", "type" => "triage"}
+            }
+          }
+        }
+      })
+    end)
+
+    Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790008100.000100"}))
+
+    view |> form("#issue-form-#{item.id}", %{"item" => %{"issue_estimate" => ""}}) |> render_submit()
+
+    assert has_element?(view, "#triage-item-#{item.id}[data-state='settled']", "Created TRI-220")
+    refute has_element?(view, "#issue-estimate-#{item.id}")
+    assert %Item{created_issue: %Issue{estimate: nil}} = Item |> Repo.get!(item.id) |> Repo.preload(:created_issue)
   end
 
   test "a created issue points to its issue page until its task starts, then shows the task's stage", %{
@@ -574,6 +640,7 @@ defmodule RailWeb.TriageLiveTest do
     assert has_element?(view, "#triage-tracked-#{item.id}", "TRI-23")
     assert has_element?(view, "#triage-tracked-link-#{item.id}[href='/issues/#{tracked_issue_id}']")
     refute has_element?(view, "#issue-form-#{item.id}")
+    refute has_element?(view, "#issue-estimate-#{item.id}")
 
     Req.Test.allow(Rail.Slack, self(), view.pid)
     Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790007100.000100"}))

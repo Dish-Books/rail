@@ -18,7 +18,7 @@ defmodule Rail.Triage.Actions.SyncTriage do
   alias Rail.Triage.Schemas.Message
   alias Rail.Triage.Schemas.Thread
 
-  @issue_fields [:issue_title, :issue_description, :issue_priority]
+  @issue_fields [:issue_title, :issue_description, :issue_priority, :issue_estimate]
 
   @doc """
   Records `result` against `thread`, whose preloaded messages are the ones the
@@ -122,7 +122,7 @@ defmodule Rail.Triage.Actions.SyncTriage do
 
     # An item something already tracks gets no issue drafted for it.
     if existing_issue_id do
-      Map.merge(base, %{issue_title: nil, issue_description: nil, issue_priority: nil})
+      Map.merge(base, Map.new(@issue_fields, &{&1, nil}))
     else
       Map.merge(base, Map.take(attrs, @issue_fields))
     end
