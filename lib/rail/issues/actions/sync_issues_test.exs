@@ -7,7 +7,7 @@ defmodule Rail.Issues.Actions.SyncIssuesTest do
   alias Rail.Projects
 
   test "sync_issues/1 queues a pull of the project's issues instead of doing it inline" do
-    {:ok, project} =
+    {:ok, %{id: project_id} = project} =
       Projects.create_project(system_scope(), %{
         name: "Sync Issues Project",
         github_repo: "org/sync-issues",
@@ -17,9 +17,16 @@ defmodule Rail.Issues.Actions.SyncIssuesTest do
         clone_path: "/tmp/repos/sync-issues"
       })
 
+    asked_at = DateTime.utc_now()
+
     # No Linear stub is queued, so a request made here would raise.
     assert {:ok, %Oban.Job{}} = Issues.sync_issues(project)
 
-    assert_enqueued(worker: LinearSync, args: %{project_id: project.id})
+    # The pages share the time the sync was asked for, which the last one prunes against.
+    assert [%Oban.Job{args: %{"project_id" => ^project_id, "started_at" => started_at}}] =
+             all_enqueued(worker: LinearSync)
+
+    assert {:ok, started_at, 0} = DateTime.from_iso8601(started_at)
+    assert DateTime.compare(started_at, asked_at) != :lt
   end
 end

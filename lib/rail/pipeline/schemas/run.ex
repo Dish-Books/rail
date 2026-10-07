@@ -215,6 +215,9 @@ defmodule Rail.Pipeline.Schemas.Run do
       waiting_state?(state(run), task.stage)
   end
 
+  # A run read as its issue was deleted has no issue left to wait on anyone for.
+  def needs_attention?(%__MODULE__{}), do: false
+
   @doc """
   Since when this run has been waiting on a human.
 
