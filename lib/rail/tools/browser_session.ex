@@ -69,8 +69,9 @@ defmodule Rail.Tools.BrowserSession do
   @doc """
   Starts the session for `task` under the browser `name` and returns its process.
 
-  `opts` takes `:resume`, a map with the `:browser_context_id`, `:target_id` and
-  `:account` of a tab an earlier session opened, to attach to that tab rather than open one.
+  `opts` takes `:resume`, a map with the `:browser_context_id`, `:target_id`,
+  `:account` and `:signed_in?` of a tab an earlier session opened, to attach to
+  that tab rather than open one.
   """
   def start_link(opts) do
     task = Keyword.fetch!(opts, :task)
@@ -172,7 +173,9 @@ defmodule Rail.Tools.BrowserSession do
     case if(is_binary(link), do: command(state, "Page.navigate", %{url: link}), else: {:ok, :bare}) do
       {:ok, _opened} ->
         {_recorded, _returning} =
-          Repo.update_all(from(s in BrowserSession, where: s.id == ^state.session_id), set: [account: account])
+          Repo.update_all(from(s in BrowserSession, where: s.id == ^state.session_id),
+            set: [account: account, signed_in_at: DateTime.utc_now()]
+          )
 
         {:reply, :ok, %{state | signed_in?: true, account: account}}
 
@@ -363,7 +366,13 @@ defmodule Rail.Tools.BrowserSession do
   # pointed at it.
   defp tab(%__MODULE__{} = state, %{browser_context_id: context, target_id: target} = resume)
        when is_binary(context) and is_binary(target) do
-    state = %{state | browser_context_id: context, target_id: target, signed_in?: true, account: resume[:account]}
+    state = %{
+      state
+      | browser_context_id: context,
+        target_id: target,
+        signed_in?: resume[:signed_in?] == true,
+        account: resume[:account]
+    }
 
     # Where the tab is comes from its main frame, as a navigation reports it: the
     # target's own info catches up later, and reads blank in between.

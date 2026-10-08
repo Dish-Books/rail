@@ -9,7 +9,8 @@ defmodule Rail.Tools.Schemas.BrowserSession do
 
   Each agent names its browser, and a task has one live session per name, so a
   second `start` finds the first rather than leaving a browser behind. `account`
-  is who the project's seed signed it in as. The finished rows stay as the record.
+  is who the project's seed signed it in as, and `signed_in_at` when it was signed
+  in or left bare on purpose. The finished rows stay as the record.
   """
   use Rail.Schema
 
@@ -21,6 +22,7 @@ defmodule Rail.Tools.Schemas.BrowserSession do
   schema "browser_sessions" do
     field :name, :string
     field :account, :string
+    field :signed_in_at, :utc_datetime_usec
     field :debug_port, :integer
     field :browser_context_id, :string
     field :target_id, :string
@@ -38,6 +40,7 @@ defmodule Rail.Tools.Schemas.BrowserSession do
     :task_id,
     :name,
     :account,
+    :signed_in_at,
     :debug_port,
     :browser_context_id,
     :target_id,

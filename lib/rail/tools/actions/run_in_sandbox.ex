@@ -42,10 +42,9 @@ defmodule Rail.Tools.Actions.RunInSandbox do
 
   defp run(%OsProcess{runtime: :docker, container_id: container_id}, task, command, timeout_ms)
        when is_binary(container_id) do
-    exec =
-      Task.async(fn ->
-        Docker.exec_in_container(container_id, ["/bin/sh", "-c", command], worktree_env(task), task.worktree_path)
-      end)
+    # Rail stopping its wait does not stop an exec, so the container kills the command at the same limit.
+    argv = ["timeout", "-k", "5", "#{timeout_ms / 1000}", "/bin/sh", "-c", command]
+    exec = Task.async(fn -> Docker.exec_in_container(container_id, argv, worktree_env(task), task.worktree_path) end)
 
     case Task.yield(exec, timeout_ms) || Task.shutdown(exec, :brutal_kill) do
       {:ok, result} -> result

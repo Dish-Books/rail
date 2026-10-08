@@ -8,7 +8,11 @@ defmodule Rail.Repo.Migrations.NameBrowserSessions do
     alter table(:browser_sessions) do
       add :name, :text
       add :account, :text
+      add :signed_in_at, :utc_datetime_usec
     end
+
+    # A tab live at the deploy was signed in by hand, before there was a seed to run.
+    execute "UPDATE browser_sessions SET signed_in_at = started_at WHERE status <> 'finished'"
 
     # A row is named for the QA or demo run that drove it: the latest one on its
     # task started before it, else the stage the task is at now.
@@ -47,6 +51,7 @@ defmodule Rail.Repo.Migrations.NameBrowserSessions do
     alter table(:browser_sessions) do
       remove :name
       remove :account
+      remove :signed_in_at
     end
   end
 end

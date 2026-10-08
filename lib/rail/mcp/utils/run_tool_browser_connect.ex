@@ -43,7 +43,7 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnect do
        Browser: #{name}
        Your tab: #{page_url}
        Now at: #{Tools.get_browser_url(task, name) || "about:blank"}
-       #{signed_in}Driver: #{driver}
+       #{signed_in}#{no_seed(task)}Driver: #{driver}
 
        Write a script and run it with node:
 
@@ -59,6 +59,13 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnect do
        """}
     end
   end
+
+  # Said outright rather than left to the absence of an account, which also means a
+  # bare browser or a seed that printed no email.
+  defp no_seed(%Task{project: %Project{account_seed_command: seed}}) when seed in [nil, ""],
+    do: "Account seed: none, so sign in as your prompt says.\n"
+
+  defp no_seed(%Task{}), do: ""
 
   defp account(arguments) do
     case Map.get(arguments, "account", "fresh") do
@@ -86,12 +93,12 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnect do
   end
 
   defp seed(session, seed, os_process) do
-    case Tools.run_in_sandbox(os_process, seed) do
-      {:ok, %{exit_code: 0, output: output}} ->
-        case link(output) do
-          "" <> link -> settle(session, link, email(output))
-          nil -> {:refused, "The account seed `#{seed}` printed no link to sign in with. It printed:\n#{tail(output)}"}
-        end
+    with {:ok, %{exit_code: 0, output: output}} <- Tools.run_in_sandbox(os_process, seed),
+         "" <> link <- link(output) || {:no_link, output} do
+      settle(session, link, email(output))
+    else
+      {:no_link, output} ->
+        {:refused, "The account seed `#{seed}` printed no link to sign in with. It printed:\n#{tail(output)}"}
 
       {:ok, %{exit_code: code, output: output}} ->
         {:refused, "The account seed `#{seed}` exited with #{code}, so nobody is signed in. It printed:\n#{tail(output)}"}

@@ -49,7 +49,7 @@ of its own and says who: nobody else's records are in it. Each `browser` name yo
 browser signed in as another account. To show sign-up, onboarding or billing itself, ask for
 `account: "bare"` under a new name, and the browser opens with nobody signed in.
 
-When `browser_connect` names no account,
+When `browser_connect` says there is no account seed,
 `http://localhost:$PORT/dev/login?return_to=<path>` signs in `qa-admin@rail.local`, straight onto
 the page you want. `/dev/login/<email>?return_to=<path>` switches to somebody else on camera, for
 anything that turns on whose work it is. Do it before the first beat that matters: nobody watching

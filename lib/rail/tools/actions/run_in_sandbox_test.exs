@@ -78,7 +78,11 @@ defmodule Rail.Tools.Actions.RunInSandboxTest do
         {"POST", "/containers/c0ffee/exec"} ->
           {:ok, body, conn} = Plug.Conn.read_body(conn)
 
-          assert %{"Cmd" => ["/bin/sh", "-c", "scripts/seed"], "WorkingDir" => ^worktree, "Env" => env} =
+          assert %{
+                   "Cmd" => ["timeout", "-k", "5", "120.0", "/bin/sh", "-c", "scripts/seed"],
+                   "WorkingDir" => ^worktree,
+                   "Env" => env
+                 } =
                    Jason.decode!(body)
 
           assert "RAIL_PORT_BASE=20300" in env

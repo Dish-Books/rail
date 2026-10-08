@@ -47,7 +47,12 @@ defmodule Rail.Tools.Actions.StartBrowserSession do
 
   defp resume(%Task{} = task, name, %Session{browser_context_id: context, target_id: target} = session, opts)
        when is_binary(context) and is_binary(target) do
-    resume = %{browser_context_id: context, target_id: target, account: session.account}
+    resume = %{
+      browser_context_id: context,
+      target_id: target,
+      account: session.account,
+      signed_in?: is_struct(session.signed_in_at, DateTime)
+    }
 
     case start(task, session, [{:resume, resume} | opts]) do
       {:ok, pid} ->
