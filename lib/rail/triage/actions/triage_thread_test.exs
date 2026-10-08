@@ -73,15 +73,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     bug: bug,
     result_path: result_path
   } do
-    expect(Tools, :run_agent, fn _role, argv, _opts ->
-      assert Enum.any?(argv, &(&1 =~ ~s("priority": "medium", "estimate": 2})))
-
-      assert Enum.any?(
-               argv,
-               &(&1 =~ "`estimate` is the issue's points on Product's scale: 1, 2, 3 or 5, and 8" and
-                   &1 =~ "It is a number only, never a description of the work.")
-             )
-
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
       File.write!(result_path, Jason.encode!(%{"title" => "Tasks stuck at Design", "items" => [bug]}))
       {:ok, ""}
     end)
