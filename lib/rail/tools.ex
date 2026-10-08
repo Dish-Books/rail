@@ -42,16 +42,16 @@ defmodule Rail.Tools do
   defdelegate os_process_alive?(pid), to: Actions.OsProcessAlive
   defdelegate terminate_os_process(pid, opts \\ []), to: Actions.TerminateOsProcess
 
-  defdelegate start_browser_session(task, opts \\ []), to: Actions.StartBrowserSession
-  defdelegate get_browser_session(task), to: Actions.GetBrowserSession
-  defdelegate get_browser_frame(task), to: Actions.GetBrowserFrame
-  defdelegate get_browser_url(task), to: Actions.GetBrowserUrl
+  defdelegate start_browser_session(task, name, opts \\ []), to: Actions.StartBrowserSession
+  defdelegate get_browser_session(task, name), to: Actions.GetBrowserSession
+  defdelegate get_browser_frame(task, name), to: Actions.GetBrowserFrame
+  defdelegate get_browser_url(task, name), to: Actions.GetBrowserUrl
   defdelegate stop_browser_session(task), to: Actions.StopBrowserSession
   defdelegate reconcile_browser_sessions(opts \\ []), to: Actions.ReconcileBrowserSessions
   defdelegate capture_browser_evidence(session, task, name, key \\ nil), to: Actions.CaptureBrowserEvidence
   defdelegate file_qa_evidence(task, path, name, key), to: Actions.FileQaEvidence
 
-  defdelegate start_browser_recording(task), to: Actions.StartBrowserRecording
+  defdelegate start_browser_recording(task, name), to: Actions.StartBrowserRecording
   defdelegate get_browser_recording(task), to: Actions.GetBrowserRecording
   defdelegate stop_browser_recording(task), to: Actions.StopBrowserRecording
   defdelegate encode_recording(directory, marks \\ []), to: Actions.EncodeRecording
@@ -61,6 +61,7 @@ defmodule Rail.Tools do
   defdelegate start_after_usage_reset(os_process_id), to: Actions.StartAfterUsageReset
   defdelegate get_usage_wait(run), to: Actions.GetUsageWait
   defdelegate start_command_process(run, kind, command, opts \\ []), to: Actions.StartCommandProcess
+  defdelegate run_in_sandbox(os_process, command, opts \\ []), to: Actions.RunInSandbox
   defdelegate stop_os_process(scope, os_process, opts \\ []), to: Actions.StopOsProcess
   defdelegate get_os_process(id), to: Actions.GetOsProcess
   defdelegate get_active_os_process(run), to: Actions.GetActiveOsProcess

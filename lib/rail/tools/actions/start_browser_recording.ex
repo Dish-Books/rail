@@ -18,15 +18,15 @@ defmodule Rail.Tools.Actions.StartBrowserRecording do
   alias Rail.Tools.BrowserSupervisor
 
   @doc """
-  Returns `{:ok, pid}` for `task`'s recording, into `<scratch>/demo`.
+  Returns `{:ok, pid}` for `task`'s recording of the browser `name`, into `<scratch>/demo`.
   """
-  def start_browser_recording(%Task{} = task) do
+  def start_browser_recording(%Task{} = task, name) when is_binary(name) do
     case Tools.get_browser_recording(task) do
       pid when is_pid(pid) ->
         {:ok, pid}
 
       nil ->
-        child = {BrowserRecorder, [task: task, directory: Path.join(task.scratch_path, "demo")]}
+        child = {BrowserRecorder, [task: task, name: name, directory: Path.join(task.scratch_path, "demo")]}
 
         case DynamicSupervisor.start_child(BrowserSupervisor, child) do
           {:ok, pid} -> {:ok, pid}

@@ -37,7 +37,7 @@ defmodule Rail.Mcp.Utils.RunToolDemoSayTest do
   end
 
   test "stamps the caption against the recording's clock", %{task: task, written: written} do
-    {:ok, _rolling} = run_tool_demo_start(task, %{}, [])
+    {:ok, _rolling} = run_tool_demo_start(task, %{}, stage: :demo)
 
     assert {:ok, said} = run_tool_demo_say(task, %{"text" => "Entering a bill for Sysco"}, [])
     assert said =~ "Said at 0:00"
@@ -49,7 +49,7 @@ defmodule Rail.Mcp.Utils.RunToolDemoSayTest do
   # The criterion is what says the walkthrough covered the ticket rather than
   # wandering around the application, so it is carried through untouched.
   test "a beat that proves a criterion says which", %{task: task, written: written} do
-    {:ok, _rolling} = run_tool_demo_start(task, %{}, [])
+    {:ok, _rolling} = run_tool_demo_start(task, %{}, stage: :demo)
 
     {:ok, _said} =
       run_tool_demo_say(
@@ -62,7 +62,7 @@ defmodule Rail.Mcp.Utils.RunToolDemoSayTest do
   end
 
   test "every beat is kept, in the order it was said", %{task: task, written: written} do
-    {:ok, _rolling} = run_tool_demo_start(task, %{}, [])
+    {:ok, _rolling} = run_tool_demo_start(task, %{}, stage: :demo)
 
     {:ok, _first} = run_tool_demo_say(task, %{"text" => "Opening the bills page"}, [])
     {:ok, _second} = run_tool_demo_say(task, %{"text" => "Entering a bill"}, [])
@@ -72,7 +72,7 @@ defmodule Rail.Mcp.Utils.RunToolDemoSayTest do
 
   test "every page open on the task hears a caption land", %{task: %{id: task_id} = task} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task_id}")
-    {:ok, _rolling} = run_tool_demo_start(task, %{}, [])
+    {:ok, _rolling} = run_tool_demo_start(task, %{}, stage: :demo)
 
     {:ok, _said} = run_tool_demo_say(task, %{"text" => "Opening the bills page"}, [])
 
@@ -80,7 +80,7 @@ defmodule Rail.Mcp.Utils.RunToolDemoSayTest do
   end
 
   test "a call with no words to say records nothing", %{task: task} do
-    {:ok, _rolling} = run_tool_demo_start(task, %{}, [])
+    {:ok, _rolling} = run_tool_demo_start(task, %{}, stage: :demo)
 
     assert {:refused, "demo_say needs a `text`. Nothing was recorded."} = run_tool_demo_say(task, %{}, [])
 

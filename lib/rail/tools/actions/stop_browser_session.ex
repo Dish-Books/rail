@@ -1,9 +1,9 @@
 defmodule Rail.Tools.Actions.StopBrowserSession do
   @moduledoc """
-  Closes the tab a task was being driven in, and the context it lived in.
+  Closes every tab a task was being driven in, and the contexts they lived in.
 
-  The shared Chrome stays up for everybody else; what goes is this task's
-  context, and everything signed into it with it. A tab still open that nothing
+  The shared Chrome stays up for everybody else; what goes is each of this task's
+  contexts, whatever its name, and everything signed into it. A tab still open that nothing
   is connected to - Rail restarted since it was opened - is closed over a
   connection of its own, because a context nobody closes is a tab left open in a
   Chrome that never exits. A Chrome that is down has no tabs to close, and is not
@@ -23,14 +23,16 @@ defmodule Rail.Tools.Actions.StopBrowserSession do
   alias Rail.Tools.Schemas.BrowserSession
 
   @doc """
-  Stops `task`'s browser session, closing its tab and context.
+  Stops each of `task`'s browser sessions, closing its tab and context.
   """
   def stop_browser_session(%Task{id: task_id} = task) do
     live = Repo.all(from s in BrowserSession, where: s.task_id == ^task_id and s.status != :finished)
 
-    case Tools.get_browser_session(task) do
-      pid when is_pid(pid) -> :ok = GenServer.stop(pid, :normal, 10_000)
-      nil -> Enum.each(live, &close/1)
+    for %BrowserSession{} = session <- live do
+      case Tools.get_browser_session(task, session.name) do
+        pid when is_pid(pid) -> :ok = GenServer.stop(pid, :normal, 10_000)
+        nil -> close(session)
+      end
     end
 
     {_settled, _returning} =

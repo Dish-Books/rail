@@ -7,9 +7,9 @@ defmodule Rail.Tools.Schemas.BrowserSession do
   finds the tab again after a restart - the context and target it was given - and
   what says which contexts are still somebody's, so the rest can be closed.
 
-  One live session per task, so a second `start` finds the first rather than
-  leaving a browser behind. A task is QA'd more than once and each pass gets its
-  own; the finished rows stay as the record of what was launched.
+  Each agent names its browser, and a task has one live session per name, so a
+  second `start` finds the first rather than leaving a browser behind. `account`
+  is who the project's seed signed it in as. The finished rows stay as the record.
   """
   use Rail.Schema
 
@@ -19,6 +19,8 @@ defmodule Rail.Tools.Schemas.BrowserSession do
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "bws"}
   schema "browser_sessions" do
+    field :name, :string
+    field :account, :string
     field :debug_port, :integer
     field :browser_context_id, :string
     field :target_id, :string
@@ -34,6 +36,8 @@ defmodule Rail.Tools.Schemas.BrowserSession do
 
   @cast_fields [
     :task_id,
+    :name,
+    :account,
     :debug_port,
     :browser_context_id,
     :target_id,
@@ -43,7 +47,7 @@ defmodule Rail.Tools.Schemas.BrowserSession do
     :finished_at
   ]
 
-  @required_fields [:task_id, :status]
+  @required_fields [:task_id, :name, :status]
 
   @doc """
   Builds a changeset for a browser session.
@@ -53,6 +57,6 @@ defmodule Rail.Tools.Schemas.BrowserSession do
     |> cast(attrs, @cast_fields)
     |> validate_required(@required_fields)
     |> foreign_key_constraint(:task_id)
-    |> unique_constraint([:task_id], name: :browser_sessions_live_task_index)
+    |> unique_constraint([:task_id, :name], name: :browser_sessions_live_task_name_index)
   end
 end

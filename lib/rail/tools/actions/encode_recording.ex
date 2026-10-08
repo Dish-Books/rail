@@ -17,8 +17,8 @@ defmodule Rail.Tools.Actions.EncodeRecording do
   its own duration rather than everything being averaged into one frame rate. A
   page that animated plays at the speed it animated at. A page nothing happened
   on for forty seconds does not - `Rail.Tools.Utils.CompressTimeline` caps how
-  long a still frame holds, except while a caption is up and needs reading - so
-  the video is what was shown rather than how long it took to show it.
+  long a still frame holds, and drops what was filmed after the last caption was
+  read - so the video is what was shown rather than how long it took to show it.
 
   A machine with no ffmpeg is a machine that records but cannot encode. That is
   reported rather than raised: the frames are still there, and whoever reads the
@@ -32,9 +32,9 @@ defmodule Rail.Tools.Actions.EncodeRecording do
   @doc """
   Encodes the frames in `directory` into `directory/demo.webm`.
 
-  `marks` are the stretches of the recording that must play at real speed, each
-  `{at_ms, for_ms}` on the recording's clock - a caption and the time it takes
-  to read. Returns `{:ok, path, video_times}`, where `video_times` is where each
+  `marks` are the captions, each `{at_ms, for_ms}` on the recording's clock - when
+  it was said and the time it takes to read. Only the frames the timeline keeps
+  are encoded. Returns `{:ok, path, video_times}`, where `video_times` is where each
   mark begins in the video, in the order given.
 
   Returns `{:error, :nothing_recorded}` when no frame was ever written,

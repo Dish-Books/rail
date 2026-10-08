@@ -65,6 +65,50 @@ defmodule Rail.Tools.Clients.DockerTest do
     assert {:ok, [%{"Id" => "c0ffee"}]} = Docker.list_containers("dev.railai.sandbox")
   end
 
+  test "runs a command in a running container and reads back what it printed and how it exited" do
+    Req.Test.expect(Docker, 3, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"POST", "/containers/c0ffee/exec"} ->
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+          assert %{
+                   "Cmd" => ["/bin/sh", "-c", "scripts/seed"],
+                   "Env" => ["RAIL_PORT_BASE=20300"],
+                   "WorkingDir" => "/srv/worktree",
+                   "User" => "1000:1000",
+                   "AttachStdout" => true,
+                   "AttachStderr" => true
+                 } = Jason.decode!(body)
+
+          conn |> Plug.Conn.put_status(201) |> Req.Test.json(%{"Id" => "exec1"})
+
+        {"POST", "/exec/exec1/start"} ->
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+          assert %{"Detach" => false, "Tty" => false} = Jason.decode!(body)
+          out = "Signed up a@rail.test\n"
+          err = "warning\n"
+
+          conn
+          |> Plug.Conn.put_resp_content_type("application/vnd.docker.multiplexed-stream")
+          |> Plug.Conn.send_resp(
+            200,
+            <<1, 0, 0, 0, byte_size(out)::32, out::binary, 2, 0, 0, 0, byte_size(err)::32, err::binary>>
+          )
+
+        {"GET", "/exec/exec1/json"} ->
+          Req.Test.json(conn, %{"ExitCode" => 3, "Running" => false})
+      end
+    end)
+
+    assert {:ok, %{output: "Signed up a@rail.test\nwarning\n", exit_code: 3}} =
+             Docker.exec_in_container(
+               "c0ffee",
+               ["/bin/sh", "-c", "scripts/seed"],
+               %{"RAIL_PORT_BASE" => "20300"},
+               "/srv/worktree"
+             )
+  end
+
   test "says what Docker refused, and what never reached it" do
     Req.Test.expect(Docker, fn conn ->
       conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "No such container: gone"})

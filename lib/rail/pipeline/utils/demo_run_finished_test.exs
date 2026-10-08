@@ -74,8 +74,8 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
 
     stub(Tools, :stop_browser_recording, fn %Task{} -> nil end)
 
-    # Each caption goes in with its reading time, a few words a second.
-    expect(Tools, :encode_recording, fn ^demo_dir, [{0, 2_000}, {95_000, 2_000}] ->
+    # Each caption goes in with its reading time, four words a second.
+    expect(Tools, :encode_recording, fn ^demo_dir, [{0, 1_250}, {95_000, 1_200}] ->
       {:ok, Path.join(demo_dir, "demo.webm"), [0, 31_000]}
     end)
 

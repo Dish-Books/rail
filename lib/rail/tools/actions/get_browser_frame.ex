@@ -1,6 +1,6 @@
 defmodule Rail.Tools.Actions.GetBrowserFrame do
   @moduledoc """
-  The last thing this task's browser painted, for a panel that has just opened.
+  The last thing a task's named browser painted, for a panel that has just opened.
 
   Frames are broadcast as they happen, so a watcher who was already there has
   seen them. One who arrives part way through a pass has missed all of them, and
@@ -14,11 +14,11 @@ defmodule Rail.Tools.Actions.GetBrowserFrame do
   alias Rail.Tools.BrowserSession
 
   @doc """
-  Returns the newest frame from `task`'s browser as base64 JPEG, or `nil` when
-  there is no browser or it has not painted yet.
+  Returns the newest frame from the browser `name` on `task` as base64 JPEG, or
+  `nil` when there is no such browser or it has not painted yet.
   """
-  def get_browser_frame(%Task{} = task) do
-    case Tools.get_browser_session(task) do
+  def get_browser_frame(%Task{} = task, name) do
+    case Tools.get_browser_session(task, name) do
       pid when is_pid(pid) -> BrowserSession.last_frame(pid)
       nil -> nil
     end

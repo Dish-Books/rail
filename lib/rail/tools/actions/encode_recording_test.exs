@@ -50,24 +50,37 @@ defmodule Rail.Tools.Actions.EncodeRecordingTest do
            file 'frames/000001.jpg'
            duration 0.500
            file 'frames/000002.jpg'
-           duration 2.000
+           duration 1.000
            file 'frames/000002.jpg'
            """
   end
 
-  # A still page is squeezed down to what is worth watching, and where each
-  # caption landed in the squeezed video comes back for the player to use.
-  test "squeezes the still stretches and says where each caption landed", %{directory: directory} do
+  # A still page is squeezed to a second whether a caption is up or not, what was
+  # filmed after the last caption was read is not encoded, and where each caption
+  # landed in the squeezed video comes back for the player to use.
+  test "squeezes the still stretches, drops the run past the last caption, and says where it landed", %{
+    directory: directory
+  } do
     File.write!(Path.join(directory, "frames.jsonl"), """
     {"file": "000000.jpg", "at_ms": 0}
     {"file": "000001.jpg", "at_ms": 43400}
+    {"file": "000002.jpg", "at_ms": 44000}
+    {"file": "000003.jpg", "at_ms": 90000}
     """)
 
     expect(Tools, :run, fn "ffmpeg", _argv, _opts -> {"", 0} end)
 
-    assert {:ok, _video, [0]} = Tools.encode_recording(directory, [{1_000, 4_000}])
+    assert {:ok, _video, [23]} = Tools.encode_recording(directory, [{1_000, 1_200}])
 
-    assert File.read!(Path.join(directory, "frames.txt")) =~ "file 'frames/000000.jpg'\nduration 4.000\n"
+    assert File.read!(Path.join(directory, "frames.txt")) == """
+           file 'frames/000000.jpg'
+           duration 1.000
+           file 'frames/000001.jpg'
+           duration 0.600
+           file 'frames/000002.jpg'
+           duration 0.623
+           file 'frames/000002.jpg'
+           """
   end
 
   # Two frames in the same millisecond still have to hold for something, or

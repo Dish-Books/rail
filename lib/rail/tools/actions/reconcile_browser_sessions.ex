@@ -7,11 +7,11 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessions do
   the point - a deploy in the middle of a pass leaves the pass's page where it
   was - and it is also the leak: a task that moved on from QA or demo leaves a
   tab signed into its app, open until the machine restarts, unless something
-  closes it. This is what closes it: a task out of both stages has its context
-  closed and its row settled, whatever holds it.
+  closes it. This is what closes it: a task out of both stages has every named
+  context closed and its rows settled, whatever holds them.
 
-  A task still in QA or demo keeps its tab. One with a run executing right now is
-  reconnected to it, so the panel is watching again and the tab's problems are
+  A task still in QA or demo keeps its tabs. Each one a running run is driving is
+  reconnected by its name, so the panel is watching again and the tab's problems are
   collected again without waiting for the agent's next call to Rail; one waiting
   on a human is left for its next pass to attach to.
 
@@ -49,16 +49,16 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessions do
         :ok = Tools.stop_browser_session(task)
         [Repo.get!(BrowserSession, session.id)]
 
-      driven?(task) or not running?(task) ->
+      driven?(session) or not running?(task) ->
         []
 
       true ->
-        _reconnected = Tools.start_browser_session(task, [])
+        _reconnected = Tools.start_browser_session(task, session.name, [])
         []
     end
   end
 
-  defp driven?(%Task{id: task_id}), do: Registry.lookup(BrowserRegistry, task_id) != []
+  defp driven?(%BrowserSession{task_id: task_id, name: name}), do: Registry.lookup(BrowserRegistry, {task_id, name}) != []
 
   defp running?(%Task{id: task_id}) do
     Repo.exists?(from r in Run, where: r.task_id == ^task_id and r.status in [:starting, :running])

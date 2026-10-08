@@ -16,15 +16,18 @@ defmodule Rail.Mcp.Utils.RunToolQaShot do
   at all.
   """
 
+  import Rail.Mcp.Utils.BrowserName
+
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Tools
 
   @doc """
-  Captures what `task`'s browser is looking at as `arguments["name"]`, against the
-  check `arguments["check"]`, and says where it was filed.
+  Captures what the browser `arguments["browser"]` names on `task` is looking at
+  as `arguments["name"]`, against the check `arguments["check"]`, and says where it was filed.
   """
   def run_tool_qa_shot(%Task{} = task, %{"name" => name} = arguments, opts) when is_binary(name) do
-    with {:ok, session} <- Tools.start_browser_session(task, opts),
+    with {:ok, browser} <- browser_name(arguments, opts),
+         {:ok, session} <- Tools.start_browser_session(task, browser, opts),
          {:ok, file} <- Tools.capture_browser_evidence(session, task, name, arguments["check"]) do
       {:ok,
        "Filed as #{file}. Cite that name in the finding's evidence. Reading it is how you check how " <>
