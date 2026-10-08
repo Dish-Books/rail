@@ -21,9 +21,9 @@ defmodule Rail.Tools.Utils.CompressTimelineTest do
   # The caption stays up in the bar under the video while the picture moves on,
   # so it is never a reason for a still frame to hold.
   test "a still frame holds no longer than a second while a caption is up" do
-    frames = [%{file: "a.jpg", at_ms: 0}, %{file: "b.jpg", at_ms: 20_000}, %{file: "c.jpg", at_ms: 21_000}]
+    frames = [%{file: "a.jpg", at_ms: 0}, %{file: "b.jpg", at_ms: 8_000}, %{file: "c.jpg", at_ms: 9_000}]
 
-    assert {[%{hold_ms: 1_000}, %{hold_ms: 1_000}, %{hold_ms: 250}], [50]} =
+    assert {[%{hold_ms: 1_000}, %{hold_ms: 1_000}, %{hold_ms: 325}], [125]} =
              compress_timeline(frames, [{1_000, 1_200}])
   end
 
@@ -76,6 +76,29 @@ defmodule Rail.Tools.Utils.CompressTimelineTest do
               %{file: "c.jpg", hold_ms: 1_000},
               %{file: "d.jpg", hold_ms: 700}
             ], [500]} = compress_timeline(frames, [{500, 1_700}])
+  end
+
+  # A still stretch after the last caption is squeezed to a second, which would
+  # bring whatever the run painted ten seconds later into the video's last second.
+  test "a page painted long after the last caption is not in the video, and the walkthrough's last page holds" do
+    frames = [
+      %{file: "walkthrough.jpg", at_ms: 0},
+      %{file: "done.jpg", at_ms: 1_000},
+      %{file: "triage.jpg", at_ms: 15_200},
+      %{file: "settings.jpg", at_ms: 25_000}
+    ]
+
+    assert {[%{file: "walkthrough.jpg", hold_ms: 1_000}, %{file: "done.jpg", hold_ms: 3_200}], [2_000]} =
+             compress_timeline(frames, [{5_000, 1_200}])
+  end
+
+  # A result that paints a few seconds after the caption announcing it is the
+  # walkthrough, not the run going on past it.
+  test "a page painted soon after the last caption stays in the video" do
+    frames = [%{file: "form.jpg", at_ms: 0}, %{file: "saved.jpg", at_ms: 2_500}]
+
+    assert {[%{file: "form.jpg", hold_ms: 1_000}, %{file: "saved.jpg", hold_ms: 1_600}], [400]} =
+             compress_timeline(frames, [{1_000, 1_200}])
   end
 
   # The agent says what it saw after the page last changed, so the last caption

@@ -63,14 +63,15 @@ defmodule Rail.Tools.Actions.EncodeRecordingTest do
   } do
     File.write!(Path.join(directory, "frames.jsonl"), """
     {"file": "000000.jpg", "at_ms": 0}
-    {"file": "000001.jpg", "at_ms": 43400}
-    {"file": "000002.jpg", "at_ms": 44000}
-    {"file": "000003.jpg", "at_ms": 90000}
+    {"file": "000001.jpg", "at_ms": 8000}
+    {"file": "000002.jpg", "at_ms": 8600}
+    {"file": "000003.jpg", "at_ms": 9900}
+    {"file": "000004.jpg", "at_ms": 30000}
     """)
 
     expect(Tools, :run, fn "ffmpeg", _argv, _opts -> {"", 0} end)
 
-    assert {:ok, _video, [23]} = Tools.encode_recording(directory, [{1_000, 1_200}])
+    assert {:ok, _video, [125]} = Tools.encode_recording(directory, [{1_000, 1_200}])
 
     assert File.read!(Path.join(directory, "frames.txt")) == """
            file 'frames/000000.jpg'
@@ -78,7 +79,7 @@ defmodule Rail.Tools.Actions.EncodeRecordingTest do
            file 'frames/000001.jpg'
            duration 0.600
            file 'frames/000002.jpg'
-           duration 0.623
+           duration 0.725
            file 'frames/000002.jpg'
            """
   end

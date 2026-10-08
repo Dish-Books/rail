@@ -32,7 +32,8 @@ defmodule Rail.Tools.Actions.StartBrowserSession do
 
   `opts` are passed to the session: `:subscribe` for a process that should
   receive the browser's own events, and `:ready_timeout_ms` for how long a Chrome
-  that had to be started gets to answer.
+  that had to be started gets to answer. `existing: true` opens nothing for a name
+  the task has no live session under, and returns `{:error, :no_browser}`.
   """
   def start_browser_session(%Task{} = task, name, opts \\ []) when is_binary(name) do
     case Tools.get_browser_session(task, name) do
@@ -74,19 +75,26 @@ defmodule Rail.Tools.Actions.StartBrowserSession do
     launch(task, name, opts)
   end
 
-  defp resume(%Task{} = task, name, nil, opts), do: launch(task, name, opts)
+  # A tool acting on a browser the agent named opens nothing when there is none,
+  # so a slip in the name is said rather than answered from a blank tab.
+  defp resume(%Task{} = task, name, nil, opts) do
+    if Keyword.get(opts, :existing, false), do: {:error, :no_browser}, else: launch(task, name, opts)
+  end
 
+  # Two callers that both found nothing both insert, and the unique index lets one
+  # through; the other looks again and finds the session that one is starting.
   defp launch(%Task{} = task, name, opts) do
-    {:ok, session} =
-      %Session{}
-      |> Session.changeset(%{task_id: task.id, name: name, status: :starting, started_at: DateTime.utc_now()})
-      |> Repo.insert()
-
-    case start(task, session, opts) do
-      {:ok, pid} -> {:ok, pid}
-      {:error, reason} -> {:error, settle(session, reason)}
+    %Session{}
+    |> Session.changeset(%{task_id: task.id, name: name, status: :starting, started_at: DateTime.utc_now()})
+    |> Repo.insert()
+    |> case do
+      {:ok, session} -> started(session, start(task, session, opts))
+      {:error, %Ecto.Changeset{}} -> start_browser_session(task, name, opts)
     end
   end
+
+  defp started(%Session{}, {:ok, pid}), do: {:ok, pid}
+  defp started(%Session{} = session, {:error, reason}), do: {:error, settle(session, reason)}
 
   defp start(%Task{} = task, %Session{} = session, opts) do
     child = {BrowserSession, [{:task, task}, {:name, session.name}, {:session_id, session.id} | opts]}

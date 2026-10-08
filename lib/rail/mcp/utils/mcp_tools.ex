@@ -55,8 +55,8 @@ defmodule Rail.Mcp.Utils.McpTools do
   @browser %{
     "type" => "string",
     "description" =>
-      "Which of your browsers, by the name you gave it in browser_connect. Leave it out for the one " <>
-        "named for your stage, `qa` or `demo`."
+      "Which of your browsers, by the name you gave it in browser_connect; a name it never opened is " <>
+        "refused. Leave it out for the one named for your stage, `qa` or `demo`."
   }
 
   @browser_tools [

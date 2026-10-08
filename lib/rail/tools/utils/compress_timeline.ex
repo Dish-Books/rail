@@ -19,7 +19,8 @@ defmodule Rail.Tools.Utils.CompressTimeline do
 
   Everything filmed after the last caption has been read is the run going on
   past the walkthrough, so the video ends a second after that, or a second after
-  the last frame when nothing was said.
+  the last frame when nothing was said, and a page painted well after the last
+  caption is never in it.
   """
 
   # Long enough that a page settling is seen to settle, short enough that a
@@ -28,6 +29,10 @@ defmodule Rail.Tools.Utils.CompressTimeline do
 
   # Long enough to see the last screen, short enough not to feel like a hang.
   @tail_ms 1_000
+
+  # A page painted this long after the last caption is the run going on past the
+  # walkthrough; one painted sooner is the result the caption announced.
+  @past_walkthrough_ms 10_000
 
   @doc """
   Returns `{frames, video_times}` for recorded `frames` - `%{file:, at_ms:}`,
@@ -41,6 +46,7 @@ defmodule Rail.Tools.Utils.CompressTimeline do
   def compress_timeline([_first | _rest] = frames, marks) when is_list(marks) do
     {spans, _video_ms} =
       frames
+      |> walkthrough(marks)
       |> Enum.chunk_every(2, 1, [nil])
       |> Enum.map_reduce(0, fn [frame, next], video_ms ->
         span = span(frame, next, video_ms)
@@ -53,6 +59,16 @@ defmodule Rail.Tools.Utils.CompressTimeline do
     end_ms = (read_until || last_start(held)) + @tail_ms
 
     {cut(held, end_ms), video_times}
+  end
+
+  # Squeezing a long still stretch to a second would otherwise slide a page painted
+  # long after the last caption into the video's final second, under that caption.
+  defp walkthrough(frames, []), do: frames
+
+  defp walkthrough([first | rest], marks) do
+    last_said = marks |> Enum.map(fn {at_ms, _for_ms} -> at_ms end) |> Enum.max()
+
+    [first | Enum.take_while(rest, &(&1.at_ms <= last_said + @past_walkthrough_ms))]
   end
 
   # In the order they were said, each caption has to wait for the one before it

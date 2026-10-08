@@ -227,6 +227,40 @@ defmodule Rail.Tools.BrowserSessionTest do
     assert %{signed_in?: false} = BrowserSession.details(session)
   end
 
+  # A tool naming a browser acts on one browser_connect opened. A slip in the name
+  # opens nothing, and a tab Rail lost hold of across a restart is still found.
+  test "asking only for a browser the task has opens nothing for a name it has none under", %{task: task} do
+    assert {:error, :no_browser} = Tools.start_browser_session(task, "Explorer 1", existing: true)
+    assert Repo.all(from s in Session, where: s.task_id == ^task.id) == []
+
+    {:ok, session} = Tools.start_browser_session(task, "explorer 1")
+    :ok = GenServer.stop(session, :shutdown, 10_000)
+
+    assert {:ok, again} = Tools.start_browser_session(task, "explorer 1", existing: true)
+    assert again != session
+    assert [%Session{name: "explorer 1", status: :running}] = Repo.all(from s in Session, where: s.task_id == ^task.id)
+  end
+
+  # Two tool calls for a name nobody has opened yet both find nothing and both
+  # insert. The one the index refuses finds the other's browser rather than crashing.
+  test "callers starting one new name at once all get the same browser", %{task: task} do
+    test = self()
+
+    started =
+      1..8
+      |> Enum.map(fn _caller ->
+        Task.async(fn ->
+          Ecto.Adapters.SQL.Sandbox.allow(Repo, test, self())
+          Tools.start_browser_session(task, "qa")
+        end)
+      end)
+      |> Task.await_many(60_000)
+
+    assert [{:ok, session}] = Enum.uniq(started)
+    assert is_pid(session)
+    assert [%Session{status: :running}] = Repo.all(from s in Session, where: s.task_id == ^task.id)
+  end
+
   # Rail stopping is not the task being done with its browser: a deploy in the
   # middle of a pass comes back to the page the pass was on.
   test "a session that ends with Rail leaves its tab, and the next one attaches to it", %{task: task, page: page} do

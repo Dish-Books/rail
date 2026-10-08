@@ -41,6 +41,7 @@ defmodule Rail.Mcp.Utils.RunToolDemoStartTest do
 
   # A demo that drives a second browser films that one when it names it.
   test "a take films the browser it names", %{task: task} do
+    expect(Tools, :start_browser_session, fn ^task, "signup", [existing: true, stage: :demo] -> {:ok, self()} end)
     stub(Tools, :get_browser_frame, fn ^task, "signup" -> Base.encode64("sign-up page") end)
 
     assert {:ok, _rolling} = run_tool_demo_start(task, %{"browser" => "signup"}, stage: :demo)
