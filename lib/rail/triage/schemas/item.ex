@@ -13,6 +13,8 @@ defmodule Rail.Triage.Schemas.Item do
   @kinds [:bug, :feature_request]
   @verdicts %{bug: [:confirmed, :not_reproduced, :already_fixed], feature_request: [:built, :partly_built, :not_built]}
   @all_verdicts [:confirmed, :not_reproduced, :already_fixed, :built, :partly_built, :not_built]
+  # Product's scale, so the agent, the person and Linear see the same points.
+  @estimates [1, 2, 3, 5, 8]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "tit"}
   schema "triage_items" do
@@ -27,6 +29,7 @@ defmodule Rail.Triage.Schemas.Item do
     field :issue_title, :string
     field :issue_description, :string
     field :issue_priority, Ecto.Enum, values: Issue.priorities()
+    field :issue_estimate, :integer
     field :reply_text, :string
     field :reply_posted_at, :utc_datetime_usec
     field :retriaging, :boolean, default: false
@@ -68,6 +71,7 @@ defmodule Rail.Triage.Schemas.Item do
     :issue_title,
     :issue_description,
     :issue_priority,
+    :issue_estimate,
     :reply_text,
     :retriaging,
     :retriaged_at,
@@ -90,8 +94,11 @@ defmodule Rail.Triage.Schemas.Item do
   @doc """
   What a person typed into the drafts, before they accept them.
   """
-  def draft_changeset(item, attrs),
-    do: cast(item, attrs, [:issue_title, :issue_description, :issue_priority, :reply_text])
+  def draft_changeset(item, attrs) do
+    item
+    |> cast(attrs, [:issue_title, :issue_description, :issue_priority, :issue_estimate, :reply_text])
+    |> validate_inclusion(:issue_estimate, @estimates)
+  end
 
   def issue_draft?(%__MODULE__{issue_title: title, existing_issue_id: nil}), do: is_binary(title) and title != ""
   def issue_draft?(%__MODULE__{}), do: false
@@ -115,6 +122,7 @@ defmodule Rail.Triage.Schemas.Item do
   end
 
   def kinds, do: @kinds
+  def estimates, do: @estimates
   def verdicts(kind), do: Map.fetch!(@verdicts, kind)
 
   def verdict_label(:confirmed), do: "Confirmed"

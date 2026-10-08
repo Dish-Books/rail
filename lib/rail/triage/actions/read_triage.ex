@@ -72,6 +72,7 @@ defmodule Rail.Triage.Actions.ReadTriage do
           issue_title: text(issue["title"]),
           issue_description: text(issue["description"]),
           issue_priority: enum(issue["priority"], Enum.map(Issue.priorities(), &Atom.to_string/1)),
+          issue_estimate: if(issue["estimate"] in Item.estimates(), do: issue["estimate"]),
           reply_text: text(item["reply"])
         }
       ]

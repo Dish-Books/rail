@@ -62,7 +62,12 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
 
   # The item keeps the issue as it was created, which is what the person sent.
   defp create(scope, %Item{thread: thread} = item, %Item{} = drafted) do
-    attrs = %{title: drafted.issue_title, description: drafted.issue_description, priority: drafted.issue_priority}
+    attrs = %{
+      title: drafted.issue_title,
+      description: drafted.issue_description,
+      priority: drafted.issue_priority,
+      estimate: drafted.issue_estimate
+    }
 
     case Issues.create_issue(scope, thread.project, attrs) do
       {:ok, %Issue{} = issue} ->
@@ -71,7 +76,8 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
           created_issue_id: issue.id,
           issue_title: attrs.title,
           issue_description: attrs.description,
-          issue_priority: attrs.priority
+          issue_priority: attrs.priority,
+          issue_estimate: attrs.estimate
         )
         |> Repo.update!()
 

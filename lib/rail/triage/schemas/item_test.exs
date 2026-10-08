@@ -28,6 +28,15 @@ defmodule Rail.Triage.Schemas.ItemTest do
              Item.draft_changeset(item, %{"issue_title" => "New", "reply_text" => "Hi", "verdict" => "built"})
   end
 
+  test "a person can change the estimate or clear it, but only to a point on the scale" do
+    item = %Item{issue_estimate: 3}
+
+    assert %{valid?: true, changes: %{issue_estimate: 5}} = Item.draft_changeset(item, %{"issue_estimate" => "5"})
+    assert %{valid?: true, changes: %{issue_estimate: nil}} = Item.draft_changeset(item, %{"issue_estimate" => ""})
+    assert %{issue_estimate: ["is invalid"]} = errors_on(Item.draft_changeset(item, %{"issue_estimate" => "4"}))
+    assert [1, 2, 3, 5, 8] = Item.estimates()
+  end
+
   test "an existing issue means there is no issue draft" do
     assert Item.issue_draft?(%Item{issue_title: "Draft"})
     refute Item.issue_draft?(%Item{issue_title: "Draft", existing_issue_id: "iss_1"})

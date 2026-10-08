@@ -1,6 +1,7 @@
 defmodule Rail.Triage.Actions.CreateTriageIssueTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Scope
@@ -87,6 +88,78 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
              Repo.get_by!(Message, external_id: "1790000500.000100")
 
     assert {:error, :already_created} = Triage.create_triage_issue(scope, item, %{})
+  end
+
+  test "an estimate the person picked reaches Linear, the issue and the item, in place of the agent's", %{
+    thread: thread,
+    scope: scope,
+    linear_issue: linear_issue
+  } do
+    bug = triage_bug(%{"reply" => nil, "issue" => %{"title" => "Stuck", "priority" => "high", "estimate" => 3}})
+    %Thread{items: [item]} = triage_with(thread, %{"items" => [bug]})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert %{"variables" => %{"input" => %{"estimate" => 5}}} = conn |> Req.Test.raw_body() |> Jason.decode!()
+      Req.Test.json(conn, %{"data" => %{"issueCreate" => %{"success" => true, "issue" => linear_issue}}})
+    end)
+
+    Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790000700.000100"}))
+
+    assert {:ok, %Item{created_issue_id: issue_id, issue_estimate: 5}} =
+             Triage.create_triage_issue(scope, item, %{"issue_estimate" => "5"})
+
+    assert %Issue{estimate: 5} = Repo.get!(Issue, issue_id)
+  end
+
+  test "an estimate left as the agent drafted it is the one created", %{
+    thread: thread,
+    scope: scope,
+    linear_issue: linear_issue
+  } do
+    bug = triage_bug(%{"reply" => nil, "issue" => %{"title" => "Stuck", "priority" => "high", "estimate" => 3}})
+    %Thread{items: [item]} = triage_with(thread, %{"items" => [bug]})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert %{"variables" => %{"input" => %{"estimate" => 3}}} = conn |> Req.Test.raw_body() |> Jason.decode!()
+      Req.Test.json(conn, %{"data" => %{"issueCreate" => %{"success" => true, "issue" => linear_issue}}})
+    end)
+
+    Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790000800.000100"}))
+
+    assert {:ok, %Item{created_issue_id: issue_id, issue_estimate: 3}} =
+             Triage.create_triage_issue(scope, item, %{"issue_title" => "Stuck"})
+
+    assert %Issue{estimate: 3} = Repo.get!(Issue, issue_id)
+  end
+
+  test "an estimate cleared to no points sends none to Linear, and the issue has none", %{
+    thread: thread,
+    scope: scope,
+    linear_issue: linear_issue
+  } do
+    bug = triage_bug(%{"reply" => nil, "issue" => %{"title" => "Stuck", "priority" => "high", "estimate" => 3}})
+    %Thread{items: [item]} = triage_with(thread, %{"items" => [bug]})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert %{"variables" => %{"input" => input}} = conn |> Req.Test.raw_body() |> Jason.decode!()
+      refute Map.has_key?(input, "estimate")
+      Req.Test.json(conn, %{"data" => %{"issueCreate" => %{"success" => true, "issue" => linear_issue}}})
+    end)
+
+    Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790000900.000100"}))
+
+    assert {:ok, %Item{created_issue_id: issue_id, issue_estimate: nil}} =
+             Triage.create_triage_issue(scope, item, %{"issue_estimate" => ""})
+
+    assert %Issue{estimate: nil} = Repo.get!(Issue, issue_id)
+  end
+
+  test "an estimate off the scale creates nothing", %{thread: thread, scope: scope} do
+    %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug()]})
+
+    assert {:error, %Ecto.Changeset{} = changeset} = Triage.create_triage_issue(scope, item, %{"issue_estimate" => "4"})
+    assert %{issue_estimate: ["is invalid"]} = errors_on(changeset)
+    assert %Item{created_issue_id: nil, issue_created_by_id: nil} = Repo.get!(Item, item.id)
   end
 
   test "posts only the link line when no reply was proposed, and keeps no error", %{

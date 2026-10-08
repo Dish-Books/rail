@@ -341,7 +341,7 @@ defmodule Rail.Triage.Actions.TriageThread do
           "assumptions": [{"text": "what you took as given without checking", "corrected": false}],
           "existing_issue": null,
           "issue_note": "which issue you checked covers this, or that none does",
-          "issue": {"title": "the issue's title", "description": "the problem, its cause and its evidence", "priority": "medium"},
+          "issue": {"title": "the issue's title", "description": "the problem, its cause and its evidence", "priority": "medium", "estimate": 2},
           "reply": "the reply a teammate would post in the thread, or null"
         }
       ]
@@ -356,6 +356,7 @@ defmodule Rail.Triage.Actions.TriageThread do
     - Never propose a fix, a design or a plan, anywhere. There is no field for one.
     - `existing_issue` is the identifier of the Linear issue that already covers the item, such as `TRI-23`, or null. When one does, leave `issue` null, and #{tracked(thread)}
     - `priority` is `urgent`, `high`, `medium` or `low`.
+    - `estimate` is the issue's points on Product's scale: 1, 2, 3 or 5, and 8 for work too big for one ticket. Judge it from how much of the behavior exists and what the code shows, or leave it null where you cannot. It is a number only, never a description of the work.
     - A reply is posted by the teammate who accepts it, under their name. Write it in their voice. #{issue_link(thread)} Leave `reply` null where only a bot would read it.
     """)
   end

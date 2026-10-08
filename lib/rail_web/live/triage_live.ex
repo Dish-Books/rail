@@ -29,6 +29,7 @@ defmodule RailWeb.TriageLive do
     "issue_title" => :issue_title,
     "issue_description" => :issue_description,
     "issue_priority" => :issue_priority,
+    "issue_estimate" => :issue_estimate,
     "reply_text" => :reply_text
   }
 
