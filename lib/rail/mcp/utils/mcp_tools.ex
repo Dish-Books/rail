@@ -69,10 +69,12 @@ defmodule Rail.Mcp.Utils.McpTools do
           "evaluate, expect, until, text, shot, resize and drainProblems, all as trusted input " <>
           "events so LiveView sees what a person's would produce. Write a script per check and run " <>
           "it with `node`; the tab stays where each script leaves it, signed in. Rail watches the " <>
-          "same tab, so the panel and a demo recording show what you do. Call it again if the " <>
-          "address stops answering. Each `browser` name is a context and tab of its own; the first " <>
-          "call for a name signs it in as a fresh account the project's seed makes for it, when the " <>
-          "project has one, and says who.",
+          "same tab, so the panel and a demo recording show what you do. Each `browser` name is a " <>
+          "context and tab of its own; the first call for a name signs it in as a fresh account the " <>
+          "project's seed makes for it, when the project has one, and says who. Call it again with the " <>
+          "same name if the address stops answering, in a later turn, or after Rail restarts: you get " <>
+          "the same tab back, where you left it and signed in as the same account. Only a tab Chrome " <>
+          "lost is opened again, and then signed in as a new account.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{
@@ -87,8 +89,9 @@ defmodule Rail.Mcp.Utils.McpTools do
             "enum" => ["fresh", "bare"],
             "description" =>
               "`fresh`, the default, signs a new browser in as a new account. `bare` opens it with nobody " <>
-                "signed in and the seed not run, for checking sign-up, onboarding or billing itself. Only " <>
-                "the first call for a name signs it in."
+                "signed in and the seed not run, for checking sign-up, onboarding or billing itself. It " <>
+                "only applies to a name's first call: a reconnect keeps whoever the browser already is, so " <>
+                "ask for a bare one under a new name."
           }
         }
       }

@@ -30,7 +30,7 @@ defmodule Rail.Tools.BrowserSession do
   alias Rail.Repo
   alias Rail.Tools.Browser
   alias Rail.Tools.BrowserRegistry
-  alias Rail.Tools.Schemas.BrowserSession, as: Session
+  alias Rail.Tools.Schemas.BrowserSession
 
   require Logger
 
@@ -172,7 +172,7 @@ defmodule Rail.Tools.BrowserSession do
     case if(is_binary(link), do: command(state, "Page.navigate", %{url: link}), else: {:ok, :bare}) do
       {:ok, _opened} ->
         {_recorded, _returning} =
-          Repo.update_all(from(s in Session, where: s.id == ^state.session_id), set: [account: account])
+          Repo.update_all(from(s in BrowserSession, where: s.id == ^state.session_id), set: [account: account])
 
         {:reply, :ok, %{state | signed_in?: true, account: account}}
 

@@ -67,13 +67,21 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnect do
     end
   end
 
-  # Only a tab nobody has signed in yet is signed in, so a second connect, or a tab
-  # found again after a restart, keeps whoever it already is.
+  # Only a tab nobody has signed in yet is signed in, so a reconnect, or a tab found
+  # again after a restart, keeps whoever it already is whatever `account` asks.
   defp sign_in(%Task{project: %Project{account_seed_command: seed}}, session, account, opts) do
     case BrowserSession.details(session) do
-      %{signed_in?: true, account: email} -> {:ok, said(email)}
-      %{signed_in?: false} when account == "bare" or seed in [nil, ""] -> settle(session, nil, nil)
-      %{signed_in?: false} -> seed(session, seed, Keyword.fetch!(opts, :os_process))
+      %{signed_in?: true, account: "" <> email} when account == "bare" ->
+        {:ok, said(email) <> "`bare` only opens a new browser, so ask under a new name for one with nobody signed in.\n"}
+
+      %{signed_in?: true, account: email} ->
+        {:ok, said(email)}
+
+      %{signed_in?: false} when account == "bare" or seed in [nil, ""] ->
+        settle(session, nil, nil)
+
+      %{signed_in?: false} ->
+        seed(session, seed, Keyword.fetch!(opts, :os_process))
     end
   end
 

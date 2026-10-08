@@ -130,10 +130,18 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnectTest do
 
     assert one != two
 
-    # Connecting again keeps the account it already has rather than making another.
+    # Connecting again keeps the account it already has rather than making another,
+    # and a reconnect asking for bare is told it is still signed in.
     assert {:ok, again} = run_tool_browser_connect(task, %{"browser" => "explorer 1"}, opts)
     assert again =~ "Signed in as: explorer-1@rail.test"
+    refute again =~ "`bare` only opens a new browser"
+
+    assert {:ok, bare} = run_tool_browser_connect(task, %{"browser" => "explorer 1", "account" => "bare"}, opts)
+    assert bare =~ "Signed in as: explorer-1@rail.test"
+    assert bare =~ "`bare` only opens a new browser, so ask under a new name"
+
     assert File.read!(seeded) == "2\n"
+    assert Tools.get_browser_url(task, "explorer 1") == link <> "?n=1"
   end
 
   test "a browser asked for bare opens with nobody signed in and the seed not run", %{
