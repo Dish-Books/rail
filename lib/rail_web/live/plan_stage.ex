@@ -6,13 +6,19 @@ defmodule RailWeb.Live.PlanStage do
   Everything here is read off scratch and the runs whenever the page reloads it, so a save shows
   the moment it lands. What waits on the human opens when the step opens, and only a click changes it after.
 
-  Once a design is picked the reader can comment on its elements while Plan can take a message. The mode and the
-  open comment box are this tab's alone; the comments are rows, and the conversation sends them.
+  Once a design is picked the reader can comment on its elements while Plan can take a message, and on any line of
+  the ticket or the plan once it is saved, through the + beside it. The mode and the open comment box are this tab's
+  alone; the comments are rows, and the conversation sends them.
   """
   use RailWeb, :live_component
 
+  import RailWeb.Utils.BuildDocumentBlocks
+  import RailWeb.Utils.CalculateDocumentComments
+
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ImplementationPlan
+  alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
 
@@ -29,6 +35,8 @@ defmodule RailWeb.Live.PlanStage do
       |> assign_new(:error, fn -> nil end)
       |> assign_new(:commenting, fn -> false end)
       |> assign_new(:draft, fn -> nil end)
+      |> assign_new(:line_draft, fn -> nil end)
+      |> assign_new(:reported_changed, fn -> nil end)
       |> assign_new(:selected_key, fn -> nil end)
       |> assign_new(:diagram_views, fn -> %{change: :diagram, call_flow: :diagram} end)
       |> assign_new(:open_child, fn -> nil end)
@@ -150,8 +158,14 @@ defmodule RailWeb.Live.PlanStage do
               <.ticket_pane
                 :if={@selected_item == "ticket"}
                 ticket={@ticket}
+                lines={@ticket_lines}
                 running={@running}
                 pick_up={@pick_up}
+                placed={@ticket_comments.placed}
+                changed={@ticket_comments.lifted}
+                draft={@line_draft}
+                offered={@ticket_offered}
+                target={@myself}
               />
 
               <.design_pane
@@ -180,6 +194,11 @@ defmodule RailWeb.Live.PlanStage do
                 running={@running}
                 pending_text={@pending_text}
                 diagram_views={@diagram_views}
+                lines={@plan_lines}
+                placed={@plan_comments.placed}
+                changed={@plan_comments.lifted}
+                draft={@line_draft}
+                offered={@plan_offered}
                 target={@myself}
               />
 
@@ -272,11 +291,46 @@ defmodule RailWeb.Live.PlanStage do
 
     socket =
       case commenting and reason == nil and draft(Map.put(params, "option_key", design.picked)) do
-        %{} = draft -> assign(socket, :draft, draft)
+        %{} = draft -> socket |> assign(:draft, draft) |> assign(:line_draft, nil)
         _off_or_malformed -> socket
       end
 
     {:noreply, socket}
+  end
+
+  # The line is read off this tab's own copy of the document by its key, so only a line it shows can be commented on.
+  def handle_event("open_document_comment", %{"doc" => doc, "key" => key}, socket) when doc in ["ticket", "plan"] do
+    %{ticket_line_list: ticket_lines, plan_lines: plan_lines} = socket.assigns
+
+    {lines, offered} =
+      if doc == "ticket",
+        do: {ticket_lines, socket.assigns.ticket_offered},
+        else: {plan_lines, socket.assigns.plan_offered}
+
+    socket =
+      case offered && Enum.find(lines, &(&1.key == key)) do
+        %{} = line ->
+          draft = %{
+            doc: String.to_existing_atom(doc),
+            key: line.key,
+            kind: line.kind,
+            label: line.label,
+            text: line.text,
+            occurrence: line.occurrence,
+            body: nil
+          }
+
+          socket |> assign(:line_draft, draft) |> assign(:draft, nil)
+
+        _gone_or_not_offered ->
+          socket
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("change_plan_comment", %{"body" => body}, %{assigns: %{line_draft: %{} = draft}} = socket) do
+    {:noreply, assign(socket, :line_draft, %{draft | body: body})}
   end
 
   def handle_event("change_plan_comment", %{"body" => body}, %{assigns: %{draft: %{} = draft}} = socket) do
@@ -286,10 +340,34 @@ defmodule RailWeb.Live.PlanStage do
   def handle_event("change_plan_comment", _params, socket), do: {:noreply, socket}
 
   def handle_event("cancel_plan_comment", _params, socket) do
-    {:noreply, assign(socket, :draft, nil)}
+    socket = socket |> assign(:draft, nil) |> assign(:line_draft, nil)
+    {:noreply, socket}
   end
 
   # A blank comment is refused and the box stays open on what was typed.
+  def handle_event("save_plan_comment", %{"body" => body}, %{assigns: %{line_draft: %{} = draft}} = socket) do
+    attrs = %{
+      target: draft.doc,
+      body: body,
+      element_kind: draft.kind,
+      element_label: draft.label,
+      element_occurrence: draft.occurrence,
+      element_text: draft.text
+    }
+
+    case Pipeline.create_plan_comment(socket.assigns.current_scope, socket.assigns.run, attrs) do
+      {:ok, _comment} ->
+        socket = socket |> assign(:line_draft, nil) |> assign(:error, nil) |> assign_comments()
+        {:noreply, socket}
+
+      {:error, %Ecto.Changeset{}} ->
+        {:noreply, assign(socket, :line_draft, %{draft | body: body})}
+
+      {:error, reason} ->
+        socket |> assign(:line_draft, nil) |> then(&respond({:error, reason}, &1))
+    end
+  end
+
   def handle_event("save_plan_comment", %{"body" => body}, %{assigns: %{draft: %{} = draft}} = socket) do
     attrs = %{
       target: :design,
@@ -316,6 +394,18 @@ defmodule RailWeb.Live.PlanStage do
 
   def handle_event("save_plan_comment", _params, socket), do: {:noreply, socket}
 
+  def handle_event("remove_plan_comment", %{"id" => id}, socket) do
+    case Enum.find(socket.assigns.comments, &(&1.id == id)) do
+      %PlanComment{} = comment ->
+        {:ok, _removed} = Pipeline.delete_plan_comment(socket.assigns.current_scope, comment)
+        {:noreply, assign_comments(socket)}
+
+      # Another tab removed or sent it already.
+      nil ->
+        {:noreply, assign_comments(socket)}
+    end
+  end
+
   def handle_event("diagram_view", %{"view" => view}, socket) do
     [diagram, shown] = String.split(view, ":")
     diagram = if diagram == "call_flow", do: :call_flow, else: :change
@@ -327,8 +417,14 @@ defmodule RailWeb.Live.PlanStage do
   # --- Panes ---
 
   attr :ticket, :any, required: true
+  attr :lines, :map, required: true, doc: "the ticket's title, priority and estimate lines, and its description's"
   attr :running, :boolean, required: true
   attr :pick_up, :string, required: true
+  attr :placed, :map, required: true
+  attr :changed, :list, required: true
+  attr :draft, :map, default: nil
+  attr :offered, :boolean, required: true
+  attr :target, :any, required: true
 
   defp ticket_pane(assigns) do
     ~H"""
@@ -347,13 +443,55 @@ defmodule RailWeb.Live.PlanStage do
     />
 
     <div :if={@ticket != nil} id="plan-ticket" data-qa="plan_ticket" class="max-w-3xl select-text">
-      <h2
-        id="plan-ticket-title"
-        class="mb-4 text-xl font-bold text-slate-900 dark:text-slate-100 wrap-break-word"
+      <.changed_comments id="ticket-changed-comments" comments={@changed} target={@target} />
+
+      <.commentable_line
+        line={@lines.title}
+        doc={:ticket}
+        placed={@placed}
+        draft={@draft}
+        offered={@offered}
+        target={@target}
       >
-        {@ticket.title}
-      </h2>
-      <.markdown content={@ticket.description} class="text-[15px] leading-relaxed" />
+        <h2
+          id="plan-ticket-title"
+          class="text-xl font-bold text-slate-900 dark:text-slate-100 wrap-break-word"
+        >
+          {@ticket.title}
+        </h2>
+      </.commentable_line>
+
+      <.commentable_line
+        layout={:values}
+        doc={:ticket}
+        placed={@placed}
+        draft={@draft}
+        offered={@offered}
+        target={@target}
+        class="mt-1 mb-3"
+      >
+        <:value line={@lines.priority}>
+          <.priority_icon :if={@ticket.priority} priority={@ticket.priority} />
+          <span id="plan-ticket-priority">{@lines.priority.text}</span>
+        </:value>
+        <:value line={@lines.estimate}>
+          <.icon name="pi-triangle" class="size-3.5 text-slate-500 dark:text-slate-400" />
+          <span id="plan-ticket-estimate">{@lines.estimate.text}</span>
+        </:value>
+      </.commentable_line>
+
+      <div id="plan-ticket-description">
+        <.commentable_line
+          :for={line <- @lines.description}
+          line={line}
+          layout={layout(line)}
+          doc={:ticket}
+          placed={@placed}
+          draft={@draft}
+          offered={@offered}
+          target={@target}
+        />
+      </div>
     </div>
     """
   end
@@ -666,6 +804,11 @@ defmodule RailWeb.Live.PlanStage do
   attr :running, :boolean, required: true
   attr :pending_text, :string, required: true
   attr :diagram_views, :map, required: true
+  attr :lines, :list, required: true, doc: "the plan's lines, read off its sheet or, without one, off its markdown"
+  attr :placed, :map, required: true
+  attr :changed, :list, required: true
+  attr :draft, :map, default: nil
+  attr :offered, :boolean, required: true
   attr :target, :any, required: true
 
   defp plan_pane(assigns) do
@@ -704,9 +847,28 @@ defmodule RailWeb.Live.PlanStage do
         diagram_views={@diagram_views}
         event="diagram_view"
         target={@target}
+        placed={@placed}
+        changed={@changed}
+        draft={@draft}
+        offered={@offered}
       />
-      <.markdown :if={@sheet == nil} content={@plan.content} class="text-[15px] leading-relaxed" />
-      <p :if={@approved} class="mt-6 text-[13px] text-slate-500 dark:text-slate-400">
+      <div :if={@sheet == nil}>
+        <.changed_comments id="plan-changed-comments" comments={@changed} target={@target} />
+        <.commentable_line
+          :for={line <- @lines}
+          line={line}
+          layout={layout(line)}
+          doc={:plan}
+          placed={@placed}
+          draft={@draft}
+          offered={@offered}
+          target={@target}
+        />
+      </div>
+      <p
+        :if={@approved}
+        class="mt-6 text-[13px] text-slate-500 dark:text-slate-400"
+      >
         Engineer, Code Reviewer, QA and Demo Presenter work from this plan exactly as approved.
       </p>
     </div>
@@ -984,19 +1146,24 @@ defmodule RailWeb.Live.PlanStage do
     {plan, approved} = plan(task)
     split = Pipeline.read_split(task)
     running = Run.running?(run)
+    can_chat = Run.can_chat?(run)
     picked = design && Enum.find(design.options, &(&1.key == design.picked))
     selected_key = selected_key(design, socket.assigns.selected_key)
-    items = items(ticket, design, picked, plan, split, running)
+    sheet = plan && build_plan_sheet(plan.content)
+    items = items(ticket, design, picked, plan, sheet, split, running)
 
     socket
     |> assign(:ticket, ticket)
+    |> assign_ticket_lines(ticket)
     |> assign(:design, design)
     |> assign(:plan, plan)
     |> assign(:split, split)
-    |> assign(:sheet, plan && build_plan_sheet(plan.content))
+    |> assign(:sheet, sheet)
+    |> assign(:plan_lines, plan_lines(plan, sheet))
     |> assign(:approved, approved)
     |> assign(:running, running)
-    |> assign(:can_pick, task.stage == :plan and Run.can_chat?(run))
+    |> assign(:can_pick, task.stage == :plan and can_chat)
+    |> assign_offered(ticket, plan, can_chat and not approved)
     |> assign(:selected_key, selected_key)
     |> assign(:option, shown_option(design, selected_key))
     |> assign(:items, items)
@@ -1007,23 +1174,97 @@ defmodule RailWeb.Live.PlanStage do
     |> assign(:show_approve, approvable?(socket.assigns, ticket, design, plan))
     |> assign(:comment_reason, comment_reason(design, run, approved))
     |> stop_commenting_unless_allowed()
+    |> close_line_draft_unless_offered()
     |> assign_comments()
   end
 
+  # Numbered in round order, so a card on a line carries the number the tray gives it.
   defp assign_comments(socket) do
     %{current_scope: scope, task: task, design: design} = socket.assigns
     comments = Pipeline.list_plan_comments(scope, task)
+    numbered = Enum.with_index(comments, 1)
     picked = design && design.picked
 
     markers =
-      for {comment, number} <- Enum.with_index(comments, 1),
+      for {comment, number} <- numbered,
           comment.target == :design and comment.option_key == picked,
           do: %{id: comment.id, number: number, selector: comment.selector}
+
+    ticket_lines = socket.assigns.ticket_line_list
+    ticket = calculate_document_comments(ticket_lines, Enum.filter(numbered, &(elem(&1, 0).target == :ticket)))
+    plan = calculate_document_comments(socket.assigns.plan_lines, Enum.filter(numbered, &(elem(&1, 0).target == :plan)))
 
     socket
     |> assign(:comments, comments)
     |> assign(:markers, markers)
+    |> assign(:ticket_comments, ticket)
+    |> assign(:plan_comments, plan)
+    |> report_changed(Enum.map(ticket.lifted ++ plan.lifted, &elem(&1, 0).id))
   end
+
+  # The conversation's tray marks the same comments changed, and hears of it only when they change.
+  defp report_changed(%{assigns: %{reported_changed: ids}} = socket, ids), do: socket
+
+  defp report_changed(socket, ids) do
+    send(self(), {:plan_comments_lifted, ids})
+    assign(socket, :reported_changed, ids)
+  end
+
+  # A line takes a comment once its document is saved, while Plan can take a message and nobody has approved yet.
+  defp assign_offered(socket, ticket, plan, open) do
+    socket
+    |> assign(:ticket_offered, ticket != nil and open)
+    |> assign(:plan_offered, plan != nil and open)
+  end
+
+  defp close_line_draft_unless_offered(%{assigns: %{line_draft: %{doc: :ticket}, ticket_offered: false}} = socket),
+    do: assign(socket, :line_draft, nil)
+
+  defp close_line_draft_unless_offered(%{assigns: %{line_draft: %{doc: :plan}, plan_offered: false}} = socket),
+    do: assign(socket, :line_draft, nil)
+
+  defp close_line_draft_unless_offered(socket), do: socket
+
+  # The title, the priority and the estimate are lines of the ticket as much as its description's are.
+  defp assign_ticket_lines(socket, nil), do: socket |> assign(:ticket_lines, nil) |> assign(:ticket_line_list, [])
+
+  defp assign_ticket_lines(socket, ticket) do
+    lines = ticket_lines(ticket)
+
+    socket
+    |> assign(:ticket_lines, lines)
+    |> assign(:ticket_line_list, [lines.title, lines.priority, lines.estimate | lines.description])
+  end
+
+  defp ticket_lines(ticket) do
+    priority = (ticket.priority && Issue.priority_label(ticket.priority)) || "No priority"
+
+    estimate =
+      case ticket.estimate do
+        1 -> "1 Point"
+        points when is_integer(points) -> "#{points} Points"
+        nil -> "No estimate"
+      end
+
+    %{
+      title: ticket_line(:title, ticket.title, "Title"),
+      priority: ticket_line(:priority, priority, "Priority"),
+      estimate: ticket_line(:estimate, estimate, "Estimate"),
+      description: build_document_blocks(ticket.description || "")
+    }
+  end
+
+  defp ticket_line(kind, text, label) do
+    %{key: "#{kind}-#{:erlang.phash2({text, 1})}", kind: kind, text: text, occurrence: 1, label: label, depth: 0}
+  end
+
+  defp plan_lines(nil, _sheet), do: []
+  defp plan_lines(_plan, %{lines: lines}), do: lines
+  defp plan_lines(plan, nil), do: build_document_blocks(plan.content)
+
+  defp layout(%{kind: :code}), do: :code
+  defp layout(%{kind: :table_row}), do: :table_row
+  defp layout(_line), do: :text
 
   # Comments go to Plan through its conversation, which an approved plan no longer has.
   defp comment_reason(_design, _run, true), do: "The plan is approved, so the design takes no more comments."
@@ -1121,14 +1362,13 @@ defmodule RailWeb.Live.PlanStage do
       end
   end
 
-  defp items(ticket, design, picked, plan, split, running) do
+  defp items(ticket, design, picked, plan, sheet, split, running) do
     options = if design, do: design.options, else: []
-    plan_sheet = plan && build_plan_sheet(plan.content)
 
     [
       ticket_item(ticket, running),
       design_item(options, picked, plan, running),
-      plan_item(plan, plan_sheet, picked, running),
+      plan_item(plan, sheet, picked, running),
       split_item(split)
     ]
   end

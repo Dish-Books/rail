@@ -13,8 +13,10 @@ defmodule RailWeb.CoreComponents do
   defdelegate answer_field(assigns), to: Components.AnswerField
   defdelegate assignee(assigns), to: Components.IssueIcons
   defdelegate button(assigns), to: Components.Button
+  defdelegate changed_comments(assigns), to: Components.ChangedComments
   defdelegate child_switcher(assigns), to: Components.ChildSwitcher
   defdelegate comment_box(assigns), to: Components.CommentBox
+  defdelegate commentable_line(assigns), to: Components.CommentableLine
   defdelegate design_comment_control(assigns), to: Components.DesignCommentControl
   defdelegate diff_comment(assigns), to: Components.DiffComment
   defdelegate diff_comment_list(assigns), to: Components.DiffCommentList
@@ -23,6 +25,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate diff_row(assigns), to: Components.DiffRow
   defdelegate diff_stat(assigns), to: Components.DiffStat
   defdelegate dispatch_banner(assigns), to: Components.DispatchBanner
+  defdelegate document_comment(assigns), to: Components.DocumentComment
   defdelegate element_preview(assigns), to: Components.ElementPreview
   defdelegate icon(assigns), to: Components.Icon
   defdelegate in_progress_tasks(assigns), to: Components.InProgressTasks

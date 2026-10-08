@@ -11,6 +11,26 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
+  @plan """
+  ## Implementation plan
+
+  ### Approach
+
+  - Group by project.
+
+  No diagrams: one module changes.
+
+  ### File-level changes
+
+  - `lib/rail.ex`: groups.
+
+  ### Verification
+
+  - `lib/rail_test.exs`: covers it.
+  """
+
+  @line %{element_kind: :list_item, element_label: "Item 1", element_occurrence: 1, element_text: "Group by project."}
+
   setup %{project: project} do
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
@@ -295,5 +315,88 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
     assert {:ok, :sent, %Run{}} = Pipeline.send_plan_comments(ada, run)
     assert_receive {:plan_comments_changed, ^task_id}
     refute_receive {:plan_comments_changed, ^task_id}
+  end
+
+  test "one comment each on the design, the ticket and the plan go as one message, and become rules once delivered", %{
+    task: task,
+    run: run,
+    ada: ada,
+    attrs: attrs
+  } do
+    {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Lanes", description: "- Group by project."})
+    {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan})
+    {:ok, %{id: design_id}} = Pipeline.create_plan_comment(ada, run, attrs)
+    {:ok, %{id: plan_id}} = Pipeline.create_plan_comment(ada, run, Map.merge(@line, %{target: :plan, body: "Why?"}))
+    {:ok, %{id: ticket_id}} = Pipeline.create_plan_comment(ada, run, Map.merge(@line, %{target: :ticket, body: "Who?"}))
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    assert {:ok, :sent, %Run{}} = Pipeline.send_plan_comments(ada, run)
+
+    assert run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line) ==
+             Enum.map_join(
+               String.split(
+                 """
+                 3 comments on the design, the ticket and the plan
+
+                 On Lanes by what they wait on (waiting-lanes):
+
+                 1. `#group-by-project` "Group by project"
+                 > Turn this on by default.
+
+                 On the ticket:
+
+                 2. Item 1
+                 | Group by project.
+                 > Who?
+
+                 On the plan:
+
+                 3. Item 1
+                 | Group by project.
+                 > Why?\
+                 """,
+                 "\n"
+               ),
+               "\n",
+               &"[human:#{ada.user.id}] #{&1}"
+             )
+
+    assert [
+             %Observation{source_id: ^design_id, source_kind: :design_comment},
+             %Observation{
+               source_id: ^plan_id,
+               source_kind: :plan_comment,
+               learning: %{status: :provisional, roles: [:architect], rule: "Why?"}
+             },
+             %Observation{
+               source_id: ^ticket_id,
+               source_kind: :ticket_comment,
+               learning: %{status: :provisional, kind: :product, roles: [:product], rule: "Who?"}
+             }
+           ] =
+             from(o in Observation, where: o.task_id == ^task.id, preload: :learning)
+             |> Repo.all()
+             |> Enum.sort_by(&Enum.find_index([design_id, plan_id, ticket_id], fn id -> id == &1.source_id end))
+
+    assert Pipeline.list_plan_comments(ada, task) == []
+  end
+
+  test "a queued round on the design and the ticket handed back is unsent again and cut out of the text whole", %{
+    task: task,
+    run: run,
+    ada: ada,
+    attrs: attrs
+  } do
+    {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Lanes", description: "- Group by project."})
+    {:ok, _design} = Pipeline.create_plan_comment(ada, run, attrs)
+    {:ok, _ticket} = Pipeline.create_plan_comment(ada, run, Map.merge(@line, %{target: :ticket, body: "Who?"}))
+    {:ok, running} = Pipeline.update_run(run, %{status: :running})
+    {:ok, :queued, _run} = Pipeline.send_message(ada, running, "Typed too.")
+    {:ok, :queued, _run} = Pipeline.send_plan_comments(ada, running)
+
+    assert {:ok, _stopped, "Typed too."} = Pipeline.stop_run(ada, running)
+
+    assert [%PlanComment{target: :design, status: :unsent}, %PlanComment{target: :ticket, status: :unsent}] =
+             Pipeline.list_plan_comments(ada, task)
   end
 end

@@ -26,11 +26,10 @@ defmodule Rail.Pipeline.Utils.WithdrawPlanComments do
     # Each author's round went out as one message written from their comments, so it is written again to find it.
     rest =
       comments
-      |> Enum.sort_by(&{DateTime.to_unix(&1.inserted_at, :microsecond), &1.id})
       |> Enum.group_by(& &1.user_id)
       |> Enum.reduce(queued, fn {user_id, round}, text ->
         broadcast_plan_comments(task_id, user_id)
-        String.replace(text, PlanComment.calculate_message(round, design), "")
+        String.replace(text, PlanComment.calculate_message(PlanComment.calculate_round(round), design), "")
       end)
 
     case ~r/\n{3,}/ |> Regex.replace(rest, "\n\n") |> String.trim() do

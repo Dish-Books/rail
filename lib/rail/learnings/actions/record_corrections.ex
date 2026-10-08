@@ -84,6 +84,16 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
     }
   end
 
+  defp observation(%PlanComment{target: target} = comment, _suggested) do
+    %{
+      source_kind: if(target == :ticket, do: :ticket_comment, else: :plan_comment),
+      source_id: comment.id,
+      actor_id: comment.user_id,
+      text: comment.body,
+      excerpt: comment.element_text
+    }
+  end
+
   defp observation(%ReviewFinding{} = finding, _suggested) do
     %{
       source_kind: :review_finding,
@@ -142,6 +152,15 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
     }
   end
 
+  # A ticket comment teaches Product, which writes the ticket, as a plan comment teaches Architect.
+  defp rule(%PlanComment{target: :ticket} = comment, _observation) do
+    %{kind: :product, roles: [:product], rule: clip(comment.body), why: line_why("a ticket", comment)}
+  end
+
+  defp rule(%PlanComment{target: :plan} = comment, _observation) do
+    %{kind: :convention, roles: [:architect], rule: clip(comment.body), why: line_why("a plan", comment)}
+  end
+
   defp rule(%ReviewFinding{} = finding, _observation) do
     where = if finding.file, do: " on #{finding.file}", else: ""
     Map.merge(%{kind: :convention, roles: [:engineer, :review]}, finding_rule(finding, "Raised in review#{where}"))
@@ -163,6 +182,11 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
 
   defp finding_rule(finding, raised) do
     %{rule: clip(finding.title), why: why(["#{raised} and sent to be fixed.", finding.detail])}
+  end
+
+  defp line_why(document, %PlanComment{} = comment) do
+    quoted = comment.element_text |> clip() |> String.split("\n") |> Enum.map_join("\n", &"> #{&1}")
+    "From #{document} comment on #{comment.element_label}:\n\n#{quoted}"
   end
 
   defp why(parts), do: parts |> Enum.reject(&is_nil/1) |> Enum.join("\n\n")

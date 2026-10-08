@@ -5,6 +5,7 @@ defmodule RailWeb.Components.PlanSheetTest do
   import RailTest.Helpers
   import RailWeb.Helpers, only: [build_plan_sheet: 1]
 
+  alias Rail.Pipeline.Schemas.PlanComment
   alias RailWeb.Components.PlanSheet
 
   setup_all do
@@ -40,7 +41,10 @@ defmodule RailWeb.Components.PlanSheetTest do
     assert Floki.text(action) =~ "Rail.Pipeline.Actions.SendBackToArchitect"
     assert Floki.text(Floki.find(action, "[data-qa='plan_module_new']")) =~ "new"
     assert Floki.attribute(action, "a", "href") == ["#plan-file-1"]
-    assert Floki.text(Floki.find(action, "pre")) =~ "def send_back_to_architect(%Run{} = run, note)"
+
+    assert Floki.text(Floki.find(action, "[data-qa='plan_module_signatures']")) =~
+             "def send_back_to_architect(%Run{} = run, note)"
+
     assert Floki.find(context, "[data-qa='plan_module_new']") == []
     assert Floki.attribute(context, "a", "href") == ["#plan-file-2"]
 
@@ -159,5 +163,68 @@ defmodule RailWeb.Components.PlanSheetTest do
     assert Floki.attribute(html, "button[phx-value-view='change:diagram']", "aria-pressed") == ["true"]
     assert Floki.attribute(html, "button[phx-value-view='call_flow:source']", "aria-pressed") == ["true"]
     assert Floki.attribute(html, "button[phx-value-view='call_flow:source']", "phx-target") == ["#architect-stage"]
+  end
+
+  test "every line of the sheet draws a + while commenting is offered, and the changed comments sit at the top", %{
+    views: views
+  } do
+    sheet = build_plan_sheet(sheet_plan())
+
+    lifted = %PlanComment{
+      id: "pcm_l",
+      target: :plan,
+      element_kind: :paragraph,
+      element_label: "Approach, paragraph 1",
+      element_text: "As it read.",
+      body: "Hm."
+    }
+
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(
+        sheet: sheet,
+        diagram_views: %{views | change: :source},
+        event: "diagram_view",
+        offered: true,
+        changed: [{lifted, 1}]
+      )
+      |> Floki.parse_fragment!()
+
+    adds = html |> Floki.attribute("[data-qa='line_comment_add']", "phx-value-key") |> MapSet.new()
+    drawn = for line <- sheet.lines, line.kind != :node, into: MapSet.new(), do: line.key
+
+    assert drawn == adds
+    assert [_lifted] = Floki.find(html, "#plan-changed-comments [data-lifted='true']")
+
+    quiet =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: sheet, diagram_views: views, event: "diagram_view")
+      |> Floki.parse_fragment!()
+
+    assert Floki.find(quiet, "[data-qa='line_comment_add']") == []
+  end
+
+  test "prose under a module and a table in a section are lines of their own", %{views: views} do
+    plan =
+      sheet_plan()
+      |> String.replace(
+        "```elixir\ndef send_back_to_architect",
+        "Called by the stage.\n\n```elixir\ndef send_back_to_architect"
+      )
+      |> String.replace("### Assumptions\n", "### Assumptions\n\n| Case | Then |\n|------|------|\n| Empty | Refused |\n")
+
+    sheet = build_plan_sheet(plan)
+    labels = Enum.map(sheet.lines, & &1.label)
+
+    assert "SendBackToArchitect, paragraph 1" in labels
+    assert "Assumptions, table row 1" in labels
+
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: sheet, diagram_views: views, event: "diagram_view", offered: true)
+      |> Floki.parse_fragment!()
+
+    assert Floki.text(Floki.find(html, "[data-qa='plan_module_signatures']")) =~ "Called by the stage."
+    assert [_header, _row] = Floki.find(html, "#plan-assumptions [data-kind='table_row']")
   end
 end

@@ -96,4 +96,28 @@ defmodule Rail.Pipeline.Actions.ListPlanCommentsTest do
 
     assert Enum.map(Pipeline.list_plan_comments(ada, task), & &1.id) == Enum.sort([first.id, second.id])
   end
+
+  test "a design comment and then a ticket comment come back as 1 and 2 to their author alone, and a later design
+        comment moves ahead of the ticket's",
+       %{task: task, run: run, ada: ada, grace: grace, attrs: attrs} do
+    {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Lanes", description: "- Group by project."})
+    {:ok, %{id: first_design}} = Pipeline.create_plan_comment(ada, run, attrs)
+
+    {:ok, %{id: ticket_id}} =
+      Pipeline.create_plan_comment(ada, run, %{
+        target: :ticket,
+        element_kind: :list_item,
+        element_label: "Item 1",
+        element_occurrence: 1,
+        element_text: "Group by project.",
+        body: "Say which project."
+      })
+
+    assert [%PlanComment{id: ^first_design}, %PlanComment{id: ^ticket_id}] = Pipeline.list_plan_comments(ada, task)
+    assert Pipeline.list_plan_comments(grace, task) == []
+
+    {:ok, %{id: later_design}} = Pipeline.create_plan_comment(ada, run, %{attrs | body: "Later."})
+
+    assert [%{id: ^first_design}, %{id: ^later_design}, %{id: ^ticket_id}] = Pipeline.list_plan_comments(ada, task)
+  end
 end

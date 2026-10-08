@@ -13,6 +13,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
+  alias Rail.Users
 
   # The smallest part of a plan the structure allows, trimmed as a save trims it.
   @part String.trim("""
@@ -276,6 +277,70 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   test "a user without the project cannot approve it", %{task: task, run: run} do
     assert {:error, :not_found} = Pipeline.approve_plan(user_scope(project_ids: []), run)
     assert %Task{stage: :plan} = Repo.reload!(task)
+  end
+
+  test "the ticket's priority and estimate go to the issue with its title and description", %{task: task, run: run} do
+    {:ok, _ticket} =
+      Pipeline.save_ticket(task, %{
+        title: "Approved title",
+        description: "The approved ticket body.",
+        priority: :high,
+        estimate: 3
+      })
+
+    assert {:ok, %Run{}} = Pipeline.approve_plan(system_scope(), run)
+
+    assert %Issue{title: "Approved title", description: "The approved ticket body.", priority: :high, estimate: 3} =
+             Repo.get!(Issue, task.issue_id)
+  end
+
+  test "an approval deletes every author's unsent comments, since the conversation they go to closes", %{
+    task: %{id: task_id} = task,
+    run: run
+  } do
+    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_app_ada", login: "ada", email: "ada@example.com"})
+    {:ok, grace} = Users.register_oauth_user(%{github_id: "gh_app_grace", login: "grace", email: "grace@example.com"})
+    [ada, grace] = Enum.map([ada, grace], &user_scope(user: &1))
+
+    comment = %{
+      target: :ticket,
+      element_kind: :title,
+      element_label: "Title",
+      element_occurrence: 1,
+      element_text: "Approved title",
+      body: "Shorter."
+    }
+
+    for author <- [ada, grace], do: {:ok, _comment} = Pipeline.create_plan_comment(author, run, comment)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "plan_comments:#{task_id}:#{ada.user.id}")
+    Phoenix.PubSub.subscribe(Rail.PubSub, "plan_comments:#{task_id}:#{grace.user.id}")
+
+    assert {:ok, %Run{}} = Pipeline.approve_plan(system_scope(), run)
+
+    assert Pipeline.list_plan_comments(ada, task) == []
+    assert Pipeline.list_plan_comments(grace, task) == []
+    assert_receive {:plan_comments_changed, ^task_id}
+    assert_receive {:plan_comments_changed, ^task_id}
+  end
+
+  test "a refused approval leaves unsent comments where they were", %{task: task, run: run} do
+    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_app_ada2", login: "ada2", email: "ada2@example.com"})
+    ada = user_scope(user: ada)
+
+    {:ok, %{id: id}} =
+      Pipeline.create_plan_comment(ada, run, %{
+        target: :plan,
+        element_kind: :section_title,
+        element_label: "Approach",
+        element_occurrence: 1,
+        element_text: "Approach",
+        body: "Why?"
+      })
+
+    File.rm!(Path.join([task.scratch_path, "tickets", "APP-1.md"]))
+
+    assert {:error, :no_ticket} = Pipeline.approve_plan(system_scope(), run)
+    assert [%{id: ^id}] = Pipeline.list_plan_comments(ada, task)
   end
 
   describe "with a split saved" do

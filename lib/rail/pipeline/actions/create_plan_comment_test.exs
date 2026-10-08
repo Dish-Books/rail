@@ -9,6 +9,24 @@ defmodule Rail.Pipeline.Actions.CreatePlanCommentTest do
   alias Rail.Roles
   alias Rail.Users
 
+  @plan """
+  ## Implementation plan
+
+  ### Approach
+
+  One module decides.
+
+  No diagrams: one module changes.
+
+  ### File-level changes
+
+  - `lib/rail.ex`: decides.
+
+  ### Verification
+
+  - `lib/rail_test.exs`: covers it.
+  """
+
   setup %{project: project} do
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
@@ -139,5 +157,54 @@ defmodule Rail.Pipeline.Actions.CreatePlanCommentTest do
 
     assert {:error, changeset} = Pipeline.create_plan_comment(ada, run, %{attrs | body: " "})
     assert %{body: ["can't be blank"]} = errors_on(changeset)
+  end
+
+  test "a ticket comment needs a saved ticket and a plan comment a saved plan", %{task: task, run: run, ada: ada} do
+    line = %{element_kind: :paragraph, element_label: "Paragraph 1", element_occurrence: 1, body: "Say which pages."}
+    ticket = Map.merge(line, %{target: :ticket, element_text: "Recordings open blank."})
+    plan = Map.merge(line, %{target: :plan, element_text: "One module decides."})
+
+    assert {:error, :no_ticket} = Pipeline.create_plan_comment(ada, run, ticket)
+    assert {:error, :no_plan} = Pipeline.create_plan_comment(ada, run, plan)
+
+    {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Recordings", description: "Recordings open blank."})
+    {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan})
+
+    assert {:ok, %PlanComment{target: :ticket, element_label: "Paragraph 1"}} =
+             Pipeline.create_plan_comment(ada, run, ticket)
+
+    assert {:ok, %PlanComment{target: :plan, element_text: "One module decides."}} =
+             Pipeline.create_plan_comment(ada, run, plan)
+  end
+
+  test "ticket and plan comments save while Plan can take a message, two on one line, and not once it cannot", %{
+    task: task,
+    role: role,
+    run: chatty,
+    ada: ada
+  } do
+    {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Recordings", description: "Recordings open blank."})
+    {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan})
+
+    {:ok, silent} =
+      Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :finished, started_at: DateTime.utc_now()})
+
+    attrs = %{
+      target: :ticket,
+      element_kind: :title,
+      element_label: "Title",
+      element_occurrence: 1,
+      element_text: "Recordings",
+      body: "Say what settles."
+    }
+
+    assert {:ok, %PlanComment{}} = Pipeline.create_plan_comment(ada, chatty, attrs)
+    assert {:ok, %PlanComment{}} = Pipeline.create_plan_comment(ada, chatty, %{attrs | body: "And when."})
+    assert {:ok, %PlanComment{}} = Pipeline.create_plan_comment(ada, chatty, %{attrs | target: :plan})
+    assert {:error, :chat_unavailable} = Pipeline.create_plan_comment(ada, silent, attrs)
+    assert {:error, :chat_unavailable} = Pipeline.create_plan_comment(ada, silent, %{attrs | target: :plan})
+
+    assert [%{body: "Say what settles."}, %{body: "And when."}, %{target: :plan}] =
+             Pipeline.list_plan_comments(ada, task)
   end
 end

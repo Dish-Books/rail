@@ -1,9 +1,10 @@
 defmodule Rail.Pipeline.Actions.ApprovePlan do
   @moduledoc """
-  Approves the Plan step in one go: the ticket and the picked design are published to the issue, the
-  plan is recorded as the one the engineer builds from, and the task moves to Engineer. With a split
-  saved, each child becomes a Linear sub-issue with a task of its own instead, the parent moves to Split,
-  and an `AdvanceSplit` job committed with them starts the children, so they start even if the caller dies.
+  Approves the Plan step in one go: the ticket, with its priority and estimate, and the picked design are
+  published to the issue, the plan is recorded as the one the engineer builds from, and the task moves to
+  Engineer. With a split saved, each child becomes a Linear sub-issue with a task of its own instead, the parent
+  moves to Split, and an `AdvanceSplit` job committed with them starts the children, so they start even if the
+  caller dies. Unsent plan comments are deleted, since the conversation they would go to closes.
 
   Approving is a one-way door. The task row is locked and the next stage claimed inside the same
   transaction, so a second click or a second tab waits on the lock, then finds the task moved on and is
@@ -12,11 +13,13 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
 
   import Ecto.Query
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
+  import Rail.Pipeline.Utils.BroadcastPlanComments
   import Rail.Pipeline.Utils.RecordImplementationPlan
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.AdvanceSplit
@@ -43,22 +46,27 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
              :ok <- publish(task, ticket, design),
              {:ok, children} <- create_children(scope, task, Pipeline.read_split(task)) do
           record_implementation_plan(task, plan.content)
+          authors = delete_unsent_comments(task)
           {:ok, run} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
           {:ok, task} = Pipeline.enter_stage(task, if(children == [], do: :engineer, else: :split), start: false)
           if children != [], do: {:ok, _job} = %{parent_task_id: task.id} |> AdvanceSplit.new() |> Oban.insert()
-          {run, task, children}
+          {run, task, children, authors}
         else
           {:error, reason} -> Repo.rollback(reason)
         end
       end)
 
+    with {:ok, {_run, task, _children, authors}} <- result do
+      for user_id <- authors, do: broadcast_plan_comments(task.id, user_id)
+    end
+
     # Started only once the move is committed, so the engineer's spawn reads the task at Engineer.
     case result do
-      {:ok, {run, task, []}} ->
+      {:ok, {run, task, [], _authors}} ->
         with {:ok, _started} <- Pipeline.enter_stage(task, :engineer), do: {:ok, run}
 
       # The move to Split was broadcast inside the transaction, so a page that read it then missed the children.
-      {:ok, {run, task, children}} ->
+      {:ok, {run, task, children, _authors}} ->
         broadcast_pipeline_changed(task)
 
         for child <- children, do: Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, child.issue_id})
@@ -68,6 +76,19 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  # Returns whose comments went, so only their tabs are told.
+  defp delete_unsent_comments(%Task{id: task_id}) do
+    {_deleted, authors} =
+      Repo.delete_all(
+        from(comment in PlanComment,
+          where: comment.task_id == ^task_id and comment.status == :unsent,
+          select: comment.user_id
+        )
+      )
+
+    Enum.uniq(authors)
   end
 
   defp approvable(%Task{stage: stage}) when stage != :plan, do: {:error, {:invalid_stage, stage}}
@@ -117,7 +138,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
 
   # One write carries the ticket and the design. Linear hears about it from the sync that write enqueues.
   defp publish(%Task{issue: %Issue{} = issue}, ticket, nil) do
-    update_issue(issue, %{title: ticket.title, description: ticket.description})
+    update_issue(issue, ticket_attrs(ticket, ticket.description))
   end
 
   defp publish(%Task{issue: %Issue{} = issue} = task, ticket, {option, screenshot}) do
@@ -127,8 +148,16 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
       description = String.trim(ticket.description || "")
       description = if description == "", do: section, else: description <> "\n\n" <> section
 
-      update_issue(issue, %{title: ticket.title, description: description})
+      update_issue(issue, ticket_attrs(ticket, description))
     end
+  end
+
+  # A priority or estimate the ticket could not be read with is left as the issue has it.
+  defp ticket_attrs(ticket, description) do
+    Map.reject(
+      %{title: ticket.title, description: description, priority: ticket.priority, estimate: ticket.estimate},
+      fn {_field, value} -> is_nil(value) end
+    )
   end
 
   defp update_issue(%Issue{} = issue, attrs) do

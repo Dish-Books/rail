@@ -150,9 +150,6 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
       assert prompt =~ "which one you recommend and why"
       assert prompt =~ "then to each other subagent whose output it affects"
       assert prompt =~ ~s(A pick arrives as a message that says only "I picked <title> \(<key>\).")
-      assert prompt =~ "Comments on the design arrive as one message before approval"
-      assert prompt =~ "Hand them to Designer to revise the picked option under its key"
-      refute prompt =~ "after approval"
       assert prompt =~ "One round per turn."
       assert prompt =~ "Nothing is saved yet."
       assert prompt =~ "title: Attachments follow their source document"

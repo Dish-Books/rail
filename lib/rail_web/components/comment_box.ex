@@ -1,6 +1,6 @@
 defmodule RailWeb.Components.CommentBox do
   @moduledoc """
-  The box a comment is written in, on a diff line or on an element of a design: Cancel, Escape or Save comment
+  The box a comment is written in, on a diff line, an element of a design or a line of the ticket or plan: Cancel, Escape or Save comment
   closes it, and only its author sees what it saves until they send it.
   """
   use RailWeb, :html

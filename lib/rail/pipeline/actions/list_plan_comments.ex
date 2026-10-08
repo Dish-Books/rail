@@ -12,13 +12,13 @@ defmodule Rail.Pipeline.Actions.ListPlanComments do
   alias Rail.Scope
 
   @doc """
-  Returns the scope user's unsent comments on `task`, of every target, oldest first.
+  Returns the scope user's unsent comments on `task`, of every target, in the order Send would number them.
   """
   def list_plan_comments(%Scope{user: %{id: user_id}}, %Task{id: task_id}) do
-    Repo.all(
-      from comment in PlanComment,
-        where: comment.task_id == ^task_id and comment.user_id == ^user_id and comment.status == :unsent,
-        order_by: [asc: comment.inserted_at, asc: comment.id]
+    from(comment in PlanComment,
+      where: comment.task_id == ^task_id and comment.user_id == ^user_id and comment.status == :unsent
     )
+    |> Repo.all()
+    |> PlanComment.calculate_round()
   end
 end

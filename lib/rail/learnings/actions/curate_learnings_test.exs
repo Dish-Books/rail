@@ -9,6 +9,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
   alias Rail.Learnings.Schemas.LearningProposal
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Learnings.Workers.CollectPullRequest
+  alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
@@ -643,7 +644,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
 
     {:ok, [_provisional]} =
       Learnings.record_corrections(one, [
-        %Rail.Pipeline.Schemas.PlanComment{
+        %PlanComment{
           id: "pcm_cur",
           target: :design,
           option_key: "lanes",
@@ -680,6 +681,58 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     assert observations =~ "Design comment"
     assert_received {:posted, text}
     assert text =~ "*Provisional since the last run 1:* from a design comment on CUR-1"
+  end
+
+  test "a pass over a provisional rule from a ticket comment names it as a ticket comment", %{
+    project: project,
+    tasks: [one | _rest]
+  } do
+    %{workspace: workspace} = connect_slack_channel(project)
+
+    {:ok, _project} =
+      Projects.update_project(system_scope(), project, %{
+        "learnings_slack_workspace_id" => workspace.id,
+        "learnings_channel_external_id" => "C_LEARN"
+      })
+
+    {:ok, [_provisional]} =
+      Learnings.record_corrections(one, [
+        %PlanComment{
+          id: "pcm_cur_ticket",
+          target: :ticket,
+          element_kind: :priority,
+          element_label: "Priority",
+          element_occurrence: 1,
+          element_text: "Medium",
+          body: "Blocks the release notes, so High."
+        }
+      ])
+
+    test = self()
+
+    Req.Test.stub(Rail.Slack, fn conn ->
+      case conn.request_path do
+        "/api/chat.postMessage" ->
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+          send(test, {:posted, Jason.decode!(body)["text"]})
+          Req.Test.json(conn, %{"ok" => true, "ts" => "1790000000.000903"})
+
+        "/api/chat.getPermalink" ->
+          Req.Test.json(conn, %{"ok" => true, "permalink" => "https://slack.example/p4"})
+      end
+    end)
+
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
+      send(test, {:read, File.read!(Path.join(opts[:cd], "observations.md"))})
+      File.write!(Path.join(opts[:cd], "result.json"), ~s({"outcomes": [], "proposals": []}))
+      {:ok, ""}
+    end)
+
+    assert {:ok, %CuratorPass{}} = Learnings.curate_learnings(project)
+    assert_received {:read, observations}
+    assert observations =~ "Ticket comment"
+    assert_received {:posted, text}
+    assert text =~ "*Provisional since the last run 1:* from a ticket comment on CUR-1"
   end
 
   test "a third task's sighting linked to a pending add on a retired rule activates nothing", %{

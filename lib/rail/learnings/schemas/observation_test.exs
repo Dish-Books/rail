@@ -8,6 +8,8 @@ defmodule Rail.Learnings.Schemas.ObservationTest do
     assert Enum.map(Observation.source_kinds(), &Observation.source_label/1) == [
              "Diff comment",
              "Design comment",
+             "Ticket comment",
+             "Plan comment",
              "Fix on a review finding",
              "Fix on a QA finding",
              "Answer",

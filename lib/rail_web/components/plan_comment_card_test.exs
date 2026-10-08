@@ -3,11 +3,13 @@ defmodule RailWeb.Components.PlanCommentCardTest do
 
   import Phoenix.LiveViewTest
 
+  alias Rail.Pipeline.Schemas.PlanComment
   alias RailWeb.Components.PlanCommentCard
 
   test "names the sender, the count, the option and each numbered comment with its selector and element" do
     round = %{
       count: 2,
+      groups: "the design",
       sections: [
         %{
           target: :design,
@@ -39,5 +41,43 @@ defmodule RailWeb.Components.PlanCommentCardTest do
     assert text =~ "Say how long.\nNot only the count."
     assert text =~ "<label>"
     assert text =~ "Drop it."
+  end
+
+  test "a round on the design, the ticket and the plan draws each section and names them all" do
+    design = %PlanComment{
+      target: :design,
+      option_key: "a",
+      selector: "#x",
+      element_text: "X",
+      element_tag: "p",
+      body: "One."
+    }
+
+    line = %PlanComment{
+      target: :ticket,
+      element_kind: :priority,
+      element_label: "Priority",
+      element_occurrence: 1,
+      element_text: "Medium",
+      body: "Make it High."
+    }
+
+    round =
+      [design, line, %{line | target: :plan, element_kind: :file, element_label: "File 1", element_text: "lib/a.ex"}]
+      |> PlanComment.calculate_message(%{options: [%{key: "a", title: "First"}]})
+      |> PlanComment.parse_message()
+
+    html =
+      (&PlanCommentCard.plan_comment_card/1)
+      |> render_component(id: "msg-1", sender: "Maya", round: round, identifier: "RAIL-82")
+      |> Floki.parse_fragment!()
+
+    assert Floki.text(html) =~ "3 comments on the design, the ticket and the plan"
+    assert [first, ticket, plan] = Floki.find(html, "[data-qa='plan_comment_card_section']")
+    assert Floki.text(first) =~ "First"
+    assert Floki.text(ticket) =~ ~r/Ticket\s+RAIL-82/
+    assert Floki.text(ticket) =~ ~s(Priority"Medium")
+    assert Floki.text(ticket) =~ "Make it High."
+    assert Floki.text(plan) =~ ~s(File 1"lib/a.ex")
   end
 end
