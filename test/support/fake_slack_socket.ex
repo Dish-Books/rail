@@ -2,7 +2,8 @@ defmodule Rail.FakeSlackSocket do
   @moduledoc """
   The websocket half of `Rail.FakeSlack`. It says hello the way Slack does, then
   sends whatever the test hands it with `{:push, frame}`, and forwards every
-  frame it receives to the test as `{:fake_slack_frame, socket, frame}`.
+  frame it receives to the test as `{:fake_slack_frame, socket, frame}`. A
+  connection that ends is reported as `{:fake_slack_closed, socket}`.
   """
   @behaviour WebSock
 
@@ -28,5 +29,8 @@ defmodule Rail.FakeSlackSocket do
   def handle_info(:close, state), do: {:stop, :normal, state}
 
   @impl true
-  def terminate(_reason, state), do: {:ok, state}
+  def terminate(_reason, %{test: test} = state) do
+    send(test, {:fake_slack_closed, self()})
+    {:ok, state}
+  end
 end
