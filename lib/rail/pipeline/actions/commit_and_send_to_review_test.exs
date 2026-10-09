@@ -188,4 +188,19 @@ defmodule Rail.Pipeline.Actions.CommitAndSendToReviewTest do
     assert %Run{error: nil} = Repo.reload!(run)
     assert %Task{stage: :engineer} = Repo.reload!(task)
   end
+
+  # Past Engineer the branch is Review's, and its fixes are committed by the Review lead.
+  test "a task past engineer is refused, with nothing committed and no go-ahead left", %{
+    scope: scope,
+    run: run,
+    task: task,
+    repo: repo
+  } do
+    {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
+    File.write!(Path.join(repo, "feature.ex"), "one\n")
+    reject(&Git.commit_worktree/3)
+
+    assert {:error, {:invalid_stage, :review}} = Pipeline.commit_and_send_to_review(scope, run, "CSR-1: add it")
+    assert %Run{review_on_ci_pass: false} = Repo.reload!(run)
+  end
 end

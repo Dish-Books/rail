@@ -20,7 +20,7 @@ defmodule Rail.Tools.Actions.FileQaEvidenceTest do
     end)
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "File Evidence"})
-    {:ok, task} = Pipeline.create_task(issue, :qa)
+    {:ok, task} = Pipeline.create_task(issue, :review)
     qa = Path.join(task.scratch_path, "qa")
     File.mkdir_p!(Path.join(qa, "evidence"))
     outside = Path.join(System.tmp_dir!(), "fqe-outside-#{System.unique_integer([:positive])}")
@@ -45,7 +45,33 @@ defmodule Rail.Tools.Actions.FileQaEvidenceTest do
     assert File.read!(Path.join([qa, "evidence", "script-runs~the-script-s-log.log"])) == "wrote 3 rows"
     assert File.read!(Path.join([qa, "evidence", "run.log"])) == "wrote 3 rows"
 
-    assert [%{"file" => "script-runs~the-script-s-log.log", "name" => "The script's log"}] =
+    # With no worktree and no browser named, there is neither to write down.
+    assert [
+             %{
+               "file" => "script-runs~the-script-s-log.log",
+               "name" => "The script's log",
+               "commit" => nil,
+               "browser" => nil
+             }
+           ] =
+             [qa, "evidence", "captions.jsonl"]
+             |> Path.join()
+             |> File.read!()
+             |> String.split("\n", trim: true)
+             |> Enum.map(&Jason.decode!/1)
+  end
+
+  # A finding citing the file copies these, so it can say which commit and which explorer it came from.
+  test "a file is written down with the commit and the browser it came from", %{task: task, qa: qa} do
+    stub(Rail.Git, :branch_fingerprint, fn _worktree -> %{head_sha: "headsha"} end)
+    task = %{task | worktree_path: Path.join(System.tmp_dir!(), "fqe_wt_#{System.unique_integer([:positive])}")}
+    File.mkdir_p!(task.worktree_path)
+    on_exit(fn -> File.rm_rf(task.worktree_path) end)
+    File.write!(Path.join([qa, "evidence", "run.log"]), "wrote 3 rows")
+
+    {:ok, _file} = Tools.file_qa_evidence(task, "evidence/run.log", "The log", "script-runs", "explorer-1")
+
+    assert [%{"file" => "script-runs~the-log.log", "commit" => "headsha", "browser" => "explorer-1"}] =
              [qa, "evidence", "captions.jsonl"]
              |> Path.join()
              |> File.read!()

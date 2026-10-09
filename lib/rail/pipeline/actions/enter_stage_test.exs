@@ -52,9 +52,9 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
   test "writes the stage and starts the run that belongs to it", %{task: task, roles: roles} do
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 
-    %{id: review_role_id} = roles[:review]
+    %{id: review_lead_role_id} = roles[:review_lead]
 
-    assert {:ok, %Run{role_id: ^review_role_id, status: :running}} = Pipeline.enter_stage(task, :review)
+    assert {:ok, %Run{role_id: ^review_lead_role_id, status: :running}} = Pipeline.enter_stage(task, :review)
     assert %Task{stage: :review} = Repo.reload!(task)
   end
 
@@ -62,7 +62,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 
-    assert {:ok, %Task{}} = Pipeline.enter_stage(task, :demo, start: false)
+    assert {:ok, %Task{}} = Pipeline.enter_stage(task, :debugger, start: false)
     assert_received {:pipeline_changed, ^task_id}
 
     assert {:ok, %Run{}} = Pipeline.enter_stage(task, :review)
@@ -72,8 +72,8 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
   test "every stage the ticket follows queues its Linear move", %{task: task} do
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 
-    for stage <- [:plan, :engineer, :review, :qa, :demo, :merged] do
-      assert {:ok, _run_or_task} = Pipeline.enter_stage(task, stage, start: stage not in [:demo, :merged])
+    for stage <- [:plan, :engineer, :review, :merged] do
+      assert {:ok, _run_or_task} = Pipeline.enter_stage(task, stage, start: stage != :merged)
       assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: task.issue_id})
 
       # Finish it, since a queued move would absorb the next stage's.
@@ -104,15 +104,16 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: task.issue_id})
   end
 
-  test "review is spawned with its own brief", %{task: task, roles: roles} do
-    %{id: review_role_id} = roles[:review]
+  test "Review is spawned as the Review lead, with its own brief and its subagents", %{task: task, roles: roles} do
+    %{id: review_lead_role_id} = roles[:review_lead]
 
-    expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
-      assert prompt =~ "`save_finding`"
+    expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] = argv ->
+      assert prompt =~ "You lead Rail's Review step"
+      assert "--agents" in argv
       {:ok, %OsProcess{run: spawned, task: task}}
     end)
 
-    assert {:ok, %Run{role_id: ^review_role_id, status: :running}} = Pipeline.enter_stage(task, :review)
+    assert {:ok, %Run{role_id: ^review_lead_role_id, status: :running}} = Pipeline.enter_stage(task, :review)
   end
 
   # Debugger has a role bound and no brief of its own, which is every stage Rail
@@ -126,17 +127,6 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     end)
 
     assert {:ok, %Run{role_id: ^debugger_role_id, status: :running}} = Pipeline.enter_stage(task, :debugger)
-  end
-
-  test "QA is briefed on the report it writes, like every stage Rail has built", %{task: task, roles: roles} do
-    %{id: qa_role_id} = roles[:qa]
-
-    expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
-      assert prompt =~ Path.join(task.scratch_path, "qa")
-      {:ok, %OsProcess{run: spawned, task: task}}
-    end)
-
-    assert {:ok, %Run{role_id: ^qa_role_id, status: :running}} = Pipeline.enter_stage(task, :qa)
   end
 
   test "an engineer starts with the prompt merged to its project's .rail/prompts, not the stored one", %{
@@ -177,7 +167,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     {:ok, done} =
       Pipeline.create_run(%{
         task_id: task.id,
-        role_id: roles[:review].id,
+        role_id: roles[:review_lead].id,
         status: :finished,
         stage_outcome: :done,
         error: "Something went wrong last time.",

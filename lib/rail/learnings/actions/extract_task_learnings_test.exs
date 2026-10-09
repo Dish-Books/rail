@@ -27,32 +27,35 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
         email: "dana-#{id}@ext.example"
       })
 
-    {:ok, review} = Roles.get_role(project_id: project.id, stage: :review)
+    {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
     task = learnings_task(project, "EXT-1", :review)
-    {:ok, task} = Pipeline.update_task(task, %{pr_number: 7})
+    {:ok, task} = Pipeline.update_task(task, %{pr_number: 7, worktree_path: System.tmp_dir!()})
     on_exit(fn -> File.rm_rf(Path.join([Rail.scratch_root(), project.id, "learnings", "tasks", task.id])) end)
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    stub(Rail.Git, :branch_fingerprint, fn _worktree -> %{head_sha: "basesha"} end)
 
     {:ok, run} =
-      Pipeline.create_run(%{
-        task_id: task.id,
-        role_id: review.id,
-        status: :finished,
-        started_at: DateTime.utc_now(),
-        stage_fingerprint_head_sha: "basesha"
-      })
+      Pipeline.create_run(%{task_id: task.id, role_id: lead.id, status: :finished, started_at: DateTime.utc_now()})
 
     Pipeline.append_run_events(run.id, nil, ["[human] Use the factory, please"])
 
-    [finding] =
-      for finding <- [
-            %{key: "nil", title: "Nil is not handled", severity: :major, recommendation: :fix, status: :open}
-          ] do
-        {:ok, saved} = Pipeline.save_review_finding(task, finding)
+    code = %{
+      kind: :code,
+      raised_by: :code_reviewer,
+      problem: "A task with no worktree crashes the page.",
+      file: "lib/a.ex",
+      line: 3,
+      fix: "Guard the nil in the action.",
+      why: "It crashes.",
+      rule: "Every caller handles a missing worktree.",
+      severity: :major,
+      recommendation: :fix,
+      places: [%{file: "lib/a.ex", line: 3, label: "handle/1"}],
+      evidence: [%{name: "The clause", kind: :code, file: "lib/a.ex", line: 3}]
+    }
 
-        saved
-      end
-
-    {:ok, _decided} = Pipeline.decide_review_finding(Rail.Scope.for_user(user), finding, :fix)
+    {:ok, finding} = Pipeline.save_finding(task, Map.merge(code, %{key: "nil", title: "Nil is not handled"}))
+    {:ok, _decided} = Pipeline.decide_finding(Rail.Scope.for_user(user), finding, :fix)
 
     {:ok, question} =
       Pipeline.register_question(%{run | task: Repo.preload(task, :issue)}, %DetectedQuestion{
@@ -63,38 +66,38 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
     rule = learning(project, %{rule: "Use the factory", kind: :convention})
     calibration = learning(project, %{rule: "Don't flag docs", kind: :calibration})
 
-    for finding <- [
-          %{
-            key: "doc",
-            title: "Missing @doc",
-            severity: :nit,
-            recommendation: :skip,
-            status: :open,
-            rule: calibration.id
-          },
-          %{
-            key: "factory",
-            title: "Repo.insert! in a test",
-            severity: :minor,
-            recommendation: :fix,
-            status: :open,
-            rule: rule.id
-          }
-        ],
-        do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
+    {:ok, _doc} =
+      Pipeline.save_finding(
+        task,
+        Map.merge(code, %{key: "doc", title: "Missing @doc", recommendation: :skip, checklist_rule: calibration.id})
+      )
 
-    for finding <- [
-          %{
-            key: "total",
-            title: "The total is unrounded",
-            check: "totals",
-            severity: :major,
-            recommendation: :fix,
-            status: :open,
-            evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-          }
-        ],
-        do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
+    {:ok, _factory} =
+      Pipeline.save_finding(
+        task,
+        Map.merge(code, %{key: "factory", title: "Repo.insert! in a test", checklist_rule: rule.id})
+      )
+
+    {:ok, _total} =
+      Pipeline.save_finding(task, %{
+        key: "total",
+        kind: :screen,
+        raised_by: :explorer,
+        title: "The total is unrounded",
+        problem: "Every bill shows $1234.5.",
+        screen: "Invoices",
+        steps: ["Open an invoice"],
+        check: "totals",
+        fix: "Round the total to cents.",
+        why: "Money reads in cents.",
+        rule: "Totals show two decimals.",
+        severity: :major,
+        recommendation: :fix,
+        places: [%{screen: "Invoices"}],
+        evidence: [%{name: "What QA saw", kind: :note, text: "Seen."}]
+      })
+
+    {:ok, %{head: "basesha"}} = Pipeline.save_review(task)
 
     {:ok, _pending} =
       Pipeline.register_question(%{run | task: Repo.preload(task, :issue)}, %DetectedQuestion{prompt: "Behind a flag?"})
@@ -169,7 +172,8 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
     assert files["plan.md"] == "Extend the invoices module."
     assert files["findings.md"] =~ "Suppressed by rule #{calibration_id}."
     assert files["findings.md"] =~ "Raised from rule #{rule_id}."
-    assert files["findings.md"] =~ "## QA: The total is unrounded"
+    assert files["findings.md"] =~ "## Round 1, screen: The total is unrounded"
+    assert files["findings.md"] =~ "Rule: Totals show two decimals."
     assert files["questions.md"] =~ "pending, answered by nobody"
     assert files["rules.md"] =~ rule.id
     assert_received {:transcripts, [transcript]}

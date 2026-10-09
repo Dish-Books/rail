@@ -58,6 +58,12 @@ defmodule Rail.Pipeline.Utils.UpdateBranchPass do
 
   defp say(%Run{id: run_id}, line), do: Pipeline.append_run_events(run_id, nil, ["[rail] #{line}"])
 
+  # A merge that brought nothing in leaves a task past Engineer where it was, with nothing to commit or push.
+  defp send_on(%Run{task: %Task{stage: stage} = task} = run) when stage != :engineer do
+    {:ok, task} = task |> Task.changeset(%{is_updating_branch: false}) |> Repo.update()
+    {:ok, %{run | task: task}}
+  end
+
   defp send_on(%Run{task: %Task{} = task} = run) do
     {:ok, task} = task |> Task.changeset(%{is_updating_branch: false}) |> Repo.update()
 

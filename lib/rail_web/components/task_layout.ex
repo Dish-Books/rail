@@ -9,6 +9,8 @@ defmodule RailWeb.Components.TaskLayout do
   """
   use RailWeb, :html
 
+  import RailWeb.Utils.StageLabel, only: [ready_to_merge?: 2]
+
   attr :task, :any, required: true
   attr :run, :any, default: nil
   # The status reads the task's stage, whichever tab is open; nil when that stage has no run yet.
@@ -75,10 +77,14 @@ defmodule RailWeb.Components.TaskLayout do
             data-qa="task_status_chip"
             class={[
               "inline-flex items-center gap-1.5 font-semibold",
-              run_state_style(@stage_run).text_class
+              chip_style(@task, @stage_run).text_class
             ]}
           >
-            <.icon :if={@line} name={run_state_style(@stage_run).icon} class="h-4 w-4" />
+            <.icon
+              :if={@line != nil or ready_to_merge?(@task, @stage_run)}
+              name={chip_style(@task, @stage_run).icon}
+              class="h-4 w-4"
+            />
             {stage_label(@task, @stage_run)}
             <span :if={@starts_at} id="task-usage-starts" data-qa="task_usage_starts">
               · starts <.local_time id="task-usage-starts-at" at={@starts_at} />
@@ -166,5 +172,12 @@ defmodule RailWeb.Components.TaskLayout do
       </div>
     </div>
     """
+  end
+
+  # A finished review is the one done run that waits on nothing but the merge, so it reads as done.
+  defp chip_style(task, run) do
+    if ready_to_merge?(task, run),
+      do: %{text_class: "text-emerald-600 dark:text-emerald-400", icon: "pi-check-circle"},
+      else: run_state_style(run)
   end
 end

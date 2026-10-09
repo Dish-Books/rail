@@ -25,6 +25,8 @@ defmodule Rail.Git do
   defdelegate content_fingerprint(worktree_path), to: Actions.ContentFingerprint
 
   defdelegate worktree_dirty?(worktree_path), to: Actions.WorktreeDirty
+  defdelegate list_changed_paths(worktree_path), to: Actions.ListChangedPaths
+  defdelegate load_branch_history(task), to: Actions.LoadBranchHistory
   defdelegate branch_unpushed?(worktree_path), to: Actions.BranchUnpushed
   defdelegate branch_changed?(task), to: Actions.BranchChanged
   defdelegate commit_worktree(scope, task, message), to: Actions.CommitWorktree

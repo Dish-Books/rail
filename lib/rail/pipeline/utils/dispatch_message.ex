@@ -15,8 +15,8 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   import Rail.Pipeline.Utils.DeliverPlanComments
   import Rail.Pipeline.Utils.PlanSubagents
   import Rail.Pipeline.Utils.PrepareWorktree
+  import Rail.Pipeline.Utils.ReviewSubagents
   import Rail.Pipeline.Utils.StartWorktreeSetup
-  import Rail.Pipeline.Utils.TurnStamp
 
   alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Pipeline
@@ -99,25 +99,20 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   defp send_message(%Task{} = task, %Role{} = role, %Run{} = run, worktree_path, _opts) do
     message = run.pending_chat
 
-    # The turn's end compares against this to tell whether the engineer changed code.
-    stamp = if role.stage == :engineer, do: turn_stamp(%{task | worktree_path: worktree_path}), else: %{}
-
     # The turn before this one is history the moment another starts. Its error
     # and exit code go with it: left on the row they read as this turn's, and a
     # run still wearing an error is one that can never be latched done.
     {:ok, run} =
       run
-      |> Run.changeset(
-        Map.merge(stamp, %{
-          pending_chat: nil,
-          # A person stepping in is what lets CI send its failures back again.
-          ci_failure_streak: 0,
-          status: :running,
-          error: nil,
-          exit_code: nil,
-          started_at: run.started_at || DateTime.utc_now()
-        })
-      )
+      |> Run.changeset(%{
+        pending_chat: nil,
+        # A person stepping in is what lets CI send its failures back again.
+        ci_failure_streak: 0,
+        status: :running,
+        error: nil,
+        exit_code: nil,
+        started_at: run.started_at || DateTime.utc_now()
+      })
       |> Repo.update()
 
     broadcast_changed(run)
@@ -133,8 +128,8 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
         system_prompt: role.system_prompt,
         conversation_id: run.conversation_id,
         work_dir: worktree_path,
-        # Subagents are a spawn flag, not part of the saved session, so every Plan turn passes them again.
-        agents: if(role.stage == :plan, do: plan_subagents(task), else: [])
+        # Subagents are a spawn flag, not part of the saved session, so every lead's turn passes them again.
+        agents: subagents(role, task)
       )
 
     case Tools.start_os_process(run, argv) do
@@ -151,8 +146,13 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
     end
   end
 
+  defp subagents(%Role{stage: :plan}, %Task{} = task), do: plan_subagents(task)
+  defp subagents(%Role{stage: :review_lead}, %Task{} = task), do: review_subagents(task)
+  defp subagents(%Role{}, %Task{}), do: []
+
   # The message never reached an agent, so it goes back on the row as though it
   # had never left: still queued, still the human's to cancel or re-send.
+
   defp requeue(%Run{} = run, message) do
     run |> Run.changeset(%{pending_chat: message}) |> Repo.update!() |> broadcast_changed()
   end

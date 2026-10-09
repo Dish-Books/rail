@@ -51,7 +51,19 @@ defmodule Rail.Learnings.Schemas.LearningTest do
     assert Enum.map(Learning.statuses(), &Learning.status_label/1) == ["Proposed", "Provisional", "Active", "Retired"]
 
     assert Enum.map(Learning.roles(), &Learning.role_label/1) ==
-             ["Plan", "Product", "Designer", "Architect", "Engineer", "Reviewer", "QA", "Demo", "Debugger", "Triage"]
+             [
+               "Plan",
+               "Product",
+               "Designer",
+               "Architect",
+               "Engineer",
+               "Review lead",
+               "Reviewer",
+               "QA",
+               "Demo",
+               "Debugger",
+               "Triage"
+             ]
   end
 
   test "what is embedded is the rule and its why" do

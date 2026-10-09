@@ -21,7 +21,7 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidenceTest do
     end)
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "Capture Evidence"})
-    {:ok, task} = Pipeline.create_task(issue, :qa)
+    {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     %{task: task}
@@ -39,6 +39,31 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidenceTest do
 
     assert File.read!(Path.join([task.scratch_path, "qa", "evidence", "the-bill-total-as-rendered.jpg"])) ==
              "jpeg bytes"
+  end
+
+  # A finding citing the picture copies these, so it can say which commit and which explorer it was seen on.
+  test "the caption is written down with the commit and the browser it was taken on", %{task: task} do
+    stub(BrowserSession, :call, fn _session, _method, _params -> {:ok, %{"data" => Base.encode64("jpeg")}} end)
+    stub(Rail.Git, :branch_fingerprint, fn _worktree -> %{head_sha: "headsha"} end)
+    task = %{task | worktree_path: Path.join(System.tmp_dir!(), "cpe_wt_#{System.unique_integer([:positive])}")}
+    File.mkdir_p!(task.worktree_path)
+    on_exit(fn -> File.rm_rf(task.worktree_path) end)
+
+    {:ok, _file} = Tools.capture_browser_evidence(:session, task, "The saved bill", "bill-saves", "explorer-1")
+
+    assert [
+             %{
+               "file" => "bill-saves~the-saved-bill.jpg",
+               "name" => "The saved bill",
+               "commit" => "headsha",
+               "browser" => "explorer-1"
+             }
+           ] =
+             [task.scratch_path, "qa", "evidence", "captions.jsonl"]
+             |> Path.join()
+             |> File.read!()
+             |> String.split("\n", trim: true)
+             |> Enum.map(&Jason.decode!/1)
   end
 
   # The panel shows a picture the moment it is filed, and never half of one.

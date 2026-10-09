@@ -3,12 +3,12 @@ defmodule RailWeb.OverviewLiveTest do
 
   import Phoenix.LiveViewTest
 
-  alias Rail.Git
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.ImplementationPlan
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -1209,12 +1209,12 @@ defmodule RailWeb.OverviewLiveTest do
           started_at: DateTime.shift(now, minute: -10)
         })
 
-      failed_task = task_for.("Failed work", %{stage: :qa})
+      failed_task = task_for.("Failed work", %{stage: :review})
 
       {:ok, failed} =
         Pipeline.create_run(%{
           task_id: failed_task.id,
-          role_id: roles[:qa].id,
+          role_id: roles[:review_lead].id,
           status: :failed,
           error: "Exited with code 2",
           started_at: DateTime.shift(now, hour: -5),
@@ -1222,12 +1222,12 @@ defmodule RailWeb.OverviewLiveTest do
         })
 
       # A stage no human signs off just finished; it did not hand anything over.
-      gate_task = task_for.("Gate work", %{stage: :qa})
+      gate_task = task_for.("Gate work", %{stage: :debugger})
 
       {:ok, gate} =
         Pipeline.create_run(%{
           task_id: gate_task.id,
-          role_id: roles[:qa].id,
+          role_id: roles[:debugger].id,
           status: :finished,
           stage_outcome: :done,
           started_at: DateTime.shift(now, hour: -5),
@@ -1335,12 +1335,12 @@ defmodule RailWeb.OverviewLiveTest do
       task_for: task_for
     } do
       now = DateTime.utc_now()
-      task = task_for.("Retry after failure", %{stage: :qa})
+      task = task_for.("Retry after failure", %{stage: :review})
 
       {:ok, failed} =
         Pipeline.create_run(%{
           task_id: task.id,
-          role_id: roles[:qa].id,
+          role_id: roles[:review_lead].id,
           status: :failed,
           error: "3 of 11 checks failed",
           started_at: DateTime.shift(now, hour: -2),
@@ -1350,7 +1350,7 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, _retry} =
         Pipeline.create_run(%{
           task_id: task.id,
-          role_id: roles[:qa].id,
+          role_id: roles[:review_lead].id,
           status: :running,
           started_at: DateTime.shift(now, minute: -10)
         })
@@ -1361,55 +1361,44 @@ defmodule RailWeb.OverviewLiveTest do
       refute has_element?(view, "#up-next-featured-#{failed.id}")
       assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
       refute has_element?(view, "#attention-badge")
-      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='running']", "QA running")
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='running']", "Review running")
     end
 
-    test "a task at demo whose code changed waits at engineer for review, not to be merged", %{
+    test "a Review run whose review is finished leads as ready to merge", %{
       conn: conn,
       roles: roles,
       task_for: task_for
     } do
-      now = DateTime.utc_now()
-
       task =
-        task_for.("Change after the demo", %{
-          stage: :demo,
-          worktree_path: create_temp_git_repo(),
+        task_for.("Finished review", %{
+          stage: :review,
           pr_number: 4,
           pr_url: "https://github.com/example/test-seed/pull/4"
         })
 
-      {:ok, engineer_run} =
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+      {:ok, %Run{id: run_id} = run} =
         Pipeline.create_run(%{
           task_id: task.id,
-          role_id: roles[:engineer].id,
+          role_id: roles[:review_lead].id,
           status: :finished,
           stage_outcome: :done,
-          started_at: DateTime.shift(now, hour: -3),
-          completed_at: DateTime.shift(now, hour: -2)
+          started_at: DateTime.shift(DateTime.utc_now(), hour: -1),
+          completed_at: DateTime.utc_now()
         })
 
-      {:ok, demo_run} =
-        Pipeline.create_run(%{
-          task_id: task.id,
-          role_id: roles[:demo].id,
-          status: :finished,
-          stage_outcome: :done,
-          started_at: DateTime.shift(now, hour: -2),
-          completed_at: DateTime.shift(now, hour: -1)
-        })
+      {:ok, _pass} = Pipeline.save_review(task)
 
       assert {:ok, view, _html} = live(conn, ~p"/")
-      assert has_element?(view, "#up-next-featured-#{demo_run.id} [data-qa='up-next-chip']", "Ready to merge")
+      assert has_element?(view, "#up-next-featured-#{run_id} [data-qa='up-next-chip']", "Ready for review")
+      assert has_element?(view, "#in-progress-task-#{task.id}", "Review the findings")
 
-      stub(Git, :push_branch, fn _scope, _task -> :ok end)
-      File.write!(Path.join(task.worktree_path, "after_demo.ex"), "changed\n")
-      assert :ok = Pipeline.commit_engineer_work(system_scope(), task, nil)
+      {:ok, %Run{id: ^run_id}} = Pipeline.start_fix_round(run)
 
       assert {:ok, view, _html} = live(conn, ~p"/")
-      assert has_element?(view, "#up-next-featured-#{engineer_run.id} [data-qa='up-next-chip']", "Ready for review")
-      refute has_element?(view, "[data-qa='up-next-chip']", "Ready to merge")
-      assert has_element?(view, "#in-progress-task-#{task.id}", "Review the diff")
+      assert has_element?(view, "#up-next-featured-#{run_id} [data-qa='up-next-chip']", "Ready to merge")
+      assert has_element?(view, "#in-progress-task-#{task.id}", "Ready to merge")
     end
 
     test "the sidebar lists every task in progress and where it stands", %{
@@ -1440,12 +1429,12 @@ defmodule RailWeb.OverviewLiveTest do
           completed_at: DateTime.shift(now, hour: -2)
         })
 
-      qa = task_for.("Retry a failed QA run", %{stage: :qa})
+      review = task_for.("Retry a failed Review run", %{stage: :review})
 
       {:ok, _failed} =
         Pipeline.create_run(%{
-          task_id: qa.id,
-          role_id: roles[:qa].id,
+          task_id: review.id,
+          role_id: roles[:review_lead].id,
           status: :failed,
           error: "3 of 11 checks failed",
           started_at: DateTime.shift(now, hour: -2),
@@ -1459,14 +1448,14 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#in-progress-task-#{architect.id}[data-state='done']", "Review the plan")
       assert has_element?(view, "#in-progress-task-#{architect.id}", "Prorate seat changes")
       assert has_element?(view, "#in-progress-task-#{architect.id}", architect.issue.identifier)
-      assert has_element?(view, "#in-progress-task-#{qa.id}[data-state='failed']", "QA failed")
+      assert has_element?(view, "#in-progress-task-#{review.id}[data-state='failed']", "Review failed")
 
       assert has_element?(view, "#in-progress-count", "3 tasks")
       assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "3")
 
       # Waiting on you first, then broken, then working, however long each has been so.
       positions =
-        Enum.map([architect, qa, engineer], fn task ->
+        Enum.map([architect, review, engineer], fn task ->
           html |> :binary.match("in-progress-task-#{task.id}") |> elem(0)
         end)
 

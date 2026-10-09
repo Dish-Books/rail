@@ -53,6 +53,24 @@ defmodule RailWeb.Live.EngineerStageTest do
     %{conn: log_in_user(conn, user), task: task, repo: repo}
   end
 
+  test "once the task is in Review, the Engineer tab offers no Commit, CI, send or chat", %{
+    conn: conn,
+    task: task,
+    repo: repo
+  } do
+    File.write!(Path.join(repo, "rows.ex"), "edited\n")
+    {:ok, _review} = Pipeline.update_task(task, %{stage: :review})
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=rol_test_seed_engineer")
+
+    assert has_element?(view, "#engineer-stage")
+    refute has_element?(view, "#commit-work")
+    refute has_element?(view, "#run-ci")
+    refute has_element?(view, "#send-to-review")
+    refute has_element?(view, "#chat-input")
+    assert has_element?(view, "#conversation-closed", "The work is in Review now, so this conversation is closed")
+  end
+
   test "a saved comment carries the code around its line, from the view it was written in", %{
     conn: conn,
     task: task,

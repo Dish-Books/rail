@@ -1,7 +1,6 @@
 defmodule Rail.Pipeline.Actions.SendToReviewTest do
   use Rail.DataCase, async: true
 
-  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -62,39 +61,6 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
     }
   end
 
-  # The brief the reviewer is spawned with never reaches its log, so without this
-  # the change comes back round with nothing in the conversation marking that it
-  # did.
-  test "the reviewer's log says the change came back", %{project: project, task: task, run: run} do
-    {:ok, review_role} = Roles.get_role(project_id: project.id, stage: :review)
-
-    {:ok, review_run} =
-      Pipeline.create_run(%{
-        task_id: task.id,
-        role_id: review_role.id,
-        status: :finished,
-        stage_outcome: :done,
-        conversation_id: "sess_send_to_review_review",
-        started_at: DateTime.utc_now()
-      })
-
-    assert {:ok, %Run{}} = Pipeline.send_to_review(run)
-
-    log = review_run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
-
-    assert log =~ "[human] The engineer has worked on your findings and pushed the change again."
-    assert log =~ "a fix can be wrong, or right and break something next to it"
-    assert log =~ "whether it has been addressed"
-  end
-
-  # A reviewer that has never run has no conversation for this to be the next
-  # thing in: its first turn is the brief.
-  test "a reviewer that has never run gets no such line", %{run: run} do
-    assert {:ok, %Run{}} = Pipeline.send_to_review(run)
-
-    assert Repo.all(Rail.Pipeline.Schemas.RunEvent) == []
-  end
-
   test "hands the task to review and latches the engineer run", %{task: task, run: run} do
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.send_to_review(run)
     assert %Task{stage: :review} = Repo.reload!(task)
@@ -128,6 +94,14 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
     {:ok, _moved} = Pipeline.update_task(task, %{stage: :plan})
 
     assert {:error, {:invalid_stage, :plan}} = Pipeline.send_to_review(run)
+  end
+
+  # The fixes Review asks for are made inside Review, so nothing sends a task there twice.
+  test "refuses a task already past engineer", %{task: task, run: run} do
+    {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
+    reject(Tools, :start_os_process, 2)
+
+    assert {:error, {:invalid_stage, :review}} = Pipeline.send_to_review(run)
   end
 
   test "a project with CI sends nothing to review that CI has not passed", %{project: project, task: task, run: run} do
@@ -173,96 +147,5 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
     |> Repo.insert!()
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.send_to_review(run)
-  end
-
-  test "a task past engineer goes back to review for what the engineer changed since", %{
-    project: project,
-    task: task,
-    run: run,
-    worktree_path: worktree_path
-  } do
-    {:ok, review_role} = Roles.get_role(project_id: project.id, stage: :review)
-
-    reviewed = String.trim(git!(worktree_path, ["rev-parse", "HEAD"]))
-
-    {:ok, _review_run} =
-      Pipeline.create_run(%{
-        task_id: task.id,
-        role_id: review_role.id,
-        status: :finished,
-        stage_outcome: :done,
-        stage_fingerprint_head_sha: reviewed,
-        started_at: DateTime.utc_now()
-      })
-
-    {:ok, task} = Pipeline.update_task(task, %{stage: :demo})
-
-    assert {:error, :nothing_new_to_review} = Pipeline.send_to_review(run)
-    refute Pipeline.changed_since_review?(task)
-
-    File.write!(Path.join(worktree_path, "resolved.ex"), "both\n")
-    git!(worktree_path, ["add", "."])
-    git!(worktree_path, ["commit", "-m", "resolve the merge"])
-    git!(worktree_path, ["push", "origin", "main"])
-
-    assert Pipeline.changed_since_review?(task)
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-
-    assert {:ok, %Run{}} = Pipeline.send_to_review(run)
-    assert %Task{stage: :review} = Repo.reload!(task)
-  end
-
-  test "code changed at QA goes round review and QA again, with neither earlier pass carrying it", %{
-    project: project,
-    task: task,
-    run: run,
-    worktree_path: worktree_path
-  } do
-    {:ok, review_role} = Roles.get_role(project_id: project.id, stage: :review)
-    {:ok, qa_role} = Roles.get_role(project_id: project.id, stage: :qa)
-
-    {:ok, task} =
-      Pipeline.update_task(task, %{stage: :qa, pr_number: 3, pr_url: "https://github.com/example/test-seed/pull/3"})
-
-    {:ok, review_run} =
-      Pipeline.create_run(%{
-        task_id: task.id,
-        role_id: review_role.id,
-        status: :finished,
-        stage_outcome: :done,
-        started_at: DateTime.utc_now()
-      })
-
-    {:ok, qa_run} =
-      Pipeline.create_run(%{
-        task_id: task.id,
-        role_id: qa_role.id,
-        status: :finished,
-        stage_outcome: :done,
-        started_at: DateTime.utc_now()
-      })
-
-    {:ok, _latched} = Pipeline.update_run(run, %{stage_outcome: :done})
-
-    stub(Git, :push_branch, fn _scope, _task ->
-      git!(worktree_path, ["push", "origin", "main"])
-      :ok
-    end)
-
-    File.write!(Path.join(worktree_path, "asked_for_at_qa.ex"), "the change\n")
-    assert :ok = Pipeline.commit_engineer_work(system_scope(), task, nil)
-
-    assert {:error, {:invalid_stage, :engineer}} = Pipeline.send_to_demo(qa_run)
-    assert {:error, {:invalid_stage, :engineer}} = Pipeline.send_to_qa(review_run)
-
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-
-    assert {:ok, %Run{}} = Pipeline.send_to_review(run)
-    assert %Task{stage: :review} = Repo.reload!(task)
-    assert %Run{stage_outcome: :in_progress} = Repo.reload!(review_run)
-  end
-
-  test "a task never reviewed has changed since review", %{task: task} do
-    assert Pipeline.changed_since_review?(task)
   end
 end

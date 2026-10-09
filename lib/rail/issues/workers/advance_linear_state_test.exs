@@ -265,7 +265,7 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
     assert {:snooze, 1} = perform_job(AdvanceLinearState, %{issue_id: issue.id})
   end
 
-  # A send-back from review or QA re-enters the engineer stage.
+  # A merge of main from Review re-enters the engineer stage.
   test "the engineer leaves an In Review ticket at In Review", %{
     issue: issue,
     task: task,
@@ -322,7 +322,7 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
 
   test "never reopens a ticket that is Done or Canceled", %{issue: issue, task: task, nodes: nodes, states: states} do
     for finished <- ["st_done", "st_canceled"],
-        stage <- [:plan, :engineer, :review, :qa, :demo, :merged] do
+        stage <- [:plan, :engineer, :review, :merged] do
       {:ok, _task} = Pipeline.update_task(task, %{stage: stage})
 
       Req.Test.expect(Rail.Linear, fn conn ->

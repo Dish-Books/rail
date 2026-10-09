@@ -19,7 +19,7 @@ defmodule Rail.Pipeline.Actions.RecordQaCheckTest do
     end)
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "Record Check"})
-    {:ok, task} = Pipeline.create_task(issue, :qa)
+    {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     {:ok, _checklist} =

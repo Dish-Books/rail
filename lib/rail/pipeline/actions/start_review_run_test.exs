@@ -3,16 +3,16 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Repo
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
-    scope = system_scope()
-
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :review)
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -30,190 +30,163 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(scope, project, %{description: "Filter invoices by vendor."})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Filter invoices by vendor."})
     {:ok, task} = Pipeline.create_task(issue, :review)
     worktree_path = create_temp_git_repo()
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     {:ok, run} = Pipeline.start_or_resume_run(task, role, worktree_path)
+    # Between rounds, where the human rules.
+    {:ok, run} = Pipeline.update_run(run, %{status: :finished})
 
-    %{task: task, run: run}
+    %{task: task, run: %{run | role: role}}
   end
 
-  test "briefs the reviewer on the change and the tools it reports with", %{task: task, run: run} do
-    reviews_dir = Path.join(task.scratch_path, "reviews")
-
-    expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
-      assert ["-p", prompt | _rest] = argv
-      assert prompt =~ "Review the change described below."
-      assert prompt =~ "You are reading it, not changing it"
-      assert prompt =~ "git diff origin/main...HEAD"
-      assert prompt =~ "The branch #{task.worktree_name}" or prompt =~ task.worktree_name
-      assert prompt =~ "`save_finding` saves one finding, as soon as you have confirmed it"
-
-      assert prompt =~
-               "`save_review` says the pass is finished, and it is the last thing you do, including when you found nothing"
-
-      refute prompt =~ "<<'JSON'"
-      refute prompt =~ reviews_dir
-      assert prompt =~ "Ask everything at once."
-      assert prompt =~ "Filter invoices by vendor."
-
-      {:ok, %OsProcess{run: spawned}}
-    end)
-
-    assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_review_run(run)
-    refute File.exists?(reviews_dir)
-  end
-
-  test "keeps severity and recommendation apart, so a nit can still be worth fixing", %{run: run} do
-    expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
-      assert ["-p", prompt | _rest] = argv
-      assert prompt =~ "They are separate axes"
-      assert prompt =~ "a nit worth the thirty seconds it costs is `fix`, and a blocker is never `skip`"
-
-      {:ok, %OsProcess{run: spawned}}
-    end)
-
-    assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_review_run(run)
-  end
-
-  # The human rules on the reasoning and the engineer is handed the remedy, so the
-  # two are separate fields and the brief has to say which is which.
-  test "tells the reviewer the reasoning and the remedy have different readers", %{run: run} do
-    expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
-      assert ["-p", prompt | _rest] = argv
-      assert prompt =~ "`detail` and `suggestion` have different readers"
-      assert prompt =~ "the whole of what the engineer is handed"
-      assert prompt =~ "whether this change caused the problem or merely stands next to it"
-      assert prompt =~ "written as though the finding will be fixed"
-      assert prompt =~ "hands the engineer a decision the human has already taken"
-
-      {:ok, %OsProcess{run: spawned}}
-    end)
-
-    assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_review_run(run)
-  end
-
-  test "asks the reviewer to confirm what it reports rather than guess", %{run: run} do
-    expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
-      assert ["-p", prompt | _rest] = argv
-      assert prompt =~ "Report only what you checked."
-      assert prompt =~ "open the callers, read the test, run it"
-
-      {:ok, %OsProcess{run: spawned}}
-    end)
-
-    assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_review_run(run)
-  end
-
-  test "says the ticket is the whole specification when nothing planned it", %{run: run} do
-    expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
-      assert ["-p", prompt | _rest] = argv
-      assert prompt =~ "There is no implementation plan for this ticket"
-
-      {:ok, %OsProcess{run: spawned}}
-    end)
-
-    assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_review_run(run)
-  end
-
-  test "reads the change against the plan it was built from", %{task: task, run: run} do
-    %ImplementationPlan{}
-    |> ImplementationPlan.changeset(%{
-      task_id: task.id,
-      content:
-        ~s{## Implementation plan\n\nExtend the invoice filter module.\n\n```mermaid\nflowchart LR\n  A["InvoicesLive"] --> B["Invoices"]\n```\n\n```elixir\ndef list_invoices(scope, filters)\n```},
-      captured_at: DateTime.utc_now()
-    })
-    |> Repo.insert!()
-
-    expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
-      assert ["-p", prompt | _rest] = argv
-      assert prompt =~ "Extend the invoice filter module."
-      assert prompt =~ ~s(```mermaid\nflowchart LR\n  A["InvoicesLive"] --> B["Invoices"]\n```)
-      assert prompt =~ "```elixir\ndef list_invoices(scope, filters)\n```"
-      assert prompt =~ "It is the specification:"
-      refute prompt =~ "There is no implementation plan"
-
-      {:ok, %OsProcess{run: spawned}}
-    end)
-
-    assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_review_run(run)
-  end
-
-  test "a first pass is not asked to verify anything", %{run: run} do
-    expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
-      assert ["-p", prompt | _rest] = argv
-      refute prompt =~ "This change has been reviewed before"
-
-      {:ok, %OsProcess{run: spawned}}
-    end)
-
-    assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_review_run(run)
-  end
-
-  test "hands a later pass every finding already on the task, with what the human decided", %{
+  test "spawns the lead on its own model with the code reviewer, explorer, engineer and demo recorder", %{
     task: task,
     run: run
   } do
-    [to_fix, dismissed] =
-      for finding <- [
-            %{
-              key: "unhandled-nil",
-              title: "Nil is not handled",
-              detail: "The clause assumes a map.",
-              file: "lib/rail/example.ex",
-              line: 12,
-              severity: :major,
-              recommendation: :fix,
-              status: :open
-            },
-            %{
-              key: "naming-nit",
-              title: "The variable could be named better",
-              detail: nil,
-              file: nil,
-              line: nil,
-              severity: :nit,
-              recommendation: :fix,
-              status: :open
-            }
-          ] do
-        {:ok, saved} = Pipeline.save_review_finding(task, finding)
-        saved
-      end
-
-    for finding <- [
-          %{key: "not-ruled-on", title: "Nobody has looked", severity: :minor, recommendation: :fix, status: :open}
-        ],
-        do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
-
-    {:ok, _stopped} = Pipeline.update_run(run, %{status: :finished})
-    {:ok, _to_fix} = Pipeline.decide_review_finding(system_scope(), to_fix, :fix)
-    {:ok, _skipped} = Pipeline.decide_review_finding(system_scope(), dismissed, :skip)
-
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
-      assert ["-p", prompt | _rest] = argv
-      assert prompt =~ "This change has been reviewed before"
-      assert prompt =~ "`unhandled-nil` [major, human decided: fix it, status: open] Nil is not handled"
-      assert prompt =~ "(lib/rail/example.ex:12)"
-      assert prompt =~ "`naming-nit` [nit, human decided: dismissed, leave it, status: open]"
-      # A turn that came back before anybody read it leaves findings nobody has
-      # ruled on, and the next pass is owed the truth about that rather than a
-      # default.
-      assert prompt =~ "`not-ruled-on` [minor, human decided: not yet decided, status: open]"
-      assert prompt =~ "never argue it again"
+      assert ["-p", _prompt, "--model", "claude-opus-5-5" | _rest] = argv
+      [json] = for ["--agents", json] <- Enum.chunk_every(argv, 2, 1), do: json
+
+      assert %{
+               "code-reviewer" => %{"model" => "claude-opus-5-5"},
+               "explorer" => %{"model" => "claude-opus-5-5"},
+               "engineer" => %{"model" => "claude-opus-5-5"},
+               "demo-recorder" => %{"model" => "claude-opus-5-5"}
+             } = Jason.decode!(json)
 
       {:ok, %OsProcess{run: spawned}}
     end)
 
     assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_review_run(run)
+    assert File.dir?(Path.join([task.scratch_path, "qa", "evidence"]))
+    assert File.dir?(Path.join(task.scratch_path, "demo"))
+  end
+
+  test "the brief lists the findings already on the task with their rounds, rulings, places and notes", %{
+    task: task,
+    run: run
+  } do
+    {:ok, finding} =
+      Pipeline.save_finding(task, %{
+        key: "send-twice",
+        kind: :screen,
+        raised_by: :explorer,
+        title: "Send stays enabled while a round is on its way",
+        problem: "A second click sends the same comments twice.",
+        screen: "Engineer tab, Diff toolbar",
+        steps: ["Click Send twice"],
+        fix: "Disable Send until the server answers.",
+        why: "Two runs for one round.",
+        rule: "A round is sent once, however many times Send is pressed.",
+        severity: :major,
+        recommendation: :fix,
+        places: [%{screen: "Engineer tab, Diff toolbar", label: "Send button"}, %{file: "lib/a.ex", line: 22}],
+        evidence: [%{name: "count", kind: :note, text: "2 deliveries"}],
+        note: "Seen by explorer-1."
+      })
+
+    {:ok, %{round: 1}} = Pipeline.save_review(task)
+    {:ok, _ruled} = Pipeline.decide_finding(system_scope(), finding, :fix)
+    {:ok, %{round: 2}} = Pipeline.save_review(task)
+    {:ok, _carried} = Pipeline.save_finding(task, %{key: "send-twice", status: "not_fixed", note: "Still twice."})
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~
+               "- `send-twice` [carried into round 3, major screen, human ruled: Fix, status: not_fixed] " <>
+                 "Send stays enabled while a round is on its way (Engineer tab, Diff toolbar)"
+
+      assert prompt =~ "  Rule: A round is sent once, however many times Send is pressed."
+      assert prompt =~ "  Place 1: Engineer tab, Diff toolbar, Send button"
+      assert prompt =~ "  Place 2: lib/a.ex:22"
+      assert prompt =~ ~r/  Round 1, raised on [0-9a-f]{7}: Seen by explorer-1\./
+      assert prompt =~ "  Round 1, ruled Fix"
+      assert prompt =~ ~r/  Round 3, not_fixed on [0-9a-f]{7}: Still twice\./
+      assert prompt =~ ~r/  Round 3, carried on [0-9a-f]{7}/
+
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_review_run(run)
+  end
+
+  test "a fixed finding, one ruled Don't fix and one from before rules read as such, and the plan is the specification",
+       %{
+         task: task,
+         run: run
+       } do
+    attrs = %{
+      kind: :code,
+      raised_by: :code_reviewer,
+      problem: "It crashes.",
+      file: "lib/a.ex",
+      line: 3,
+      fix: "Guard it.",
+      why: "It crashes.",
+      rule: "Every caller handles nil.",
+      severity: :minor,
+      recommendation: :skip,
+      places: [%{file: "lib/a.ex", line: 3}],
+      evidence: [%{name: "range", kind: :code, file: "lib/a.ex", line: 3}]
+    }
+
+    {:ok, dismissed} = Pipeline.save_finding(task, Map.merge(attrs, %{key: "left-alone", title: "Left alone"}))
+    {:ok, _dismissed} = Pipeline.decide_finding(system_scope(), dismissed, :skip)
+
+    {:ok, _fixed} =
+      Pipeline.save_finding(task, Map.merge(attrs, %{key: "already-fixed", title: "Already fixed"}))
+
+    {:ok, _fixed} = Pipeline.save_finding(task, %{key: "already-fixed", status: "fixed"})
+
+    # Findings carried over from the old review table have no rule.
+    Repo.insert!(%Finding{
+      task_id: task.id,
+      key: "migrated",
+      kind: :code,
+      raised_by: :code_reviewer,
+      round: 1,
+      title: "Migrated",
+      file: "lib/b.ex",
+      line: 1,
+      severity: :nit,
+      recommendation: :skip
+    })
+
+    Repo.insert!(%ImplementationPlan{
+      task_id: task.id,
+      content: "## Implementation plan\n\nFilter by vendor.",
+      captured_at: DateTime.utc_now()
+    })
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~
+               "- `left-alone` [round 1, minor code, human ruled: Don't fix, status: open] Left alone (lib/a.ex:3)"
+
+      assert prompt =~ "- `already-fixed` [round 1, minor code, human ruled: not yet, status: fixed] Already fixed"
+      assert prompt =~ ~r/human ruled: not yet, status: open\] Migrated \(lib\/b\.ex:1\)\n(?!  Rule)/
+      assert prompt =~ "Filter by vendor."
+
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_review_run(run)
+  end
+
+  test "an answer turn sends only the answer", %{run: run} do
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt == "Start fix round 1.\n\nContinue from where you stopped.\n"
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} =
+             Pipeline.start_review_run(%{run | pending_answer: "Start fix round 1.", conversation_id: "sess_srv"})
   end
 
   describe "the checklist" do
-    test "carries the rules found per changed file, with ids, the calibration instruction and the rule field", %{
+    test "carries the rules found per changed file, with ids, for the lead to hand on, and names the id field", %{
       project: project,
       run: run
     } do
@@ -240,12 +213,9 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
       calibration = learning(project, %{rule: "Don't flag a missing @doc", kind: :calibration, pinned: true})
 
       expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
-        assert prompt =~ "The checklist: rules this project has learned."
         assert prompt =~ "- `#{rule.id}` Convention: Tests use the factory Applies to `test/**`."
         assert prompt =~ "- `#{calibration.id}` Calibration: Don't flag a missing @doc"
-        assert prompt =~ "A finding one says not to raise is still saved, with that rule's id as `rule`"
-        assert prompt =~ "`status` and `rule`"
-        assert prompt =~ "`rule` is the id of the checklist rule a finding comes from"
+        assert prompt =~ "give that rule's id as `checklist_rule`"
         {:ok, %OsProcess{run: spawned}}
       end)
 

@@ -1225,6 +1225,7 @@ defmodule RailWeb.Settings.RolesLive do
     product: "Product Manager",
     architect: "Architect",
     engineer: "Engineer",
+    review_lead: "Review lead",
     review: "Reviewer",
     qa: "QA Engineer",
     demo: "Demo Recorder",
@@ -1241,6 +1242,7 @@ defmodule RailWeb.Settings.RolesLive do
   }
 
   defp stage_display_name(:qa), do: "QA"
+  defp stage_display_name(:review_lead), do: "Review lead"
 
   defp stage_display_name(stage) do
     stage

@@ -116,6 +116,19 @@ default_roles = [
     max_concurrent: 2,
     position: 3
   },
+  # Leads the four below inside one Review run, each a subagent on its own role's model.
+  %{
+    stage: :review_lead,
+    name: "Review lead",
+    description: "Leads the code reviewer, QA explorers, engineer and demo recorder through Review",
+    icon_name: "pi-seal-check-fill",
+    cli: :claude,
+    model: "claude-opus-5-5",
+    reasoning_effort: :high,
+    system_prompt: read_prompt.("review_lead"),
+    max_concurrent: 1,
+    position: 4
+  },
   %{
     stage: :review,
     name: "Code Reviewer",

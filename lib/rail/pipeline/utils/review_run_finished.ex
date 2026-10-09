@@ -1,47 +1,47 @@
 defmodule Rail.Pipeline.Utils.ReviewRunFinished do
   @moduledoc """
-  Where a finished review run leaves its task.
+  Where a finished Review lead turn leaves its task.
 
-  The findings are already rows, saved one at a time as the reviewer confirmed
-  them, and while any of them is waiting on a human the task stays at review: the
-  reviewer recommends and a person decides, so a pass that read the change well
-  enough to conclude something still moves nothing.
+  The findings are already rows, saved one at a time, and the task stays at Review whatever they say: the
+  lead recommends and a person rules, and the fixes they rule happen inside Review. A round that leaves
+  nothing to rule and nothing to fix is the exception, and finishes the review by itself, taking the pull
+  request out of draft. A message the human queued for the lead holds it: they have more to say.
 
-  A pass that leaves nothing to decide is the exception. No findings, or every
-  one of them fixed or already dismissed, is exactly what `send_to_qa/1` would
-  let through, and parking a human in front of an empty panel only to have them
-  press the button is not a decision. So it goes on to QA by itself - on the
-  first pass or on a re-review that found the engineer fixed everything. A
-  message the human queued for the reviewer holds it here: they have something
-  more to say to this stage.
-
-  What a review run can get wrong is exiting cleanly without calling
-  `save_review`, which is how a pass says it finished, and that is recorded on
-  the run so the stage stays open for the message that fixes it.
+  What a turn can get wrong is ending without `save_review` when a round was due, which is any time the
+  branch has moved since the last pass read it. That is recorded on the run, so the stage stays open for
+  the message that fixes it.
   """
 
+  import Rail.Pipeline.Utils.FinishReview
+
+  alias Rail.Git
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
 
-  @doc "Finishes `run` as the review stage."
+  @doc "Finishes `run` as the Review lead's."
   def review_run_finished(%Run{} = run, _opts) do
-    case run.task |> Repo.preload(:issue) |> Pipeline.read_review() do
-      %DateTime{} -> advance(run)
-      nil -> fail(run, "The reviewer did not save its review.")
+    task = Repo.preload(run.task, :issue)
+    passes = Pipeline.read_review(task)
+
+    cond do
+      not saved?(passes, task) -> fail(run, "The Review lead did not save its review.")
+      run.pending_chat != nil or List.last(passes).finished_at != nil -> run
+      Enum.any?(Pipeline.list_findings(task), &(Finding.undecided?(&1) or Finding.outstanding?(&1))) -> run
+      true -> %{run | task: finish_review(task)}
     end
   end
 
-  # `send_to_qa/1` is the one place that decides whether a review is closed, so
-  # it is asked rather than restated here; a refusal is a review still open.
-  defp advance(%Run{pending_chat: nil} = run) do
-    case Pipeline.send_to_qa(run) do
-      {:ok, %Run{} = sent} -> sent
-      {:error, _still_open} -> run
-    end
-  end
+  # A pass with no commit, or a worktree git cannot read, is taken at its word.
+  defp saved?([], %Task{}), do: false
 
-  defp advance(%Run{} = run), do: run
+  defp saved?(passes, %Task{} = task) do
+    read = List.last(passes).head
+    now = if Task.worktree_present?(task), do: Git.branch_fingerprint(task.worktree_path)[:head_sha]
+    is_nil(read) or is_nil(now) or read == now
+  end
 
   defp fail(%Run{} = run, error) do
     {:ok, failed} = run |> Run.changeset(%{error: error}) |> Repo.update()

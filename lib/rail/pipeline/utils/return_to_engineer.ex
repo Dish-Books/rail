@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Utils.ReturnToEngineer do
   @moduledoc """
-  Code that changes after Engineer has to go back through review and QA.
+  A merge of the default branch into a task past Engineer, which Update branch makes, goes back there
+  to be committed and sent to Review again; nothing else in Review moves a task back.
   """
 
   alias Rail.Pipeline
@@ -15,8 +16,8 @@ defmodule Rail.Pipeline.Utils.ReturnToEngineer do
     # Callers such as the diff pane can hold a task whose stage has since moved, and
     # the changeset diffs against the struct, so it has to carry the stage as stored.
     case Repo.get!(Task, task.id) do
-      %Task{stage: stage} when stage in [:review, :qa, :demo] ->
-        Pipeline.enter_stage(%{task | stage: stage}, :engineer, start: false)
+      %Task{stage: :review} ->
+        Pipeline.enter_stage(%{task | stage: :review}, :engineer, start: false)
 
       %Task{stage: stage} ->
         {:ok, %{task | stage: stage}}

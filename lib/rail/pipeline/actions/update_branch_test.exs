@@ -76,6 +76,7 @@ defmodule Rail.Pipeline.Actions.UpdateBranchTest do
   end
 
   test "a merge that goes cleanly is pushed without the engineer", %{task: task, run: run} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
     expect(Git, :fetch_default_branch, fn %Project{default_branch: "main"}, _path -> :ok end)
     expect(Git, :merge_default_branch, fn _scope, %Task{} -> :ok end)
     expect(Git, :push_branch, fn _scope, _task -> :ok end)
@@ -103,12 +104,11 @@ defmodule Rail.Pipeline.Actions.UpdateBranchTest do
     assert {:ok, %Task{stage: :review}} = Pipeline.update_branch(system_scope(), task)
   end
 
-  test "a merge that brings anything into the branch of a task at QA sends it back to engineer", %{
+  test "a merge that brings anything into the branch of a task at review sends it back to engineer", %{
     task: task,
     run: run,
     worktree_path: worktree_path
   } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
     stub(Git, :fetch_default_branch, fn _project, _path -> :ok end)
 
     expect(Git, :merge_default_branch, fn _scope, %Task{} ->

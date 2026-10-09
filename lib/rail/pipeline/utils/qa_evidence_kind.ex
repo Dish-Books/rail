@@ -3,7 +3,7 @@ defmodule Rail.Pipeline.Utils.QaEvidenceKind do
 
   import Rail.Pipeline.Utils.ReadTextHead
 
-  alias Rail.Pipeline.Schemas.QaEvidence
+  alias Rail.Pipeline.Schemas.FindingEvidence
 
   @doc """
   What the file at `path` is: `:screenshot`, `:pdf`, `:text` or `:file`. Text is
@@ -11,7 +11,7 @@ defmodule Rail.Pipeline.Utils.QaEvidenceKind do
   """
   def qa_evidence_kind(path) do
     cond do
-      QaEvidence.picture?(path) -> :screenshot
+      FindingEvidence.picture?(path) -> :screenshot
       String.downcase(Path.extname(path)) == ".pdf" -> :pdf
       match?({:text, _text, _truncated}, read_text_head(path, 8_192)) -> :text
       true -> :file

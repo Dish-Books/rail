@@ -18,24 +18,18 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   A run that already had its say is latched at `stage_outcome: :done` and is left
   alone however many times it is messaged afterwards. `enter_stage/3` is what
   unlatches it, which is why nothing here moves a task: a stage's own finish
-  does, when what it concluded leaves nobody anything to decide. The one
-  exception is an engineer turn past Engineer that changed the tree, which sends
-  the task back there.
+  does, when what it concluded leaves nobody anything to decide.
   """
 
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.CiRunFinished
-  import Rail.Pipeline.Utils.DemoRunFinished
   import Rail.Pipeline.Utils.DispatchMessage
   import Rail.Pipeline.Utils.EngineerRunFinished
   import Rail.Pipeline.Utils.PlanRunFinished
-  import Rail.Pipeline.Utils.QaRunFinished
   import Rail.Pipeline.Utils.QuestionQueue
   import Rail.Pipeline.Utils.RegisterAskedQuestions
-  import Rail.Pipeline.Utils.ReturnToEngineer
   import Rail.Pipeline.Utils.ReviewRunFinished
   import Rail.Pipeline.Utils.SetupRunFinished
-  import Rail.Pipeline.Utils.TurnStamp
   import Rail.Pipeline.Utils.UnsentRound
   import Rail.Pipeline.Utils.UpdateBranchRunFinished
 
@@ -134,31 +128,6 @@ defmodule Rail.Pipeline.Actions.RunFinished do
     end
   end
 
-  # A chat turn after the engineer's round is left on the diff for the Commit
-  # button, but code changed past Engineer has to be reviewed again.
-  defp finish(
-         %Run{
-           role: %Role{stage: :engineer},
-           task: %Task{stage: stage} = task,
-           stage_outcome: :done,
-           stage_fingerprint_head_sha: head_sha,
-           stage_fingerprint_dirty_digest: digest
-         } = run,
-         %OsProcess{} = os_process,
-         _opts
-       )
-       when stage in [:review, :qa, :demo] do
-    _asked = register_asked_questions(os_process, run)
-
-    # A turn with no stamp is one nobody can say changed anything.
-    if is_binary(head_sha) and
-         turn_stamp(task) != %{stage_fingerprint_head_sha: head_sha, stage_fingerprint_dirty_digest: digest} do
-      {:ok, _task} = return_to_engineer(task)
-    end
-
-    run
-  end
-
   defp finish(%Run{} = run, %OsProcess{} = os_process, opts) do
     case register_asked_questions(os_process, run) do
       [] -> maybe_finish(run, opts)
@@ -185,7 +154,8 @@ defmodule Rail.Pipeline.Actions.RunFinished do
     %{failed | task: run.task, role: run.role}
   end
 
-  defp concluded?(%Run{role: %Role{stage: stage}} = run) when stage in [:review, :qa, :demo] do
+  # The Review lead has its say at the end of every round, so a turn after one it already latched counts too.
+  defp concluded?(%Run{role: %Role{stage: :review_lead}} = run) do
     run.exit_code == 0 and not asked_anything_open?(run)
   end
 
@@ -207,9 +177,8 @@ defmodule Rail.Pipeline.Actions.RunFinished do
 
   defp finish_action(%Run{role: %Role{stage: :plan}}), do: &plan_run_finished/2
   defp finish_action(%Run{role: %Role{stage: :engineer}}), do: &engineer_run_finished/2
-  defp finish_action(%Run{role: %Role{stage: :review}}), do: &review_run_finished/2
-  defp finish_action(%Run{role: %Role{stage: :qa}}), do: &qa_run_finished/2
-  defp finish_action(%Run{role: %Role{stage: :demo}}), do: &demo_run_finished/2
+  defp finish_action(%Run{role: %Role{stage: :review_lead}}), do: &review_run_finished/2
+
   defp finish_action(%Run{}), do: fn run, _opts -> run end
 
   # A finish that recorded an error did not conclude anything, so it stays open

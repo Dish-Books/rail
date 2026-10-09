@@ -18,14 +18,14 @@ defmodule Rail.Pipeline.Actions.ListQaEvidence do
 
   import Rail.Pipeline.Utils.QaEvidenceKind
 
-  alias Rail.Pipeline.Schemas.QaEvidence
+  alias Rail.Pipeline.Schemas.FindingEvidence
   alias Rail.Pipeline.Schemas.Task
 
   @doc """
-  Lists `task`'s QA evidence as `%{name:, file:, check:, kind:, taken_at:}`,
+  Lists `task`'s QA evidence as `%{name:, file:, check:, kind:, taken_at:, commit:, browser:}`,
   newest first. `check` is the key of the row it was filed for, or `nil` for a
   picture filed before there was a checklist. `kind` is `:screenshot`, `:pdf`,
-  `:text` or `:file`.
+  `:text` or `:file`. `commit` and `browser` are what it was filed on, where that was written down.
   """
   def list_qa_evidence(%Task{scratch_path: scratch_path}) do
     directory = Path.join([scratch_path, "qa", "evidence"])
@@ -55,7 +55,7 @@ defmodule Rail.Pipeline.Actions.ListQaEvidence do
     |> String.split("\n", trim: true)
     |> Enum.reduce(%{}, fn line, captions ->
       case Jason.decode(line) do
-        {:ok, %{"file" => file, "name" => name}} -> Map.put(captions, file, name)
+        {:ok, %{"file" => file, "name" => _name} = caption} -> Map.put(captions, file, caption)
         _unreadable -> captions
       end
     end)
@@ -67,16 +67,20 @@ defmodule Rail.Pipeline.Actions.ListQaEvidence do
     path = Path.join(directory, entry)
     {check, caption} = split(entry)
 
-    with true <- is_binary(check) or QaEvidence.picture?(entry),
+    with true <- is_binary(check) or FindingEvidence.picture?(entry),
          {:ok, %File.Stat{type: :regular, mtime: taken_at}} <- File.lstat(path, time: :posix),
          kind when kind == :screenshot or is_binary(check) <- qa_evidence_kind(path) do
+      written = Map.get(captions, entry, %{})
+
       [
         %{
-          name: Map.get(captions, entry, caption),
+          name: Map.get(written, "name", caption),
           file: entry,
           check: check,
           kind: kind,
-          taken_at: taken_at
+          taken_at: taken_at,
+          commit: written["commit"],
+          browser: written["browser"]
         }
       ]
     else

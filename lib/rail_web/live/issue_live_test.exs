@@ -144,14 +144,14 @@ defmodule RailWeb.IssueLiveTest do
       |> Repo.insert!()
       |> Repo.preload(:project)
 
-    {:ok, task} = Pipeline.create_task(issue, :qa)
-    {:ok, qa} = Roles.get_role(project_id: project.id, stage: :qa)
+    {:ok, task} = Pipeline.create_task(issue, :review)
+    {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
     now = DateTime.utc_now()
 
     {:ok, _failed} =
       Pipeline.create_run(%{
         task_id: task.id,
-        role_id: qa.id,
+        role_id: lead.id,
         status: :failed,
         error: "3 of 11 checks failed",
         started_at: DateTime.shift(now, hour: -2),
@@ -161,14 +161,14 @@ defmodule RailWeb.IssueLiveTest do
     {:ok, _retry} =
       Pipeline.create_run(%{
         task_id: task.id,
-        role_id: qa.id,
+        role_id: lead.id,
         status: :running,
         started_at: DateTime.shift(now, minute: -10)
       })
 
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
 
-    assert has_element?(view, "#issue-task-link", "QA running")
+    assert has_element?(view, "#issue-task-link", "Review running")
   end
 
   test "an issue with no task can be started from its page", %{conn: conn, project: project} do

@@ -21,7 +21,7 @@ defmodule Rail.Mcp.Utils.RunToolQaFileTest do
     end)
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "Qa File"})
-    {:ok, task} = Pipeline.create_task(issue, :qa)
+    {:ok, task} = Pipeline.create_task(issue, :review)
     File.mkdir_p!(Path.join([task.scratch_path, "qa", "evidence"]))
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
@@ -47,6 +47,41 @@ defmodule Rail.Mcp.Utils.RunToolQaFileTest do
                %{"check" => "script-runs", "name" => "The script's log", "path" => "evidence/run.log"},
                []
              )
+  end
+
+  # The browser it came from is written beside it, so a finding citing it can say which explorer saw it.
+  test "a file names the browser it came from, when the call names one", %{task: task} do
+    File.write!(Path.join([task.scratch_path, "qa", "evidence", "run.log"]), "wrote 3 rows")
+    File.write!(Path.join([task.scratch_path, "qa", "evidence", "totals.log"]), "1234.50")
+
+    {:ok, _filed} =
+      run_tool_qa_file(
+        task,
+        %{"check" => "script-runs", "name" => "The log", "path" => "evidence/run.log", "browser" => " explorer-1 "},
+        stage: :review_lead
+      )
+
+    {:ok, _filed} =
+      run_tool_qa_file(task, %{"check" => "totals", "name" => "The totals", "path" => "evidence/totals.log"},
+        stage: :review_lead
+      )
+
+    assert [%{check: "script-runs", browser: "explorer-1"}, %{check: "totals", browser: nil}] =
+             task |> Pipeline.list_qa_evidence() |> Enum.sort_by(& &1.check)
+  end
+
+  test "a browser name Rail will not key a browser by files nothing", %{task: task} do
+    File.write!(Path.join([task.scratch_path, "qa", "evidence", "run.log"]), "wrote 3 rows")
+
+    assert {:refused,
+            "`browser` is a name of up to 40 letters, digits, spaces, dashes or underscores. Nothing was filed."} =
+             run_tool_qa_file(
+               task,
+               %{"check" => "script-runs", "name" => "The log", "path" => "evidence/run.log", "browser" => "../x"},
+               stage: :review_lead
+             )
+
+    assert ["run.log"] = File.ls!(Path.join([task.scratch_path, "qa", "evidence"]))
   end
 
   # Every refusal is one, in words the agent can act on the next call.

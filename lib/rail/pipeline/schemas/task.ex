@@ -20,8 +20,6 @@ defmodule Rail.Pipeline.Schemas.Task do
     :plan,
     :engineer,
     :review,
-    :qa,
-    :demo,
     :merged,
     :debugger,
     :split
@@ -44,8 +42,6 @@ defmodule Rail.Pipeline.Schemas.Task do
     field :pr_is_draft, :boolean
     # The default branch is being merged in, and has stopped on conflicts or not yet been sent on.
     field :is_updating_branch, :boolean, default: false
-    # A person settled the demo stage as not needed rather than recording one.
-    field :demo_skipped_at, :utc_datetime_usec
     # Set once the curator has distilled the finished task, so it is never read twice.
     field :learnings_extracted_at, :utc_datetime_usec
     # A child of a split: its place in it, from 1, and the earlier places it waits on to merge.
@@ -80,7 +76,6 @@ defmodule Rail.Pipeline.Schemas.Task do
     :pr_url,
     :pr_is_draft,
     :is_updating_branch,
-    :demo_skipped_at,
     :learnings_extracted_at,
     :split_position,
     :builds_on
@@ -143,7 +138,14 @@ defmodule Rail.Pipeline.Schemas.Task do
 
   def stages, do: @stages
 
-  @doc "True when the demo stage has a video on disk for `task`."
+  @doc """
+  The stage of the role that works a task at `stage`: Review is led by the Review lead, whose
+  subagents are the review, QA, engineer and demo roles.
+  """
+  def role_stage(:review), do: :review_lead
+  def role_stage(stage) when is_atom(stage), do: stage
+
+  @doc "True when Review's demo recorder has a video on disk for `task`."
   def demo_recorded?(%__MODULE__{scratch_path: scratch_path}) do
     File.regular?(Path.join([scratch_path, "demo", "demo.webm"]))
   end
@@ -167,8 +169,6 @@ defmodule Rail.Pipeline.Schemas.Task do
   def stage_label(:plan), do: "Plan"
   def stage_label(:engineer), do: "Engineer"
   def stage_label(:review), do: "Review"
-  def stage_label(:qa), do: "QA"
-  def stage_label(:demo), do: "Demo"
   def stage_label(:merged), do: "Merged"
   def stage_label(:debugger), do: "Debugger"
   def stage_label(:split), do: "Split"

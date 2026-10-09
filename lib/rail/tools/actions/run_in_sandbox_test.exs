@@ -25,12 +25,12 @@ defmodule Rail.Tools.Actions.RunInSandboxTest do
     end)
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Seed"})
-    {:ok, task} = Pipeline.create_task(issue, :qa)
+    {:ok, task} = Pipeline.create_task(issue, :review)
     task = task |> Ecto.Changeset.change(worktree_slot: 3) |> Repo.update!()
     File.mkdir_p!(task.worktree_path)
     on_exit(fn -> File.rm_rf(task.worktree_path) end)
 
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :qa)
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
 
     {:ok, run} =
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})

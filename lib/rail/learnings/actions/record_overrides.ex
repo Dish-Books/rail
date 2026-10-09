@@ -11,7 +11,7 @@ defmodule Rail.Learnings.Actions.RecordOverrides do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Learnings.Schemas.LearningProposal
   alias Rail.Learnings.Schemas.Observation
-  alias Rail.Pipeline.Schemas.ReviewFinding
+  alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
 
@@ -27,14 +27,14 @@ defmodule Rail.Learnings.Actions.RecordOverrides do
         observations =
           insert_observations(
             project_id,
-            for %ReviewFinding{suppressed_by_id: rule_id} = finding <- findings, is_binary(rule_id) do
+            for %Finding{suppressed_by_id: rule_id} = finding <- findings, is_binary(rule_id) do
               %{
                 task_id: task_id,
                 source_kind: :override,
                 source_id: finding.id,
                 actor_id: finding.decided_by_id,
                 text: "Fix on: #{finding.title}",
-                excerpt: finding.detail,
+                excerpt: finding.problem,
                 learning_id: rule_id
               }
             end

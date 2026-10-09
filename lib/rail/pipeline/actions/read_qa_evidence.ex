@@ -3,13 +3,13 @@ defmodule Rail.Pipeline.Actions.ReadQaEvidence do
   The head of one text file a QA pass saved, for the panel to show inline.
 
   It takes either an entry `Rail.Pipeline.list_qa_evidence/1` listed or a piece
-  of a finding's evidence, whose path `QaEvidence.changeset/2` already confined
+  of a finding's evidence, whose path `FindingEvidence.changeset/2` already confined
   to `<scratch>/qa`, so nothing read here was named from outside.
   """
 
   import Rail.Pipeline.Utils.ReadTextHead
 
-  alias Rail.Pipeline.Schemas.QaEvidence
+  alias Rail.Pipeline.Schemas.FindingEvidence
   alias Rail.Pipeline.Schemas.Task
 
   @listed_limit 65_536
@@ -23,7 +23,7 @@ defmodule Rail.Pipeline.Actions.ReadQaEvidence do
   `{:error, :not_text}` is a file whose bytes are not text, and
   `{:error, :not_found}` one that is not there.
   """
-  def read_qa_evidence(%Task{scratch_path: scratch_path}, %QaEvidence{path: path}) when is_binary(path) do
+  def read_qa_evidence(%Task{scratch_path: scratch_path}, %FindingEvidence{path: path}) when is_binary(path) do
     read(Path.join([scratch_path, "qa", path]), @finding_limit)
   end
 

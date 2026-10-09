@@ -27,7 +27,7 @@ defmodule RailWeb.QaControllerTest do
     end)
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Qa Controller"})
-    {:ok, task} = Pipeline.create_task(issue, :qa)
+    {:ok, task} = Pipeline.create_task(issue, :review)
     evidence_dir = Path.join([task.scratch_path, "qa", "evidence"])
     File.mkdir_p!(evidence_dir)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
@@ -45,26 +45,32 @@ defmodule RailWeb.QaControllerTest do
     File.write!(Path.join(evidence_dir, "gone.png"), "png bytes")
     File.write!(Path.join(evidence_dir, "gone.log"), "a log")
 
-    for finding <- [
-          %{
-            key: "total-unrounded",
-            title: "The total renders as $1234.5",
-            check: "A bill's total reads as money",
-            severity: :major,
-            recommendation: :fix,
-            status: :open,
-            evidence: [
-              %{name: "the total", kind: :screenshot, path: "evidence/total.png"},
-              %{name: "the stacktrace", kind: :log, path: "evidence/server.log"},
-              %{name: "the stored amount", kind: :query, text: "1234.50"},
-              %{name: "a file QA wrote and then deleted", kind: :screenshot, path: "evidence/gone.png"},
-              %{name: "a page it wrote", kind: :log, path: "evidence/page.html"},
-              %{name: "the bill", kind: :screenshot, path: "evidence/bill.jpg"},
-              %{name: "a log QA wrote and then deleted", kind: :log, path: "evidence/gone.log"}
-            ]
-          }
-        ],
-        do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
+    {:ok, _finding} =
+      Pipeline.save_finding(task, %{
+        key: "total-unrounded",
+        kind: :screen,
+        raised_by: :explorer,
+        title: "The total renders as $1234.5",
+        problem: "A bill's total shows one decimal.",
+        screen: "Invoices",
+        steps: ["Open an invoice"],
+        check: "A bill's total reads as money",
+        fix: "Round the total to cents.",
+        why: "Money reads in cents.",
+        rule: "Totals show two decimals.",
+        severity: :major,
+        recommendation: :fix,
+        places: [%{screen: "Invoices"}],
+        evidence: [
+          %{name: "the total", kind: :screenshot, path: "evidence/total.png"},
+          %{name: "the stacktrace", kind: :log, path: "evidence/server.log"},
+          %{name: "the stored amount", kind: :query, text: "1234.50"},
+          %{name: "a file QA wrote and then deleted", kind: :screenshot, path: "evidence/gone.png"},
+          %{name: "a page it wrote", kind: :log, path: "evidence/page.html"},
+          %{name: "the bill", kind: :screenshot, path: "evidence/bill.jpg"},
+          %{name: "a log QA wrote and then deleted", kind: :log, path: "evidence/gone.log"}
+        ]
+      })
 
     File.rm!(Path.join(evidence_dir, "gone.png"))
     File.rm!(Path.join(evidence_dir, "gone.log"))
@@ -97,18 +103,24 @@ defmodule RailWeb.QaControllerTest do
 
   # The name `qa_file` handed back is the name the agent was told to cite.
   test "serves a filed log a finding cites by the name Rail gave it", %{conn: conn, task: task} do
-    for finding <- [
-          %{
-            key: "cites-filed",
-            title: "The script reports a failure",
-            check: "script-runs",
-            severity: :minor,
-            recommendation: :fix,
-            status: :open,
-            evidence: [%{name: "the log", kind: :log, path: "evidence/script-runs~the-log.log"}]
-          }
-        ],
-        do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
+    {:ok, _finding} =
+      Pipeline.save_finding(task, %{
+        key: "cites-filed",
+        kind: :screen,
+        raised_by: :explorer,
+        title: "The script reports a failure",
+        problem: "The import script logs a failure.",
+        screen: "Imports",
+        steps: ["Run the import"],
+        check: "script-runs",
+        fix: "Handle the empty row.",
+        why: "Imports fail.",
+        rule: "Scripts finish cleanly.",
+        severity: :minor,
+        recommendation: :fix,
+        places: [%{screen: "Imports"}],
+        evidence: [%{name: "the log", kind: :log, path: "evidence/script-runs~the-log.log"}]
+      })
 
     conn = get(conn, ~p"/tasks/#{task.id}/qa/cites-filed/evidence/0")
 

@@ -42,6 +42,12 @@ defmodule Rail.Learnings.Utils.SearchLearnings do
     where(query, [learning: l], fragment("cardinality(?) = 0 OR ? && ?::text[]", l.roles, l.roles, ^roles))
   end
 
+  # The Review lead leads the four roles it hands work to, so their rules are its own too.
+  defp filter({:role, :review_lead}, query) do
+    roles = ["review_lead", "review", "qa", "engineer", "demo"]
+    where(query, [learning: l], fragment("cardinality(?) = 0 OR ? && ?::text[]", l.roles, l.roles, ^roles))
+  end
+
   defp filter({:role, role}, query) when role in @roles do
     where(query, [learning: l], fragment("cardinality(?) = 0 OR ? = ANY(?)", l.roles, ^to_string(role), l.roles))
   end

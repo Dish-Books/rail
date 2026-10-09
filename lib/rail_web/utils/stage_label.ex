@@ -7,6 +7,7 @@ defmodule RailWeb.Utils.StageLabel do
   anyone is waiting, and `:done` does not say done with what.
   """
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -75,13 +76,31 @@ defmodule RailWeb.Utils.StageLabel do
   end
 
   def approval_label(%Task{stage: :engineer}), do: "Review the diff"
-  def approval_label(%Task{stage: :review}), do: "Review the findings"
-  def approval_label(%Task{stage: :qa}), do: "Review the QA report"
-  def approval_label(%Task{stage: :demo}), do: "Watch the demo"
+
+  def approval_label(%Task{stage: :review} = task) do
+    if review_finished?(task), do: "Ready to merge", else: "Review the findings"
+  end
+
   def approval_label(%Task{}), do: "Waiting on you"
+
+  @doc """
+  True when `task` is at Review with its run done and the review finished, nothing left to rule or fix.
+  """
+  def ready_to_merge?(%Task{stage: :review} = task, run), do: Run.state(run) == :done and review_finished?(task)
+  def ready_to_merge?(_task, _run), do: false
 
   @doc "True when `task` has design options saved and none of them picked yet."
   def waiting_on_pick?(%Task{} = task) do
     match?(%{options: [_first | _rest], picked: nil}, Pipeline.read_design(task, pages: false))
   end
+
+  # Read only off a task whose issue is loaded, which names the review file.
+  defp review_finished?(%Task{issue: %Issue{}} = task) do
+    case Pipeline.read_review(task) do
+      [] -> false
+      passes -> List.last(passes).finished_at != nil
+    end
+  end
+
+  defp review_finished?(%Task{}), do: false
 end

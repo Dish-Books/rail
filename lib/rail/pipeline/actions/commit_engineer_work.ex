@@ -13,7 +13,6 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWork do
   import Rail.Pipeline.Utils.CiPassed
   import Rail.Pipeline.Utils.CommitMessage
   import Rail.Pipeline.Utils.OpenPullRequest
-  import Rail.Pipeline.Utils.ReturnToEngineer
   import Rail.Pipeline.Utils.StartCi
 
   alias Rail.Git
@@ -30,18 +29,22 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWork do
   or starts CI on the engineer's run. With no message, the commit says it holds
   follow-up changes.
 
-  Returns `:ok`, or `{:error, reason}` when git, GitHub or CI refused. Safe to
-  run again after either half failed: it is the outstanding work it acts on, not
-  a fixed pair of steps.
+  Returns `:ok`, or `{:error, reason}` when the task has left Engineer or git,
+  GitHub or CI refused. Safe to run again after either half failed: it is the
+  outstanding work it acts on, not a fixed pair of steps.
   """
   def commit_engineer_work(%Scope{} = scope, %Task{} = task, message) do
-    task = Repo.preload(task, [:issue, :project])
+    task = Task |> Repo.get!(task.id) |> Repo.preload([:issue, :project])
 
-    with {:ok, sha} <- commit(scope, task, message),
-         {:ok, _task} <- return_if_committed(sha, task) do
+    with :ok <- at_engineer(task),
+         {:ok, _sha} <- commit(scope, task, message) do
       send_on(scope, task)
     end
   end
+
+  # Past Engineer the branch is Review's: its fixes are committed by the Review lead's `commit_fixes`.
+  defp at_engineer(%Task{stage: :engineer}), do: :ok
+  defp at_engineer(%Task{stage: stage}), do: {:error, {:invalid_stage, stage}}
 
   # A commit CI has not passed is not pushed: CI's finish pushes it.
   defp send_on(%Scope{} = scope, %Task{project: %Project{ci_command: command}} = task) do
@@ -74,8 +77,4 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWork do
       do: Git.commit_worktree(scope, task, commit_message(task, message)),
       else: {:ok, :nothing_to_commit}
   end
-
-  # Code changed past Engineer is reviewed again, even when the push then fails.
-  defp return_if_committed(:nothing_to_commit, %Task{} = task), do: {:ok, task}
-  defp return_if_committed(_sha, %Task{} = task), do: return_to_engineer(task)
 end

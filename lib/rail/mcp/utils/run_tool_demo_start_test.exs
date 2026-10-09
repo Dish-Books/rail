@@ -24,9 +24,9 @@ defmodule Rail.Mcp.Utils.RunToolDemoStartTest do
   # screen the clock would wait for the first change and every caption before it
   # would pile up at 0:00.
   test "a take opens on what the browser is already showing", %{task: task, frames: frames} do
-    stub(Tools, :get_browser_frame, fn ^task, "demo" -> Base.encode64("still page") end)
+    stub(Tools, :get_browser_frame, fn ^task, "review_lead" -> Base.encode64("still page") end)
 
-    assert {:ok, rolling} = run_tool_demo_start(task, %{}, stage: :demo)
+    assert {:ok, rolling} = run_tool_demo_start(task, %{}, stage: :review_lead)
     assert rolling =~ "Recording."
 
     eventually(fn ->
@@ -39,12 +39,12 @@ defmodule Rail.Mcp.Utils.RunToolDemoStartTest do
     assert BrowserRecorder.elapsed_ms(Tools.get_browser_recording(task)) >= 0
   end
 
-  # A demo that drives a second browser films that one when it names it.
+  # A lead that drives a second browser films that one when it names it.
   test "a take films the browser it names", %{task: task} do
-    expect(Tools, :start_browser_session, fn ^task, "signup", [existing: true, stage: :demo] -> {:ok, self()} end)
+    expect(Tools, :start_browser_session, fn ^task, "signup", [existing: true, stage: :review_lead] -> {:ok, self()} end)
     stub(Tools, :get_browser_frame, fn ^task, "signup" -> Base.encode64("sign-up page") end)
 
-    assert {:ok, _rolling} = run_tool_demo_start(task, %{"browser" => "signup"}, stage: :demo)
+    assert {:ok, _rolling} = run_tool_demo_start(task, %{"browser" => "signup"}, stage: :review_lead)
 
     eventually(fn ->
       assert File.read!(Path.join([task.scratch_path, "demo", "frames", "000000.jpg"])) == "sign-up page"
@@ -52,13 +52,15 @@ defmodule Rail.Mcp.Utils.RunToolDemoStartTest do
   end
 
   test "a browser name Rail will not key a browser by is refused", %{task: task} do
-    assert {:refused, "`browser` is a name" <> _rest} = run_tool_demo_start(task, %{"browser" => "a/b"}, stage: :demo)
-    assert {:refused, _not_text} = run_tool_demo_start(task, %{"browser" => 7}, stage: :demo)
+    assert {:refused, "`browser` is a name" <> _rest} =
+             run_tool_demo_start(task, %{"browser" => "a/b"}, stage: :review_lead)
+
+    assert {:refused, _not_text} = run_tool_demo_start(task, %{"browser" => 7}, stage: :review_lead)
     refute Tools.get_browser_recording(task)
   end
 
   test "a take with no browser yet waits for its first paint", %{task: task, frames: frames} do
-    assert {:ok, _rolling} = run_tool_demo_start(task, %{}, stage: :demo)
+    assert {:ok, _rolling} = run_tool_demo_start(task, %{}, stage: :review_lead)
 
     assert BrowserRecorder.elapsed_ms(Tools.get_browser_recording(task)) == 0
     refute File.exists?(frames)

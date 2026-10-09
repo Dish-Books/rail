@@ -10,16 +10,17 @@ defmodule Rail.Tools.Actions.FileQaEvidence do
   import Rail.Tools.Utils.WriteQaEvidence
 
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.QaEvidence
+  alias Rail.Pipeline.Schemas.FindingEvidence
   alias Rail.Pipeline.Schemas.Task
 
   @doc """
   Copies `path`, relative to `task`'s QA directory, in as evidence captioned
-  `name` against the check `key`, and returns `{:ok, file}` to cite in a finding.
+  `name` against the check `key`, from the browser `browser` if one, and returns
+  `{:ok, file}` to cite in a finding.
   A path that is absolute or climbs out is `:unconfined_path`; one that is only
   spelled with characters Rail does not serve is `:unusable_name`.
   """
-  def file_qa_evidence(%Task{scratch_path: scratch_path} = task, path, name, key) do
+  def file_qa_evidence(%Task{scratch_path: scratch_path} = task, path, name, key, browser \\ nil) do
     qa = Path.join(scratch_path, "qa")
     source = Path.expand(Path.join(qa, path))
 
@@ -27,7 +28,7 @@ defmodule Rail.Tools.Actions.FileQaEvidence do
       Path.type(path) == :absolute or ".." in Path.split(path) ->
         {:error, :unconfined_path}
 
-      not QaEvidence.confined?(path) ->
+      not FindingEvidence.confined?(path) ->
         {:error, :unusable_name}
 
       not regular?(qa, Path.split(path)) ->
@@ -35,7 +36,8 @@ defmodule Rail.Tools.Actions.FileQaEvidence do
 
       true ->
         extension = String.downcase(Path.extname(path))
-        file = write_qa_evidence(scratch_path, name, key, extension, &File.cp!(source, &1))
+        file = write_qa_evidence(task, name, key, extension, &File.cp!(source, &1), browser)
+
         Pipeline.broadcast_output_saved(task)
 
         {:ok, file}

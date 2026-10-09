@@ -15,6 +15,8 @@ defmodule Rail.Roles.Schemas.Role do
     :design,
     :architect,
     :engineer,
+    # Leads review, QA, engineer and demo, which run inside it as subagents; a task at Review enters it.
+    :review_lead,
     :review,
     :qa,
     :demo,

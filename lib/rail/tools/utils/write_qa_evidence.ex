@@ -9,18 +9,23 @@ defmodule Rail.Tools.Utils.WriteQaEvidence do
 
   What the caption actually said is written down beside the file rather than
   read back out of the filename, which has lost the capitals, the punctuation
-  and anything past sixty characters by the time it is a filename.
+  and anything past sixty characters by the time it is a filename. So are the
+  commit HEAD was on and the browser that took it, which a finding citing it copies.
 
   The bytes land under a hidden name in the QA folder, outside the listing, and
   a rename files them, so the panel and the evidence route never serve half a file.
   """
 
+  alias Rail.Git
+  alias Rail.Pipeline.Schemas.Task
+
   @doc """
   Files evidence captioned `name` against the check `key` as
   `evidence/<key>~<slug><extension>`, with `write` putting the bytes at the
   absolute path it is handed, and returns that name relative to the QA directory.
+  `browser` names the browser it came from, if any.
   """
-  def write_qa_evidence(scratch_path, name, key, extension, write) do
+  def write_qa_evidence(%Task{scratch_path: scratch_path} = task, name, key, extension, write, browser) do
     file = "evidence/#{prefix(key)}#{slug(name)}#{extension}"
     path = Path.join([scratch_path, "qa", file])
     temporary = Path.join([scratch_path, "qa", ".#{Path.basename(file)}.#{System.unique_integer([:positive])}.tmp"])
@@ -28,7 +33,8 @@ defmodule Rail.Tools.Utils.WriteQaEvidence do
     File.mkdir_p!(Path.dirname(path))
     write.(temporary)
     File.rename!(temporary, path)
-    caption(path, Path.basename(file), name)
+    commit = if Task.worktree_present?(task), do: Git.branch_fingerprint(task.worktree_path)[:head_sha]
+    caption(path, %{file: Path.basename(file), name: name, commit: commit, browser: browser})
 
     file
   end
@@ -41,8 +47,8 @@ defmodule Rail.Tools.Utils.WriteQaEvidence do
   # One line per file, appended rather than rewritten: a pass that dies half way
   # leaves every caption it had already written, and the panel falls back to the
   # filename for any it did not.
-  defp caption(path, file, name) do
-    line = Jason.encode_to_iodata!(%{file: file, name: name})
+  defp caption(path, caption) do
+    line = Jason.encode_to_iodata!(caption)
 
     File.write!(Path.join(Path.dirname(path), "captions.jsonl"), [line, "\n"], [:append])
   end

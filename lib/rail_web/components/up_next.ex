@@ -5,7 +5,7 @@ defmodule RailWeb.Components.UpNext do
   The first leads as a card and the rest follow as rows. Nothing here acts on a
   run: what the human does next — reading a ticket, answering a question — needs
   the task in front of them, so every entry is only a way there. A change whose
-  demo is recorded is ready to merge, and its entry opens on the demo.
+  review is finished is ready to merge, and its entry opens on Review.
   """
   use RailWeb, :html
 
@@ -145,17 +145,17 @@ defmodule RailWeb.Components.UpNext do
   defp parent_identifier(%Run{task: %Task{parent_task: %Task{issue: %{identifier: identifier}}}}), do: identifier
   defp parent_identifier(%Run{}), do: nil
 
-  # The demo is what the merge is decided on, so a change ready for it opens there.
+  # Review is what the merge is decided on, so a change ready for it opens there.
   defp destination(run) do
     if ready_to_merge?(run),
       do: [navigate: ~p"/tasks/#{run.task_id}?tab=#{run.role_id}"],
       else: [navigate: ~p"/tasks/#{run.task_id}"]
   end
 
-  # The demo is the last thing Rail makes, so a change with one recorded and a
-  # pull request to merge has nothing left to wait on but the merge.
-  defp ready_to_merge?(%Run{role: %Role{stage: :demo}, task: %Task{pr_url: pr_url}} = run) when is_binary(pr_url) do
-    Run.state(run) == :done
+  # A finished Review with a pull request to merge has nothing left to wait on but the merge.
+  defp ready_to_merge?(%Run{role: %Role{stage: :review_lead}, task: %Task{pr_url: pr_url} = task} = run)
+       when is_binary(pr_url) do
+    ready_to_merge?(task, run)
   end
 
   defp ready_to_merge?(%Run{}), do: false
@@ -203,7 +203,7 @@ defmodule RailWeb.Components.UpNext do
     case Run.state(run) do
       :done ->
         cond do
-          ready_to_merge?(run) -> "The demo is recorded, and the pull request is waiting on you to merge it."
+          ready_to_merge?(run) -> "The review is finished, and the pull request is waiting on you to merge it."
           MapSet.member?(picking, run.id) -> "Waiting on you to pick a design."
           true -> "Waiting on you to read the #{work(run)}."
         end
@@ -220,7 +220,7 @@ defmodule RailWeb.Components.UpNext do
     case Run.state(run) do
       :done ->
         cond do
-          ready_to_merge?(run) -> "demo recorded"
+          ready_to_merge?(run) -> "review finished"
           MapSet.member?(picking, run.id) -> "pick a design"
           true -> "#{work(run)} ready for review"
         end
@@ -271,8 +271,6 @@ defmodule RailWeb.Components.UpNext do
   defp work(%Run{task: %Task{stage: :plan}}), do: "plan"
   defp work(%Run{task: %Task{stage: :engineer}}), do: "diff"
   defp work(%Run{task: %Task{stage: :review}}), do: "findings"
-  defp work(%Run{task: %Task{stage: :qa}}), do: "QA report"
-  defp work(%Run{task: %Task{stage: :demo}}), do: "demo"
 
   defp questions(%Run{questions: [_one]}), do: "a question"
   defp questions(%Run{questions: questions}), do: "#{length(questions)} questions"

@@ -131,33 +131,27 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
     assert :ok = Pipeline.commit_engineer_work(scope, task, nil)
   end
 
-  test "a commit on a task past engineer sends it back to engineer", %{scope: scope, task: task, repo: repo} do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
+  # Past Engineer the branch is Review's, and its fixes are committed by the Review lead.
+  test "a commit on a task past engineer is refused, and nothing is committed", %{scope: scope, task: task, repo: repo} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review})
     File.write!(Path.join(repo, "feature.ex"), "one\n")
+    reject(&Git.commit_worktree/3)
 
-    assert :ok = Pipeline.commit_engineer_work(scope, task, nil)
-    assert %Task{stage: :engineer} = Repo.reload!(task)
+    assert {:error, {:invalid_stage, :review}} = Pipeline.commit_engineer_work(scope, task, nil)
+    assert %Task{stage: :review} = Repo.reload!(task)
   end
 
   # The diff pane can hold a task loaded before someone else sent it on.
-  test "a commit from a page that still thinks the task is at engineer sends it back", %{
+  test "a commit from a page that still thinks the task is at engineer is refused", %{
     scope: scope,
     task: task,
     repo: repo
   } do
-    {:ok, _moved} = Pipeline.update_task(task, %{stage: :qa})
+    {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
     File.write!(Path.join(repo, "feature.ex"), "one\n")
+    reject(&Git.commit_worktree/3)
 
-    assert :ok = Pipeline.commit_engineer_work(scope, %{task | stage: :engineer}, nil)
-    assert %Task{stage: :engineer} = Repo.reload!(task)
-  end
-
-  # A retry with only the push outstanding changes no code, so nothing new needs review.
-  test "a push with nothing to commit leaves a task past engineer where it is", %{scope: scope, task: task} do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
-
-    assert :ok = Pipeline.commit_engineer_work(scope, task, nil)
-    assert %Task{stage: :qa} = Repo.reload!(task)
+    assert {:error, {:invalid_stage, :review}} = Pipeline.commit_engineer_work(scope, %{task | stage: :engineer}, nil)
   end
 
   test "a project with CI runs it on the commit instead of pushing it", %{

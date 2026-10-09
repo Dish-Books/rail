@@ -4,11 +4,12 @@ defmodule Rail.Pipeline.Actions.EndTurnAndMerge do
   busy task, then merges the default branch in as the Update branch button does.
   """
 
-  import Rail.Pipeline.Utils.EndEngineerTurn
+  import Rail.Pipeline.Utils.EndTurn
   import Rail.Pipeline.Utils.WithLiveTurn
 
   alias Rail.Git
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -21,13 +22,15 @@ defmodule Rail.Pipeline.Actions.EndTurnAndMerge do
   already ended, or `{:error, reason}` from the fetch.
   """
   def end_turn_and_merge(%Task{} = task, %OsProcess{} = os_process) do
-    case with_live_turn(os_process, fn -> task |> Repo.reload!() |> Repo.preload(:project) |> accept() end) do
+    case with_live_turn(os_process, fn ->
+           task |> Repo.reload!() |> Repo.preload(:project) |> accept(Repo.get!(Run, os_process.run_id))
+         end) do
       :ended -> {:refused, "Refused, nothing merged again. This turn has already ended and handed the merge to Rail."}
       result -> result
     end
   end
 
-  defp accept(%Task{project: %Project{} = project} = task) do
+  defp accept(%Task{project: %Project{} = project} = task, %Run{} = run) do
     base = project.default_branch
 
     cond do
@@ -47,7 +50,8 @@ defmodule Rail.Pipeline.Actions.EndTurnAndMerge do
       true ->
         with :ok <- Git.fetch_default_branch(project, task.worktree_path),
              false <- Git.up_to_date_with?(task.worktree_path, base) do
-          :ok = end_engineer_turn(task, fn -> merge(task) end)
+          :ok = end_turn(run, fn -> merge(task) end)
+
           {:ok, :merging}
         else
           true -> {:refused, "Refused, nothing merged. This branch already has everything on origin/#{base}."}

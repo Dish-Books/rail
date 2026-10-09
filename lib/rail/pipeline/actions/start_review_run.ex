@@ -1,26 +1,24 @@
 defmodule Rail.Pipeline.Actions.StartReviewRun do
   @moduledoc """
-  Spawns the review stage's run: the brief naming the change to read and the
-  tools its findings are saved with, and the process that reads it.
+  Spawns the Review lead: the brief saying how a round and a fix round work, the findings already on the
+  task, and the process that leads the code reviewer, QA explorers, engineer and demo recorder as subagents.
 
-  `enter_stage/3` has already claimed the stage, started the run and made the
-  worktree; this is the part only review knows about.
-
-  A task reaches review more than once, so the brief is not the same every time:
-  the findings already on the task go into it with what the human decided about
-  each, and the pass is then a verification of those as well as a reading of
-  whatever the engineer has since changed.
+  How the step works is the same for every project, so it is here in the brief rather than in a prompt
+  file. `enter_stage/3` has already claimed the stage, started the run and made the worktree.
   """
 
   import Rail.Pipeline.Utils.FormatComments
   import Rail.Pipeline.Utils.FormatTicket
   import Rail.Pipeline.Utils.LearningsBrief
+  import Rail.Pipeline.Utils.ReviewSubagents
 
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.FindingNote
+  alias Rail.Pipeline.Schemas.FindingPlace
   alias Rail.Pipeline.Schemas.ImplementationPlan
-  alias Rail.Pipeline.Schemas.ReviewFinding
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
@@ -34,14 +32,12 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
   @file_chars 6_000
 
   @doc """
-  Spawns `run`'s role to review its task.
-
-  The run is the whole handle: it carries the task to review, the worktree to
-  read it in, and the role that does it. Returns whatever
-  `Tools.start_os_process/2` does.
+  Spawns `run`'s Review lead on its task, with its subagents. Returns whatever `Tools.start_os_process/2` does.
   """
   def start_review_run(%Run{task: %Task{} = task, role: %Role{} = role} = run) do
-    task = Repo.preload(task, [:project, issue: [comments: :replies]])
+    task = Repo.preload(task, [:project, issue: [comments: :replies]], force: true)
+    File.mkdir_p!(Path.join([task.scratch_path, "qa", "evidence"]))
+    File.mkdir_p!(Path.join(task.scratch_path, "demo"))
 
     prompt =
       Pipeline.build_prompt(
@@ -58,7 +54,8 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
         reasoning_effort: role.reasoning_effort || "high",
         system_prompt: role.system_prompt,
         conversation_id: run.conversation_id,
-        work_dir: task.worktree_path
+        work_dir: task.worktree_path,
+        agents: review_subagents(task)
       )
 
     Tools.start_os_process(run, args)
@@ -66,35 +63,44 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
 
   defp brief(%Task{scratch_path: scratch_path, issue: %Issue{} = issue} = task, %Run{} = run) do
     String.trim("""
-    Review the change described below. #{workspace(task)}
+    You lead Rail's Review step for the change below: one run that reads the code, drives the built app and records the demo, and, once the human has ruled on what it found, has the fixes they ruled Fix made, a round at a time. The code reviewer, the QA explorers, the engineer and the demo recorder are your subagents: hand each its work with the Task tool, naming it, and start an explorer's description with its browser name, as in `explorer-1: Checks 1 and 2`. A subagent sees only what you write it. #{workspace(task)}
 
-    You are reading it, not changing it: write no application code and no tests, and leave to Rail the git it does itself - no commit, no push, no merge, no rebase, nor anything like them that writes history or moves the branch. Any other git command is yours to run. Reading the tree with git is exactly what you are here for.
+    You change nothing in the worktree yourself, and you leave to Rail the git it does itself: no commit, no push, no merge, no rebase. `commit_fixes` is how a fix round is committed. Nothing under #{scratch_path} is part of the change.
 
-    Do not run the project's test suite, its coverage run or its linters. Those are the engineer's to have passed before the change reached you, they take minutes you would spend not reading, and a number out of one of them is not a finding. Run a single targeted check only where it settles a question you cannot answer by reading, and say in the finding what you ran.
+    How a round works:
 
-    Nothing under #{scratch_path} is part of the change, and the diff never includes it.
+    1. Read the ticket, the plan and the diff, then write the checklist with `qa_plan`: every acceptance criterion gets at least one check quoting it in `criterion`.
+    2. Have one explorer start the app server first, from the worktree, and tell you its address. Hand the other explorers their checks once it is up.
+    3. Then, in parallel: the code reviewer reads the branch against the plan and the ticket. The explorers, one per group of one or two checks, each drive the app in a browser of its own named `explorer-1`, `explorer-2` and so on, and bring back what they saw with its evidence. The demo recorder, when the change has something on screen, records a shot list you write from the acceptance criteria, in the browser named `demo`, beside them; it never holds up the round. A change with nothing on screen gets no demo: say so in one line.
+    4. Nothing reaches the human before the code reviewer and every explorer have finished. Then settle each check with `qa_check` from what the explorers saw, and save every finding with `save_finding` yourself. A subagent never saves a finding or marks a check.
+    5. Call `save_review` last, also when there is nothing to report: it closes the round. End the turn with what the round found in two or three sentences. The human rules on each finding in Rail, not in the chat.
 
-    You report with two tools. `save_finding` saves one finding, as soon as you have confirmed it rather than at the end: the human watching sees each one while you keep reading, though nobody rules on any until you have finished. `save_review` says the pass is finished, and it is the last thing you do, including when you found nothing.
+    Findings:
 
-    - A finding's fields are `key`, `title`, `detail`, `suggestion`, `file`, `line`, `severity`, `recommendation`, `status` and `rule`. A save in the wrong shape is refused naming each field and what is wrong with it: fix it and save again. Saving a key again replaces what you said about it.
-    - One finding per problem. Two symptoms of one cause are one finding; one file with three unrelated problems is three.
-    - `key` is your own name for the problem, lowercase with hyphens, and it must stay the same for the same problem across passes. That is what lets a later pass update a finding rather than raise it twice.
-    - `severity` is `blocker`, `major`, `minor` or `nit`, and says how much the problem matters. `recommendation` is `fix` or `skip`, and says whether you would act on it. They are separate axes: a nit worth the thirty seconds it costs is `fix`, and a blocker is never `skip`. Most changes have some of each.
-    - `recommendation` is your advice, not your decision. A human reads it beside the finding and decides, so say which you would do rather than reporting everything as equal.
-    - `detail` and `suggestion` have different readers, so do not write one twice. `detail` is what is wrong and what it costs, which is what the human rules on. Say in `detail` whether this change caused the problem or merely stands next to it - something already broken before this change is `skip` unless the change made it worse.
-    - `suggestion` is written as though the finding will be fixed, because by the time an engineer reads it a human has decided it will be. It is one change, named concretely enough to apply: the files, the edit, and the tests that go with it. It is the whole of what the engineer is handed.
-    - Nothing in `suggestion` restates or reconsiders `recommendation`. "Leave it", "only if you think it matters", or a fix offered as one branch of a choice hands the engineer a decision the human has already taken, and it will be built as the hedge rather than the fix. Recommend `skip` in the field for recommending it; still write the fix you would apply if told to.
-    - `status` is `open` for a problem that still stands. Leave findings out entirely rather than inventing them: no findings and then `save_review` is a clean review, and is the right answer when the change is good.
-    - A finding with no file is fine. Give `file` and `line` whenever you can point at one; `line` is one positive whole number.
-    - `rule` is the id of the checklist rule a finding comes from; leave it out when it comes from none. A finding a calibration rule says not to raise is still saved, with that rule's id.
-    - Report only what you checked. You have the worktree: open the callers, read the test, run it. A finding you could have confirmed and did not is a guess, and a guess costs the engineer a whole round.
-    - Confirm a finding against the rest of the change before you save it. A finding against one file that the next file already answers is noise. If you stop part way, for a question or anything else, do not call `save_review`, and the task waits for you.
-    - `save_finding` and `save_review` are the only way to report. Write no report file.
-    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or the plan is not a question.
+    - One finding is one broken rule, with every place it applies listed in `places`, each a `file` with its `line` and `end_line` and a short `label`, or a `screen` with its `steps`. Two symptoms of one cause are one finding.
+    - `kind` is `code` for something in the diff and `screen` for something seen in the app. `raised_by` says who found it: `code_reviewer`, `explorer` or `review_lead`.
+    - `title` is at most 90 characters, written as what is wrong. `problem` is at most two plain sentences, 300 characters. `fix` is at most two sentences, 300 characters, pointing the way rather than writing the patch. `why` is at most 200 characters on why to fix it or leave it. `rule` is at most 160 characters: the rule the change breaks.
+    - Where it is: for `code`, its `file`, `line` and `end_line`; for `screen`, the `screen` and the `steps` that reach it.
+    - `evidence` needs at least one entry: a `code` range in the worktree (`file`, `line`, `end_line`), a file an explorer filed with `qa_shot` or `qa_file` cited by the name it handed back as `path`, or a small `text`.
+    - `severity` is `blocker`, `major`, `minor` or `nit`. `recommendation` is `fix` or `skip`: your advice, beside which the human decides.
+    - `key` is your own stable name for the problem, lowercase with hyphens, the same across rounds.
+    - A save missing a field, over a limit or holding tool-call markup is refused naming the field: fix it and save it again in the same turn.
+    - A finding already on the task is saved again by its `key` with only its `status` (`fixed`, `not_fixed` or `open`), a `note` of at most 300 characters on what this round checked and saw, and any new `evidence`. What it said when raised never changes. A Fix finding still failing is carried into this round with its ruling. One the human ruled Don't fix is not argued again.
+
+    A fix round:
+
+    1. Start fix round arrives as a message listing the findings the human ruled Fix, with their rules and places. Hand them to the engineer whole, every place included.
+    2. When the engineer reports, have the code reviewer read the uncommitted diff against those findings, and an explorer re-check any screen a fix touched, before anything is committed. Send what they find back to the engineer.
+    3. Call `commit_fixes` with a commit `message`, every Fix finding with the places its fix covered, those it left and why, and the test that failed first, and every other changed file with its reason, which the human reads. It refuses a round that leaves a Fix finding out, lists one without a place or a test, or holds a changed file nothing explains: settle what it names and call it again. It ends your turn, and Rail commits the round, runs CI and starts the next round once CI passes.
+    4. When CI fails, Rail resumes you with its output: have the engineer fix it and call `commit_fixes` again, or call it with nothing changed to run CI again when the failure is not the change's.
+
+    Questions:
+
+    - Ask everything at once. Put every question you and the subagents could not close in your last message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. A question you can settle from the code, the ticket or the plan is not a question.
 
     #{outstanding(task)}
     #{plan(task)}#{learnings_brief(run, fn -> file_queries(task) end)}
-    The ticket the change was built from:
+    The ticket the change was built from. Its acceptance criteria are the first source of the checklist:
 
     #{format_ticket(issue)}
     Every comment on the issue, oldest first. This is the whole discussion; do not look for more.
@@ -119,45 +125,69 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
 
   defp workspace(%Task{worktree_path: worktree_path, worktree_name: branch, project: %Project{} = project}) do
     String.trim("""
-    Your worktree is #{worktree_path} and every path you read is under it. The change is the branch #{branch} against #{project.default_branch} on remote `origin`: read it with `git diff origin/#{project.default_branch}...HEAD` from your worktree. Other agents share this repository, so never work in the main checkout and never touch another worktree.
+    The worktree is #{worktree_path} and every path you and the subagents touch is under it. The change is the branch #{branch} against #{project.default_branch} on remote `origin`: read it with `git diff origin/#{project.default_branch}...HEAD`, and when main has been merged in, read the branch's own commits with `git log --first-parent --no-merges`. Other agents share this repository, so never work in the main checkout and never touch another worktree.
     """)
   end
 
-  # A task comes back to review once the engineer has worked on it again. What the
-  # reviewer is owed is a verdict on each thing it already raised, so the rows
-  # are handed back to it rather than left for it to remember.
+  # The findings already on the task are handed back rather than left for the lead to remember.
   defp outstanding(%Task{} = task) do
-    case Pipeline.list_review_findings(task) do
+    case Pipeline.list_findings(task) do
       [] ->
         ""
 
       findings ->
         """
-        This change has been reviewed before and has been with the engineer since. These are the findings already on it, and this pass owes a verdict on every one of them.
+        These findings are already on the task, newest round first, with what the human ruled and what has happened to each. A round owes a verdict on every one not ruled Don't fix.
 
-        #{Enum.map_join(findings, "\n", &finding_line/1)}
-
-        Save each of those keys again with `save_finding`, with `status` set to `fixed` where the change now addresses it and `not_fixed` where it does not, and say in `detail` what you actually checked. Save a dismissed finding again with the `status` it has and never argue it again - the human has ruled on it. Anything new you find in the change as it now stands is a new finding with a new key, and is welcome.
+        #{Enum.map_join(findings, "\n", &finding_lines/1)}
         """
     end
   end
 
-  defp finding_line(%ReviewFinding{} = finding) do
-    location = if finding.file, do: " (#{finding.file}#{finding.line && ":#{finding.line}"})", else: ""
+  defp finding_lines(%Finding{} = finding) do
+    round = if finding.carried_round, do: "carried into round #{finding.carried_round}", else: "round #{finding.round}"
+    fixed = if finding.fixed_in, do: ", fixed in #{String.slice(finding.fixed_in, 0, 7)}", else: ""
 
-    "- `#{finding.key}` [#{finding.severity}, human decided: #{decision_word(finding.decision)}, status: #{finding.status}] #{finding.title}#{location}"
+    head =
+      "- `#{finding.key}` [#{round}, #{finding.severity} #{finding.kind}, human ruled: #{ruling(finding)}, " <>
+        "status: #{finding.status}#{fixed}] #{finding.title} (#{Finding.where(finding)})"
+
+    places = finding.places |> Enum.with_index(1) |> Enum.map(fn {place, n} -> "  Place #{n}: #{place_line(place)}" end)
+    notes = Enum.map(finding.notes, &"  #{note_line(&1)}")
+
+    Enum.join([head | rule_line(finding) ++ places ++ notes], "\n")
   end
 
-  defp decision_word(:fix), do: "fix it"
-  defp decision_word(:skip), do: "dismissed, leave it"
-  defp decision_word(nil), do: "not yet decided"
+  defp rule_line(%Finding{rule: rule}) when is_binary(rule), do: ["  Rule: #{rule}"]
+  defp rule_line(%Finding{}), do: []
 
-  # A task that skipped architect has no plan, and the ticket is then the whole
-  # of the specification the change is read against.
+  defp place_line(%FindingPlace{label: label} = place) when is_binary(label),
+    do: "#{FindingPlace.describe(place)}, #{label}"
+
+  defp place_line(%FindingPlace{} = place), do: FindingPlace.describe(place)
+
+  defp note_line(%FindingNote{} = note) do
+    words = if note.text, do: ": #{note.text}", else: ""
+    commit = if note.commit, do: " on #{String.slice(note.commit, 0, 7)}", else: ""
+    "Round #{note.round}, #{note_kind(note)}#{commit}#{words}"
+  end
+
+  defp note_kind(%FindingNote{kind: :ruling, decision: decision}), do: "ruled #{ruling_word(decision)}"
+  defp note_kind(%FindingNote{kind: :pass, status: status}) when is_atom(status) and status != nil, do: "#{status}"
+  defp note_kind(%FindingNote{kind: :fix}), do: "fixed"
+  defp note_kind(%FindingNote{kind: kind}), do: to_string(kind)
+
+  defp ruling(%Finding{decision: decision}), do: ruling_word(decision)
+
+  defp ruling_word(:fix), do: "Fix"
+  defp ruling_word(:skip), do: "Don't fix"
+  defp ruling_word(nil), do: "not yet"
+
+  # A task without a plan is read against its ticket alone.
   defp plan(%Task{} = task) do
     case Pipeline.get_implementation_plan(task) do
       {:ok, %ImplementationPlan{content: content}} ->
-        "The approved implementation plan the change was built from. It is the specification: where it named a file and what changed in it, that is what should have changed, and a change that did something else instead, or stopped short of what it called for, is a finding however good the code is. Work beyond the plan is not a finding for being beyond it: a human usually asked for it in the engineer's chat, or QA sent it back. Judge it on whether it is right.\n\n#{String.trim(content)}\n"
+        "The approved implementation plan the change was built from. It is the specification: where it named a file and what changed in it, that is what should have changed, and a change that did something else instead, or stopped short of it, is a finding however good the code is. Work beyond the plan is judged on whether it is right.\n\n#{String.trim(content)}\n"
 
       {:error, :not_found} ->
         "There is no implementation plan for this ticket, so the ticket below is the whole specification.\n"

@@ -4,6 +4,7 @@ defmodule RailWeb.IssuesLive do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline.Schemas.Task
   alias RailWeb.Components.CaptureIssueModal
 
   @page_size 50
@@ -357,7 +358,7 @@ defmodule RailWeb.IssuesLive do
   # of the runs already loaded rather than queried per row.
   defp stage_run(%{runs: runs, stage: stage}) when is_list(runs) do
     runs
-    |> Enum.filter(&(&1.role != nil and &1.role.stage == stage))
+    |> Enum.filter(&(&1.role != nil and &1.role.stage == Task.role_stage(stage)))
     |> Enum.max_by(&(&1.started_at || &1.inserted_at), DateTime, fn -> nil end)
   end
 

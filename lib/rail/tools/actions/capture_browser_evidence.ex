@@ -17,15 +17,16 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidence do
   alias Rail.Tools.BrowserSession
 
   @doc """
-  Captures the page as `name`, against the check `key`, and returns `{:ok, path}`
-  relative to the task's QA directory - which is exactly what a finding's
-  evidence should carry.
+  Captures the page as `name`, against the check `key`, taken by the browser
+  `browser`, and returns `{:ok, path}` relative to the task's QA directory -
+  which is exactly what a finding's evidence should carry.
   """
-  def capture_browser_evidence(session, %Task{scratch_path: scratch_path} = task, name, key \\ nil) do
+  def capture_browser_evidence(session, %Task{} = task, name, key \\ nil, browser \\ nil) do
     with {:ok, %{"data" => data}} <-
            BrowserSession.call(session, "Page.captureScreenshot", %{format: "jpeg", quality: 72}),
          {:ok, bytes} <- Base.decode64(data) do
-      file = write_qa_evidence(scratch_path, name, key, ".jpg", &File.write!(&1, bytes))
+      file = write_qa_evidence(task, name, key, ".jpg", &File.write!(&1, bytes), browser)
+
       Pipeline.broadcast_output_saved(task)
 
       {:ok, file}

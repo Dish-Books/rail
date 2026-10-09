@@ -19,7 +19,7 @@ defmodule Rail.Pipeline.Actions.ListQaEvidenceTest do
     end)
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "List Evidence"})
-    {:ok, task} = Pipeline.create_task(issue, :qa)
+    {:ok, task} = Pipeline.create_task(issue, :review)
     directory = Path.join([task.scratch_path, "qa", "evidence"])
     File.mkdir_p!(directory)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
@@ -101,7 +101,20 @@ defmodule Rail.Pipeline.Actions.ListQaEvidenceTest do
       Jason.encode!(%{file: "script-runs~the-script-s-log.log", name: "The script's log"}) <> "\n"
     )
 
-    assert [%{name: "The script's log", kind: :text}] = Pipeline.list_qa_evidence(task)
+    assert [%{name: "The script's log", kind: :text, commit: nil, browser: nil}] = Pipeline.list_qa_evidence(task)
+  end
+
+  # A pass can drive more than one browser across more than one commit, so a
+  # reader needs to know which one a picture came from.
+  test "a filed file says the commit and browser it was taken on", %{task: task, directory: directory} do
+    File.write!(Path.join(directory, "totals~the-total.png"), "png")
+
+    File.write!(
+      Path.join(directory, "captions.jsonl"),
+      Jason.encode!(%{file: "totals~the-total.png", name: "The total", commit: "abc1234", browser: "admin"}) <> "\n"
+    )
+
+    assert [%{name: "The total", commit: "abc1234", browser: "admin"}] = Pipeline.list_qa_evidence(task)
   end
 
   # A link is a way of putting a file from anywhere on the machine in the roll,

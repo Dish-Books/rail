@@ -18,7 +18,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Learnings.Schemas.LearningProposal
   alias Rail.Learnings.Schemas.Observation
-  alias Rail.Pipeline.Schemas.ReviewFinding
+  alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
@@ -163,7 +163,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
   defp broken_file(%Project{id: project_id}, since) do
     findings =
       Repo.all(
-        from f in ReviewFinding,
+        from f in Finding,
           join: t in Task,
           on: t.id == f.task_id,
           where: t.project_id == ^project_id and not is_nil(f.rule_id) and is_nil(f.suppressed_by_id),

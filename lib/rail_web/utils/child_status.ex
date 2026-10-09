@@ -12,7 +12,7 @@ defmodule RailWeb.Utils.ChildStatus do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
 
-  @stages [:engineer, :review, :qa, :demo]
+  @stages [:engineer, :review]
 
   @amber "bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200"
   @slate_text "text-slate-500 dark:text-slate-400"
@@ -204,8 +204,6 @@ defmodule RailWeb.Utils.ChildStatus do
   defp chip(:blocked, _stage, _style), do: %{label: "Questions", icon: "pi-question", class: @amber}
   defp chip(:done, :review, _style), do: %{label: "Findings", icon: "pi-chat-text", class: @amber}
   defp chip(:done, :engineer, _style), do: %{label: "Diff", icon: "pi-chat-text", class: @amber}
-  defp chip(:done, :qa, _style), do: %{label: "Report", icon: "pi-chat-text", class: @amber}
-  defp chip(:done, :demo, _style), do: %{label: "Demo", icon: "pi-chat-text", class: @amber}
 
   defp chip(:failed, _stage, _style),
     do: %{label: "Failed", icon: "pi-warning-circle", class: "bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200"}
@@ -229,8 +227,7 @@ defmodule RailWeb.Utils.ChildStatus do
   defp line(:failed, %Task{stage: stage}, %Run{error: error}), do: "#{Task.stage_label(stage)} failed: #{error}"
   defp line(:done, %Task{stage: :engineer}, _run), do: "Diff ready for review"
   defp line(:done, %Task{stage: :review}, _run), do: "Findings to rule"
-  defp line(:done, %Task{stage: :qa}, _run), do: "QA report ready"
-  defp line(:done, %Task{stage: :demo}, _run), do: "Demo recorded"
+
   defp line(:queued, %Task{stage: stage}, _run), do: "Queued for #{Task.stage_label(stage)}"
   defp line(:waiting, %Task{stage: stage}, _run), do: "#{Task.stage_label(stage)} waiting for resources"
   defp line(:stopped, %Task{stage: stage}, _run), do: "#{Task.stage_label(stage)} stopped"
@@ -242,7 +239,7 @@ defmodule RailWeb.Utils.ChildStatus do
   # A child is read through its stage's latest run, as the task page reads it.
   defp stage_run(%Task{runs: runs, stage: stage}) do
     runs
-    |> Enum.filter(&(&1.role.stage == stage))
+    |> Enum.filter(&(&1.role.stage == Task.role_stage(stage)))
     |> Enum.max_by(&(&1.started_at || &1.inserted_at), DateTime, fn -> nil end)
   end
 

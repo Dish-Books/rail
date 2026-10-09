@@ -11,7 +11,7 @@ defmodule RailWeb.Utils.ChildStatusTest do
 
   setup do
     now = DateTime.utc_now()
-    roles = Map.new([:engineer, :review, :qa], &{&1, %Role{id: "rol_#{&1}", name: "#{&1} role", stage: &1}})
+    roles = Map.new([:engineer, :review_lead], &{&1, %Role{id: "rol_#{&1}", name: "#{&1} role", stage: &1}})
 
     child = fn position, attrs ->
       struct(
@@ -21,6 +21,7 @@ defmodule RailWeb.Utils.ChildStatusTest do
           builds_on: [],
           stage: :engineer,
           runs: [],
+          scratch_path: "/nonexistent/child_status",
           issue: %Issue{identifier: "SPL-#{position}", title: "Child #{position}"}
         },
         attrs
@@ -42,7 +43,7 @@ defmodule RailWeb.Utils.ChildStatusTest do
              label: "Merged",
              line: "Merged · PR #212",
              needs_attention: false,
-             cells: [%{mark: :done}, %{mark: :done}, %{mark: :done}, %{mark: :done}],
+             cells: [%{mark: :done}, %{mark: :done}],
              merged: %{chip: %{label: "Merged"}}
            } = child_status(merged, [merged])
   end
@@ -138,16 +139,16 @@ defmodule RailWeb.Utils.ChildStatusTest do
     at_review =
       child.(1,
         stage: :review,
-        runs: [run.(:engineer, stage_outcome: :done), run.(:review, status: :finished, stage_outcome: :done)]
+        runs: [run.(:engineer, stage_outcome: :done), run.(:review_lead, status: :finished, stage_outcome: :done)]
       )
 
     assert %{
              label: "Review the findings",
-             cells: [%{mark: :done}, %{mark: :current, chip: %{label: "Findings"}}, %{mark: :pending}, %{mark: :pending}],
+             cells: [%{mark: :done}, %{mark: :current, chip: %{label: "Findings"}}],
              line: "Findings to rule",
              needs_attention: true,
              badge: :dot,
-             action: %{label: "Review the findings", tab: "rol_review"}
+             action: %{label: "Review the findings", tab: "rol_review_lead"}
            } = child_status(at_review, [at_review])
   end
 
@@ -157,7 +158,7 @@ defmodule RailWeb.Utils.ChildStatusTest do
   } do
     asked = [%Question{status: :pending}, %Question{status: :pending}]
     blocked = child.(1, runs: [run.(:engineer, status: :blocked_on_input, questions: asked)])
-    failed = child.(2, stage: :qa, runs: [run.(:qa, status: :failed, error: "Chrome could not reach it")])
+    failed = child.(2, stage: :review, runs: [run.(:review_lead, status: :failed, error: "Chrome could not reach it")])
     running = child.(3, runs: [run.(:engineer, status: :running)])
 
     assert %{badge: 2, line: "engineer role asked 2 questions", action: %{label: "Answer", tab: "rol_engineer"}} =
@@ -165,11 +166,11 @@ defmodule RailWeb.Utils.ChildStatusTest do
 
     assert %{
              badge: :dot,
-             label: "QA failed",
-             line: "QA failed: Chrome could not reach it",
+             label: "Review failed",
+             line: "Review failed: Chrome could not reach it",
              line_class: "text-red-600 dark:text-red-500",
-             action: %{label: "Fix", tab: "rol_qa"},
-             cells: [%{mark: :done}, %{mark: :done}, %{chip: %{label: "Failed"}}, %{mark: :pending}]
+             action: %{label: "Fix", tab: "rol_review_lead"},
+             cells: [%{mark: :done}, %{chip: %{label: "Failed"}}]
            } = child_status(failed, [failed])
 
     assert %{
@@ -191,26 +192,14 @@ defmodule RailWeb.Utils.ChildStatusTest do
     assert %{state: :queued, line: "Queued for Engineer", badge: nil} = child_status(queued, [queued])
     assert %{line: "engineer role asked a question", badge: :dot} = child_status(one_question, [one_question])
 
-    for {status, stage, line} <- [
-          {%{status: :finished, stage_outcome: :done}, :engineer, "Diff ready for review"},
-          {%{status: :finished, stage_outcome: :done}, :qa, "QA report ready"},
-          {%{status: :waiting_for_resources}, :engineer, "Engineer waiting for resources"},
-          {%{status: :finished}, :engineer, "Engineer stopped"}
+    for {status, stage, role, line} <- [
+          {%{status: :finished, stage_outcome: :done}, :engineer, :engineer, "Diff ready for review"},
+          {%{status: :finished, stage_outcome: :done}, :review, :review_lead, "Findings to rule"},
+          {%{status: :waiting_for_resources}, :engineer, :engineer, "Engineer waiting for resources"},
+          {%{status: :finished}, :engineer, :engineer, "Engineer stopped"}
         ] do
-      task = child.(3, stage: stage, runs: [run.(stage, Map.to_list(status))])
+      task = child.(3, stage: stage, runs: [run.(role, Map.to_list(status))])
       assert %{line: ^line} = child_status(task, [task])
     end
-
-    demo =
-      child.(4,
-        stage: :demo,
-        runs: [
-          :engineer
-          |> run.(status: :finished, stage_outcome: :done)
-          |> Map.put(:role, %Role{id: "rol_demo", name: "Demo", stage: :demo})
-        ]
-      )
-
-    assert %{line: "Demo recorded", cells: [_e, _r, _q, %{chip: %{label: "Demo"}}]} = child_status(demo, [demo])
   end
 end

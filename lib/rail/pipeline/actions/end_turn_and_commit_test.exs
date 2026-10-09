@@ -5,6 +5,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
@@ -26,7 +27,12 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "End Turn Commit"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
+    # Review only takes a branch the remote has, so a pushed commit really reaches one.
+    remote = create_temp_git_repo(prefix: "rail_git_remote", initial_commit: false)
+    git!(remote, ["config", "receive.denyCurrentBranch", "ignore"])
     repo = create_temp_git_repo()
+    git!(repo, ["remote", "add", "origin", remote])
+    git!(repo, ["push", "--set-upstream", "origin", "main"])
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: repo})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
@@ -78,7 +84,12 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
       {:ok, os_process}
     end)
 
-    expect(Git, :push_branch, fn _scope, _task -> :ok end)
+    expect(Git, :push_branch, fn _scope, %Task{worktree_path: path} ->
+      git!(path, ["push", "origin", "HEAD"])
+      :ok
+    end)
+
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
     assert {:ok, :committing} =
              Pipeline.end_turn_and_commit(task, os_process, "ETC-1: add the feature\n\nWhy it changed.")
@@ -89,6 +100,29 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
     assert git!(repo, ["log", "-1", "--pretty=%B"]) =~ ~r/\AETC-1: add the feature\n\nWhy it changed.\n\nTicket: ETC-1/
     assert %Run{status: :finished, stage_outcome: :done, error: nil} = Repo.get!(Run, run_id)
     refute File.exists?(Path.join(task.scratch_path, "commits"))
+  end
+
+  # The engineer's commit is its word that the work is ready, so a pushed commit goes on to Review.
+  test "a commit pushed with no CI sends the task on to Review", %{
+    task: task,
+    run: %Run{id: run_id},
+    repo: repo,
+    os_process: os_process
+  } do
+    File.write!(Path.join(repo, "feature.ex"), "one\n")
+    stub(Tools, :stop_os_process, fn _scope, _os_process, _opts -> {:ok, os_process} end)
+
+    stub(Git, :push_branch, fn _scope, %Task{worktree_path: path} ->
+      git!(path, ["push", "origin", "HEAD"])
+      :ok
+    end)
+
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, os_process, "ETC-1: add the feature")
+    assert_receive {:run_changed, ^run_id}, 5_000
+
+    assert %Task{stage: :review} = Repo.reload!(task)
   end
 
   # The agent's CLI can send one call twice, the second while the first is still
@@ -106,7 +140,12 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
       {:ok, stopped}
     end)
 
-    expect(Git, :push_branch, fn _scope, _task -> :ok end)
+    expect(Git, :push_branch, fn _scope, %Task{worktree_path: path} ->
+      git!(path, ["push", "origin", "HEAD"])
+      :ok
+    end)
+
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
     calls =
       for _n <- 1..2, do: Elixir.Task.async(fn -> Pipeline.end_turn_and_commit(task, os_process, "ETC-1: add it") end)
@@ -148,6 +187,20 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
 
     assert {:refused, "Refused, nothing committed. This turn is resolving a merge" <> _rest} =
              Pipeline.end_turn_and_commit(task, os_process, "ETC-1: resolve")
+  end
+
+  # Past Engineer the branch is Review's, and its fixes are committed by the Review lead.
+  test "a task past Engineer is refused, since the work is no longer this conversation's to commit", %{
+    task: task,
+    repo: repo,
+    os_process: os_process
+  } do
+    File.write!(Path.join(repo, "feature.ex"), "one\n")
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+    reject(Tools, :stop_os_process, 3)
+
+    assert {:refused, "Refused, nothing committed. The task is at Review, past Engineer" <> _rest} =
+             Pipeline.end_turn_and_commit(task, os_process, "ETC-1: add it")
   end
 
   test "after a CI failure, nothing changed runs CI again on the same commit", %{
@@ -200,7 +253,10 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
     assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, os_process, "ETC-1: add the feature")
     assert_receive {:run_changed, ^run_id}, 5_000
 
-    assert %Run{status: :running, stage_outcome: :in_progress, error: nil} = Repo.get!(Run, run_id)
+    # CI passing on it is what sends the task to Review, with nobody clicking.
+    assert %Run{status: :running, stage_outcome: :in_progress, error: nil, review_on_ci_pass: true} =
+             Repo.get!(Run, run_id)
+
     refute Git.worktree_dirty?(repo)
   end
 
@@ -294,10 +350,10 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
     assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, os_process, "ETC-1: add the feature")
     assert_receive {:run_changed, ^run_id}, 5_000
 
-    assert %Run{error: "Could not finish the engineer's turn: the remote hung up", stage_outcome: :in_progress} =
+    assert %Run{error: "Could not finish the turn: the remote hung up", stage_outcome: :in_progress} =
              Repo.get!(Run, run_id)
 
-    assert "[rail] Could not finish the engineer's turn: the remote hung up" in Enum.map(
+    assert "[rail] Could not finish the turn: the remote hung up" in Enum.map(
              Pipeline.list_run_events(run),
              & &1.line
            )
@@ -325,7 +381,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
     assert_receive {:dispatched, argv}, 5_000
     assert Enum.any?(argv, &(&1 =~ "Also rename the filter"))
 
-    assert "[rail] Could not finish the engineer's turn: the remote hung up" in Enum.map(
+    assert "[rail] Could not finish the turn: the remote hung up" in Enum.map(
              Pipeline.list_run_events(run),
              & &1.line
            )

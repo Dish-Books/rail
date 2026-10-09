@@ -7,6 +7,7 @@ defmodule RailWeb.OverviewLive do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Scope
   alias Rail.Tools
 
@@ -222,7 +223,7 @@ defmodule RailWeb.OverviewLive do
   # is behind it, so neither says where the task stands.
   defp latest_stage_runs(runs) do
     runs
-    |> Enum.filter(&(&1.role.stage == &1.task.stage))
+    |> Enum.filter(&(&1.role.stage == Task.role_stage(&1.task.stage)))
     |> Enum.group_by(& &1.task_id)
     |> Map.new(fn {task_id, task_runs} ->
       {task_id, Enum.max_by(task_runs, &(&1.started_at || &1.inserted_at), DateTime)}
@@ -326,7 +327,7 @@ defmodule RailWeb.OverviewLive do
   # A run at a stage a human signs off has handed its work over when it is done,
   # whether or not the human has since reviewed it and moved the task on.
   defp done_text(run, key) do
-    if run.role.stage in [:plan, :engineer],
+    if run.role.stage in [:plan, :engineer, :review_lead],
       do: "says #{key} is ready for review",
       else: "finished on #{key}"
   end

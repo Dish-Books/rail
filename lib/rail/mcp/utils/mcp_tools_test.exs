@@ -6,54 +6,52 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
   alias Rail.Roles.Schemas.Role
 
   setup do
-    stages = [:plan, :product, :design, :architect, :engineer, :review, :qa, :demo, :triage]
+    stages = [:plan, :product, :design, :architect, :engineer, :review_lead, :review, :qa, :demo, :triage]
     %{names: Map.new(stages, fn stage -> {stage, %Role{stage: stage} |> mcp_tools() |> Enum.map(& &1["name"])} end)}
   end
 
   test "each stage that writes something is offered exactly its own save tool", %{names: names} do
     assert names[:plan] == ["save_ticket", "save_design_option", "save_plan", "save_split", "knowledge_search"]
     assert names[:engineer] == ["commit", "request_merge", "knowledge_search"]
-    assert names[:review] == ["save_finding", "save_review", "knowledge_search"]
   end
 
-  test "QA is offered the browser, the checklist, and the tools it reports with", %{names: names} do
-    assert names[:qa] == [
+  test "the Review lead is offered the browser, the checklist, the camera, and the tools it reports with",
+       %{names: names} do
+    assert names[:review_lead] == [
              "browser_connect",
              "browser_problems",
              "qa_plan",
              "qa_check",
              "qa_shot",
              "qa_file",
-             "save_finding",
-             "save_verdict",
-             "knowledge_search"
-           ]
-  end
-
-  test "demo is offered the same browser, narrates, and saves its write-up", %{names: names} do
-    assert names[:demo] == [
-             "browser_connect",
-             "browser_problems",
              "demo_start",
              "demo_say",
+             "save_finding",
+             "save_review",
+             "commit_fixes",
              "save_demo",
              "knowledge_search"
            ]
   end
 
-  # Both are called save_finding, and each takes the fields its own stage raises.
-  test "review's and QA's save_finding take their own fields" do
-    fields = fn stage ->
-      %Role{stage: stage}
-      |> mcp_tools()
-      |> Enum.find(&(&1["name"] == "save_finding"))
-      |> get_in(["inputSchema", "properties"])
-    end
+  # One save_finding holds both kinds, so it takes a code range and evidence alike.
+  test "save_finding takes a code finding's range, a screen finding's steps, and evidence" do
+    assert %{
+             "inputSchema" => %{
+               "required" => ["key"],
+               "properties" => %{
+                 "file" => %{"type" => "string"},
+                 "steps" => %{"type" => "array"},
+                 "evidence" => %{"type" => "array"}
+               }
+             }
+           } = %Role{stage: :review_lead} |> mcp_tools() |> Enum.find(&(&1["name"] == "save_finding"))
+  end
 
-    assert Map.has_key?(fields.(:review), "file")
-    refute Map.has_key?(fields.(:review), "evidence")
-    assert Map.has_key?(fields.(:qa), "evidence")
-    refute Map.has_key?(fields.(:qa), "file")
+  test "the lead's subagents are offered only the knowledge base", %{names: names} do
+    assert names[:review] == ["knowledge_search"]
+    assert names[:qa] == ["knowledge_search"]
+    assert names[:demo] == ["knowledge_search"]
   end
 
   test "a stage with no output of its own is offered only the knowledge base", %{names: names} do

@@ -18,14 +18,14 @@ defmodule RailWeb.QaController do
   use RailWeb, :controller
 
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.QaEvidence
+  alias Rail.Pipeline.Schemas.FindingEvidence
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Scope
 
   def evidence(conn, %{"task_id" => task_id, "key" => key, "index" => index}) do
     with {:ok, %Task{} = task} <- Pipeline.get_task(task_id),
          true <- Scope.can_access_project?(conn.assigns.current_scope, task.project_id),
-         %QaEvidence{path: path} when is_binary(path) <- evidence(task, key, index),
+         %FindingEvidence{path: path} when is_binary(path) <- evidence(task, key, index),
          {:ok, kind} <- Pipeline.classify_qa_evidence(task, path) do
       send_shot(conn, Path.join([task.scratch_path, "qa", path]), kind)
     else
@@ -66,7 +66,7 @@ defmodule RailWeb.QaController do
   defp evidence(%Task{} = task, key, index) do
     with {position, ""} <- Integer.parse(index),
          true <- position >= 0,
-         %{evidence: evidence} <- Enum.find(Pipeline.list_qa_findings(task), &(&1.key == key)) do
+         %{evidence: evidence} <- Enum.find(Pipeline.list_findings(task), &(&1.key == key)) do
       Enum.at(evidence, position)
     else
       _missing -> nil

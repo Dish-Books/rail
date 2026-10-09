@@ -7,7 +7,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   its server on the issue's assigned user's connection.
 
   That register is the whole of the gate, so there is no second idea of who may
-  call what: a review run calling `browser_connect` was offered no such tool, falls
+  call what: an engineer run calling `browser_connect` was offered no such tool, falls
   through to the proxy, and finds no server by that name either. The allowlist is
   rechecked here rather than trusted from `tools/list`, because an agent can call
   any name it likes.
@@ -30,6 +30,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   import Rail.Mcp.Utils.RunToolBrowserConnect
   import Rail.Mcp.Utils.RunToolBrowserProblems
   import Rail.Mcp.Utils.RunToolCommit
+  import Rail.Mcp.Utils.RunToolCommitFixes
   import Rail.Mcp.Utils.RunToolDemoSay
   import Rail.Mcp.Utils.RunToolDemoStart
   import Rail.Mcp.Utils.RunToolKnowledgeSearch
@@ -45,7 +46,6 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   import Rail.Mcp.Utils.RunToolSaveReview
   import Rail.Mcp.Utils.RunToolSaveSplit
   import Rail.Mcp.Utils.RunToolSaveTicket
-  import Rail.Mcp.Utils.RunToolSaveVerdict
   import Rail.Mcp.Utils.ToolAllowed
   import Rail.Mcp.Utils.WithUpstreamToken
 
@@ -62,10 +62,10 @@ defmodule Rail.Mcp.Actions.CallRunTool do
     "save_plan",
     "save_split",
     "commit",
+    "commit_fixes",
     "request_merge",
     "save_finding",
     "save_review",
-    "save_verdict",
     "save_demo"
   ]
 
@@ -148,7 +148,6 @@ defmodule Rail.Mcp.Actions.CallRunTool do
       {[_first | _rest] = allowed, _validation, _type} -> "#{shown(value)} is not one of #{Enum.join(allowed, ", ")}"
       {nil, :required, _type} -> "is required"
       {nil, :cast, :integer} -> "must be a whole number, got #{shown(value)}"
-      {nil, :cast, :boolean} -> "must be true or false, got #{shown(value)}"
       {nil, :cast, :string} -> "must be text, got #{shown(value)}"
       {nil, :cast, {:array, _type}} -> "must be a list, got #{shown(value)}"
       {nil, :embed, {:array, _type}} -> "must be a list of entries, got #{shown(value)}"
@@ -236,10 +235,11 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp run("save_plan", task, arguments, opts), do: run_tool_save_plan(task, arguments, opts)
   defp run("save_split", task, arguments, opts), do: run_tool_save_split(task, arguments, opts)
   defp run("commit", task, arguments, opts), do: run_tool_commit(task, arguments, opts)
+  defp run("commit_fixes", task, arguments, opts), do: run_tool_commit_fixes(task, arguments, opts)
   defp run("request_merge", task, arguments, opts), do: run_tool_request_merge(task, arguments, opts)
   defp run("save_finding", task, arguments, opts), do: run_tool_save_finding(task, arguments, opts)
   defp run("save_review", task, arguments, opts), do: run_tool_save_review(task, arguments, opts)
-  defp run("save_verdict", task, arguments, opts), do: run_tool_save_verdict(task, arguments, opts)
+
   defp run("save_demo", task, arguments, opts), do: run_tool_save_demo(task, arguments, opts)
 
   defp task(%RunContext{os_process: %{task_id: task_id}}) when is_binary(task_id) do

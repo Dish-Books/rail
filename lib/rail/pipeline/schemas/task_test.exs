@@ -165,14 +165,34 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
              "Plan",
              "Engineer",
              "Review",
-             "QA",
-             "Demo",
              "Merged",
              "Debugger",
              "Split"
            ]
 
     assert is_nil(Task.stage_label(:nonsense))
+  end
+
+  # Review is one run of the Review lead, whose subagents are the review, QA, engineer and demo roles.
+  test "role_stage/1 names the Review lead for Review and every other stage's own role" do
+    assert Enum.map(Task.stages(), &Task.role_stage/1) == [
+             :plan,
+             :engineer,
+             :review_lead,
+             :merged,
+             :debugger,
+             :split
+           ]
+  end
+
+  test "demo_recorded?/1 is true once the demo recorder's video is on disk", %{task: task} do
+    refute Task.demo_recorded?(task)
+
+    File.mkdir_p!(Path.join(task.scratch_path, "demo"))
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    File.write!(Path.join([task.scratch_path, "demo", "demo.webm"]), "webm bytes")
+
+    assert Task.demo_recorded?(task)
   end
 
   test "cast_stage/1 takes an atom or a string and refuses anything else" do

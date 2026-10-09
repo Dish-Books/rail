@@ -9,13 +9,19 @@ defmodule Rail.Pipeline.Actions.SendMessage do
 
   Queued messages accumulate rather than replacing, so a second thought lands
   after the first one in the same turn.
+
+  The engineer's own conversation closes once the task leaves Engineer: Review's
+  fixes are the Review lead's to hand its engineer, so a message there would
+  change the branch behind Review's back.
   """
 
   import Rail.Pipeline.Utils.DispatchMessage
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
+  alias Rail.Roles.Schemas.Role
   alias Rail.Scope
 
   @doc """
@@ -25,7 +31,8 @@ defmodule Rail.Pipeline.Actions.SendMessage do
   agent is still working and it will go out when the turn ends.
   """
   def send_message(%Scope{} = scope, %Run{} = run, text, opts \\ []) do
-    with %Run{} = run <- Repo.get(Run, run.id),
+    with %Run{} = run <- Run |> Repo.get(run.id) |> Repo.preload([:task, :role]),
+         :ok <- validate_open(run),
          :ok <- validate_can_chat(run),
          {:ok, trimmed} <- validate_message(text) do
       deliver(scope, run, trimmed, opts[:from])
@@ -34,6 +41,11 @@ defmodule Rail.Pipeline.Actions.SendMessage do
       {:error, reason} -> {:error, reason}
     end
   end
+
+  defp validate_open(%Run{role: %Role{stage: :engineer}, task: %Task{stage: stage}}) when stage != :engineer,
+    do: {:error, {:invalid_stage, stage}}
+
+  defp validate_open(%Run{}), do: :ok
 
   defp validate_can_chat(%Run{} = run) do
     if Run.can_chat?(run), do: :ok, else: {:error, :chat_unavailable}

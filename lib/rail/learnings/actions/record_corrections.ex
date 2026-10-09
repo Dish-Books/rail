@@ -12,10 +12,9 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline.Schemas.DiffComment
+  alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.PlanComment
-  alias Rail.Pipeline.Schemas.QaFinding
   alias Rail.Pipeline.Schemas.Question
-  alias Rail.Pipeline.Schemas.ReviewFinding
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
 
@@ -94,24 +93,15 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
     }
   end
 
-  defp observation(%ReviewFinding{} = finding, _suggested) do
+  # A code finding teaches what review reads for, a screen finding what QA drives for.
+  defp observation(%Finding{} = finding, _suggested) do
     %{
-      source_kind: :review_finding,
+      source_kind: if(finding.kind == :screen, do: :qa_finding, else: :review_finding),
       source_id: finding.id,
       actor_id: finding.decided_by_id,
       text: finding.title,
-      excerpt: finding.detail,
+      excerpt: finding.problem,
       learning_id: finding.rule_id
-    }
-  end
-
-  defp observation(%QaFinding{} = finding, _suggested) do
-    %{
-      source_kind: :qa_finding,
-      source_id: finding.id,
-      actor_id: finding.decided_by_id,
-      text: finding.title,
-      excerpt: finding.observed || finding.detail
     }
   end
 
@@ -161,13 +151,13 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
     %{kind: :convention, roles: [:architect], rule: clip(comment.body), why: line_why("a plan", comment)}
   end
 
-  defp rule(%ReviewFinding{} = finding, _observation) do
-    where = if finding.file, do: " on #{finding.file}", else: ""
-    Map.merge(%{kind: :convention, roles: [:engineer, :review]}, finding_rule(finding, "Raised in review#{where}"))
+  defp rule(%Finding{kind: :screen} = finding, _observation) do
+    Map.merge(%{kind: :convention, roles: [:engineer, :qa]}, finding_rule(finding, "Raised by QA"))
   end
 
-  defp rule(%QaFinding{} = finding, _observation) do
-    Map.merge(%{kind: :convention, roles: [:engineer, :qa]}, finding_rule(finding, "Raised by QA"))
+  defp rule(%Finding{} = finding, _observation) do
+    where = if finding.file, do: " on #{finding.file}", else: ""
+    Map.merge(%{kind: :convention, roles: [:engineer, :review]}, finding_rule(finding, "Raised in review#{where}"))
   end
 
   # A bare answer such as "Yes" means nothing to a later run without the question it settled.
@@ -175,13 +165,16 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
     %{kind: :decision, roles: [], rule: Learning.answer_rule(question.prompt, question.answer), why: nil}
   end
 
-  # A finding's title names what was wrong; its suggestion, where it has one, says what to do instead.
-  defp finding_rule(%{suggestion: suggestion} = finding, raised) when is_binary(suggestion) and suggestion != "" do
-    %{rule: clip(suggestion), why: why(["#{raised} and sent to be fixed: #{finding.title}", finding.detail])}
+  # A finding's broken rule is what to do instead, where it names one; its title names what was wrong.
+  defp finding_rule(%Finding{rule: rule} = finding, raised) when is_binary(rule) and rule != "" do
+    %{rule: clip(rule), why: why(["#{raised} and sent to be fixed: #{finding.title}", finding.problem, finding.fix])}
   end
 
-  defp finding_rule(finding, raised) do
-    %{rule: clip(finding.title), why: why(["#{raised} and sent to be fixed.", finding.detail])}
+  defp finding_rule(%Finding{} = finding, raised) do
+    %{
+      rule: clip(finding.fix || finding.title),
+      why: why(["#{raised} and sent to be fixed: #{finding.title}", finding.problem])
+    }
   end
 
   defp line_why(document, %PlanComment{} = comment) do

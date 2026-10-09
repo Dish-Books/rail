@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Utils.LearningsBrief do
   @moduledoc """
-  The rules a run is given as it starts, as a section of its brief: a list for most roles, and for the reviewer
-  a checklist with ids and the instruction to still write up what a calibration rule says not to raise.
+  The rules a run is given as it starts, as a section of its brief: a list for most roles, and for the Review
+  lead a checklist with ids and the instruction to still write up what a calibration rule says not to raise.
   """
 
   alias Rail.Learnings
@@ -29,14 +29,14 @@ defmodule Rail.Pipeline.Utils.LearningsBrief do
 
   defp section([], _stage), do: ""
 
-  defp section(rules, :review) do
+  defp section(rules, :review_lead) do
     """
 
-    The checklist: rules this project has learned. Check the change against every one that applies to the files it touches, and when a finding comes from one, give that rule's id as `rule` in the finding.
+    The checklist: rules this project has learned. Hand each subagent every one that bears on its work, word for word, since a subagent sees only what you write it. Check the change against every one that applies to the files it touches, and when a finding comes from one, give that rule's id as `checklist_rule` in the finding.
 
     #{Enum.map_join(rules, "\n", &line(&1, true))}
 
-    A calibration rule says what not to raise. A finding one says not to raise is still saved, with that rule's id as `rule`: Rail sets it apart for a person rather than dropping it, so leaving it out loses the record that the rule held.
+    A calibration rule says what not to raise. A finding one says not to raise is still saved, with that rule's id as `checklist_rule`: Rail sets it apart for a person rather than dropping it, so leaving it out loses the record that the rule held.
     """
   end
 

@@ -31,10 +31,10 @@ defmodule Rail.Pipeline.Actions.EnterStage do
 
   # The stages a Linear ticket's status follows; the rest leave it where it is.
   # Only a split parent enters `:merged`, once its last child has, and its ticket is then Done.
-  @linear_stages [:plan, :engineer, :review, :qa, :demo, :merged]
+  @linear_stages [:plan, :engineer, :review, :merged]
 
   @doc """
-  Enters `stage` on `task` and spawns the role that stage belongs to.
+  Enters `stage` on `task` and spawns the role that works it, `Task.role_stage/1`'s.
 
   Returns `{:ok, run}` with the run left executing, or `{:ok, task}` under
   `start: false`, which records the move and stops there, for a stage a person
@@ -45,7 +45,7 @@ defmodule Rail.Pipeline.Actions.EnterStage do
 
     result =
       if Keyword.get(opts, :start, true) do
-        {:ok, %Role{} = role} = Roles.get_role(project_id: task.project_id, stage: stage)
+        {:ok, %Role{} = role} = Roles.get_role(project_id: task.project_id, stage: Task.role_stage(stage))
         start_role(task, role)
       else
         {:ok, task}
@@ -123,9 +123,7 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   # The run carries its task and its role, so it is the whole of what a spawn needs.
   defp start_process(%Run{role: %Role{stage: :plan}} = run), do: Pipeline.start_plan_run(run)
   defp start_process(%Run{role: %Role{stage: :engineer}} = run), do: Pipeline.start_engineer_run(run)
-  defp start_process(%Run{role: %Role{stage: :review}} = run), do: Pipeline.start_review_run(run)
-  defp start_process(%Run{role: %Role{stage: :qa}} = run), do: Pipeline.start_qa_run(run)
-  defp start_process(%Run{role: %Role{stage: :demo}} = run), do: Pipeline.start_demo_run(run)
+  defp start_process(%Run{role: %Role{stage: :review_lead}} = run), do: Pipeline.start_review_run(run)
 
   defp start_process(%Run{task: %Task{} = task, role: %Role{} = role} = run) do
     prompt =

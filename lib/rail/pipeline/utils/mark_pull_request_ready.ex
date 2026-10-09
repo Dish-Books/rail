@@ -9,7 +9,8 @@ defmodule Rail.Pipeline.Utils.MarkPullRequestReady do
   require Logger
 
   @doc """
-  Takes `task`'s draft pull request out of draft, once the demo is settled.
+  Takes `task`'s draft pull request out of draft, once its review is finished.
+
 
   A pull request that will not come out of draft is not a reason to hold the task
   back, so a failure is logged and the task returned as it was.

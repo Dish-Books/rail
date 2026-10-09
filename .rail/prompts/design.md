@@ -6,7 +6,7 @@ Everything about the issue is already in front of you. Do not use the Linear MCP
 
 ## Who uses Rail
 
-Rail takes Linear issues through a pipeline of AI agent stages (plan, with product, design and architect as its subagents, then engineer, review, QA, demo) and triages Slack threads. Its users are a small team of engineers supervising those agents across several projects at once. They come to Rail to act: answer an agent's questions, approve a plan, rule on findings Fix or Don't fix, send work back, see what is running and what is stuck on them. They read fast and know the domain. Density is welcome; ceremony, confirmation steps and explanatory copy are not.
+Rail takes Linear issues through a pipeline of AI agent stages (plan, with product, design and architect as its subagents, then engineer, then review, with the code reviewer, QA explorers, an engineer and a demo recorder as its subagents) and triages Slack threads. Its users are a small team of engineers supervising those agents across several projects at once. They come to Rail to act: answer an agent's questions, approve a plan, rule on findings Fix or Don't fix, start fix rounds, see what is running and what is stuck on them. They read fast and know the domain. Density is welcome; ceremony, confirmation steps and explanatory copy are not.
 
 ## Rail's interface, so you do not have to rediscover it
 

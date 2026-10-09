@@ -19,7 +19,7 @@ defmodule Rail.Pipeline.Actions.WriteQaChecklistTest do
     end)
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "Write Checklist"})
-    {:ok, task} = Pipeline.create_task(issue, :qa)
+    {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     %{task: task, path: Path.join([task.scratch_path, "qa", "checklist.json"])}

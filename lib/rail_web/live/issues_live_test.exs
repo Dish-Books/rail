@@ -4,7 +4,6 @@ defmodule RailWeb.IssuesLiveTest do
 
   import Phoenix.LiveViewTest
 
-  alias Rail.Git
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.LinearSync
@@ -675,14 +674,14 @@ defmodule RailWeb.IssuesLiveTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Retry after failure"})
     {:ok, issue} = Issues.update_issue(issue, %{state: :backlog})
-    {:ok, task} = Pipeline.create_task(issue, :qa)
-    {:ok, qa} = Roles.get_role(project_id: project.id, stage: :qa)
+    {:ok, task} = Pipeline.create_task(issue, :review)
+    {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
     now = DateTime.utc_now()
 
     {:ok, _failed} =
       Pipeline.create_run(%{
         task_id: task.id,
-        role_id: qa.id,
+        role_id: lead.id,
         status: :failed,
         error: "3 of 11 checks failed",
         started_at: DateTime.shift(now, hour: -2),
@@ -692,65 +691,14 @@ defmodule RailWeb.IssuesLiveTest do
     {:ok, _retry} =
       Pipeline.create_run(%{
         task_id: task.id,
-        role_id: qa.id,
+        role_id: lead.id,
         status: :running,
         started_at: DateTime.shift(now, minute: -10)
       })
 
     assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/issues")
 
-    assert has_element?(view, "#task-link-#{issue.id}", "QA running")
-  end
-
-  test "a task at QA whose code changed reads as back at engineer", %{conn: conn, project: project} do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_issues_live_back",
-        login: "issues_live_user_back",
-        email: "issues_live_user_back@example.com",
-        admin: true
-      })
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_back_1", "identifier" => "BK-1", "title" => "Changed at QA"}
-          }
-        }
-      })
-    end)
-
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Changed at QA"})
-    {:ok, issue} = Issues.update_issue(issue, %{state: :backlog})
-    {:ok, task} = Pipeline.create_task(issue, :qa)
-
-    {:ok, task} =
-      Pipeline.update_task(task, %{
-        worktree_path: create_temp_git_repo(),
-        pr_number: 5,
-        pr_url: "https://github.com/example/test-seed/pull/5"
-      })
-
-    {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
-
-    {:ok, _engineer_run} =
-      Pipeline.create_run(%{
-        task_id: task.id,
-        role_id: engineer.id,
-        status: :finished,
-        stage_outcome: :done,
-        started_at: DateTime.utc_now()
-      })
-
-    stub(Git, :push_branch, fn _scope, _task -> :ok end)
-    File.write!(Path.join(task.worktree_path, "asked_for_at_qa.ex"), "changed\n")
-    assert :ok = Pipeline.commit_engineer_work(system_scope(), task, nil)
-
-    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/issues")
-
-    assert has_element?(view, "#task-link-#{issue.id}", "Review the diff")
+    assert has_element?(view, "#task-link-#{issue.id}", "Review running")
   end
 
   test "sync_issues button triggers sync on current project or all projects", %{

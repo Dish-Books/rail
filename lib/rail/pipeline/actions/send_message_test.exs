@@ -124,4 +124,14 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
 
     assert {:error, :not_found} = Pipeline.send_message(system_scope(), run, "Hello?")
   end
+
+  # Review's fixes are the Review lead's to hand its engineer, so a message here would change the branch behind it.
+  test "the engineer's conversation closes once the task leaves Engineer", %{task: task, idle: idle} do
+    run = idle.()
+    {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
+    reject(Tools, :start_os_process, 2)
+
+    assert {:error, {:invalid_stage, :review}} = Pipeline.send_message(system_scope(), run, "One more thing")
+    assert [] = Pipeline.list_run_events(run)
+  end
 end
