@@ -23,11 +23,13 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
              "qa_plan",
              "qa_check",
              "qa_shot",
+             "save_screen",
              "demo_start",
              "demo_say",
              "save_finding",
              "save_review",
              "commit",
+             "request_merge",
              "save_demo",
              "knowledge_search"
            ]
@@ -60,6 +62,18 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
 
     assert %{"name" => %{"type" => "string"}, "browser" => %{"type" => "string"}} = properties
     assert map_size(properties) == 2
+  end
+
+  # The key is what pairs a state's pictures across rounds, and Rail names the file.
+  test "save_screen takes the state's key, what it shows and which browser, and never a path" do
+    assert %{
+             "inputSchema" => %{
+               "properties" => %{"key" => %{"type" => "string"}, "label" => %{"type" => "string"}} = properties,
+               "required" => ["key", "label"]
+             }
+           } = %Role{stage: :review_lead} |> mcp_tools() |> Enum.find(&(&1["name"] == "save_screen"))
+
+    assert Map.keys(properties) == ["browser", "key", "label"]
   end
 
   test "the lead's subagents are offered only the knowledge base", %{names: names} do

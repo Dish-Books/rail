@@ -34,6 +34,7 @@ defmodule RailWeb.TaskLive do
   alias Rail.Scope
   alias Rail.Tools
   alias Rail.Users
+  alias RailWeb.Live.DiffView
   alias RailWeb.Live.EngineerStage
   alias RailWeb.Live.PlanStage
   alias RailWeb.Live.QuestionCard
@@ -248,7 +249,6 @@ defmodule RailWeb.TaskLive do
           line={@line}
           approvable={@approvable}
           current_scope={@current_scope}
-          engineer_tab={@engineer_tab}
         >
           <:breadcrumb :if={@show_switcher}>
             <.child_switcher
@@ -464,10 +464,11 @@ defmodule RailWeb.TaskLive do
   end
 
   # Comments the reader sees moved, in another tab or this one. Only the comments
-  # are read again: the diff under them has not moved.
+  # are read again: the diff under them has not moved. The Review tab draws the diff
+  # only while its Diff item is open, and an update to a diff not drawn goes nowhere.
   def handle_info({:diff_comments_changed, task_id}, socket) do
-    with %{pane: :engineer, task_id: ^task_id, selected_role: %Role{} = role} <- socket.assigns do
-      send_update(EngineerStage, id: stage_component_id(role), reload_comments: true)
+    with %{pane: pane, task_id: ^task_id} when pane in [:engineer, :review] <- socket.assigns do
+      send_update(DiffView, id: "diff-view", reload_comments: true)
     end
 
     {:noreply, socket}
@@ -695,20 +696,24 @@ defmodule RailWeb.TaskLive do
 
       %{pane: :engineer, task: task, selected_role: role} ->
         send_update(EngineerStage, id: stage_component_id(role), task: task)
+        send_update(DiffView, id: "diff-view", reload: true)
 
       %{pane: :review, task: task, selected_role: role} ->
         send_update(ReviewStage, id: stage_component_id(role), task: task)
+        send_update(DiffView, id: "diff-view", reload: true)
 
       _no_stage_on_disk ->
         :ok
     end
   end
 
-  defp refresh_diff(%{assigns: %{pane: :engineer, selected_role: %Role{} = role, task: %Task{} = task}} = socket) do
+  defp refresh_diff(%{assigns: %{pane: pane, selected_role: %Role{} = role, task: %Task{} = task}} = socket)
+       when pane in [:engineer, :review] do
     now = System.monotonic_time(:millisecond)
 
     if due?(socket.assigns.diff_refreshed_at, now) do
-      send_update(EngineerStage, id: stage_component_id(role), task: task)
+      if pane == :engineer, do: send_update(EngineerStage, id: stage_component_id(role), task: task)
+      send_update(DiffView, id: "diff-view", reload: true)
       assign(socket, :diff_refreshed_at, now)
     else
       socket
@@ -959,8 +964,8 @@ defmodule RailWeb.TaskLive do
   defp merge_tab(%{task: %Task{stage: :review}, stage_run: %Run{role_id: role_id}}), do: role_id
   defp merge_tab(%{engineer_tab: engineer_tab}), do: engineer_tab
 
-  # A finding names a file, and the diff that file changed in is the engineer's
-  # tab, so review can only link there once the engineer has a tab to link to.
+  # A branch the engineer has built is one there is anything to merge into, and its
+  # tab is where Update branch lands before Review.
   defp engineer_tab(started) do
     Enum.find_value(started, fn {role, _run} -> role.stage == :engineer and role.id end)
   end

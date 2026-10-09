@@ -37,7 +37,10 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
         comment_list: :files,
         selected_comment: nil,
         draft: nil,
-        engineer_running?: false
+        picker: %{view: :branch, history: %{commits: []}, dirty?: false, parent: nil},
+        running?: false,
+        agent: "Engineer",
+        commentable?: true
       }
     }
   end
@@ -197,6 +200,38 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
                calculate_diff_pane(%{assigns | files: [diff], comments: [elsewhere]})
     end
 
+    # A commit's line numbers are that commit's own, so its comments sit only in its view.
+    test "a comment written in a commit's view sits on its line only there", %{
+      assigns: assigns,
+      diff: diff,
+      rows: rows,
+      comment: comment
+    } do
+      in_commit = comment.(line_kind: :added, line: 2, line_text: rows.added.text, filter: :commit, commit: "9c41e07")
+      on_branch = comment.(line_kind: :added, line: 2, line_text: rows.added.text)
+
+      assert %{sections: [{_id, %{lifted: [{^on_branch, false}], segments: segments}}]} =
+               calculate_diff_pane(%{
+                 assigns
+                 | files: [diff],
+                   comments: [in_commit, on_branch],
+                   filter: {:commit, "9c41e07"}
+               })
+
+      assert [%{comments: [^in_commit]}, %{comments: []}] = segments
+
+      assert %{sections: [{_id, %{lifted: [{^in_commit, false}]}}]} =
+               calculate_diff_pane(%{assigns | files: [diff], comments: [in_commit]})
+
+      assert %{sections: [{_id, %{lifted: [{^in_commit, false}]}}]} =
+               calculate_diff_pane(%{assigns | files: [diff], comments: [in_commit], filter: {:commit, "7b19e4c"}})
+    end
+
+    test "a merge's view takes no comment on its lines", %{assigns: assigns, diff: diff} do
+      assert %{sections: [{_id, %{commentable?: false}}], toolbar: %{commentable?: false}} =
+               calculate_diff_pane(%{assigns | files: [diff], commentable?: false})
+    end
+
     test "a comment on a file out of the view is kept after the last file, one the query hides is not", %{
       assigns: assigns,
       diff: diff,
@@ -223,10 +258,10 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
       ]
 
       assert %{
-               toolbar: %{unsent: 4, engineer_running?: true},
+               toolbar: %{unsent: 4, running?: true, agent: "Engineer"},
                tree: %{rows: [%{unsent: 1}, %{unsent: 2}]},
                sections: [{_filter, %{unsent: 1}}, {_mix, %{unsent: 2}}]
-             } = calculate_diff_pane(%{assigns | files: [diff, other], comments: comments, engineer_running?: true})
+             } = calculate_diff_pane(%{assigns | files: [diff, other], comments: comments, running?: true})
     end
 
     # Line changed is said of every comment, but the notice is about what Send sends.

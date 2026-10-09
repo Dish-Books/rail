@@ -95,6 +95,7 @@ defmodule RailWeb.Router do
     get "/tasks/:task_id/design/:key/screenshot", DesignController, :screenshot
     get "/tasks/:task_id/demo/video", DemoController, :video
     get "/tasks/:task_id/findings/:key/evidence/:index", EvidenceController, :show
+    get "/tasks/:task_id/screens/:key/:index", ScreenController, :show
 
     live_session :require_authenticated_user,
       on_mount: [

@@ -257,8 +257,26 @@ defmodule Rail.Pipeline.Actions.UpdateBranchTest do
       assert %Run{stage_outcome: :in_progress, ci_failure_streak: 0, review_on_ci_pass: false} = Repo.reload!(lead_run)
       assert %Run{status: :finished, stage_outcome: :done} = Repo.reload!(engineer_run)
 
-      assert ["[rail] Merged origin/main in.", "[rail] Round 1 started after it was pushed"] =
+      merged = worktree_path |> git!(["rev-parse", "--short=7", "HEAD"]) |> String.trim()
+
+      assert ["[rail] Merged origin/main in as " <> ^merged <> ".", "[rail] Round 1 started after it was pushed"] =
                Enum.map(Pipeline.list_run_events(lead_run), & &1.line)
+    end
+
+    # The click is the human's, so the lead's conversation says who asked before what Rail did about it.
+    test "a person's click is said in the lead's conversation, and the engineer's stays as it was", %{
+      task: task,
+      engineer_run: engineer_run,
+      lead_run: lead_run
+    } do
+      %{user: %{id: user_id}} = scope = user_scope()
+      clicked = "[human:#{user_id}] Update branch"
+      expect(Git, :merge_default_branch, fn _scope, _task -> :ok end)
+
+      assert {:ok, %Task{stage: :review}} = Pipeline.update_branch(scope, task)
+
+      assert [^clicked, "[rail] Merged origin/main in."] = Enum.map(Pipeline.list_run_events(lead_run), & &1.line)
+      assert [] = Pipeline.list_run_events(engineer_run)
     end
 
     # Nothing to merge leaves HEAD where it was, so there is no new code for a round to read.

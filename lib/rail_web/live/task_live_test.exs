@@ -3001,6 +3001,7 @@ defmodule RailWeb.TaskLiveTest do
     # At Review the branch is the Review lead's: the merge runs on its run and shows on its tab.
     test "a clean merge into a task at Review leaves it there, pushes and starts the lead's next round", %{
       conn: conn,
+      scope: %{user: %{id: user_id}},
       project: project,
       task: task,
       repo: repo
@@ -3039,8 +3040,15 @@ defmodule RailWeb.TaskLiveTest do
       assert %Task{stage: :review, is_updating_branch: false} = Repo.reload!(task)
       refute Git.branch_unpushed?(repo)
 
-      assert ["[rail] Merged origin/main in.", "[rail] Round 1 started after it was pushed"] =
-               lead_run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
+      merged = repo |> git!(["rev-parse", "--short=7", "HEAD"]) |> String.trim()
+
+      assert [
+               "[human:" <> ^user_id <> "] Update branch",
+               "[rail] Merged origin/main in as " <> ^merged <> ".",
+               "[rail] Round 1 started after it was pushed"
+             ] = lead_run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
+
+      assert has_element?(view, "#review-stage")
     end
 
     test "updating the branch says why for each way it can be refused", %{
@@ -3133,7 +3141,7 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='diff-file-row']", "shipped.ex")
       assert has_element?(view, "[data-qa='diff-file-row']", "wip.ex")
 
-      view |> element("#diff-filter-uncommitted") |> render_click()
+      view |> with_target("#diff-view") |> render_click("pick_commit", %{"commit" => "uncommitted"})
 
       refute has_element?(view, "[data-qa='diff-file-row']", "shipped.ex")
       assert has_element?(view, "[data-qa='diff-file-row']", "wip.ex")
@@ -3144,12 +3152,12 @@ defmodule RailWeb.TaskLiveTest do
     test "an empty uncommitted view can still be switched out of", %{conn: conn, task: task} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      view |> element("#diff-filter-uncommitted") |> render_click()
+      view |> with_target("#diff-view") |> render_click("pick_commit", %{"commit" => "uncommitted"})
 
       assert has_element?(view, "[data-qa='diff_empty_state']", "Everything in the worktree is committed.")
       refute has_element?(view, "[data-qa='engineer_work_pending']")
 
-      view |> element("#diff-filter-branch") |> render_click()
+      view |> element("#diff-commit-option-branch") |> render_click()
       assert has_element?(view, "[data-qa='diff-file-row']", "shipped.ex")
     end
 
@@ -3292,12 +3300,12 @@ defmodule RailWeb.TaskLiveTest do
     test "the first page leaves the diff to the live view", %{conn: conn, task: task} do
       html = conn |> get(~p"/tasks/#{task.id}") |> html_response(200)
 
-      assert html =~ "engineer_diff_loading"
+      assert html =~ "diff_loading"
       refute html =~ "diff_file_section"
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert has_element?(view, "[data-qa='diff_file_section']", "shipped.ex")
-      refute has_element?(view, "[data-qa='engineer_diff_loading']")
+      refute has_element?(view, "[data-qa='diff_loading']")
     end
 
     # The header's buttons should not jump when the diff lands.
@@ -3660,7 +3668,7 @@ defmodule RailWeb.TaskLiveTest do
 
       # Against the branch wide.ex is one whole new file; the two edits to it only
       # read as two hunks with a gap between them once it is already committed.
-      view |> element("#diff-filter-uncommitted") |> render_click()
+      view |> with_target("#diff-view") |> render_click("pick_commit", %{"commit" => "uncommitted"})
       assert has_element?(view, "[data-qa='diff_gap_row']")
 
       view |> element("[data-qa='diff_gap_row']") |> render_click()
@@ -3785,7 +3793,7 @@ defmodule RailWeb.TaskLiveTest do
       File.write!(Path.join(repo, "tracked.txt"), "two\nthree\n")
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      stage = with_target(view, "#engineer-stage")
+      stage = with_target(view, "#diff-view")
 
       render_click(stage, "open_diff_comment", %{
         "path" => "shipped.ex",
@@ -3810,7 +3818,7 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#diff-file-tracked-txt [data-qa='diff_comment']", "Not sent")
       refute has_element?(view, "[data-qa='diff_comment_form']")
 
-      view |> element("#diff-filter-uncommitted") |> render_click()
+      view |> with_target("#diff-view") |> render_click("pick_commit", %{"commit" => "uncommitted"})
 
       render_click(stage, "open_diff_comment", %{
         "path" => "tracked.txt",
@@ -3835,7 +3843,7 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       view
-      |> with_target("#engineer-stage")
+      |> with_target("#diff-view")
       |> render_click("open_diff_comment", %{
         "path" => "shipped.ex",
         "kind" => "added",
@@ -3898,7 +3906,7 @@ defmodule RailWeb.TaskLiveTest do
 
       # A resolve forged from the teammate's page changes nothing.
       theirs
-      |> with_target("#engineer-stage")
+      |> with_target("#diff-view")
       |> render_click("resolve_diff_comment", %{"id" => id, "resolved" => "true"})
 
       assert [%{status: :sent}, %{status: :unsent}] = Pipeline.list_diff_comments(scope, task)
@@ -3983,7 +3991,7 @@ defmodule RailWeb.TaskLiveTest do
       assert_receive {:turn, _first_round}, 5_000
 
       view
-      |> with_target("#engineer-stage")
+      |> with_target("#diff-view")
       |> render_click("open_diff_comment", %{
         "path" => "shipped.ex",
         "kind" => "added",
@@ -4094,13 +4102,13 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#send-diff-comments", "Send 1 comment")
 
       # A click from a page drawn before the removal names a comment that is gone.
-      view |> with_target("#engineer-stage") |> render_click("remove_diff_comment", %{"id" => dropped.id})
+      view |> with_target("#diff-view") |> render_click("remove_diff_comment", %{"id" => dropped.id})
 
       view |> element("[data-qa='diff_comment_remove'][phx-value-id='#{kept.id}']") |> render_click()
       refute has_element?(view, "[data-qa='diff_comment']")
       refute has_element?(view, "#send-diff-comments")
 
-      view |> with_target("#engineer-stage") |> render_click("send_diff_comments", %{})
+      view |> with_target("#diff-view") |> render_click("send_diff_comments", %{})
       refute has_element?(view, "#engineer-error")
       assert Pipeline.list_run_events(run) == []
     end
@@ -4126,7 +4134,7 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       view |> element("#send-diff-comments") |> render_click()
 
-      assert has_element?(view, "#engineer-error", "The engineer has no conversation to send these to yet.")
+      assert has_element?(view, "#diff-error", "The engineer has no conversation to send these to yet.")
       assert has_element?(view, "[data-qa='diff_comment']", "Not sent")
       refute has_element?(view, "[data-qa='diff_comment']", "Sent")
       assert has_element?(view, "#send-diff-comments", "Send 1 comment")
@@ -4137,7 +4145,7 @@ defmodule RailWeb.TaskLiveTest do
 
     test "the comment being written can be put away, and is not saved blank", %{conn: conn, task: task} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      stage = with_target(view, "#engineer-stage")
+      stage = with_target(view, "#diff-view")
       open = %{"path" => "shipped.ex", "kind" => "added", "old_line" => "", "new_line" => "1"}
 
       render_click(stage, "open_diff_comment", open)
@@ -4162,8 +4170,8 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "[data-qa='diff_comment']")
 
       render_click(stage, "open_diff_comment", open)
-      view |> element("#diff-filter-uncommitted") |> render_click()
-      view |> element("#diff-filter-branch") |> render_click()
+      view |> with_target("#diff-view") |> render_click("pick_commit", %{"commit" => "uncommitted"})
+      view |> element("#diff-commit-option-branch") |> render_click()
       refute has_element?(view, "[data-qa='diff_comment_form']")
     end
 
@@ -4177,7 +4185,7 @@ defmodule RailWeb.TaskLiveTest do
       File.write!(Path.join(repo, "tracked.txt"), "two\nthree\n")
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      stage = with_target(view, "#engineer-stage")
+      stage = with_target(view, "#diff-view")
 
       render_click(stage, "open_diff_comment", %{
         "path" => "tracked.txt",
@@ -4213,7 +4221,7 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       view
-      |> with_target("#engineer-stage")
+      |> with_target("#diff-view")
       |> render_click("open_diff_comment", %{
         "path" => "shipped.ex",
         "kind" => "added",
@@ -4238,7 +4246,7 @@ defmodule RailWeb.TaskLiveTest do
       open = %{"path" => "shipped.ex", "kind" => "added", "old_line" => "", "new_line" => "1"}
 
       for body <- ["Written in the other tab.", "Thought better of it."] do
-        there |> with_target("#engineer-stage") |> render_click("open_diff_comment", open)
+        there |> with_target("#diff-view") |> render_click("open_diff_comment", open)
         there |> form("[data-qa='diff_comment_form']", %{"body" => body}) |> render_submit()
       end
 
@@ -4265,8 +4273,8 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(here, "#send-diff-comments")
 
       # This tab drew the comment before it was sent, so its Send and Remove are stale.
-      here |> with_target("#engineer-stage") |> render_click("send_diff_comments", %{})
-      here |> with_target("#engineer-stage") |> render_click("remove_diff_comment", %{"id" => dropped.id})
+      here |> with_target("#diff-view") |> render_click("send_diff_comments", %{})
+      here |> with_target("#diff-view") |> render_click("remove_diff_comment", %{"id" => dropped.id})
       refute has_element?(here, "#engineer-error")
       assert [%{status: :sent}] = Pipeline.list_diff_comments(scope, task)
     end
@@ -4305,7 +4313,7 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(there, "#diff-comment-#{id}[aria-expanded='false']", "Resolved")
 
       # A second click from a tab drawn before the first is a harmless repeat.
-      there |> with_target("#engineer-stage") |> render_click("resolve_diff_comment", %{"id" => id, "resolved" => "true"})
+      there |> with_target("#diff-view") |> render_click("resolve_diff_comment", %{"id" => id, "resolved" => "true"})
       assert has_element?(there, "#diff-comment-#{id}[aria-expanded='false']")
 
       here |> element("#diff-comment-#{id}") |> render_click()
@@ -4392,10 +4400,10 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#diff-comment-#{id} [data-qa='diff_comment_remove']")
       refute has_element?(view, "#diff-comment-#{id} [data-qa='diff_comment_resolve']")
 
-      view |> with_target("#engineer-stage") |> render_click("resolve_diff_comment", %{"id" => id, "resolved" => "true"})
+      view |> with_target("#diff-view") |> render_click("resolve_diff_comment", %{"id" => id, "resolved" => "true"})
 
       view
-      |> with_target("#engineer-stage")
+      |> with_target("#diff-view")
       |> render_click("resolve_diff_comment", %{"id" => "dcm_gone", "resolved" => "true"})
 
       assert has_element?(view, "#diff-comment-#{id}", "Not sent")
@@ -4442,7 +4450,7 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#diff-comment-#{id} [data-qa='diff_comment_resolve']")
 
       # A row from a page drawn before the comment went is a jump to nowhere.
-      view |> with_target("#engineer-stage") |> render_click("select_diff_comment", %{"id" => "dcm_gone"})
+      view |> with_target("#diff-view") |> render_click("select_diff_comment", %{"id" => "dcm_gone"})
 
       view |> element("#diff-list-files") |> render_click()
       assert has_element?(view, "[data-qa='diff-file-row']", "shipped.ex")
@@ -5052,12 +5060,10 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='review_finding_detail']", "Nil is not handled")
     end
 
-    # A finding names a line; the change it points at lives on the engineer's tab,
-    # so the pane shows the one hunk and links to that file in the whole diff.
-    test "a finding shows the change it points at and opens that file in the Engineer tab's diff", %{
+    # A finding names a line, so the pane shows the one hunk and opens the commit it was raised in, at that file.
+    test "a finding shows the change it points at and opens its commit in the Diff item at that file", %{
       conn: conn,
       task: task,
-      engineer_role: engineer_role,
       code: code
     } do
       File.mkdir_p!(Path.join(task.worktree_path, "lib/rail"))
@@ -5086,15 +5092,15 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='finding_diff']", "lib/rail/example.ex")
       assert has_element?(view, "[data-qa='diff_line_row']", "the line the finding points at")
 
-      assert has_element?(
-               view,
-               ~s(#finding-open-in-diff[href="/tasks/#{task.id}?tab=#{engineer_role.id}&file=lib%2Frail%2Fexample.ex"]),
-               "Open in diff"
-             )
+      short = task.worktree_path |> git!(["rev-parse", "--short", "HEAD"]) |> String.trim()
+      assert has_element?(view, "#finding-open-in-diff", "Open #{short} in Diff")
 
       view |> element("#finding-open-in-diff") |> render_click()
 
-      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{engineer_role.id}&file=#{"lib/rail/example.ex"}")
+      assert has_element?(view, "#review-pane[data-item='diff']")
+      assert has_element?(view, "#diff-commit-picker", short)
+      assert has_element?(view, "#diff-scroller[data-scroll-to='lib/rail/example.ex']")
+      assert has_element?(view, "[data-qa='diff_file_section'][data-path='lib/rail/example.ex']")
     end
 
     # Only a window around the line the finding names is shown, so the pane has

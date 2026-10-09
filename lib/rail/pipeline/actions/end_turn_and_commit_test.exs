@@ -741,6 +741,82 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
                %Run{id: run_id} |> Pipeline.list_run_events() |> Enum.map(& &1.line) |> Enum.filter(&(&1 =~ "Round 2"))
     end
 
+    # Right after Rail merges main in, the lead follows main's changes through before the next round.
+    test "right after a merge, a Merge follow-up fixes no finding and commits every file with its reason", %{
+      task: task,
+      lead_run: %Run{id: run_id},
+      repo: repo,
+      lead_process: lead_process
+    } do
+      git!(repo, ["checkout", "-b", "landed"])
+      File.write!(Path.join(repo, "landed.ex"), "on main\n")
+      git!(repo, ["add", "."])
+      git!(repo, ["commit", "-m", "landed on main"])
+      git!(repo, ["checkout", "main"])
+      git!(repo, ["merge", "--no-ff", "--no-edit", "landed"])
+      File.write!(Path.join(repo, "renamed.ex"), "follows main's rename\n")
+
+      stub(Tools, :stop_os_process, fn _scope, _os_process, _opts -> {:ok, lead_process} end)
+      expect(Git, :push_branch, fn _scope, _task -> :ok end)
+      expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      follow_up = %{
+        "message" => "Follow main's rename through",
+        "merge_follow_up" => true,
+        "other_files" => [%{"path" => "renamed.ex", "reason" => "Main renamed the module it calls."}]
+      }
+
+      assert {:ok, :committing} = Pipeline.end_turn_and_commit(task, lead_process, follow_up)
+      assert_receive {:run_changed, ^run_id}, 5_000
+
+      assert git!(repo, ["log", "-1", "--pretty=%B"]) =~
+               ~r/\AFollow main's rename through\n.*Rail-Step: Merge follow-up\n/s
+
+      assert [%Finding{key: "nil-crash", status: :open, fixed_in: nil}] = Pipeline.list_findings(task)
+
+      assert ["[rail] renamed.ex changed in merge follow-up: Main renamed the module it calls."] =
+               %Run{id: run_id} |> Pipeline.list_run_events() |> Enum.map(& &1.line) |> Enum.filter(&(&1 =~ "renamed.ex"))
+    end
+
+    test "a Merge follow-up is refused with no merge to follow, with findings, or with a file it does not explain", %{
+      project: project,
+      task: task,
+      repo: repo,
+      lead_process: lead_process,
+      round: round
+    } do
+      reject(Tools, :stop_os_process, 3)
+      follow_up = %{"message" => "Follow main through", "merge_follow_up" => true}
+
+      assert {:refused, "Refused, nothing committed. `merge_follow_up` is only for right after a merge" <> _rest} =
+               Pipeline.end_turn_and_commit(task, lead_process, follow_up)
+
+      git!(repo, ["checkout", "-b", "landed"])
+      git!(repo, ["commit", "--allow-empty", "-m", "landed on main"])
+      git!(repo, ["checkout", "main"])
+      git!(repo, ["merge", "--no-ff", "--no-edit", "landed"])
+      File.write!(Path.join(repo, "renamed.ex"), "follows main\n")
+
+      assert {:refused, "Refused, nothing committed. a merge follow-up fixes no findings." <> _rest} =
+               Pipeline.end_turn_and_commit(task, lead_process, Map.put(follow_up, "findings", round["findings"]))
+
+      assert {:refused, "Refused, nothing committed. renamed.ex changed, and no place, test or reason" <> _rest} =
+               Pipeline.end_turn_and_commit(task, lead_process, follow_up)
+
+      # A follow-up CI has not passed yet is corrected as a follow-up, and one CI passed is done with.
+      git!(repo, ["add", "."])
+      git!(repo, ["commit", "-m", "Follow main through\n\nRail-Step: Merge follow-up"])
+      File.write!(Path.join(repo, "renamed.ex"), "follows main, fixed\n")
+
+      assert {:refused, "Refused, nothing committed. `merge_follow_up` is only for right after a merge" <> _rest} =
+               Pipeline.end_turn_and_commit(task, lead_process, follow_up)
+
+      {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+
+      assert {:refused, "Refused, nothing committed. a merge follow-up fixes no findings." <> _rest} =
+               Pipeline.end_turn_and_commit(task, lead_process, Map.put(follow_up, "findings", round["findings"]))
+    end
+
     # The migration leaves a finding with no file or screen without places, and it is still fixed by one.
     test "a Fix finding with no places is committed, its note naming none", %{
       task: task,

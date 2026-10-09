@@ -1,18 +1,21 @@
 defmodule RailWeb.Components.ReviewStatus do
   @moduledoc """
   What the Findings item shows above the list while the Review run works or waits: a round running, a fix
-  round, CI on the fix commit with the end of its log, the next round, CI failed three times, or nothing
-  left to rule, with each agent at work and the work it was given.
+  round, CI on the fix commit with the end of its log, the next round, CI failed three times, a merge of
+  the default branch with the conflicts being resolved and the follow-through to come, or nothing left to
+  rule, with each agent at work and the work it was given.
   """
   use RailWeb, :html
 
-  attr :phase, :atom, required: true, doc: "`:round`, `:fixing`, `:ci`, `:ci_failed` or `:finished`"
+  attr :phase, :atom, required: true, doc: "`:round`, `:fixing`, `:ci`, `:ci_failed`, `:merging` or `:finished`"
   attr :round, :integer, required: true, doc: "the round running, or the last one finished"
   attr :sha, :string, default: nil, doc: "the short commit CI or the round is on"
   attr :counts, :map, required: true, doc: "`%{fix:, fixed:, dismissed:}`"
   attr :agents, :list, default: [], doc: "`%{name:, work:, running:}` for each subagent of the turn"
   attr :tail, :list, default: [], doc: "the end of the CI log"
   attr :pr_number, :integer, default: nil
+  attr :base, :string, default: "main", doc: "the default branch a merge brings in"
+  attr :conflicts, :list, default: [], doc: "the files a merge still has conflicted"
 
   def review_status(assigns) do
     assigns = assign(assigns, :said, said(assigns))
@@ -25,7 +28,7 @@ defmodule RailWeb.Components.ReviewStatus do
       class="shrink-0 px-4 py-3 space-y-2 border-b border-slate-200 dark:border-slate-700"
     >
       <p class={["flex items-center gap-2 text-[13.5px] font-semibold", tone(@phase)]}>
-        <span :if={@phase in [:round, :fixing, :ci]} class="relative flex size-2 shrink-0">
+        <span :if={@phase in [:round, :fixing, :ci, :merging]} class="relative flex size-2 shrink-0">
           <span class="absolute inline-flex size-full rounded-full bg-blue-400 opacity-75 motion-safe:animate-ping" />
           <span class="relative inline-flex size-2 rounded-full bg-blue-500" />
         </span>
@@ -101,6 +104,17 @@ defmodule RailWeb.Components.ReviewStatus do
      "The Review lead stopped. Read the log, then message the lead: it can run CI again with nothing changed."}
   end
 
+  defp said(%{phase: :merging, conflicts: []} = assigns) do
+    {"Merging origin/#{assigns.base} into the branch",
+     "Main's changes are followed through once it is in, then the next round re-reviews."}
+  end
+
+  defp said(%{phase: :merging} = assigns) do
+    {"Merging origin/#{assigns.base} into the branch",
+     "Resolving #{plural(length(assigns.conflicts), "conflict")} in #{Enum.join(Enum.map(assigns.conflicts, &Path.basename/1), ", ")}. " <>
+       "Main's changes are followed through once it is in, then the next round re-reviews."}
+  end
+
   defp said(%{phase: :finished} = assigns) do
     pr = if assigns.pr_number, do: " PR ##{assigns.pr_number} is out of draft and ready to merge.", else: ""
 
@@ -129,7 +143,7 @@ defmodule RailWeb.Components.ReviewStatus do
   defp plural(1, word), do: "1 #{word}"
   defp plural(count, word), do: "#{count} #{word}s"
 
-  defp tone(phase) when phase in [:round, :fixing, :ci], do: "text-blue-600 dark:text-blue-400"
+  defp tone(phase) when phase in [:round, :fixing, :ci, :merging], do: "text-blue-600 dark:text-blue-400"
   defp tone(:ci_failed), do: "text-red-600 dark:text-red-400"
   defp tone(:finished), do: "text-emerald-600 dark:text-emerald-400"
 end

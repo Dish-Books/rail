@@ -26,9 +26,10 @@ defmodule Rail.Pipeline.Utils.UpdateBranchPass do
 
     case Git.merge_default_branch(scope, task) do
       :ok ->
-        say(run, "Merged origin/#{base} in.")
         {:ok, task} = task |> Task.changeset(%{is_updating_branch: false}) |> Repo.update()
-        moved? = not match?(%{head_sha: ^head_sha}, Git.branch_fingerprint(task.worktree_path))
+        fingerprint = Git.branch_fingerprint(task.worktree_path)
+        moved? = not match?(%{head_sha: ^head_sha}, fingerprint)
+        say(run, merged(base, moved?, fingerprint[:head_sha]))
         send_on(scope, %{run | task: task}, moved?)
 
       {:conflicts, files} ->
@@ -46,6 +47,9 @@ defmodule Rail.Pipeline.Utils.UpdateBranchPass do
   end
 
   defp say(%Run{id: run_id}, line), do: Pipeline.append_run_events(run_id, nil, ["[rail] #{line}"])
+
+  defp merged(base, true, merged) when is_binary(merged), do: "Merged origin/#{base} in as #{String.slice(merged, 0, 7)}."
+  defp merged(base, _moved?, _merged), do: "Merged origin/#{base} in."
 
   # A branch already up to date at Review has nothing new for a round to read.
   defp send_on(%Scope{}, %Run{role: %Role{stage: :review_lead}} = run, false), do: {:ok, run}

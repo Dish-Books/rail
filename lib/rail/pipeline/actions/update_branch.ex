@@ -5,12 +5,14 @@ defmodule Rail.Pipeline.Actions.UpdateBranch do
   Rail fetches and merges itself, on the run of the stage the task is at, and a
   merge that goes through cleanly needs nobody: it is sent on as any finished
   round is. Only one that stops on a conflict goes to that run's agent, because a
-  conflict is a question about the code. The task stays where it is.
+  conflict is a question about the code. The task stays where it is. At Review the
+  click is said in the lead's conversation, which the merge and the next round follow.
   """
 
   import Rail.Pipeline.Utils.UpdateBranchPass
 
   alias Rail.Git
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
@@ -28,6 +30,7 @@ defmodule Rail.Pipeline.Actions.UpdateBranch do
 
     with :ok <- updatable(task),
          {:ok, %Run{} = run} <- stage_run(task),
+         :ok <- say_click(scope, run),
          :ok <- Git.fetch_default_branch(project, task.worktree_path),
          {:ok, _run} <- update_branch_pass(scope, %{run | task: task}) do
       {:ok, Repo.reload!(task)}
@@ -53,6 +56,13 @@ defmodule Rail.Pipeline.Actions.UpdateBranch do
         :ok
     end
   end
+
+  defp say_click(%Scope{user: %{id: user_id}}, %Run{role: %Role{stage: :review_lead}} = run) do
+    _logged = Pipeline.append_run_events(run.id, nil, ["[human:#{user_id}] Update branch"])
+    :ok
+  end
+
+  defp say_click(%Scope{}, %Run{}), do: :ok
 
   # At Review the branch is the Review lead's; anywhere else it is still the engineer's.
   defp stage_run(%Task{} = task) do

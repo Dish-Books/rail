@@ -42,6 +42,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   import Rail.Mcp.Utils.RunToolSaveFinding
   import Rail.Mcp.Utils.RunToolSavePlan
   import Rail.Mcp.Utils.RunToolSaveReview
+  import Rail.Mcp.Utils.RunToolSaveScreen
   import Rail.Mcp.Utils.RunToolSaveSplit
   import Rail.Mcp.Utils.RunToolSaveTicket
   import Rail.Mcp.Utils.ToolAllowed
@@ -63,7 +64,8 @@ defmodule Rail.Mcp.Actions.CallRunTool do
     "request_merge",
     "save_finding",
     "save_review",
-    "save_demo"
+    "save_demo",
+    "save_screen"
   ]
 
   @doc """
@@ -220,6 +222,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp run("qa_plan", task, arguments, opts), do: run_tool_qa_plan(task, arguments, opts)
   defp run("qa_check", task, arguments, opts), do: run_tool_qa_check(task, arguments, opts)
   defp run("qa_shot", task, arguments, opts), do: run_tool_qa_shot(task, arguments, opts)
+  defp run("save_screen", task, arguments, opts), do: run_tool_save_screen(task, arguments, opts)
   defp run("demo_start", task, arguments, opts), do: run_tool_demo_start(task, arguments, opts)
   defp run("demo_say", task, arguments, opts), do: run_tool_demo_say(task, arguments, opts)
   defp run("save_ticket", task, arguments, opts), do: run_tool_save_ticket(task, arguments, opts)

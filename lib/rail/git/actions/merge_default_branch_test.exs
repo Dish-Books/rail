@@ -62,11 +62,16 @@ defmodule Rail.Git.Actions.MergeDefaultBranchTest do
     assert :ok = Git.merge_default_branch(system_scope(), task)
     assert Git.up_to_date_with?(repo, "main")
     assert git!(repo, ["log", "-1", "--format=%cn"]) == "Rail\n"
+    refute git!(repo, ["log", "-1", "--format=%B"]) =~ "Rail-Conflicts"
     # The branch's own commit is kept as it was, beneath the merge.
     assert git!(repo, ["rev-parse", "HEAD^1"]) == branch_commit
   end
 
-  test "stops on a conflict once, and carries on once it is resolved", %{remote: remote, repo: repo, task: task} do
+  test "stops on a conflict once, and carries on once it is resolved, counting it", %{
+    remote: remote,
+    repo: repo,
+    task: task
+  } do
     File.write!(Path.join(remote, "tracked.txt"), "theirs\n")
     git!(remote, ["commit", "-am", "upstream change"])
     File.write!(Path.join(repo, "tracked.txt"), "ours\n")
@@ -88,6 +93,7 @@ defmodule Rail.Git.Actions.MergeDefaultBranchTest do
     assert :ok = Git.merge_default_branch(system_scope(), task)
     refute Git.merge_in_progress?(repo)
     assert Git.up_to_date_with?(repo, "main")
+    assert git!(repo, ["log", "-1", "--format=%B"]) =~ ~r/\nRail-Conflicts: 1\n/
   end
 
   test "a merge git refuses for any other reason is abandoned and says why", %{repo: repo, task: task} do

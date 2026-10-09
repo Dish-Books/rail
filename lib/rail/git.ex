@@ -40,9 +40,13 @@ defmodule Rail.Git do
   defdelegate conflicted_files(worktree_path), to: Actions.ConflictedFiles
   defdelegate merge_default_branch(scope, task), to: Actions.MergeDefaultBranch
 
+  # `filter` is `:branch`, `:uncommitted`, or `{:commit, sha}` for one commit against its first parent.
   defdelegate load_diff(scope, task, filter \\ :branch, previous_files \\ []), to: Actions.LoadDiff
   defdelegate load_diff_hunk(scope, task, path, line \\ nil), to: Actions.LoadDiffHunk
-  defdelegate expand_diff_gap(task, path, gap_index, start_line, end_line), to: Actions.ExpandDiffGap
+
+  defdelegate expand_diff_gap(task, path, gap_index, start_line, end_line, revision \\ :worktree),
+    to: Actions.ExpandDiffGap
+
   defdelegate list_viewed_files(scope, task), to: Actions.ListViewedFiles
   defdelegate set_file_viewed(scope, task, path, digest, viewed), to: Actions.SetFileViewed
 end

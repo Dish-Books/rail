@@ -2,7 +2,8 @@ defmodule RailWeb.Components.DemoPlayer do
   @moduledoc """
   Review's Demo item: a header row saying what the demo was recorded on, then the video with its caption
   bar beneath it, never over it, and the walkthrough beside it. Each beat seeks the player to the moment
-  it was said, and one that proves an acceptance criterion quotes it.
+  it was said, and one that proves an acceptance criterion quotes it. A demo the branch has moved past
+  says so in slate above the video, with Re-record.
   """
   use RailWeb, :html
 
@@ -13,6 +14,9 @@ defmodule RailWeb.Components.DemoPlayer do
   attr :beats, :list, required: true
   attr :recorded, :boolean, required: true
   attr :recording, :boolean, required: true
+  attr :stale, :map, default: nil, doc: "`%{commit:, behind:}` when commits came after the recording"
+  attr :rerecordable, :boolean, default: false, doc: "the Review lead is idle and can be asked to record again"
+  attr :target, :any, default: nil
 
   def demo_player(assigns) do
     ~H"""
@@ -42,6 +46,46 @@ defmodule RailWeb.Components.DemoPlayer do
       <div :if={@recorded or @recording} class="p-5">
         <div class="flex flex-col @4xl:flex-row gap-4 min-h-0">
           <div :if={@recorded} id="demo-player" data-qa="demo_player" class="flex-1 min-w-0 space-y-3">
+            <div
+              :if={@stale && not @recording}
+              id="demo-stale"
+              data-qa="demo_stale"
+              class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/60 px-3 py-2"
+            >
+              <.icon
+                name="pi-clock-counter-clockwise"
+                class="size-4 shrink-0 text-slate-500 dark:text-slate-300"
+              />
+              <p class="min-w-0 flex-1 text-[12.5px] text-slate-700 dark:text-slate-200">
+                Recorded on <button
+                  type="button"
+                  phx-click="open_diff"
+                  phx-value-commit={@stale.commit}
+                  phx-target={@target}
+                  title={"Open #{String.slice(@stale.commit, 0, 7)} in Diff"}
+                  class="font-mono text-blue-600 dark:text-blue-400 hover:underline cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                >
+                  {String.slice(@stale.commit, 0, 7)}
+                </button>, {commits(
+                  @stale.behind
+                )} ago; may be out of date
+              </p>
+              <button
+                type="button"
+                id="demo-rerecord"
+                data-qa="demo_rerecord"
+                phx-click="record_demo"
+                phx-target={@target}
+                disabled={not @rerecordable}
+                title={
+                  if not @rerecordable, do: "The Review lead is working; Re-record once it stops"
+                }
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+              >
+                <.icon name="pi-record-fill" class="size-3.5 text-red-500" />Re-record
+              </button>
+            </div>
+
             <div :if={@demo} class="space-y-1.5">
               <h2
                 :if={@demo.title}
@@ -129,6 +173,9 @@ defmodule RailWeb.Components.DemoPlayer do
     </div>
     """
   end
+
+  defp commits(1), do: "1 commit"
+  defp commits(count), do: "#{count} commits"
 
   defp header(true, _recorded, _demo, [_one]), do: "Recording · 1 beat said so far"
   defp header(true, _recorded, _demo, beats), do: "Recording · #{length(beats)} beats said so far"

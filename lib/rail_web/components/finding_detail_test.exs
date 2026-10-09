@@ -47,7 +47,15 @@ defmodule RailWeb.Components.FindingDetailTest do
   end
 
   test "the code range says what it leaves out, and an attached log shows its text, commit, time and browser" do
-    hunk = %{display_path: "lib/a.ex", additions: 2, deletions: 1, rows: [], hidden_lines: 1, other_hunks: 2}
+    hunk = %{
+      path: "lib/a.ex",
+      display_path: "lib/a.ex",
+      additions: 2,
+      deletions: 1,
+      rows: [],
+      hidden_lines: 1,
+      other_hunks: 2
+    }
 
     log = %FindingEvidence{
       kind: :log,
@@ -63,18 +71,67 @@ defmodule RailWeb.Components.FindingDetailTest do
 
     doc =
       (&FindingDetail.finding_detail/1)
-      |> render_component([finding: @finding, hunk: hunk, diff_link: "/tasks/t?diff", filed: filed] ++ @attrs)
+      |> render_component([finding: @finding, hunk: hunk, filed: filed] ++ @attrs)
       |> Floki.parse_fragment!()
 
     assert "1 more line and 2 more other changes in this file." =
              doc |> Floki.find("[data-qa=finding_other_hunks]") |> Floki.text() |> String.trim()
 
-    assert [_link] = Floki.find(doc, "[data-qa=finding_open_in_diff]")
+    assert ["Open in Diff"] =
+             doc |> Floki.find("[data-qa=finding_open_in_diff]") |> Enum.map(&String.trim(Floki.text(&1)))
+
     assert "boom" = doc |> Floki.find("[data-qa=finding_evidence_text]") |> Floki.text()
     taken = doc |> Floki.find("[data-qa=finding_evidence_taken]") |> Floki.text()
     assert taken =~ "abcdef1"
     assert taken =~ "QA explorer 2"
     assert taken =~ "Open"
+  end
+
+  # Only a commit the branch still has has a view to open.
+  test "Raised in, Fixed in and Open in Diff open their commit in the Diff item at the finding's file" do
+    raised = String.duplicate("a", 40)
+    fixed = String.duplicate("b", 40)
+    gone = String.duplicate("c", 40)
+    finding = %{@finding | raised_in: raised, fixed_in: fixed}
+
+    hunk = %{
+      path: "lib/a.ex",
+      display_path: "lib/a.ex",
+      additions: 2,
+      deletions: 1,
+      rows: [],
+      hidden_lines: 0,
+      other_hunks: 0
+    }
+
+    labels = %{raised => "Engineer", fixed => "Fix round 1"}
+
+    doc =
+      (&FindingDetail.finding_detail/1)
+      |> render_component([finding: finding, hunk: hunk, labels: labels] ++ @attrs)
+      |> Floki.parse_fragment!()
+
+    assert [open] = Floki.find(doc, "[data-qa=finding_open_in_diff]")
+    assert Floki.text(open) =~ "Open aaaaaaa in Diff"
+    assert Floki.attribute(open, "phx-value-commit") == [raised]
+    assert Floki.attribute(open, "phx-value-file") == ["lib/a.ex"]
+
+    assert [raised_link] = Floki.find(doc, "[data-qa=finding_raised_in] [data-qa=finding_commit_link]")
+    assert [fixed_link] = Floki.find(doc, "[data-qa=finding_fixed_in] [data-qa=finding_commit_link]")
+    assert Floki.attribute(raised_link, "phx-click") == ["open_diff"]
+    assert Floki.attribute(raised_link, "phx-value-commit") == [raised]
+    assert Floki.attribute(fixed_link, "phx-value-commit") == [fixed]
+    assert Floki.attribute(fixed_link, "phx-value-file") == ["lib/a.ex"]
+    assert doc |> Floki.find("[data-qa=finding_fixed_in]") |> Floki.text() =~ "Fix round 1"
+
+    rebased =
+      (&FindingDetail.finding_detail/1)
+      |> render_component([finding: %{finding | raised_in: gone, fixed_in: nil}, hunk: hunk, labels: labels] ++ @attrs)
+      |> Floki.parse_fragment!()
+
+    assert [] = Floki.find(rebased, "[data-qa=finding_commit_link]")
+    assert rebased |> Floki.find("[data-qa=finding_raised_in]") |> Floki.text() =~ "ccccccc"
+    assert [] = rebased |> Floki.find("[data-qa=finding_open_in_diff]") |> Floki.attribute("phx-value-commit")
   end
 
   test "a picked screenshot shows full size, and a PDF or other file shows its own icon and no text" do

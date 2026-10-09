@@ -1,7 +1,8 @@
 defmodule RailWeb.Components.DiffComment do
   @moduledoc """
-  One comment on a line of the diff: unsent, sent, or resolved and folded to one
-  line until the reader opens it. Only its author can remove, resolve or unresolve it.
+  One comment on a line of the diff: unsent, sending while Send is on its way, sent,
+  or resolved and folded to one line until the reader opens it. Only its author can
+  remove, resolve or unresolve it.
 
   A comment lifted off its line quotes the line as it read when it was written,
   because that quote is what the engineer is sent.
@@ -87,9 +88,18 @@ defmodule RailWeb.Components.DiffComment do
         </span>
         <span
           :if={@comment.status == :unsent}
-          class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0 bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300"
+          data-qa="diff_comment_unsent"
+          class="inline-flex group-[.phx-click-loading]/diff:hidden items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0 bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300"
         >
           Not sent
+        </span>
+        <%!-- Shown from the click on Send until its reply redraws the comment as Sent. --%>
+        <span
+          :if={@comment.status == :unsent}
+          data-qa="diff_comment_sending"
+          class="hidden group-[.phx-click-loading]/diff:inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 text-slate-600 dark:text-slate-300"
+        >
+          <.icon name="pi-circle-notch-bold" class="size-3 motion-safe:animate-spin" />Sending
         </span>
         <span
           :if={@comment.status == :sent}

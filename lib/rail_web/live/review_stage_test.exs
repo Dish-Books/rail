@@ -92,7 +92,7 @@ defmodule RailWeb.Live.ReviewStageTest do
     %{conn: log_in_user(conn, user), user: user, task: task, run: run, head: head, code: code, screen: screen}
   end
 
-  test "the rail shows Findings, Demo and Browser, each with its state as its title and the count still to rule", %{
+  test "the rail shows Findings, Diff, Screens, Demo and Browser, each with its state as its title", %{
     conn: conn,
     task: task,
     code: code,
@@ -106,8 +106,18 @@ defmodule RailWeb.Live.ReviewStageTest do
 
     assert has_element?(view, "#review-items #review-item-findings[aria-current=true][title='Findings: 2 to rule']")
     assert has_element?(view, "#review-item-findings [data-qa=review_item_badge]", "2")
+    assert has_element?(view, "#review-item-diff[title='Diff: No commits yet']")
+    assert has_element?(view, "#review-item-screens[title='Screens: No screens yet']")
     assert has_element?(view, "#review-item-demo[title='Demo: None recorded']")
     assert has_element?(view, "#review-item-browser[title='Browser: No browsers open']")
+
+    assert ["findings", "diff", "screens", "demo", "browser"] =
+             view
+             |> render()
+             |> Floki.parse_document!()
+             |> Floki.find("#review-items button")
+             |> Enum.flat_map(&Floki.attribute(&1, "phx-value-item"))
+
     assert has_element?(view, "#review-item-findings .sr-only", "2 to rule")
     assert has_element?(view, "#task-tabs [aria-selected=true]", "2")
   end
@@ -657,5 +667,301 @@ defmodule RailWeb.Live.ReviewStageTest do
     view |> element("#decide-fix-view-only-send") |> render_click()
 
     assert has_element?(view, "#review-error", "The review is finished, so its rulings are settled.")
+  end
+
+  describe "with the branch's commits" do
+    # The branch forked from origin/main at the first commit, then the engineer and a fix round each committed.
+    setup %{task: %{worktree_path: worktree}} do
+      git!(worktree, ["update-ref", "refs/remotes/origin/main", "HEAD"])
+      File.write!(Path.join(worktree, "a.ex"), "defmodule A do\nend\n")
+      git!(worktree, ["add", "."])
+      git!(worktree, ["commit", "-m", "Send comments as one round"])
+      engineer = worktree |> git!(["rev-parse", "HEAD"]) |> String.trim()
+      File.write!(Path.join(worktree, "b.ex"), "defmodule B do\nend\n")
+      git!(worktree, ["add", "."])
+      git!(worktree, ["commit", "-m", "Fix 1 finding from round 1\n\nRail-Step: Fix round 1"])
+      fix = worktree |> git!(["rev-parse", "HEAD"]) |> String.trim()
+
+      %{engineer: engineer, fix: fix}
+    end
+
+    test "the Diff item counts the commits and lines, and opens on the whole branch", %{conn: conn, task: task} do
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#review-item-diff[title='Diff: 2 commits · +4 -0']")
+
+      view |> element("#review-item-diff") |> render_click()
+
+      assert has_element?(view, "#review-pane[data-item=diff] #diff-commit-picker", "Whole branch")
+      assert has_element?(view, "[data-qa='diff_file_section'][data-path='a.ex']")
+      assert has_element?(view, "[data-qa='diff_file_section'][data-path='b.ex']")
+    end
+
+    test "Raised in, Fixed in and Open in Diff open their commit in the Diff item at the finding's file", %{
+      conn: conn,
+      task: task,
+      code: code,
+      engineer: engineer,
+      fix: fix
+    } do
+      {:ok, finding} = Pipeline.save_finding(task, Map.put(%{code | file: "a.ex", line: 1}, :key, "view-only-send"))
+      {:ok, _fixed} = finding |> Ecto.Changeset.change(fixed_in: engineer) |> Repo.update()
+      {:ok, _pass} = Pipeline.save_review(task)
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("[data-qa=finding_raised_in] [data-qa=finding_commit_link]") |> render_click()
+
+      assert has_element?(view, "#review-pane[data-item=diff] #diff-commit-picker", String.slice(fix, 0, 7))
+      assert has_element?(view, "#diff-scroller[data-scroll-to='a.ex']")
+      assert has_element?(view, "[data-qa='diff_file_section'][data-path='b.ex']")
+      refute has_element?(view, "[data-qa='diff_file_section'][data-path='a.ex']")
+
+      view |> element("#review-item-findings") |> render_click()
+      view |> element("[data-qa=finding_fixed_in] [data-qa=finding_commit_link]") |> render_click()
+
+      assert has_element?(view, "#diff-commit-picker", "Engineer")
+      assert has_element?(view, "[data-qa='diff_file_section'][data-path='a.ex']")
+      refute has_element?(view, "[data-qa='diff_file_section'][data-path='b.ex']")
+
+      # A commit the branch does not have, after a rebase say, opens the whole branch.
+      view |> with_target("#review-stage") |> render_click("open_diff", %{"commit" => String.duplicate("0", 40)})
+
+      assert has_element?(view, "#diff-commit-picker", "Whole branch")
+    end
+
+    test "the Screens item sets each state's latest shot beside an earlier commit's, with the findings citing it", %{
+      conn: conn,
+      task: %{worktree_path: worktree} = task,
+      screen: screen,
+      fix: fix
+    } do
+      folder = Path.join([task.scratch_path, "qa", "screens", "file-list-after-send"])
+      File.mkdir_p!(folder)
+      File.write!(Path.join(folder, "1.jpg"), "first")
+
+      {:ok, _first} =
+        Pipeline.save_screen(task, %{
+          key: "file-list-after-send",
+          label: "File list",
+          file: "screens/file-list-after-send/1.jpg"
+        })
+
+      git!(worktree, ["commit", "--allow-empty", "-m", "Fix round 2\n\nRail-Step: Fix round 2"])
+      latest = worktree |> git!(["rev-parse", "HEAD"]) |> String.trim()
+      File.write!(Path.join(folder, "2.jpg"), "second")
+
+      {:ok, _second} =
+        Pipeline.save_screen(task, %{
+          key: "file-list-after-send",
+          label: "File list just after Send",
+          file: "screens/file-list-after-send/2.jpg"
+        })
+
+      {:ok, _cited} =
+        Pipeline.save_finding(
+          task,
+          screen
+          |> Map.put(:key, "send-twice")
+          |> Map.put(:evidence, [%{name: "The list", kind: :screenshot, path: "screens/file-list-after-send/2.jpg"}])
+        )
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#review-item-screens[title='Screens: 1 screen · on #{String.slice(latest, 0, 7)}']")
+
+      view |> element("#review-item-screens") |> render_click()
+
+      assert has_element?(view, "[data-qa=review_screens_count]", "1")
+      assert has_element?(view, "[data-qa=review_screens_on]", "latest taken on #{String.slice(latest, 0, 7)}")
+      assert has_element?(view, "#screen-file-list-after-send", "File list just after Send")
+      assert has_element?(view, "#screen-file-list-after-send", "Fix round 2")
+      assert has_element?(view, "#screen-file-list-after-send", "1 earlier")
+
+      assert has_element?(
+               view,
+               "#screen-file-list-after-send img[src='/tasks/#{task.id}/screens/file-list-after-send/1']"
+             )
+
+      view |> element("#screen-file-list-after-send") |> render_click()
+
+      assert has_element?(view, "[data-qa=screen_latest] img[src$='/screens/file-list-after-send/1']")
+      assert has_element?(view, "[data-qa=screen_earlier] img[src$='/screens/file-list-after-send/0']")
+      assert has_element?(view, "[data-qa=screen_earlier] option[selected]", "#{String.slice(fix, 0, 7)} Fix round 1")
+      assert has_element?(view, "[data-qa=screen_latest]", "Fix round 2")
+
+      view |> form("#screen-earlier-form", %{"index" => "0"}) |> render_change()
+      assert has_element?(view, "[data-qa=screen_earlier] img[src$='/screens/file-list-after-send/0']")
+
+      view |> element("[data-qa=screen_finding]", "Send stays enabled") |> render_click()
+      assert has_element?(view, "#review-pane[data-item=findings]")
+      assert has_element?(view, "[data-qa=review_finding_detail]", "Send stays enabled")
+
+      # The state opened stays open to come back to, until it is closed.
+      view |> element("#review-item-screens") |> render_click()
+      assert has_element?(view, "[data-qa=screen_open]", "File list just after Send")
+      view |> element("#screen-close") |> render_click()
+      refute has_element?(view, "[data-qa=screen_open]")
+      assert has_element?(view, "#screen-file-list-after-send")
+    end
+
+    test "with no screens the Screens item says so, and a state a stale page names opens nothing", %{
+      conn: conn,
+      task: task
+    } do
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#review-item-screens") |> render_click()
+
+      assert has_element?(view, "[data-qa=review_screens_count]", "0")
+      assert has_element?(view, "[data-qa=review_screens_none]", "No screens yet.")
+      refute has_element?(view, "[data-qa=review_screens_on]")
+
+      view |> with_target("#review-stage") |> render_click("open_screen", %{"key" => "gone"})
+
+      assert has_element?(view, "[data-qa=review_screens_none]")
+    end
+
+    # Its worktree cleaned up, the branch has nothing on disk left to diff.
+    test "the Diff item of a task whose worktree is gone says nothing has changed", %{conn: conn, task: task} do
+      {:ok, _gone} = Pipeline.update_task(task, %{worktree_path: "/tmp/gone_#{System.unique_integer([:positive])}"})
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#review-item-diff") |> render_click()
+
+      assert has_element?(view, "[data-qa=diff_empty_state]", "Nothing has been changed on this branch yet.")
+    end
+
+    test "a state shot once opens with nothing earlier beside it", %{conn: conn, task: task} do
+      folder = Path.join([task.scratch_path, "qa", "screens", "toolbar"])
+      File.mkdir_p!(folder)
+      File.write!(Path.join(folder, "1.jpg"), "only")
+      {:ok, _only} = Pipeline.save_screen(task, %{key: "toolbar", label: "Toolbar", file: "screens/toolbar/1.jpg"})
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#review-item-screens") |> render_click()
+      view |> element("#screen-toolbar") |> render_click()
+
+      refute has_element?(view, "[data-qa=screen_earlier]")
+      assert has_element?(view, "[data-qa=screen_open]", "No earlier shot")
+    end
+
+    test "a demo the branch has moved past says so in slate with Re-record, and the rail marks it", %{
+      conn: conn,
+      task: task,
+      run: run,
+      engineer: engineer,
+      fix: fix
+    } do
+      demo_dir = Path.join(task.scratch_path, "demo")
+      File.mkdir_p!(demo_dir)
+      File.write!(Path.join(demo_dir, "demo.webm"), "webm")
+
+      File.write!(
+        Path.join(demo_dir, "RST-1.json"),
+        Jason.encode!(%{title: "Filters", summary: "It filters.", commit: engineer})
+      )
+
+      short = String.slice(engineer, 0, 7)
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#review-item-demo[title='Demo: Recorded on #{short}, 1 commit ago; may be out of date']")
+      assert has_element?(view, "#review-item-demo [data-qa=review_item_stale]")
+
+      view |> element("#review-item-demo") |> render_click()
+
+      assert has_element?(view, "#demo-stale button", short)
+      assert has_element?(view, "#demo-stale", "1 commit ago; may be out of date")
+      expect(Pipeline, :record_demo, fn _scope, _task -> {:ok, :sent, run} end)
+      view |> element("#demo-rerecord") |> render_click()
+      refute has_element?(view, "#review-error")
+
+      expect(Pipeline, :record_demo, fn _scope, _task -> {:error, :stage_running} end)
+      view |> element("#demo-rerecord") |> render_click()
+      assert has_element?(view, "#review-error", "Something is still running on this task.")
+
+      view |> element("#demo-stale button", short) |> render_click()
+      assert has_element?(view, "#review-pane[data-item=diff] #diff-commit-picker", "Engineer")
+
+      File.write!(
+        Path.join(demo_dir, "RST-1.json"),
+        Jason.encode!(%{title: "Filters", summary: "It filters.", commit: fix})
+      )
+
+      {:ok, latest, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(latest, "#review-item-demo[title='Demo: Recorded on #{String.slice(fix, 0, 7)}']")
+      refute has_element?(latest, "#review-item-demo [data-qa=review_item_stale]")
+      latest |> element("#review-item-demo") |> render_click()
+      refute has_element?(latest, "#demo-stale")
+    end
+
+    test "a demo two commits behind counts them, and a Re-record Review cannot take says why", %{
+      conn: conn,
+      task: %{worktree_path: worktree} = task,
+      engineer: engineer
+    } do
+      demo_dir = Path.join(task.scratch_path, "demo")
+      File.mkdir_p!(demo_dir)
+      File.write!(Path.join(demo_dir, "demo.webm"), "webm")
+
+      File.write!(
+        Path.join(demo_dir, "RST-1.json"),
+        Jason.encode!(%{title: "Filters", summary: "It filters.", commit: engineer})
+      )
+
+      git!(worktree, ["commit", "--allow-empty", "-m", "later"])
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#review-item-demo") |> render_click()
+
+      assert has_element?(view, "#demo-stale", "2 commits ago; may be out of date")
+
+      for {reason, said} <- [
+            no_stage_run: "Review has no run to ask yet.",
+            chat_unavailable: "The Review lead has no conversation to ask yet."
+          ] do
+        expect(Pipeline, :record_demo, fn _scope, _task -> {:error, reason} end)
+        view |> element("#demo-rerecord") |> render_click()
+
+        assert has_element?(view, "#review-error", said)
+      end
+    end
+
+    test "Re-record waits while the Review lead works", %{conn: conn, task: task, run: run, engineer: engineer} do
+      demo_dir = Path.join(task.scratch_path, "demo")
+      File.mkdir_p!(demo_dir)
+      File.write!(Path.join(demo_dir, "demo.webm"), "webm")
+
+      File.write!(
+        Path.join(demo_dir, "RST-1.json"),
+        Jason.encode!(%{title: "Filters", summary: "It filters.", commit: engineer})
+      )
+
+      {:ok, _working} = Pipeline.update_run(run, %{status: :running})
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#review-item-demo") |> render_click()
+
+      assert has_element?(view, "#demo-rerecord[disabled]")
+    end
+
+    test "a merge of main in progress says what it is resolving, and the Diff item that it is merging", %{
+      conn: conn,
+      task: task,
+      run: run
+    } do
+      {:ok, _merging} = Pipeline.update_task(task, %{is_updating_branch: true})
+      {:ok, _working} = Pipeline.update_run(run, %{status: :running})
+      stub(Rail.Git, :conflicted_files, fn _path -> ["lib/rail/pipeline/schemas/diff_comment.ex"] end)
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#review-status[data-phase=merging]", "Merging origin/main into the branch")
+      assert has_element?(view, "#review-status", "Resolving 1 conflict in diff_comment.ex.")
+      assert has_element?(view, "#review-item-findings[title='Findings: Merge of main running']")
+      assert has_element?(view, "#review-item-diff[title='Diff: Merging origin/main'] [data-qa=review_item_running]")
+      refute has_element?(view, "#start-fix-round")
+    end
   end
 end

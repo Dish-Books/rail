@@ -46,22 +46,23 @@ body {
 }
 
 /* Busy controls. Unlayered so Tailwind's utility text colors can't un-hide the label.
-   The 250ms animation-delay keeps replies that come back quickly from flashing a spinner. */
+   The 250ms animation-delay keeps replies that come back quickly from flashing a spinner.
+   An element marked data-busy-self draws its own busy state. */
 .phx-click-loading,
 .phx-submit-loading {
   cursor: progress;
 }
 
-:is(button.phx-click-loading, button[type="submit"].phx-submit-loading):not([phx-disable-with], [role="tab"]) {
+:is(button.phx-click-loading, button[type="submit"].phx-submit-loading):not([phx-disable-with], [role="tab"], [data-busy-self]) {
   position: relative;
   animation: busy-label 0s 250ms forwards;
 }
 
-:is(button.phx-click-loading, button[type="submit"].phx-submit-loading):not([phx-disable-with], [role="tab"]) > * {
+:is(button.phx-click-loading, button[type="submit"].phx-submit-loading):not([phx-disable-with], [role="tab"], [data-busy-self]) > * {
   animation: busy-hide 0s 250ms forwards;
 }
 
-:is(button.phx-click-loading, button[type="submit"].phx-submit-loading):not([phx-disable-with], [role="tab"])::after {
+:is(button.phx-click-loading, button[type="submit"].phx-submit-loading):not([phx-disable-with], [role="tab"], [data-busy-self])::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -75,12 +76,12 @@ body {
   animation: busy-reveal 0s 250ms forwards, busy-spin 1s linear 250ms infinite;
 }
 
-.phx-click-loading:not(button) {
+.phx-click-loading:not(button, [data-busy-self]) {
   animation: busy-dim 0s 250ms forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :is(button.phx-click-loading, button[type="submit"].phx-submit-loading):not([phx-disable-with], [role="tab"])::after {
+  :is(button.phx-click-loading, button[type="submit"].phx-submit-loading):not([phx-disable-with], [role="tab"], [data-busy-self])::after {
     animation: busy-reveal 0s 250ms forwards;
   }
 }

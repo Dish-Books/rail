@@ -1,10 +1,12 @@
 defmodule RailWeb.Live.ReviewStage do
   @moduledoc """
-  Review, read the way Plan lists its own items: a slim rail of Findings, Demo and Browser beside the
-  picked item's pane. Findings is the list beside one finding, with what the run is doing above them while
-  it works or waits; ruling moves on to the next finding, and Start fix round, or Finish review, is the
-  list's footer. Demo plays the latest recording with its walkthrough, and Browser watches any tab the
-  explorers and the demo recorder have open.
+  Review, read the way Plan lists its own items: a slim rail of Findings, Diff, Screens, Demo and Browser
+  beside the picked item's pane. Findings is the list beside one finding, with what the run is doing above
+  them while it works or waits; ruling moves on to the next finding, and Start fix round, or Finish review,
+  is the list's footer. Diff is the branch, or one commit of it, which a finding's commits open. Screens
+  sets each screen state's latest shot beside an earlier one, Demo plays the latest recording with its
+  walkthrough and says when the branch has moved past it, and Browser watches any tab the explorers and
+  the demo recorder have open.
   """
   use RailWeb, :live_component
 
@@ -18,6 +20,7 @@ defmodule RailWeb.Live.ReviewStage do
   alias Rail.Pipeline.Turn
   alias Rail.Tools
   alias Rail.Users
+  alias RailWeb.Live.DiffView
 
   @double_click_ms 400
 
@@ -32,6 +35,10 @@ defmodule RailWeb.Live.ReviewStage do
       |> assign_new(:advanced_to, fn -> nil end)
       |> assign_new(:filed_index, fn -> 0 end)
       |> assign_new(:browser, fn -> nil end)
+      |> assign_new(:diff_open, fn -> nil end)
+      |> assign_new(:diff_file, fn -> nil end)
+      |> assign_new(:screen_open, fn -> nil end)
+      |> assign_new(:screen_earlier, fn -> nil end)
       |> load()
 
     {:ok, socket}
@@ -65,7 +72,10 @@ defmodule RailWeb.Live.ReviewStage do
 
             <div id="review-pane" data-item={@item} class="flex-1 min-w-0 min-h-0 flex flex-col">
               <.review_status
-                :if={@item == :findings and @phase in [:round, :fixing, :ci, :ci_failed, :finished]}
+                :if={
+                  @item == :findings and
+                    @phase in [:round, :fixing, :ci, :ci_failed, :finished, :merging]
+                }
                 phase={@phase}
                 round={@round}
                 sha={@sha}
@@ -73,6 +83,8 @@ defmodule RailWeb.Live.ReviewStage do
                 agents={@agents}
                 tail={@tail}
                 pr_number={@task.pr_number}
+                base={@task.project.default_branch}
+                conflicts={@conflicts}
               />
 
               <div :if={@item == :findings} class="@container flex-1 min-h-0">
@@ -90,10 +102,11 @@ defmodule RailWeb.Live.ReviewStage do
                     finding={@selected}
                     position={@position}
                     count={length(@findings)}
-                    decidable={@approvable and @phase not in [:round, :fixing, :ci, :finished]}
+                    decidable={
+                      @approvable and @phase not in [:round, :fixing, :ci, :finished, :merging]
+                    }
                     running={@phase == :round}
                     hunk={@hunk}
-                    diff_link={diff_link(@task, @engineer_tab, @hunk)}
                     filed={@filed}
                     filed_index={@filed_index}
                     labels={@labels}
@@ -116,6 +129,29 @@ defmodule RailWeb.Live.ReviewStage do
                 </div>
               </div>
 
+              <div :if={@item == :diff} class="flex-1 min-w-0 min-h-0">
+                <.live_component
+                  module={DiffView}
+                  id="diff-view"
+                  task={@task}
+                  run={@run}
+                  agent="Review lead"
+                  current_scope={@current_scope}
+                  focus_file={@diff_file}
+                  open={@diff_open}
+                />
+              </div>
+
+              <.screen_compare
+                :if={@item == :screens}
+                task_id={@task.id}
+                screens={@screens}
+                labels={@labels}
+                open={@screen_open}
+                earlier={@screen_earlier}
+                target={@myself}
+              />
+
               <.demo_player
                 :if={@item == :demo}
                 task={@task}
@@ -123,6 +159,9 @@ defmodule RailWeb.Live.ReviewStage do
                 beats={@beats}
                 recorded={@recorded}
                 recording={@recording}
+                stale={@stale}
+                rerecordable={@approvable and not Run.running?(@run)}
+                target={@myself}
               />
 
               <.browser_picker
@@ -147,6 +186,57 @@ defmodule RailWeb.Live.ReviewStage do
   def handle_event("pick_item", %{"item" => item}, socket) do
     socket = socket |> assign(:item, item(item)) |> load()
     {:noreply, socket}
+  end
+
+  # A finding's commit opens in the Diff item at the finding's file; none is the whole branch.
+  def handle_event("open_diff", params, socket) do
+    socket =
+      socket
+      |> assign(:item, :diff)
+      |> assign(:diff_open, %{commit: params["commit"], at: System.unique_integer([:positive])})
+      |> assign(:diff_file, params["file"])
+      |> load()
+
+    {:noreply, socket}
+  end
+
+  # The earlier shot set beside the latest starts as the one just before it.
+  def handle_event("open_screen", %{"key" => key}, socket) do
+    earlier =
+      case Enum.find(socket.assigns.screens, &(&1.key == key)) do
+        %{shots: [_one]} -> nil
+        %{shots: shots} -> length(shots) - 2
+        nil -> nil
+      end
+
+    socket = socket |> assign(:screen_open, key) |> assign(:screen_earlier, earlier)
+    {:noreply, socket}
+  end
+
+  def handle_event("pick_earlier", %{"index" => index}, socket) do
+    socket = assign(socket, :screen_earlier, String.to_integer(index))
+    {:noreply, socket}
+  end
+
+  def handle_event("close_screen", _params, socket) do
+    socket = socket |> assign(:screen_open, nil) |> assign(:screen_earlier, nil)
+    {:noreply, socket}
+  end
+
+  def handle_event("open_finding", %{"key" => key}, socket) do
+    socket = socket |> assign(:item, :findings) |> assign(:selected_key, key) |> assign(:filed_index, 0) |> load()
+    {:noreply, socket}
+  end
+
+  def handle_event("record_demo", _params, socket) do
+    case Pipeline.record_demo(socket.assigns.current_scope, socket.assigns.task) do
+      {:ok, _sent, _run} ->
+        send(self(), :task_changed)
+        {:noreply, assign(socket, :error, nil)}
+
+      {:error, reason} ->
+        {:noreply, assign(socket, :error, message_for(reason))}
+    end
   end
 
   def handle_event("pick_browser", %{"name" => name}, socket) do
@@ -224,10 +314,13 @@ defmodule RailWeb.Live.ReviewStage do
     |> assign(:sha, ci_sha(ci))
     |> assign(:counts, counts)
     |> assign(:tail, if(ci, do: ci.tail, else: []))
-    |> assign(:agents, if(socket.assigns.item == :findings and phase in [:round, :fixing], do: agents(run), else: []))
+    |> assign(
+      :agents,
+      if(socket.assigns.item == :findings and phase in [:round, :fixing, :merging], do: agents(run), else: [])
+    )
     |> assign(:tally, tally(phase, counts, findings, passes))
     |> assign(:button, button(phase, counts, passes, socket.assigns.approvable))
-    |> assign(:demo, Pipeline.read_demo(task))
+    |> assign_branch(phase)
     |> assign(:beats, beats)
     |> assign(:recorded, Task.demo_recorded?(task))
     |> assign(:recording, recording)
@@ -237,6 +330,20 @@ defmodule RailWeb.Live.ReviewStage do
     |> assign_items()
     |> assign_selected(selected, findings)
     |> watch(browser)
+  end
+
+  # The branch's commits label each finding's and screen's commit, count the Diff item and date the demo.
+  defp assign_branch(%{assigns: %{task: task}} = socket, phase) do
+    history = Git.load_branch_history(task)
+    demo = Pipeline.read_demo(task)
+
+    socket
+    |> assign(:demo, demo)
+    |> assign(:history, history)
+    |> assign(:labels, Map.new(history.commits, &{&1.sha, &1.label}))
+    |> assign(:conflicts, if(phase == :merging, do: Git.conflicted_files(task.worktree_path), else: []))
+    |> assign(:screens, Pipeline.list_screens(task))
+    |> assign(:stale, stale(demo, history))
   end
 
   # The page holds the subscription a frame arrives on, so it is told which browser is being watched.
@@ -254,7 +361,6 @@ defmodule RailWeb.Live.ReviewStage do
     |> assign(:neighbours, %{previous: nil, next: nil})
     |> assign(:hunk, nil)
     |> assign(:filed, [])
-    |> assign(:labels, %{})
     |> assign(:names, %{})
     |> assign(:suppressor, nil)
   end
@@ -273,7 +379,6 @@ defmodule RailWeb.Live.ReviewStage do
     })
     |> assign(:hunk, if(open?, do: hunk(socket, selected)))
     |> assign(:filed, if(open?, do: filed(socket, selected), else: []))
-    |> assign(:labels, if(open?, do: labels(socket.assigns.task), else: %{}))
     |> assign(:names, if(open?, do: names(socket, selected), else: %{}))
     |> assign(:suppressor, if(open?, do: suppressor(selected)))
   end
@@ -287,14 +392,36 @@ defmodule RailWeb.Live.ReviewStage do
       icon: "pi-list-checks",
       picked_icon: "pi-list-checks-fill",
       state: findings_state(phase, counts, socket.assigns),
-      badge: if(phase not in [:round, :fixing, :ci] and counts.undecided > 0, do: counts.undecided),
-      dot: if(phase in [:round, :fixing, :ci], do: :running),
+      badge: if(phase not in [:round, :fixing, :ci, :merging] and counts.undecided > 0, do: counts.undecided),
+      dot: if(phase in [:round, :fixing, :ci, :merging], do: :running),
       mark:
         cond do
           phase == :finished -> :done
           phase == :ci_failed -> :failed
           true -> nil
         end
+    }
+
+    diff = %{
+      key: :diff,
+      label: "Diff",
+      icon: "pi-git-diff",
+      picked_icon: "pi-git-diff-fill",
+      state: diff_state(phase, socket.assigns),
+      badge: nil,
+      dot: if(phase == :merging, do: :running),
+      mark: nil
+    }
+
+    screens = %{
+      key: :screens,
+      label: "Screens",
+      icon: "pi-images",
+      picked_icon: "pi-images-fill",
+      state: screens_state(socket.assigns.screens),
+      badge: nil,
+      dot: nil,
+      mark: nil
     }
 
     demo = %{
@@ -305,7 +432,7 @@ defmodule RailWeb.Live.ReviewStage do
       state: demo_state(socket.assigns),
       badge: nil,
       dot: if(socket.assigns.recording, do: :recording),
-      mark: nil
+      mark: if(socket.assigns.stale && not socket.assigns.recording, do: :stale)
     }
 
     browser = %{
@@ -324,13 +451,14 @@ defmodule RailWeb.Live.ReviewStage do
       mark: nil
     }
 
-    assign(socket, :items, [findings, demo, browser])
+    assign(socket, :items, [findings, diff, screens, demo, browser])
   end
 
   # What the run is doing, read off the run, its CI and the passes it saved. A run working with a Fix
   # finding the last pass read and nothing committed since is fixing; any other working run is a round.
   defp phase(%Run{} = run, %Task{} = task, passes, findings, ci) do
     cond do
+      task.is_updating_branch -> :merging
       match?(%{state: :running}, ci) -> :ci
       Run.running?(run) and fixing?(task, passes, findings) -> :fixing
       Run.running?(run) -> :round
@@ -363,7 +491,7 @@ defmodule RailWeb.Live.ReviewStage do
   defp tally(:round, counts, _findings, passes),
     do: "#{counts.total} so far · rule once round #{length(passes) + 1} finishes"
 
-  defp tally(phase, counts, _findings, _passes) when phase in [:fixing, :ci],
+  defp tally(phase, counts, _findings, _passes) when phase in [:fixing, :ci, :merging],
     do: said([{counts.fix, "fixing"}, {counts.fixed, "fixed"}, {counts.dismissed, "not fixing"}])
 
   defp tally(_phase, %{total: 0}, _findings, _passes), do: "No findings"
@@ -389,7 +517,7 @@ defmodule RailWeb.Live.ReviewStage do
     %{label: "Start fix round #{round}", icon: "pi-wrench", disabled: true, title: "Round #{round} is still running"}
   end
 
-  defp button(phase, _counts, _passes, _approvable) when phase in [:fixing, :ci, :finished], do: nil
+  defp button(phase, _counts, _passes, _approvable) when phase in [:fixing, :ci, :finished, :merging], do: nil
   defp button(_phase, _counts, [], _approvable), do: nil
   defp button(_phase, _counts, _passes, false), do: nil
 
@@ -417,6 +545,7 @@ defmodule RailWeb.Live.ReviewStage do
   defp findings_state(:ci, _counts, %{sha: sha}), do: "CI running" <> if(sha, do: " on #{sha}", else: "")
   defp findings_state(:ci_failed, _counts, %{sha: sha}), do: "CI failed" <> if(sha, do: " on #{sha}", else: "")
   defp findings_state(:finished, _counts, _assigns), do: "Nothing left to rule"
+  defp findings_state(:merging, _counts, _assigns), do: "Merge of main running"
 
   defp findings_state(:ruling, counts, _assigns) do
     case said([{counts.undecided, "to rule"}, {counts.fix, "to fix"}]) do
@@ -425,8 +554,24 @@ defmodule RailWeb.Live.ReviewStage do
     end
   end
 
+  defp diff_state(:merging, %{task: task}), do: "Merging origin/#{task.project.default_branch}"
+  defp diff_state(_phase, %{history: %{commits: []}}), do: "No commits yet"
+
+  defp diff_state(_phase, %{history: history}),
+    do: "#{plural(length(history.commits), "commit")} · +#{history.additions} -#{history.deletions}"
+
+  defp screens_state([]), do: "No screens yet"
+
+  defp screens_state(screens) do
+    latest = screens |> Enum.map(&List.last(&1.shots)) |> Enum.max_by(& &1.taken_at, DateTime)
+    on = if latest.commit, do: " · on #{String.slice(latest.commit, 0, 7)}", else: ""
+    "#{plural(length(screens), "screen")}#{on}"
+  end
+
   defp demo_state(%{recording: true, beats: [_one]}), do: "Recording · 1 beat said so far"
   defp demo_state(%{recording: true, beats: beats}), do: "Recording · #{length(beats)} beats said so far"
+
+  defp demo_state(%{recorded: true, stale: %{} = stale}), do: stale_text(stale)
 
   defp demo_state(%{recorded: true, demo: %{commit: commit}}) when is_binary(commit),
     do: "Recorded on #{String.slice(commit, 0, 7)}"
@@ -492,6 +637,22 @@ defmodule RailWeb.Live.ReviewStage do
     %{name: name, work: work, running: status == :running}
   end
 
+  # How many of the branch's commits came after the one the demo was recorded on, counted when the tab draws.
+  defp stale(%{commit: commit}, %{commits: commits}) when is_binary(commit) do
+    case Enum.find_index(commits, &(&1.sha == commit)) do
+      behind when is_integer(behind) and behind > 0 -> %{commit: commit, behind: behind}
+      _latest_or_unknown -> nil
+    end
+  end
+
+  defp stale(_demo, _history), do: nil
+
+  defp stale_text(%{commit: commit, behind: behind}),
+    do: "Recorded on #{String.slice(commit, 0, 7)}, #{plural(behind, "commit")} ago; may be out of date"
+
+  defp plural(1, word), do: "1 #{word}"
+  defp plural(count, word), do: "#{count} #{word}s"
+
   defp ci_sha(%{os_process: %{head_sha: sha}}) when is_binary(sha), do: String.slice(sha, 0, 7)
   defp ci_sha(_no_ci), do: nil
 
@@ -532,8 +693,6 @@ defmodule RailWeb.Live.ReviewStage do
     end
   end
 
-  defp labels(%Task{} = task), do: task |> Git.load_branch_history() |> Map.new(&{&1.sha, &1.label})
-
   defp names(socket, %Finding{notes: notes}) do
     case for(%{by_id: id} <- notes, is_binary(id), uniq: true, do: id) do
       [] ->
@@ -563,13 +722,8 @@ defmodule RailWeb.Live.ReviewStage do
   defp double_click?({key, at}, key), do: System.monotonic_time(:millisecond) - at < @double_click_ms
   defp double_click?(_advanced_to, _key), do: false
 
-  # Only once the engineer has a tab to land on, and only for a file the branch actually changed.
-  defp diff_link(%Task{} = task, engineer_tab, %{path: path}) when is_binary(engineer_tab) do
-    ~p"/tasks/#{task.id}?tab=#{engineer_tab}&file=#{path}"
-  end
-
-  defp diff_link(_task, _no_tab, _no_hunk), do: nil
-
+  defp item("diff"), do: :diff
+  defp item("screens"), do: :screens
   defp item("demo"), do: :demo
   defp item("browser"), do: :browser
   defp item(_findings), do: :findings
@@ -578,6 +732,8 @@ defmodule RailWeb.Live.ReviewStage do
   defp decision("skip"), do: :skip
 
   defp message_for(:stage_running), do: "Something is still running on this task."
+  defp message_for(:no_stage_run), do: "Review has no run to ask yet."
+  defp message_for(:chat_unavailable), do: "The Review lead has no conversation to ask yet."
   defp message_for({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not Review."
   defp message_for(:findings_undecided), do: "Some findings have no ruling yet. Rule on every one first."
   defp message_for(:nothing_to_start), do: "There is nothing left to start: the review is finished."

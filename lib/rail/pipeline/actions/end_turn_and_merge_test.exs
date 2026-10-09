@@ -217,4 +217,63 @@ defmodule Rail.Pipeline.Actions.EndTurnAndMergeTest do
 
     assert {:error, "no network"} = Pipeline.end_turn_and_merge(task, os_process)
   end
+
+  # At Review the branch is the Review lead's, so its request merges main in there.
+  describe "the Review lead's request" do
+    setup %{project: project, task: task, run: engineer_run} do
+      {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
+      # The engineer handed its work on before the task reached Review.
+      {:ok, _handed_on} = Pipeline.update_run(engineer_run, %{status: :finished, stage_outcome: :done})
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review, pr_number: 3})
+
+      {:ok, lead_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: lead.id,
+          status: :running,
+          conversation_id: "sess_end_turn_merge_lead",
+          started_at: DateTime.utc_now()
+        })
+
+      {:ok, lead_process} =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: lead_run.id,
+          task_id: task.id,
+          stream_path: "/tmp/end_turn_merge/#{lead_run.id}.ndjson",
+          status: :running,
+          started_at: DateTime.utc_now()
+        })
+        |> Repo.insert()
+
+      Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{lead_run.id}")
+
+      %{task: task, lead_run: lead_run, lead_process: lead_process}
+    end
+
+    test "stops the lead's turn and merges main in on its run, and the task stays at Review", %{
+      task: task,
+      lead_run: %Run{id: lead_run_id},
+      lead_process: lead_process
+    } do
+      stub(Tools, :stop_os_process, fn _scope, _os_process, _opts -> {:ok, lead_process} end)
+      stub(Git, :fetch_default_branch, fn _project, _path -> :ok end)
+      expect(Git, :up_to_date_with?, fn _path, "main" -> false end)
+      expect(Git, :merge_default_branch, fn _scope, _task -> {:conflicts, ["lib/a.ex"]} end)
+      expect(Tools, :start_os_process, fn %Run{id: ^lead_run_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      assert {:ok, :merging} = Pipeline.end_turn_and_merge(task, lead_process)
+      assert_receive {:run_changed, ^lead_run_id}, 5_000
+
+      assert %Task{stage: :review, is_updating_branch: true} = Repo.reload!(task)
+    end
+
+    test "is refused once the task is not at Review", %{task: task, lead_process: lead_process} do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
+      reject(Tools, :stop_os_process, 3)
+
+      assert {:refused, "Refused, nothing merged. The task is at Engineer, not Review" <> _rest} =
+               Pipeline.end_turn_and_merge(task, lead_process)
+    end
+  end
 end

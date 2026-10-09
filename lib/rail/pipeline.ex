@@ -71,6 +71,9 @@ defmodule Rail.Pipeline do
 
   defdelegate save_demo(task, attrs), to: Actions.SaveDemo
   defdelegate list_demo_beats(task), to: Actions.ListDemoBeats
+  defdelegate record_demo(scope, task), to: Actions.RecordDemo
+  defdelegate save_screen(task, attrs), to: Actions.SaveScreen
+  defdelegate list_screens(task), to: Actions.ListScreens
 
   defdelegate start_task(issue, stage), to: Actions.StartTask
   defdelegate create_task(issue, stage), to: Actions.CreateTask

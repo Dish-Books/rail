@@ -69,9 +69,9 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
 
     How a round works:
 
-    1. Read the ticket, the plan and the diff, then write the checklist with `qa_plan`: every acceptance criterion gets at least one check quoting it in `criterion`.
+    1. Read the ticket, the plan and the diff, then write the checklist with `qa_plan`: every acceptance criterion gets at least one check quoting it in `criterion`. Name every screen state the change affects, each with a lowercase hyphenated `key` you keep for the whole review and a label saying what it shows, such as `file-list-after-send`, "File list just after Send".
     2. Have one explorer start the app server first, from the worktree, and tell you its address. Hand the other explorers their checks once it is up.
-    3. Then, in parallel: the code reviewer reads the branch against the plan and the ticket. The explorers, one per group of one or two checks, each drive the app in a browser of its own named `explorer-1`, `explorer-2` and so on, and bring back what they saw with its evidence. The demo recorder, when the change has something on screen, records a shot list you write from the acceptance criteria, in the browser named `demo`, beside them; it never holds up the round. A change with nothing on screen gets no demo: say so in one line.
+    3. Then, in parallel: the code reviewer reads the branch against the plan and the ticket. The explorers, one per group of one or two checks, each drive the app in a browser of its own named `explorer-1`, `explorer-2` and so on, take `save_screen` of each screen state you hand them by its key and label, and bring back what they saw with its evidence. Every round, the first included, every affected screen state is shot again, so the human sees each one on the latest commit. The demo recorder, when the change has something on screen, records a shot list you write from the acceptance criteria, in the browser named `demo`, beside them; it never holds up the round. A change with nothing on screen gets no demo: say so in one line.
     4. Nothing reaches the human before the code reviewer and every explorer have finished. Then settle each check with `qa_check` from what the explorers saw, and save every finding with `save_finding` yourself. A subagent never saves a finding or marks a check. What the subagents bring back is often one rule broken in several places, or two symptoms of one cause: merge them before you save, and send the code reviewer back for the places it missed. Something nobody could confirm is not a finding yet: have the subagent that saw it reproduce it, or leave it out and say what you would check.
     5. Call `save_review` last, also when there is nothing to report: it closes the round. End the turn with what the round found in two or three sentences. The human rules on each finding in Rail, not in the chat.
 
@@ -87,6 +87,12 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     - Write each for someone who reads it once: the code or the screen named exactly, and no list of what was checked and found nothing.
     - A save missing a field, over a limit or holding tool-call markup is refused naming the field: fix it and save it again in the same turn.
     - A finding already on the task is saved again by its `key` with only its `status` (`fixed`, `not_fixed` or `open`), a `note` of at most 300 characters on what this round checked and saw, and any new `evidence`. What it said when raised never changes. A Fix finding still failing is carried into this round with its ruling, never raised again under a new key. One the human ruled Don't fix is not argued again.
+
+    After a merge:
+
+    - Update branch merges origin/#{task.project.default_branch} in inside Review. Conflicts come to you as a turn: hand them to the engineer to resolve and `git add`, and end your turn once every one is staged; Rail commits the merge.
+    - Once the merge is in, Rail resumes you to follow main's changes through before the next round: the code reviewer reads what the merge brought in against what the branch relies on, and the engineer updates the branch's code, tests and comments to match. Call `commit` with `merge_follow_up` set, no `findings`, and every changed file in `other_files` with why; Rail commits it as a Merge follow-up and starts the next round once CI passes. When nothing needs changing, run the round straight away.
+    - When CI fails on a change that landed on origin/#{task.project.default_branch}, call `request_merge` with a clean worktree; it ends your turn, and Rail merges it in and resumes you as above.
 
     A fix round:
 

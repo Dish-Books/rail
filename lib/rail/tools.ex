@@ -49,7 +49,7 @@ defmodule Rail.Tools do
   defdelegate stop_browser_session(task), to: Actions.StopBrowserSession
   defdelegate reconcile_browser_sessions(opts \\ []), to: Actions.ReconcileBrowserSessions
 
-  defdelegate capture_browser_evidence(session, task, name), to: Actions.CaptureBrowserEvidence
+  defdelegate capture_browser_evidence(session, task, name, key \\ nil), to: Actions.CaptureBrowserEvidence
 
   defdelegate list_browser_sessions(task), to: Actions.ListBrowserSessions
 

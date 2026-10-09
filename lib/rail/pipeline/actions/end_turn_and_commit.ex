@@ -1,7 +1,8 @@
 defmodule Rail.Pipeline.Actions.EndTurnAndCommit do
   @moduledoc """
   The `commit` tool, the engineer's and the Review lead's alike: ends the turn, then commits and sends the
-  work on. At Review it is a fix round, refused until it accounts for every Fix finding and changed file.
+  work on. At Review it is a fix round, refused until it accounts for every Fix finding and changed file, or
+  right after a merge of the default branch a Merge follow-up, which fixes no finding and explains every file.
   """
 
   import Rail.Pipeline.Utils.CiPassed
@@ -50,6 +51,9 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommit do
             "resolved file and end your turn without calling commit."
         )
 
+      role_stage == :review_lead and arguments["merge_follow_up"] == true ->
+        accept_follow_up(task, run, arguments)
+
       role_stage == :review_lead ->
         accept_round(task, run, arguments)
 
@@ -76,6 +80,40 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommit do
       commit(run, %{message: String.trim(arguments["message"]), fixes: fixes, other_files: others})
     end
   end
+
+  # Right after a merge, or correcting a follow-up CI has not passed, so a fix round is never relabeled.
+  defp accept_follow_up(%Task{} = task, %Run{} = run, arguments) do
+    others = entries(arguments["other_files"])
+    changed = if Task.worktree_present?(task), do: Git.list_changed_paths(task.worktree_path), else: []
+
+    with :ok <- check_after_merge(task),
+         :ok <- check_no_findings(entries(arguments["findings"])),
+         :ok <- check_others(others),
+         :ok <- check_changed(changed, ci_owed?(task), [], others) do
+      commit(run, %{message: String.trim(arguments["message"]), other_files: others, step: "Merge follow-up"})
+    end
+  end
+
+  defp check_after_merge(%Task{} = task) do
+    case Git.load_branch_history(task) do
+      %{commits: [%{merge?: true} | _earlier]} ->
+        :ok
+
+      %{commits: [%{label: "Merge follow-up"} | _earlier]} ->
+        if ci_owed?(task), do: :ok, else: not_after_merge()
+
+      %{} ->
+        not_after_merge()
+    end
+  end
+
+  defp not_after_merge,
+    do: refused("`merge_follow_up` is only for right after a merge of the default branch, and HEAD is not one.")
+
+  defp check_no_findings([]), do: :ok
+
+  defp check_no_findings(_listed),
+    do: refused("a merge follow-up fixes no findings. Leave `findings` out, and commit a fix round on its own.")
 
   # With nothing changed while CI has not passed on HEAD, committing is the agent asking for CI again,
   # however many failures ago a person's message reset the streak.

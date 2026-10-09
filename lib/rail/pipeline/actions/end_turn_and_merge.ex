@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.EndTurnAndMerge do
   @moduledoc """
-  The engineer's `request_merge`: ends the turn, since `update_branch/2` refuses a
-  busy task, then merges the default branch in as the Update branch button does.
+  `request_merge`, the engineer's at Engineer and the Review lead's at Review: ends the turn, since
+  `update_branch/2` refuses a busy task, then merges the default branch in as the Update branch button does.
   """
 
   import Rail.Pipeline.Utils.EndTurn
@@ -13,31 +13,35 @@ defmodule Rail.Pipeline.Actions.EndTurnAndMerge do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias Rail.Roles.Schemas.Role
   alias Rail.Scope
   alias Rail.Tools.Schemas.OsProcess
 
   @doc """
-  Ends `task`'s engineer turn, carried by `os_process`, and merges the default
+  Ends `task`'s turn, carried by `os_process`, and merges the default
   branch in: `{:ok, :merging}`, `{:refused, text}` with the turn still going or
   already ended, or `{:error, reason}` from the fetch.
   """
   def end_turn_and_merge(%Task{} = task, %OsProcess{} = os_process) do
     case with_live_turn(os_process, fn ->
-           task |> Repo.reload!() |> Repo.preload(:project) |> accept(Repo.get!(Run, os_process.run_id))
+           task
+           |> Repo.reload!()
+           |> Repo.preload(:project)
+           |> accept(Run |> Repo.get!(os_process.run_id) |> Repo.preload(:role))
          end) do
       :ended -> {:refused, "Refused, nothing merged again. This turn has already ended and handed the merge to Rail."}
       result -> result
     end
   end
 
-  defp accept(%Task{project: %Project{} = project} = task, %Run{} = run) do
+  defp accept(%Task{project: %Project{} = project} = task, %Run{role: %Role{stage: role_stage}} = run) do
     base = project.default_branch
 
     cond do
-      task.stage != :engineer ->
+      Task.role_stage(task.stage) != role_stage ->
         {:refused,
-         "Refused, nothing merged. The task is at #{Task.stage_label(task.stage)}, not Engineer, so its branch is not " <>
-           "updated from here."}
+         "Refused, nothing merged. The task is at #{Task.stage_label(task.stage)}, not #{owner(role_stage)}, so its " <>
+           "branch is not updated from here."}
 
       task.is_updating_branch or Git.merge_in_progress?(task.worktree_path) ->
         {:refused, "Refused, nothing merged. A merge is already under way on this branch."}
@@ -59,6 +63,9 @@ defmodule Rail.Pipeline.Actions.EndTurnAndMerge do
         end
     end
   end
+
+  defp owner(:review_lead), do: "Review"
+  defp owner(:engineer), do: "Engineer"
 
   defp merge(%Task{} = task) do
     case Pipeline.update_branch(Scope.for_system(), task) do

@@ -30,9 +30,10 @@ defmodule Rail.Mcp.Utils.McpTools do
   the task moves on.
 
   `@qa_tools` are about a pass rather than a page. `qa_plan` writes the checklist
-  before anything is opened, `qa_check` marks a row off as it is reached, and
-  `qa_shot` saves a picture for a finding to cite. None of the three opens a
-  browser of its own.
+  before anything is opened, `qa_check` marks a row off as it is reached,
+  `qa_shot` saves a picture for a finding to cite, and `save_screen` saves a
+  screen state's picture for HEAD's commit, retaken every round. None of them
+  opens a browser of its own.
 
   Every stage hands its output over through save tools of its own, checked when
   called. The Review lead's subagents inherit its tools, so the one register is
@@ -181,6 +182,30 @@ defmodule Rail.Mcp.Utils.McpTools do
           "browser" => @browser
         },
         "required" => ["name"]
+      }
+    },
+    %{
+      "name" => "save_screen",
+      "description" =>
+        "Photograph one screen state the lead named and save it as that state's image for HEAD's commit, which " <>
+          "the human compares round by round. Take it of the state as the change leaves it, under the same `key` " <>
+          "every round. Refused while the worktree has uncommitted changes. Returns the path, which a finding " <>
+          "can cite as evidence.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{
+          "key" => %{
+            "type" => "string",
+            "description" =>
+              "The state's name the lead gave you, lowercase letters, digits and dashes, the same every round."
+          },
+          "label" => %{
+            "type" => "string",
+            "description" => "What the state shows, as the human reads it, such as `File list just after Send`."
+          },
+          "browser" => @browser
+        },
+        "required" => ["key", "label"]
       }
     }
   ]
@@ -354,8 +379,9 @@ defmodule Rail.Mcp.Utils.McpTools do
         "you write after it is read, so write your summary for the human in the same message, before the " <>
         "call. At Review, list every finding ruled Fix in `findings` and every other changed file in " <>
         "`other_files`; it refuses a round that leaves a Fix finding out, lists one without a place or a test, " <>
-        "or holds a changed file nothing listed explains. After a CI failure that was not the change's to fix, " <>
-        "call it with nothing changed and CI runs again.",
+        "or holds a changed file nothing listed explains. Right after a merge of the default branch, set " <>
+        "`merge_follow_up` with no `findings` to commit the branch's updates to what main changed. After a CI " <>
+        "failure that was not the change's to fix, call it with nothing changed and CI runs again.",
     "inputSchema" => %{
       "type" => "object",
       "properties" => %{
@@ -401,6 +427,12 @@ defmodule Rail.Mcp.Utils.McpTools do
             "required" => ["key", "covered", "test"]
           }
         },
+        "merge_follow_up" => %{
+          "type" => "boolean",
+          "description" =>
+            "At Review, right after Rail merged the default branch in: this commit follows main's changes " <>
+              "through. List no findings, and every changed file in `other_files`."
+        },
         "other_files" => %{
           "type" => "array",
           "description" => "At Review: every other changed file, with the reason the human reads.",
@@ -415,7 +447,7 @@ defmodule Rail.Mcp.Utils.McpTools do
     }
   }
 
-  @engineer_tools [
+  @merge_tools [
     %{
       "name" => "request_merge",
       "description" =>
@@ -582,12 +614,13 @@ defmodule Rail.Mcp.Utils.McpTools do
   output over with, and the knowledge base for all.
   """
   def mcp_tools(%Role{stage: :plan}), do: @plan_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :engineer}), do: [@commit_tool | @engineer_tools] ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :engineer}), do: [@commit_tool | @merge_tools] ++ @knowledge_tools
 
   def mcp_tools(%Role{stage: :review_lead}),
     do:
       @browser_tools ++
-        @qa_tools ++ @demo_tools ++ @review_lead_tools ++ [@commit_tool | @demo_report_tools] ++ @knowledge_tools
+        @qa_tools ++
+        @demo_tools ++ @review_lead_tools ++ [@commit_tool | @merge_tools] ++ @demo_report_tools ++ @knowledge_tools
 
   def mcp_tools(%Role{}), do: @knowledge_tools
 end

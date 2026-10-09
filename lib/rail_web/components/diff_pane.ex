@@ -2,71 +2,55 @@ defmodule RailWeb.Components.DiffPane do
   @moduledoc """
   The diff, as a toolbar over a file list beside the changes themselves.
 
-  Everything it draws comes out of `Rail.Git.load_diff/4` ready to render, so
-  this decides nothing about the diff. Every event it raises goes to `@target`,
-  so the stage owning the diff decides what selecting, expanding, filtering and
-  marking read actually do. The one thing it works out for itself is which files
-  the reader's query leaves visible, because the counts in the toolbar are of the
-  whole diff either way.
-
-  The toolbar, the file list and each file are live components of their own,
-  because the browser redraws everything under whatever a patch touches. What
-  `RailWeb.Utils.CalculateDiffPane` returns is split the same way, so the stage
-  can send a part that moved to that part alone.
+  It draws the parts `RailWeb.Utils.CalculateDiffPane` worked out, so it decides
+  nothing about the diff. Every event it raises goes to `@target`, so the view
+  owning the diff decides what selecting, expanding, filtering and marking read
+  actually do. The toolbar, the file list and each file are live components of
+  their own, because the browser redraws everything under whatever a patch
+  touches, and each part is an attribute of its own so a change reaches only it.
+  Under 576px of its own width it leaves the file list out, as the Review tab's
+  Diff item is beside a narrow window's conversation.
   """
   use RailWeb, :html
 
-  import RailWeb.Utils.CalculateDiffPane
   import RailWeb.Utils.DiffFileName
 
   alias RailWeb.Live.DiffFile
   alias RailWeb.Live.DiffFileTree
   alias RailWeb.Live.DiffToolbar
 
-  attr :files, :list, default: []
-  attr :expanded_gaps, :map, default: %{}
-  attr :collapsed, :list, default: []
-  attr :selected_file, :string, default: nil
-  attr :show_file_tree, :boolean, default: true
-  attr :filter, :atom, default: :branch
-  attr :wrap, :atom, default: :scroll, doc: "the reader's Scroll or Wrap, which only the toolbar draws"
-  attr :query, :string, default: ""
-  attr :empty_message, :string, default: "Nothing has been changed on this branch yet."
-  attr :scroll_to, :string, default: nil
+  attr :frame, :map, required: true, doc: "what draws the pane whole: its sections, empty state and stray comments"
+  attr :toolbar, :map, required: true
+  attr :tree, :map, default: nil, doc: "the file list, `nil` while there are no files"
+  attr :sections, :list, required: true, doc: "each file's id with what its component draws"
+  attr :reader_id, :string, default: nil
   attr :target, :any, default: nil
 
-  attr :comments, :list,
-    default: [],
-    doc: "everyone's sent and resolved comments on this task, and the reader's unsent ones"
-
-  attr :reader_id, :string, default: nil
-  attr :open_comments, :list, default: [], doc: "ids of the resolved comments the reader has unfolded"
-  attr :comment_list, :atom, default: :files, doc: "which of files or comments the column beside the diff lists"
-  attr :selected_comment, :string, default: nil
-  attr :draft, :map, default: nil, doc: "the line a comment is being written on"
-  attr :engineer_running?, :boolean, default: false
-
   def diff_pane(assigns) do
-    assigns = assign(assigns, :pane, calculate_diff_pane(assigns))
-
     ~H"""
-    <div id="diff-pane" data-qa="diff-pane diff_pane" class="flex flex-col h-full">
-      <.live_component module={DiffToolbar} id="diff-toolbar" {@pane.toolbar} />
+    <%!-- Send marks the pane loading until its reply lands, which each unsent comment reads as Sending. --%>
+    <div
+      id="diff-pane"
+      data-qa="diff-pane diff_pane"
+      data-busy-self
+      class="@container group/diff flex flex-col h-full"
+    >
+      <.live_component module={DiffToolbar} id="diff-toolbar" {@toolbar} />
 
       <div
-        :if={@pane.frame.empty_message}
+        :if={@frame.empty_message}
         id="diff-empty-state"
         data-qa="diff_empty_state"
         class="flex-1 flex flex-col items-center justify-center text-center p-8"
       >
         <.icon name="pi-check-circle" class="w-12 h-12 text-emerald-600 mb-3" />
         <p class="text-sm font-medium text-slate-900 dark:text-slate-100">
-          {@pane.frame.empty_message}
+          {@frame.empty_message}
         </p>
 
-        <div :if={@pane.frame.stray != []} class="mt-6 w-full max-w-4xl space-y-3 text-left">
+        <div :if={@frame.stray != []} class="mt-6 w-full max-w-4xl space-y-3 text-left">
           <.stray_comments
-            :for={{path, comments} <- @pane.frame.stray}
+            :for={{path, comments} <- @frame.stray}
             name={diff_file_name(%{display_path: path})}
             comments={comments}
             reader_id={@reader_id}
@@ -75,8 +59,8 @@ defmodule RailWeb.Components.DiffPane do
         </div>
       </div>
 
-      <div :if={@pane.tree} class="flex-1 min-h-0 flex">
-        <.live_component module={DiffFileTree} id="diff-file-tree" {@pane.tree} />
+      <div :if={@tree} class="flex-1 min-h-0 flex">
+        <.live_component module={DiffFileTree} id="diff-file-tree" {@tree} />
 
         <div
           id="diff-row-list"
@@ -89,18 +73,18 @@ defmodule RailWeb.Components.DiffPane do
             class="flex-1 overflow-y-auto px-3 pb-3 space-y-3 selection:bg-blue-500/20"
             phx-hook="DiffScroller"
             id="diff-scroller"
-            data-scroll-to={@pane.frame.scroll_to}
+            data-scroll-to={@frame.scroll_to}
           >
             <p
-              :if={@pane.frame.no_match}
+              :if={@frame.no_match}
               data-qa="diff_no_match"
               class="py-10 text-center text-sm text-slate-500 dark:text-slate-400"
             >
-              No file here matches {@pane.frame.no_match}.
+              No file here matches {@frame.no_match}.
             </p>
 
             <.live_component
-              :for={{id, section} <- @pane.sections}
+              :for={{id, section} <- @sections}
               :key={id}
               module={DiffFile}
               id={id}
@@ -108,7 +92,7 @@ defmodule RailWeb.Components.DiffPane do
             />
 
             <.stray_comments
-              :for={{path, comments} <- @pane.frame.stray}
+              :for={{path, comments} <- @frame.stray}
               name={diff_file_name(%{display_path: path})}
               comments={comments}
               reader_id={@reader_id}

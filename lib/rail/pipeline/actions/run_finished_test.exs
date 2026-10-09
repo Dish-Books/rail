@@ -812,6 +812,44 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       assert [%{line: ^started}] = Pipeline.list_run_events(run)
     end
 
+    # A merge that went through can still leave the branch behind what main changed.
+    test "that passed on a merge of main resumes the lead to follow main's changes through first", %{
+      task: %{worktree_path: repo},
+      exited: exited
+    } do
+      git!(repo, ["checkout", "-b", "upstream"])
+      File.write!(Path.join(repo, "landed.ex"), "on main\n")
+      git!(repo, ["add", "."])
+      git!(repo, ["commit", "-m", "landed on main"])
+      git!(repo, ["update-ref", "refs/remotes/origin/main", "HEAD"])
+      git!(repo, ["checkout", "main"])
+      git!(repo, ["update-ref", "refs/remotes/origin/main", "upstream"])
+      git!(repo, ["checkout", "-b", "feature", "upstream~1"])
+      File.write!(Path.join(repo, "feature.ex"), "the branch\n")
+      git!(repo, ["add", "."])
+      git!(repo, ["commit", "-m", "the branch"])
+      git!(repo, ["merge", "--no-edit", "-m", "Merge origin/main\n\nRail-Conflicts: 2", "origin/main"])
+      merge = repo |> git!(["rev-parse", "--short=7", "HEAD"]) |> String.trim()
+      test_pid = self()
+
+      {%Run{id: run_id}, os_process} = exited.(:review_lead, %{review_on_ci_pass: true})
+      os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
+
+      expect(Git, :push_branch, fn _scope, _task -> :ok end)
+
+      expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, argv ->
+        send(test_pid, {:resumed, Enum.join(argv, "\n")})
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %Run{error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+      assert_received {:resumed, argv}
+      assert argv =~ "Rail merged origin/main into the branch as #{merge}, resolving 2 conflicts,"
+      assert argv =~ "Follow main's changes through before round 2"
+      assert argv =~ "`merge_follow_up`"
+      refute argv =~ "The branch has moved since round 1"
+    end
+
     # CI Rail ran on its own, such as Run CI from the diff, asked for no round.
     test "that passed on a commit that did not ask for review only pushes", %{task: task, exited: exited} do
       {run, os_process} = exited.(:review_lead, %{ci_failure_streak: 1, stage_outcome: :done})
@@ -973,7 +1011,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       assert {:ok, %Run{error: nil, stage_outcome: :in_progress}} = Pipeline.run_finished(os_process, %{exit_code: 0})
       assert %Task{stage: :review, is_updating_branch: false} = Repo.reload!(task)
 
-      assert ["[rail] Merged origin/main in.", "[rail] Round 2 started after it was pushed"] =
+      assert ["[rail] Merged origin/main in as " <> _merged, "[rail] Round 2 started after it was pushed"] =
                run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
     end
   end
