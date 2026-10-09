@@ -30,6 +30,7 @@ defmodule Rail.Triage.SlackSocketTest do
           Req.Test.json(conn, %{"ok" => true, "user" => %{"real_name" => "Priya"}})
 
         "/api/conversations.history" ->
+          send(test, :history_read)
           Req.Test.json(conn, %{"ok" => true, "messages" => Agent.get(history, & &1)})
       end
     end)
@@ -122,7 +123,13 @@ defmodule Rail.Triage.SlackSocketTest do
   } do
     assert %{status: :off, last_frame_at: nil} = Rail.Triage.get_slack_socket_status(workspace)
 
-    Req.Test.stub(Rail.Slack, &Req.Test.json(&1, %{"ok" => false, "error" => "not_allowed_token_type"}))
+    test = self()
+
+    Req.Test.stub(Rail.Slack, fn conn ->
+      send(test, :refused)
+      Req.Test.json(conn, %{"ok" => false, "error" => "not_allowed_token_type"})
+    end)
+
     # Pinging all the while, with no connection to ping.
     start_supervised!({SlackSocket, workspace: workspace, backoff: 10, ping_interval: 5})
 
@@ -130,12 +137,17 @@ defmodule Rail.Triage.SlackSocketTest do
       assert %{status: {:error, {:slack_error, "not_allowed_token_type"}}} =
                Rail.Triage.get_slack_socket_status(workspace)
     end)
+
+    # The retry is ten off and the first ping five, so by the second refusal it has pinged.
+    assert_receive :refused, @connect_timeout
+    assert_receive :refused, @connect_timeout
   end
 
   test "a connection that stops answering is reopened, and one that answers its pings is kept", %{workspace: workspace} do
-    start_supervised!({SlackSocket, workspace: workspace, backoff: 10, ping_interval: 20, idle_timeout: 100})
+    # Idle for a second, which a pong on a loaded machine does not take; a tenth of one, it did.
+    start_supervised!({SlackSocket, workspace: workspace, backoff: 10, ping_interval: 20, idle_timeout: 1_000})
     assert_receive {:fake_slack_connected, first}, @connect_timeout
-    refute_receive {:fake_slack_connected, _reopened}, 300
+    refute_receive {:fake_slack_connected, _reopened}, 1_500
 
     # Suspended, it reads nothing and closes nothing, which is all a dead connection looks like from here.
     :sys.suspend(first)
@@ -148,11 +160,17 @@ defmodule Rail.Triage.SlackSocketTest do
     workspace: workspace,
     channel: channel
   } do
-    start_supervised!({SlackSocket, workspace: workspace, backoff: 10, drain: 300})
+    start_supervised!({SlackSocket, workspace: workspace, backoff: 10, drain: 1_000})
     assert_receive {:fake_slack_connected, first}, @connect_timeout
 
     send(first, {:push, {:text, Jason.encode!(%{"type" => "disconnect", "reason" => "refresh_requested"})}})
-    assert_receive {:fake_slack_connected, _second}, @connect_timeout
+    assert_receive {:fake_slack_connected, second}, @connect_timeout
+
+    # Both connections are read at once, so each is sent something while the other is open - once
+    # the new one's upgrade is done, or it is read with the upgrade rather than alongside the old one.
+    eventually(fn -> assert %{status: :connected} = Rail.Triage.get_slack_socket_status(workspace) end)
+    send(second, {:push, {:text, Jason.encode!(%{"envelope_id" => "env-new", "type" => "slash_commands"})}})
+    assert_receive {:fake_slack_frame, ^second, %{"envelope_id" => "env-new"}}
 
     envelope = %{
       "envelope_id" => "env-late",
@@ -183,7 +201,11 @@ defmodule Rail.Triage.SlackSocketTest do
   } do
     start_supervised!({SlackSocket, workspace: workspace, backoff: 10, backfill_interval: 30, delivery_grace: 0})
     assert_receive {:fake_slack_connected, first}, @connect_timeout
-    eventually(fn -> assert %{status: :connected} = Rail.Triage.get_slack_socket_status(workspace) end)
+
+    # Posted once the interval has read as well as the backfill the connection opened with, or a
+    # slow first read could find it and leave the interval never run.
+    assert_receive :history_read, @connect_timeout
+    assert_receive :history_read, @connect_timeout
 
     ts = :erlang.float_to_binary(System.os_time(:microsecond) / 1_000_000, decimals: 6)
     Agent.update(history, fn _none -> [%{"type" => "message", "user" => "U_PRIYA", "text" => "Unheard", "ts" => ts}] end)

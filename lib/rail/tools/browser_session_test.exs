@@ -405,7 +405,10 @@ defmodule Rail.Tools.BrowserSessionTest do
 
     Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}")
     assert_receive {:browser_frame, _task_id, _data}, 10_000
-    assert "" <> _frame = BrowserSession.last_frame(session)
+
+    # Chrome keeps two frames in flight, so the one received can be the second,
+    # sent while the first ack was still held and before its next look found us.
+    eventually(fn -> assert "" <> _frame = BrowserSession.last_frame(session) end)
   end
 
   # The tab closed from under the session between its last frame and the
