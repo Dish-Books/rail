@@ -16,7 +16,11 @@ config :rail, Rail.Repo,
   port: String.to_integer(System.get_env("DB_PORT", "5432")),
   database: "rail_test#{System.get_env("DB_SUFFIX")}#{System.get_env("MIX_TEST_PARTITION")}",
   pool: Ecto.Adapters.SQL.Sandbox,
-  pool_size: System.schedulers_online() * 2
+  pool_size: System.schedulers_online() * 2,
+  # A test shares its one connection with its LiveViews, which reload on broadcasts from every other
+  # test; under load the default target dropped a reload that was only waiting its turn.
+  queue_target: 5_000,
+  queue_interval: 10_000
 
 config :rail, RailWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: String.to_integer(System.get_env("TEST_PORT", "4002"))],

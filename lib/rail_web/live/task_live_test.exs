@@ -692,6 +692,9 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which region?"})
       {:ok, third} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Who reviews it?"})
 
+      # A sent round resumes the conversation in the background, from the task's worktree.
+      stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+
       %{questions: [first, second, third]}
     end
 
@@ -712,7 +715,12 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "a replaced answer is the one that goes back", %{conn: conn, task: task, run: run} do
-      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      test = self()
+
+      expect(Tools, :start_os_process, fn spawned, _argv ->
+        send(test, :resumed)
+        {:ok, %OsProcess{run: spawned}}
+      end)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -728,6 +736,7 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='saved-answer']", "Sqlite")
 
       view |> element("#send-answers-button") |> render_click()
+      assert_receive :resumed
 
       lines = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
       assert lines =~ "The answer is: Sqlite"
@@ -780,7 +789,12 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "a sent round leaves the card", %{conn: conn, task: task, questions: questions} do
-      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      test = self()
+
+      expect(Tools, :start_os_process, fn spawned, _argv ->
+        send(test, :resumed)
+        {:ok, %OsProcess{run: spawned}}
+      end)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -788,6 +802,7 @@ defmodule RailWeb.TaskLiveTest do
       view |> form("#answer-question-form", %{"answer" => "eu-west-1"}) |> render_submit()
       view |> form("#answer-question-form", %{"answer" => "Sam"}) |> render_submit()
       view |> element("#send-answers-button") |> render_click()
+      assert_receive :resumed
 
       refute has_element?(view, "#answer-field-card")
 

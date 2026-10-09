@@ -102,8 +102,9 @@ defmodule Rail.Tools.Actions.StartCommandProcessTest do
              Tools.start_command_process(run, :ci, command)
 
     eventually(fn -> assert File.read(OsProcess.exit_path(os_process)) == {:ok, "1\n"} end, 10_000)
-    # mise names the missing install one of two ways, depending on its version.
-    assert File.read!(stream_path) =~ ~r/missing: erlang@0\.0\.0-rail|erlang@0\.0\.0-rail is not installed/
+    # mise's wording varies by version ("missing: …", "… is not installed"); the
+    # version it could not find is the part every one names.
+    assert File.read!(stream_path) =~ "erlang@0.0.0-rail"
   end
 
   test "is given a deadline as far off as its timeout, and the commit it runs against", %{run: run} do

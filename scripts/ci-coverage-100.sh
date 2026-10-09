@@ -10,13 +10,14 @@ if [[ ! -f $report ]]; then
   exit 1
 fi
 
-# A null entry is a line coverage does not count; 0 is a relevant line nothing ran.
+# A null entry is a line coverage does not count; 0 is a relevant line nothing ran. The line
+# numbers are printed because CI keeps no report: a miss that only happens there can't be rerun.
 uncovered=$(jq -r '
   [.source_files[]
-   | {name, missed: ([.coverage[] | select(. == 0)] | length)}
-   | select(.missed > 0)]
-  | sort_by(-.missed)[]
-  | "  \(.missed)\t\(.name)"
+   | {name, lines: ([.coverage | to_entries[] | select(.value == 0) | .key + 1])}
+   | select(.lines != [])]
+  | sort_by(-(.lines | length))[]
+  | "  \(.lines | length)\t\(.name)\t(lines \(.lines | map(tostring) | join(", ")))"
 ' "$report")
 
 if [[ -z $uncovered ]]; then
@@ -25,9 +26,7 @@ if [[ -z $uncovered ]]; then
 fi
 
 {
-  echo "$label: below 100% - uncovered lines by file (missed, file):"
+  echo "$label: below 100% - uncovered lines by file (missed, file, lines):"
   echo "$uncovered"
-  echo
-  echo "mix coveralls.detail --filter <file> shows which lines."
 } >&2
 exit 1
