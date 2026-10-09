@@ -5,6 +5,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Workers.AdvanceLinearState
   alias Rail.Issues.Workers.LinearSync
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline
@@ -107,6 +108,55 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
 
     # Pulling from Linear is not a change to push back to it.
     refute_enqueued(worker: SyncIssue)
+  end
+
+  test "an unowned issue the page gives an owner has its Linear status caught up, and no other does", %{
+    project: project
+  } do
+    {:ok, %{id: user_id} = user} =
+      Users.register_oauth_user(%{github_id: "gh_sync_owner", login: "sync_owner", email: "sync_owner@example.com"})
+
+    user |> Ecto.Changeset.change(linear_user_id: "lin_usr_sync_owner") |> Repo.update!()
+
+    [%Issue{id: unowned_id} = unowned, owned, left_alone] =
+      for {key, owner_user_id} <- [{"unowned", nil}, {"owned", user_id}, {"left_alone", nil}] do
+        %Issue{}
+        |> Issue.linear_changeset(%{
+          project_id: project.id,
+          external_id: "lin_sync_#{key}",
+          identifier: "SPO-#{key}",
+          title: "Issue #{key}",
+          state: :backlog,
+          owner_user_id: owner_user_id
+        })
+        |> Repo.insert!()
+      end
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      nodes =
+        for {issue, assignee} <- [
+              {unowned, %{"id" => "lin_usr_sync_owner"}},
+              {owned, %{"id" => "lin_usr_sync_owner"}},
+              {left_alone, nil}
+            ] do
+          %{
+            "id" => issue.external_id,
+            "identifier" => issue.identifier,
+            "title" => issue.title,
+            "assignee" => assignee,
+            "updatedAt" => "2026-10-08T15:00:00.250Z"
+          }
+        end
+
+      Req.Test.json(conn, %{
+        "data" => %{"issues" => %{"nodes" => nodes, "pageInfo" => %{"hasNextPage" => false, "endCursor" => nil}}}
+      })
+    end)
+
+    assert :ok = perform_job(LinearSync, %{project_id: project.id})
+
+    assert %Issue{owner_user_id: ^user_id, linear_updated_at: ~U[2026-10-08 15:00:00.250000Z]} = Repo.reload!(unowned)
+    assert [%Oban.Job{args: %{"issue_id" => ^unowned_id}}] = all_enqueued(worker: AdvanceLinearState)
   end
 
   test "writes each issue's comments with replies threaded by Rail id, and re-syncs in place", %{project: project} do

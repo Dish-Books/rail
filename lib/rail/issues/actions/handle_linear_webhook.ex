@@ -5,6 +5,10 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
   The row is written with `Issue.linear_changeset/2`: the change came from
   Linear, so nothing is pushed back to it. An update that finishes an open issue
   is handed to Learnings and the pipeline, which only queue their work.
+
+  Every issue event carries the whole ticket, and two sent close together can
+  arrive in either order. So the row is locked while it is written, and an event
+  older than what the row already holds, by Linear's `updatedAt`, is dropped.
   """
 
   import Ecto.Query
@@ -28,7 +32,8 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
   updates are upserted onto the project on the issue's team and broadcast as
   `{:issue_changed, issue_id}` on `"issues"`. A remove or a trash deletes the
   issue and its task, and so does an archive when no task references it, both
-  broadcast the same way. Anything else, including a team no project is on, is ignored.
+  broadcast the same way. Anything else, including a team no project is on or an
+  update older than the row, is ignored.
   """
   def handle_linear_webhook(%LinearWorkspace{projects: projects}, %{
         "type" => "Issue",
@@ -107,9 +112,17 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
           |> format_linear_issue()
           |> Map.merge(%{project_id: project_id, owner_user_id: owner_user_id(data["assigneeId"])})
 
-        existing = Repo.get_by(Issue, external_id: external_id) || %Issue{}
+        {:ok, {existing, result}} =
+          Repo.transaction(fn ->
+            existing =
+              Repo.one(from(i in Issue, where: i.external_id == ^external_id, lock: "FOR UPDATE")) || %Issue{}
 
-        with {:ok, issue} <- existing |> Issue.linear_changeset(attrs) |> Repo.insert_or_update() do
+            if stale?(existing, attrs),
+              do: {existing, :ok},
+              else: {existing, existing |> Issue.linear_changeset(attrs) |> Repo.insert_or_update()}
+          end)
+
+        with {:ok, issue} <- result do
           # A child's owner is its parent's, so a new owner on a split parent reaches its children.
           if is_binary(existing.id) and existing.owner_user_id != issue.owner_user_id,
             do: {:ok, _children} = Pipeline.share_owner_with_children(issue)
@@ -201,6 +214,11 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
     do: not Issue.finished_state?(was) and Issue.finished_state?(now)
 
   defp finished?(_action, _existing, _issue), do: false
+
+  defp stale?(%Issue{linear_updated_at: %DateTime{} = have}, %{linear_updated_at: %DateTime{} = sent}),
+    do: DateTime.before?(sent, have)
+
+  defp stale?(_existing, _attrs), do: false
 
   # An assignee with no linked Rail user leaves the issue unowned, as the full sync does.
   defp owner_user_id(linear_user_id) when is_binary(linear_user_id) do

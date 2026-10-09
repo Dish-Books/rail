@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.ShareOwnerWithChildren do
   @moduledoc """
-  Gives a split parent's owner to each of its children, the only owner a child can have, and moves
-  their Linear status on as a claim does.
+  Gives a split parent's owner to each of its children, the only owner a child can have. A child
+  that had none has its Linear status moved on by the write, as a claim's does.
   """
 
   import Ecto.Query
@@ -29,7 +29,6 @@ defmodule Rail.Pipeline.Actions.ShareOwnerWithChildren do
     children =
       for child <- Repo.all(query) do
         {:ok, child} = Issues.update_issue(child, %{owner_user_id: owner_user_id})
-        {:ok, _job} = Issues.advance_issue_state(child)
         child
       end
 

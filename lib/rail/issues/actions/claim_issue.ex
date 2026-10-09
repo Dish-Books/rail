@@ -3,11 +3,10 @@ defmodule Rail.Issues.Actions.ClaimIssue do
   Assigns an unassigned issue to the scope's user. Linear hears about it from the
   sync the write enqueues, which is why a user who never linked Linear cannot claim.
 
-  An unowned ticket's Linear status is held back while its task runs, so the claim
-  also queues the move that catches it up.
+  An unowned ticket's Linear status is held back while its task runs. The write
+  queues the move that catches it up, as any write that gives an issue an owner does.
   """
 
-  alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Repo
   alias Rail.Scope
@@ -24,9 +23,7 @@ defmodule Rail.Issues.Actions.ClaimIssue do
           Repo.rollback(:already_assigned)
 
         %Issue{} = unassigned ->
-          claimed = unassigned |> Issue.changeset(%{owner_user_id: user.id}) |> Repo.update!()
-          {:ok, _job} = Issues.advance_issue_state(claimed)
-          claimed
+          unassigned |> Issue.changeset(%{owner_user_id: user.id}) |> Repo.update!()
       end
     end)
   end

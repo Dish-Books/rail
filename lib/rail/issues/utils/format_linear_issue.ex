@@ -22,9 +22,20 @@ defmodule Rail.Issues.Utils.FormatLinearIssue do
       state_name: state["name"],
       branch_name: node["branchName"],
       url: node["url"],
-      completed_at: completed_at(node["completedAt"])
+      completed_at: completed_at(node["completedAt"]),
+      linear_updated_at: linear_updated_at(node["updatedAt"])
     }
   end
+
+  # The column holds microseconds and `insert_all` writes the value without casting it.
+  defp linear_updated_at(timestamp) when is_binary(timestamp) do
+    case DateTime.from_iso8601(timestamp) do
+      {:ok, %DateTime{microsecond: {usec, _precision}} = at, _offset} -> %{at | microsecond: {usec, 6}}
+      {:error, _reason} -> nil
+    end
+  end
+
+  defp linear_updated_at(_missing), do: nil
 
   # Linear sends milliseconds, but the column holds seconds and `insert_all`
   # writes the value without casting it, so it is truncated here.

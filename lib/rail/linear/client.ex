@@ -46,6 +46,7 @@ defmodule Rail.Linear.Client do
   branchName
   url
   completedAt
+  updatedAt
   archivedAt
   trashed
   """

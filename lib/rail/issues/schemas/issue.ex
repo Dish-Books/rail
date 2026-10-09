@@ -3,6 +3,7 @@ defmodule Rail.Issues.Schemas.Issue do
   use Rail.Schema
 
   alias Rail.Issues.Schemas.Comment
+  alias Rail.Issues.Workers.AdvanceLinearState
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
@@ -25,6 +26,8 @@ defmodule Rail.Issues.Schemas.Issue do
     field :branch_name, :string
     field :url, :string
     field :completed_at, :utc_datetime
+    # When Linear last changed the ticket, by its own clock. `updated_at` is when Rail last wrote the row.
+    field :linear_updated_at, :utc_datetime_usec
 
     belongs_to :project, Project
     belongs_to :owner_user, User
@@ -43,6 +46,7 @@ defmodule Rail.Issues.Schemas.Issue do
     :estimate,
     :external_id,
     :identifier,
+    :linear_updated_at,
     :owner_user_id,
     :priority,
     :project_id,
@@ -70,6 +74,9 @@ defmodule Rail.Issues.Schemas.Issue do
   A changeset for what Linear itself reports, such as a webhook. It is the same
   as `changeset/2` except that nothing is queued to push back to Linear, since
   Linear is where the change came from.
+
+  Either one, on giving an unowned issue an owner, queues
+  `Rail.Issues.Workers.AdvanceLinearState` to catch its Linear status up with its task.
   """
   def linear_changeset(issue, attrs) do
     issue
@@ -78,6 +85,7 @@ defmodule Rail.Issues.Schemas.Issue do
     |> unique_constraint(:external_id)
     |> foreign_key_constraint(:project_id)
     |> foreign_key_constraint(:owner_user_id)
+    |> advance_when_claimed()
   end
 
   def priorities, do: @priorities
@@ -125,4 +133,23 @@ defmodule Rail.Issues.Schemas.Issue do
   end
 
   defp sync_to_linear(%Ecto.Changeset{} = changeset), do: changeset
+
+  # An unowned ticket's Linear status is held back while its task runs, so whatever
+  # gives it an owner also queues the move that catches it up. Here, for the same
+  # reason as the sync above: no way of setting the owner can forget to.
+  defp advance_when_claimed(
+         %Ecto.Changeset{data: %__MODULE__{id: id, owner_user_id: nil}, changes: %{owner_user_id: owner_user_id}} =
+           changeset
+       )
+       when is_binary(id) and is_binary(owner_user_id) do
+    prepare_changes(changeset, fn prepared ->
+      %{issue_id: id}
+      |> AdvanceLinearState.new()
+      |> Oban.insert!()
+
+      prepared
+    end)
+  end
+
+  defp advance_when_claimed(%Ecto.Changeset{} = changeset), do: changeset
 end

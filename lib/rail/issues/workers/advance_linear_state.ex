@@ -5,8 +5,9 @@ defmodule Rail.Issues.Workers.AdvanceLinearState do
   Only ever forward, judged against Linear's live state: somebody may have moved
   the ticket further by hand, and a send-back to the engineer must not undo In Review.
 
-  Only once somebody has claimed the issue: an unowned ticket stays where it is, and
-  the claim queues this job to catch it up with its task.
+  Only once the issue has an owner: an unowned ticket stays where it is, and the write
+  that gives it one, `Rail.Issues.Schemas.Issue`'s changeset or the full sync, queues
+  this job to catch it up with its task.
 
   One job per issue at a time, so two can never race their writes. That job covers
   any later stage: it reads the stage when it runs, and runs again if it moved meanwhile.

@@ -4,7 +4,9 @@ defmodule Rail.Issues.Actions.UpdateIssueTest do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Workers.AdvanceLinearState
   alias Rail.Issues.Workers.SyncIssue
+  alias Rail.Users
 
   setup %{project: project} do
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -50,5 +52,29 @@ defmodule Rail.Issues.Actions.UpdateIssueTest do
     {:ok, _issue} = Issues.update_issue(issue, %{title: issue.title})
 
     refute_enqueued(worker: SyncIssue)
+  end
+
+  test "giving an unowned issue an owner queues the move that catches its Linear status up, and only then", %{
+    issue: issue
+  } do
+    [first, second] =
+      Enum.map(["first_owner", "second_owner"], fn login ->
+        {:ok, user} =
+          Users.register_oauth_user(%{github_id: "gh_#{login}", login: login, email: "#{login}@example.com"})
+
+        user
+      end)
+
+    {:ok, _issue} = Issues.update_issue(issue, %{title: "Still nobody's"})
+    refute_enqueued(worker: AdvanceLinearState)
+
+    {:ok, owned} = Issues.update_issue(issue, %{owner_user_id: first.id})
+    assert [%Oban.Job{id: job_id}] = all_enqueued(worker: AdvanceLinearState, args: %{issue_id: issue.id})
+
+    # Already owned, so its status has not been held back: a new owner or none queues nothing more.
+    Repo.delete!(%Oban.Job{id: job_id})
+    {:ok, handed_on} = Issues.update_issue(owned, %{owner_user_id: second.id})
+    {:ok, _unowned} = Issues.update_issue(handed_on, %{owner_user_id: nil})
+    refute_enqueued(worker: AdvanceLinearState)
   end
 end
