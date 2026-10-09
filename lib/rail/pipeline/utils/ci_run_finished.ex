@@ -2,15 +2,15 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   @moduledoc """
   Where a finished CI run leaves the run it ran on, the engineer's or the Review lead's.
 
-  A pass is what lets the branch be pushed. On the engineer's run it settles the
-  stage and sends the work to Review when a commit asked for that; on the Review
-  lead's it starts the next round. A failure goes back to that run's own agent
+  A pass is what lets the branch be pushed, and a commit that asked for review
+  then gets it: the engineer's work goes to Review, and the Review lead starts
+  its next round. A failure goes back to that run's own agent
   with the output that says why, until it has failed three times in a row with
   nobody stepping in; then it waits for a person.
   """
 
   import Rail.Pipeline.Utils.OpenPullRequest
-  import Rail.Pipeline.Utils.StartNextRound
+  import Rail.Pipeline.Utils.ReviewPushedBranch
 
   alias Rail.Git
   alias Rail.Pipeline
@@ -27,31 +27,12 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   @tail_lines 150
 
   @doc "Finishes `run` after `os_process`, its CI, exited."
-  def ci_run_finished(%Run{exit_code: 0, role: %Role{stage: :review_lead}, task: %Task{} = task} = run, %OsProcess{} = ci) do
+  def ci_run_finished(%Run{exit_code: 0, task: %Task{} = task} = run, %OsProcess{} = ci) do
     case Git.push_branch(Scope.for_system(), task) do
       :ok ->
-        pushed = %{update(run, %{ci_failure_streak: 0, error: nil}) | task: open_pull_request(task, run)}
-        short = if ci.head_sha, do: " on #{String.slice(ci.head_sha, 0, 7)}", else: ""
-
-        case start_next_round(pushed, "CI passed#{short}") do
-          :ok -> %{Repo.get!(Run, run.id) | task: pushed.task, role: run.role}
-          {:error, text} -> update(pushed, %{error: text})
-        end
-
-      {:error, reason} ->
-        update(run, %{error: "CI passed, but the branch could not be pushed: #{describe(reason)}"})
-    end
-  end
-
-  def ci_run_finished(%Run{exit_code: 0, task: %Task{} = task} = run, %OsProcess{}) do
-    case Git.push_branch(Scope.for_system(), task) do
-      :ok ->
-        attrs = %{ci_failure_streak: 0, error: nil, stage_outcome: :done, review_on_ci_pass: false}
+        attrs = Map.merge(%{ci_failure_streak: 0, error: nil, review_on_ci_pass: false}, settled(run))
         pushed = %{update(run, attrs) | task: open_pull_request(task, run)}
-
-        # A message queued while CI ran is the engineer about to work again, which
-        # review cannot see once the run has settled.
-        if run.review_on_ci_pass and is_nil(run.pending_chat), do: send_on_to_review(pushed), else: pushed
+        if review?(run), do: review(pushed, ci), else: pushed
 
       {:error, reason} ->
         update(run, %{
@@ -119,8 +100,26 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   defp who(%Run{role: %Role{stage: :review_lead}}), do: "message the Review lead or Retry"
   defp who(%Run{}), do: "message the engineer or run CI again"
 
-  defp send_on_to_review(%Run{} = pushed) do
-    case Pipeline.send_to_review(pushed) do
+  # The lead's run is open while its rounds go on; the engineer's is done once its work is pushed.
+  defp settled(%Run{role: %Role{stage: :review_lead}}), do: %{}
+  defp settled(%Run{}), do: %{stage_outcome: :done}
+
+  # A message queued while CI ran is the engineer about to work again, which review cannot see once the run
+  # has settled; the lead reads it in its next round.
+  defp review?(%Run{role: %Role{stage: :review_lead}, review_on_ci_pass: review?}), do: review?
+  defp review?(%Run{review_on_ci_pass: review?, pending_chat: queued}), do: review? and is_nil(queued)
+
+  defp review(%Run{role: %Role{stage: :review_lead}} = pushed, %OsProcess{head_sha: sha}) do
+    short = if sha, do: " on #{String.slice(sha, 0, 7)}", else: ""
+
+    case review_pushed_branch(pushed, "CI passed#{short}") do
+      {:ok, %Run{} = started} -> started
+      {:error, text} -> update(pushed, %{error: text})
+    end
+  end
+
+  defp review(%Run{} = pushed, %OsProcess{}) do
+    case review_pushed_branch(pushed, "CI passed") do
       {:ok, %Run{} = sent} ->
         %{sent | task: pushed.task, role: pushed.role}
 
@@ -156,9 +155,9 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   end
 
   defp next_step(%Run{role: %Role{stage: :review_lead}}) do
-    "Have the engineer fix what it reports, have the code reviewer read the change, then call `commit_fixes` " <>
+    "Have the engineer fix what it reports, have the code reviewer read the change, then call `commit` " <>
       "again, listing each changed file in `other_files` with why. When the failure is not the change's to fix, " <>
-      "such as a flaky test elsewhere, call `commit_fixes` without changing anything and Rail runs CI again on the " <>
+      "such as a flaky test elsewhere, call `commit` without changing anything and Rail runs CI again on the " <>
       "same commit."
   end
 

@@ -7,6 +7,7 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
   alias Rail.Mcp.Schemas.McpConnection
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools.Schemas.OsProcess
@@ -310,7 +311,9 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
                Mcp.call_run_tool(lead, "save_demo", %{"title" => "One round", "summary" => "Shown."})
 
       # Each is handed the turn that called it, which it ends.
-      expect(Pipeline, :end_turn_and_commit, fn _task, %OsProcess{task_id: task_id}, "CRS-1: the change" ->
+      expect(Pipeline, :end_turn_and_commit, fn _task,
+                                                %OsProcess{task_id: task_id},
+                                                %{"message" => "CRS-1: the change"} ->
         assert task_id == task.id
         {:ok, :committing}
       end)
@@ -322,6 +325,37 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
 
       assert {:error, {:refused, "Refused, nothing merged."}} =
                Mcp.call_run_tool(context.(:engineer), "request_merge", %{})
+    end
+
+    # The engineer and the Review lead hand work over through the one `commit`, and only they do.
+    test "the Review lead's commit reaches the same commit with the round it describes", %{
+      project: project,
+      lead: lead,
+      run: run,
+      task: %{id: task_id}
+    } do
+      round = %{"message" => "Scope the round query", "findings" => [%{"key" => "round-query-scope"}]}
+
+      expect(Pipeline, :end_turn_and_commit, 2, fn
+        %Task{id: ^task_id}, %OsProcess{}, ^round ->
+          {:ok, :committing}
+
+        %Task{id: ^task_id}, %OsProcess{}, %{"findings" => []} ->
+          {:refused, "Refused, nothing committed. the round leaves out round-query-scope, ruled Fix."}
+      end)
+
+      assert {:ok, %{"content" => [%{"text" => "Your turn is over. Rail is committing your work" <> _rest}]}} =
+               Mcp.call_run_tool(lead, "commit", round)
+
+      assert {:error, {:refused, "Refused, nothing committed. the round leaves out round-query-scope, ruled Fix."}} =
+               Mcp.call_run_tool(lead, "commit", %{round | "findings" => []})
+
+      # A save is not logged: the transcript already shows the call.
+      assert Pipeline.list_run_events(run) == []
+
+      {:ok, plan} = Roles.get_role(project_id: project.id, stage: :plan)
+      assert {:error, :unknown_tool} = Mcp.call_run_tool(%{lead | role: plan}, "commit", round)
+      assert {:error, :unknown_tool} = Mcp.call_run_tool(lead, "commit_fixes", round)
     end
 
     test "saves and their refusals append nothing to the run's log", %{lead: lead, run: run, task: task} do

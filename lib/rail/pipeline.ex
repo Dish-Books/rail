@@ -16,7 +16,6 @@ defmodule Rail.Pipeline do
   starts once CI passes on it. A task never goes back to Engineer, and it waits at
   Review, ready to merge, once nothing is left to rule or fix.
 
-
   Plan can also end with a split: approval then makes each child an issue and a task of its own at
   Engineer, and parks the parent at Split until the last child merges.
 
@@ -47,10 +46,9 @@ defmodule Rail.Pipeline do
   defdelegate share_owner_with_children(issue), to: Actions.ShareOwnerWithChildren
 
   defdelegate start_engineer_run(run), to: Actions.StartEngineerRun
-  defdelegate end_turn_and_commit(task, os_process, message), to: Actions.EndTurnAndCommit
+  defdelegate end_turn_and_commit(task, os_process, arguments), to: Actions.EndTurnAndCommit
   defdelegate end_turn_and_merge(task, os_process), to: Actions.EndTurnAndMerge
-  defdelegate commit_engineer_work(scope, task, message), to: Actions.CommitEngineerWork
-  defdelegate commit_and_send_to_review(scope, run, message \\ nil), to: Actions.CommitAndSendToReview
+  defdelegate commit_work(scope, run, attrs \\ %{}), to: Actions.CommitWork
   defdelegate send_to_review(run), to: Actions.SendToReview
   defdelegate run_ci(scope, run), to: Actions.RunCi
   defdelegate update_branch(scope, task), to: Actions.UpdateBranch
@@ -63,14 +61,11 @@ defmodule Rail.Pipeline do
   defdelegate save_review(task), to: Actions.SaveReview
   defdelegate read_review(task), to: Actions.ReadReview
   defdelegate start_fix_round(run), to: Actions.StartFixRound
-  defdelegate end_turn_and_commit_fixes(task, os_process, arguments), to: Actions.EndTurnAndCommitFixes
 
   defdelegate write_qa_checklist(task, checks), to: Actions.WriteQaChecklist
   defdelegate read_qa_checklist(task), to: Actions.ReadQaChecklist
   defdelegate record_qa_check(task, key, outcome, note \\ nil), to: Actions.RecordQaCheck
-  defdelegate list_qa_evidence(task), to: Actions.ListQaEvidence
-  defdelegate read_qa_evidence(task, evidence), to: Actions.ReadQaEvidence
-  defdelegate classify_qa_evidence(task, path), to: Actions.ClassifyQaEvidence
+  defdelegate get_finding_evidence(task, key, index), to: Actions.GetFindingEvidence
 
   defdelegate read_demo(task), to: Actions.ReadDemo
 

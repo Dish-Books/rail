@@ -68,7 +68,7 @@ There are no other headings. Research earns its place by making those sections c
 ### Rules
 
 - No padding. Do not restate the title in the first line. Do not add a heading with one obvious line under it.
-- No em dashes. Check with `grep -n '—' <file>`.
+- Apply the unslop skill (`.claude/skills/unslop/SKILL.md`) to everything you write.
 - American English. The exceptions are names we do not own, where a status value, a schema field or a provider's own vocabulary keeps its spelling.
 - Define a term the first time it appears, unless it is in the list above.
 - The ticket is not longer because more research went into it, it is more precise. If the research does not change what the four sections say, it does not go on the ticket.

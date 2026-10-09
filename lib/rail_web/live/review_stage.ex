@@ -12,6 +12,7 @@ defmodule RailWeb.Live.ReviewStage do
   alias Rail.Learnings
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.FindingEvidence
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Turn
@@ -159,7 +160,7 @@ defmodule RailWeb.Live.ReviewStage do
   end
 
   def handle_event("select_evidence", %{"index" => index}, socket) do
-    socket = socket |> assign(:filed_index, String.to_integer(index)) |> load()
+    socket = assign(socket, :filed_index, String.to_integer(index))
     {:noreply, socket}
   end
 
@@ -507,25 +508,25 @@ defmodule RailWeb.Live.ReviewStage do
 
   defp focus(row, %Finding{}), do: row
 
+  # Read off the row alone: a text file's opening was read into the finding when it was attached.
   defp filed(socket, %Finding{key: key, evidence: evidence}) do
     task = socket.assigns.task
 
     for {piece, index} <- Enum.with_index(evidence), piece.kind != :code do
-      kind = kind(task, piece)
-      url = if is_binary(piece.path), do: ~p"/tasks/#{task.id}/qa/#{key}/evidence/#{index}"
-      read = if kind == :text and index == socket.assigns.filed_index, do: Pipeline.read_qa_evidence(task, piece)
-      %{index: index, evidence: piece, kind: kind, url: url, read: read}
+      url = if is_binary(piece.path), do: ~p"/tasks/#{task.id}/findings/#{key}/evidence/#{index}"
+      %{index: index, evidence: piece, kind: kind(piece), url: url}
     end
   end
 
-  defp kind(%Task{} = task, %{path: path}) when is_binary(path) do
-    case Pipeline.classify_qa_evidence(task, path) do
-      {:ok, kind} -> kind
-      {:error, :not_found} -> :missing
+  defp kind(%FindingEvidence{text: text}) when is_binary(text), do: :inline
+
+  defp kind(%FindingEvidence{path: path}) do
+    cond do
+      FindingEvidence.picture?(path) -> :screenshot
+      String.downcase(Path.extname(path)) == ".pdf" -> :pdf
+      true -> :file
     end
   end
-
-  defp kind(%Task{}, _inline), do: :inline
 
   defp labels(%Task{} = task), do: task |> Git.load_branch_history() |> Map.new(&{&1.sha, &1.label})
 

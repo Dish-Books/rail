@@ -507,36 +507,42 @@ defmodule RailWeb.Live.ReviewStageTest do
              |> Enum.map(&(&1 |> Floki.text() |> String.split() |> Enum.take(-2) |> Enum.join(" ")))
   end
 
-  test "each evidence tab shows its piece: a filed log as text, a screenshot as the picture, a file gone says so", %{
+  # The log's opening was read into the finding when attached, so the tab shows it with no file opened.
+  test "each evidence tab shows its piece: a log's text from the finding, a screenshot as the picture", %{
     conn: conn,
     task: task,
     screen: screen
   } do
     qa = Path.join(task.scratch_path, "qa")
-    File.mkdir_p!(qa)
-    File.write!(Path.join(qa, "shot.png"), <<137, 80, 78, 71, 13, 10, 26, 10>>)
+    File.mkdir_p!(Path.join(qa, "shots"))
+    File.write!(Path.join(qa, "shots/send-twice-1.jpg"), "jpeg bytes")
     File.write!(Path.join(qa, "server.log"), "two deliveries\n")
-    {:ok, shot} = Tools.file_qa_evidence(task, "shot.png", "Send twice", "send-twice", "explorer-1")
-    {:ok, log} = Tools.file_qa_evidence(task, "server.log", "Server log", "send-twice", "explorer-1")
+    File.write!(Path.join(qa, "invoice.pdf"), "%PDF-1.7")
+    File.write!(Path.join(qa, "export.bin"), <<0, 159, 146, 150>>)
 
     evidence = [
-      %{name: "Send twice", kind: :screenshot, path: shot},
-      %{name: "Server log", kind: :log, path: log}
+      %{name: "Send twice", kind: :screenshot, path: "shots/send-twice-1.jpg", browser: "explorer-1"},
+      %{name: "Server log", kind: :log, path: "server.log"},
+      %{name: "The invoice", kind: :log, path: "invoice.pdf"},
+      %{name: "The export", kind: :log, path: "export.bin"}
     ]
 
     {:ok, _finding} = Pipeline.save_finding(task, Map.merge(screen, %{key: "send-twice", evidence: evidence}))
 
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-    assert has_element?(view, "#finding-evidence img[alt='Send twice']")
 
+    assert has_element?(
+             view,
+             "#finding-evidence img[alt='Send twice'][src='/tasks/#{task.id}/findings/send-twice/evidence/0']"
+           )
+
+    assert has_element?(view, "#finding-evidence-2 .pi-file-pdf")
+    assert has_element?(view, "#finding-evidence-3 .pi-file")
+
+    File.rm_rf!(qa)
     view |> element("#finding-evidence-1") |> render_click()
     assert has_element?(view, "#finding-evidence-1[aria-selected=true]")
     assert has_element?(view, "[data-qa=finding_evidence_text]", "two deliveries")
-
-    File.rm!(Path.join(qa, log))
-    view |> element("#finding-evidence-0") |> render_click()
-    view |> element("#finding-evidence-1") |> render_click()
-    assert has_element?(view, "#finding-evidence", "The file this cites is not there any more.")
   end
 
   test "the Demo item counts a single beat said, and a demo saved without its commit reads Recorded", %{

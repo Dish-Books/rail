@@ -17,7 +17,7 @@ defmodule RailWeb.Components.FindingDetail do
   attr :running, :boolean, required: true
   attr :hunk, :any, default: nil, doc: "the code range the finding points at, as `Rail.Git.load_diff_hunk/4` reads it"
   attr :diff_link, :string, default: nil
-  attr :filed, :list, default: [], doc: "`%{index:, evidence:, kind:, read:, url:}` for each filed piece"
+  attr :filed, :list, default: [], doc: "`%{index:, evidence:, kind:, url:}` for each attached piece"
   attr :filed_index, :integer, default: 0
   attr :labels, :map, default: %{}, doc: "each commit on the branch to what made it, as Engineer or Fix round N"
   attr :names, :map, default: %{}, doc: "who ruled, by user id"
@@ -258,13 +258,10 @@ defmodule RailWeb.Components.FindingDetail do
                 class="w-full rounded-lg border border-slate-200 dark:border-slate-700"
               />
               <pre
-                :if={@picked.kind == :inline or match?({:ok, _read}, @picked.read)}
+                :if={@picked.kind == :inline}
                 data-qa="finding_evidence_text"
                 class="max-h-96 overflow-auto rounded-lg bg-slate-50 dark:bg-slate-800/40 p-3 font-mono text-[11.5px] whitespace-pre-wrap wrap-anywhere text-slate-700 dark:text-slate-300"
-              >{evidence_text(@picked)}</pre>
-              <p :if={@picked.kind == :missing} class="text-xs text-slate-500 dark:text-slate-400">
-                The file this cites is not there any more.
-              </p>
+              >{@picked.evidence.text}</pre>
             </div>
           </div>
 
@@ -537,9 +534,6 @@ defmodule RailWeb.Components.FindingDetail do
   defp evidence_icon(:pdf), do: "pi-file-pdf"
   defp evidence_icon(:file), do: "pi-file"
   defp evidence_icon(_text), do: "pi-file-text"
-
-  defp evidence_text(%{read: {:ok, %{text: text}}}), do: text
-  defp evidence_text(%{evidence: %{text: text}}), do: text
 
   # Only a window around the lines the finding names is shown, so the pane says what it left out.
   defp elided(%{hidden_lines: hidden, other_hunks: others}) do

@@ -791,31 +791,44 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       %{task: task, head_sha: String.trim(git!(task.worktree_path, ["rev-parse", "HEAD"]))}
     end
 
-    test "that passed pushes the branch and starts the next round", %{task: task, exited: exited, head_sha: head_sha} do
-      {run, os_process} = exited.(:review_lead, %{ci_failure_streak: 1, stage_outcome: :done})
+    test "that passed on a commit that asked for review pushes the branch and starts the next round", %{
+      task: task,
+      exited: exited,
+      head_sha: head_sha
+    } do
+      {%Run{id: run_id} = run, os_process} =
+        exited.(:review_lead, %{ci_failure_streak: 1, stage_outcome: :done, review_on_ci_pass: true})
+
       os_process = os_process |> OsProcess.changeset(%{kind: :ci, head_sha: head_sha}) |> Repo.update!()
-      short = String.slice(head_sha, 0, 7)
-      started = "[rail] Round 2 started after CI passed on #{short}"
-      test_pid = self()
+      started = "[rail] Round 2 started after CI passed on #{String.slice(head_sha, 0, 7)}"
 
       expect(Git, :push_branch, fn _scope, _task -> :ok end)
+      expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
-      expect(Tools, :start_os_process, fn spawned, argv ->
-        send(test_pid, {:resumed, Enum.join(argv, " ")})
-        {:ok, %OsProcess{run: spawned}}
-      end)
-
-      assert {:ok, %Run{ci_failure_streak: 0, stage_outcome: :in_progress, error: nil}} =
+      assert {:ok, %Run{ci_failure_streak: 0, stage_outcome: :in_progress, error: nil, review_on_ci_pass: false}} =
                Pipeline.run_finished(os_process, %{exit_code: 0})
 
       assert %Task{stage: :review, pr_number: 7} = Repo.reload!(task)
       assert [%{line: ^started}] = Pipeline.list_run_events(run)
-      assert_received {:resumed, prompt}
-      assert prompt =~ "Fix round 1 is committed as #{short} and CI passed on #{short}. Run round 2"
+    end
+
+    # CI Rail ran on its own, such as Run CI from the diff, asked for no round.
+    test "that passed on a commit that did not ask for review only pushes", %{task: task, exited: exited} do
+      {run, os_process} = exited.(:review_lead, %{ci_failure_streak: 1, stage_outcome: :done})
+      os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
+
+      expect(Git, :push_branch, fn _scope, _task -> :ok end)
+      reject(Tools, :start_os_process, 2)
+
+      assert {:ok, %Run{ci_failure_streak: 0, stage_outcome: :done, error: nil, review_on_ci_pass: false}} =
+               Pipeline.run_finished(os_process, %{exit_code: 0})
+
+      assert %Task{stage: :review, pr_number: 7} = Repo.reload!(task)
+      assert [] = Pipeline.list_run_events(run)
     end
 
     test "that passed on a commit it has no record of still starts the next round", %{exited: exited} do
-      {run, os_process} = exited.(:review_lead, %{})
+      {run, os_process} = exited.(:review_lead, %{review_on_ci_pass: true})
       os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
 
       expect(Git, :push_branch, fn _scope, _task -> :ok end)
@@ -826,7 +839,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     end
 
     test "that passed with dispatch off says the round was not started", %{exited: exited} do
-      {_run, os_process} = exited.(:review_lead, %{})
+      {_run, os_process} = exited.(:review_lead, %{review_on_ci_pass: true})
       os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
 
       expect(Git, :push_branch, fn _scope, _task -> :ok end)
@@ -837,7 +850,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     end
 
     test "that passed and could not start the lead says why", %{exited: exited} do
-      {_run, os_process} = exited.(:review_lead, %{})
+      {_run, os_process} = exited.(:review_lead, %{review_on_ci_pass: true})
       os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
 
       expect(Git, :push_branch, fn _scope, _task -> :ok end)
@@ -847,14 +860,17 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     end
 
     test "that passed on a branch that will not push says so and starts nothing", %{exited: exited} do
-      {_run, os_process} = exited.(:review_lead, %{})
+      {_run, os_process} = exited.(:review_lead, %{review_on_ci_pass: true})
       os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
 
       expect(Git, :push_branch, fn _scope, _task -> {:error, "no CI receipt for this tree"} end)
       reject(Tools, :start_os_process, 2)
 
-      assert {:ok, %Run{error: "CI passed, but the branch could not be pushed: no CI receipt for this tree"}} =
-               Pipeline.run_finished(os_process, %{exit_code: 0})
+      assert {:ok,
+              %Run{
+                review_on_ci_pass: false,
+                error: "CI passed, but the branch could not be pushed: no CI receipt for this tree"
+              }} = Pipeline.run_finished(os_process, %{exit_code: 0})
     end
 
     test "that failed goes back to the lead with the end of its output", %{task: task, exited: exited} do
@@ -880,7 +896,6 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       assert_received {:resumed, prompt}
       assert prompt =~ "`mise run ci` exited with code 1"
       assert prompt =~ "1 test, 1 failure"
-      assert prompt =~ "call `commit_fixes` without changing anything and Rail runs CI again"
 
       assert [%{line: "[rail] CI failed, so its output went back to the Review lead (1 of 3)."}] =
                Pipeline.list_run_events(run)
@@ -908,6 +923,58 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
       assert {:ok, %Run{error: "CI was stopped before it finished. Message the Review lead or Retry when ready."}} =
                Pipeline.run_finished(os_process, %{exit_code: -1})
+    end
+  end
+
+  # Update branch at Review hands conflicts to the Review lead, whose turn finishing is judged by the branch.
+  describe "a Review lead turn resolving conflicts" do
+    setup %{task: task} do
+      {:ok, task} =
+        Pipeline.update_task(task, %{
+          stage: :review,
+          is_updating_branch: true,
+          pr_number: 7,
+          worktree_path: create_temp_git_repo()
+        })
+
+      {:ok, _pass} = Pipeline.save_review(task)
+      %{task: task}
+    end
+
+    test "that stopped with conflicts unresolved says so and stays updating the branch", %{task: task, exited: exited} do
+      {_run, os_process} = exited.(:review_lead, %{})
+
+      stub(Git, :conflicted_files, fn _path -> ["lib/app.ex"] end)
+      reject(&Git.merge_default_branch/2)
+      reject(Tools, :start_os_process, 2)
+
+      assert {:ok, %Run{error: "The Review lead stopped with conflicts still unresolved. Message it to finish them."}} =
+               Pipeline.run_finished(os_process, %{exit_code: 0})
+
+      assert %Task{stage: :review, is_updating_branch: true} = Repo.reload!(task)
+    end
+
+    test "that staged them all has the merge committed, pushed and the next round started", %{
+      task: task,
+      exited: exited
+    } do
+      {%Run{id: run_id} = run, os_process} = exited.(:review_lead, %{})
+
+      stub(Git, :merge_in_progress?, fn _path -> true end)
+
+      expect(Git, :merge_default_branch, fn _scope, _task ->
+        git!(task.worktree_path, ["commit", "--allow-empty", "-m", "merged main in"])
+        :ok
+      end)
+
+      expect(Git, :push_branch, fn _scope, _task -> :ok end)
+      expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      assert {:ok, %Run{error: nil, stage_outcome: :in_progress}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+      assert %Task{stage: :review, is_updating_branch: false} = Repo.reload!(task)
+
+      assert ["[rail] Merged origin/main in.", "[rail] Round 2 started after it was pushed"] =
+               run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
     end
   end
 
@@ -1004,8 +1071,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     end
   end
 
-  # The conflicts already sent the task back to engineer, and finishing the merge
-  # leaves it there for review to see the result.
+  # At Engineer the merge is pushed like any commit Rail makes on its own, and waits there for a human.
   test "conflicts the engineer resolved are carried on and the branch sent on", %{task: task, exited: exited} do
     {:ok, task} =
       Pipeline.update_task(task, %{stage: :engineer, is_updating_branch: true, worktree_path: create_temp_git_repo()})

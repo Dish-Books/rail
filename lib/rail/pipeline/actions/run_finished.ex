@@ -118,10 +118,11 @@ defmodule Rail.Pipeline.Actions.RunFinished do
 
   # A merge is judged by the branch, whatever the stage had already concluded.
   defp finish(
-         %Run{role: %Role{stage: :engineer}, task: %Task{is_updating_branch: true}} = run,
+         %Run{role: %Role{stage: stage}, task: %Task{is_updating_branch: true}} = run,
          %OsProcess{} = os_process,
          _opts
-       ) do
+       )
+       when stage in [:engineer, :review_lead] do
     case register_asked_questions(os_process, run) do
       [] -> update_branch_run_finished(run)
       _asked -> run

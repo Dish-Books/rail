@@ -30,12 +30,10 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   import Rail.Mcp.Utils.RunToolBrowserConnect
   import Rail.Mcp.Utils.RunToolBrowserProblems
   import Rail.Mcp.Utils.RunToolCommit
-  import Rail.Mcp.Utils.RunToolCommitFixes
   import Rail.Mcp.Utils.RunToolDemoSay
   import Rail.Mcp.Utils.RunToolDemoStart
   import Rail.Mcp.Utils.RunToolKnowledgeSearch
   import Rail.Mcp.Utils.RunToolQaCheck
-  import Rail.Mcp.Utils.RunToolQaFile
   import Rail.Mcp.Utils.RunToolQaPlan
   import Rail.Mcp.Utils.RunToolQaShot
   import Rail.Mcp.Utils.RunToolRequestMerge
@@ -62,7 +60,6 @@ defmodule Rail.Mcp.Actions.CallRunTool do
     "save_plan",
     "save_split",
     "commit",
-    "commit_fixes",
     "request_merge",
     "save_finding",
     "save_review",
@@ -162,7 +159,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   #
   # These are logged once they answer: a plan, mark or filing can be refused and its
   # line must say so, `browser_problems` has nothing to say first, and a caption's time is the tool's.
-  defp answers_itself?(name), do: name in ["qa_plan", "qa_check", "qa_shot", "qa_file", "browser_problems", "demo_say"]
+  defp answers_itself?(name), do: name in ["qa_plan", "qa_check", "qa_shot", "browser_problems", "demo_say"]
 
   # What the browser complained about, counted rather than quoted: the agent has
   # the list, and a watcher wants to know whether there was one.
@@ -177,9 +174,6 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   # words with the moment they landed on rather than the receipt the agent read.
   defp said("demo_say", line, {:ok, "Said at " <> said}), do: "#{hd(String.split(said, "."))} #{line}"
 
-  # A refusal is a call that filed nothing, and a run log of them should not read
-  # as a run of files filed.
-  defp said("qa_file", line, {:refused, _text}), do: line <> " · nothing filed"
   defp said(_name, line, {:refused, _text}), do: line <> " · refused"
 
   defp said(_name, line, _result), do: line
@@ -197,7 +191,6 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp asked("qa_plan", %{"checks" => checks}) when is_list(checks), do: "plan #{length(checks)} checks"
   defp asked("qa_check", %{"key" => key, "outcome" => outcome}), do: "check #{inspect(key)} #{outcome}"
   defp asked("qa_shot", %{"name" => name}) when is_binary(name), do: "shot #{inspect(name)}"
-  defp asked("qa_file", %{"name" => name}), do: "file #{inspect(name)}"
   defp asked("demo_say", %{"text" => text}), do: "say #{inspect(text)}"
   defp asked("demo_say", _arguments), do: "say"
   defp asked("knowledge_search", %{"query" => query}), do: "search #{inspect(query)}"
@@ -227,7 +220,6 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp run("qa_plan", task, arguments, opts), do: run_tool_qa_plan(task, arguments, opts)
   defp run("qa_check", task, arguments, opts), do: run_tool_qa_check(task, arguments, opts)
   defp run("qa_shot", task, arguments, opts), do: run_tool_qa_shot(task, arguments, opts)
-  defp run("qa_file", task, arguments, opts), do: run_tool_qa_file(task, arguments, opts)
   defp run("demo_start", task, arguments, opts), do: run_tool_demo_start(task, arguments, opts)
   defp run("demo_say", task, arguments, opts), do: run_tool_demo_say(task, arguments, opts)
   defp run("save_ticket", task, arguments, opts), do: run_tool_save_ticket(task, arguments, opts)
@@ -235,7 +227,6 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp run("save_plan", task, arguments, opts), do: run_tool_save_plan(task, arguments, opts)
   defp run("save_split", task, arguments, opts), do: run_tool_save_split(task, arguments, opts)
   defp run("commit", task, arguments, opts), do: run_tool_commit(task, arguments, opts)
-  defp run("commit_fixes", task, arguments, opts), do: run_tool_commit_fixes(task, arguments, opts)
   defp run("request_merge", task, arguments, opts), do: run_tool_request_merge(task, arguments, opts)
   defp run("save_finding", task, arguments, opts), do: run_tool_save_finding(task, arguments, opts)
   defp run("save_review", task, arguments, opts), do: run_tool_save_review(task, arguments, opts)

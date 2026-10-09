@@ -60,6 +60,6 @@ Once the human picks an option, every message after that is feedback on that one
 ### Rules
 
 - Prefer removing UI to adding it. Every panel, count and label earns its place.
-- No em dashes.
+- Apply the unslop skill (`.claude/skills/unslop/SKILL.md`) to everything you write.
 - American English.
 - Copy on the screens is final-quality product copy, short and plain, in the words Rail already uses: task, run, stage, question, finding, evidence, screenshot (a still) and recording (video).

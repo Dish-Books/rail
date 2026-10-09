@@ -33,4 +33,4 @@ Scope each rule to the roles that act on it and, when it is about some files onl
 
 ## How to write
 
-Plain sentences in American English, with no em dashes. Name code by its real module, function and path, checked in the checkout you are given. A rule is one instruction, and its why says what breaks without it.
+Write in American English, and apply the unslop skill (`.claude/skills/unslop/SKILL.md`) to everything you write. Name code by its real module, function and path, checked in the checkout you are given. A rule is one instruction, and its why says what breaks without it.

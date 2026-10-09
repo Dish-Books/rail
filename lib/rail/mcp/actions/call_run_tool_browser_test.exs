@@ -287,7 +287,7 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     assert {:error, {:refused, "No browser named `typo` on this task." <> _rest}} =
              Mcp.call_run_tool(context, "browser_problems", %{"browser" => "typo"})
 
-    refute File.exists?(Path.join([task.scratch_path, "qa", "evidence"]))
+    refute File.exists?(Path.join([task.scratch_path, "qa", "shots"]))
 
     assert {:error, {:refused, "No browser named `Demo` on this task." <> _rest}} =
              Mcp.call_run_tool(context, "demo_start", %{"browser" => "Demo"})
@@ -306,48 +306,10 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
 
   # Rail names the file, so nothing arriving from a model becomes a path.
   test "a screenshot is described rather than located", %{context: context, task: task} do
-    assert {:ok, %{"content" => [%{"text" => text}]}} =
+    assert {:ok, %{"content" => [%{"text" => "Saved as shots/the-bill-total-as-rendered-" <> _rest}]}} =
              Mcp.call_run_tool(context, "qa_shot", %{"name" => "The bill total as rendered"})
 
-    assert text =~ "evidence/the-bill-total-as-rendered.jpg"
-    # The name comes back, never the picture, so reading it is the agent's own
-    # decision to make and its own context to spend.
-    assert text =~ "read it only when a check turns on that"
-    assert File.exists?(Path.join([task.scratch_path, "qa", "evidence", "the-bill-total-as-rendered.jpg"]))
-  end
-
-  # A change with nothing on screen is proved by what it writes, so filing that costs no browser, even
-  # one it names, and the line lands once there is a file for the panel to read.
-  test "a file is filed against its check without a browser", %{context: context, task: task, run: run} do
-    reject(Tools, :start_browser_session, 3)
-    {:ok, _checklist} = Pipeline.write_qa_checklist(task, [%{"key" => "script-runs", "title" => "The script runs"}])
-    File.mkdir_p!(Path.join([task.scratch_path, "qa", "evidence"]))
-    File.write!(Path.join([task.scratch_path, "qa", "evidence", "run.log"]), "wrote 3 rows")
-
-    assert {:ok, %{"content" => [%{"text" => text}]}} =
-             Mcp.call_run_tool(context, "qa_file", %{
-               "check" => "script-runs",
-               "name" => "The script's log",
-               "path" => "evidence/run.log",
-               "browser" => "explorer-1"
-             })
-
-    assert text =~ "evidence/script-runs~the-script-s-log.log"
-
-    assert [%{file: "script-runs~the-script-s-log.log", browser: "explorer-1"}] = Pipeline.list_qa_evidence(task)
-
-    # A refusal reads as one in the log, rather than as one more file filed.
-    {:error, {:refused, _refused}} =
-      Mcp.call_run_tool(context, "qa_file", %{"check" => "script-runs", "name" => "Stolen", "path" => "/etc/passwd"})
-
-    {:error, {:refused, _usage}} = Mcp.call_run_tool(context, "qa_file", %{"check" => "script-runs", "name" => "No path"})
-
-    log = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
-
-    assert log =~ ~s([qa] file "The script's log"\n)
-    refute log =~ ~s([qa] file "The script's log" · nothing filed)
-    assert log =~ ~s([qa] file "Stolen" · nothing filed)
-    assert log =~ ~s([qa] file "No path" · nothing filed)
+    assert [_saved] = Path.wildcard(Path.join([task.scratch_path, "qa", "shots", "the-bill-total-as-rendered-*.jpg"]))
   end
 
   test "the browser's own complaints are drained, not accumulated", %{context: context} do

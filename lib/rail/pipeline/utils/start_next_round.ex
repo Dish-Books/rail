@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Utils.StartNextRound do
   @moduledoc """
-  Resumes the Review lead for the round after a fix round, once that round's commit is pushed: through CI
-  where the project has it, or at once where it does not.
+  Resumes the Review lead for its next round once the branch it reviews has moved and is pushed, by a fix
+  round or a merge of the default branch: through CI where the project has it, or at once where it does not.
   """
 
   alias Rail.Git
@@ -23,7 +23,7 @@ defmodule Rail.Pipeline.Utils.StartNextRound do
     Pipeline.append_run_events(run.id, nil, ["[rail] Round #{round} started after #{after_what}"])
 
     note = """
-    Fix round #{round - 1} is committed#{if head, do: " as #{String.slice(head, 0, 7)}"} and #{after_what}. Run round #{round}: have the code reviewer read what changed since round #{round - 1} against the findings, and the explorers re-check the screens it touched. Save every finding not ruled Don't fix again with its status, raise anything new, and call `save_review`.
+    The branch has moved since round #{round - 1}#{if head, do: ", to #{String.slice(head, 0, 7)},"} and #{after_what}. Run round #{round}: have the code reviewer read what changed since round #{round - 1} against the findings, and the explorers re-check the screens it touched. Save every finding not ruled Don't fix again with its status, raise anything new, and call `save_review`.
     """
 
     {:ok, briefed} =

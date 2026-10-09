@@ -420,8 +420,7 @@ defmodule RailWeb.TaskLive do
         {:error, reason} -> put_flash(socket, :error, update_branch_error(reason))
       end
 
-    # The merge is the engineer's work, and its tab is where it shows.
-    {:noreply, push_patch(socket, to: task_path(socket, socket.assigns.engineer_tab))}
+    {:noreply, push_patch(socket, to: task_path(socket, merge_tab(socket.assigns)))}
   end
 
   def handle_info({:run_events, run_id, events}, socket) do
@@ -955,6 +954,10 @@ defmodule RailWeb.TaskLive do
   defp sync_tab_url(%{assigns: %{selected_tab: tab}} = socket) do
     push_patch(socket, to: task_path(socket, tab))
   end
+
+  # The merge runs on the run of the stage the task is at, the Review lead's at Review, and shows on its tab.
+  defp merge_tab(%{task: %Task{stage: :review}, stage_run: %Run{role_id: role_id}}), do: role_id
+  defp merge_tab(%{engineer_tab: engineer_tab}), do: engineer_tab
 
   # A finding names a file, and the diff that file changed in is the engineer's
   # tab, so review can only link there once the engineer has a tab to link to.

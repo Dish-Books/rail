@@ -86,7 +86,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
 
     #{Enum.map_join(fix, "\n\n", &finding/1)}
 
-    Hand them to the engineer whole, every place included. Have the code reviewer read the uncommitted diff against them, and an explorer re-check any screen a fix touched, then call `commit_fixes`.
+    Hand them to the engineer whole, every place included. Have the code reviewer read the uncommitted diff against them, and an explorer re-check any screen a fix touched, then call `commit`.
     """
   end
 

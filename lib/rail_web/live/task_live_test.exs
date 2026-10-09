@@ -2956,12 +2956,25 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#update-branch[disabled]", "Updating…")
     end
 
-    test "a clean merge into a task at Review brings it back to engineer, ready to send to review", %{
+    # At Review the branch is the Review lead's: the merge runs on its run and shows on its tab.
+    test "a clean merge into a task at Review leaves it there, pushes and starts the lead's next round", %{
       conn: conn,
+      project: project,
       task: task,
       repo: repo
     } do
-      {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review, pr_number: 7})
+      {:ok, lead_role} = Roles.get_role(project_id: project.id, stage: :review_lead)
+
+      {:ok, %Run{id: lead_run_id} = lead_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: lead_role.id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.utc_now()
+        })
+
       expect(Git, :fetch_default_branch, fn _project, _path -> :ok end)
 
       expect(Git, :merge_default_branch, fn _scope, _task ->
@@ -2974,13 +2987,18 @@ defmodule RailWeb.TaskLiveTest do
         :ok
       end)
 
+      expect(Tools, :start_os_process, fn %Run{id: ^lead_run_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "[data-qa='task_status_chip']", "Queued for Review")
 
       view |> element("#update-branch") |> render_click()
 
-      assert has_element?(view, "[data-qa='task_status_chip']", "Review the diff")
-      assert has_element?(view, "[data-qa='send_to_review']:not([disabled])")
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{lead_role.id}")
+      assert %Task{stage: :review, is_updating_branch: false} = Repo.reload!(task)
+      refute Git.branch_unpushed?(repo)
+
+      assert ["[rail] Merged origin/main in.", "[rail] Round 1 started after it was pushed"] =
+               lead_run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
     end
 
     test "updating the branch says why for each way it can be refused", %{

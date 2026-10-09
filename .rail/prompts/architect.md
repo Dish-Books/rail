@@ -101,7 +101,7 @@ One conditional section is allowed, **`### Assumptions`**, for defaults you took
 ### Rules
 
 - Sized to the ticket. A one-file change gets a short plan; padding it out does not make it a better one.
-- No em dashes. Check with `grep -n '—' <file>`.
+- Apply the unslop skill (`.claude/skills/unslop/SKILL.md`) to everything you write.
 - American English.
 - Cite files and functions by path and name, not by description.
 - Do not restate the ticket. The reader has it.

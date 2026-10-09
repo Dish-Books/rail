@@ -46,19 +46,20 @@ defmodule RailWeb.Components.FindingDetailTest do
     assert "Suppressed" = doc |> Floki.find("[data-qa=finding_state]") |> Floki.text() |> String.trim()
   end
 
-  test "the code range says what it leaves out, and a filed log shows its text, commit, time and browser" do
+  test "the code range says what it leaves out, and an attached log shows its text, commit, time and browser" do
     hunk = %{display_path: "lib/a.ex", additions: 2, deletions: 1, rows: [], hidden_lines: 1, other_hunks: 2}
 
     log = %FindingEvidence{
       kind: :log,
       name: "server log",
-      path: "qa/evidence/a.log",
+      path: "evidence/send-twice/1-a.log",
+      text: "boom",
       commit: "abcdef1234",
       taken_at: @at,
       browser: "explorer-2"
     }
 
-    filed = [%{index: 0, evidence: log, kind: :text, read: {:ok, %{text: "boom"}}, url: "/qa/a.log"}]
+    filed = [%{index: 0, evidence: log, kind: :inline, url: "/findings/send-twice/evidence/0"}]
 
     doc =
       (&FindingDetail.finding_detail/1)
@@ -76,17 +77,15 @@ defmodule RailWeb.Components.FindingDetailTest do
     assert taken =~ "Open"
   end
 
-  test "a picked screenshot shows full size, and a file no longer there says so" do
-    shot = %FindingEvidence{kind: :screenshot, name: "Send twice", path: "qa/evidence/a.png"}
-    gone = %FindingEvidence{kind: :log, name: "gone", path: "qa/evidence/gone.log"}
-    pdf = %FindingEvidence{kind: :log, name: "report", path: "qa/evidence/a.pdf"}
-    other = %FindingEvidence{kind: :log, name: "dump", path: "qa/evidence/a.bin"}
+  test "a picked screenshot shows full size, and a PDF or other file shows its own icon and no text" do
+    shot = %FindingEvidence{kind: :screenshot, name: "Send twice", path: "evidence/send-twice/1-a.png"}
+    pdf = %FindingEvidence{kind: :log, name: "report", path: "evidence/send-twice/2-a.pdf"}
+    other = %FindingEvidence{kind: :log, name: "dump", path: "evidence/send-twice/3-a.bin"}
 
     filed = [
-      %{index: 0, evidence: shot, kind: :screenshot, read: nil, url: "/qa/a.png"},
-      %{index: 1, evidence: gone, kind: :missing, read: nil, url: nil},
-      %{index: 2, evidence: pdf, kind: :pdf, read: nil, url: "/qa/a.pdf"},
-      %{index: 3, evidence: other, kind: :file, read: nil, url: "/qa/a.bin"}
+      %{index: 0, evidence: shot, kind: :screenshot, url: "/evidence/0"},
+      %{index: 1, evidence: pdf, kind: :pdf, url: "/evidence/1"},
+      %{index: 2, evidence: other, kind: :file, url: "/evidence/2"}
     ]
 
     shown =
@@ -94,15 +93,19 @@ defmodule RailWeb.Components.FindingDetailTest do
       |> render_component([finding: @finding, filed: filed] ++ @attrs)
       |> Floki.parse_fragment!()
 
-    assert [_img] = Floki.find(shown, "#finding-evidence img[src='/qa/a.png']")
+    assert [_img] = Floki.find(shown, "#finding-evidence img[src='/evidence/0']")
     assert shown |> Floki.find("[data-qa=finding_evidence_taken]") |> Floki.text() =~ "Full size"
-    assert [_pdf] = Floki.find(shown, "#finding-evidence-2 .pi-file-pdf")
-    assert [_file] = Floki.find(shown, "#finding-evidence-3 .pi-file")
+    assert [_pdf] = Floki.find(shown, "#finding-evidence-1 .pi-file-pdf")
+    assert [_file] = Floki.find(shown, "#finding-evidence-2 .pi-file")
 
-    missing =
-      render_component(&FindingDetail.finding_detail/1, [finding: @finding, filed: filed, filed_index: 1] ++ @attrs)
+    picked =
+      (&FindingDetail.finding_detail/1)
+      |> render_component([finding: @finding, filed: filed, filed_index: 2] ++ @attrs)
+      |> Floki.parse_fragment!()
 
-    assert missing =~ "The file this cites is not there any more."
+    assert [] = Floki.find(picked, "[data-qa=finding_evidence_text]")
+    assert [] = Floki.find(picked, "#finding-evidence img")
+    assert picked |> Floki.find("[data-qa=finding_evidence_taken] a[href='/evidence/2']") |> Floki.text() =~ "Open"
   end
 
   test "the history reads each note in its round, naming who ruled and what each fix covered" do

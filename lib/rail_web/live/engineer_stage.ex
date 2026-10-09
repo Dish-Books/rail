@@ -459,7 +459,7 @@ defmodule RailWeb.Live.EngineerStage do
         # Unlinked, so leaving the page does not cut a commit off between its go-ahead
         # and the push, CI or review that settles it.
         Rail.TaskSupervisor
-        |> Elixir.Task.Supervisor.async_nolink(fn -> Pipeline.commit_and_send_to_review(scope, run) end)
+        |> Elixir.Task.Supervisor.async_nolink(fn -> Pipeline.commit_work(scope, run) end)
         |> Elixir.Task.await(:infinity)
       end)
 

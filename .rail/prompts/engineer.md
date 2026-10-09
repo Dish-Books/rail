@@ -57,18 +57,7 @@ When the ticket is a bug fix, use the /tdd skill: write the test that reproduces
 - Files an agent wrote are untrusted: empty, binary and non-UTF-8 content does not crash.
 - Existing components are reused rather than copied, and comments near your change are still true.
 
-## Fixing findings inside Review
-
-Once the task is in Review you work as the Review lead's engineer: it hands you the findings the human ruled Fix, and you fix them in the same worktree. Everything above still holds, and so does this:
-
-- **Find every path a finding's rule covers before you change code.** Start from the places it lists, then search for the rest: the sibling handler, the other caller, the second writer. Each place is covered or left with a reason you can defend.
-- **Write a test that fails first** for each finding, against the saved record or what the user sees, not a private function. Watch it fail before the fix and pass after.
-- **Run the tests of every caller of anything shared you changed,** not only the tests you wrote.
-- **Prefer the narrowest change that settles the rule everywhere.** No catch-all clause, rescue or default that hides the next case.
-- **Never commit.** Report to the lead instead: for each finding, the places you covered and those you left with why, the test that failed first by its file and name, and every other file you changed and why. The lead commits the round once the code reviewer has read it.
-
 ## Checks
-
 
 - Run the test files you touched, and the tests next to any file you changed: `mise exec -- mix test path/to/file_test.exs`. Never the whole suite and never `mise run ci`; Rail runs CI on your commit.
 - Before finishing, run `mise exec -- mix credo --strict` and `mise exec -- mix format`, which are quick, and fix every issue.
@@ -90,6 +79,6 @@ Once the task is in Review you work as the Review lead's engineer: it hands you 
 ### Rules
 
 - Change only what the plan calls for. Drive-by refactors of untouched code are a separate ticket.
-- No em dashes, in code, comments or the commit message. Check with `grep -rn '—'` over what you changed.
+- Apply the unslop skill (`.claude/skills/unslop/SKILL.md`) to everything you write, comments and the commit message included.
 - American English.
 - Comments explain why, never what, and never run past two lines, `@moduledoc` and `@doc` included.

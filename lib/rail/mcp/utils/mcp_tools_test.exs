@@ -23,12 +23,11 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
              "qa_plan",
              "qa_check",
              "qa_shot",
-             "qa_file",
              "demo_start",
              "demo_say",
              "save_finding",
              "save_review",
-             "commit_fixes",
+             "commit",
              "save_demo",
              "knowledge_search"
            ]
@@ -42,10 +41,25 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
                "properties" => %{
                  "file" => %{"type" => "string"},
                  "steps" => %{"type" => "array"},
-                 "evidence" => %{"type" => "array"}
+                 "evidence" => %{
+                   "type" => "array",
+                   "items" => %{
+                     "properties" => %{"path" => %{"type" => "string"}, "browser" => %{"type" => "string"}},
+                     "required" => ["name", "kind"]
+                   }
+                 }
                }
              }
            } = %Role{stage: :review_lead} |> mcp_tools() |> Enum.find(&(&1["name"] == "save_finding"))
+  end
+
+  # Rail names the file, so a shot takes a caption and a browser and never a path.
+  test "qa_shot takes what the picture shows and which browser, and nothing else" do
+    assert %{"inputSchema" => %{"properties" => properties, "required" => ["name"]}} =
+             %Role{stage: :review_lead} |> mcp_tools() |> Enum.find(&(&1["name"] == "qa_shot"))
+
+    assert %{"name" => %{"type" => "string"}, "browser" => %{"type" => "string"}} = properties
+    assert map_size(properties) == 2
   end
 
   test "the lead's subagents are offered only the knowledge base", %{names: names} do

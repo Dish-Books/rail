@@ -7,13 +7,13 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
   """
 
   import Ecto.Changeset
+  import Rail.Pipeline.Utils.AttachEvidence
 
   alias Rail.Git
   alias Rail.Learnings
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
-  alias Rail.Pipeline.Schemas.FindingEvidence
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
 
@@ -45,71 +45,52 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
   end
 
   defp raise_finding(%Task{} = task, attrs, said) do
-    attrs = Map.put(attrs, "evidence", filed(task, attrs["evidence"], said))
+    build = fn evidence ->
+      %Finding{task_id: task.id, round: said.round, raised_in: said.commit}
+      |> Finding.raise_changeset(Map.put(attrs, "evidence", evidence))
+      |> change(link(task, attrs["checklist_rule"]))
+      |> Finding.note_changeset(%{note: Map.merge(said, %{kind: :raised, text: attrs["note"]})})
+    end
 
-    %Finding{task_id: task.id, round: said.round, raised_in: said.commit}
-    |> Finding.raise_changeset(attrs)
-    |> change(link(task, attrs["checklist_rule"]))
-    |> Finding.note_changeset(%{note: Map.merge(said, %{kind: :raised, text: attrs["note"]})})
-    |> validate_filed(task)
-    |> Repo.insert()
-  end
-
-  defp note(%Task{} = task, %Finding{} = finding, attrs, said) do
-    changeset =
-      Finding.note_changeset(finding, %{
-        status: attrs["status"] || finding.status,
-        evidence: filed(task, attrs["evidence"], said),
-        note: Map.merge(said, %{kind: :pass, status: attrs["status"] || finding.status, text: attrs["note"]})
-      })
-
-    carried? =
-      finding.decision == :fix and get_field(changeset, :status) == :not_fixed and finding.carried_round != said.round
-
-    changeset =
-      if carried?,
-        do: Finding.note_changeset(changeset, %{carried_round: said.round, note: Map.put(said, :kind, :carried)}),
-        else: changeset
-
-    changeset |> validate_filed(task) |> Repo.update()
-  end
-
-  # A file a pass filed carries the commit and browser it was taken on; anything else was seen at HEAD now.
-  defp filed(%Task{} = task, entries, said) when is_list(entries) do
-    listed = if Enum.any?(entries, &match?(%{"path" => _path}, &1)), do: Pipeline.list_qa_evidence(task), else: []
-
-    for entry <- entries do
-      entry = if is_map(entry), do: Map.drop(entry, ["commit", "browser", "taken_at"]), else: entry
-
-      with %{"path" => "evidence/" <> file} <- entry,
-           %{} = listed <- Enum.find(listed, &(&1.file == file)) do
-        Map.merge(entry, %{
-          "commit" => listed.commit,
-          "browser" => listed.browser,
-          "taken_at" => DateTime.from_unix!(listed.taken_at)
-        })
-      else
-        %{} = seen -> Map.merge(seen, %{"commit" => said.commit, "taken_at" => said.at})
-        _unreadable -> entry
-      end
+    with {:ok, changeset} <- attach_then(build, task, attrs["key"], attrs["evidence"], said) do
+      Repo.insert(changeset)
     end
   end
 
-  defp filed(%Task{}, _no_evidence, _said), do: []
+  defp note(%Task{} = task, %Finding{} = finding, attrs, said) do
+    status = attrs["status"] || finding.status
 
-  # The schema already holds a path to the QA folder; this holds it to a file that is there.
-  defp validate_filed(changeset, %Task{scratch_path: scratch_path}) do
-    qa_dir = Path.join(scratch_path, "qa")
+    build = fn evidence ->
+      changeset =
+        Finding.note_changeset(finding, %{
+          status: status,
+          evidence: evidence,
+          note: Map.merge(said, %{kind: :pass, status: status, text: attrs["note"]})
+        })
 
-    missing =
-      for %FindingEvidence{path: path} when is_binary(path) <- get_field(changeset, :evidence),
-          FindingEvidence.confined?(path),
-          not File.regular?(Path.join(qa_dir, path)),
-          do: path
+      carried? =
+        finding.decision == :fix and get_field(changeset, :status) == :not_fixed and finding.carried_round != said.round
 
-    case missing do
-      [] -> changeset
-      paths -> add_error(changeset, :evidence, "#{Enum.join(paths, ", ")} is not a file in #{qa_dir}")
+      if carried?,
+        do: Finding.note_changeset(changeset, %{carried_round: said.round, note: Map.put(said, :kind, :carried)}),
+        else: changeset
+    end
+
+    with {:ok, changeset} <- attach_then(build, task, finding.key, attrs["evidence"], said) do
+      Repo.update(changeset)
+    end
+  end
+
+  # Checked as cited before anything is copied, so a refused save leaves no file behind in the finding's folder.
+  defp attach_then(build, %Task{} = task, key, cited, said) do
+    entries = if is_list(cited), do: cited, else: []
+
+    with %Ecto.Changeset{valid?: true} <- build.(entries),
+         {:ok, attached} <- attach_evidence(task, key, entries, said) do
+      {:ok, build.(attached)}
+    else
+      %Ecto.Changeset{} = refused -> {:error, refused}
+      {:error, text} -> {:error, add_error(build.(entries), :evidence, text)}
     end
   end
 

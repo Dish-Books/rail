@@ -1,7 +1,8 @@
 defmodule Rail.Pipeline.Schemas.FindingEvidence do
   @moduledoc """
   What a finding has to show for itself: a highlighted code range in the worktree, or a screenshot, log,
-  query or note a pass filed under `<scratch>/qa`, with the commit and browser it was taken on.
+  query or note a pass wrote under `<scratch>/qa` and saving the finding attached, with the commit and
+  browser it was taken on.
 
   `file` is relative to the worktree and `path` to the QA folder, and neither may leave its root: `path` is
   the one string here that becomes a filename on a request from a browser.
@@ -23,14 +24,14 @@ defmodule Rail.Pipeline.Schemas.FindingEvidence do
     field :end_line, :integer
     field :path, :string
     field :text, :string
-    # Copied from what was filed, never taken from the agent.
+    # Rail's own record of when and where, never taken from the agent; `browser` is the lead's word.
     field :commit, :string
     field :browser, :string
     field :taken_at, :utc_datetime_usec
   end
 
   @doc """
-  Builds a changeset for one piece of evidence; `commit`, `browser` and `taken_at` are the filing's.
+  Builds a changeset for one piece of evidence; `commit` and `taken_at` are Rail's, set when it is attached.
   """
   def changeset(evidence, attrs) do
     evidence
@@ -55,7 +56,7 @@ defmodule Rail.Pipeline.Schemas.FindingEvidence do
 
   @doc """
   True when `path` is relative to the task's `<scratch>/qa` and never climbs out
-  of it, which is the one test for a path a finding cites or `qa_file` files.
+  of it, which is the one test for a path a finding cites.
   """
   def confined?(path) when is_binary(path), do: path =~ @path and ".." not in Path.split(path)
 

@@ -24,17 +24,15 @@ defmodule Rail.Mcp.Utils.McpTools do
 
   The agent never starts the browser and never names a file Rail serves. Any
   tool opens the tab if it is not open, a screenshot is described rather than
-  located, and a file the agent wrote is copied in under a name Rail chooses - so
-  nothing arriving from a model becomes a served path, and there is no way to
+  located, and a file a finding cites is copied into the finding's own folder -
+  so nothing arriving from a model becomes a served path, and there is no way to
   leave a tab behind by forgetting the last instruction: reconcile closes it when
   the task moves on.
 
   `@qa_tools` are about a pass rather than a page. `qa_plan` writes the checklist
   before anything is opened, `qa_check` marks a row off as it is reached, and
-  `qa_shot` files a picture and `qa_file` an output file against one of those
-  rows - which is what the human watching is actually shown: a list of what this
-  pass said it would do, going green a row at a time with its evidence beside it.
-  None of the four opens a browser of its own.
+  `qa_shot` saves a picture for a finding to cite. None of the three opens a
+  browser of its own.
 
   Every stage hands its output over through save tools of its own, checked when
   called. The Review lead's subagents inherit its tools, so the one register is
@@ -173,43 +171,16 @@ defmodule Rail.Mcp.Utils.McpTools do
     %{
       "name" => "qa_shot",
       "description" =>
-        "Photograph the page and file it against one check. Say what the picture is of and which " <>
-          "check it is for; Rail names the file and returns the name to put in a finding's " <>
-          "evidence - the name, never the picture. The human reads the checklist row by row with " <>
-          "what was filed for each, so a check that asserts something on screen wants a picture of " <>
-          "it: take it at the point the check asserts it, not after every keystroke.",
+        "Photograph the page and save it in the QA folder. Say what the picture is of; Rail names the file " <>
+          "and returns its path, which goes to the lead to cite in a finding's evidence: the path, never " <>
+          "the picture. Take it at the point a check asserts something on screen, not after every keystroke.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{
-          "check" => %{"type" => "string", "description" => "The key of the check this shows, from qa_plan."},
           "name" => %{"type" => "string", "description" => "What this picture shows."},
           "browser" => @browser
         },
-        "required" => ["check", "name"]
-      }
-    },
-    %{
-      "name" => "qa_file",
-      "description" =>
-        "File an output file against one check: a log, a PDF, a CSV, whatever the check produced " <>
-          "that proves it. Write or copy it under the QA directory first and give its path relative " <>
-          "to that directory; Rail copies it in under a name of its own and returns the name to put " <>
-          "in a finding's evidence. A check proved by what it writes needs no picture, and a check " <>
-          "can carry both.",
-      "inputSchema" => %{
-        "type" => "object",
-        "properties" => %{
-          "check" => %{"type" => "string", "description" => "The key of the check this proves, from qa_plan."},
-          "name" => %{"type" => "string", "description" => "What this file shows."},
-          "browser" => %{"type" => "string", "description" => "The browser it came from, by its name, if any."},
-          "path" => %{
-            "type" => "string",
-            "description" =>
-              "Where the file is, relative to the QA directory: a log, a PDF, a CSV, any output that " <>
-                "proves the check. Never absolute and never climbing out with `..`."
-          }
-        },
-        "required" => ["check", "name", "path"]
+        "required" => ["name"]
       }
     }
   ]
@@ -374,27 +345,71 @@ defmodule Rail.Mcp.Utils.McpTools do
     }
   ]
 
-  @engineer_tools [
-    %{
-      "name" => "commit",
-      "description" =>
-        "Hand over finished work. Call it once the work is finished and its tests pass: it ends your turn " <>
-          "on the spot, and Rail commits the worktree under your message and pushes it or runs CI. Nothing " <>
-          "you write after it is read, so write your summary for the human (what you changed, how you " <>
-          "checked it, what you could not do) in the same message, before the call. After a CI failure that " <>
-          "was not your change's to fix, call it with nothing changed and CI runs again.",
-      "inputSchema" => %{
-        "type" => "object",
-        "properties" => %{
-          "message" => %{
-            "type" => "string",
-            "description" =>
-              "One line saying what this change does, a blank line, then what changed and why, as a commit body."
+  @commit_tool %{
+    "name" => "commit",
+    "description" =>
+      "Hand over finished work. Call it once the work is finished and its tests pass: it ends your turn on " <>
+        "the spot, and Rail commits the worktree under your message and sends it on, through CI where the " <>
+        "project has it: the engineer's work to Review, and at Review the fix round to the next round. Nothing " <>
+        "you write after it is read, so write your summary for the human in the same message, before the " <>
+        "call. At Review, list every finding ruled Fix in `findings` and every other changed file in " <>
+        "`other_files`; it refuses a round that leaves a Fix finding out, lists one without a place or a test, " <>
+        "or holds a changed file nothing listed explains. After a CI failure that was not the change's to fix, " <>
+        "call it with nothing changed and CI runs again.",
+    "inputSchema" => %{
+      "type" => "object",
+      "properties" => %{
+        "message" => %{
+          "type" => "string",
+          "description" =>
+            "One line saying what this change does, a blank line, then what changed and why, as a commit body."
+        },
+        "findings" => %{
+          "type" => "array",
+          "description" => "At Review: every finding ruled Fix and still to fix.",
+          "items" => %{
+            "type" => "object",
+            "properties" => %{
+              "key" => %{"type" => "string"},
+              "covered" => %{
+                "type" => "array",
+                "items" => %{"type" => "integer"},
+                "description" => "The numbers of the places, from 1, its fix covers."
+              },
+              "left" => %{
+                "type" => "array",
+                "description" => "The places the fix leaves as they are, and why.",
+                "items" => %{
+                  "type" => "object",
+                  "properties" => %{"place" => %{"type" => "integer"}, "reason" => %{"type" => "string"}},
+                  "required" => ["place", "reason"]
+                }
+              },
+              "test" => %{
+                "type" => "object",
+                "description" => "The test that failed before the fix.",
+                "properties" => %{"file" => %{"type" => "string"}, "name" => %{"type" => "string"}},
+                "required" => ["file", "name"]
+              }
+            },
+            "required" => ["key", "covered", "test"]
           }
         },
-        "required" => ["message"]
-      }
-    },
+        "other_files" => %{
+          "type" => "array",
+          "description" => "At Review: every other changed file, with the reason the human reads.",
+          "items" => %{
+            "type" => "object",
+            "properties" => %{"path" => %{"type" => "string"}, "reason" => %{"type" => "string"}},
+            "required" => ["path", "reason"]
+          }
+        }
+      },
+      "required" => ["message"]
+    }
+  }
+
+  @engineer_tools [
     %{
       "name" => "request_merge",
       "description" =>
@@ -462,15 +477,17 @@ defmodule Rail.Mcp.Utils.McpTools do
           "evidence" => %{
             "type" => "array",
             "description" =>
-              "At least one piece: a `code` range in the worktree, a name qa_shot or qa_file handed back as " <>
-                "`path`, or a small value as `text`.",
+              "At least one piece: a `code` range in the worktree, a file in the QA folder as `path`, such as " <>
+                "a picture qa_shot saved or a log a pass wrote, which Rail attaches to the finding, or a small " <>
+                "value as `text`.",
             "items" => %{
               "type" => "object",
               "properties" =>
                 Map.merge(@range, %{
                   "name" => %{"type" => "string", "description" => "What it shows."},
                   "kind" => %{"type" => "string", "enum" => ["code", "screenshot", "log", "query", "note"]},
-                  "path" => %{"type" => "string", "description" => "Relative to the QA folder, as Rail named it."},
+                  "path" => %{"type" => "string", "description" => "Relative to the QA folder."},
+                  "browser" => %{"type" => "string", "description" => "The browser it was taken in, if any."},
                   "text" => %{"type" => "string", "description" => "Something small enough to read inline."}
                 }),
               "required" => ["name", "kind"]
@@ -508,65 +525,6 @@ defmodule Rail.Mcp.Utils.McpTools do
         "Say the round is finished, once every finding is saved and every check settled. Call it last, and " <>
           "call it when the round found nothing too. A round that ends without it has not reported.",
       "inputSchema" => %{"type" => "object", "properties" => %{}}
-    },
-    %{
-      "name" => "commit_fixes",
-      "description" =>
-        "Commit the fix round, once the engineer has fixed every finding ruled Fix and the code reviewer has " <>
-          "read the diff. It ends your turn on the spot: Rail commits the round as one commit, runs CI and " <>
-          "starts the next round once it passes. It refuses a round that leaves a Fix finding out, lists one " <>
-          "without a place or a test, or holds a changed file nothing listed explains. After a CI failure, " <>
-          "call it with nothing changed and CI runs again.",
-      "inputSchema" => %{
-        "type" => "object",
-        "properties" => %{
-          "message" => %{
-            "type" => "string",
-            "description" => "One line saying what this round fixes, a blank line, then the body."
-          },
-          "findings" => %{
-            "type" => "array",
-            "description" => "Every finding ruled Fix and still to fix.",
-            "items" => %{
-              "type" => "object",
-              "properties" => %{
-                "key" => %{"type" => "string"},
-                "covered" => %{
-                  "type" => "array",
-                  "items" => %{"type" => "integer"},
-                  "description" => "The numbers of the places, from 1, its fix covers."
-                },
-                "left" => %{
-                  "type" => "array",
-                  "description" => "The places the fix leaves as they are, and why.",
-                  "items" => %{
-                    "type" => "object",
-                    "properties" => %{"place" => %{"type" => "integer"}, "reason" => %{"type" => "string"}},
-                    "required" => ["place", "reason"]
-                  }
-                },
-                "test" => %{
-                  "type" => "object",
-                  "description" => "The test that failed before the fix.",
-                  "properties" => %{"file" => %{"type" => "string"}, "name" => %{"type" => "string"}},
-                  "required" => ["file", "name"]
-                }
-              },
-              "required" => ["key", "covered", "test"]
-            }
-          },
-          "other_files" => %{
-            "type" => "array",
-            "description" => "Every other changed file, with the reason the human reads.",
-            "items" => %{
-              "type" => "object",
-              "properties" => %{"path" => %{"type" => "string"}, "reason" => %{"type" => "string"}},
-              "required" => ["path", "reason"]
-            }
-          }
-        },
-        "required" => ["message", "findings"]
-      }
     }
   ]
 
@@ -618,10 +576,12 @@ defmodule Rail.Mcp.Utils.McpTools do
   output over with, and the knowledge base for all.
   """
   def mcp_tools(%Role{stage: :plan}), do: @plan_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :engineer}), do: @engineer_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :engineer}), do: [@commit_tool | @engineer_tools] ++ @knowledge_tools
 
   def mcp_tools(%Role{stage: :review_lead}),
-    do: @browser_tools ++ @qa_tools ++ @demo_tools ++ @review_lead_tools ++ @demo_report_tools ++ @knowledge_tools
+    do:
+      @browser_tools ++
+        @qa_tools ++ @demo_tools ++ @review_lead_tools ++ [@commit_tool | @demo_report_tools] ++ @knowledge_tools
 
   def mcp_tools(%Role{}), do: @knowledge_tools
 end

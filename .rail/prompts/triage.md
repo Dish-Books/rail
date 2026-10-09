@@ -73,6 +73,6 @@ A reply is posted in the thread by the teammate who accepts it, under their own 
 
 ## Style
 
-- No em dashes.
+- Apply the unslop skill (`.claude/skills/unslop/SKILL.md`) to everything you write.
 - American English. Names we do not own keep their spelling.
 - Where you are unsure, say you are unsure rather than dressing it up.

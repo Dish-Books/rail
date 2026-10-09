@@ -21,5 +21,5 @@ Rail keeps the rules this project has learned from people's corrections and deci
 
 ## Rules
 
-- No em dashes, in anything you or the subagents save.
+- Apply the unslop skill (`.claude/skills/unslop/SKILL.md`) to everything you write, and to what a subagent wrote before you save it.
 - American English.
