@@ -81,15 +81,23 @@ defmodule Rail.Tools.Actions.StartBrowserSession do
     if Keyword.get(opts, :existing, false), do: {:error, :no_browser}, else: launch(task, name, opts)
   end
 
-  # Two callers that both found nothing both insert, and the unique index lets one
-  # through; the other looks again and finds the session that one is starting.
+  # Two callers that both found nothing both insert, and the live-name index lets one
+  # through; only that refusal is retried, finding the session the other is starting.
   defp launch(%Task{} = task, name, opts) do
     %Session{}
     |> Session.changeset(%{task_id: task.id, name: name, status: :starting, started_at: DateTime.utc_now()})
     |> Repo.insert()
     |> case do
-      {:ok, session} -> started(session, start(task, session, opts))
-      {:error, %Ecto.Changeset{}} -> start_browser_session(task, name, opts)
+      {:ok, session} ->
+        started(session, start(task, session, opts))
+
+      {:error,
+       %Ecto.Changeset{
+         errors: [
+           task_id: {_message, [constraint: :unique, constraint_name: "browser_sessions_live_task_name_index"]}
+         ]
+       }} ->
+        start_browser_session(task, name, opts)
     end
   end
 

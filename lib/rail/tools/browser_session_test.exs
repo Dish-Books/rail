@@ -261,6 +261,14 @@ defmodule Rail.Tools.BrowserSessionTest do
     assert [%Session{status: :running}] = Repo.all(from s in Session, where: s.task_id == ^task.id)
   end
 
+  # Only the race on the live name is retried. A task deleted under a tool call
+  # fails its foreign key every time, so it raises rather than looping.
+  test "a task deleted under the call raises rather than retrying", %{task: task} do
+    Repo.delete!(task)
+
+    assert_raise CaseClauseError, fn -> Tools.start_browser_session(task, "qa") end
+  end
+
   # Rail stopping is not the task being done with its browser: a deploy in the
   # middle of a pass comes back to the page the pass was on.
   test "a session that ends with Rail leaves its tab, and the next one attaches to it", %{task: task, page: page} do
