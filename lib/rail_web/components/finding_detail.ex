@@ -481,8 +481,12 @@ defmodule RailWeb.Components.FindingDetail do
   defp words(nil), do: ""
   defp words(text), do: ": #{text}"
 
-  defp covered(%FindingNote{covered: covered, left: left}) do
-    [covered != [] && "; covers #{Enum.join(covered, ", ")}", left != [] && "; leaves #{Enum.join(left, "; ")}"]
+  defp covered(%FindingNote{covered: covered, left: left, files: files}) do
+    [
+      covered != [] && "; covers #{Enum.join(covered, ", ")}",
+      left != [] && "; leaves #{Enum.join(left, "; ")}",
+      files != [] && "; changes #{Enum.join(files, ", ")}"
+    ]
     |> Enum.filter(&is_binary/1)
     |> Enum.join()
   end

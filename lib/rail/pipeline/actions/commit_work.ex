@@ -56,7 +56,7 @@ defmodule Rail.Pipeline.Actions.CommitWork do
   defp record_fixes(%Task{} = task, %Run{} = run, round, sha, fixes, others) do
     now = DateTime.utc_now()
 
-    for %{finding: finding, covered: covered, left: left, test: test} <- fixes do
+    for %{finding: finding, covered: covered, left: left, files: files, test: test} <- fixes do
       places =
         finding.places
         |> Enum.with_index(1)
@@ -80,6 +80,7 @@ defmodule Rail.Pipeline.Actions.CommitWork do
             %FindingPlace{} = place <- [place(finding, n)],
             do: "#{FindingPlace.describe(place)}: #{reason}"
           ),
+        files: files,
         test: "#{String.trim(test["file"])}: #{String.trim(test["name"])}"
       }
 

@@ -461,12 +461,13 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
       File.write!(Path.join(repo, "feature.ex"), "fixed\n")
       test_pid = self()
 
-      expect(Tools, :start_os_process, fn %Run{id: ^lead_run_id} = spawned, _argv ->
+      # Resumed as running, so the page shows the re-review and nothing can start another turn under it.
+      expect(Tools, :start_os_process, fn %Run{id: ^lead_run_id, status: :running} = spawned, _argv ->
         send(test_pid, :resumed)
         {:ok, %OsProcess{run: spawned}}
       end)
 
-      assert {:ok, %Run{id: ^lead_run_id, stage_outcome: :in_progress}} =
+      assert {:ok, %Run{id: ^lead_run_id, stage_outcome: :in_progress, status: :running}} =
                Pipeline.commit_work(scope, lead_run, %{message: "Guard the nil"})
 
       assert git!(repo, ["log", "-1", "--pretty=%B"]) =~ ~r/\AGuard the nil\n\nTicket: CMW-1 .*\nRail-Step: Fix round 1\n/
@@ -515,9 +516,13 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
         })
         |> Repo.insert!()
 
-      expect(Tools, :start_os_process, fn %Run{id: ^lead_run_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      expect(Tools, :start_os_process, fn %Run{id: ^lead_run_id, status: :running} = spawned, _argv ->
+        {:ok, %OsProcess{run: spawned}}
+      end)
 
-      assert {:ok, %Run{review_on_ci_pass: false, error: nil}} = Pipeline.run_finished(ci, %{exit_code: 0})
+      assert {:ok, %Run{review_on_ci_pass: false, error: nil, status: :running}} =
+               Pipeline.run_finished(ci, %{exit_code: 0})
+
       refute Git.branch_unpushed?(repo)
       assert %Task{stage: :review} = Repo.reload!(task)
 
@@ -539,6 +544,7 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
                Pipeline.commit_work(scope, lead_run, %{message: "Guard the nil"})
 
       refute Git.branch_unpushed?(repo)
+      assert %Run{status: :finished} = Repo.reload!(lead_run)
     end
 
     test "the lead's commit on a task back at Engineer is refused, with nothing committed", %{

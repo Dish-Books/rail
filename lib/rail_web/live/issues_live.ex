@@ -256,7 +256,7 @@ defmodule RailWeb.IssuesLive do
             <.issue_card
               :for={issue <- @issues}
               issue={issue}
-              task={issue.task}
+              task={issue.task && %{issue.task | issue: issue}}
               run={stage_run(issue.task)}
             />
           </div>

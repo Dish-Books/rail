@@ -76,7 +76,8 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
 
-    expect(Tools, :start_os_process, fn %Run{id: ^run_id, stage_outcome: :in_progress} = spawned,
+    # Spawned as running, so a second click finds the stage busy and the page shows the fix round.
+    expect(Tools, :start_os_process, fn %Run{id: ^run_id, stage_outcome: :in_progress, status: :running} = spawned,
                                         ["-p", prompt | _rest] ->
       assert prompt =~ "Start fix round 1. The human ruled these 1 findings Fix"
       assert prompt =~ ~s(<finding key="nil-crash" severity="major" kind="code">)
@@ -84,10 +85,12 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
       assert prompt =~ "1. lib/a.ex:3, handle/1\n2. lib/b.ex:9"
       refute prompt =~ "a-nit"
 
-      {:ok, %OsProcess{run: %{spawned | status: :running}}}
+      {:ok, %OsProcess{run: spawned}}
     end)
 
     assert {:ok, %Run{id: ^run_id, status: :running}} = Pipeline.start_fix_round(run)
+    assert %Run{status: :running} = Repo.get!(Run, run_id)
+    assert {:error, :stage_running} = Pipeline.start_fix_round(run)
     assert %Task{stage: :review} = Repo.reload!(task)
     assert [_line | _rest] = run |> Pipeline.list_run_events() |> Enum.filter(&(&1.line =~ "[human] Start fix round 1"))
     assert Repo.exists?(from o in Observation, where: o.source_id == ^crash.id and o.source_kind == :review_finding)
@@ -224,8 +227,11 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
     end)
 
     assert {:ok, %Run{error: "Could not start"}} = Pipeline.start_fix_round(run)
+    # A failed spawn settles its run through run_finished, which this stub stands in for.
+    {:ok, _settled} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished})
 
     expect(Tools, :start_os_process, fn %Run{}, _argv -> {:error, :dispatch_disabled} end)
     assert {:error, :dispatch_disabled} = Pipeline.start_fix_round(run)
+    assert %Run{status: :finished} = Repo.reload!(run)
   end
 end

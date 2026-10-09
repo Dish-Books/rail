@@ -73,14 +73,21 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
     {:ok, finished}
   end
 
-  # The note is consumed by the spawn and never written anywhere, so the conversation keeps it too.
+  # The note is consumed by the spawn and never written anywhere, so the conversation keeps it too. The run
+  # reads running from here, so a second click finds the stage busy and the page shows the fix round.
   defp resume(%Run{} = run, fix, round) do
     note = note(fix, round)
     send_back(run.task, :review_lead, note)
 
     {:ok, reopened} =
       run
-      |> Run.changeset(%{stage_outcome: :in_progress, error: nil, ci_failure_streak: 0, pending_answer: note})
+      |> Run.changeset(%{
+        status: :running,
+        stage_outcome: :in_progress,
+        error: nil,
+        ci_failure_streak: 0,
+        pending_answer: note
+      })
       |> Repo.update()
 
     {:ok, role} = Roles.get_role(id: run.role_id)
@@ -88,8 +95,14 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
     case Pipeline.start_review_run(%{reopened | task: run.task, role: role}) do
       {:ok, os_process} -> {:ok, os_process.run}
       {:error, {:spawn_failed, _reason, %Run{} = failed}} -> {:ok, failed}
-      {:error, :dispatch_disabled} -> {:error, :dispatch_disabled}
+      {:error, :dispatch_disabled} -> unstarted(reopened, :dispatch_disabled)
     end
+  end
+
+  # Marked running before the spawn so a second click is refused, it goes back when nothing was spawned.
+  defp unstarted(%Run{} = run, reason) do
+    {:ok, _settled} = run |> Run.changeset(%{status: :finished}) |> Repo.update()
+    {:error, reason}
   end
 
   defp note(fix, round) do

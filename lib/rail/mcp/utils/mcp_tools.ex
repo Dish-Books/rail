@@ -376,6 +376,12 @@ defmodule Rail.Mcp.Utils.McpTools do
                 "items" => %{"type" => "integer"},
                 "description" => "The numbers of the places, from 1, its fix covers."
               },
+              "files" => %{
+                "type" => "array",
+                "items" => %{"type" => "string"},
+                "description" =>
+                  "The files its fix changed, a screen finding's especially, since a screen place names none."
+              },
               "left" => %{
                 "type" => "array",
                 "description" => "The places the fix leaves as they are, and why.",

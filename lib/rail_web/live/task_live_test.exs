@@ -461,6 +461,33 @@ defmodule RailWeb.TaskLiveTest do
     refute has_element?(view, "#retry-run")
   end
 
+  # The migration leaves every task it moved to Review on a stopped lead run with no conversation.
+  test "a Review lead run with no conversation is retried by entering Review again", %{
+    conn: conn,
+    task: task,
+    project: project
+  } do
+    {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+
+    {:ok, stopped} =
+      Pipeline.create_run(%{task_id: task.id, role_id: lead.id, status: :finished, started_at: DateTime.utc_now()})
+
+    stub(Git, :get_or_create_worktree, fn _project, _task -> {:ok, task.worktree_path} end)
+
+    expect(Tools, :start_os_process, fn spawned, argv ->
+      assert "--agents" in argv
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{lead.id}")
+
+    view |> element("#retry-run") |> render_click()
+
+    assert %Run{status: :running, error: nil} = Repo.reload!(stopped)
+    assert %Task{stage: :review} = Repo.reload!(task)
+  end
+
   test "a question's options, tabs and draft all feed the answer", %{conn: conn, task: task, run: run} do
     {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
     blocked = Repo.preload(blocked, task: :issue)

@@ -50,4 +50,15 @@ defmodule RailWeb.Components.ReviewStatusTest do
              |> Floki.text()
              |> String.trim()
   end
+
+  # Each row is whitespace-pre, so anything around the line in the template would show as blank lines.
+  test "the end of the CI log holds each line as it is, with nothing around it" do
+    doc =
+      (&ReviewStatus.review_status/1)
+      |> render_component(phase: :ci, round: 1, counts: @counts, tail: ["  4 tests, 1 failure", "exit 1"])
+      |> Floki.parse_fragment!()
+
+    assert ["  4 tests, 1 failure", "exit 1"] =
+             doc |> Floki.find("[data-qa=review_status_log] .whitespace-pre") |> Enum.map(&Floki.text/1)
+  end
 end

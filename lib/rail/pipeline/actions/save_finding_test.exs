@@ -93,6 +93,24 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
     assert Pipeline.list_findings(task) == []
   end
 
+  # The lead saves it again in the same turn, which it can only do knowing which piece is wrong and why.
+  test "a new finding with a bad evidence entry is refused naming the entry and what is wrong", %{
+    task: task,
+    attrs: attrs
+  } do
+    for {entry, said} <- [
+          {%{"name" => "passwd", "kind" => "log", "path" => "../../../../etc/passwd"},
+           %{path: ["cannot climb out of the QA directory"]}},
+          {%{"name" => "The handler", "kind" => "code", "file" => "lib/a.ex"},
+           %{file: ["code evidence needs the `file` and `line` it highlights"]}},
+          {%{"name" => "Odd", "kind" => "bogus", "text" => "x"}, %{kind: ["is invalid"]}},
+          {%{"name" => "Note", "kind" => "note"}, %{path: ["evidence needs a file or some text"]}}
+        ] do
+      assert {:error, changeset} = Pipeline.save_finding(task, %{attrs | "evidence" => [entry]})
+      assert %{evidence: [^said]} = errors_on(changeset)
+    end
+  end
+
   # Copied rather than pointed at, so a later pass writing over the original changes nothing the human was shown.
   test "a cited screenshot is copied into the finding's folder and outlives the original", %{
     task: task,

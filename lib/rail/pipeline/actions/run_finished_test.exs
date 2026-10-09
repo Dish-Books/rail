@@ -911,7 +911,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
               %Run{
                 ci_failure_streak: 3,
                 error:
-                  "CI failed 3 times in a row, so it was not sent back again. Read its output, then message the Review lead or Retry."
+                  "CI failed 3 times in a row, so it was not sent back again. Read its output, then message the Review lead, which can run CI again with nothing changed."
               }} = Pipeline.run_finished(os_process, %{exit_code: 1})
     end
 
@@ -921,7 +921,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
       reject(Tools, :start_os_process, 2)
 
-      assert {:ok, %Run{error: "CI was stopped before it finished. Message the Review lead or Retry when ready."}} =
+      assert {:ok, %Run{error: "CI was stopped before it finished. Message the Review lead to run it again when ready."}} =
                Pipeline.run_finished(os_process, %{exit_code: -1})
     end
   end

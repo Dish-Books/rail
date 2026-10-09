@@ -94,10 +94,12 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   defp agent(%Run{role: %Role{stage: :review_lead}}), do: "Review lead"
   defp agent(%Run{}), do: "engineer"
 
-  defp again(%Run{role: %Role{stage: :review_lead}}), do: "Message the Review lead or Retry when ready."
+  defp again(%Run{role: %Role{stage: :review_lead}}), do: "Message the Review lead to run it again when ready."
   defp again(%Run{}), do: "Run it again from the diff when ready."
 
-  defp who(%Run{role: %Role{stage: :review_lead}}), do: "message the Review lead or Retry"
+  defp who(%Run{role: %Role{stage: :review_lead}}),
+    do: "message the Review lead, which can run CI again with nothing changed"
+
   defp who(%Run{}), do: "message the engineer or run CI again"
 
   # The lead's run is open while its rounds go on; the engineer's is done once its work is pushed.

@@ -162,6 +162,7 @@ defmodule RailWeb.Components.FindingDetailTest do
             commit: "2222222bbbb",
             covered: ["Engineer tab"],
             left: ["lib/b.ex:1: Out of reach"],
+            files: ["lib/bills_live.ex"],
             test: "test/a_test.exs: sends once"
           },
           %FindingNote{round: 4, kind: :pass, at: @at, status: :fixed, commit: "2222222bbbb"}
@@ -204,7 +205,8 @@ defmodule RailWeb.Components.FindingDetailTest do
     assert open =~ "Still open"
 
     assert fixed =~
-             "Fixed in 2222222; covers Engineer tab; leaves lib/b.ex:1: Out of reach; test that failed first: test/a_test.exs: sends once"
+             "Fixed in 2222222; covers Engineer tab; leaves lib/b.ex:1: Out of reach; changes lib/bills_live.ex; " <>
+               "test that failed first: test/a_test.exs: sends once"
 
     assert checked =~ "Checked fixed on 2222222"
     assert doc |> Floki.find("[data-qa=finding_fixed_in]") |> Floki.text() =~ "Fix round 3"

@@ -4,6 +4,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommit do
   work on. At Review it is a fix round, refused until it accounts for every Fix finding and changed file.
   """
 
+  import Rail.Pipeline.Utils.CiPassed
   import Rail.Pipeline.Utils.EndTurn
   import Rail.Pipeline.Utils.WithLiveTurn
 
@@ -13,6 +14,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommit do
   alias Rail.Pipeline.Schemas.FindingPlace
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
@@ -25,7 +27,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommit do
   def end_turn_and_commit(%Task{} = task, %OsProcess{} = os_process, arguments) when is_map(arguments) do
     case with_live_turn(os_process, fn ->
            run = Run |> Repo.get!(os_process.run_id) |> Repo.preload(:role)
-           task |> Repo.reload!() |> Repo.preload(:issue) |> accept(run, arguments)
+           task |> Repo.reload!() |> Repo.preload([:issue, :project]) |> accept(run, arguments)
          end) do
       :ended -> {:refused, "Refused, nothing committed again. This turn has already ended and handed its work to Rail."}
       result -> result
@@ -51,7 +53,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommit do
       role_stage == :review_lead ->
         accept_round(task, run, arguments)
 
-      not Git.worktree_dirty?(task.worktree_path) and run.ci_failure_streak == 0 ->
+      not Git.worktree_dirty?(task.worktree_path) and not ci_owed?(task) ->
         refused(
           "Nothing in the worktree has changed. Make the change first, or say in your last message why there is nothing to do."
         )
@@ -70,12 +72,16 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommit do
     with :ok <- check_listed(outstanding, listed),
          {:ok, fixes} <- check_fixes(outstanding, listed),
          :ok <- check_others(others),
-         :ok <- check_changed(changed, run, fixes, others) do
+         :ok <- check_changed(changed, ci_owed?(task), fixes, others) do
       commit(run, %{message: String.trim(arguments["message"]), fixes: fixes, other_files: others})
     end
   end
 
-  # After a CI failure, committing nothing is the agent asking for CI again.
+  # With nothing changed while CI has not passed on HEAD, committing is the agent asking for CI again,
+  # however many failures ago a person's message reset the streak.
+  defp ci_owed?(%Task{project: %Project{ci_command: command}} = task),
+    do: command not in [nil, ""] and not ci_passed?(task)
+
   defp commit(%Run{} = run, attrs) do
     :ok =
       end_turn(run, fn ->
@@ -134,6 +140,9 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommit do
           is_binary(reason),
           do: {n, String.trim(reason)}
 
+    files =
+      for file <- entries(entry["files"]), is_binary(file), String.trim(file) != "", uniq: true, do: String.trim(file)
+
     unaccounted = Enum.reject(numbers, &(&1 in covered or List.keymember?(left, &1, 0)))
 
     cond do
@@ -153,7 +162,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommit do
         )
 
       true ->
-        {:ok, %{finding: finding, covered: covered, left: left, test: entry["test"]}}
+        {:ok, %{finding: finding, covered: covered, left: left, files: files, test: entry["test"]}}
     end
   end
 
@@ -169,13 +178,12 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommit do
        else: refused("each entry in `other_files` needs the `path` and the `reason` it changed.")
   end
 
-  # After a CI failure, a round with nothing changed is the lead asking for CI again.
-  defp check_changed([], %Run{ci_failure_streak: streak}, _fixes, _others) when streak > 0, do: :ok
+  defp check_changed([], true, _fixes, _others), do: :ok
 
-  defp check_changed([], %Run{}, _fixes, _others),
+  defp check_changed([], false, _fixes, _others),
     do: refused("nothing in the worktree has changed. Have the engineer make the fixes first.")
 
-  defp check_changed(changed, %Run{}, fixes, others) do
+  defp check_changed(changed, _ci_owed?, fixes, others) do
     explained =
       MapSet.new(
         for(
@@ -186,6 +194,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommit do
           file = place.file,
           do: file
         ) ++
+          for(%{files: files} <- fixes, file <- files, do: file) ++
           for(%{test: %{"file" => file}} <- fixes, do: String.trim(file)) ++
           for(%{"path" => path} <- others, do: String.trim(path))
       )

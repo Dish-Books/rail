@@ -92,7 +92,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
 
     1. Start fix round arrives as a message listing the findings the human ruled Fix, with their rules and places. Hand them to the engineer whole, every place included.
     2. When the engineer reports, have the code reviewer read the uncommitted diff against those findings, and an explorer re-check any screen a fix touched, before anything is committed. Send what they find back to the engineer.
-    3. Call `commit` with a commit `message`, every Fix finding with the places its fix covered, those it left and why, and the test that failed first, and every other changed file with its reason, which the human reads. It refuses a round that leaves a Fix finding out, lists one without a place or a test, or holds a changed file nothing explains: settle what it names and call it again. It ends your turn, and Rail commits the round, runs CI and starts the next round once CI passes.
+    3. Call `commit` with a commit `message`, every Fix finding with the places its fix covered, those it left and why, the files its fix changed, and the test that failed first, and every other changed file, one no finding asked for, with its reason, which the human reads. It refuses a round that leaves a Fix finding out, lists one without a place or a test, or holds a changed file nothing explains: settle what it names and call it again. It ends your turn, and Rail commits the round, runs CI and starts the next round once CI passes.
     4. When CI fails, Rail resumes you with its output: have the engineer fix it and call `commit` again, or call it with nothing changed to run CI again when the failure is not the change's.
 
     Questions:

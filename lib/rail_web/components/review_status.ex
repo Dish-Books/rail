@@ -66,12 +66,11 @@ defmodule RailWeb.Components.ReviewStatus do
           <.icon name="pi-terminal-window" class="size-[13px]" />End of the CI log
         </p>
         <div class="overflow-x-auto bg-slate-50 dark:bg-slate-800/40 py-1.5 font-mono text-[11px] leading-[1.6]">
-          <div
+          <%!-- The row is whitespace-pre, so the line sits in it with no template whitespace around it. --%><div
             :for={line <- @tail}
+            phx-no-format
             class="pl-3 pr-4 whitespace-pre text-slate-700 dark:text-slate-300"
-          >
-            {line}
-          </div>
+          >{line}</div>
         </div>
       </div>
     </div>
@@ -99,7 +98,7 @@ defmodule RailWeb.Components.ReviewStatus do
 
   defp said(%{phase: :ci_failed} = assigns) do
     {"CI failed 3 times on fix round #{assigns.round}",
-     "The Review lead stopped. Read the log, then message the lead or Retry."}
+     "The Review lead stopped. Read the log, then message the lead: it can run CI again with nothing changed."}
   end
 
   defp said(%{phase: :finished} = assigns) do

@@ -2,7 +2,7 @@ defmodule Rail.Pipeline.Schemas.FindingNote do
   @moduledoc """
   One dated entry in a finding's history, in the round it happened: its raising, a pass's verdict on it, a
   ruling and who made it, a fix, or being carried into a later round. A fix names the places it covered or
-  left and the test that failed first.
+  left, the files it changed, and the test that failed first.
   """
   use Rail.Schema
 
@@ -20,6 +20,8 @@ defmodule Rail.Pipeline.Schemas.FindingNote do
     field :text, :string
     field :covered, {:array, :string}, default: []
     field :left, {:array, :string}, default: []
+    # The files a fix changed for it, which a screen place cannot name.
+    field :files, {:array, :string}, default: []
     field :test, :string
   end
 
@@ -28,7 +30,7 @@ defmodule Rail.Pipeline.Schemas.FindingNote do
   """
   def changeset(note, attrs) do
     note
-    |> cast(attrs, [:round, :kind, :at, :commit, :status, :decision, :by_id, :text, :covered, :left, :test])
+    |> cast(attrs, [:round, :kind, :at, :commit, :status, :decision, :by_id, :text, :covered, :left, :files, :test])
     |> validate_required([:round, :kind, :at])
     |> validate_number(:round, greater_than: 0)
     |> validate_length(:text, max: 300)

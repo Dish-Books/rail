@@ -187,6 +187,32 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
              Pipeline.end_turn_and_commit(task, os_process, %{"message" => "ETC-1: nothing"})
   end
 
+  test "with CI already passed on HEAD, nothing changed is still nothing to commit", %{
+    project: project,
+    task: task,
+    run: run,
+    repo: repo,
+    os_process: os_process
+  } do
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+
+    Repo.insert!(%OsProcess{
+      run_id: run.id,
+      task_id: task.id,
+      kind: :ci,
+      head_sha: repo |> git!(["rev-parse", "HEAD"]) |> String.trim(),
+      exit_code: 0,
+      status: :finished,
+      stream_path: "/tmp/etc-ci-passed.log",
+      started_at: DateTime.utc_now()
+    })
+
+    reject(Tools, :stop_os_process, 3)
+
+    assert {:refused, "Refused, nothing committed. Nothing in the worktree has changed." <> _rest} =
+             Pipeline.end_turn_and_commit(task, os_process, %{"message" => "ETC-1: nothing"})
+  end
+
   test "a turn resolving a merge is refused, since that commit is Rail's", %{
     task: task,
     repo: repo,
@@ -223,7 +249,19 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
     os_process: os_process
   } do
     {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
-    {:ok, _streak} = Pipeline.update_run(run, %{ci_failure_streak: 1})
+    head = repo |> git!(["rev-parse", "HEAD"]) |> String.trim()
+
+    # A person's message resets the failure streak, so the failed CI on HEAD is what still owes a rerun.
+    Repo.insert!(%OsProcess{
+      run_id: run.id,
+      task_id: task.id,
+      kind: :ci,
+      head_sha: head,
+      exit_code: 1,
+      status: :finished,
+      stream_path: "/tmp/etc-ci-failed.log",
+      started_at: DateTime.utc_now()
+    })
 
     stub(Tools, :stop_os_process, fn _scope, _os_process, _opts -> {:ok, os_process} end)
     stub(Git, :credential_env, fn _project -> {:ok, %{}} end)
@@ -760,6 +798,61 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
                Repo.get!(Finding, placeless_id)
     end
 
+    # A screen place names no file, so the files its fix changed are listed with it rather than as extras.
+    test "a screen finding's fix lists the files it changed, which count as its own and go in its note", %{
+      task: task,
+      lead_run: %Run{id: run_id},
+      repo: repo,
+      lead_process: lead_process,
+      round: round
+    } do
+      %Finding{id: screen_id} =
+        Repo.insert!(%Finding{
+          task_id: task.id,
+          key: "bills-blank",
+          kind: :screen,
+          raised_by: :explorer,
+          round: 1,
+          title: "Bills page is blank",
+          problem: "Nothing renders.",
+          screen: "/bills",
+          fix: "Render the list.",
+          why: "It is empty.",
+          rule: "A page shows its rows.",
+          severity: :major,
+          recommendation: :fix,
+          decision: :fix,
+          places: [%FindingPlace{screen: "/bills"}]
+        })
+
+      File.mkdir_p!(Path.join(repo, "lib"))
+      File.mkdir_p!(Path.join(repo, "test"))
+      File.write!(Path.join([repo, "lib", "a.ex"]), "guarded\n")
+      File.write!(Path.join([repo, "test", "a_test.exs"]), "test\n")
+      File.write!(Path.join([repo, "lib", "bills_live.ex"]), "rows\n")
+      File.write!(Path.join([repo, "test", "bills_test.exs"]), "test\n")
+      stub(Tools, :stop_os_process, fn _scope, _os_process, _opts -> {:ok, lead_process} end)
+      expect(Git, :push_branch, fn _scope, _task -> :ok end)
+      expect(Tools, :start_os_process, fn %Run{} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      screen = %{
+        "key" => "bills-blank",
+        "covered" => [1],
+        "files" => ["lib/bills_live.ex"],
+        "test" => %{"file" => "test/bills_test.exs", "name" => "bills render"}
+      }
+
+      assert {:ok, :committing} =
+               Pipeline.end_turn_and_commit(task, lead_process, %{round | "findings" => [screen | round["findings"]]})
+
+      assert_receive {:run_changed, ^run_id}, 5_000
+
+      assert %Finding{status: :fixed, notes: [%FindingNote{kind: :fix, files: ["lib/bills_live.ex"]}]} =
+               Repo.get!(Finding, screen_id)
+
+      assert [] = %Run{id: run_id} |> Pipeline.list_run_events() |> Enum.filter(&(&1.line =~ "changed in fix round"))
+    end
+
     test "on a project with CI the round runs CI on the lead's run, and after a failure nothing changed runs it again", %{
       project: project,
       task: task,
@@ -788,7 +881,19 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
       assert %Run{status: :running, error: nil, review_on_ci_pass: true} = Repo.get!(Run, run_id)
       commits = git!(repo, ["rev-list", "--count", "HEAD"])
 
-      {:ok, _failed} = Pipeline.update_run(lead_run, %{status: :running, ci_failure_streak: 1})
+      # Three failures and a person's message later: the streak is back to 0, and CI on HEAD still failed.
+      {:ok, _failed} = Pipeline.update_run(lead_run, %{status: :running, ci_failure_streak: 0})
+
+      Repo.insert!(%OsProcess{
+        run_id: run_id,
+        task_id: task.id,
+        kind: :ci,
+        head_sha: repo |> git!(["rev-parse", "HEAD"]) |> String.trim(),
+        exit_code: 1,
+        status: :finished,
+        stream_path: "/tmp/commit_fixes/#{run_id}.ci.log",
+        started_at: DateTime.utc_now()
+      })
 
       {:ok, rerun} =
         %OsProcess{}

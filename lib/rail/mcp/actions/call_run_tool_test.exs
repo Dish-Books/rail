@@ -267,6 +267,13 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
                Mcp.call_run_tool(lead, "save_finding", Map.update!(finding, "places", &[hd(&1), %{"label" => "nowhere"}]))
     end
 
+    test "a refused evidence entry names the entry and what is wrong", %{lead: lead, finding: finding} do
+      escape = %{"name" => "passwd", "kind" => "log", "path" => "../../../../etc/passwd"}
+
+      assert {:error, {:refused, "Refused, nothing saved. evidence 1 path: cannot climb out of the QA directory."}} =
+               Mcp.call_run_tool(lead, "save_finding", Map.put(finding, "evidence", [escape]))
+    end
+
     test "a field that should be a list says so", %{project: project, task: task} do
       {:ok, plan_role} = Roles.get_role(project_id: project.id, stage: :plan)
       plan = %RunContext{os_process: %OsProcess{task_id: task.id}, role: plan_role, user: nil}

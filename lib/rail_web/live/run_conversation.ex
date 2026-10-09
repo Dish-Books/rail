@@ -15,6 +15,7 @@ defmodule RailWeb.Live.RunConversation do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Turn
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
@@ -1170,7 +1171,7 @@ defmodule RailWeb.Live.RunConversation do
     %{task: task, selected_run: run, roles_map: roles_map} = socket.assigns
 
     if retryable?(run, task, roles_map) do
-      {:ok, %Run{} = run} = Pipeline.enter_stage(task, roles_map[run.role_id].stage)
+      {:ok, %Run{} = run} = Pipeline.enter_stage(task, task.stage)
       {:noreply, select(socket, run)}
     else
       {:noreply, socket}
@@ -1615,8 +1616,10 @@ defmodule RailWeb.Live.RunConversation do
   defp selected_role(%Run{role_id: role_id}, roles_map), do: resolve_role(role_id, roles_map)
 
   # Only the stage the task is in can be entered again without moving the task.
+  # The run belongs to the stage the task is at, Review's being the Review lead's.
   defp retryable?(%Run{role_id: role_id} = run, %{stage: stage}, %{} = roles_map) do
-    not Run.running?(run) and not Run.resumable?(run) and match?(%{stage: ^stage}, roles_map[role_id])
+    role_stage = Task.role_stage(stage)
+    not Run.running?(run) and not Run.resumable?(run) and match?(%{stage: ^role_stage}, roles_map[role_id])
   end
 
   defp restore_draft(nil, draft), do: draft

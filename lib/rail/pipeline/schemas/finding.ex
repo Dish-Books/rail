@@ -128,10 +128,13 @@ defmodule Rail.Pipeline.Schemas.Finding do
     note = FindingNote.changeset(%FindingNote{}, Map.fetch!(attrs, :note))
     added = for evidence <- Map.get(attrs, :evidence, []), do: FindingEvidence.changeset(%FindingEvidence{}, evidence)
 
-    changeset
-    |> put_embed(:notes, List.insert_at(get_field(changeset, :notes), -1, note))
-    |> put_embed(:evidence, get_field(changeset, :evidence) ++ added)
-    |> validate_note(note)
+    changeset = put_embed(changeset, :notes, List.insert_at(get_field(changeset, :notes), -1, note))
+
+    # Put only when there is something to add: put_embed takes the fields as applied, losing a raise's errors.
+    changeset =
+      if added == [], do: changeset, else: put_embed(changeset, :evidence, get_field(changeset, :evidence) ++ added)
+
+    validate_note(changeset, note)
   end
 
   @doc """

@@ -37,7 +37,7 @@ defmodule Rail.Pipeline.Utils.ReviewPushedBranch do
 
     {:ok, briefed} =
       run
-      |> Run.changeset(%{pending_answer: note, stage_outcome: :in_progress, error: nil})
+      |> Run.changeset(%{pending_answer: note, status: :running, stage_outcome: :in_progress, error: nil})
       |> Repo.update()
 
     {:ok, role} = Roles.get_role(id: run.role_id)
@@ -45,7 +45,13 @@ defmodule Rail.Pipeline.Utils.ReviewPushedBranch do
     case Pipeline.start_review_run(%{briefed | task: task, role: role}) do
       {:ok, _os_process} -> :ok
       {:error, {:spawn_failed, reason, _run}} -> {:error, "Could not start round #{round}: #{inspect(reason)}"}
-      {:error, :dispatch_disabled} -> {:error, "Dispatch is off, so round #{round} was not started."}
+      {:error, :dispatch_disabled} -> unstarted(briefed, "Dispatch is off, so round #{round} was not started.")
     end
+  end
+
+  # Marked running before the spawn so the page shows the round, it goes back when nothing was spawned.
+  defp unstarted(%Run{} = run, text) do
+    {:ok, _settled} = run |> Run.changeset(%{status: :finished}) |> Repo.update()
+    {:error, text}
   end
 end
