@@ -26,7 +26,7 @@ defmodule RailWeb.Components.SplitBoard do
               <th class="pl-4 py-2 font-medium">#</th>
               <th class="px-3 py-2 font-medium">Child</th>
               <th
-                :for={label <- ["Engineer", "Review", "QA", "Demo", "Merged"]}
+                :for={label <- ["Engineer", "Review", "Merged"]}
                 class="px-2 py-2 text-center font-medium"
               >
                 {label}

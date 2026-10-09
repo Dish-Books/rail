@@ -1,51 +1,56 @@
 defmodule Rail.Mcp.Utils.RunToolSaveFinding do
   @moduledoc """
-  Saves one finding for review or for QA: both call `save_finding`, with their own
-  fields, so the run's stage says which.
+  Saves one finding for the Review lead: a new one whole, or a later round's note on one already raised.
   """
 
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.QaFinding
-  alias Rail.Pipeline.Schemas.ReviewFinding
+  alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.Task
 
-  @review ["key", "title", "detail", "suggestion", "file", "line", "severity", "recommendation", "status", "rule"]
-
-  @qa [
+  @fields [
     "key",
+    "kind",
+    "raised_by",
     "title",
-    "check",
-    "criterion",
+    "problem",
+    "file",
+    "line",
+    "end_line",
     "screen",
     "steps",
-    "expected",
-    "observed",
-    "detail",
-    "suggestion",
+    "check",
+    "fix",
+    "why",
+    "rule",
+    "places",
+    "evidence",
     "severity",
     "recommendation",
-    "caused_by_change",
+    "checklist_rule",
     "status",
-    "evidence"
+    "note"
   ]
 
   @doc """
-  Saves the finding in `arguments` on `task` for `opts[:stage]` and says what
-  was saved, or hands back the changeset that refused it.
+  Saves the finding in `arguments` on `task` and says what was saved, or hands back the changeset that
+  refused it, naming each field.
   """
-  def run_tool_save_finding(%Task{} = task, arguments, opts) do
-    case Keyword.fetch!(opts, :stage) do
-      :review -> task |> Pipeline.save_review_finding(Map.take(arguments, @review)) |> saved()
-      :qa -> task |> Pipeline.save_qa_finding(Map.take(arguments, @qa)) |> saved()
+  def run_tool_save_finding(%Task{} = task, arguments, _opts) do
+    case Pipeline.save_finding(task, Map.take(arguments, @fields)) do
+      {:ok, %Finding{key: key, round: round, notes: [_raised]} = finding} ->
+        {:ok,
+         "Saved finding #{key} (#{finding.severity}) in round #{round} with #{pieces(finding.evidence)} of evidence."}
+
+      {:ok, %Finding{key: key, status: status, carried_round: carried} = finding} ->
+        carried = if List.last(finding.notes).kind == :carried, do: " and carried it into round #{carried}", else: ""
+
+        {:ok, "Noted #{key} as #{status}#{carried}. What it said when raised stands."}
+
+      {:error, changeset} ->
+        {:error, changeset}
     end
   end
 
-  defp saved({:ok, %ReviewFinding{key: key, severity: severity}}), do: {:ok, "Saved finding #{key} (#{severity})."}
-
-  defp saved({:ok, %QaFinding{key: key, severity: severity, evidence: evidence}}) do
-    {:ok,
-     "Saved finding #{key} (#{severity}) with #{length(evidence)} piece#{if length(evidence) == 1, do: "", else: "s"} of evidence."}
-  end
-
-  defp saved({:error, changeset}), do: {:error, changeset}
+  defp pieces([_one]), do: "1 piece"
+  defp pieces(evidence), do: "#{length(evidence)} pieces"
 end

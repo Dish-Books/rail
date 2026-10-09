@@ -12,11 +12,11 @@ The words the team uses, and the ticket should too:
 
 - **Project**: a repo clone plus a Linear team, with its own CI command.
 - **Issue**: a Linear ticket, mirrored into Rail. Linear status only moves forward.
-- **Task**: an issue moving through the stages product, design, architect, engineer, review, QA and demo. It has a worktree, a branch, a scratch folder and, later, a pull request.
+- **Task**: an issue moving through the stages plan, engineer and review. It has a worktree, a branch, a scratch folder and, later, a pull request.
 - **Role**: a stage's agent settings: backend, model, and the prompt in `.rail/prompts/<stage>.md`, read from the default branch at the start of every run. Changing a prompt needs no seed or migration.
 - **Run**: one agent conversation for a role on a task. A human chats with it, answers its questions, approves its output or sends it back.
 - **Question**: a `[QUESTION: ...]` an agent asks. Rail collects a run's questions and the human answers them as one round.
-- **Finding**: a defect review or QA raises. A human rules each one Fix or Don't fix, and the fixes go back to the engineer.
+- **Finding**: a defect Review raises, in the code or on a screen. A human rules each one Fix or Don't fix, and the fixes are made inside Review, a round at a time.
 - **Evidence**: a screenshot or file attached to a QA check. A screenshot is a still; a recording or demo is video.
 - **Triage**: Slack threads read by an agent that proposes replies and issues for a teammate to accept.
 
@@ -29,7 +29,7 @@ The words the team uses, and the ticket should too:
 **Where to look.** You do not need to survey the repo to find these:
 
 - Contexts are under `lib/rail/`: `pipeline` (tasks, runs, stages, questions, findings), `issues` (Linear sync, status moves in `issues/workers/advance_linear_state.ex`), `projects`, `roles`, `tools` (agent processes, sandboxes, the browser), `git` (worktrees, merging the default branch in), `mcp` (the tools agents call, in `mcp/utils/`), `triage`, `slack`, `linear`, `github`, `users`.
-- Each stage's brief is `lib/rail/pipeline/actions/start_<stage>_run.ex`, and the rules Plan's subagents work to are `lib/rail/pipeline/utils/plan_subagents.ex`; what happens when it finishes is `lib/rail/pipeline/utils/<stage>_run_finished.ex`; moving between stages is `enter_stage.ex`.
+- Each stage's brief is `lib/rail/pipeline/actions/start_<stage>_run.ex`, and the rules Plan's and Review's subagents work to are `lib/rail/pipeline/utils/plan_subagents.ex` and `review_subagents.ex`; what happens when it finishes is `lib/rail/pipeline/utils/<stage>_run_finished.ex`; moving between stages is `enter_stage.ex`.
 - Screens are under `lib/rail_web/live/`: `overview_live.ex`, `issues_live.ex`, `issue_live.ex`, `triage_live.ex`, `sandboxes_live.ex`, `task_live.ex` with the Plan tab in `plan_stage.ex` and one `<stage>_stage.ex` per tab for the other stages, and `run_conversation.ex` for the chat beside it.
 - The written rules are `docs/standards.md`, `docs/tests.md` and `docs/local-ci.md`. There is no `CLAUDE.md`, `AGENTS.md` or `CONTRIBUTING.md`.
 
@@ -68,7 +68,7 @@ There are no other headings. Research earns its place by making those sections c
 ### Rules
 
 - No padding. Do not restate the title in the first line. Do not add a heading with one obvious line under it.
-- No em dashes. Check with `grep -n '—' <file>`.
+- Apply the unslop skill (`.claude/skills/unslop/SKILL.md`) to everything you write.
 - American English. The exceptions are names we do not own, where a status value, a schema field or a provider's own vocabulary keeps its spelling.
 - Define a term the first time it appears, unless it is in the list above.
 - The ticket is not longer because more research went into it, it is more precise. If the research does not change what the four sections say, it does not go on the ticket.

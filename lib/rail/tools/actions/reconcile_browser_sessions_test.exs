@@ -23,7 +23,7 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
     end)
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "Reconcile Browsers"})
-    {:ok, task} = Pipeline.create_task(issue, :qa)
+    {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     %{task: task, project: project}
@@ -31,7 +31,7 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
 
   # The shared Chrome outlives everything, so a tab the task no longer needs is
   # one somebody has to close - and it is closed whatever holds it.
-  test "closes every named tab of a task that has left QA and demo", %{task: task} do
+  test "closes every named tab of a task that has left Review", %{task: task} do
     {:ok, %BrowserSession{id: qa}} =
       %BrowserSession{}
       |> BrowserSession.changeset(%{task_id: task.id, name: "qa", status: :running, started_at: DateTime.utc_now()})
@@ -73,10 +73,10 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
              |> Repo.insert()
   end
 
-  # Rail restarted in the middle of a pass. The tab is still open in the shared
+  # Rail restarted in the middle of a round. The tab is still open in the shared
   # Chrome, and the panel and the problems it collects are what reconnecting gets
   # back without waiting for the agent to call.
-  test "reconnects to the tab of a pass that is running", %{task: task, project: project} do
+  test "reconnects to the tab of a Review lead run that is running", %{task: task, project: project} do
     {:ok, _held} =
       %BrowserSession{}
       |> BrowserSession.changeset(%{
@@ -88,7 +88,7 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
       })
       |> Repo.insert()
 
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :qa)
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
 
     {:ok, _run} =
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
@@ -98,9 +98,9 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
     assert Tools.reconcile_browser_sessions() == []
   end
 
-  # A pass waiting on a human attaches when it next runs; until then there is
-  # nothing to watch.
-  test "leaves the tab of a pass that is not running for its next run", %{task: task} do
+  # Between rounds the task waits on a human at Review, and the next round
+  # attaches when it runs; until then there is nothing to watch.
+  test "keeps the tab of a task at Review between rounds for the next one", %{task: task} do
     {:ok, _waiting} =
       %BrowserSession{}
       |> BrowserSession.changeset(%{

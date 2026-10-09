@@ -1,15 +1,16 @@
 defmodule Rail.Pipeline.Utils.CiRunFinished do
   @moduledoc """
-  Where a finished CI run leaves the engineer's run.
+  Where a finished CI run leaves the run it ran on, the engineer's or the Review lead's.
 
-  A pass is what lets the branch be pushed, and the stage be done, and sends the
-  work to review when a human's commit or CI run asked for that. A failure goes
-  back to the engineer with the output that says why, until it has failed three
-  times in a row with nobody stepping in; then it waits for a person.
+  A pass is what lets the branch be pushed, and a commit that asked for review
+  then gets it: the engineer's work goes to Review, and the Review lead starts
+  its next round. A failure goes back to that run's own agent
+  with the output that says why, until it has failed three times in a row with
+  nobody stepping in; then it waits for a person.
   """
 
   import Rail.Pipeline.Utils.OpenPullRequest
-  import Rail.Pipeline.Utils.TurnStamp
+  import Rail.Pipeline.Utils.ReviewPushedBranch
 
   alias Rail.Git
   alias Rail.Pipeline
@@ -17,6 +18,7 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles
+  alias Rail.Roles.Schemas.Role
   alias Rail.Scope
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
@@ -25,15 +27,12 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   @tail_lines 150
 
   @doc "Finishes `run` after `os_process`, its CI, exited."
-  def ci_run_finished(%Run{exit_code: 0, task: %Task{} = task} = run, %OsProcess{}) do
+  def ci_run_finished(%Run{exit_code: 0, task: %Task{} = task} = run, %OsProcess{} = ci) do
     case Git.push_branch(Scope.for_system(), task) do
       :ok ->
-        attrs = %{ci_failure_streak: 0, error: nil, stage_outcome: :done, review_on_ci_pass: false}
+        attrs = Map.merge(%{ci_failure_streak: 0, error: nil, review_on_ci_pass: false}, settled(run))
         pushed = %{update(run, attrs) | task: open_pull_request(task, run)}
-
-        # A message queued while CI ran is the engineer about to work again, which
-        # review cannot see once the run has settled.
-        if run.review_on_ci_pass and is_nil(run.pending_chat), do: send_on_to_review(pushed), else: pushed
+        if review?(run), do: review(pushed, ci), else: pushed
 
       {:error, reason} ->
         update(run, %{
@@ -48,7 +47,7 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   def ci_run_finished(%Run{exit_code: -1} = run, %OsProcess{}) do
     update(run, %{
       review_on_ci_pass: false,
-      error: "CI was stopped before it finished. Run it again from the diff when ready."
+      error: "CI was stopped before it finished. #{again(run)}"
     })
   end
 
@@ -56,34 +55,28 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
     update(run, %{
       ci_failure_streak: streak + 1,
       review_on_ci_pass: false,
-      error:
-        "CI failed #{streak + 1} times in a row, so it was not sent back again. " <>
-          "Read its output, then message the engineer or run CI again."
+      error: "CI failed #{streak + 1} times in a row, so it was not sent back again. Read its output, then #{who(run)}."
     })
   end
 
   def ci_run_finished(%Run{ci_failure_streak: streak} = run, %OsProcess{} = os_process) do
     Pipeline.append_run_events(run.id, nil, [
-      "[rail] CI failed, so its output went back to the engineer (#{streak + 1} of #{@failure_limit})."
+      "[rail] CI failed, so its output went back to the #{agent(run)} (#{streak + 1} of #{@failure_limit})."
     ])
 
-    # The fix turn's end compares against this to tell whether the engineer changed code.
     briefed =
-      update(
-        run,
-        Map.merge(turn_stamp(run.task), %{
-          ci_failure_streak: streak + 1,
-          review_on_ci_pass: false,
-          pending_answer: note(run, os_process),
-          status: :running,
-          error: nil
-        })
-      )
+      update(run, %{
+        ci_failure_streak: streak + 1,
+        review_on_ci_pass: false,
+        pending_answer: note(run, os_process),
+        status: :running,
+        error: nil
+      })
 
     # Each turn's system prompt is the one it is spawned with, so it is read as the repo has it now.
     {:ok, role} = Roles.get_role(id: run.role_id)
 
-    case Pipeline.start_engineer_run(%{briefed | role: role}) do
+    case resume(%{briefed | role: role}) do
       {:ok, %OsProcess{run: %Run{} = resumed}} ->
         resumed
 
@@ -91,12 +84,44 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
         failed
 
       {:error, :dispatch_disabled} ->
-        update(briefed, %{status: :finished, error: "Dispatch is off, so the engineer was not resumed."})
+        update(briefed, %{status: :finished, error: "Dispatch is off, so the #{agent(run)} was not resumed."})
     end
   end
 
-  defp send_on_to_review(%Run{} = pushed) do
-    case Pipeline.send_to_review(pushed) do
+  defp resume(%Run{role: %Role{stage: :review_lead}} = run), do: Pipeline.start_review_run(run)
+  defp resume(%Run{} = run), do: Pipeline.start_engineer_run(run)
+
+  defp agent(%Run{role: %Role{stage: :review_lead}}), do: "Review lead"
+  defp agent(%Run{}), do: "engineer"
+
+  defp again(%Run{role: %Role{stage: :review_lead}}), do: "Message the Review lead to run it again when ready."
+  defp again(%Run{}), do: "Run it again from the diff when ready."
+
+  defp who(%Run{role: %Role{stage: :review_lead}}),
+    do: "message the Review lead, which can run CI again with nothing changed"
+
+  defp who(%Run{}), do: "message the engineer or run CI again"
+
+  # The lead's run is open while its rounds go on; the engineer's is done once its work is pushed.
+  defp settled(%Run{role: %Role{stage: :review_lead}}), do: %{}
+  defp settled(%Run{}), do: %{stage_outcome: :done}
+
+  # A message queued while CI ran is the engineer about to work again, which review cannot see once the run
+  # has settled; the lead reads it in its next round.
+  defp review?(%Run{role: %Role{stage: :review_lead}, review_on_ci_pass: review?}), do: review?
+  defp review?(%Run{review_on_ci_pass: review?, pending_chat: queued}), do: review? and is_nil(queued)
+
+  defp review(%Run{role: %Role{stage: :review_lead}} = pushed, %OsProcess{head_sha: sha}) do
+    short = if sha, do: " on #{String.slice(sha, 0, 7)}", else: ""
+
+    case review_pushed_branch(pushed, "CI passed#{short}") do
+      {:ok, %Run{} = started} -> started
+      {:error, text} -> update(pushed, %{error: text})
+    end
+  end
+
+  defp review(%Run{} = pushed, %OsProcess{}) do
+    case review_pushed_branch(pushed, "CI passed") do
       {:ok, %Run{} = sent} ->
         %{sent | task: pushed.task, role: pushed.role}
 
@@ -109,7 +134,7 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
     end
   end
 
-  defp note(%Run{exit_code: exit_code}, %OsProcess{command: command, stream_path: stream_path}) do
+  defp note(%Run{exit_code: exit_code} = run, %OsProcess{command: command, stream_path: stream_path}) do
     how = if exit_code == 124, do: "timed out and was stopped", else: "exited with code #{exit_code}"
 
     tail =
@@ -119,7 +144,7 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
       end
 
     """
-    CI failed on your last commit: `#{command}` #{how}.
+    CI failed on the last commit: `#{command}` #{how}.
 
     The end of its output:
 
@@ -127,8 +152,22 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
     #{String.trim(tail)}
     ```
 
-    The whole log is #{stream_path}. Fix what it reports, then call `commit` again with a message for this round. Rail runs CI once more when you do. When the failure is not your change's to fix, such as a flaky test elsewhere, call `commit` without changing anything and Rail runs CI again on the same commit. When it failed on a change that landed on the default branch, call `request_merge` instead.
+    The whole log is #{stream_path}. #{next_step(run)}
     """
+  end
+
+  defp next_step(%Run{role: %Role{stage: :review_lead}}) do
+    "Have the engineer fix what it reports, have the code reviewer read the change, then call `commit` " <>
+      "again, listing each changed file in `other_files` with why. When the failure is not the change's to fix, " <>
+      "such as a flaky test elsewhere, call `commit` without changing anything and Rail runs CI again on the " <>
+      "same commit."
+  end
+
+  defp next_step(%Run{}) do
+    "Fix what it reports, then call `commit` again with a message for this round. Rail runs CI once more when " <>
+      "you do. When the failure is not your change's to fix, such as a flaky test elsewhere, call `commit` without " <>
+      "changing anything and Rail runs CI again on the same commit. When it failed on a change that landed on the " <>
+      "default branch, call `request_merge` instead."
   end
 
   defp update(%Run{} = run, attrs) do

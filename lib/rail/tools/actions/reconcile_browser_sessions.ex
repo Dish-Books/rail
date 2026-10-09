@@ -5,12 +5,12 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessions do
 
   The shared Chrome outlives Rail, so a tab outlives whatever opened it. That is
   the point - a deploy in the middle of a pass leaves the pass's page where it
-  was - and it is also the leak: a task that moved on from QA or demo leaves a
+  was - and it is also the leak: a task that moved on from Review leaves a
   tab signed into its app, open until the machine restarts, unless something
-  closes it. This is what closes it: a task out of both stages has every named
+  closes it. This is what closes it: a task out of Review has every named
   context closed and its rows settled, whatever holds them.
 
-  A task still in QA or demo keeps its tabs. Each one a running run is driving is
+  A task still in Review keeps its tabs, between rounds as well. Each one a running run is driving is
   reconnected by its name, so the panel is watching again and the tab's problems are
   collected again without waiting for the agent's next call to Rail; one waiting
   on a human is left for its next pass to attach to.
@@ -28,11 +28,12 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessions do
   alias Rail.Tools.BrowserRegistry
   alias Rail.Tools.Schemas.BrowserSession
 
-  @driven_stages [:qa, :demo]
+  @driven_stages [:review]
 
   @doc """
-  Closes every live session whose task has left QA and demo, reconnects every
+  Closes every live session whose task has left Review, reconnects every
   one a running pass is using, and returns the sessions it closed.
+
   """
   def reconcile_browser_sessions(_opts \\ []) do
     BrowserSession

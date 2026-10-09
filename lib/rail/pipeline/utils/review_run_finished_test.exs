@@ -3,17 +3,15 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
 
   import Rail.Pipeline.Utils.ReviewRunFinished
 
+  alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.ReviewFinding
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles
 
   setup %{project: project} do
-    scope = system_scope()
-
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :review)
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -26,10 +24,11 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(scope, project, %{description: "Review Finished"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Review Finished"})
     {:ok, task} = Pipeline.create_task(issue, :review)
-    # Going on to QA starts its run, which works in the worktree.
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+    worktree = create_temp_git_repo()
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree, pr_number: 42, pr_is_draft: true})
+    task = Repo.preload(task, :issue)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     {:ok, run} =
@@ -44,89 +43,103 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
 
     %{
       task: task,
+      worktree: worktree,
       run: Repo.preload(run, [:task, :role]),
-      report_path: Path.join([task.scratch_path, "reviews", "RFN-1.json"]),
-      finding: %{key: "unhandled-nil", title: "Nil is not handled", severity: :major, recommendation: :fix}
+      finding: %{
+        key: "unhandled-nil",
+        kind: :code,
+        raised_by: :code_reviewer,
+        title: "Nil is not handled",
+        problem: "It crashes.",
+        file: "lib/a.ex",
+        line: 3,
+        fix: "Guard it.",
+        why: "It crashes.",
+        rule: "Every caller handles nil.",
+        severity: :major,
+        recommendation: :fix,
+        places: [%{file: "lib/a.ex", line: 3}],
+        evidence: [%{name: "range", kind: :code, file: "lib/a.ex", line: 3}]
+      }
     }
   end
 
-  test "a closed pass with a finding to decide moves nothing", %{task: task, run: run, finding: finding} do
-    {:ok, _saved} = Pipeline.save_review_finding(task, finding)
-    {:ok, _closed} = Pipeline.save_review(task)
-
-    assert %Run{error: nil} = review_run_finished(run, [])
-    assert %Task{stage: :review} = Repo.reload!(task)
-    assert [%ReviewFinding{key: "unhandled-nil", decision: nil}] = Pipeline.list_review_findings(task)
-  end
-
-  test "a closed pass that found nothing goes on to QA by itself", %{task: task, run: run} do
-    {:ok, _closed} = Pipeline.save_review(task)
-
-    assert %Run{error: nil, stage_outcome: :done} = review_run_finished(run, [])
-    assert %Task{stage: :qa} = Repo.reload!(task)
-  end
-
-  test "a re-review that finds everything fixed goes on to QA", %{task: task, run: run, finding: finding} do
-    {:ok, saved} = Pipeline.save_review_finding(task, finding)
-    {:ok, _to_fix} = Pipeline.decide_review_finding(system_scope(), saved, :fix)
-    {:ok, _fixed} = Pipeline.save_review_finding(task, Map.put(finding, :status, :fixed))
-    {:ok, _closed} = Pipeline.save_review(task)
-
-    assert %Run{error: nil, stage_outcome: :done} = review_run_finished(run, [])
-    assert %Task{stage: :qa} = Repo.reload!(task)
-  end
-
-  # A finding the human already dismissed is closed however the reviewer restates
-  # it, so it does not hold the change at review.
-  test "a re-review that leaves only what the human dismissed goes on to QA", %{task: task, run: run} do
-    long_name = %{key: "long-name", title: "The name is long", severity: :nit, recommendation: :skip}
-    {:ok, saved} = Pipeline.save_review_finding(task, long_name)
-    {:ok, _dismissed} = Pipeline.decide_review_finding(system_scope(), saved, :skip)
-    {:ok, _restated} = Pipeline.save_review_finding(task, Map.put(long_name, :status, :not_fixed))
-    {:ok, _closed} = Pipeline.save_review(task)
-
-    assert %Run{error: nil} = review_run_finished(run, [])
-    assert %Task{stage: :qa} = Repo.reload!(task)
-  end
-
-  test "a re-review that finds a fix still missing stays at review", %{task: task, run: run, finding: finding} do
-    {:ok, saved} = Pipeline.save_review_finding(task, finding)
-    {:ok, _to_fix} = Pipeline.decide_review_finding(system_scope(), saved, :fix)
-    {:ok, _not_fixed} = Pipeline.save_review_finding(task, Map.put(finding, :status, :not_fixed))
-    {:ok, _closed} = Pipeline.save_review(task)
-
-    assert %Run{error: nil, stage_outcome: :in_progress} = review_run_finished(run, [])
-    assert %Task{stage: :review} = Repo.reload!(task)
-  end
-
-  test "a message queued for the reviewer holds a clean review at review", %{task: task, run: run} do
-    {:ok, _closed} = Pipeline.save_review(task)
-    {:ok, queued} = Pipeline.update_run(run, %{pending_chat: "Look at the migration too."})
-
-    assert %Run{error: nil} = review_run_finished(%{queued | task: run.task, role: run.role}, [])
-    assert %Task{stage: :review} = Repo.reload!(task)
-  end
-
-  test "a pass that saved findings but never closed records that rather than reading as clean", %{
+  test "a round with a finding to rule waits for the human, with the pull request in draft", %{
     task: task,
     run: run,
     finding: finding
   } do
-    {:ok, _saved} = Pipeline.save_review_finding(task, finding)
+    {:ok, _saved} = Pipeline.save_finding(task, finding)
+    {:ok, _closed} = Pipeline.save_review(task)
 
-    assert %Run{error: "The reviewer did not save its review."} = review_run_finished(run, [])
+    assert %Run{error: nil} = review_run_finished(run, [])
+    assert %Task{stage: :review, pr_is_draft: true} = Repo.reload!(task)
+    assert [%{finished_at: nil}] = Pipeline.read_review(task)
+  end
+
+  test "a round that leaves nothing to rule or fix finishes the review and takes the pull request out of draft", %{
+    task: task,
+    run: run
+  } do
+    Req.Test.expect(Client, 3, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"POST", "/app/installations/1/access_tokens"} ->
+          Req.Test.json(conn, %{"token" => "ghs_token"})
+
+        {"GET", "/repos/example/test-seed/pulls/42"} ->
+          Req.Test.json(conn, %{"number" => 42, "node_id" => "PR_42"})
+
+        {"POST", "/graphql"} ->
+          Req.Test.json(conn, %{"data" => %{"markPullRequestReadyForReview" => %{"pullRequest" => %{"isDraft" => false}}}})
+      end
+    end)
+
+    {:ok, _closed} = Pipeline.save_review(task)
+
+    assert %Run{error: nil} = review_run_finished(run, [])
+    assert %Task{stage: :review, pr_is_draft: false} = Repo.reload!(task)
+    assert [%{finished_at: %DateTime{}}] = Pipeline.read_review(task)
+  end
+
+  test "a review already finished is not finished again", %{task: task, run: run} do
+    {:ok, _closed} = Pipeline.save_review(task)
+    {:ok, task} = Pipeline.update_task(task, %{pr_is_draft: false})
+    %Run{} = review_run_finished(%{run | task: task}, [])
+    [%{finished_at: finished_at}] = Pipeline.read_review(task)
+
+    assert %Run{error: nil} = review_run_finished(%{run | task: task}, [])
+    assert [%{finished_at: ^finished_at}] = Pipeline.read_review(task)
+  end
+
+  test "a message the human queued holds the review open", %{task: task, run: run} do
+    {:ok, _closed} = Pipeline.save_review(task)
+
+    assert %Run{error: nil} = review_run_finished(%{run | pending_chat: "One more thing"}, [])
+    assert [%{finished_at: nil}] = Pipeline.read_review(task)
+  end
+
+  test "a turn that ends without saving its review records that, and moves nothing", %{task: task, run: run} do
+    assert %Run{error: "The Review lead did not save its review."} = review_run_finished(run, [])
     assert %Task{stage: :review} = Repo.reload!(task)
   end
 
-  test "a report an old-brief agent wrote does not close the review, so the task stays", %{
+  test "a turn after a fix round's commit owes a round, so the last pass does not stand for it", %{
     task: task,
     run: run,
-    report_path: path
+    worktree: worktree
   } do
-    File.mkdir_p!(Path.dirname(path))
-    File.write!(path, ~s({"findings": [{"key": "old-finding", "title": "Old", "severity": "major"}]}))
+    {:ok, _closed} = Pipeline.save_review(task)
+    File.write!(Path.join(worktree, "fixed.ex"), "fixed\n")
+    git!(worktree, ["add", "."])
+    git!(worktree, ["commit", "-m", "Fix round 1"])
 
-    assert %Run{error: "The reviewer did not save its review."} = review_run_finished(run, [])
-    assert %Task{stage: :review} = Repo.reload!(task)
+    assert %Run{error: "The Review lead did not save its review."} = review_run_finished(run, [])
+  end
+
+  test "a pass with no commit is taken at its word", %{task: task, run: run, finding: finding} do
+    {:ok, %{head: nil}} = Pipeline.save_review(%{task | worktree_path: "/nonexistent/rfn"})
+    {:ok, _ruled_later} = Pipeline.save_finding(task, finding)
+
+    assert %Run{error: nil} = review_run_finished(run, [])
   end
 end

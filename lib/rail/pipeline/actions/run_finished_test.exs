@@ -19,7 +19,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   setup %{project: project} do
     roles =
-      Map.new([:plan, :engineer, :review, :qa, :demo, :debugger], fn stage ->
+      Map.new([:plan, :engineer, :review_lead, :debugger], fn stage ->
         {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
 
         {stage, role}
@@ -208,17 +208,47 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert [%{prompt: "Which database?"}] = pending_questions(task.id)
   end
 
-  test "a review run that closed its pass leaves the task at review with what it saved", %{task: task, exited: exited} do
+  test "a Review lead turn that saved its review leaves the task at review with what it found", %{
+    task: task,
+    exited: exited
+  } do
     {:ok, task} = Pipeline.update_task(task, %{stage: :review})
-    finding = %{key: "unhandled-nil", title: "Nil is not handled", severity: :major, recommendation: :fix}
-    {:ok, _saved} = Pipeline.save_review_finding(task, finding)
-    {:ok, _closed} = Pipeline.save_review(task)
 
-    {_run, os_process} = exited.(:review, %{})
+    {:ok, _finding} =
+      Pipeline.save_finding(task, %{
+        key: "unhandled-nil",
+        kind: :code,
+        raised_by: :code_reviewer,
+        title: "Nil is not handled",
+        problem: "A task with no worktree crashes the page.",
+        file: "lib/a.ex",
+        line: 3,
+        fix: "Guard the nil in the action.",
+        why: "It crashes.",
+        rule: "Every caller handles a missing worktree.",
+        severity: :major,
+        recommendation: :fix,
+        places: [%{file: "lib/a.ex", line: 3, label: "handle/1"}],
+        evidence: [%{name: "The clause", kind: :code, file: "lib/a.ex", line: 3}]
+      })
 
-    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    {:ok, _pass} = Pipeline.save_review(task)
+
+    {_run, os_process} = exited.(:review_lead, %{})
+
+    assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert %Task{stage: :review} = Repo.reload!(task)
-    assert [%{key: "unhandled-nil", decision: nil}] = Pipeline.list_review_findings(task)
+    assert [%{key: "unhandled-nil", decision: nil}] = Pipeline.list_findings(task)
+  end
+
+  test "a Review lead turn that did not save its review says so and stays open", %{task: task, exited: exited} do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :review})
+    {_run, os_process} = exited.(:review_lead, %{})
+
+    assert {:ok, %Run{stage_outcome: :in_progress, error: "The Review lead did not save its review."}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+
+    assert %Task{stage: :review} = Repo.reload!(task)
   end
 
   test "a question another run left unanswered does not hold this run's finish", %{task: task, exited: exited} do
@@ -228,11 +258,27 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     {:ok, _question} =
       Pipeline.register_question(Repo.preload(engineer_run, task: :issue), %DetectedQuestion{prompt: "Rebase onto main?"})
 
-    finding = %{key: "unhandled-nil", title: "Nil is not handled", severity: :major, recommendation: :fix}
-    {:ok, _saved} = Pipeline.save_review_finding(task, finding)
-    {:ok, _closed} = Pipeline.save_review(task)
+    {:ok, _finding} =
+      Pipeline.save_finding(task, %{
+        key: "unhandled-nil",
+        kind: :code,
+        raised_by: :code_reviewer,
+        title: "Nil is not handled",
+        problem: "A task with no worktree crashes the page.",
+        file: "lib/a.ex",
+        line: 3,
+        fix: "Guard the nil in the action.",
+        why: "It crashes.",
+        rule: "Every caller handles a missing worktree.",
+        severity: :major,
+        recommendation: :fix,
+        places: [%{file: "lib/a.ex", line: 3, label: "handle/1"}],
+        evidence: [%{name: "The clause", kind: :code, file: "lib/a.ex", line: 3}]
+      })
 
-    {_run, os_process} = exited.(:review, %{})
+    {:ok, _pass} = Pipeline.save_review(task)
+
+    {_run, os_process} = exited.(:review_lead, %{})
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
   end
@@ -242,12 +288,12 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   # said nothing about why.
   test "a finish that blows up says so on the run", %{task: task, exited: exited} do
     {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
-    {:ok, _closed} = Pipeline.save_review(task)
-    stub(Tools, :start_os_process, fn _run, _argv -> raise "the spawn fell over" end)
+    {:ok, _pass} = Pipeline.save_review(task)
+    stub(Git, :branch_fingerprint, fn _path -> raise "git fell over" end)
 
-    {_run, os_process} = exited.(:review, %{})
+    {_run, os_process} = exited.(:review_lead, %{})
 
-    assert {:ok, %Run{stage_outcome: :in_progress, error: "the spawn fell over"}} =
+    assert {:ok, %Run{stage_outcome: :in_progress, error: "git fell over"}} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
   end
 
@@ -260,249 +306,6 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert %Task{stage: :debugger} = Repo.reload!(task)
-  end
-
-  test "a QA run that saved its verdict leaves the task at QA with what it saved", %{task: task, exited: exited} do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
-
-    {:ok, _saved} =
-      Pipeline.save_qa_finding(task, %{
-        key: "total-unrounded",
-        title: "The total renders as $1234.5",
-        check: "A bill's total reads as money",
-        severity: :major,
-        recommendation: :fix,
-        evidence: [%{name: "the total", kind: :query, text: "total: 1234.5"}]
-      })
-
-    {:ok, _verdict} = Pipeline.save_qa_verdict(task, %{verdict: :fail, summary: "The total is wrong."})
-
-    {_run, os_process} = exited.(:qa, %{})
-
-    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-    assert %Task{stage: :qa} = Repo.reload!(task)
-    assert [%{key: "total-unrounded", decision: nil}] = Pipeline.list_qa_findings(task)
-  end
-
-  # The demo settles the same way QA does: the recording is encoded, the write-up
-  # is read, and the task stays where it is for a human to watch it.
-  test "a demo run encodes what it filmed and leaves the task at demo", %{task: task, exited: exited} do
-    {:ok, _filming} = Pipeline.update_task(task, %{stage: :demo})
-    demo_dir = Path.join(task.scratch_path, "demo")
-    File.mkdir_p!(Path.join(demo_dir, "frames"))
-    File.write!(Path.join(demo_dir, "RUN-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
-
-    expect(Tools, :stop_browser_recording, fn %Task{} -> demo_dir end)
-    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
-
-    {_run, os_process} = exited.(:demo, %{})
-
-    assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-    assert %Task{stage: :demo} = Repo.reload!(task)
-  end
-
-  test "a demo that is done takes the task's pull request out of draft", %{task: task, exited: exited} do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :demo, pr_number: 7, pr_is_draft: true})
-    demo_dir = Path.join(task.scratch_path, "demo")
-    File.mkdir_p!(Path.join(demo_dir, "frames"))
-    File.write!(Path.join(demo_dir, "RUN-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
-
-    expect(Tools, :stop_browser_recording, fn %Task{} -> demo_dir end)
-    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
-
-    Req.Test.expect(Client, 3, fn conn ->
-      case {conn.method, conn.request_path} do
-        {"POST", "/app/installations/1/access_tokens"} ->
-          Req.Test.json(conn, %{"token" => "ghs_token"})
-
-        {"GET", "/repos/example/test-seed/pulls/7"} ->
-          Req.Test.json(conn, %{"number" => 7, "node_id" => "PR_kw7"})
-
-        {"POST", "/graphql"} ->
-          Req.Test.json(conn, %{"data" => %{"markPullRequestReadyForReview" => %{"pullRequest" => %{"isDraft" => false}}}})
-      end
-    end)
-
-    {_run, os_process} = exited.(:demo, %{})
-
-    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-    assert %Task{stage: :demo, pr_is_draft: false} = Repo.reload!(task)
-  end
-
-  test "a recorded demo is posted on the ticket and linked from the pull request", %{task: task, exited: exited} do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :demo, pr_number: 7, pr_is_draft: false})
-    demo_dir = Path.join(task.scratch_path, "demo")
-    File.mkdir_p!(Path.join(demo_dir, "frames"))
-    File.write!(Path.join(demo_dir, "RUN-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
-    File.write!(Path.join(demo_dir, "demo.webm"), "webm bytes")
-
-    expect(Tools, :stop_browser_recording, fn %Task{} -> demo_dir end)
-    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "fileUpload" => %{
-            "success" => true,
-            "uploadFile" => %{
-              "uploadUrl" => "https://uploads.linear.app/put/run-1",
-              "assetUrl" => "https://uploads.linear.app/assets/RUN-1-demo.webm",
-              "headers" => []
-            }
-          }
-        }
-      })
-    end)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      assert {:ok, "webm bytes", conn} = Plug.Conn.read_body(conn)
-      Plug.Conn.send_resp(conn, 200, "")
-    end)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
-      comment = "## Demo: Filters\n\nIt filters.\n\n[Watch the demo](https://uploads.linear.app/assets/RUN-1-demo.webm)"
-      assert %{"variables" => %{"input" => %{"body" => ^comment}}} = Jason.decode!(body)
-
-      Req.Test.json(conn, %{
-        "data" => %{
-          "commentCreate" => %{
-            "success" => true,
-            "comment" => %{
-              "id" => "comment_demo",
-              "body" => comment,
-              "createdAt" => "2026-09-22T10:00:00.000Z",
-              "issue" => %{"id" => "lin_run_finished_1"},
-              "botActor" => %{"name" => "Rail"}
-            }
-          }
-        }
-      })
-    end)
-
-    Req.Test.expect(Client, 3, fn conn ->
-      case {conn.method, conn.request_path} do
-        {"POST", "/app/installations/" <> _id} ->
-          Req.Test.json(conn, %{"token" => "ghs_token"})
-
-        {"GET", "/repos/example/test-seed/pulls/7"} ->
-          Req.Test.json(conn, %{"number" => 7, "body" => "Opened by Rail.\n\n## Demo\n\n[Watch the demo](old)"})
-
-        {"PATCH", "/repos/example/test-seed/pulls/7"} ->
-          {:ok, body, conn} = Plug.Conn.read_body(conn)
-
-          assert %{
-                   "body" =>
-                     "Opened by Rail.\n\n## Demo\n\n[Watch the demo](https://uploads.linear.app/assets/RUN-1-demo.webm)"
-                 } =
-                   Jason.decode!(body)
-
-          Req.Test.json(conn, %{"number" => 7})
-      end
-    end)
-
-    {run, os_process} = exited.(:demo, %{})
-
-    assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-    refute Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "Could not publish"))
-  end
-
-  test "a recorded demo on a task with no pull request goes on the ticket alone", %{task: task, exited: exited} do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :demo})
-    demo_dir = Path.join(task.scratch_path, "demo")
-    File.mkdir_p!(Path.join(demo_dir, "frames"))
-    File.write!(Path.join(demo_dir, "RUN-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
-    File.write!(Path.join(demo_dir, "demo.webm"), "webm bytes")
-
-    expect(Tools, :stop_browser_recording, fn %Task{} -> demo_dir end)
-    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "fileUpload" => %{
-            "success" => true,
-            "uploadFile" => %{
-              "uploadUrl" => "https://uploads.linear.app/put/run-1",
-              "assetUrl" => "https://uploads.linear.app/a.webm",
-              "headers" => []
-            }
-          }
-        }
-      })
-    end)
-
-    Req.Test.expect(Rail.Linear, &Plug.Conn.send_resp(&1, 200, ""))
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "commentCreate" => %{
-            "success" => true,
-            "comment" => %{
-              "id" => "comment_demo_2",
-              "body" => "## Demo: Filters",
-              "createdAt" => "2026-09-22T10:00:00.000Z",
-              "issue" => %{"id" => "lin_run_finished_1"},
-              "botActor" => %{"name" => "Rail"}
-            }
-          }
-        }
-      })
-    end)
-
-    Req.Test.stub(Client, fn _conn -> flunk("asked GitHub about a pull request the task does not have") end)
-
-    {run, os_process} = exited.(:demo, %{})
-
-    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-    refute Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "Could not publish"))
-  end
-
-  test "a demo that could not be published says so and is still done", %{task: task, exited: exited} do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :demo})
-    demo_dir = Path.join(task.scratch_path, "demo")
-    File.mkdir_p!(Path.join(demo_dir, "frames"))
-    File.write!(Path.join(demo_dir, "RUN-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
-    File.write!(Path.join(demo_dir, "demo.webm"), "webm bytes")
-
-    expect(Tools, :stop_browser_recording, fn %Task{} -> demo_dir end)
-    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
-    Req.Test.expect(Rail.Linear, &Req.Test.json(&1, %{"data" => %{"fileUpload" => %{"success" => false}}}))
-
-    {run, os_process} = exited.(:demo, %{})
-
-    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-    assert Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "[rail] Could not publish the demo:"))
-  end
-
-  test "a draft GitHub will not mark ready does not hold the demo back", %{task: task, exited: exited} do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :demo, pr_number: 7, pr_is_draft: true})
-    demo_dir = Path.join(task.scratch_path, "demo")
-    File.mkdir_p!(Path.join(demo_dir, "frames"))
-    File.write!(Path.join(demo_dir, "RUN-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
-
-    expect(Tools, :stop_browser_recording, fn %Task{} -> demo_dir end)
-    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
-    Req.Test.expect(Client, &(&1 |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "Not Found"})))
-
-    {_run, os_process} = exited.(:demo, %{})
-
-    assert ExUnit.CaptureLog.capture_log(fn ->
-             assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-           end) =~ "Could not mark example/test-seed#7 ready for review"
-
-    assert %Task{pr_is_draft: true} = Repo.reload!(task)
-  end
-
-  test "a QA run that saved no verdict says so and stays open", %{task: task, exited: exited} do
-    {:ok, _at_qa} = Pipeline.update_task(task, %{stage: :qa})
-    {_run, os_process} = exited.(:qa, %{})
-
-    error = "The QA agent did not save a verdict."
-
-    assert {:ok, %Run{stage_outcome: :in_progress, error: ^error}} =
-             Pipeline.run_finished(os_process, %{exit_code: 0})
   end
 
   # `commit` stops the turn it is called in and commits in the background, so the
@@ -542,121 +345,18 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert %Task{stage: :engineer} = Repo.reload!(task)
   end
 
-  test "an engineer turn at QA that changed files sends the task back to engineer, uncommitted", %{
+  # Nothing sends a task back from Review but Update branch, so a turn there leaves it where it is.
+  test "an engineer turn after the task left Engineer moves nothing, whatever it changed", %{
     task: task,
     exited: exited
   } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :qa, worktree_path: create_temp_git_repo()})
-    %{head_sha: head_sha, content_digest: content_digest} = Git.content_fingerprint(task.worktree_path)
-
-    {run, os_process} =
-      exited.(:engineer, %{
-        stage_outcome: :done,
-        stage_fingerprint_head_sha: head_sha,
-        stage_fingerprint_dirty_digest: content_digest
-      })
-
-    File.write!(Path.join(task.worktree_path, "asked_for.ex"), "the change\n")
-    reject(&Git.commit_worktree/3)
-
-    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-    assert %Task{stage: :engineer} = Repo.reload!(task)
-    assert %Run{stage_outcome: :done} = Repo.reload!(run)
-    assert Git.worktree_dirty?(task.worktree_path)
-  end
-
-  test "an engineer turn at demo that only answered leaves the task and its demo where they were", %{
-    task: task,
-    roles: roles,
-    exited: exited
-  } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :demo, worktree_path: create_temp_git_repo()})
-    %{head_sha: head_sha, content_digest: content_digest} = Git.content_fingerprint(task.worktree_path)
-
-    {:ok, demo_run} =
-      Pipeline.create_run(%{
-        task_id: task.id,
-        role_id: roles[:demo].id,
-        status: :finished,
-        stage_outcome: :done,
-        started_at: DateTime.utc_now()
-      })
-
-    {_run, os_process} =
-      exited.(:engineer, %{
-        stage_outcome: :done,
-        stage_fingerprint_head_sha: head_sha,
-        stage_fingerprint_dirty_digest: content_digest
-      })
-
-    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-    assert %Task{stage: :demo} = Repo.reload!(task)
-    assert %Run{status: :finished, stage_outcome: :done} = Repo.reload!(demo_run)
-  end
-
-  # Files a QA or demo agent left behind were there before the turn, so they are
-  # not the engineer changing anything.
-  test "an engineer turn at demo in a worktree already dirty, left as it was, moves nothing", %{
-    task: task,
-    exited: exited
-  } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :demo, worktree_path: create_temp_git_repo()})
-    File.write!(Path.join(task.worktree_path, "qa_leftover.log"), "from QA\n")
-    %{head_sha: head_sha, content_digest: content_digest} = Git.content_fingerprint(task.worktree_path)
-
-    {_run, os_process} =
-      exited.(:engineer, %{
-        stage_outcome: :done,
-        stage_fingerprint_head_sha: head_sha,
-        stage_fingerprint_dirty_digest: content_digest
-      })
-
-    assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-    assert %Task{stage: :demo} = Repo.reload!(task)
-  end
-
-  # `git status` reads " M" before and after, so only the contents say the turn changed code.
-  test "an engineer turn at QA that rewrote a file already modified sends the task back to engineer", %{
-    task: task,
-    exited: exited
-  } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :qa, worktree_path: create_temp_git_repo()})
-    File.write!(Path.join(task.worktree_path, "feature.ex"), "committed\n")
-    git!(task.worktree_path, ["add", "."])
-    git!(task.worktree_path, ["commit", "-m", "the engineer's round"])
-    File.write!(Path.join(task.worktree_path, "feature.ex"), "left uncommitted\n")
-
-    # The message queued during the last turn goes out as it ends, stamping the tree.
-    {run, os_process} =
-      exited.(:engineer, %{stage_outcome: :done, pending_chat: "Make the currency follow the entity"})
-
-    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-    assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0}, async: false)
-    assert %Task{stage: :qa} = Repo.reload!(task)
-
-    File.write!(Path.join(task.worktree_path, "feature.ex"), "follows the entity\n")
-
-    {:ok, turn} =
-      %OsProcess{}
-      |> OsProcess.changeset(%{
-        run_id: run.id,
-        task_id: task.id,
-        stream_path: "/tmp/run_finished/#{run.id}-turn.ndjson",
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-      |> Repo.insert()
-
-    assert {:ok, %Run{}} = Pipeline.run_finished(turn, %{exit_code: 0})
-    assert %Task{stage: :engineer} = Repo.reload!(task)
-  end
-
-  test "an engineer turn with no record of how the tree started moves nothing", %{task: task, exited: exited} do
     {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
     {_run, os_process} = exited.(:engineer, %{stage_outcome: :done})
     File.write!(Path.join(task.worktree_path, "unknown.ex"), "when\n")
 
-    assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    reject(&Git.commit_worktree/3)
+
+    assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert %Task{stage: :review} = Repo.reload!(task)
   end
 
@@ -883,7 +583,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       {:ok, other} =
         Pipeline.create_run(%{
           task_id: task.id,
-          role_id: roles[:review].id,
+          role_id: roles[:review_lead].id,
           status: :running,
           started_at: DateTime.utc_now()
         })
@@ -902,7 +602,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     end
 
     test "a merge carried on through CI is not done while CI waits in line", %{task: task, exited: exited} do
-      {:ok, _task} = Pipeline.update_task(task, %{is_updating_branch: true})
+      {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, is_updating_branch: true})
       {_run, os_process} = exited.(:engineer, %{stage_outcome: :done})
 
       stub(Git, :merge_in_progress?, fn _path -> true end)
@@ -972,35 +672,6 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     assert [%{line: "[rail] CI failed, so its output went back to the engineer (1 of 3)."}] =
              Pipeline.list_run_events(run)
-  end
-
-  # The fix turn's end compares against how the tree stood when it started, not
-  # against whatever an earlier turn left on the run.
-  test "CI that failed on a task past engineer stamps how the tree stood for the fix turn", %{
-    task: task,
-    exited: exited
-  } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :qa, worktree_path: create_temp_git_repo()})
-
-    {run, os_process} =
-      exited.(:engineer, %{
-        stage_outcome: :done,
-        stage_fingerprint_head_sha: "an_earlier_turn",
-        stage_fingerprint_dirty_digest: "an_earlier_digest"
-      })
-
-    os_process =
-      os_process
-      |> OsProcess.changeset(%{kind: :ci, command: "mise run ci", stream_path: "/tmp/gone.log"})
-      |> Repo.update!()
-
-    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-    %{head_sha: head_sha, content_digest: content_digest} = Git.content_fingerprint(task.worktree_path)
-
-    assert {:ok, %Run{status: :running}} = Pipeline.run_finished(os_process, %{exit_code: 1})
-
-    assert %Run{stage_fingerprint_head_sha: ^head_sha, stage_fingerprint_dirty_digest: ^content_digest} =
-             Repo.reload!(run)
   end
 
   test "CI that failed resumes the engineer on the prompt merged to the project's .rail/prompts", %{
@@ -1112,6 +783,201 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
              Pipeline.run_finished(os_process, %{exit_code: 0})
   end
 
+  describe "CI on the Review lead's run" do
+    setup %{task: task} do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
+      {:ok, _pass} = Pipeline.save_review(task)
+
+      %{task: task, head_sha: String.trim(git!(task.worktree_path, ["rev-parse", "HEAD"]))}
+    end
+
+    test "that passed on a commit that asked for review pushes the branch and starts the next round", %{
+      task: task,
+      exited: exited,
+      head_sha: head_sha
+    } do
+      {%Run{id: run_id} = run, os_process} =
+        exited.(:review_lead, %{ci_failure_streak: 1, stage_outcome: :done, review_on_ci_pass: true})
+
+      os_process = os_process |> OsProcess.changeset(%{kind: :ci, head_sha: head_sha}) |> Repo.update!()
+      started = "[rail] Round 2 started after CI passed on #{String.slice(head_sha, 0, 7)}"
+
+      expect(Git, :push_branch, fn _scope, _task -> :ok end)
+      expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      assert {:ok, %Run{ci_failure_streak: 0, stage_outcome: :in_progress, error: nil, review_on_ci_pass: false}} =
+               Pipeline.run_finished(os_process, %{exit_code: 0})
+
+      assert %Task{stage: :review, pr_number: 7} = Repo.reload!(task)
+      assert [%{line: ^started}] = Pipeline.list_run_events(run)
+    end
+
+    # CI Rail ran on its own, such as Run CI from the diff, asked for no round.
+    test "that passed on a commit that did not ask for review only pushes", %{task: task, exited: exited} do
+      {run, os_process} = exited.(:review_lead, %{ci_failure_streak: 1, stage_outcome: :done})
+      os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
+
+      expect(Git, :push_branch, fn _scope, _task -> :ok end)
+      reject(Tools, :start_os_process, 2)
+
+      assert {:ok, %Run{ci_failure_streak: 0, stage_outcome: :done, error: nil, review_on_ci_pass: false}} =
+               Pipeline.run_finished(os_process, %{exit_code: 0})
+
+      assert %Task{stage: :review, pr_number: 7} = Repo.reload!(task)
+      assert [] = Pipeline.list_run_events(run)
+    end
+
+    test "that passed on a commit it has no record of still starts the next round", %{exited: exited} do
+      {run, os_process} = exited.(:review_lead, %{review_on_ci_pass: true})
+      os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
+
+      expect(Git, :push_branch, fn _scope, _task -> :ok end)
+      expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      assert {:ok, %Run{error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+      assert [%{line: "[rail] Round 2 started after CI passed"}] = Pipeline.list_run_events(run)
+    end
+
+    test "that passed with dispatch off says the round was not started", %{exited: exited} do
+      {_run, os_process} = exited.(:review_lead, %{review_on_ci_pass: true})
+      os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
+
+      expect(Git, :push_branch, fn _scope, _task -> :ok end)
+      expect(Tools, :start_os_process, fn _spawned, _argv -> {:error, :dispatch_disabled} end)
+
+      assert {:ok, %Run{error: "Dispatch is off, so round 2 was not started."}} =
+               Pipeline.run_finished(os_process, %{exit_code: 0})
+    end
+
+    test "that passed and could not start the lead says why", %{exited: exited} do
+      {_run, os_process} = exited.(:review_lead, %{review_on_ci_pass: true})
+      os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
+
+      expect(Git, :push_branch, fn _scope, _task -> :ok end)
+      expect(Tools, :start_os_process, fn spawned, _argv -> {:error, {:spawn_failed, :enoent, spawned}} end)
+
+      assert {:ok, %Run{error: "Could not start round 2: :enoent"}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    end
+
+    test "that passed on a branch that will not push says so and starts nothing", %{exited: exited} do
+      {_run, os_process} = exited.(:review_lead, %{review_on_ci_pass: true})
+      os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
+
+      expect(Git, :push_branch, fn _scope, _task -> {:error, "no CI receipt for this tree"} end)
+      reject(Tools, :start_os_process, 2)
+
+      assert {:ok,
+              %Run{
+                review_on_ci_pass: false,
+                error: "CI passed, but the branch could not be pushed: no CI receipt for this tree"
+              }} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    end
+
+    test "that failed goes back to the lead with the end of its output", %{task: task, exited: exited} do
+      {run, os_process} = exited.(:review_lead, %{})
+      stream_path = Path.join(task.scratch_path, "ci.log")
+      File.write!(stream_path, "1 test, 1 failure\n")
+
+      os_process =
+        os_process
+        |> OsProcess.changeset(%{kind: :ci, command: "mise run ci", stream_path: stream_path})
+        |> Repo.update!()
+
+      test_pid = self()
+
+      expect(Tools, :start_os_process, fn spawned, argv ->
+        send(test_pid, {:resumed, Enum.join(argv, " ")})
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %Run{status: :running, ci_failure_streak: 1}} =
+               Pipeline.run_finished(os_process, %{exit_code: 1, error: "Exited with code 1"})
+
+      assert_received {:resumed, prompt}
+      assert prompt =~ "`mise run ci` exited with code 1"
+      assert prompt =~ "1 test, 1 failure"
+
+      assert [%{line: "[rail] CI failed, so its output went back to the Review lead (1 of 3)."}] =
+               Pipeline.list_run_events(run)
+    end
+
+    test "that failed a third time in a row waits for a person", %{exited: exited} do
+      {_run, os_process} = exited.(:review_lead, %{ci_failure_streak: 2})
+      os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
+
+      reject(Tools, :start_os_process, 2)
+
+      assert {:ok,
+              %Run{
+                ci_failure_streak: 3,
+                error:
+                  "CI failed 3 times in a row, so it was not sent back again. Read its output, then message the Review lead, which can run CI again with nothing changed."
+              }} = Pipeline.run_finished(os_process, %{exit_code: 1})
+    end
+
+    test "that was stopped before it finished says how to go on", %{exited: exited} do
+      {_run, os_process} = exited.(:review_lead, %{})
+      os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
+
+      reject(Tools, :start_os_process, 2)
+
+      assert {:ok, %Run{error: "CI was stopped before it finished. Message the Review lead to run it again when ready."}} =
+               Pipeline.run_finished(os_process, %{exit_code: -1})
+    end
+  end
+
+  # Update branch at Review hands conflicts to the Review lead, whose turn finishing is judged by the branch.
+  describe "a Review lead turn resolving conflicts" do
+    setup %{task: task} do
+      {:ok, task} =
+        Pipeline.update_task(task, %{
+          stage: :review,
+          is_updating_branch: true,
+          pr_number: 7,
+          worktree_path: create_temp_git_repo()
+        })
+
+      {:ok, _pass} = Pipeline.save_review(task)
+      %{task: task}
+    end
+
+    test "that stopped with conflicts unresolved says so and stays updating the branch", %{task: task, exited: exited} do
+      {_run, os_process} = exited.(:review_lead, %{})
+
+      stub(Git, :conflicted_files, fn _path -> ["lib/app.ex"] end)
+      reject(&Git.merge_default_branch/2)
+      reject(Tools, :start_os_process, 2)
+
+      assert {:ok, %Run{error: "The Review lead stopped with conflicts still unresolved. Message it to finish them."}} =
+               Pipeline.run_finished(os_process, %{exit_code: 0})
+
+      assert %Task{stage: :review, is_updating_branch: true} = Repo.reload!(task)
+    end
+
+    test "that staged them all has the merge committed, pushed and the next round started", %{
+      task: task,
+      exited: exited
+    } do
+      {%Run{id: run_id} = run, os_process} = exited.(:review_lead, %{})
+
+      stub(Git, :merge_in_progress?, fn _path -> true end)
+
+      expect(Git, :merge_default_branch, fn _scope, _task ->
+        git!(task.worktree_path, ["commit", "--allow-empty", "-m", "merged main in"])
+        :ok
+      end)
+
+      expect(Git, :push_branch, fn _scope, _task -> :ok end)
+      expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      assert {:ok, %Run{error: nil, stage_outcome: :in_progress}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+      assert %Task{stage: :review, is_updating_branch: false} = Repo.reload!(task)
+
+      assert ["[rail] Merged origin/main in.", "[rail] Round 2 started after it was pushed"] =
+               run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
+    end
+  end
+
   describe "CI that passed on a commit" do
     # Review only takes a branch the remote has, on a commit CI passed, so the
     # worktree is one CI's pass can really push.
@@ -1205,8 +1071,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     end
   end
 
-  # The conflicts already sent the task back to engineer, and finishing the merge
-  # leaves it there for review to see the result.
+  # At Engineer the merge is pushed like any commit Rail makes on its own, and waits there for a human.
   test "conflicts the engineer resolved are carried on and the branch sent on", %{task: task, exited: exited} do
     {:ok, task} =
       Pipeline.update_task(task, %{stage: :engineer, is_updating_branch: true, worktree_path: create_temp_git_repo()})
@@ -1228,7 +1093,10 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   test "a merge carried on through CI is not done until CI passes", %{project: project, task: task, exited: exited} do
     {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
-    {:ok, _task} = Pipeline.update_task(task, %{is_updating_branch: true, worktree_path: create_temp_git_repo()})
+
+    {:ok, _task} =
+      Pipeline.update_task(task, %{stage: :engineer, is_updating_branch: true, worktree_path: create_temp_git_repo()})
+
     {_run, os_process} = exited.(:engineer, %{stage_outcome: :done})
 
     stub(Git, :merge_in_progress?, fn _path -> true end)
@@ -1241,7 +1109,9 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   end
 
   test "a merge that stops on conflicts again goes back to the engineer", %{task: task, exited: exited} do
-    {:ok, _task} = Pipeline.update_task(task, %{is_updating_branch: true, worktree_path: create_temp_git_repo()})
+    {:ok, _task} =
+      Pipeline.update_task(task, %{stage: :engineer, is_updating_branch: true, worktree_path: create_temp_git_repo()})
+
     {_run, os_process} = exited.(:engineer, %{})
 
     stub(Git, :merge_in_progress?, fn _path -> true end)
@@ -1256,7 +1126,9 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   end
 
   test "an engineer that stopped with conflicts unresolved stays updating the branch", %{task: task, exited: exited} do
-    {:ok, task} = Pipeline.update_task(task, %{is_updating_branch: true, worktree_path: create_temp_git_repo()})
+    {:ok, task} =
+      Pipeline.update_task(task, %{stage: :engineer, is_updating_branch: true, worktree_path: create_temp_git_repo()})
+
     {_run, os_process} = exited.(:engineer, %{})
 
     stub(Git, :conflicted_files, fn _path -> ["lib/app.ex"] end)
@@ -1269,7 +1141,9 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   end
 
   test "a merge the engineer abandoned is said so", %{task: task, exited: exited} do
-    {:ok, _task} = Pipeline.update_task(task, %{is_updating_branch: true, worktree_path: create_temp_git_repo()})
+    {:ok, _task} =
+      Pipeline.update_task(task, %{stage: :engineer, is_updating_branch: true, worktree_path: create_temp_git_repo()})
+
     {_run, os_process} = exited.(:engineer, %{})
 
     stub(Git, :merge_in_progress?, fn _path -> false end)
@@ -1280,7 +1154,9 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   end
 
   test "a merge that cannot be carried on says why", %{task: task, exited: exited} do
-    {:ok, _task} = Pipeline.update_task(task, %{is_updating_branch: true, worktree_path: create_temp_git_repo()})
+    {:ok, _task} =
+      Pipeline.update_task(task, %{stage: :engineer, is_updating_branch: true, worktree_path: create_temp_git_repo()})
+
     {_run, os_process} = exited.(:engineer, %{})
 
     stub(Git, :merge_in_progress?, fn _path -> true end)
@@ -1291,7 +1167,9 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   end
 
   test "a merge carried on whose push fails says why", %{task: task, exited: exited} do
-    {:ok, _task} = Pipeline.update_task(task, %{is_updating_branch: true, worktree_path: create_temp_git_repo()})
+    {:ok, _task} =
+      Pipeline.update_task(task, %{stage: :engineer, is_updating_branch: true, worktree_path: create_temp_git_repo()})
+
     {_run, os_process} = exited.(:engineer, %{})
 
     stub(Git, :merge_in_progress?, fn _path -> true end)
@@ -1303,7 +1181,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   end
 
   test "an engineer that asks something while updating the branch parks on it", %{task: task, exited: exited} do
-    {:ok, task} = Pipeline.update_task(task, %{is_updating_branch: true})
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, is_updating_branch: true})
     {run, os_process} = exited.(:engineer, %{})
     now = DateTime.utc_now()
 

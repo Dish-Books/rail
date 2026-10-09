@@ -392,7 +392,7 @@ defmodule RailWeb.Components.IssueView do
   # Where the task got to is what the latest run at the stage it sits at says.
   defp stage_run(%{runs: runs, stage: stage}) do
     runs
-    |> Enum.filter(&(&1.role != nil and &1.role.stage == stage))
+    |> Enum.filter(&(&1.role != nil and &1.role.stage == Task.role_stage(stage)))
     |> Enum.max_by(&(&1.started_at || &1.inserted_at), DateTime, fn -> nil end)
   end
 end

@@ -18,7 +18,6 @@ defmodule Rail.Mcp.Utils.RunToolDemoStart do
   for the next change to start the clock.
   """
 
-  import Rail.Mcp.Utils.BrowserName
   import Rail.Mcp.Utils.NamedBrowser
 
   alias Rail.Pipeline.Schemas.Task
@@ -41,9 +40,7 @@ defmodule Rail.Mcp.Utils.RunToolDemoStart do
 
   # A take of a browser nobody connected would record nothing, and the agent would
   # only learn so once the run ended.
-  defp filmed(task, %{"browser" => _given} = arguments, opts) do
+  defp filmed(task, arguments, opts) do
     with {:ok, name, _session} <- named_browser(task, arguments, opts), do: {:ok, name}
   end
-
-  defp filmed(_task, arguments, opts), do: browser_name(arguments, opts)
 end

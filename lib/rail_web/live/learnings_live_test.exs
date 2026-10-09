@@ -85,10 +85,24 @@ defmodule RailWeb.LearningsLiveTest do
     override = Repo.insert!(%LearningProposal{project_id: project.id, action: :override, learning_id: rule.id})
     task = learnings_task(project, "OWN-1", :review)
 
-    for finding <- [
-          %{key: "doc", title: "Missing @doc", severity: :nit, recommendation: :skip, status: :open, rule: rule.id}
-        ],
-        do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
+    {:ok, _doc} =
+      Pipeline.save_finding(task, %{
+        key: "doc",
+        kind: :code,
+        raised_by: :code_reviewer,
+        title: "Missing @doc",
+        problem: "A task with no worktree crashes the page.",
+        file: "lib/a.ex",
+        line: 3,
+        fix: "Guard the nil in the action.",
+        why: "It crashes.",
+        rule: "Every caller handles a missing worktree.",
+        severity: :nit,
+        recommendation: :skip,
+        checklist_rule: rule.id,
+        places: [%{file: "lib/a.ex", line: 3, label: "handle/1"}],
+        evidence: [%{name: "The clause", kind: :code, file: "lib/a.ex", line: 3}]
+      })
 
     {:ok, view, _html} = live(conn, ~p"/learnings/#{rule.id}")
     assert has_element?(view, "#learnings-segment-active[aria-pressed=true]")
@@ -375,18 +389,25 @@ defmodule RailWeb.LearningsLiveTest do
       for n <- 1..8,
           do: %{
             key: "doc-#{n}",
+            kind: :code,
+            raised_by: :code_reviewer,
             title: "Missing @doc #{n}",
+            problem: "A task with no worktree crashes the page.",
             file: "lib/c.ex",
             line: n,
+            fix: "Guard the nil in the action.",
+            why: "It crashes.",
+            rule: "Every caller handles a missing worktree.",
             severity: :nit,
             recommendation: :skip,
-            status: :open,
-            rule: rule.id
+            checklist_rule: rule.id,
+            places: [%{file: "lib/c.ex", line: n, label: "handle/1"}],
+            evidence: [%{name: "The clause", kind: :code, file: "lib/c.ex", line: n}]
           }
 
     [first | _rest] =
       for finding <- findings do
-        {:ok, saved} = Pipeline.save_review_finding(task, finding)
+        {:ok, saved} = Pipeline.save_finding(task, finding)
 
         saved
       end
@@ -394,9 +415,9 @@ defmodule RailWeb.LearningsLiveTest do
     second_task = learnings_task(project, "LLV-3", :review)
 
     for finding <- [%{hd(findings) | key: "elsewhere"}],
-        do: {:ok, _saved} = Pipeline.save_review_finding(second_task, finding)
+        do: {:ok, _saved} = Pipeline.save_finding(second_task, finding)
 
-    {:ok, fixed} = Pipeline.decide_review_finding(Rail.Scope.for_user(user), first, :fix)
+    {:ok, fixed} = Pipeline.decide_finding(Rail.Scope.for_user(user), first, :fix)
     {:ok, _flagged} = Learnings.record_overrides(task, [fixed])
 
     {:ok, view, _html} = live(conn, ~p"/learnings/#{rule.id}")
@@ -820,7 +841,7 @@ defmodule RailWeb.LearningsLiveTest do
   end
 
   test "the list says when it shows only the newest, and a card says what broke its rule", %{conn: conn, project: project} do
-    {:ok, review} = Rail.Roles.get_role(project_id: project.id, stage: :review)
+    {:ok, lead} = Rail.Roles.get_role(project_id: project.id, stage: :review_lead)
 
     for n <- 1..100,
         do: learning(project, %{rule: "Rule #{n}", kind: :convention}, activated_at: ~U[2026-01-01 00:00:00Z])
@@ -829,14 +850,28 @@ defmodule RailWeb.LearningsLiveTest do
     task = learnings_task(project, "BRK-1", :review)
 
     {:ok, run} =
-      Pipeline.create_run(%{task_id: task.id, role_id: review.id, status: :finished, started_at: DateTime.utc_now()})
+      Pipeline.create_run(%{task_id: task.id, role_id: lead.id, status: :finished, started_at: DateTime.utc_now()})
 
     Learnings.retrieve_learnings(run, [])
 
-    for finding <- [
-          %{key: "scope", title: "No scope", severity: :major, recommendation: :fix, status: :open, rule: pinned.id}
-        ],
-        do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
+    {:ok, _scope} =
+      Pipeline.save_finding(task, %{
+        key: "scope",
+        kind: :code,
+        raised_by: :code_reviewer,
+        title: "No scope",
+        problem: "A task with no worktree crashes the page.",
+        file: "lib/a.ex",
+        line: 3,
+        fix: "Guard the nil in the action.",
+        why: "It crashes.",
+        rule: "Every caller handles a missing worktree.",
+        severity: :major,
+        recommendation: :fix,
+        checklist_rule: pinned.id,
+        places: [%{file: "lib/a.ex", line: 3, label: "handle/1"}],
+        evidence: [%{name: "The clause", kind: :code, file: "lib/a.ex", line: 3}]
+      })
 
     {:ok, view, _html} = live(conn, ~p"/learnings?status=active")
     assert has_element?(view, "#learnings-match-line", "Newest 100 of 101 active")

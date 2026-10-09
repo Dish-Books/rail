@@ -6,19 +6,15 @@ defmodule Rail.Pipeline do
   Architect as subagents to a ticket, three design options when the change has a
   screen, and one implementation plan. The human picks an option, and one approval
   publishes the ticket and the picked design and records the plan. Engineer
-  builds it: Rail commits and pushes what it leaves, and the human reads the diff
-  and sends it to review. Review reads the change and raises findings, each with a
-  recommendation; the human decides which to address and either sends them back to
-  the engineer or hands the change to QA. QA drives the running application and
-  reports the same way, with a verdict over the top of it, and what the human
-  sends back from there goes to the engineer and comes round through review
-  again before QA sees it a second time. A task past Engineer whose code changes
-  goes back there, and has to come through review and QA again.
+  builds it: Rail commits what it leaves and, once CI passes, sends it to Review.
 
-  Demo drives the same application QA did, for the opposite reason: it records a
-  walkthrough of the change working, narrated a beat at a time, for somebody who
-  will watch two minutes of video and open nothing else. It is where a task
-  stops: nothing moves it on from there yet.
+  Review is one run led by a Review lead, with the code reviewer, QA explorers, an
+  engineer and a demo recorder as its subagents. A round reads the code and drives
+  the running application, the demo is recorded beside it, and the findings land in
+  one list for the human to rule on. Start fix round has the engineer fix what was
+  ruled Fix inside Review, committed as one commit per round, and the next round
+  starts once CI passes on it. A task never goes back to Engineer, and it waits at
+  Review, ready to merge, once nothing is left to rule or fix.
 
   Plan can also end with a split: approval then makes each child an issue and a task of its own at
   Engineer, and parks the parent at Split until the last child merges.
@@ -50,44 +46,29 @@ defmodule Rail.Pipeline do
   defdelegate share_owner_with_children(issue), to: Actions.ShareOwnerWithChildren
 
   defdelegate start_engineer_run(run), to: Actions.StartEngineerRun
-  defdelegate end_turn_and_commit(task, os_process, message), to: Actions.EndTurnAndCommit
+  defdelegate end_turn_and_commit(task, os_process, arguments), to: Actions.EndTurnAndCommit
   defdelegate end_turn_and_merge(task, os_process), to: Actions.EndTurnAndMerge
-  defdelegate commit_engineer_work(scope, task, message), to: Actions.CommitEngineerWork
-  defdelegate commit_and_send_to_review(scope, run), to: Actions.CommitAndSendToReview
+  defdelegate commit_work(scope, run, attrs \\ %{}), to: Actions.CommitWork
   defdelegate send_to_review(run), to: Actions.SendToReview
-  defdelegate changed_since_review?(task), to: Actions.ChangedSinceReview
   defdelegate run_ci(scope, run), to: Actions.RunCi
   defdelegate update_branch(scope, task), to: Actions.UpdateBranch
   defdelegate get_ci_status(run), to: Actions.GetCiStatus
 
   defdelegate start_review_run(run), to: Actions.StartReviewRun
-  defdelegate read_review(task), to: Actions.ReadReview
-  defdelegate save_review_finding(task, attrs), to: Actions.SaveReviewFinding
+  defdelegate save_finding(task, attrs), to: Actions.SaveFinding
+  defdelegate list_findings(task), to: Actions.ListFindings
+  defdelegate decide_finding(scope, finding, decision), to: Actions.DecideFinding
   defdelegate save_review(task), to: Actions.SaveReview
-  defdelegate list_review_findings(task), to: Actions.ListReviewFindings
-  defdelegate decide_review_finding(scope, finding, decision), to: Actions.DecideReviewFinding
-  defdelegate send_findings_to_engineer(run), to: Actions.SendFindingsToEngineer
-  defdelegate send_to_qa(run), to: Actions.SendToQa
+  defdelegate read_review(task), to: Actions.ReadReview
+  defdelegate start_fix_round(run), to: Actions.StartFixRound
 
-  defdelegate start_qa_run(run), to: Actions.StartQaRun
   defdelegate write_qa_checklist(task, checks), to: Actions.WriteQaChecklist
   defdelegate read_qa_checklist(task), to: Actions.ReadQaChecklist
   defdelegate record_qa_check(task, key, outcome, note \\ nil), to: Actions.RecordQaCheck
-  defdelegate list_qa_evidence(task), to: Actions.ListQaEvidence
-  defdelegate read_qa_evidence(task, evidence), to: Actions.ReadQaEvidence
-  defdelegate classify_qa_evidence(task, path), to: Actions.ClassifyQaEvidence
-  defdelegate read_qa_report(task), to: Actions.ReadQaReport
-  defdelegate save_qa_finding(task, attrs), to: Actions.SaveQaFinding
-  defdelegate save_qa_verdict(task, attrs), to: Actions.SaveQaVerdict
-  defdelegate list_qa_findings(task), to: Actions.ListQaFindings
-  defdelegate decide_qa_finding(scope, finding, decision), to: Actions.DecideQaFinding
-  defdelegate send_qa_findings_to_engineer(run), to: Actions.SendQaFindingsToEngineer
-  defdelegate send_to_demo(run), to: Actions.SendToDemo
-  defdelegate record_demo(scope, task), to: Actions.RecordDemo
-  defdelegate skip_demo(scope, task), to: Actions.SkipDemo
+  defdelegate get_finding_evidence(task, key, index), to: Actions.GetFindingEvidence
 
-  defdelegate start_demo_run(run), to: Actions.StartDemoRun
   defdelegate read_demo(task), to: Actions.ReadDemo
+
   defdelegate save_demo(task, attrs), to: Actions.SaveDemo
   defdelegate list_demo_beats(task), to: Actions.ListDemoBeats
 

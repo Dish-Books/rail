@@ -22,8 +22,9 @@ defmodule Rail.Pipeline.Utils.SetupRunFinished do
       resuming_chat?(run) ->
         run
 
-      task.stage == role.stage ->
-        {:ok, %Run{} = entered} = Pipeline.enter_stage(task, role.stage)
+      Task.role_stage(task.stage) == role.stage ->
+        {:ok, %Run{} = entered} = Pipeline.enter_stage(task, task.stage)
+
         entered
 
       true ->

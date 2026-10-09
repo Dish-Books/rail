@@ -62,9 +62,36 @@ defmodule RailWeb.Utils.StageLabelTest do
     assert stage_label(%Task{stage: :plan, scratch_path: scratch}, done) == "Review the plan"
     assert stage_label(%Task{stage: :engineer}, done) == "Review the diff"
     assert stage_label(%Task{stage: :review}, done) == "Review the findings"
-    assert stage_label(%Task{stage: :qa}, done) == "Review the QA report"
-    assert stage_label(%Task{stage: :demo}, done) == "Watch the demo"
     assert approval_label(%Task{stage: :merged}) == "Waiting on you"
+  end
+
+  test "a Review run done reads the findings until the review is finished, and then is ready to merge" do
+    done = %Run{status: :finished, stage_outcome: :done}
+    scratch = Path.join(System.tmp_dir!(), "stage_label_#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf(scratch) end)
+    task = %Task{stage: :review, scratch_path: scratch, issue: %Issue{identifier: "STL-1"}}
+    File.mkdir_p!(Path.join(scratch, "reviews"))
+
+    assert approval_label(task) == "Review the findings"
+    refute ready_to_merge?(task, done)
+
+    File.write!(
+      Path.join(scratch, "reviews/STL-1.json"),
+      ~s({"passes": [{"round": 1, "saved_at": "2026-10-01T10:00:00Z", "head": "abc"}]})
+    )
+
+    assert stage_label(task, done) == "Review the findings"
+    refute ready_to_merge?(task, done)
+
+    File.write!(
+      Path.join(scratch, "reviews/STL-1.json"),
+      ~s({"passes": [{"round": 1, "saved_at": "2026-10-01T10:00:00Z", "head": "abc", "finished_at": "2026-10-01T11:00:00Z"}]})
+    )
+
+    assert stage_label(task, done) == "Ready to merge"
+    assert ready_to_merge?(task, done)
+    refute ready_to_merge?(task, %Run{status: :running})
+    refute ready_to_merge?(%{task | stage: :engineer}, done)
   end
 
   test "a Plan run done with options and no pick asks for the pick, and once picked for the review" do

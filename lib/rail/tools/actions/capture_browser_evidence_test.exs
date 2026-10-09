@@ -21,59 +21,48 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidenceTest do
     end)
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "Capture Evidence"})
-    {:ok, task} = Pipeline.create_task(issue, :qa)
+    {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     %{task: task}
   end
 
-  # Rail names the file from the caption, so nothing arriving from a model ever
-  # becomes a path.
-  test "a caption becomes the filename, and the caller is told which", %{task: task} do
+  # Rail names the file from the caption, so nothing arriving from a model ever becomes a path.
+  test "a caption becomes the filename under shots, and the caller is told which", %{task: task} do
     stub(BrowserSession, :call, fn _session, "Page.captureScreenshot", _params ->
       {:ok, %{"data" => Base.encode64("jpeg bytes")}}
     end)
 
-    assert {:ok, "evidence/the-bill-total-as-rendered.jpg"} =
+    assert {:ok, "shots/the-bill-total-as-rendered-" <> _unique = file} =
              Tools.capture_browser_evidence(:session, task, "The bill total, as rendered")
 
-    assert File.read!(Path.join([task.scratch_path, "qa", "evidence", "the-bill-total-as-rendered.jpg"])) ==
-             "jpeg bytes"
+    assert String.ends_with?(file, ".jpg")
+    assert File.read!(Path.join([task.scratch_path, "qa", file])) == "jpeg bytes"
   end
 
-  # The panel shows a picture the moment it is filed, and never half of one.
-  test "every page open on the task hears a picture filed, and no temporary file is left", %{task: %{id: task_id} = task} do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task_id}")
+  # Two pictures with one caption are two pictures, so neither writes over the other.
+  test "the same caption twice saves two files", %{task: task} do
     stub(BrowserSession, :call, fn _session, _method, _params -> {:ok, %{"data" => Base.encode64("jpeg")}} end)
 
-    assert {:ok, _file} = Tools.capture_browser_evidence(:session, task, "The saved bill", "bill-saves")
+    {:ok, first} = Tools.capture_browser_evidence(:session, task, "The saved bill")
+    {:ok, second} = Tools.capture_browser_evidence(:session, task, "The saved bill")
 
-    assert_received {:output_saved, ^task_id}
-    assert Path.wildcard(Path.join([task.scratch_path, "qa", ".*"]), match_dot: true) == []
+    assert first != second
+    assert [_first, _second] = Path.wildcard(Path.join([task.scratch_path, "qa", "shots", "*.jpg"]))
   end
 
-  # The row it belongs to leads the name, which is how the panel shows a picture
-  # against the check it was taken for.
-  test "the check it was taken for leads the filename", %{task: task} do
+  # A caption with nothing a filesystem would keep still has to land somewhere.
+  test "a caption made of nothing a filename can hold still saves", %{task: task} do
     stub(BrowserSession, :call, fn _session, _method, _params -> {:ok, %{"data" => Base.encode64("jpeg")}} end)
 
-    assert {:ok, "evidence/bill-saves~the-saved-bill.jpg"} =
-             Tools.capture_browser_evidence(:session, task, "The saved bill", "bill-saves")
+    assert {:ok, "shots/shot-" <> _unique} = Tools.capture_browser_evidence(:session, task, "!!!")
   end
 
-  # A caption with nothing a filesystem would keep still has to land somewhere,
-  # because the finding that cites it is already written.
-  test "a caption made of nothing a filename can hold still files", %{task: task} do
-    stub(BrowserSession, :call, fn _session, _method, _params -> {:ok, %{"data" => Base.encode64("jpeg")}} end)
-
-    assert {:ok, "evidence/shot.jpg"} = Tools.capture_browser_evidence(:session, task, "!!!")
-  end
-
-  test "a screenshot that is not readable is not filed", %{task: task} do
+  test "a screenshot that is not readable is not saved", %{task: task} do
     stub(BrowserSession, :call, fn _session, _method, _params -> {:ok, %{"data" => "not base64 at all!"}} end)
 
     assert {:error, :unreadable_screenshot} = Tools.capture_browser_evidence(:session, task, "The bill")
-    refute File.exists?(Path.join([task.scratch_path, "qa", "evidence"]))
+    refute File.exists?(Path.join([task.scratch_path, "qa", "shots"]))
   end
 
   test "a browser that refuses to photograph says why", %{task: task} do

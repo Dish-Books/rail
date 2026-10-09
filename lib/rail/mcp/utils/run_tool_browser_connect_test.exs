@@ -38,7 +38,7 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnectTest do
     end)
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Sign in"})
-    {:ok, task} = Pipeline.create_task(issue, :qa)
+    {:ok, task} = Pipeline.create_task(issue, :review)
 
     # The app the seed's link points at: a page served the way the worktree's server would.
     site = Path.join(task.scratch_path, "site")
@@ -65,7 +65,7 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnectTest do
     File.write!(Path.join(task.worktree_path, "scripts/linkless.sh"), "echo 'Created someone@rail.test'")
     File.write!(Path.join(task.worktree_path, "scripts/nameless.sh"), "echo 'http://127.0.0.1:#{port}/signin.html'")
 
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :qa)
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
 
     {:ok, run} =
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
@@ -82,7 +82,7 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnectTest do
       |> Repo.insert!()
 
     on_exit(fn ->
-      for name <- ["qa", "explorer 1", "explorer 2", "signup", "twin"] do
+      for name <- ["explorer 1", "explorer 2", "signup", "twin"] do
         case Tools.get_browser_session(task, name) do
           pid when is_pid(pid) -> GenServer.stop(pid, :normal, 10_000)
           nil -> :ok
@@ -96,7 +96,7 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnectTest do
     %{
       task: task,
       project: project,
-      opts: [stage: :qa, os_process: os_process],
+      opts: [stage: :review_lead, os_process: os_process],
       link: "http://127.0.0.1:#{port}/signin.html",
       seeded: Path.join(task.worktree_path, "seeded")
     }
@@ -207,18 +207,18 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnectTest do
     refute File.exists?(seeded)
   end
 
-  test "with no seed set, the stage's browser opens as it always has", %{task: task, opts: opts} do
+  test "with no seed set, a browser opens with nobody signed in and says so", %{task: task, opts: opts} do
     {:ok, task} = Pipeline.get_task(task.id)
 
-    assert {:ok, text} = run_tool_browser_connect(task, %{}, opts)
+    assert {:ok, text} = run_tool_browser_connect(task, %{"browser" => "explorer 1"}, opts)
 
-    assert text =~ "Browser: qa"
+    assert text =~ "Browser: explorer 1"
     refute text =~ "Signed in as"
     assert text =~ "Account seed: none, so sign in as your prompt says."
-    assert Tools.get_browser_url(task, "qa") in [nil, "about:blank"]
+    assert Tools.get_browser_url(task, "explorer 1") in [nil, "about:blank"]
 
     # Every connect says so, a reconnect included.
-    assert {:ok, again} = run_tool_browser_connect(task, %{}, opts)
+    assert {:ok, again} = run_tool_browser_connect(task, %{"browser" => "explorer 1"}, opts)
     assert again =~ "Account seed: none"
   end
 
@@ -232,14 +232,14 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnectTest do
     project |> Ecto.Changeset.change(account_seed_command: "sh scripts/broken.sh") |> Repo.update!()
     {:ok, task} = Pipeline.get_task(task.id)
 
-    assert {:refused, refused} = run_tool_browser_connect(task, %{}, opts)
+    assert {:refused, refused} = run_tool_browser_connect(task, %{"browser" => "explorer 1"}, opts)
     assert refused =~ "The account seed `sh scripts/broken.sh` exited with 3"
     assert refused =~ "could not reach the database"
 
     project |> Ecto.Changeset.change(account_seed_command: "sh scripts/seed.sh") |> Repo.update!()
     {:ok, task} = Pipeline.get_task(task.id)
 
-    assert {:ok, text} = run_tool_browser_connect(task, %{}, opts)
+    assert {:ok, text} = run_tool_browser_connect(task, %{"browser" => "explorer 1"}, opts)
     assert text =~ "Signed in as: explorer-1@rail.test"
     assert File.read!(seeded) == "1\n"
   end
@@ -255,13 +255,13 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnectTest do
     project |> Ecto.Changeset.change(account_seed_command: "sh scripts/broken.sh") |> Repo.update!()
     {:ok, task} = Pipeline.get_task(task.id)
 
-    assert {:refused, _failed} = run_tool_browser_connect(task, %{}, opts)
-    :ok = GenServer.stop(Tools.get_browser_session(task, "qa"), :shutdown, 10_000)
+    assert {:refused, _failed} = run_tool_browser_connect(task, %{"browser" => "explorer 1"}, opts)
+    :ok = GenServer.stop(Tools.get_browser_session(task, "explorer 1"), :shutdown, 10_000)
 
     project |> Ecto.Changeset.change(account_seed_command: "sh scripts/seed.sh") |> Repo.update!()
     {:ok, task} = Pipeline.get_task(task.id)
 
-    assert {:ok, text} = run_tool_browser_connect(task, %{}, opts)
+    assert {:ok, text} = run_tool_browser_connect(task, %{"browser" => "explorer 1"}, opts)
     assert text =~ "Signed in as: explorer-1@rail.test"
     assert File.read!(seeded) == "1\n"
 
@@ -273,10 +273,10 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnectTest do
     project |> Ecto.Changeset.change(account_seed_command: "sh scripts/linkless.sh") |> Repo.update!()
     {:ok, task} = Pipeline.get_task(task.id)
 
-    assert {:refused, refused} = run_tool_browser_connect(task, %{}, opts)
+    assert {:refused, refused} = run_tool_browser_connect(task, %{"browser" => "explorer 1"}, opts)
     assert refused =~ "printed no link to sign in with"
     assert refused =~ "Created someone@rail.test"
-    assert %{signed_in?: false} = BrowserSession.details(Tools.get_browser_session(task, "qa"))
+    assert %{signed_in?: false} = BrowserSession.details(Tools.get_browser_session(task, "explorer 1"))
   end
 
   test "a seed that prints a link and no email signs the tab in without naming the account", %{
@@ -288,11 +288,11 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnectTest do
     project |> Ecto.Changeset.change(account_seed_command: "sh scripts/nameless.sh") |> Repo.update!()
     {:ok, task} = Pipeline.get_task(task.id)
 
-    assert {:ok, text} = run_tool_browser_connect(task, %{}, opts)
+    assert {:ok, text} = run_tool_browser_connect(task, %{"browser" => "explorer 1"}, opts)
     refute text =~ "Signed in as"
     refute text =~ "Account seed: none"
-    eventually(fn -> assert Tools.get_browser_url(task, "qa") == link end)
-    assert %{signed_in?: true, account: nil} = BrowserSession.details(Tools.get_browser_session(task, "qa"))
+    eventually(fn -> assert Tools.get_browser_url(task, "explorer 1") == link end)
+    assert %{signed_in?: true, account: nil} = BrowserSession.details(Tools.get_browser_session(task, "explorer 1"))
   end
 
   test "a seed that runs too long, or cannot be run, is said", %{task: task, project: project, opts: opts} do
@@ -302,15 +302,15 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnectTest do
     expect(Tools, :run_in_sandbox, fn _os_process, "sh scripts/seed.sh" -> {:error, :timeout} end)
 
     assert {:refused, "The account seed `sh scripts/seed.sh` did not finish within two minutes" <> _rest} =
-             run_tool_browser_connect(task, %{}, opts)
+             run_tool_browser_connect(task, %{"browser" => "explorer 1"}, opts)
 
     expect(Tools, :run_in_sandbox, fn _os_process, _seed -> {:error, {:docker_api_error, 404, %{}}} end)
-    assert {:error, {:docker_api_error, 404, %{}}} = run_tool_browser_connect(task, %{}, opts)
+    assert {:error, {:docker_api_error, 404, %{}}} = run_tool_browser_connect(task, %{"browser" => "explorer 1"}, opts)
   end
 
   test "an account or a name Rail cannot use is refused before anything opens", %{task: task, opts: opts} do
     assert {:refused, "`account` is `fresh` or `bare`." <> _rest} =
-             run_tool_browser_connect(task, %{"account" => "admin"}, opts)
+             run_tool_browser_connect(task, %{"browser" => "explorer 1", "account" => "admin"}, opts)
 
     assert {:refused, "`browser` is a name" <> _rest} = run_tool_browser_connect(task, %{"browser" => ""}, opts)
     assert Repo.all(from s in Session, where: s.task_id == ^task.id) == []

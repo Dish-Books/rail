@@ -18,7 +18,7 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     scope = system_scope()
 
     roles =
-      Map.new([:qa, :demo, :review], fn stage ->
+      Map.new([:review_lead, :review], fn stage ->
         {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
 
         {stage, role}
@@ -40,7 +40,7 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     end)
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "Qa Tools"})
-    {:ok, task} = Pipeline.create_task(issue, :qa)
+    {:ok, task} = Pipeline.create_task(issue, :review)
     File.mkdir_p!(task.scratch_path)
 
     stub(Tools, :start_browser_session, fn _task, _name, _opts -> {:ok, self()} end)
@@ -65,7 +65,7 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     {:ok, run} =
       Pipeline.create_run(%{
         task_id: task.id,
-        role_id: roles[:qa].id,
+        role_id: roles[:review_lead].id,
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -75,7 +75,7 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: task.id,
-        role_id: roles[:qa].id,
+        role_id: roles[:review_lead].id,
         os_pid: 1234,
         stream_path: Path.join(task.scratch_path, "stream.ndjson"),
         status: :running,
@@ -83,7 +83,7 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
       })
       |> Repo.insert()
 
-    context = %RunContext{os_process: os_process, role: roles[:qa], user: nil}
+    context = %RunContext{os_process: os_process, role: roles[:review_lead], user: nil}
 
     on_exit(fn ->
       Tools.stop_browser_recording(task)
@@ -93,8 +93,8 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     %{task: task, run: run, context: context, roles: roles}
   end
 
-  # Knowing the name is not the same as being allowed to call it.
-  test "another stage cannot call one by knowing its name", %{context: context, roles: roles} do
+  # Knowing the name is not the same as being allowed to call it: a code reviewer has no browser.
+  test "another role cannot call one by knowing its name", %{context: context, roles: roles} do
     reviewing = %{context | role: roles[:review]}
 
     assert {:error, :unknown_tool} = Mcp.call_run_tool(reviewing, "browser_connect", %{})
@@ -102,13 +102,13 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
 
   # Rehearsing is driving the application without filming it, which is the whole
   # of what `demo_start` buys: the camera is off until the agent says otherwise.
-  test "a demo run is not filmed until it starts a take", %{context: context, task: task, roles: roles} do
-    filming = %{context | role: roles[:demo]}
-
-    assert {:ok, _rehearsed} = Mcp.call_run_tool(filming, "browser_connect", %{})
+  test "a run is not filmed until it starts a take", %{context: context, task: task} do
+    assert {:ok, _rehearsed} = Mcp.call_run_tool(context, "browser_connect", %{"browser" => "demo"})
     refute Tools.get_browser_recording(task)
 
-    assert {:ok, %{"content" => [%{"text" => rolling}]}} = Mcp.call_run_tool(filming, "demo_start", %{})
+    assert {:ok, %{"content" => [%{"text" => rolling}]}} =
+             Mcp.call_run_tool(context, "demo_start", %{"browser" => "demo"})
+
     assert rolling =~ "Recording."
 
     assert is_pid(Tools.get_browser_recording(task))
@@ -116,26 +116,23 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
 
   # A walkthrough that went wrong costs a retake rather than a bad video, so the
   # beats of the take being replaced go with its frames.
-  test "another take discards the one before it", %{context: context, task: task, roles: roles} do
-    filming = %{context | role: roles[:demo]}
+  test "another take discards the one before it", %{context: context, task: task} do
     captions = Path.join([task.scratch_path, "demo", "captions.jsonl"])
 
-    {:ok, _rolling} = Mcp.call_run_tool(filming, "demo_start", %{})
-    {:ok, _said} = Mcp.call_run_tool(filming, "demo_say", %{"text" => "A take that went wrong"})
+    {:ok, _rolling} = Mcp.call_run_tool(context, "demo_start", %{"browser" => "demo"})
+    {:ok, _said} = Mcp.call_run_tool(context, "demo_say", %{"text" => "A take that went wrong"})
     assert File.exists?(captions)
 
-    {:ok, _again} = Mcp.call_run_tool(filming, "demo_start", %{})
+    {:ok, _again} = Mcp.call_run_tool(context, "demo_start", %{"browser" => "demo"})
 
     refute File.exists?(captions)
   end
 
-  test "a caption is filed under the demo and says when it landed", %{context: context, task: task, roles: roles} do
-    filming = %{context | role: roles[:demo]}
-
-    {:ok, _rolling} = Mcp.call_run_tool(filming, "demo_start", %{})
+  test "a caption is filed under the demo and says when it landed", %{context: context, task: task} do
+    {:ok, _rolling} = Mcp.call_run_tool(context, "demo_start", %{"browser" => "demo"})
 
     assert {:ok, %{"content" => [%{"text" => said}]}} =
-             Mcp.call_run_tool(filming, "demo_say", %{"text" => "Entering a bill for Sysco"})
+             Mcp.call_run_tool(context, "demo_say", %{"text" => "Entering a bill for Sysco"})
 
     assert said =~ "Said at 0:00"
 
@@ -149,14 +146,12 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
 
   # What a caption said and when it landed is what a person reading the log back
   # wants; the receipt the agent read is not.
-  test "the log carries the caption and the moment it landed", %{context: context, roles: roles, run: run} do
-    filming = %{context | role: roles[:demo]}
-
-    {:ok, _rolling} = Mcp.call_run_tool(filming, "demo_start", %{})
-    {:ok, _said} = Mcp.call_run_tool(filming, "demo_say", %{"text" => "Entering a bill for Sysco"})
+  test "the log carries the caption and the moment it landed", %{context: context, run: run} do
+    {:ok, _rolling} = Mcp.call_run_tool(context, "demo_start", %{"browser" => "demo"})
+    {:ok, _said} = Mcp.call_run_tool(context, "demo_say", %{"text" => "Entering a bill for Sysco"})
 
     # A caption with no words is still a call somebody has to see having happened.
-    {:error, {:refused, _nothing}} = Mcp.call_run_tool(filming, "demo_say", %{})
+    {:error, {:refused, _nothing}} = Mcp.call_run_tool(context, "demo_say", %{})
 
     log = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
 
@@ -236,12 +231,13 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
   # The agent drives the tab itself, so what it is handed is the tab's address
   # and a driver at a path its sandbox can see.
   test "connecting opens the tab without being asked and hands over the driver", %{context: context, task: task, run: run} do
-    expect(Tools, :start_browser_session, fn started, "qa", _opts ->
+    expect(Tools, :start_browser_session, fn started, "explorer-1", _opts ->
       assert started.id == task.id
       {:ok, self()}
     end)
 
-    assert {:ok, %{"content" => [%{"text" => text}]}} = Mcp.call_run_tool(context, "browser_connect", %{})
+    assert {:ok, %{"content" => [%{"text" => text}]}} =
+             Mcp.call_run_tool(context, "browser_connect", %{"browser" => "explorer-1"})
 
     driver = Path.join([task.scratch_path, "browser", "driver.mjs"])
 
@@ -253,35 +249,36 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     assert run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line) =~ "[browser] connect"
   end
 
-  # An agent driving two browsers asks about the one it names, and about the one
-  # named for its stage when it names none.
+  # An agent driving two browsers asks about the one it names.
   test "a browser tool acts on the browser it names", %{context: context} do
-    expect(Tools, :start_browser_session, fn _task, "explorer 2", opts ->
-      assert opts[:existing]
-      {:ok, self()}
-    end)
-
-    expect(Tools, :start_browser_session, fn _task, "qa", opts ->
-      refute opts[:existing]
-      {:ok, self()}
-    end)
-
-    expect(Tools, :start_browser_session, fn _task, "explorer 2", opts ->
+    expect(Tools, :start_browser_session, 2, fn _task, "explorer 2", opts ->
       assert opts[:existing]
       {:ok, self()}
     end)
 
     assert {:ok, _drained} = Mcp.call_run_tool(context, "browser_problems", %{"browser" => "explorer 2"})
-    assert {:ok, _drained} = Mcp.call_run_tool(context, "browser_problems", %{})
     assert {:ok, _filed} = Mcp.call_run_tool(context, "qa_shot", %{"name" => "Signed in", "browser" => "explorer 2"})
 
     assert {:error, {:refused, "`browser` is a name" <> _rest}} =
              Mcp.call_run_tool(context, "qa_shot", %{"name" => "Signed in", "browser" => "../x"})
   end
 
+  # Each explorer and the recorder has a browser and an account of its own, so one
+  # left unnamed would be a tab two of them share.
+  test "the Review lead's run that names no browser is refused and opens none", %{context: context, task: task} do
+    reject(Tools, :start_browser_session, 3)
+    said = "Pass `browser`, the name the lead gave you, such as `explorer-1` or `demo`."
+
+    assert {:error, {:refused, ^said}} = Mcp.call_run_tool(context, "browser_connect", %{})
+    assert {:error, {:refused, ^said}} = Mcp.call_run_tool(context, "demo_start", %{})
+    assert {:error, {:refused, ^said}} = Mcp.call_run_tool(context, "browser_connect", %{"browser" => nil})
+
+    refute Tools.get_browser_recording(task)
+  end
+
   # A name nobody connected is a slip, and a blank picture or a clean drain from a
   # browser nobody drove would read as evidence.
-  test "a browser tool refuses a name browser_connect never opened", %{context: context, task: task, roles: roles} do
+  test "a browser tool refuses a name browser_connect never opened", %{context: context, task: task} do
     stub(Tools, :start_browser_session, fn _task, _name, [{:existing, true} | _opts] -> {:error, :no_browser} end)
 
     assert {:error, {:refused, "No browser named `Explorer 1` on this task. Call browser_connect with that name first."}} =
@@ -294,77 +291,39 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     assert {:error, {:refused, "No browser named `typo` on this task." <> _rest}} =
              Mcp.call_run_tool(context, "browser_problems", %{"browser" => "typo"})
 
-    refute File.exists?(Path.join([task.scratch_path, "qa", "evidence"]))
-
-    filming = %{context | role: roles[:demo]}
+    refute File.exists?(Path.join([task.scratch_path, "qa", "shots"]))
 
     assert {:error, {:refused, "No browser named `Demo` on this task." <> _rest}} =
-             Mcp.call_run_tool(filming, "demo_start", %{"browser" => "Demo"})
+             Mcp.call_run_tool(context, "demo_start", %{"browser" => "Demo"})
 
     refute Tools.get_browser_recording(task)
   end
 
-  test "a take of a browser the agent named and connected films it", %{context: context, task: task, roles: roles} do
+  test "a take of a browser the agent named and connected films it", %{context: context, task: task} do
     expect(Tools, :start_browser_session, fn _task, "signup", [{:existing, true} | _opts] -> {:ok, self()} end)
 
     assert {:ok, %{"content" => [%{"text" => "Recording." <> _rest}]}} =
-             Mcp.call_run_tool(%{context | role: roles[:demo]}, "demo_start", %{"browser" => "signup"})
+             Mcp.call_run_tool(context, "demo_start", %{"browser" => "signup"})
 
     assert is_pid(Tools.get_browser_recording(task))
   end
 
   # Rail names the file, so nothing arriving from a model becomes a path.
   test "a screenshot is described rather than located", %{context: context, task: task} do
-    assert {:ok, %{"content" => [%{"text" => text}]}} =
-             Mcp.call_run_tool(context, "qa_shot", %{"name" => "The bill total as rendered"})
+    assert {:ok, %{"content" => [%{"text" => "Saved as shots/the-bill-total-as-rendered-" <> _rest}]}} =
+             Mcp.call_run_tool(context, "qa_shot", %{"name" => "The bill total as rendered", "browser" => "explorer-1"})
 
-    assert text =~ "evidence/the-bill-total-as-rendered.jpg"
-    # The name comes back, never the picture, so reading it is the agent's own
-    # decision to make and its own context to spend.
-    assert text =~ "read it only when a check turns on that"
-    assert File.exists?(Path.join([task.scratch_path, "qa", "evidence", "the-bill-total-as-rendered.jpg"]))
-  end
-
-  # A change with nothing on screen is proved by what it writes, so filing that
-  # costs no browser, and the line lands once there is a file for the panel to read.
-  test "a file is filed against its check without a browser", %{context: context, task: task, run: run} do
-    reject(Tools, :start_browser_session, 3)
-    {:ok, _checklist} = Pipeline.write_qa_checklist(task, [%{"key" => "script-runs", "title" => "The script runs"}])
-    File.mkdir_p!(Path.join([task.scratch_path, "qa", "evidence"]))
-    File.write!(Path.join([task.scratch_path, "qa", "evidence", "run.log"]), "wrote 3 rows")
-
-    assert {:ok, %{"content" => [%{"text" => text}]}} =
-             Mcp.call_run_tool(context, "qa_file", %{
-               "check" => "script-runs",
-               "name" => "The script's log",
-               "path" => "evidence/run.log"
-             })
-
-    assert text =~ "evidence/script-runs~the-script-s-log.log"
-    assert File.exists?(Path.join([task.scratch_path, "qa", "evidence", "script-runs~the-script-s-log.log"]))
-
-    # A refusal reads as one in the log, rather than as one more file filed.
-    {:error, {:refused, _refused}} =
-      Mcp.call_run_tool(context, "qa_file", %{"check" => "script-runs", "name" => "Stolen", "path" => "/etc/passwd"})
-
-    {:error, {:refused, _usage}} = Mcp.call_run_tool(context, "qa_file", %{"check" => "script-runs", "name" => "No path"})
-
-    log = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
-
-    assert log =~ ~s([qa] file "The script's log"\n)
-    refute log =~ ~s([qa] file "The script's log" · nothing filed)
-    assert log =~ ~s([qa] file "Stolen" · nothing filed)
-    assert log =~ ~s([qa] file "No path" · nothing filed)
+    assert [_saved] = Path.wildcard(Path.join([task.scratch_path, "qa", "shots", "the-bill-total-as-rendered-*.jpg"]))
   end
 
   test "the browser's own complaints are drained, not accumulated", %{context: context} do
     expect(BrowserSession, :drain_problems, fn _session -> [%{kind: :console, detail: "total is unrounded"}] end)
 
     assert {:ok, %{"content" => [%{"text" => "[console] total is unrounded"}]}} =
-             Mcp.call_run_tool(context, "browser_problems", %{})
+             Mcp.call_run_tool(context, "browser_problems", %{"browser" => "explorer-1"})
 
     assert {:ok, %{"content" => [%{"text" => "Nothing since the last check."}]}} =
-             Mcp.call_run_tool(context, "browser_problems", %{})
+             Mcp.call_run_tool(context, "browser_problems", %{"browser" => "explorer-1"})
   end
 
   # A request that failed says which one, because "something 404'd" is not a
@@ -375,13 +334,13 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     end)
 
     assert {:ok, %{"content" => [%{"text" => "[response] 404 Not Found (file:///nowhere-at-all.png)"}]}} =
-             Mcp.call_run_tool(context, "browser_problems", %{})
+             Mcp.call_run_tool(context, "browser_problems", %{"browser" => "explorer-1"})
   end
 
   # Called outside a pass - which is every call made while testing this - there
   # is no run to write to and nothing to write about.
   test "a call with no run behind it writes nothing and still answers", %{roles: roles, task: task} do
-    context = %RunContext{os_process: %OsProcess{task_id: task.id}, role: roles[:qa], user: nil}
+    context = %RunContext{os_process: %OsProcess{task_id: task.id}, role: roles[:review_lead], user: nil}
 
     assert {:ok, %{"content" => [%{"text" => text}]}} =
              Mcp.call_run_tool(context, "qa_plan", %{"checks" => [%{"key" => "one", "title" => "A bill saves"}]})
@@ -391,11 +350,15 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
 
   test "a call with no task behind it is Rail's failure", %{roles: roles} do
     assert {:error, {:rail_failed, :no_task}} =
-             Mcp.call_run_tool(%RunContext{os_process: %OsProcess{}, role: roles[:qa], user: nil}, "browser_connect", %{})
+             Mcp.call_run_tool(
+               %RunContext{os_process: %OsProcess{}, role: roles[:review_lead], user: nil},
+               "browser_connect",
+               %{}
+             )
 
     assert {:error, {:rail_failed, :no_task}} =
              Mcp.call_run_tool(
-               %RunContext{os_process: %OsProcess{task_id: "tsk_gone"}, role: roles[:qa], user: nil},
+               %RunContext{os_process: %OsProcess{task_id: "tsk_gone"}, role: roles[:review_lead], user: nil},
                "browser_connect",
                %{}
              )
@@ -413,9 +376,9 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     stub(Tools, :start_browser_session, fn _task, _name, _opts -> {:error, {:browser_unavailable, :chrome_not_found}} end)
 
     assert {:error, {:rail_failed, {:browser_unavailable, :chrome_not_found}}} =
-             Mcp.call_run_tool(context, "browser_connect", %{})
+             Mcp.call_run_tool(context, "browser_connect", %{"browser" => "explorer-1"})
 
     assert {:error, {:rail_failed, {:browser_unavailable, :chrome_not_found}}} =
-             Mcp.call_run_tool(context, "browser_problems", %{})
+             Mcp.call_run_tool(context, "browser_problems", %{"browser" => "explorer-1"})
   end
 end

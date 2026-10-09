@@ -66,14 +66,15 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
     assert Pipeline.count_attention(project_id: []) == 0
   end
 
+  # Review is worked by the Review lead, so it is the lead's runs that count there.
   test "only the latest run at a task's stage counts, not one it has retried", %{roles: roles, task_for: task_for} do
     now = DateTime.utc_now()
-    task = task_for.(:qa)
+    task = task_for.(:review)
 
     {:ok, _failed} =
       Pipeline.create_run(%{
         task_id: task.id,
-        role_id: roles[:qa].id,
+        role_id: roles[:review_lead].id,
         status: :failed,
         error: "3 of 11 checks failed",
         started_at: DateTime.shift(now, hour: -2),
@@ -81,9 +82,25 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
       })
 
     {:ok, _retry} =
-      Pipeline.create_run(%{task_id: task.id, role_id: roles[:qa].id, status: :running, started_at: now})
+      Pipeline.create_run(%{task_id: task.id, role_id: roles[:review_lead].id, status: :running, started_at: now})
 
     assert Pipeline.count_attention() == 0
+  end
+
+  test "a task at Review waits on its Review lead's run", %{roles: roles, task_for: task_for} do
+    task = task_for.(:review)
+
+    {:ok, _finished} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:review_lead].id,
+        status: :finished,
+        stage_outcome: :done,
+        started_at: DateTime.utc_now(),
+        completed_at: DateTime.utc_now()
+      })
+
+    assert Pipeline.count_attention() == 1
   end
 
   test "a run at a stage the task has left is not counted", %{roles: roles, task_for: task_for} do
@@ -122,7 +139,7 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
     {:ok, _reviewed} =
       Pipeline.create_run(%{
         task_id: task.id,
-        role_id: roles[:review].id,
+        role_id: roles[:review_lead].id,
         status: :finished,
         stage_outcome: :done,
         started_at: DateTime.shift(now, hour: -1),

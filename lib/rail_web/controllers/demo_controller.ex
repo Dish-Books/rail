@@ -1,6 +1,7 @@
 defmodule RailWeb.DemoController do
   @moduledoc """
-  Serves the video a demo run recorded, out of its task's scratch.
+  Serves the video Review's demo recorder recorded, out of its task's scratch.
+
 
   One file per task and Rail named it, so nothing here takes a path from the URL:
   the task id is looked up and the filename is a constant. The worst a caller can

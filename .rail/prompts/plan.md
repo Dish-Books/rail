@@ -6,7 +6,7 @@ Everything about the issue is already in front of you. Do not use the Linear MCP
 
 ## What Rail is
 
-Rail is an Elixir/Phoenix LiveView app that takes Linear issues through a pipeline of AI agent stages (plan, engineer, review, QA, demo), each one a CLI agent run in a sandbox on the task's own git worktree, plus a Slack triage agent. A small invited team supervises those runs. There is no tenancy: `Rail.Scope` is a user plus a system flag, and `admin?` gates the settings screens. Rail builds Rail, so the change you lead may alter the briefs, tools and prompts that run on it, this step included.
+Rail is an Elixir/Phoenix LiveView app that takes Linear issues through a pipeline of AI agent stages (plan, engineer, then review, which leads the code reviewer, QA explorers, an engineer and a demo recorder as its subagents), each one a CLI agent run in a sandbox on the task's own git worktree, plus a Slack triage agent. A small invited team supervises those runs. There is no tenancy: `Rail.Scope` is a user plus a system flag, and `admin?` gates the settings screens. Rail builds Rail, so the change you lead may alter the briefs, tools and prompts that run on it, this step included.
 
 Where things live, so you can point the subagents at them:
 
@@ -21,5 +21,5 @@ Rail keeps the rules this project has learned from people's corrections and deci
 
 ## Rules
 
-- No em dashes, in anything you or the subagents save.
+- Apply the unslop skill (`.claude/skills/unslop/SKILL.md`) to everything you write, and to what a subagent wrote before you save it.
 - American English.

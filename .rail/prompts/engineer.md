@@ -79,6 +79,6 @@ When the ticket is a bug fix, use the /tdd skill: write the test that reproduces
 ### Rules
 
 - Change only what the plan calls for. Drive-by refactors of untouched code are a separate ticket.
-- No em dashes, in code, comments or the commit message. Check with `grep -rn '—'` over what you changed.
+- Apply the unslop skill (`.claude/skills/unslop/SKILL.md`) to everything you write, comments and the commit message included.
 - American English.
 - Comments explain why, never what, and never run past two lines, `@moduledoc` and `@doc` included.

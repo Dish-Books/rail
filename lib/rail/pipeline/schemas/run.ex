@@ -201,8 +201,8 @@ defmodule Rail.Pipeline.Schemas.Run do
   A blocked run stays blocked until its answers are sent, so it keeps its place
   in the queue while the human works through the batch. A run at a stage a human
   signs off is waiting on that sign-off once it is done: its ticket, design pick
-  and plan approved, its diff sent to review, or, once the demo is recorded, the
-  change merged.
+  and plan approved, its diff sent to review, its findings ruled, or, once
+  nothing is left to rule or fix, the change merged.
 
   A run that failed or stopped is waiting too, and on the same person. Neither
   moves on its own - a failure is fixed by a message and a stopped run is resumed
@@ -213,7 +213,7 @@ defmodule Rail.Pipeline.Schemas.Run do
   """
   def needs_attention?(%__MODULE__{role: %Role{} = role, task: %Task{issue: %Issue{} = issue} = task} = run) do
     task.stage != :merged and is_nil(task.merged_at) and is_nil(issue.completed_at) and
-      issue.state not in [:canceled, :duplicate] and role.stage == task.stage and
+      issue.state not in [:canceled, :duplicate] and role.stage == Task.role_stage(task.stage) and
       waiting_state?(state(run), task.stage)
   end
 
@@ -269,7 +269,7 @@ defmodule Rail.Pipeline.Schemas.Run do
   defp waiting_state?(:blocked, _stage), do: true
   defp waiting_state?(:failed, _stage), do: true
   defp waiting_state?(:stopped, _stage), do: true
-  defp waiting_state?(:done, stage), do: stage in [:plan, :engineer, :review, :qa, :demo]
+  defp waiting_state?(:done, stage), do: stage in [:plan, :engineer, :review]
   defp waiting_state?(_running_or_queued, _stage), do: false
 
   # A run is one conversation with one agent. Moving it to another would silently

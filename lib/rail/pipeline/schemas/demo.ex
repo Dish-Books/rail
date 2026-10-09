@@ -24,6 +24,8 @@ defmodule Rail.Pipeline.Schemas.Demo do
     field :title, :string
     field :summary, :string
     field :not_shown, :string
+    # The commit HEAD was on when the write-up was saved, which is Rail's to say.
+    field :commit, :string
   end
 
   @doc """

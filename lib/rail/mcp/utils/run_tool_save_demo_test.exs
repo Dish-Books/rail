@@ -12,7 +12,9 @@ defmodule Rail.Mcp.Utils.RunToolSaveDemoTest do
     scratch = Path.join(System.tmp_dir!(), "rt_save_demo_#{System.unique_integer([:positive])}")
     on_exit(fn -> File.rm_rf(scratch) end)
 
-    %{task: %Task{id: "tsk_rt_demo", scratch_path: scratch, issue: %Issue{identifier: "RTD-1"}}}
+    # A task always has a worktree path, though its directory may be gone.
+    worktree = Path.join(scratch, "worktree")
+    %{task: %Task{id: "tsk_rt_demo", scratch_path: scratch, worktree_path: worktree, issue: %Issue{identifier: "RTD-1"}}}
   end
 
   test "a good save is receipted by its title", %{task: task} do

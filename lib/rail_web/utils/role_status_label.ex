@@ -23,14 +23,12 @@ defmodule RailWeb.Utils.RoleStatusLabel do
   def role_status_label(%Role{}, nil, %Task{}), do: "not started"
   def role_status_label(%Role{}, %Run{status: :waiting_for_usage}, %Task{}), do: "waiting for usage"
 
-  def role_status_label(%Role{stage: stage}, %Run{} = run, %Task{stage: stage} = task) do
-    case Run.state(run) do
-      :done -> waiting_label(task)
-      state -> label(state)
+  def role_status_label(%Role{stage: role_stage}, %Run{} = run, %Task{stage: stage} = task) do
+    case {Run.state(run), role_stage == Task.role_stage(stage)} do
+      {:done, true} -> waiting_label(task)
+      {state, _at_its_stage} -> label(state)
     end
   end
-
-  def role_status_label(%Role{}, %Run{} = run, %Task{}), do: run |> Run.state() |> label()
 
   defp label(:running), do: "in progress"
   defp label(:waiting), do: "waiting for resources"
@@ -41,6 +39,7 @@ defmodule RailWeb.Utils.RoleStatusLabel do
 
   # The tab and the header answer the same question, the tab in lower case.
   defp waiting_label(%Task{stage: :plan} = task), do: task |> approval_label() |> String.downcase()
-  defp waiting_label(%Task{stage: :review}), do: "review the findings"
+  defp waiting_label(%Task{stage: :review} = task), do: task |> approval_label() |> String.downcase()
+
   defp waiting_label(%Task{}), do: "needs review"
 end

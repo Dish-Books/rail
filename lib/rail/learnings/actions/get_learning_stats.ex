@@ -9,7 +9,7 @@ defmodule Rail.Learnings.Actions.GetLearningStats do
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Learnings.Schemas.LearningProposal
   alias Rail.Learnings.Schemas.Observation
-  alias Rail.Pipeline.Schemas.ReviewFinding
+  alias Rail.Pipeline.Schemas.Finding
   alias Rail.Repo
 
   @doc """
@@ -32,7 +32,7 @@ defmodule Rail.Learnings.Actions.GetLearningStats do
 
     findings =
       Repo.all(
-        from f in ReviewFinding,
+        from f in Finding,
           where: f.suppressed_by_id == ^id,
           order_by: [desc: f.inserted_at, desc: f.id],
           preload: [task: :issue]

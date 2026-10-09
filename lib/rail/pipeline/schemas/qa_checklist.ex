@@ -38,31 +38,6 @@ defmodule Rail.Pipeline.Schemas.QaChecklist do
   """
   def progress(%__MODULE__{checks: checks}), do: {Enum.count(checks, &QaCheck.run?/1), length(checks)}
 
-  @doc """
-  How many rows came to each outcome, keyed by outcome.
-  """
-  def tally(%__MODULE__{checks: checks}) do
-    Map.merge(Map.new(QaCheck.outcomes(), &{&1, 0}), Enum.frequencies_by(checks, & &1.outcome))
-  end
-
-  @doc """
-  The rows under their headings, `{group, checks}` in the order the groups were
-  first written, so the list reads the way the pass planned it.
-  """
-  def groups(%__MODULE__{checks: checks}) do
-    checks
-    |> Enum.chunk_by(& &1.group)
-    |> Enum.map(fn [%QaCheck{group: group} | _rest] = chunk -> {group, chunk} end)
-  end
-
-  @doc """
-  The row the pass is on: the first nobody has an outcome for.
-
-  Inferred rather than recorded, because a pass that had to say it was starting a
-  row as well as how it ended would be telling Rail the same thing twice.
-  """
-  def current(%__MODULE__{checks: checks}), do: Enum.find(checks, &(not QaCheck.run?(&1)))
-
   # A checklist with no rows is a pass that planned nothing, and the panel would
   # show an empty box nobody could explain.
   defp validate_listed(changeset) do

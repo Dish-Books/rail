@@ -6,7 +6,8 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
   alias Rail.Mcp.RunContext
   alias Rail.Mcp.Schemas.McpConnection
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.ReviewFinding
+  alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools.Schemas.OsProcess
@@ -172,7 +173,7 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
       {:ok, task} = Pipeline.create_task(issue, :review)
       on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
-      {:ok, role} = Roles.get_role(project_id: project.id, stage: :review)
+      {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
 
       {:ok, run} =
         Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
@@ -186,80 +187,99 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
           started_at: DateTime.utc_now()
         })
 
-      %{task: task, run: run, review: %RunContext{os_process: os_process, role: role, user: nil}}
+      finding = %{
+        "key" => "round-query-scope",
+        "kind" => "code",
+        "raised_by" => "code_reviewer",
+        "title" => "The round reads other tasks",
+        "problem" => "The query has no task filter.",
+        "file" => "lib/a.ex",
+        "line" => 88,
+        "fix" => "Scope the query to the task.",
+        "why" => "Another task's rows leak in.",
+        "rule" => "Every query is scoped to its task.",
+        "severity" => "minor",
+        "recommendation" => "fix",
+        "places" => [%{"file" => "lib/a.ex", "line" => 88, "label" => "list/1"}],
+        "evidence" => [%{"name" => "The query", "kind" => "code", "file" => "lib/a.ex", "line" => 88}]
+      }
+
+      %{task: task, run: run, finding: finding, lead: %RunContext{os_process: os_process, role: role, user: nil}}
     end
 
-    test "a review run calling another stage's save tool is told there is no such tool", %{review: review} do
-      assert {:error, :unknown_tool} = Mcp.call_run_tool(review, "save_ticket", %{"title" => "T", "description" => "D"})
+    test "a Review lead run calling another stage's save tool is told there is no such tool", %{lead: lead} do
+      assert {:error, :unknown_tool} = Mcp.call_run_tool(lead, "save_ticket", %{"title" => "T", "description" => "D"})
     end
 
     test "a malformed finding is refused naming each field, and the corrected call is saved", %{
-      review: review,
+      lead: lead,
+      finding: finding,
       task: task
     } do
-      finding = %{"key" => "round-query-scope", "title" => "The round reads other tasks", "recommendation" => "fix"}
-
       refused =
         ~s(Refused, nothing saved. severity: "high" is not one of blocker, major, minor, nit. ) <>
-          ~s(line: must be a whole number, got "88-94".)
+          ~s(line: must be a whole number, got "88-94". ) <>
+          "file: a code finding's Where is the `file` and `line` it is in."
 
       assert {:error, {:refused, ^refused}} =
-               Mcp.call_run_tool(review, "save_finding", Map.merge(finding, %{"severity" => "high", "line" => "88-94"}))
+               Mcp.call_run_tool(lead, "save_finding", Map.merge(finding, %{"severity" => "high", "line" => "88-94"}))
 
-      assert Pipeline.list_review_findings(task) == []
+      assert Pipeline.list_findings(task) == []
 
-      assert {:ok, %{"content" => [%{"text" => "Saved finding round-query-scope (minor)."}]}} =
-               Mcp.call_run_tool(review, "save_finding", Map.merge(finding, %{"severity" => "minor", "line" => 88}))
+      assert {:ok,
+              %{
+                "content" => [%{"text" => "Saved finding round-query-scope (minor) in round 1 with 1 piece of evidence."}]
+              }} =
+               Mcp.call_run_tool(lead, "save_finding", finding)
 
-      assert [%ReviewFinding{key: "round-query-scope", line: 88}] = Pipeline.list_review_findings(task)
+      assert [%Finding{key: "round-query-scope", line: 88}] = Pipeline.list_findings(task)
     end
 
-    test "a field left out is said to be required, and one Rail does not take is ignored", %{review: review} do
+    test "a field left out is said to be required, and one Rail does not take is ignored", %{lead: lead} do
       assert {:error, {:refused, refused}} =
-               Mcp.call_run_tool(review, "save_finding", %{"key" => "k", "decision" => "skip"})
+               Mcp.call_run_tool(lead, "save_finding", %{"key" => "k", "decision" => "skip"})
 
       assert refused =~ "title: is required."
       assert refused =~ "severity: is required."
       refute refused =~ "decision"
     end
 
-    test "a message no rule spells out is passed on with its values filled in", %{review: review} do
-      assert {:error, {:refused, "Refused, nothing saved. line: must be a positive whole number."}} =
-               Mcp.call_run_tool(review, "save_finding", %{
-                 "key" => "k",
-                 "title" => "T",
-                 "severity" => "minor",
-                 "recommendation" => "fix",
-                 "line" => 0
-               })
+    test "a message no rule spells out is passed on with its values filled in", %{lead: lead, finding: finding} do
+      assert {:error, {:refused, "Refused, nothing saved. title: should be at most 90 character(s)."}} =
+               Mcp.call_run_tool(lead, "save_finding", Map.put(finding, "title", String.duplicate("t", 91)))
     end
 
-    test "a value of the wrong kind says what kind it wanted", %{project: project, task: task} do
-      {:ok, qa_role} = Roles.get_role(project_id: project.id, stage: :qa)
-      qa = %RunContext{os_process: %OsProcess{task_id: task.id}, role: qa_role, user: nil}
-
+    test "a value of the wrong kind says what kind it wanted", %{lead: lead, finding: finding} do
       assert {:error, {:refused, refused}} =
-               Mcp.call_run_tool(qa, "save_finding", %{
-                 "key" => "k",
-                 "title" => 7,
-                 "check" => "c",
-                 "severity" => "minor",
-                 "recommendation" => "fix",
-                 "caused_by_change" => "maybe",
-                 "evidence" => "a picture"
-               })
+               Mcp.call_run_tool(
+                 lead,
+                 "save_finding",
+                 Map.merge(finding, %{"title" => 7, "steps" => "open it", "places" => "the list page"})
+               )
 
       assert refused =~ "title: must be text, got 7."
-      assert refused =~ ~s(caused_by_change: must be true or false, got "maybe".)
-      assert refused =~ ~s(evidence: must be a list of entries, got "a picture".)
+      assert refused =~ ~s(steps: must be a list, got "open it".)
+      assert refused =~ ~s(places: must be a list of entries, got "the list page".)
     end
 
-    test "a refusal inside a list names the entry it was in", %{project: project, task: task} do
-      {:ok, design_role} = Roles.get_role(project_id: project.id, stage: :plan)
-      design = %RunContext{os_process: %OsProcess{task_id: task.id}, role: design_role, user: nil}
+    test "a refusal inside a list names the entry it was in", %{lead: lead, finding: finding} do
+      assert {:error, {:refused, "Refused, nothing saved. places 2 file: " <> _rest}} =
+               Mcp.call_run_tool(lead, "save_finding", Map.update!(finding, "places", &[hd(&1), %{"label" => "nowhere"}]))
+    end
+
+    test "a refused evidence entry names the entry and what is wrong", %{lead: lead, finding: finding} do
+      escape = %{"name" => "passwd", "kind" => "log", "path" => "../../../../etc/passwd"}
+
+      assert {:error, {:refused, "Refused, nothing saved. evidence 1 path: cannot climb out of the QA directory."}} =
+               Mcp.call_run_tool(lead, "save_finding", Map.put(finding, "evidence", [escape]))
+    end
+
+    test "a field that should be a list says so", %{project: project, task: task} do
+      {:ok, plan_role} = Roles.get_role(project_id: project.id, stage: :plan)
+      plan = %RunContext{os_process: %OsProcess{task_id: task.id}, role: plan_role, user: nil}
 
       assert {:error, {:refused, refused}} =
-               Mcp.call_run_tool(design, "save_design_option", %{
+               Mcp.call_run_tool(plan, "save_design_option", %{
                  "key" => "k",
                  "title" => "T",
                  "summary" => "S",
@@ -269,7 +289,7 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
       assert refused =~ ~s(good_at: must be a list, got "fast".)
     end
 
-    test "each stage's save tool reaches its own save", %{project: project, task: task} do
+    test "each stage's save tool reaches its own save", %{project: project, task: task, lead: lead} do
       context = fn stage ->
         {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
         %RunContext{os_process: %OsProcess{task_id: task.id}, role: role, user: nil}
@@ -294,14 +314,13 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
                  "children" => [hd(children), Map.delete(List.last(children), "plan")]
                })
 
-      assert {:ok, %{"content" => [%{"text" => "Verdict saved: Passed." <> _rest}]}} =
-               Mcp.call_run_tool(context.(:qa), "save_verdict", %{"verdict" => "pass", "summary" => "Works."})
-
       assert {:ok, %{"content" => [%{"text" => "Write-up saved: One round."}]}} =
-               Mcp.call_run_tool(context.(:demo), "save_demo", %{"title" => "One round", "summary" => "Shown."})
+               Mcp.call_run_tool(lead, "save_demo", %{"title" => "One round", "summary" => "Shown."})
 
       # Each is handed the turn that called it, which it ends.
-      expect(Pipeline, :end_turn_and_commit, fn _task, %OsProcess{task_id: task_id}, "CRS-1: the change" ->
+      expect(Pipeline, :end_turn_and_commit, fn _task,
+                                                %OsProcess{task_id: task_id},
+                                                %{"message" => "CRS-1: the change"} ->
         assert task_id == task.id
         {:ok, :committing}
       end)
@@ -315,12 +334,43 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
                Mcp.call_run_tool(context.(:engineer), "request_merge", %{})
     end
 
-    test "saves and their refusals append nothing to the run's log", %{review: review, run: run, task: task} do
-      {:ok, _closed} = Mcp.call_run_tool(review, "save_review", %{})
-      {:error, {:refused, _refused}} = Mcp.call_run_tool(review, "save_finding", %{})
+    # The engineer and the Review lead hand work over through the one `commit`, and only they do.
+    test "the Review lead's commit reaches the same commit with the round it describes", %{
+      project: project,
+      lead: lead,
+      run: run,
+      task: %{id: task_id}
+    } do
+      round = %{"message" => "Scope the round query", "findings" => [%{"key" => "round-query-scope"}]}
+
+      expect(Pipeline, :end_turn_and_commit, 2, fn
+        %Task{id: ^task_id}, %OsProcess{}, ^round ->
+          {:ok, :committing}
+
+        %Task{id: ^task_id}, %OsProcess{}, %{"findings" => []} ->
+          {:refused, "Refused, nothing committed. the round leaves out round-query-scope, ruled Fix."}
+      end)
+
+      assert {:ok, %{"content" => [%{"text" => "Your turn is over. Rail is committing your work" <> _rest}]}} =
+               Mcp.call_run_tool(lead, "commit", round)
+
+      assert {:error, {:refused, "Refused, nothing committed. the round leaves out round-query-scope, ruled Fix."}} =
+               Mcp.call_run_tool(lead, "commit", %{round | "findings" => []})
+
+      # A save is not logged: the transcript already shows the call.
+      assert Pipeline.list_run_events(run) == []
+
+      {:ok, plan} = Roles.get_role(project_id: project.id, stage: :plan)
+      assert {:error, :unknown_tool} = Mcp.call_run_tool(%{lead | role: plan}, "commit", round)
+      assert {:error, :unknown_tool} = Mcp.call_run_tool(lead, "commit_fixes", round)
+    end
+
+    test "saves and their refusals append nothing to the run's log", %{lead: lead, run: run, task: task} do
+      {:ok, _closed} = Mcp.call_run_tool(lead, "save_review", %{})
+      {:error, {:refused, _refused}} = Mcp.call_run_tool(lead, "save_finding", %{})
 
       assert Pipeline.list_run_events(run) == []
-      assert %DateTime{} = task |> Repo.preload(:issue) |> Pipeline.read_review()
+      assert [%{round: 1}] = task |> Repo.preload(:issue) |> Pipeline.read_review()
     end
   end
 

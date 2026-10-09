@@ -7,11 +7,10 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Learnings.Workers.EmbedLearning
   alias Rail.Pipeline.Schemas.DiffComment
+  alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.PlanCommentCapture
-  alias Rail.Pipeline.Schemas.QaFinding
   alias Rail.Pipeline.Schemas.Question
-  alias Rail.Pipeline.Schemas.ReviewFinding
   alias Rail.Users
 
   setup %{project: project} do
@@ -36,20 +35,23 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
         context_text: "  + rows = build()\n> + Repo.insert!(row)",
         body: "Use the factory here"
       },
-      %ReviewFinding{
-        id: "rvf_rc_1",
+      %Finding{
+        id: "fnd_rc_1",
+        kind: :code,
         decided_by_id: user.id,
         title: "Nil is not handled",
-        detail: "It assumes a map.",
-        suggestion: "Match nil before reading the map.",
+        problem: "It assumes a map.",
+        fix: "Guard the nil in the action.",
+        rule: "Match nil before reading the map.",
         file: "lib/a.ex"
       },
-      %QaFinding{
-        id: "qaf_rc_1",
+      %Finding{
+        id: "fnd_rc_2",
+        kind: :screen,
         decided_by_id: user.id,
         title: "The total is unrounded",
-        detail: "Every bill shows it.",
-        observed: "$1234.5"
+        problem: "Every bill shows $1234.5.",
+        fix: "Round the total to cents."
       },
       %Question{
         id: "qst_rc_1",
@@ -89,14 +91,15 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
              kind: :convention,
              roles: [:engineer, :review],
              rule: "Match nil before reading the map.",
-             why: "Raised in review on lib/a.ex and sent to be fixed: Nil is not handled\n\nIt assumes a map."
+             why:
+               "Raised in review on lib/a.ex and sent to be fixed: Nil is not handled\n\nIt assumes a map.\n\nGuard the nil in the action."
            } = review_rule
 
     assert %Learning{
              kind: :convention,
              roles: [:engineer, :qa],
-             rule: "The total is unrounded",
-             why: "Raised by QA and sent to be fixed.\n\nEvery bill shows it."
+             rule: "Round the total to cents.",
+             why: "Raised by QA and sent to be fixed: The total is unrounded\n\nEvery bill shows $1234.5."
            } = qa_rule
 
     assert %Learning{
@@ -114,8 +117,8 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
                excerpt: "  + rows = build()\n> + Repo.insert!(row)",
                learning_id: ^comment_rule_id
              },
-             %Observation{source_kind: :review_finding},
-             %Observation{source_kind: :qa_finding, excerpt: "$1234.5"},
+             %Observation{source_kind: :review_finding, excerpt: "It assumes a map."},
+             %Observation{source_kind: :qa_finding, excerpt: "Every bill shows $1234.5."},
              %Observation{source_kind: :answer, excerpt: "Blue, to match the review tab."}
            ] =
              from(o in Observation, where: o.task_id == ^task.id, order_by: [asc: o.source_kind])
@@ -325,8 +328,9 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
   } do
     %{id: rule_id} = learning(project, %{rule: "Amber is for warnings only", kind: :design})
 
-    finding = %ReviewFinding{
-      id: "rvf_rc_rule",
+    finding = %Finding{
+      id: "fnd_rc_rule",
+      kind: :code,
       decided_by_id: user_id,
       title: "Comment body uses amber for ordinary text",
       rule_id: rule_id
@@ -335,8 +339,21 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
     assert {:ok, []} = Learnings.record_corrections(task, [finding])
 
     assert %Observation{source_kind: :review_finding, learning_id: ^rule_id} =
-             Repo.get_by!(Observation, source_id: "rvf_rc_rule")
+             Repo.get_by!(Observation, source_id: "fnd_rc_rule")
 
     assert [%Learning{id: ^rule_id}] = Repo.all(from l in Learning, where: l.project_id == ^project.id)
+  end
+
+  test "a finding that names no rule and no fix is learned as its title", %{task: task} do
+    finding = %Finding{id: "fnd_rc_bare", kind: :code, title: "The page crashes with no worktree", problem: "It raises."}
+
+    assert {:ok,
+            [
+              %Learning{
+                roles: [:engineer, :review],
+                rule: "The page crashes with no worktree",
+                why: "Raised in review and sent to be fixed: The page crashes with no worktree\n\nIt raises."
+              }
+            ]} = Learnings.record_corrections(task, [finding])
   end
 end

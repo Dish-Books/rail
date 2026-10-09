@@ -8,13 +8,13 @@ defmodule Rail.Mcp.Utils.McpTools do
   `Rail.Mcp.Actions.CallRunTool` is what runs them. A name that is not on a run's
   list is a name to forward, so this is also the gate.
 
-  Three registers, because two stages drive the same browser for different
-  reasons. `@browser_tools` is the browser itself and belongs to neither: QA
-  drives it to find out whether the change works, demo drives it to show that it
-  does, and the page does not care which. Rail holds it, so it can keep the
-  session alive between calls, film and stream it, and take the whole thing down
-  when the task ends. Every other stage reads code, and a browser would be a
-  thing to get lost in.
+  Three registers, because Review's explorers and its demo recorder drive the
+  same browser for different reasons. `@browser_tools` is the browser itself and
+  belongs to neither: an explorer drives it to find out whether the change works,
+  the recorder drives it to show that it does, and the page does not care which.
+  Rail holds it, so it can keep the session alive between calls, film and stream
+  it, and take the whole thing down when the task leaves Review. Every other stage
+  reads code, and a browser would be a thing to get lost in.
 
   Rail does not drive it. `browser_connect` hands the agent its tab's DevTools
   address and a driver, and the agent writes and runs its own scripts against
@@ -24,20 +24,19 @@ defmodule Rail.Mcp.Utils.McpTools do
 
   The agent never starts the browser and never names a file Rail serves. Any
   tool opens the tab if it is not open, a screenshot is described rather than
-  located, and a file the agent wrote is copied in under a name Rail chooses - so
-  nothing arriving from a model becomes a served path, and there is no way to
+  located, and a file a finding cites is copied into the finding's own folder -
+  so nothing arriving from a model becomes a served path, and there is no way to
   leave a tab behind by forgetting the last instruction: reconcile closes it when
   the task moves on.
 
   `@qa_tools` are about a pass rather than a page. `qa_plan` writes the checklist
   before anything is opened, `qa_check` marks a row off as it is reached, and
-  `qa_shot` files a picture and `qa_file` an output file against one of those
-  rows - which is what the human watching is actually shown: a list of what this
-  pass said it would do, going green a row at a time with its evidence beside it.
-  None of the four opens a browser of its own.
+  `qa_shot` saves a picture for a finding to cite. None of the three opens a
+  browser of its own.
 
   Every stage hands its output over through save tools of its own, checked when
-  called; review and QA each have a `save_finding`, with that stage's own fields.
+  called. The Review lead's subagents inherit its tools, so the one register is
+  theirs too: that only the lead saves a finding is its brief's rule.
 
   `@knowledge_tools` are offered to every role: `knowledge_search` reads the
   rules the project has learned, which no stage should have to guess at.
@@ -55,8 +54,8 @@ defmodule Rail.Mcp.Utils.McpTools do
   @browser %{
     "type" => "string",
     "description" =>
-      "Which of your browsers, by the name you gave it in browser_connect; a name it never opened is " <>
-        "refused. Leave it out for the one named for your stage, `qa` or `demo`."
+      "Which of your browsers, by the name you gave it in browser_connect, such as `explorer-1` or `demo`; " <>
+        "a name it never opened is refused."
   }
 
   @browser_tools [
@@ -81,8 +80,8 @@ defmodule Rail.Mcp.Utils.McpTools do
           "browser" => %{
             "type" => "string",
             "description" =>
-              "A name for this browser, a few letters, digits, spaces or dashes. Leave it out for the one " <>
-                "named for your stage, `qa` or `demo`. Another name is another browser signed in as another account."
+              "A name for this browser, a few letters, digits, spaces or dashes: the one the lead gave you, such " <>
+                "as `explorer-1` or `demo`. Another name is another browser signed in as another account."
           },
           "account" => %{
             "type" => "string",
@@ -172,42 +171,16 @@ defmodule Rail.Mcp.Utils.McpTools do
     %{
       "name" => "qa_shot",
       "description" =>
-        "Photograph the page and file it against one check. Say what the picture is of and which " <>
-          "check it is for; Rail names the file and returns the name to put in a finding's " <>
-          "evidence - the name, never the picture. The human reads the checklist row by row with " <>
-          "what was filed for each, so a check that asserts something on screen wants a picture of " <>
-          "it: take it at the point the check asserts it, not after every keystroke.",
+        "Photograph the page and save it in the QA folder. Say what the picture is of; Rail names the file " <>
+          "and returns its path, which goes to the lead to cite in a finding's evidence: the path, never " <>
+          "the picture. Take it at the point a check asserts something on screen, not after every keystroke.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{
-          "check" => %{"type" => "string", "description" => "The key of the check this shows, from qa_plan."},
           "name" => %{"type" => "string", "description" => "What this picture shows."},
           "browser" => @browser
         },
-        "required" => ["check", "name"]
-      }
-    },
-    %{
-      "name" => "qa_file",
-      "description" =>
-        "File an output file against one check: a log, a PDF, a CSV, whatever the check produced " <>
-          "that proves it. Write or copy it under the QA directory first and give its path relative " <>
-          "to that directory; Rail copies it in under a name of its own and returns the name to put " <>
-          "in a finding's evidence. A check proved by what it writes needs no picture, and a check " <>
-          "can carry both.",
-      "inputSchema" => %{
-        "type" => "object",
-        "properties" => %{
-          "check" => %{"type" => "string", "description" => "The key of the check this proves, from qa_plan."},
-          "name" => %{"type" => "string", "description" => "What this file shows."},
-          "path" => %{
-            "type" => "string",
-            "description" =>
-              "Where the file is, relative to the QA directory: a log, a PDF, a CSV, any output that " <>
-                "proves the check. Never absolute and never climbing out with `..`."
-          }
-        },
-        "required" => ["check", "name", "path"]
+        "required" => ["name"]
       }
     }
   ]
@@ -248,27 +221,10 @@ defmodule Rail.Mcp.Utils.McpTools do
     }
   ]
 
-  @severity %{
-    "type" => "string",
-    "enum" => ["blocker", "major", "minor", "nit"],
-    "description" => "How much it matters."
-  }
-  @recommendation %{
-    "type" => "string",
-    "enum" => ["fix", "skip"],
-    "description" => "Whether you would act on it. Your advice; a human decides."
-  }
-  @status %{
-    "type" => "string",
-    "enum" => ["open", "fixed", "not_fixed"],
-    "description" =>
-      "`open` for a problem that still stands; on a later pass, `fixed` or `not_fixed` for one raised before."
-  }
-  @finding_key %{
-    "type" => "string",
-    "description" =>
-      "Your own name for the problem, lowercase with hyphens. Keep it the same for the same problem across " <>
-        "saves and passes: saving a key again updates that finding rather than raising it twice."
+  @range %{
+    "file" => %{"type" => "string", "description" => "Relative to the worktree."},
+    "line" => %{"type" => "integer", "description" => "The first line, a positive whole number."},
+    "end_line" => %{"type" => "integer", "description" => "The last line, when it spans more than one."}
   }
 
   @plan_tools [
@@ -389,27 +345,77 @@ defmodule Rail.Mcp.Utils.McpTools do
     }
   ]
 
-  @engineer_tools [
-    %{
-      "name" => "commit",
-      "description" =>
-        "Hand over finished work. Call it once the work is finished and its tests pass: it ends your turn " <>
-          "on the spot, and Rail commits the worktree under your message and pushes it or runs CI. Nothing " <>
-          "you write after it is read, so write your summary for the human (what you changed, how you " <>
-          "checked it, what you could not do) in the same message, before the call. After a CI failure that " <>
-          "was not your change's to fix, call it with nothing changed and CI runs again.",
-      "inputSchema" => %{
-        "type" => "object",
-        "properties" => %{
-          "message" => %{
-            "type" => "string",
-            "description" =>
-              "One line saying what this change does, a blank line, then what changed and why, as a commit body."
+  @commit_tool %{
+    "name" => "commit",
+    "description" =>
+      "Hand over finished work. Call it once the work is finished and its tests pass: it ends your turn on " <>
+        "the spot, and Rail commits the worktree under your message and sends it on, through CI where the " <>
+        "project has it: the engineer's work to Review, and at Review the fix round to the next round. Nothing " <>
+        "you write after it is read, so write your summary for the human in the same message, before the " <>
+        "call. At Review, list every finding ruled Fix in `findings` and every other changed file in " <>
+        "`other_files`; it refuses a round that leaves a Fix finding out, lists one without a place or a test, " <>
+        "or holds a changed file nothing listed explains. After a CI failure that was not the change's to fix, " <>
+        "call it with nothing changed and CI runs again.",
+    "inputSchema" => %{
+      "type" => "object",
+      "properties" => %{
+        "message" => %{
+          "type" => "string",
+          "description" =>
+            "One line saying what this change does, a blank line, then what changed and why, as a commit body."
+        },
+        "findings" => %{
+          "type" => "array",
+          "description" => "At Review: every finding ruled Fix and still to fix.",
+          "items" => %{
+            "type" => "object",
+            "properties" => %{
+              "key" => %{"type" => "string"},
+              "covered" => %{
+                "type" => "array",
+                "items" => %{"type" => "integer"},
+                "description" => "The numbers of the places, from 1, its fix covers."
+              },
+              "files" => %{
+                "type" => "array",
+                "items" => %{"type" => "string"},
+                "description" =>
+                  "The files its fix changed, a screen finding's especially, since a screen place names none."
+              },
+              "left" => %{
+                "type" => "array",
+                "description" => "The places the fix leaves as they are, and why.",
+                "items" => %{
+                  "type" => "object",
+                  "properties" => %{"place" => %{"type" => "integer"}, "reason" => %{"type" => "string"}},
+                  "required" => ["place", "reason"]
+                }
+              },
+              "test" => %{
+                "type" => "object",
+                "description" => "The test that failed before the fix.",
+                "properties" => %{"file" => %{"type" => "string"}, "name" => %{"type" => "string"}},
+                "required" => ["file", "name"]
+              }
+            },
+            "required" => ["key", "covered", "test"]
           }
         },
-        "required" => ["message"]
-      }
-    },
+        "other_files" => %{
+          "type" => "array",
+          "description" => "At Review: every other changed file, with the reason the human reads.",
+          "items" => %{
+            "type" => "object",
+            "properties" => %{"path" => %{"type" => "string"}, "reason" => %{"type" => "string"}},
+            "required" => ["path", "reason"]
+          }
+        }
+      },
+      "required" => ["message"]
+    }
+  }
+
+  @engineer_tools [
     %{
       "name" => "request_merge",
       "description" =>
@@ -420,119 +426,120 @@ defmodule Rail.Mcp.Utils.McpTools do
     }
   ]
 
-  @review_tools [
+  @review_lead_tools [
     %{
       "name" => "save_finding",
       "description" =>
-        "Save one finding as soon as you have confirmed it, rather than at the end; the human sees it while " <>
-          "you keep reading. A save in the wrong shape is refused naming each field; fix it and save again.",
+        "Save one finding once the round has confirmed it; the human rules on each in Rail. A new key needs " <>
+          "everything the finding says, its evidence and every place its rule applies, and a save missing a " <>
+          "field, over a limit or holding tool-call markup is refused naming the field: fix it and save again. " <>
+          "Saving a known key on a later round takes only its `status`, a `note` and any new `evidence`; what " <>
+          "it said when raised never changes.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{
-          "key" => @finding_key,
-          "title" => %{"type" => "string", "description" => "One line naming the problem."},
-          "detail" => %{"type" => "string", "description" => "What is wrong and what it costs."},
-          "suggestion" => %{"type" => "string", "description" => "The change that settles it."},
-          "file" => %{"type" => "string", "description" => "The file it is in, relative to the worktree."},
-          "line" => %{"type" => "integer", "description" => "One line number, a positive whole number."},
-          "severity" => @severity,
-          "recommendation" => @recommendation,
-          "status" => @status,
-          "rule" => %{
+          "key" => %{
             "type" => "string",
             "description" =>
-              "The id of the checklist rule the finding comes from; leave it out when it comes from none. " <>
-                "A finding a calibration rule says not to raise is still saved, with that rule's id."
-          }
+              "Your own name for the problem, lowercase with hyphens, the same for the same problem across rounds."
+          },
+          "kind" => %{"type" => "string", "enum" => ["code", "screen"], "description" => "In the diff, or on screen."},
+          "raised_by" => %{
+            "type" => "string",
+            "enum" => ["code_reviewer", "explorer", "review_lead"],
+            "description" => "Who found it."
+          },
+          "title" => %{"type" => "string", "description" => "What is wrong, in 90 characters or less."},
+          "problem" => %{"type" => "string", "description" => "At most two plain sentences, 300 characters."},
+          "file" => @range["file"],
+          "line" => @range["line"],
+          "end_line" => @range["end_line"],
+          "screen" => %{"type" => "string", "description" => "For a screen finding, where it was seen."},
+          "steps" => %{
+            "type" => "array",
+            "items" => %{"type" => "string"},
+            "description" => "For a screen finding, the steps that reach it, one each."
+          },
+          "check" => %{"type" => "string", "description" => "The key of the checklist row it came out of, if any."},
+          "fix" => %{
+            "type" => "string",
+            "description" => "At most two sentences, 300 characters, pointing the way rather than writing the patch."
+          },
+          "why" => %{"type" => "string", "description" => "Why fix it or leave it, 200 characters."},
+          "rule" => %{"type" => "string", "description" => "The rule the change breaks, 160 characters."},
+          "places" => %{
+            "type" => "array",
+            "description" => "Every place the rule applies: a code range with a short label, or a screen with its steps.",
+            "items" => %{
+              "type" => "object",
+              "properties" =>
+                Map.merge(@range, %{
+                  "label" => %{"type" => "string", "description" => "A few words naming it, 80 characters."},
+                  "screen" => %{"type" => "string"},
+                  "steps" => %{"type" => "array", "items" => %{"type" => "string"}}
+                })
+            }
+          },
+          "evidence" => %{
+            "type" => "array",
+            "description" =>
+              "At least one piece: a `code` range in the worktree, a file in the QA folder as `path`, such as " <>
+                "a picture qa_shot saved or a log a pass wrote, which Rail attaches to the finding, or a small " <>
+                "value as `text`.",
+            "items" => %{
+              "type" => "object",
+              "properties" =>
+                Map.merge(@range, %{
+                  "name" => %{"type" => "string", "description" => "What it shows."},
+                  "kind" => %{"type" => "string", "enum" => ["code", "screenshot", "log", "query", "note"]},
+                  "path" => %{"type" => "string", "description" => "Relative to the QA folder."},
+                  "browser" => %{"type" => "string", "description" => "The browser it was taken in, if any."},
+                  "text" => %{"type" => "string", "description" => "Something small enough to read inline."}
+                }),
+              "required" => ["name", "kind"]
+            }
+          },
+          "severity" => %{
+            "type" => "string",
+            "enum" => ["blocker", "major", "minor", "nit"],
+            "description" => "How much it matters."
+          },
+          "recommendation" => %{
+            "type" => "string",
+            "enum" => ["fix", "skip"],
+            "description" => "Whether you would fix it. Your advice; the human decides."
+          },
+          "checklist_rule" => %{
+            "type" => "string",
+            "description" =>
+              "The id of the checklist rule it comes from; leave it out when it comes from none. A finding a " <>
+                "calibration rule says not to raise is still saved, with that rule's id."
+          },
+          "status" => %{
+            "type" => "string",
+            "enum" => ["open", "fixed", "not_fixed"],
+            "description" => "On a later round, whether a finding raised before is now fixed."
+          },
+          "note" => %{"type" => "string", "description" => "What this round checked and saw, 300 characters."}
         },
-        "required" => ["key", "title", "severity", "recommendation"]
+        "required" => ["key"]
       }
     },
     %{
       "name" => "save_review",
       "description" =>
-        "Say the review pass is finished, once every finding is saved. Call it last, and call it when you " <>
-          "found nothing too: that is a clean review. A pass that ends without it has not reported.",
+        "Say the round is finished, once every finding is saved and every check settled. Call it last, and " <>
+          "call it when the round found nothing too. A round that ends without it has not reported.",
       "inputSchema" => %{"type" => "object", "properties" => %{}}
-    }
-  ]
-
-  @qa_report_tools [
-    %{
-      "name" => "save_finding",
-      "description" =>
-        "Save one finding as soon as you have reproduced it, with its evidence filed first through qa_shot or " <>
-          "qa_file. A finding with no evidence, or citing a file that is not in the QA folder, is refused naming " <>
-          "each field; fix it and save again.",
-      "inputSchema" => %{
-        "type" => "object",
-        "properties" => %{
-          "key" => @finding_key,
-          "title" => %{"type" => "string", "description" => "One line naming the defect."},
-          "check" => %{"type" => "string", "description" => "The key of the checklist row it came out of."},
-          "criterion" => %{"type" => "string", "description" => "The acceptance criterion it fails, quoted."},
-          "screen" => %{"type" => "string", "description" => "Where it was seen, such as /bills/new."},
-          "steps" => %{"type" => "string", "description" => "Numbered steps that reproduce it."},
-          "expected" => %{"type" => "string", "description" => "What should have happened."},
-          "observed" => %{"type" => "string", "description" => "What happened."},
-          "detail" => %{"type" => "string", "description" => "What it costs and who it costs it."},
-          "suggestion" => %{"type" => "string", "description" => "The change that settles it."},
-          "severity" => @severity,
-          "recommendation" => @recommendation,
-          "caused_by_change" => %{
-            "type" => "boolean",
-            "description" => "`false` for something already broken before this branch."
-          },
-          "status" => @status,
-          "evidence" => %{
-            "type" => "array",
-            "description" => "At least one piece: a name qa_shot or qa_file handed back, or a small value inline.",
-            "items" => %{
-              "type" => "object",
-              "properties" => %{
-                "name" => %{"type" => "string", "description" => "What it shows."},
-                "kind" => %{"type" => "string", "enum" => ["screenshot", "log", "query", "note"]},
-                "path" => %{"type" => "string", "description" => "Relative to the QA folder, as Rail named it."},
-                "text" => %{"type" => "string", "description" => "Something small enough to read inline."}
-              },
-              "required" => ["name", "kind"]
-            }
-          }
-        },
-        "required" => ["key", "title", "check", "severity", "recommendation", "evidence"]
-      }
-    },
-    %{
-      "name" => "save_verdict",
-      "description" =>
-        "Save the verdict on the whole change, last, once every finding is saved. A pass that ends without " <>
-          "it has not reported.",
-      "inputSchema" => %{
-        "type" => "object",
-        "properties" => %{
-          "verdict" => %{
-            "type" => "string",
-            "enum" => ["pass", "concerns", "fail"],
-            "description" => "Your judgement, not a tally of the findings."
-          },
-          "summary" => %{
-            "type" => "string",
-            "description" => "One or two sentences: whether it works, and the one thing most in the way if not."
-          },
-          "not_checked" => %{
-            "type" => "string",
-            "description" => "What you could not check, and why, including anything you faked or stood in for."
-          }
-        },
-        "required" => ["verdict", "summary"]
-      }
     }
   ]
 
   @demo_report_tools [
     %{
       "name" => "save_demo",
-      "description" => "Save the write-up of the recording, once the take is recorded. Saving again replaces it.",
+      "description" =>
+        "Save the write-up of the recording straight after the last beat: it stops the recording and Rail " <>
+          "encodes it and publishes the video. Saving again after another take replaces it.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{
@@ -570,14 +577,17 @@ defmodule Rail.Mcp.Utils.McpTools do
   ]
 
   @doc """
-  The tools Rail serves this run itself: the browser for the two stages that
-  drive one, the save tools each stage hands its output over with, and the
-  knowledge base for all.
+  The tools Rail serves this run itself: the browser for the Review lead, whose
+  explorers and demo recorder drive one, the save tools each lead hands its
+  output over with, and the knowledge base for all.
   """
   def mcp_tools(%Role{stage: :plan}), do: @plan_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :engineer}), do: @engineer_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :review}), do: @review_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :qa}), do: @browser_tools ++ @qa_tools ++ @qa_report_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :demo}), do: @browser_tools ++ @demo_tools ++ @demo_report_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :engineer}), do: [@commit_tool | @engineer_tools] ++ @knowledge_tools
+
+  def mcp_tools(%Role{stage: :review_lead}),
+    do:
+      @browser_tools ++
+        @qa_tools ++ @demo_tools ++ @review_lead_tools ++ [@commit_tool | @demo_report_tools] ++ @knowledge_tools
+
   def mcp_tools(%Role{}), do: @knowledge_tools
 end

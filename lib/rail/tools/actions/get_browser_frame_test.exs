@@ -20,13 +20,13 @@ defmodule Rail.Tools.Actions.GetBrowserFrameTest do
     end)
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "Browser Frame"})
-    {:ok, task} = Pipeline.create_task(issue, :qa)
+    {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     %{task: task}
   end
 
-  # Every QA panel asks for this on the way in, including the ones opened long
+  # Every browser panel asks for this on the way in, including the ones opened long
   # after the pass ended, so no browser is the ordinary case rather than an error.
   test "a task with no browser has nothing to show", %{task: task} do
     assert Tools.get_browser_frame(task, "qa") == nil

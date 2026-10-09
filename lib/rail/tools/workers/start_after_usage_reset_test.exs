@@ -14,7 +14,7 @@ defmodule Rail.Tools.Workers.StartAfterUsageResetTest do
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Tools.Workers.StartAfterUsageReset
 
-  # A QA turn waiting on its account's weekly window; the job at that reset is what is under test.
+  # A Review lead turn waiting on its account's weekly window; the job at that reset is what is under test.
   setup %{project: project} do
     n = System.unique_integer([:positive])
     root = Path.join(System.tmp_dir!(), "usage_job_#{n}")
@@ -22,11 +22,11 @@ defmodule Rail.Tools.Workers.StartAfterUsageResetTest do
     on_exit(fn -> File.rm_rf(root) end)
 
     weekly_reset = DateTime.truncate(DateTime.shift(DateTime.utc_now(), hour: 3), :second)
-    {:ok, qa} = Roles.get_role(project_id: project.id, stage: :qa)
-    {:ok, qa} = Roles.update_role(system_scope(), qa, %{model: "claude-job-#{n}"})
+    {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
+    {:ok, lead} = Roles.update_role(system_scope(), lead, %{model: "claude-job-#{n}"})
 
     {:ok, backend} =
-      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true", models: [%{id: qa.model}]})
+      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true", models: [%{id: lead.model}]})
 
     spent = %{"label" => "Weekly", "remaining_percent" => 0, "resets_at" => DateTime.to_iso8601(weekly_reset)}
 
@@ -56,7 +56,7 @@ defmodule Rail.Tools.Workers.StartAfterUsageResetTest do
           %Task{},
           %{
             issue_id: issue.id,
-            stage: :qa,
+            stage: :review,
             worktree_name: "job-#{n}",
             worktree_path: root,
             scratch_path: Path.join(root, "scratch")
@@ -66,7 +66,7 @@ defmodule Rail.Tools.Workers.StartAfterUsageResetTest do
       )
 
     {:ok, run} =
-      Pipeline.create_run(%{task_id: task.id, role_id: qa.id, status: :starting, started_at: DateTime.utc_now()})
+      Pipeline.create_run(%{task_id: task.id, role_id: lead.id, status: :starting, started_at: DateTime.utc_now()})
 
     {:ok, waiting} = Tools.start_os_process(run, ["2"])
 

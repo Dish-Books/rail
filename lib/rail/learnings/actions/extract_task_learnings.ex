@@ -16,10 +16,9 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearnings do
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.ImplementationPlan
-  alias Rail.Pipeline.Schemas.QaFinding
   alias Rail.Pipeline.Schemas.Question
-  alias Rail.Pipeline.Schemas.ReviewFinding
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
@@ -105,33 +104,30 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearnings do
   end
 
   defp findings_file(%Task{} = task) do
-    review = task |> Pipeline.list_review_findings() |> Repo.preload(:decided_by)
-    qa = task |> Pipeline.list_qa_findings() |> Repo.preload(:decided_by)
+    findings = task |> Pipeline.list_findings() |> Repo.preload(:decided_by)
 
-    lines =
-      Enum.map(review, &finding_entry("Review", &1)) ++ Enum.map(qa, &finding_entry("QA", &1))
-
-    "# Every finding on this task, with who decided it\n\n" <> Enum.join(lines, "\n")
+    "# Every finding on this task, with who decided it\n\n" <> Enum.map_join(findings, "\n", &finding_entry/1)
   end
 
-  defp finding_entry(stage, %{decided_by: decided_by} = finding) do
+  defp finding_entry(%Finding{decided_by: decided_by} = finding) do
     who = if decided_by, do: decided_by.name || decided_by.login, else: "nobody"
 
     """
-    ## #{stage}: #{finding.title}
+    ## Round #{finding.round}, #{finding.kind}: #{finding.title}
 
     Recommended: #{finding.recommendation}. Decided: #{finding.decision || "not decided"} by #{who}. Status: #{finding.status}.#{rule_note(finding)}
 
-    #{finding.detail}
+    Rule: #{finding.rule}
 
-    Suggested fix: #{finding.suggestion}
+    #{finding.problem}
+
+    Fix: #{finding.fix}
     """
   end
 
-  defp rule_note(%ReviewFinding{suppressed_by_id: id}) when is_binary(id), do: " Suppressed by rule #{id}."
-  defp rule_note(%ReviewFinding{rule_id: id}) when is_binary(id), do: " Raised from rule #{id}."
-  defp rule_note(%ReviewFinding{}), do: ""
-  defp rule_note(%QaFinding{}), do: ""
+  defp rule_note(%Finding{suppressed_by_id: id}) when is_binary(id), do: " Suppressed by rule #{id}."
+  defp rule_note(%Finding{rule_id: id}) when is_binary(id), do: " Raised from rule #{id}."
+  defp rule_note(%Finding{}), do: ""
 
   defp questions_file(%Task{} = task) do
     questions = task |> Pipeline.list_questions(order_by: [asc: :inserted_at]) |> Repo.preload(:answered_by)
@@ -167,12 +163,13 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearnings do
     File.write!(Path.join([dir, "transcripts", "#{stage}-#{run.id}.md"]), Enum.join(logs, "\n"))
   end
 
-  # What changed between the code review last read and the code that merged is
+  # What changed between the code Review last read and the code that merged is
   # what people did after Rail, which is the clearest correction there is.
+  # The commit Review last read is on the lead's run row, since the review file goes with the scratch folder.
   defp write_compare(%Task{pr_number: number, project: %Project{} = project}, runs, dir) when is_integer(number) do
     base =
       runs
-      |> Enum.filter(&(&1.role.stage == :review and is_binary(&1.stage_fingerprint_head_sha)))
+      |> Enum.filter(&(&1.role.stage == :review_lead and is_binary(&1.stage_fingerprint_head_sha)))
       |> List.last()
 
     with %Run{stage_fingerprint_head_sha: base_sha} <- base,

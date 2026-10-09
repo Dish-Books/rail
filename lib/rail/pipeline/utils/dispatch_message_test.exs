@@ -130,22 +130,45 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     assert %Run{error: nil, exit_code: nil} = Repo.reload!(failed)
   end
 
-  # The turn's end compares against this to tell whether the engineer changed code.
-  test "a message to the engineer on a task past engineer stamps how the tree stood", %{
+  # Subagents are a spawn flag, not part of the saved session, so the lead's every turn passes them again.
+  test "a message to the Review lead spawns with the code reviewer, explorer, engineer and demo recorder", %{
     project: project,
     task: task
   } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
-    File.write!(Path.join(task.worktree_path, "qa_leftover.log"), "from QA\n")
-    %{head_sha: head_sha, content_digest: content_digest} = Git.content_fingerprint(task.worktree_path)
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
 
     {:ok, run} =
       Pipeline.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :finished,
-        stage_outcome: :done,
+        conversation_id: "sess_dispatch_review_lead",
+        pending_chat: "Check the empty state too",
+        started_at: DateTime.utc_now()
+      })
+
+    expect(Tools, :start_os_process, fn spawned, argv ->
+      [json] = for ["--agents", json] <- Enum.chunk_every(argv, 2, 1), do: json
+
+      assert %{"code-reviewer" => %{}, "explorer" => %{}, "engineer" => %{}, "demo-recorder" => %{}} =
+               Jason.decode!(json)
+
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
+  end
+
+  test "a message to a run that leads nobody spawns with no subagents", %{project: project, task: task} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :finished,
         conversation_id: "sess_dispatch_engineer",
         pending_chat: "Rename the button",
         started_at: DateTime.utc_now()
@@ -157,37 +180,6 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     end)
 
     assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
-
-    assert %Run{stage_fingerprint_head_sha: ^head_sha, stage_fingerprint_dirty_digest: ^content_digest} =
-             Repo.reload!(run)
-  end
-
-  test "a message to another stage's run leaves the stamp its stage started with", %{
-    project: project,
-    task: task
-  } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :qa)
-
-    {:ok, run} =
-      Pipeline.create_run(%{
-        task_id: task.id,
-        role_id: role.id,
-        status: :finished,
-        stage_outcome: :done,
-        conversation_id: "sess_dispatch_qa",
-        pending_chat: "Check the empty state too",
-        stage_fingerprint_head_sha: "qa_started_here",
-        stage_fingerprint_dirty_digest: "qa_started_digest",
-        started_at: DateTime.utc_now()
-      })
-
-    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-
-    assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
-
-    assert %Run{stage_fingerprint_head_sha: "qa_started_here", stage_fingerprint_dirty_digest: "qa_started_digest"} =
-             Repo.reload!(run)
   end
 
   test "a message that fails to spawn goes back on the run", %{run: run, run_id: run_id} do

@@ -41,7 +41,7 @@ defmodule Rail.Tools.BrowserSessionTest do
     end)
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "Browser Session"})
-    {:ok, task} = Pipeline.create_task(issue, :qa)
+    {:ok, task} = Pipeline.create_task(issue, :review)
 
     page = Path.join(task.scratch_path, "page.html")
     File.mkdir_p!(task.scratch_path)
@@ -146,7 +146,7 @@ defmodule Rail.Tools.BrowserSessionTest do
     end)
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Other"})
-    {:ok, other} = Pipeline.create_task(issue, :qa)
+    {:ok, other} = Pipeline.create_task(issue, :review)
 
     on_exit(fn ->
       case Tools.get_browser_session(other, "qa") do
@@ -407,7 +407,7 @@ defmodule Rail.Tools.BrowserSessionTest do
     assert :ok = Tools.stop_browser_session(task)
   end
 
-  # A human who opens the QA panel mid-pass should see it happening rather than
+  # A human who opens the browser panel mid-pass should see it happening rather than
   # read about it afterwards, and a browser that has already painted has a frame
   # to hand for the panel that has only just arrived.
   test "broadcasts what the tab is looking at", %{task: task, page: page} do

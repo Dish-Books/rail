@@ -79,10 +79,10 @@ defmodule Rail.Learnings.Actions.ListLearnings do
            %{
              run_count:
                fragment("(SELECT count(DISTINCT r.run_id) FROM learning_retrievals r WHERE r.learning_id = ?)", l.id),
-             suppressed_count: fragment("(SELECT count(*) FROM review_findings f WHERE f.suppressed_by_id = ?)", l.id),
+             suppressed_count: fragment("(SELECT count(*) FROM findings f WHERE f.suppressed_by_id = ?)", l.id),
              broken_count:
                fragment(
-                 "(SELECT count(*) FROM review_findings f WHERE f.rule_id = ? AND f.suppressed_by_id IS NULL AND EXISTS (SELECT 1 FROM learning_retrievals r JOIN runs u ON u.id = r.run_id WHERE r.learning_id = f.rule_id AND u.task_id = f.task_id))",
+                 "(SELECT count(*) FROM findings f WHERE f.rule_id = ? AND f.suppressed_by_id IS NULL AND EXISTS (SELECT 1 FROM learning_retrievals r JOIN runs u ON u.id = r.run_id WHERE r.learning_id = f.rule_id AND u.task_id = f.task_id))",
                  l.id
                ),
              override_count:

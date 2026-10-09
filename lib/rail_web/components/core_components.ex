@@ -12,6 +12,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate activity_feed(assigns), to: Components.ActivityFeed
   defdelegate answer_field(assigns), to: Components.AnswerField
   defdelegate assignee(assigns), to: Components.IssueIcons
+  defdelegate browser_picker(assigns), to: Components.BrowserPicker
   defdelegate button(assigns), to: Components.Button
   defdelegate changed_comments(assigns), to: Components.ChangedComments
   defdelegate child_switcher(assigns), to: Components.ChildSwitcher
@@ -24,9 +25,12 @@ defmodule RailWeb.CoreComponents do
   defdelegate diff_pane(assigns), to: Components.DiffPane
   defdelegate diff_row(assigns), to: Components.DiffRow
   defdelegate diff_stat(assigns), to: Components.DiffStat
+  defdelegate demo_player(assigns), to: Components.DemoPlayer
   defdelegate dispatch_banner(assigns), to: Components.DispatchBanner
   defdelegate document_comment(assigns), to: Components.DocumentComment
   defdelegate element_preview(assigns), to: Components.ElementPreview
+  defdelegate finding_detail(assigns), to: Components.FindingDetail
+  defdelegate finding_list(assigns), to: Components.FindingList
   defdelegate icon(assigns), to: Components.Icon
   defdelegate in_progress_tasks(assigns), to: Components.InProgressTasks
   defdelegate input(assigns), to: Components.Input
@@ -48,6 +52,9 @@ defmodule RailWeb.CoreComponents do
   defdelegate plan_sheet(assigns), to: Components.PlanSheet
   defdelegate priority_icon(assigns), to: Components.IssueIcons
   defdelegate project_badge(assigns), to: Components.ProjectBadge
+  defdelegate review_items(assigns), to: Components.ReviewItems
+  defdelegate review_status(assigns), to: Components.ReviewStatus
+
   defdelegate sandbox_meters(assigns), to: Components.SandboxMeters
   defdelegate sandbox_stats(assigns), to: Components.SandboxStats
   defdelegate sandbox_usage_meter(assigns), to: Components.SandboxUsageMeter

@@ -25,7 +25,8 @@ defmodule Rail.Pipeline.Actions.ReadDemo do
       %Demo{
         title: text(demo["title"]),
         summary: text(summary),
-        not_shown: text(demo["not_shown"])
+        not_shown: text(demo["not_shown"]),
+        commit: text(demo["commit"])
       }
     else
       _unreadable -> nil

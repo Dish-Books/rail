@@ -114,4 +114,27 @@ defmodule Rail.Pipeline.Actions.GetCiStatusTest do
 
     assert %{state: :pending} = Pipeline.get_ci_status(run)
   end
+
+  # The end of the log says what CI is doing, or why it failed, without opening the whole of it.
+  test "running or failed CI shows the end of its log, and passed CI none", %{run: run, ci: ci, head_sha: head_sha} do
+    stream_path = Path.join(System.tmp_dir!(), "ci_status_#{System.unique_integer([:positive])}.log")
+    File.write!(stream_path, Enum.map_join(1..20, "\n", &"line #{&1}") <> "\n\e[31mline 21\e[0m\n\n  \n")
+    on_exit(fn -> File.rm(stream_path) end)
+    tail = Enum.map(10..21, &"line #{&1}")
+
+    ci.(%{status: :running, stream_path: stream_path})
+    assert %{state: :running, tail: ^tail} = Pipeline.get_ci_status(run)
+
+    ci.(%{exit_code: 1, head_sha: head_sha, stream_path: stream_path})
+    assert %{state: :failed, tail: ^tail} = Pipeline.get_ci_status(run)
+
+    ci.(%{exit_code: 0, head_sha: head_sha, stream_path: stream_path})
+    assert %{state: :passed, tail: []} = Pipeline.get_ci_status(run)
+  end
+
+  test "a failed CI whose log is gone has no tail to show", %{run: run, ci: ci, head_sha: head_sha} do
+    ci.(%{exit_code: 1, head_sha: head_sha})
+
+    assert %{state: :failed, tail: []} = Pipeline.get_ci_status(run)
+  end
 end

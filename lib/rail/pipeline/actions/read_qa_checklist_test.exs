@@ -20,7 +20,7 @@ defmodule Rail.Pipeline.Actions.ReadQaChecklistTest do
     end)
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "Read Checklist"})
-    {:ok, task} = Pipeline.create_task(issue, :qa)
+    {:ok, task} = Pipeline.create_task(issue, :review)
     qa_dir = Path.join(task.scratch_path, "qa")
     File.mkdir_p!(qa_dir)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)

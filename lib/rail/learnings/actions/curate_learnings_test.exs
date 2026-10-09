@@ -317,7 +317,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
       })
 
     learning(project, %{rule: "Fresh", kind: :convention}, status: :provisional)
-    backed = Enum.map(Enum.take(tasks, 3), &sighting.(&1, %{source_kind: :review_finding, source_id: "rvf_#{&1.id}"}))
+    backed = Enum.map(Enum.take(tasks, 3), &sighting.(&1, %{source_kind: :review_finding, source_id: "fnd_#{&1.id}"}))
     test = self()
 
     Req.Test.stub(Rail.Slack, fn conn ->

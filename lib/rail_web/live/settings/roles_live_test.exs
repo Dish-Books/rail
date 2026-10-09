@@ -978,6 +978,10 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert has_element?(view, "#role-editor-modal")
     assert has_element?(view, "input[name='role[name]'][value='Engineer']")
 
+    render_hook(view, "open_create_modal", %{"stage" => "review_lead"})
+    assert has_element?(view, "input[name='role[name]'][value='Review lead']")
+    assert has_element?(view, "#role-form option[value='review_lead']", "Review lead")
+
     # Open with unknown stage string
     render_hook(view, "open_create_modal", %{"stage" => "unknown_custom_stage_test"})
     assert has_element?(view, "input[name='role[name]'][value='Unknown_custom_stage_test']")

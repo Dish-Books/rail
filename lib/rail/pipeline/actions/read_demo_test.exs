@@ -20,7 +20,7 @@ defmodule Rail.Pipeline.Actions.ReadDemoTest do
     end)
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "Read Demo"})
-    {:ok, task} = Pipeline.create_task(issue, :demo)
+    {:ok, task} = Pipeline.create_task(issue, :review)
 
     demo_dir = Path.join(task.scratch_path, "demo")
     File.mkdir_p!(demo_dir)
@@ -34,14 +34,16 @@ defmodule Rail.Pipeline.Actions.ReadDemoTest do
     {
       "title": "Bills can be entered from a photo",
       "summary": "A photographed bill is read, checked and saved.",
-      "not_shown": "The Stripe callback, which needs a real card."
+      "not_shown": "The Stripe callback, which needs a real card.",
+      "commit": "abc1234"
     }
     """)
 
     assert %Demo{
              title: "Bills can be entered from a photo",
              summary: "A photographed bill is read, checked and saved.",
-             not_shown: "The Stripe callback, which needs a real card."
+             not_shown: "The Stripe callback, which needs a real card.",
+             commit: "abc1234"
            } = Pipeline.read_demo(task)
   end
 

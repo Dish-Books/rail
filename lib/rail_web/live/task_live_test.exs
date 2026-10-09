@@ -13,10 +13,9 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.DetectedQuestion
+  alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.ImplementationPlan
-  alias Rail.Pipeline.Schemas.QaFinding
   alias Rail.Pipeline.Schemas.Question
-  alias Rail.Pipeline.Schemas.ReviewFinding
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
@@ -25,6 +24,7 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.Scope
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
+  alias Rail.Tools.Schemas.BrowserSession
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
@@ -459,6 +459,33 @@ defmodule RailWeb.TaskLiveTest do
 
     assert %Run{status: :running, error: nil} = Repo.reload!(failed)
     refute has_element?(view, "#retry-run")
+  end
+
+  # The migration leaves every task it moved to Review on a stopped lead run with no conversation.
+  test "a Review lead run with no conversation is retried by entering Review again", %{
+    conn: conn,
+    task: task,
+    project: project
+  } do
+    {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+
+    {:ok, stopped} =
+      Pipeline.create_run(%{task_id: task.id, role_id: lead.id, status: :finished, started_at: DateTime.utc_now()})
+
+    stub(Git, :get_or_create_worktree, fn _project, _task -> {:ok, task.worktree_path} end)
+
+    expect(Tools, :start_os_process, fn spawned, argv ->
+      assert "--agents" in argv
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{lead.id}")
+
+    view |> element("#retry-run") |> render_click()
+
+    assert %Run{status: :running, error: nil} = Repo.reload!(stopped)
+    assert %Task{stage: :review} = Repo.reload!(task)
   end
 
   test "a question's options, tabs and draft all feed the answer", %{conn: conn, task: task, run: run} do
@@ -2971,12 +2998,25 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#update-branch[disabled]", "Updating…")
     end
 
-    test "a clean merge into a task at QA brings it back to engineer, ready to send to review", %{
+    # At Review the branch is the Review lead's: the merge runs on its run and shows on its tab.
+    test "a clean merge into a task at Review leaves it there, pushes and starts the lead's next round", %{
       conn: conn,
+      project: project,
       task: task,
       repo: repo
     } do
-      {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review, pr_number: 7})
+      {:ok, lead_role} = Roles.get_role(project_id: project.id, stage: :review_lead)
+
+      {:ok, %Run{id: lead_run_id} = lead_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: lead_role.id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.utc_now()
+        })
+
       expect(Git, :fetch_default_branch, fn _project, _path -> :ok end)
 
       expect(Git, :merge_default_branch, fn _scope, _task ->
@@ -2989,13 +3029,18 @@ defmodule RailWeb.TaskLiveTest do
         :ok
       end)
 
+      expect(Tools, :start_os_process, fn %Run{id: ^lead_run_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "[data-qa='task_status_chip']", "Queued for QA")
 
       view |> element("#update-branch") |> render_click()
 
-      assert has_element?(view, "[data-qa='task_status_chip']", "Review the diff")
-      assert has_element?(view, "[data-qa='send_to_review']:not([disabled])")
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{lead_role.id}")
+      assert %Task{stage: :review, is_updating_branch: false} = Repo.reload!(task)
+      refute Git.branch_unpushed?(repo)
+
+      assert ["[rail] Merged origin/main in.", "[rail] Round 1 started after it was pushed"] =
+               lead_run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
     end
 
     test "updating the branch says why for each way it can be refused", %{
@@ -3036,43 +3081,38 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#update-branch:not([disabled])", "Update branch")
     end
 
-    test "a task past engineer offers review again for what the engineer changed since", %{
-      conn: conn,
-      task: task,
-      role: role
-    } do
-      {:ok, _moved} = Pipeline.update_task(task, %{stage: :demo})
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
-      assert has_element?(view, "#send-to-review")
-    end
-
-    test "a task past engineer with nothing new is not offered review again", %{
+    # Once Review has the task, its lead's engineer makes the fixes, so nothing here may commit or message.
+    test "once the task has left Engineer, its tab offers no Commit, Run CI, Send to review or composer", %{
       conn: conn,
       project: project,
       task: task,
-      role: role,
+      engineer_run: run,
       repo: repo
     } do
-      {:ok, review_role} = Roles.get_role(project_id: project.id, stage: :review)
+      {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
 
-      {:ok, _review_run} =
-        Pipeline.create_run(%{
-          task_id: task.id,
-          role_id: review_role.id,
-          status: :finished,
-          stage_outcome: :done,
-          stage_fingerprint_head_sha: String.trim(git!(repo, ["rev-parse", "HEAD"])),
-          started_at: DateTime.utc_now()
-        })
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{run.role_id}")
 
-      {:ok, _moved} = Pipeline.update_task(task, %{stage: :demo})
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
+      refute has_element?(view, "#run-ci")
       refute has_element?(view, "#send-to-review")
+      refute has_element?(view, "#chat-composer-form")
 
-      view |> with_target("#engineer-stage") |> render_click("send_to_review", %{})
-      assert has_element?(view, "#engineer-error", "Review has already seen this commit.")
+      assert has_element?(
+               view,
+               "#task-conversation-column #conversation-closed",
+               "The work is in Review now, so this conversation is closed: the Review lead's engineer makes its fixes."
+             )
+
+      # A page drawn before the task moved on can still send a message, and the closed conversation drops it.
+      view |> with_target("#conversation-tab-root") |> render_click("send_chat", %{"message" => "One more thing"})
+      refute Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "One more thing"))
+
+      File.write!(Path.join(repo, "left_behind.ex"), "uncommitted\n")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{run.role_id}")
+
+      refute has_element?(view, "#commit-work")
     end
 
     test "says so when the engineer has changed nothing", %{conn: conn, task: task, repo: repo} do
@@ -3531,23 +3571,6 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "#engineer-error", "Push the engineer's commits")
       assert %Task{stage: :engineer} = Repo.reload!(task)
-    end
-
-    # A turn that ended badly leaves the worktree dirty, and the task can already
-    # have moved on by the time anyone looks. Withholding the button there leaves
-    # work that nothing can commit.
-    test "the commit is still offered once the task has moved past engineer", %{
-      conn: conn,
-      task: task,
-      engineer_run: run,
-      repo: repo
-    } do
-      File.write!(Path.join(repo, "left_behind.ex"), "uncommitted\n")
-      {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{run.role_id}")
-
-      assert has_element?(view, "#commit-work")
     end
 
     test "sending the diff to review moves the task", %{conn: conn, task: task} do
@@ -4824,10 +4847,8 @@ defmodule RailWeb.TaskLiveTest do
 
   describe "the review stage" do
     setup %{project: project, task: task} do
-      {:ok, role} = Roles.get_role(project_id: project.id, stage: :review)
-
+      {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
       {:ok, engineer_role} = Roles.get_role(project_id: project.id, stage: :engineer)
-
       {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
 
       {:ok, _engineer_run} =
@@ -4850,42 +4871,97 @@ defmodule RailWeb.TaskLiveTest do
           started_at: DateTime.utc_now()
         })
 
-      raised = [
-        %{
-          key: "unhandled-nil",
-          title: "Nil is not handled",
-          detail: "The clause assumes a map.",
-          file: "lib/rail/example.ex",
-          line: 12,
-          severity: :blocker,
-          recommendation: :fix,
-          status: :open
-        },
-        %{key: "naming-nit", title: "Poor variable name", severity: :nit, recommendation: :skip, status: :open}
-      ]
-
-      # Nothing is decided until a person decides it, so a test that is not about
-      # deciding rules the way the reviewer advised and changes only its own bit.
-      decide_as_advised = fn ->
-        findings =
-          for finding <- raised do
-            {:ok, saved} = Pipeline.save_review_finding(task, finding)
-            saved
-          end
-
-        Enum.map(findings, fn finding ->
-          {:ok, decided} = Pipeline.decide_review_finding(system_scope(), finding, finding.recommendation)
-          decided
-        end)
-      end
-
-      %{
-        task: task,
-        role: role,
-        review_run: review_run,
-        raised: raised,
-        decide_as_advised: decide_as_advised
+      # A code finding as the lead raises one; a test changes only the fields it is about.
+      code = %{
+        key: "unhandled-nil",
+        kind: :code,
+        raised_by: :code_reviewer,
+        title: "Nil is not handled",
+        problem: "The clause assumes a map.",
+        file: "lib/rail/example.ex",
+        line: 12,
+        fix: "Match the empty map first.",
+        why: "A task with no worktree crashes the page.",
+        rule: "Every clause handles a missing map.",
+        severity: :blocker,
+        recommendation: :fix,
+        places: [%{file: "lib/rail/example.ex", line: 12, label: "handle/1"}],
+        evidence: [%{name: "The clause", kind: :code, file: "lib/rail/example.ex", line: 12}]
       }
+
+      %{task: task, role: role, engineer_role: engineer_role, review_run: review_run, code: code}
+    end
+
+    test "one Review tab, the lead's, counts the findings to rule beside its questions, and none while it runs", %{
+      conn: conn,
+      task: task,
+      role: role,
+      review_run: run,
+      code: code
+    } do
+      for key <- ["a-blocker", "a-nit"], do: {:ok, _saved} = Pipeline.save_finding(task, %{code | key: key})
+      {:ok, _pass} = Pipeline.save_review(task)
+      {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+
+      {:ok, _asked} =
+        blocked |> Repo.preload(task: :issue) |> Pipeline.register_question(%DetectedQuestion{prompt: "Why?"})
+
+      assert {:ok, view, html} = live(conn, ~p"/tasks/#{task.id}")
+
+      review_tab = "task-tab-#{role.id}"
+
+      assert [_issue, _plan, _engineer, ^review_tab] =
+               html |> Floki.parse_document!() |> Floki.find("[role='tab']") |> Floki.attribute("id")
+
+      assert has_element?(view, "#task-tab-#{role.id}[aria-selected='true']", role.name)
+      assert has_element?(view, "#task-tab-#{role.id} [data-qa='task-tab-badge']", "3")
+
+      {:ok, _running} = Pipeline.update_run(blocked, %{status: :running})
+      send(view.pid, :task_changed)
+
+      assert has_element?(view, "#task-tab-#{role.id} [data-qa='task-tab-badge']", "1")
+    end
+
+    test "ruling the last finding to rule takes the count off the Review tab", %{
+      conn: conn,
+      task: task,
+      role: role,
+      code: code
+    } do
+      {:ok, _saved} = Pipeline.save_finding(task, code)
+      {:ok, _pass} = Pipeline.save_review(task)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#task-tab-#{role.id} [data-qa='task-tab-badge']", "1")
+
+      view |> element("#decide-skip-unhandled-nil") |> render_click()
+
+      # The ruling's broadcast reaches the page after the click returns.
+      _settled = render(view)
+      refute has_element?(view, "#task-tab-#{role.id} [data-qa='task-tab-badge']")
+    end
+
+    test "the header says whether Review is running, failed, waiting on the findings or ready to merge", %{
+      conn: conn,
+      task: task,
+      review_run: run
+    } do
+      {:ok, running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "[data-qa='task_status_chip']", "Review running")
+
+      {:ok, failed} = Pipeline.update_run(running, %{status: :finished, error: "The lead gave up."})
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "[data-qa='task_status_chip']", "Review failed")
+
+      {:ok, done} = Pipeline.update_run(failed, %{stage_outcome: :done, error: nil})
+      {:ok, _pass} = Pipeline.save_review(task)
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "[data-qa='task_status_chip']", "Review the findings")
+
+      {:ok, _finished} = Pipeline.start_fix_round(done)
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "[data-qa='task_status_chip']", "Ready to merge")
     end
 
     test "working in the question card does not read the findings again", %{conn: conn, task: task, review_run: run} do
@@ -4898,7 +4974,7 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, _second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Who owns it?"})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      reject(&Pipeline.list_review_findings/1)
+      reject(&Pipeline.list_findings/1)
 
       for typed <- ["Y", "Ye", "Yes", "Yes, in this branch"] do
         view |> form("#answer-question-form", %{"answer" => typed}) |> render_change()
@@ -4912,55 +4988,54 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#question-prompt", "Who owns it?")
     end
 
-    test "lists every finding, worst first, with where it is", %{
+    test "the list puts the worst finding first, each with where it is, and opens it", %{
       conn: conn,
       task: task,
-      decide_as_advised: decide_as_advised
+      code: code
     } do
-      _decided = decide_as_advised.()
+      {:ok, _nit} = Pipeline.save_finding(task, %{code | key: "naming-nit", title: "Poor variable name", severity: :nit})
+      {:ok, _blocker} = Pipeline.save_finding(task, code)
+
+      {:ok, _screen} =
+        Pipeline.save_finding(task, %{
+          key: "send-twice",
+          kind: :screen,
+          raised_by: :explorer,
+          title: "Send stays enabled",
+          problem: "A second click sends the same comments twice.",
+          screen: "Engineer tab, Diff toolbar",
+          steps: ["Click Send", "Click it again"],
+          fix: "Disable Send until the server answers.",
+          why: "Two runs for one round.",
+          rule: "A round is sent once.",
+          severity: :major,
+          recommendation: :fix,
+          places: [%{screen: "Engineer tab, Diff toolbar", label: "Send button"}],
+          evidence: [%{name: "deliveries", kind: :log, text: "2 deliveries for one round"}]
+        })
+
+      {:ok, _pass} = Pipeline.save_review(task)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      assert has_element?(view, "#review-findings")
-      assert has_element?(view, "#finding-unhandled-nil", "Nil is not handled")
-      assert has_element?(view, "#finding-naming-nit", "Poor variable name")
-      assert has_element?(view, "[data-qa='review_finding_tally']", "1 to fix · 1 dismissed")
-    end
+      assert ["finding-unhandled-nil", "finding-send-twice", "finding-naming-nit"] =
+               view |> render() |> Floki.parse_fragment!() |> Floki.attribute("[data-qa='review_finding']", "id")
 
-    test "the worst finding is the one open in the reading pane", %{
-      conn: conn,
-      task: task,
-      decide_as_advised: decide_as_advised
-    } do
-      _decided = decide_as_advised.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
+      assert has_element?(view, "#finding-unhandled-nil", "lib/rail/example.ex:12")
+      assert has_element?(view, "#finding-send-twice", "Engineer tab, Diff toolbar")
+      assert has_element?(view, "#finding-unhandled-nil[aria-current='true']")
       assert has_element?(view, "[data-qa='review_finding_detail']", "Nil is not handled")
-      assert has_element?(view, "[data-qa='finding_position']", "1 of 2")
-      assert has_element?(view, "[data-qa='finding_location']", "lib/rail/example.ex:12")
-      assert has_element?(view, "[data-qa='finding_recommendation']", "recommends fixing this")
+      assert has_element?(view, "[data-qa='finding_position']", "1 of 3")
     end
 
-    test "picking a finding reads it", %{conn: conn, task: task, decide_as_advised: decide_as_advised} do
-      _decided = decide_as_advised.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("#finding-naming-nit") |> render_click()
-
-      assert has_element?(view, "[data-qa='review_finding_detail']", "Poor variable name")
-      assert has_element?(view, "[data-qa='finding_position']", "2 of 2")
-      assert has_element?(view, "[data-qa='finding_dismissed']", "Dismissed")
-      assert has_element?(view, "[data-qa='finding_recommendation']", "recommends leaving this")
-    end
-
-    test "the reader walks the findings without going back to the list", %{
+    test "the reader walks the findings with Previous and Next, without going back to the list", %{
       conn: conn,
       task: task,
-      decide_as_advised: decide_as_advised
+      code: code
     } do
-      _decided = decide_as_advised.()
+      {:ok, _blocker} = Pipeline.save_finding(task, code)
+      {:ok, _nit} = Pipeline.save_finding(task, %{code | key: "naming-nit", title: "Poor variable name", severity: :nit})
+      {:ok, _pass} = Pipeline.save_review(task)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert has_element?(view, "#finding-previous[disabled]")
@@ -4968,6 +5043,8 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("#finding-next") |> render_click()
 
       assert has_element?(view, "[data-qa='review_finding_detail']", "Poor variable name")
+      assert has_element?(view, "[data-qa='finding_position']", "2 of 2")
+      assert has_element?(view, "#finding-naming-nit[aria-current='true']")
       assert has_element?(view, "#finding-next[disabled]")
 
       view |> element("#finding-previous") |> render_click()
@@ -4976,19 +5053,15 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     # A finding names a line; the change it points at lives on the engineer's tab,
-    # so the panel shows the one hunk and links to the rest.
-    test "a finding shows the change it points at and links to the whole diff", %{
+    # so the pane shows the one hunk and links to that file in the whole diff.
+    test "a finding shows the change it points at and opens that file in the Engineer tab's diff", %{
       conn: conn,
       task: task,
-      raised: raised
+      engineer_role: engineer_role,
+      code: code
     } do
       File.mkdir_p!(Path.join(task.worktree_path, "lib/rail"))
-
-      File.write!(
-        Path.join(task.worktree_path, "lib/rail/example.ex"),
-        Enum.map_join(1..20, "", &"line #{&1}\n")
-      )
-
+      File.write!(Path.join(task.worktree_path, "lib/rail/example.ex"), Enum.map_join(1..20, "", &"line #{&1}\n"))
       git!(task.worktree_path, ["add", "."])
       git!(task.worktree_path, ["commit", "-m", "before"])
       git!(task.worktree_path, ["update-ref", "refs/remotes/origin/main", "HEAD"])
@@ -5005,303 +5078,30 @@ defmodule RailWeb.TaskLiveTest do
       git!(task.worktree_path, ["add", "."])
       git!(task.worktree_path, ["commit", "-m", "the change under review"])
 
-      for finding <- raised, do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
+      {:ok, _saved} = Pipeline.save_finding(task, code)
+      {:ok, _pass} = Pipeline.save_review(task)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(view, "[data-qa='finding_diff']", "lib/rail/example.ex")
       assert has_element?(view, "[data-qa='diff_line_row']", "the line the finding points at")
-      assert has_element?(view, "#finding-open-in-diff", "Open diff")
-    end
 
-    test "the suggested fix is set apart from the reasoning", %{conn: conn, task: task, raised: raised} do
-      for finding <- List.update_at(raised, 0, &Map.put(&1, :suggestion, "Match the empty map first.")),
-          do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
+      assert has_element?(
+               view,
+               ~s(#finding-open-in-diff[href="/tasks/#{task.id}?tab=#{engineer_role.id}&file=lib%2Frail%2Fexample.ex"]),
+               "Open in diff"
+             )
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#finding-open-in-diff") |> render_click()
 
-      assert has_element?(view, "[data-qa='finding_suggestion']", "Suggested fix")
-      assert has_element?(view, "[data-qa='finding_suggestion']", "Match the empty map first.")
-    end
-
-    test "a finding the reviewer checked again shows as fixed", %{conn: conn, task: task, raised: raised} do
-      for finding <- List.update_at(raised, 0, &%{&1 | status: :fixed}),
-          do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      # A finished finding is nobody's to rule on, so it sits under what is, and
-      # reading it is something the human asks for.
-      view |> element("#finding-unhandled-nil") |> render_click()
-
-      assert has_element?(view, "[data-qa='finding_fixed']", "Fixed")
-      assert has_element?(view, "[data-qa='review_finding'][data-state='fixed']")
-    end
-
-    test "a finding the engineer did not fix says so", %{
-      conn: conn,
-      task: task,
-      raised: raised,
-      decide_as_advised: decide_as_advised
-    } do
-      _decided = decide_as_advised.()
-
-      # The later pass keeps the ruling and only restates what it found.
-      for finding <- List.update_at(raised, 0, &%{&1 | status: :not_fixed}),
-          do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "[data-qa='finding_not_fixed']", "Still not fixed")
-      assert has_element?(view, "#send-findings-to-engineer")
-    end
-
-    test "the human overrules a recommendation from the reading pane", %{
-      conn: conn,
-      task: task,
-      decide_as_advised: decide_as_advised
-    } do
-      _decided = decide_as_advised.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "[data-qa='review_finding'][data-state='to_fix']", "Nil is not handled")
-
-      view |> element("#decide-skip-unhandled-nil") |> render_click()
-
-      assert has_element?(view, "[data-qa='review_finding'][data-state='dismissed']", "Nil is not handled")
-      assert has_element?(view, "[data-qa='finding_recommendation']", "You dismissed it.")
-      assert has_element?(view, "[data-qa='review_finding_tally']", "2 dismissed")
-    end
-
-    test "the human takes on a finding the reviewer would have left", %{
-      conn: conn,
-      task: task,
-      decide_as_advised: decide_as_advised
-    } do
-      _decided = decide_as_advised.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("#finding-naming-nit") |> render_click()
-      view |> element("#decide-fix-naming-nit") |> render_click()
-
-      assert has_element?(view, "[data-qa='finding_recommendation']", "You chose to fix it.")
-      assert has_element?(view, "#send-findings-to-engineer", "Send 2 back to engineer")
-    end
-
-    test "outstanding findings go back to the engineer", %{conn: conn, task: task, decide_as_advised: decide_as_advised} do
-      _decided = decide_as_advised.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "#send-findings-to-engineer", "Send 1 back to engineer")
-      refute has_element?(view, "#send-to-qa")
-
-      view |> element("#send-findings-to-engineer") |> render_click()
-
-      assert %Task{stage: :engineer} = Repo.reload!(task)
-    end
-
-    test "a change with nothing outstanding offers QA instead", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#review-pending-title", "Nothing to fix")
-      assert has_element?(view, "#send-to-qa")
-      refute has_element?(view, "#send-findings-to-engineer")
-
-      view |> element("#send-to-qa") |> render_click()
-
-      assert %Task{stage: :qa} = Repo.reload!(task)
-    end
-
-    test "a clean review of code that has since gone back to engineer no longer invites sending it on", %{
-      conn: conn,
-      task: task,
-      role: role
-    } do
-      {:ok, _back} = Pipeline.update_task(task, %{stage: :engineer})
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
-
-      assert has_element?(view, "#review-pending-title", "This pass was of earlier code")
-      refute has_element?(view, "#review-pending", "Send it to QA")
-    end
-
-    test "dismissing the last outstanding finding is what opens QA", %{
-      conn: conn,
-      task: task,
-      decide_as_advised: decide_as_advised
-    } do
-      _decided = decide_as_advised.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      refute has_element?(view, "#send-to-qa")
-
-      view |> element("#decide-skip-unhandled-nil") |> render_click()
-
-      assert has_element?(view, "#send-to-qa")
-      refute has_element?(view, "#send-findings-to-engineer")
-    end
-
-    test "a reviewer still reading offers neither button", %{conn: conn, task: task, review_run: run, raised: raised} do
-      for finding <- raised, do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
-      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      refute has_element?(view, "#send-findings-to-engineer")
-      refute has_element?(view, "#send-to-qa")
-      refute has_element?(view, "[data-qa='decide_fix']")
-    end
-
-    # Two people watching the same review both see each finding the moment the
-    # reviewer saves it, and neither can rule on it until the review finishes.
-    test "a finding saved mid-review shows in every open tab, with nothing to rule on yet", %{
-      conn: conn,
-      task: task,
-      review_run: run,
-      raised: [first | _rest]
-    } do
-      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-
-      assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(one, "#review-pending-title", "Reading the change")
-
-      {:ok, _saved} = Pipeline.save_review_finding(task, first)
-
-      for view <- [one, two] do
-        _settled = render(view)
-        assert has_element?(view, "#finding-unhandled-nil", "Nil is not handled")
-        assert has_element?(view, "#review-still-reviewing", "Still reviewing. New findings appear here.")
-        assert has_element?(view, "[data-qa='review_finding_tally']", "1 so far")
-        assert has_element?(view, "[data-qa='finding_locked']", "Rule on it once the review finishes")
-        refute has_element?(view, "[data-qa='review_finding_needs_call']")
-        refute has_element?(view, "[data-qa='finding_undecided']")
-        refute has_element?(view, "[data-qa='decide_fix']")
-      end
-    end
-
-    test "a review stopped partway keeps what it saved, and says how to pick it up", %{
-      conn: conn,
-      task: task,
-      review_run: run,
-      raised: raised
-    } do
-      for finding <- raised, do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
-      {:ok, _stopped} = Pipeline.update_run(run, %{status: :finished, stage_outcome: :in_progress})
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#finding-unhandled-nil")
-      assert has_element?(view, "#review-stopped-short", "Stopped before it finished. Message the reviewer")
-      assert has_element?(view, "[data-qa='review_finding_needs_call']")
-      assert has_element?(view, "[data-qa='review_finding_tally']", "2 to decide")
-      refute has_element?(view, "#review-still-reviewing")
-      refute has_element?(view, "[data-qa='finding_locked']")
-    end
-
-    test "a reviewer still reading says so rather than showing an empty report", %{
-      conn: conn,
-      task: task,
-      review_run: run
-    } do
-      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#review-pending-title", "Reading the change")
-      refute has_element?(view, "#send-to-qa")
-    end
-
-    # A run that stopped without reporting and one that reported nothing look the
-    # same on the page, and only one of them is a change anybody should send on.
-    test "a reviewer that stopped without reporting does not read as a clean review", %{
-      conn: conn,
-      task: task,
-      review_run: run
-    } do
-      {:ok, _stopped} = Pipeline.update_run(run, %{status: :finished, stage_outcome: :in_progress})
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#review-pending-title", "No findings yet")
-      refute has_element?(view, "#send-to-qa")
-    end
-
-    test "a finding saved while the page is open takes Send to QA away without a reload", %{
-      conn: conn,
-      task: task,
-      raised: raised
-    } do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "#send-to-qa")
-
-      for finding <- raised, do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
-
-      _settled = render(view)
-      refute has_element?(view, "#send-to-qa")
-      assert has_element?(view, "[data-qa='review_finding_needs_call']")
-    end
-
-    # Clicked in the moment before a save's broadcast lands, the refusal is said.
-    test "a finding raised underneath the page stops it going to QA", %{conn: conn, task: task, raised: raised} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "#send-to-qa")
-
-      for finding <- raised, do: Repo.insert!(ReviewFinding.changeset(%ReviewFinding{task_id: task.id}, finding))
-      view |> element("#send-to-qa") |> render_click()
-
-      assert has_element?(view, "#review-error", "no decision yet")
-      assert %Task{stage: :review} = Repo.reload!(task)
-    end
-
-    test "findings dismissed underneath the page leave nothing to send back", %{
-      conn: conn,
-      task: task,
-      decide_as_advised: decide_as_advised
-    } do
-      findings = decide_as_advised.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      for finding <- findings, do: {:ok, _dismissed} = Pipeline.decide_review_finding(system_scope(), finding, :skip)
-      view |> element("#send-findings-to-engineer") |> render_click()
-
-      assert has_element?(view, "#review-error", "nothing left for the engineer to fix")
-    end
-
-    test "a run started underneath the page holds the decision", %{
-      conn: conn,
-      task: task,
-      review_run: run,
-      raised: raised
-    } do
-      for finding <- raised, do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      {:ok, _running} = Pipeline.update_run(run, %{status: :running})
-      view |> element("#decide-skip-unhandled-nil") |> render_click()
-
-      assert has_element?(view, "#review-error", "still running on this task")
-    end
-
-    test "a task moved on underneath the page says where it went", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      {:ok, _moved} = Pipeline.update_task(task, %{stage: :qa})
-      view |> element("#send-to-qa") |> render_click()
-
-      assert has_element?(view, "#review-error", "This task is at QA, not review.")
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{engineer_role.id}&file=#{"lib/rail/example.ex"}")
     end
 
     # Only a window around the line the finding names is shown, so the pane has
-    # to say what it left out rather than let the reader take it for the whole
-    # change.
-    test "a hunk says what it left out", %{conn: conn, task: task} do
+    # to say what it left out rather than let the reader take it for the whole change.
+    test "a hunk says what it left out", %{conn: conn, task: task, code: code} do
       File.mkdir_p!(Path.join(task.worktree_path, "lib/rail"))
-      before = Enum.map_join(1..80, "", &"line #{&1}\n")
-      File.write!(Path.join(task.worktree_path, "lib/rail/example.ex"), before)
+      File.write!(Path.join(task.worktree_path, "lib/rail/example.ex"), Enum.map_join(1..80, "", &"line #{&1}\n"))
       git!(task.worktree_path, ["add", "."])
       git!(task.worktree_path, ["commit", "-m", "before"])
       git!(task.worktree_path, ["update-ref", "refs/remotes/origin/main", "HEAD"])
@@ -5318,162 +5118,195 @@ defmodule RailWeb.TaskLiveTest do
       git!(task.worktree_path, ["add", "."])
       git!(task.worktree_path, ["commit", "-m", "the change under review"])
 
-      for finding <- [
-            %{
-              key: "long-hunk",
-              title: "A long change",
-              file: "lib/rail/example.ex",
-              line: 20,
-              severity: :major,
-              recommendation: :fix,
-              status: :open
-            }
-          ],
-          do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
+      {:ok, _saved} = Pipeline.save_finding(task, %{code | key: "long-hunk", title: "A long change", line: 20})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(view, "[data-qa='finding_other_hunks']", "more lines")
-      assert has_element?(view, "[data-qa='finding_other_hunks']", "1 more other change")
+      assert has_element?(view, "[data-qa='finding_other_hunks']", "1 more other change in this file.")
     end
 
-    # Severity is the first thing a reader takes off the list, so every grade has
-    # to be distinguishable - and a finding with no line, or no file at all, is
-    # still a finding.
-    test "each grade of finding reads as itself, wherever it is", %{conn: conn, task: task} do
-      for finding <- [
-            %{key: "a-major", title: "A major", file: "lib/a.ex", severity: :major, recommendation: :fix},
-            %{key: "a-minor", title: "A minor", severity: :minor, recommendation: :fix},
-            %{key: "a-nit", title: "A nit", file: "lib/b.ex", line: 3, severity: :nit, recommendation: :skip},
-            %{key: "was-fixed", title: "Fixed since", severity: :major, recommendation: :fix, status: :fixed}
-          ],
-          do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
+    # Severity is the first thing a reader takes off the list, so every grade has to be distinguishable.
+    test "each severity reads as itself, on its row and in the pane", %{conn: conn, task: task, code: code} do
+      for severity <- [:blocker, :major, :minor, :nit],
+          do:
+            {:ok, _saved} =
+              Pipeline.save_finding(task, %{code | key: "a-#{severity}", title: "A #{severity}", severity: severity})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      assert has_element?(view, "#finding-a-major", "lib/a.ex")
-      assert has_element?(view, "#finding-a-minor", "no file")
-      # A finding checked again and found fixed says so instead of where it was,
-      # and one with nowhere to point has nowhere to print.
-      assert has_element?(view, "#finding-was-fixed", "fixed ·")
+      for {severity, dot} <- [blocker: "bg-red-500", major: "bg-amber-500", minor: "bg-amber-400", nit: "bg-slate-400"] do
+        view |> element("#finding-a-#{severity}") |> render_click()
 
-      view |> element("#finding-a-minor") |> render_click()
-      assert has_element?(view, "[data-qa='review_finding_detail']", "Minor")
-
-      view |> element("#finding-a-major") |> render_click()
-      assert has_element?(view, "[data-qa='review_finding_detail']", "Major")
-      assert has_element?(view, "[data-qa='finding_location']", "lib/a.ex")
+        assert has_element?(view, "#finding-a-#{severity} > span.#{dot}")
+        assert has_element?(view, "#review-finding-detail h2", "A #{severity}")
+        assert has_element?(view, "#review-finding-detail span", Atom.to_string(severity))
+      end
     end
 
-    # The button was drawn when nothing was outstanding, and something became
-    # outstanding while the reader was looking at it.
-    test "a finding put back underneath the page stops it going to QA", %{conn: conn, task: task, raised: raised} do
-      findings =
-        for finding <- raised do
-          {:ok, saved} = Pipeline.save_review_finding(task, finding)
-          saved
-        end
+    # Two people watching the same review both see each finding the moment the
+    # lead saves it, and neither can rule on it until the round finishes.
+    test "a finding saved mid-round shows in every open tab, with nothing to rule on yet", %{
+      conn: conn,
+      task: task,
+      review_run: run,
+      code: code
+    } do
+      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
 
-      Enum.each(findings, fn finding ->
-        {:ok, _skipped} = Pipeline.decide_review_finding(system_scope(), finding, :skip)
-      end)
+      assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(one, "#review-no-findings", "Findings appear here as the round saves them.")
+
+      {:ok, _saved} = Pipeline.save_finding(task, code)
+
+      for view <- [one, two] do
+        _settled = render(view)
+        assert has_element?(view, "#finding-unhandled-nil", "Nil is not handled")
+        assert has_element?(view, "[data-qa='review_finding_tally']", "1 so far · rule once round 1 finishes")
+        assert has_element?(view, "[data-qa='finding_state']", "Rule on it once the round finishes")
+        refute has_element?(view, "[data-qa='review_finding_state']", "Needs your call")
+        refute has_element?(view, "[data-qa='decide_fix']")
+      end
+    end
+
+    test "a finished round that found nothing says so", %{conn: conn, task: task} do
+      {:ok, _pass} = Pipeline.save_review(task)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "#send-to-qa")
 
-      [kept | _rest] = Pipeline.list_review_findings(task)
-      {:ok, _kept} = Pipeline.decide_review_finding(system_scope(), kept, :fix)
-
-      view |> element("#send-to-qa") |> render_click()
-
-      assert has_element?(view, "#review-error", "still outstanding")
+      assert has_element?(view, "#review-no-findings", "No findings.")
+      assert has_element?(view, "#start-fix-round", "Finish review")
     end
 
+    # A run that stopped without closing its round and one that found nothing look the
+    # same on the list, and only one of them is a review anybody should finish.
+    test "a run that stopped without closing its round offers no Finish review", %{
+      conn: conn,
+      task: task,
+      review_run: run
+    } do
+      {:ok, _stopped} = Pipeline.update_run(run, %{status: :finished, stage_outcome: :in_progress})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#review-no-findings", "No findings.")
+      refute has_element?(view, "#start-fix-round")
+    end
+
+    # A finding is inserted rather than saved, so no broadcast reaches the page and only the turn finishing can.
     test "a turn finishing re-reads the findings it just recorded", %{
       conn: conn,
       task: task,
       review_run: run,
-      raised: raised
+      code: code
     } do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "#review-pending-title", "Nothing to fix")
+      assert has_element?(view, "#review-no-findings")
 
-      for finding <- raised, do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
+      Repo.insert!(Finding.raise_changeset(%Finding{task_id: task.id, round: 1}, code))
       send(view.pid, {:os_process_finished, run, %{}})
 
       _settled = render(view)
       assert has_element?(view, "[data-qa='review_finding_detail']", "Nil is not handled")
     end
 
-    test "ruling on a finding keeps the list in place and reads the next one needing a call", %{
+    test "a run started underneath the page holds the ruling", %{
       conn: conn,
-      task: task
+      task: task,
+      review_run: run,
+      code: code
     } do
-      for finding <- [
-            %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-            %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open},
-            %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
-          ],
-          do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
+      {:ok, _saved} = Pipeline.save_finding(task, code)
+      {:ok, _pass} = Pipeline.save_review(task)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      view |> element("#decide-fix-a-blocker") |> render_click()
+      {:ok, _running} = Pipeline.update_run(run, %{status: :running})
+      view |> element("#decide-skip-unhandled-nil") |> render_click()
 
-      assert ["finding-a-blocker", "finding-a-major", "finding-a-nit"] =
-               view |> render() |> Floki.parse_fragment!() |> Floki.attribute("[data-qa='review_finding']", "id")
-
-      assert has_element?(view, "#finding-a-major[aria-current='true']")
-      assert has_element?(view, "[data-qa='review_finding_detail']", "A major")
-      assert has_element?(view, "[data-qa='finding_position']", "2 of 3")
+      assert has_element?(view, "#review-error", "Something is still running on this task.")
+      assert [%Finding{decision: nil}] = Pipeline.list_findings(task)
     end
 
-    test "a dismissed finding keeps its row", %{conn: conn, task: task} do
-      for finding <- [
-            %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-            %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
-          ],
-          do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
+    test "a task moved on underneath the page says where it went", %{conn: conn, task: task, code: code} do
+      {:ok, _saved} = Pipeline.save_finding(task, code)
+      {:ok, _pass} = Pipeline.save_review(task)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :merged})
+      view |> element("#decide-fix-unhandled-nil") |> render_click()
+
+      assert has_element?(view, "#review-error", "This task is at Merged, not Review.")
+    end
+
+    # Clicked in the moment before a save's broadcast lands, the refusal is said.
+    test "a finding raised underneath the page holds Start fix round", %{conn: conn, task: task, code: code} do
+      {:ok, finding} = Pipeline.save_finding(task, code)
+      {:ok, _pass} = Pipeline.save_review(task)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), finding, :fix)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      refute has_element?(view, "#start-fix-round[disabled]")
+
+      Repo.insert!(Finding.raise_changeset(%Finding{task_id: task.id, round: 1}, %{code | key: "raised-late"}))
+      view |> element("#start-fix-round") |> render_click()
+
+      assert has_element?(view, "#review-error", "Some findings have no ruling yet.")
+    end
+
+    test "ruling on a finding keeps the list in place and reads the next one needing a call", %{
+      conn: conn,
+      task: task,
+      code: code
+    } do
+      for {key, severity} <- [{"a-blocker", :blocker}, {"a-major", :major}, {"a-nit", :nit}],
+          do: {:ok, _saved} = Pipeline.save_finding(task, %{code | key: key, title: key, severity: severity})
+
+      {:ok, _pass} = Pipeline.save_review(task)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       view |> element("#decide-skip-a-blocker") |> render_click()
 
-      assert ["finding-a-blocker", "finding-a-nit"] =
+      assert ["finding-a-blocker", "finding-a-major", "finding-a-nit"] =
                view |> render() |> Floki.parse_fragment!() |> Floki.attribute("[data-qa='review_finding']", "id")
 
-      assert has_element?(view, "#finding-a-blocker[data-state='dismissed']")
+      assert has_element?(
+               view,
+               "#finding-a-blocker[data-state='dismissed'] [data-qa='review_finding_state']",
+               "Don't fix"
+             )
+
+      assert has_element?(view, "#finding-a-major[aria-current='true']")
+      assert has_element?(view, "[data-qa='review_finding_detail']", "a-major")
+      assert has_element?(view, "[data-qa='finding_position']", "2 of 3")
     end
 
-    test "the list marks what still needs a call", %{conn: conn, task: task} do
-      [blocker, _nit] =
-        for finding <- [
-              %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-              %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
-            ] do
-          {:ok, saved} = Pipeline.save_review_finding(task, finding)
-          saved
-        end
+    test "with nothing needing a call below, the next one is above", %{conn: conn, task: task, code: code} do
+      for {key, severity} <- [{"a-blocker", :blocker}, {"a-nit", :nit}],
+          do: {:ok, _saved} = Pipeline.save_finding(task, %{code | key: key, title: key, severity: severity})
 
-      {:ok, _decided} = Pipeline.decide_review_finding(system_scope(), blocker, :fix)
+      {:ok, _pass} = Pipeline.save_review(task)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      assert has_element?(view, "#finding-a-nit [data-qa='review_finding_needs_call']", "Needs your call")
-      refute has_element?(view, "#finding-a-blocker [data-qa='review_finding_needs_call']")
+      view |> element("#finding-a-nit") |> render_click()
+      view |> element("#decide-fix-a-nit") |> render_click()
+
+      assert has_element?(view, "#finding-a-blocker[aria-current='true']")
     end
 
-    test "the last ruling stays where it is and lets the change go on", %{conn: conn, task: task} do
+    test "the last ruling stays where it is and lets the fix round start", %{conn: conn, task: task, code: code} do
       [blocker, _nit] =
-        for finding <- [
-              %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-              %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
-            ] do
-          {:ok, saved} = Pipeline.save_review_finding(task, finding)
+        for {key, severity} <- [{"a-blocker", :blocker}, {"a-nit", :nit}] do
+          {:ok, saved} = Pipeline.save_finding(task, %{code | key: key, title: key, severity: severity})
           saved
         end
 
-      {:ok, _decided} = Pipeline.decide_review_finding(system_scope(), blocker, :fix)
+      {:ok, _pass} = Pipeline.save_review(task)
+      {:ok, _decided} = Pipeline.decide_finding(system_scope(), blocker, :fix)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -5481,22 +5314,19 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("#decide-skip-a-nit") |> render_click()
 
       assert has_element?(view, "#finding-a-nit[aria-current='true']")
-      refute has_element?(view, "[data-qa='review_finding_needs_call']")
-      assert has_element?(view, "#send-findings-to-engineer")
+      refute has_element?(view, "[data-qa='review_finding_state']", "Needs your call")
+      assert has_element?(view, "#start-fix-round:not([disabled])", "Start fix round 1")
     end
 
-    test "changing a ruling leaves the reader where they are", %{conn: conn, task: task} do
+    test "changing a ruling leaves the reader where they are", %{conn: conn, task: task, code: code} do
       [blocker, _major, _nit] =
-        for finding <- [
-              %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-              %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open},
-              %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
-            ] do
-          {:ok, saved} = Pipeline.save_review_finding(task, finding)
+        for {key, severity} <- [{"a-blocker", :blocker}, {"a-major", :major}, {"a-nit", :nit}] do
+          {:ok, saved} = Pipeline.save_finding(task, %{code | key: key, title: key, severity: severity})
           saved
         end
 
-      {:ok, _decided} = Pipeline.decide_review_finding(system_scope(), blocker, :fix)
+      {:ok, _pass} = Pipeline.save_review(task)
+      {:ok, _decided} = Pipeline.decide_finding(system_scope(), blocker, :fix)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -5508,29 +5338,12 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#finding-a-blocker[aria-current='true'][data-state='dismissed']")
     end
 
-    test "with nothing needing a call below, the next one is above", %{conn: conn, task: task} do
-      for finding <- [
-            %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-            %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
-          ],
-          do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("#finding-a-nit") |> render_click()
-      view |> element("#decide-fix-a-nit") |> render_click()
-
-      assert has_element?(view, "#finding-a-blocker[aria-current='true']")
-    end
-
     # A double click's second click lands on the finding just moved to, which nobody has read.
-    test "a double click rules only the finding that was read", %{conn: conn, task: task} do
-      for finding <- [
-            %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-            %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open},
-            %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
-          ],
-          do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
+    test "a double click rules only the finding that was read", %{conn: conn, task: task, code: code} do
+      for {key, severity} <- [{"a-blocker", :blocker}, {"a-major", :major}, {"a-nit", :nit}],
+          do: {:ok, _saved} = Pipeline.save_finding(task, %{code | key: key, title: key, severity: severity})
+
+      {:ok, _pass} = Pipeline.save_review(task)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -5538,17 +5351,20 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("#decide-fix-a-major") |> render_click()
 
       assert [%{key: "a-blocker", decision: :fix}, %{key: "a-major", decision: nil}, %{key: "a-nit", decision: nil}] =
-               Pipeline.list_review_findings(task)
+               Pipeline.list_findings(task)
 
-      assert has_element?(view, "#finding-a-major[aria-current='true'] [data-qa='review_finding_needs_call']")
+      assert has_element?(
+               view,
+               "#finding-a-major[aria-current='true'] [data-qa='review_finding_state']",
+               "Needs your call"
+             )
     end
 
-    test "the finding moved to can be ruled on once it has been seen", %{conn: conn, task: task} do
-      for finding <- [
-            %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-            %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open}
-          ],
-          do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
+    test "the finding moved to can be ruled on once it has been seen", %{conn: conn, task: task, code: code} do
+      for {key, severity} <- [{"a-blocker", :blocker}, {"a-major", :major}],
+          do: {:ok, _saved} = Pipeline.save_finding(task, %{code | key: key, title: key, severity: severity})
+
+      {:ok, _pass} = Pipeline.save_review(task)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -5556,12 +5372,11 @@ defmodule RailWeb.TaskLiveTest do
       Process.sleep(400)
       view |> element("#decide-fix-a-major") |> render_click()
 
-      assert [%{key: "a-blocker", decision: :fix}, %{key: "a-major", decision: :fix}] =
-               Pipeline.list_review_findings(task)
+      assert [%{key: "a-blocker", decision: :fix}, %{key: "a-major", decision: :fix}] = Pipeline.list_findings(task)
     end
 
-    test "the row being read keeps itself in view", %{conn: conn, task: task, raised: raised} do
-      for finding <- raised, do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
+    test "the row being read keeps itself in view", %{conn: conn, task: task, code: code} do
+      for key <- ["a-blocker", "a-nit"], do: {:ok, _saved} = Pipeline.save_finding(task, %{code | key: key})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -5569,734 +5384,34 @@ defmodule RailWeb.TaskLiveTest do
                view |> render() |> Floki.parse_fragment!() |> Floki.attribute("[data-qa='review_finding']", "phx-hook")
     end
 
-    test "neither send button shows while a finding still needs a call", %{conn: conn, task: task} do
-      for finding <- [
-            %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-            %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
-          ],
-          do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      refute has_element?(view, "#send-to-qa")
-
-      view |> element("#decide-fix-a-blocker") |> render_click()
-
-      refute has_element?(view, "#send-findings-to-engineer")
-    end
-  end
-
-  describe "the qa stage" do
-    setup %{project: project, task: task} do
-      {:ok, role} = Roles.get_role(project_id: project.id, stage: :qa)
-
-      {:ok, engineer_role} = Roles.get_role(project_id: project.id, stage: :engineer)
-
-      {:ok, task} = Pipeline.update_task(task, %{stage: :qa, worktree_path: create_temp_git_repo()})
-
-      {:ok, _engineer_run} =
-        Pipeline.create_run(%{
-          task_id: task.id,
-          role_id: engineer_role.id,
-          status: :finished,
-          stage_outcome: :done,
-          conversation_id: "sess_qa_stage_engineer",
-          started_at: DateTime.utc_now()
-        })
-
-      {:ok, qa_run} =
-        Pipeline.create_run(%{
-          task_id: task.id,
-          role_id: role.id,
-          status: :finished,
-          stage_outcome: :done,
-          conversation_id: "sess_qa_stage",
-          started_at: DateTime.utc_now()
-        })
-
-      qa_dir = Path.join(task.scratch_path, "qa")
-      File.mkdir_p!(Path.join(qa_dir, "evidence"))
-      File.write!(Path.join([qa_dir, "evidence", "total.png"]), "png bytes")
-
-      File.write!(Path.join(qa_dir, "TLV-1.json"), """
-      {"verdict": "fail",
-       "summary": "The bill saves but its total is wrong.",
-       "not_checked": "The Plaid callback, which needs a real bank."}
-      """)
-
-      raised = [
-        %{
-          key: "total-unrounded",
-          title: "The bill total renders as $1234.5",
-          check: "A bill's total reads as money on the bill page",
-          criterion: "Totals read as money",
-          screen: "/bills/new",
-          steps: "1. Open a new bill\n2. Enter 1234.50",
-          expected: "$1,234.50",
-          observed: "$1234.5",
-          detail: "Every bill screen reads this way.",
-          suggestion: "Format it with Money.to_string/1.",
-          severity: :blocker,
-          recommendation: :fix,
-          status: :open,
-          evidence: [%{name: "the total as rendered", kind: :screenshot, path: "evidence/total.png"}]
-        },
-        %{
-          key: "spacing-nit",
-          title: "Buttons sit too close together",
-          check: "The bill form looks like the rest of the app",
-          severity: :nit,
-          recommendation: :skip,
-          status: :open,
-          caused_by_change: false,
-          evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-        }
-      ]
-
-      # Nothing is decided until a person decides it, so a test that is not about
-      # deciding rules the way QA advised and changes only its own bit.
-      decide_as_advised = fn ->
-        findings =
-          for finding <- raised do
-            {:ok, saved} = Pipeline.save_qa_finding(task, finding)
-            saved
-          end
-
-        Enum.map(findings, fn finding ->
-          {:ok, decided} = Pipeline.decide_qa_finding(system_scope(), finding, finding.recommendation)
-          decided
-        end)
-      end
-
-      %{task: task, role: role, qa_run: qa_run, raised: raised, decide_as_advised: decide_as_advised}
-    end
-
-    test "working in the question card does not read the findings, checklist or evidence again", %{
+    # Leaving a suppressed finding alone is what its calibration rule already did, so Fix is the only call.
+    test "a finding a calibration rule suppressed offers Fix only, and names the rule", %{
       conn: conn,
+      project: project,
       task: task,
-      qa_run: run
+      code: code
     } do
-      {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
-      blocked = Repo.preload(blocked, task: :issue)
-
-      {:ok, _first} =
-        Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which browser?", options: ["Chrome", "Safari"]})
-
-      {:ok, _second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which account?"})
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      reject(&Pipeline.list_qa_findings/1)
-      reject(&Pipeline.list_qa_evidence/1)
-      reject(&Pipeline.read_qa_checklist/1)
-      reject(&Pipeline.read_qa_report/1)
-
-      for typed <- ["C", "Ch", "Chrome", "Chrome, at 1280 wide"] do
-        view |> form("#answer-question-form", %{"answer" => typed}) |> render_change()
-        assert has_element?(view, "#answer-textarea", typed)
-      end
-
-      view |> element("#question-option-1") |> render_click()
-      assert has_element?(view, "#question-option-1.bg-blue-100")
-
-      view |> element("#question-tab-1") |> render_click()
-      assert has_element?(view, "#question-prompt", "Which account?")
-    end
-
-    test "the checklist keeps filling under a draft, and the draft stays", %{conn: conn, task: task, qa_run: run} do
-      {:ok, running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-
-      {:ok, _question} =
-        running |> Repo.preload(task: :issue) |> Pipeline.register_question(%DetectedQuestion{prompt: "Which browser?"})
-
-      {:ok, _checklist} = Pipeline.write_qa_checklist(task, [%{"key" => "totals", "title" => "The totals agree"}])
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> form("#answer-question-form", %{"answer" => "Half typed"}) |> render_change()
-
-      {:ok, _marked} = Pipeline.record_qa_check(task, "totals", "fail", "off by a cent")
-      Pipeline.append_run_events(run.id, nil, [~s([qa] check "totals" fail)])
-      _settled = render(view)
-
-      assert has_element?(view, "[data-qa='qa_checklist_progress']", "1 of 1")
-      assert has_element?(view, "#answer-textarea", "Half typed")
-    end
-
-    test "lists every finding with QA's verdict over the top", %{
-      conn: conn,
-      task: task,
-      decide_as_advised: decide_as_advised
-    } do
-      _decided = decide_as_advised.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#qa-sidebar")
-      assert has_element?(view, "[data-qa='qa_verdict_label']", "Failed")
-      assert has_element?(view, "[data-qa='qa_verdict']", "The bill saves but its total is wrong.")
-      assert has_element?(view, "#qa-finding-total-unrounded", "The bill total renders as $1234.5")
-      assert has_element?(view, "#qa-finding-spacing-nit", "Buttons sit too close together")
-
-      # The verdict is the first row of that list rather than a banner over it,
-      # so the rest of what QA made of the change opens where a finding does.
-      refute has_element?(view, "[data-qa='qa_not_checked']")
-
-      view |> element("#qa-verdict") |> render_click()
-
-      assert has_element?(view, "#qa-report-detail [data-qa='qa_not_checked']", "The Plaid callback")
-      refute has_element?(view, "[data-qa='qa_finding_detail']")
-
-      # Nothing closes the verdict: picking the next thing to read is what
-      # leaves it, the same as every other row of that list.
-      refute has_element?(view, "#qa-report-detail [data-qa='qa_close_pane']")
-
-      view |> element("#qa-finding-total-unrounded") |> render_click()
-
-      refute has_element?(view, "#qa-report-detail")
-      assert has_element?(view, "[data-qa='qa_finding_detail']", "The bill total renders as $1234.5")
-    end
-
-    test "stacked below the desktop breakpoint, the checks list leaves room for the detail under it", %{
-      conn: conn,
-      task: task,
-      decide_as_advised: decide_as_advised
-    } do
-      _decided = decide_as_advised.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert [class] = view |> render() |> Floki.parse_fragment!() |> Floki.attribute("#qa-sidebar", "class")
-      assert "max-h-1/2" in String.split(class)
-      assert "lg:max-h-none" in String.split(class)
-    end
-
-    # Stacked, the flush stage pane clips anything taller than the room under the list.
-    test "stacked below the desktop breakpoint, a screenshot only holds a minimum height beside the list", %{
-      conn: conn,
-      task: task
-    } do
-      {:ok, _checklist} =
-        Pipeline.write_qa_checklist(task, [
-          %{"key" => "bill-saves", "title" => "A bill saves and survives a reload"}
-        ])
-
-      File.write!(Path.join([task.scratch_path, "qa", "evidence", "bill-saves~the-saved-bill.png"]), "png bytes")
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("#qa-check-bill-saves") |> render_click()
-      view |> element("#qa-check-shot-bill-saves-the-saved-bill") |> render_click()
-
-      assert [class] = view |> render() |> Floki.parse_fragment!() |> Floki.attribute("#qa-shot-frame", "class")
-      assert "min-h-0" in String.split(class)
-      assert "lg:min-h-[280px]" in String.split(class)
-    end
-
-    test "the detail pane says what QA drove and what it saw", %{
-      conn: conn,
-      task: task,
-      decide_as_advised: decide_as_advised
-    } do
-      _decided = decide_as_advised.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "[data-qa='qa_finding_detail']", "The bill total renders as $1234.5")
-      assert has_element?(view, "[data-qa='qa_finding_position']", "1 of 2")
-      assert has_element?(view, "[data-qa='qa_finding_screen']", "/bills/new")
-      assert has_element?(view, "[data-qa='qa_finding_criterion']", "Totals read as money")
-      assert has_element?(view, "[data-qa='qa_finding_check']", "A bill's total reads as money")
-      assert has_element?(view, "[data-qa='qa_finding_steps']", "Enter 1234.50")
-      assert has_element?(view, "[data-qa='qa_finding_expected']", "$1,234.50")
-      assert has_element?(view, "[data-qa='qa_finding_observed']", "$1234.5")
-      assert has_element?(view, "[data-qa='qa_finding_suggestion']", "Money.to_string/1")
-      assert has_element?(view, "[data-qa='qa_finding_recommendation']", "recommends fixing this")
-    end
-
-    test "a screenshot is shown rather than described", %{
-      conn: conn,
-      task: task,
-      decide_as_advised: decide_as_advised
-    } do
-      _decided = decide_as_advised.()
+      rule = learning(project, %{rule: "Don't flag a missing nil clause", kind: :calibration})
+      {:ok, _saved} = Pipeline.save_finding(task, Map.put(code, :checklist_rule, rule.id))
+      {:ok, _pass} = Pipeline.save_review(task)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(
                view,
-               ~s(img[src="/tasks/#{task.id}/qa/total-unrounded/evidence/0"][alt="the total as rendered"])
-             )
-    end
-
-    test "what this change did not cause is marked and sorted below what it did", %{
-      conn: conn,
-      task: task,
-      decide_as_advised: decide_as_advised
-    } do
-      _decided = decide_as_advised.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("#qa-finding-spacing-nit") |> render_click()
-
-      assert has_element?(view, "[data-qa='qa_finding_pre_existing']", "Not this change")
-      assert has_element?(view, "[data-qa='qa_finding_dismissed']", "Dismissed")
-    end
-
-    test "a pass that raised nothing says so", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#qa-pending-title", "Nothing to fix")
-    end
-
-    test "a clean pass of code that has since gone back to engineer no longer invites sending it on", %{
-      conn: conn,
-      task: task,
-      role: role
-    } do
-      {:ok, _back} = Pipeline.update_task(task, %{stage: :engineer})
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
-
-      assert has_element?(view, "#qa-pending-title", "This pass was of earlier code")
-      refute has_element?(view, "#qa-pending", "Send it on")
-    end
-
-    test "a finding is ruled on from the detail pane", %{conn: conn, task: task, decide_as_advised: decide_as_advised} do
-      _decided = decide_as_advised.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("#decide-skip-total-unrounded") |> render_click()
-
-      assert has_element?(view, "[data-qa='qa_finding_dismissed']", "Dismissed")
-      assert has_element?(view, "[data-qa='qa_finding_recommendation']", "You dismissed it")
-    end
-
-    test "nothing can be sent while a finding has no ruling on it", %{conn: conn, task: task, raised: raised} do
-      for finding <- raised, do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "[data-qa='qa_finding_undecided']", "Needs your call")
-      refute has_element?(view, "#send-qa-findings-to-engineer")
-      refute has_element?(view, "#send-to-demo")
-    end
-
-    test "what the human kept goes back to the engineer", %{conn: conn, task: task, decide_as_advised: decide_as_advised} do
-      _decided = decide_as_advised.()
-      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("#send-qa-findings-to-engineer", "Send 1 back to engineer") |> render_click()
-
-      assert %Task{stage: :engineer} = Repo.reload!(task)
-    end
-
-    test "a change with nothing left goes on to demo", %{conn: conn, task: task, decide_as_advised: decide_as_advised} do
-      for finding <- decide_as_advised.(),
-          do: {:ok, _dismissed} = Pipeline.decide_qa_finding(system_scope(), finding, :skip)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      refute has_element?(view, "#send-qa-findings-to-engineer")
-      view |> element("#send-to-demo") |> render_click()
-
-      assert %Task{stage: :demo} = Repo.reload!(task)
-    end
-
-    test "a refusal is shown rather than swallowed", %{conn: conn, task: task, decide_as_advised: decide_as_advised} do
-      _decided = decide_as_advised.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
-      view |> element("#send-qa-findings-to-engineer") |> render_click()
-
-      assert has_element?(view, "#qa-error", "This task is at Review, not QA.")
-    end
-
-    # A stopped QA agent and one that exercised the change and found nothing look
-    # identical otherwise, and only one of them is a change anybody should send on.
-    test "a QA run that never reported is not a clean pass", %{conn: conn, task: task, qa_run: run} do
-      {:ok, _unlatched} = Pipeline.update_run(run, %{stage_outcome: :in_progress})
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#qa-pending-title", "No findings yet")
-      refute has_element?(view, "#send-to-demo")
-    end
-
-    test "a QA run that has written no report yet has no verdict to show", %{conn: conn, task: task} do
-      File.rm!(Path.join([task.scratch_path, "qa", "TLV-1.json"]))
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      refute has_element?(view, "[data-qa='qa_verdict']")
-      refute has_element?(view, "#qa-held")
-      assert has_element?(view, "#qa-pending-title", "Nothing to fix")
-    end
-
-    # A pass in flight has no findings to read yet, so what is shown is what it is
-    # doing: the checklist it wrote before it opened anything, beside the browser.
-    # A picture QA takes shows in every tab the moment it is filed, and the newest
-    # one for the row it is on says so.
-    test "a screenshot filed mid-pass shows at once in every tab, marked new", %{conn: conn, task: task, qa_run: run} do
-      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-      {:ok, _checklist} = Pipeline.write_qa_checklist(task, [%{"key" => "totals", "title" => "The totals agree"}])
-      File.write!(Path.join([task.scratch_path, "qa", "evidence", "totals~the-first.png"]), "png bytes")
-      File.touch!(Path.join([task.scratch_path, "qa", "evidence", "totals~the-first.png"]), 1_790_000_000)
-
-      assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      stub(Rail.Tools.BrowserSession, :call, fn _session, "Page.captureScreenshot", _params ->
-        {:ok, %{"data" => Base.encode64("jpeg bytes")}}
-      end)
-
-      {:ok, file} = Tools.capture_browser_evidence(:session, task, "The total as rendered", "totals")
-      newest = Path.basename(file)
-
-      for view <- [one, two] do
-        _settled = render(view)
-
-        assert has_element?(
-                 view,
-                 "[data-qa='qa_current_shot'][phx-value-file='#{newest}'] [data-qa='qa_current_shot_new']",
-                 "New"
-               )
-
-        refute has_element?(
-                 view,
-                 "[data-qa='qa_current_shot'][phx-value-file='totals~the-first.png'] [data-qa='qa_current_shot_new']"
-               )
-      end
-    end
-
-    test "a QA pass still running shows the checklist and the browser", %{conn: conn, task: task, qa_run: run} do
-      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-
-      {:ok, _checklist} =
-        Pipeline.write_qa_checklist(task, [
-          %{"key" => "bill-saves", "title" => "A bill saves and survives a reload", "group" => "Setup"},
-          %{"key" => "totals", "title" => "The total agrees with the journal entry", "group" => "Acceptance"}
-        ])
-
-      {:ok, _marked} = Pipeline.record_qa_check(task, "bill-saves", "pass", "saved to the cent")
-
-      # What the pass did reads as a sequence of actions: the word for each one is
-      # lifted out of the line, and the ones worth stopping at - a refusal, a
-      # step Rail took rather than was given - are set apart from the rest.
-      _logged =
-        Pipeline.append_run_events(run.id, nil, [
-          "[browser] look",
-          "[qa] plan 3 checks",
-          "[browser]   CLICK \"Save changes\"",
-          "[browser] REFUSED \"Save changes\" is covered",
-          "[browser] goto http://localhost:4000/bills/new",
-          "[browser]   click \"Save\""
-        ])
-
-      File.write!(Path.join([task.scratch_path, "qa", "evidence", "totals~the-journal-entry.png"]), "png bytes")
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#qa-running", "Driving the application")
-      assert has_element?(view, "#qa-screencast")
-      assert has_element?(view, "[data-qa='qa_screencast_waiting']")
-
-      # Where the browser is, and the last thing Rail actually did to it.
-      assert has_element?(view, "[data-qa='qa_browser_url']", "localhost:4000/bills/new")
-      assert has_element?(view, "[data-qa='qa_doing']", "click")
-      assert has_element?(view, "[data-qa='qa_doing']", "Save")
-
-      # A line with nothing after the verb is all verb, a step Rail took is set
-      # apart from the instruction it came from, and a refusal is the one of
-      # these a reader should stop at.
-      assert has_element?(view, "[data-qa='driving-verb']", "look")
-      assert has_element?(view, "[data-qa='driving-verb']", "plan")
-      assert has_element?(view, "[data-qa='driving-step'][data-step='step']", "CLICK")
-      assert has_element?(view, "[data-qa='driving-verb'].bg-amber-100", "REFUSED")
-
-      # The pictures taken for the row it is on.
-      assert has_element?(view, "[data-qa='qa_current_shot']", "The journal entry")
-
-      view |> element("[data-qa='qa_current_shot']") |> render_click()
-
-      assert has_element?(view, "#qa-shot-viewer [data-qa='qa_shot_name']", "The journal entry")
-      assert has_element?(view, "[data-qa='qa_checklist_progress']", "1 of 2")
-      assert has_element?(view, "[data-qa='qa_check'][data-key='bill-saves'][data-outcome='pass']")
-
-      # The row says how it went and no more: what the pass wrote about it is a
-      # sentence or a paragraph, and forty of those is a column nobody can scan.
-      assert has_element?(view, "[data-qa='qa_check_note']", "passed")
-      refute has_element?(view, "[data-qa='qa_check_note']", "saved to the cent")
-      assert has_element?(view, "[data-qa='qa_check'][data-key='totals'][data-outcome='pending']")
-
-      # The headings the pass chose, and the row it is on.
-      assert has_element?(view, "[data-qa='qa_check_group']", "Setup")
-      assert has_element?(view, "[data-qa='qa_check_group']", "Acceptance")
-      assert has_element?(view, "[data-qa='qa_check'][data-key='totals'][data-current='true']")
-      assert has_element?(view, "[data-qa='qa_checklist_tally']", "1 passed")
-      assert has_element?(view, "[data-qa='qa_checklist_tally']", "1 left")
-    end
-
-    # A row that went green is a claim, and the picture filed against it is what
-    # makes it checkable. They sit on the row rather than in one pile.
-    test "a checklist row opens with the pictures taken for it", %{conn: conn, task: task} do
-      for finding <- [
-            %{
-              key: "a-nit",
-              title: "A nit",
-              check: "check",
-              severity: :nit,
-              recommendation: :skip,
-              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-            }
-          ],
-          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
-
-      {:ok, _checklist} =
-        Pipeline.write_qa_checklist(task, [
-          %{
-            "key" => "bill-saves",
-            "title" => "A bill saves and survives a reload",
-            "group" => "Setup",
-            "criterion" => "A bill can be entered and saved"
-          },
-          %{"key" => "totals", "title" => "The total agrees with the journal entry"}
-        ])
-
-      {:ok, _marked} = Pipeline.record_qa_check(task, "bill-saves", "pass", "saved to the cent")
-
-      File.write!(Path.join([task.scratch_path, "qa", "evidence", "bill-saves~the-saved-bill.png"]), "png bytes")
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      # The findings and the checklist share one sidebar, so a reader who has
-      # read a finding can still see what was checked.
-      assert has_element?(view, "#qa-sidebar #qa-finding-list")
-      assert has_element?(view, "#qa-sidebar #qa-checklist")
-
-      assert has_element?(view, "[data-qa='qa_check'][data-key='bill-saves'] [data-qa='qa_check_shots']", "1")
-      refute has_element?(view, "[data-qa='qa_check'][data-key='totals'] [data-qa='qa_check_shots']")
-
-      view |> element("#qa-check-bill-saves") |> render_click()
-
-      assert has_element?(view, "#qa-check-detail", "A bill saves and survives a reload")
-      assert has_element?(view, "[data-qa='qa_check_detail_group']", "Setup")
-      assert has_element?(view, "[data-qa='qa_check_detail_note']", "saved to the cent")
-      assert has_element?(view, "[data-qa='qa_check_detail_criterion']", "A bill can be entered and saved")
-      assert has_element?(view, "[data-qa='qa_check_detail_note']", "saved to the cent")
-
-      assert has_element?(
-               view,
-               ~s(#qa-check-detail img[src="/tasks/#{task.id}/qa/evidence/bill-saves~the-saved-bill.png"])
+               "#finding-unhandled-nil[data-state='suppressed'] [data-qa='review_finding_state']",
+               "Suppressed"
              )
 
-      # A picture opened off a row goes back to the row rather than out of it.
-      view |> element("#qa-check-shot-bill-saves-the-saved-bill") |> render_click()
-
-      assert has_element?(view, "#qa-shot-viewer [data-qa='qa_shot_name']", "The saved bill")
-
-      view |> element("#qa-close-pane") |> render_click()
-
-      assert has_element?(view, "#qa-check-detail", "A bill saves and survives a reload")
-
-      view |> element("#qa-check-totals") |> render_click()
-
-      assert has_element?(view, "[data-qa='qa_check_detail_evidence']", "Nothing was filed against this row")
-
-      # A row reads on its own; picking the next thing to read is how you leave
-      # it, and only a picture has a way out of its own.
-      refute has_element?(view, "#qa-check-detail [data-qa='qa_close_pane']")
-
-      view |> element("#qa-finding-a-nit") |> render_click()
-
-      assert has_element?(view, "[data-qa='qa_finding_detail']", "A nit")
-    end
-
-    # A change with nothing on screen is proved by what it writes, and the row
-    # carries that file the way another carries a picture.
-    test "a checklist row opens with the files filed for it", %{conn: conn, task: task} do
-      {:ok, _checklist} =
-        Pipeline.write_qa_checklist(task, [
-          %{"key" => "script-runs", "title" => "The script writes its log"},
-          %{"key" => "invoice", "title" => "The invoice comes out as a PDF"}
-        ])
-
-      evidence = Path.join([task.scratch_path, "qa", "evidence"])
-      File.write!(Path.join(evidence, "script-runs~the-script-s-log.log"), "wrote 3 rows")
-      File.write!(Path.join(evidence, "invoice~the-invoice.pdf"), "%PDF-1.7")
-      File.write!(Path.join(evidence, "invoice~the-raw-export.bin"), <<0, 159, 146, 150>>)
-      File.write!(Path.join(evidence, "invoice~nothing-written.log"), "")
-      File.write!(Path.join(evidence, "script-runs~the-garbled-run.log"), String.duplicate("a", 9_000) <> <<0xFF>>)
-
-      File.write!(
-        Path.join(evidence, "captions.jsonl"),
-        Jason.encode!(%{file: "script-runs~the-script-s-log.log", name: "The script's log"}) <> "\n"
-      )
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "[data-qa='qa_check'][data-key='script-runs'] [data-qa='qa_check_files']", "2")
-      refute has_element?(view, "[data-qa='qa_check'][data-key='script-runs'] [data-qa='qa_check_shots']")
-
-      view |> element("#qa-check-script-runs") |> render_click()
-
-      assert has_element?(
-               view,
-               "[data-qa='qa_check_detail_evidence'] [data-qa='qa_check_detail_file']",
-               "The script's log"
-             )
-
-      assert has_element?(view, "[data-qa='qa_check_detail_file'] pre", "wrote 3 rows")
-
-      # A log that turns to bytes past where the listing looked still shows its
-      # caption and its link, without a preview.
-      assert has_element?(view, "[data-qa='qa_check_detail_file']", "The garbled run")
-      assert has_element?(view, "[data-qa='qa_check_detail_file'] pre", "wrote 3 rows")
-      refute has_element?(view, "[data-qa='qa_check_detail_file'] pre", "aaaa")
-
-      assert has_element?(
-               view,
-               ~s([data-qa='qa_check_detail_file'] a[href="/tasks/#{task.id}/qa/evidence/script-runs~the-script-s-log.log"]),
-               "Open"
-             )
-
-      refute has_element?(view, "#qa-check-detail img")
-      refute has_element?(view, "[data-qa='qa_check_detail_evidence']", "Nothing was filed against this row")
-
-      # A PDF opens in the browser rather than in the pane.
-      view |> element("#qa-check-invoice") |> render_click()
-
-      assert has_element?(
-               view,
-               ~s([data-qa='qa_check_detail_file'] a[target="_blank"][href="/tasks/#{task.id}/qa/evidence/invoice~the-invoice.pdf"]),
-               "Open PDF"
-             )
-
-      # Anything that is neither text nor a PDF is downloaded rather than shown.
-      assert has_element?(
-               view,
-               ~s([data-qa='qa_check_detail_file'][data-kind="file"] a[href="/tasks/#{task.id}/qa/evidence/invoice~the-raw-export.bin"]),
-               "Download"
-             )
-
-      # An empty log says so, rather than drawing a box nobody can tell from one that
-      # failed to load.
-      assert has_element?(view, "[data-qa='qa_check_detail_file']", "Empty file")
-      refute has_element?(view, "[data-qa='qa_check_detail_file'] pre")
-    end
-
-    # Evidence can be both: what the screen showed and what the run wrote, on one
-    # row and on the finding raised from it.
-    test "a row with a picture and a file shows both, and its finding only what it cites", %{conn: conn, task: task} do
-      {:ok, _checklist} = Pipeline.write_qa_checklist(task, [%{"key" => "totals", "title" => "The totals agree"}])
-      evidence = Path.join([task.scratch_path, "qa", "evidence"])
-      File.write!(Path.join(evidence, "totals~the-journal-entry.png"), "png bytes")
-      File.write!(Path.join(evidence, "totals~the-ledger-export.csv"), String.duplicate("1,2500.00\n", 7_000))
-
-      for finding <- [
-            %{
-              key: "off-by-a-cent",
-              title: "The journal entry is off by a cent",
-              check: "totals",
-              severity: :major,
-              recommendation: :fix,
-              evidence: [%{name: "The ledger export", kind: :log, path: "evidence/totals~the-ledger-export.csv"}]
-            }
-          ],
-          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "[data-qa='qa_check'][data-key='totals'] [data-qa='qa_check_shots']", "1")
-      assert has_element?(view, "[data-qa='qa_check'][data-key='totals'] [data-qa='qa_check_files']", "1")
-
-      view |> element("#qa-check-totals") |> render_click()
-
-      assert has_element?(
-               view,
-               "[data-qa='qa_check_detail_evidence'] [data-qa='qa_check_detail_shot']",
-               "The journal entry"
-             )
-
-      assert has_element?(
-               view,
-               "[data-qa='qa_check_detail_evidence'] [data-qa='qa_check_detail_file']",
-               "The ledger export"
-             )
-
-      assert has_element?(view, "[data-qa='qa_check_detail_file']", "Showing the first 64 KB")
-
-      view |> element("#qa-check-finding-off-by-a-cent") |> render_click()
-
-      refute has_element?(view, "[data-qa='qa_finding_check_shots']")
-      refute has_element?(view, "#qa-finding-detail img")
-      assert has_element?(view, "#qa-evidence-tab-0[aria-selected='true']", "totals~the-ledger-export.csv")
-      assert has_element?(view, "#qa-finding-detail [data-qa='qa_evidence_line']", "1,2500.00")
-    end
-
-    # Filing says so on the task's topic, which is what tells the panel there is
-    # something new on the row it is on.
-    test "a file filed while the panel is open appears", %{conn: conn, task: task, qa_run: run} do
-      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-
-      {:ok, _checklist} =
-        Pipeline.write_qa_checklist(task, [%{"key" => "script-runs", "title" => "The script writes its log"}])
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      refute has_element?(view, "[data-qa='qa_check_files']")
-
-      File.write!(Path.join([task.scratch_path, "qa", "run.log"]), "wrote 3 rows")
-      {:ok, _filed} = Tools.file_qa_evidence(task, "run.log", "The log", "script-runs")
-
-      _settled = render(view)
-      assert has_element?(view, "[data-qa='qa_check'][data-key='script-runs'] [data-qa='qa_check_files']", "1")
-
-      # The row the pass is on, beside the browser it is driving.
-      assert has_element?(
-               view,
-               ~s([data-qa='qa_current_file'][href="/tasks/#{task.id}/qa/evidence/script-runs~the-log.log"]),
-               "The log"
-             )
-
-      assert has_element?(view, "[data-qa='qa_current_shots']", "Filed for this check")
-    end
-
-    # The first minute of a pass, before it has said what it means to do.
-    test "a pass that has not written its checklist yet says so", %{conn: conn, task: task, qa_run: run} do
-      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "[data-qa='qa_checklist_progress']", "not written yet")
-      assert has_element?(view, "[data-qa='qa_checklist_unwritten']")
-    end
-
-    # The checklist moves on disk and nothing else would say so. The pass writes a
-    # line in its own log as it marks each row, and that is already carried here.
-    test "a row marked off while the panel is open appears", %{conn: conn, task: task, qa_run: run} do
-      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-      {:ok, _checklist} = Pipeline.write_qa_checklist(task, [%{"key" => "totals", "title" => "The totals agree"}])
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "[data-qa='qa_checklist_progress']", "0 of 1")
-
-      {:ok, _marked} = Pipeline.record_qa_check(task, "totals", "fail", "off by a cent")
-      Pipeline.append_run_events(run.id, nil, [~s([qa] check "totals" fail)])
-
-      _settled = render(view)
-      assert has_element?(view, "[data-qa='qa_checklist_progress']", "1 of 1")
-      assert has_element?(view, "[data-qa='qa_check'][data-key='totals'][data-outcome='fail']")
+      assert has_element?(view, "#finding-suppressor", "Don't flag a missing nil clause")
+      assert has_element?(view, "#decide-fix-unhandled-nil")
+      refute has_element?(view, "#decide-skip-unhandled-nil")
+      assert has_element?(view, "#start-fix-round", "Finish review")
     end
 
     # A frame goes to the client rather than through the render, because it
     # arrives several times a second and nothing else on the page moves with it.
-    test "a frame from the browser is pushed straight to the client", %{conn: conn, task: task, qa_run: run} do
-      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-
+    test "a frame from the browser is pushed straight to the client", %{conn: conn, task: task} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       send(view.pid, {:browser_frame, task.id, "some-base64"})
@@ -6307,9 +5422,7 @@ defmodule RailWeb.TaskLiveTest do
 
     # An animated page paints dozens of frames a second, more than the socket can
     # carry, and clicks queue behind them. Only the newest of a burst follows the first.
-    test "a burst of frames reaches the client as its first and its newest", %{conn: conn, task: task, qa_run: run} do
-      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-
+    test "a burst of frames reaches the client as its first and its newest", %{conn: conn, task: task} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       for data <- ["first", "second", "newest"], do: send(view.pid, {:browser_frame, task.id, data})
@@ -6322,9 +5435,7 @@ defmodule RailWeb.TaskLiveTest do
 
     # A page that has stopped moving owes its viewer nothing, and the next change
     # on it should show at once rather than wait out a window.
-    test "a frame after a quiet window goes straight to the client", %{conn: conn, task: task, qa_run: run} do
-      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-
+    test "a frame after a quiet window goes straight to the client", %{conn: conn, task: task} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       send(view.pid, {:browser_frame, task.id, "first"})
@@ -6336,1304 +5447,53 @@ defmodule RailWeb.TaskLiveTest do
       assert_push_event(view, "browser:frame", %{data: "after the lull"}, 0)
     end
 
-    # A finished pass leaves its tab open until the task moves on, and a page that
-    # keeps repainting would send frames the panel no longer shows, which every
-    # click waits behind. So the browser is heard only while its pass runs.
-    test "the browser is heard only while its pass runs", %{conn: conn, task: task, qa_run: run} do
-      {:ok, running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:qa", {:browser_frame, task.id, "while running"})
-      _settled = render(view)
-      assert_push_event(view, "browser:frame", %{data: "while running"})
-
-      {:ok, _finished} = Pipeline.update_run(running, %{status: :finished, stage_outcome: :done})
-      send(view.pid, :task_changed)
-      send(view.pid, :frame_window_closed)
-      _settled = render(view)
-
-      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:qa", {:browser_frame, task.id, "after it finished"})
-      _settled = render(view)
-      refute_push_event(view, "browser:frame", %{data: "after it finished"}, 100)
-    end
-
-    # Each agent drives a browser of its own, and the QA pane is the QA run's.
-    test "the QA pane shows and hears its own run's browser and no other", %{conn: conn, task: task, qa_run: run} do
-      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-      _logged = Pipeline.append_run_events(run.id, nil, ["[browser] connect"])
-
-      stub(Tools, :get_browser_url, fn
-        _task, "qa" -> "http://localhost:4000/qa-tab"
-        _task, _other -> "http://localhost:4000/somebody-elses-tab"
-      end)
-
-      stub(Tools, :get_browser_frame, fn
-        _task, "qa" -> Base.encode64("qa frame")
-        _task, _other -> Base.encode64("somebody else's frame")
-      end)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "[data-qa='qa_browser_url']", "localhost:4000/qa-tab")
-      assert render(view) =~ Base.encode64("qa frame")
-
-      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:demo", {:browser_frame, task.id, "the demo's"})
-      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:qa", {:browser_frame, task.id, "the pass's"})
-      _settled = render(view)
-
-      assert_push_event(view, "browser:frame", %{data: "the pass's"})
-      refute_push_event(view, "browser:frame", %{data: "the demo's"}, 100)
-    end
-
-    # A frame for a task nobody is reading, or while another pane is in front, is
-    # nothing to send anywhere.
-    test "a frame for another task is ignored", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      send(view.pid, {:browser_frame, "tsk_somebody_else", "some-base64"})
-
-      assert render(view) =~ "qa"
-    end
-
-    # The panel is opened long after the pass ended far more often than during
-    # one, and a clean pass is exactly when a reader wants to know what was looked
-    # at rather than be told nothing went wrong.
-    test "a finished pass still shows what it checked", %{conn: conn, task: task} do
-      {:ok, _checklist} =
-        Pipeline.write_qa_checklist(task, [%{"key" => "plaid", "title" => "The Plaid callback", "outcome" => "skipped"}])
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#qa-pending-title", "Nothing to fix")
-      assert has_element?(view, "[data-qa='qa_check'][data-key='plaid'][data-outcome='skipped']")
-    end
-
-    # A row answered last time round and a finding standing against it are the
-    # same pass contradicting itself, and the reader who opens the row is the one
-    # who has to see both.
-    test "a row carried from an earlier pass shows what was raised against it", %{
-      conn: conn,
-      task: task
-    } do
-      plan = [%{"key" => "totals", "title" => "The totals agree", "group" => "Acceptance"}]
-
-      {:ok, _first} = Pipeline.write_qa_checklist(task, plan)
-      {:ok, _marked} = Pipeline.record_qa_check(task, "totals", "pass", "agreed to the cent")
-      {:ok, _replanned} = Pipeline.write_qa_checklist(task, plan)
-      File.write!(Path.join([task.scratch_path, "qa", "evidence", "totals~the-journal-entry.png"]), "png bytes")
-      File.write!(Path.join([task.scratch_path, "qa", "evidence", "totals~the-entry-a-cent-short.png"]), "png bytes")
-
-      for finding <- [
-            %{
-              key: "off-by-a-cent",
-              title: "The journal entry is off by a cent",
-              check: "totals",
-              severity: :major,
-              recommendation: :fix,
-              evidence: [
-                %{name: "The entry a cent short", kind: :screenshot, path: "evidence/totals~the-entry-a-cent-short.png"}
-              ]
-            }
-          ],
-          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      # It passed, but not this time round, and the list says which.
-      assert has_element?(view, "[data-qa='qa_check'][data-key='totals']", "passed earlier")
-
-      view |> element("[data-qa='qa_check'][data-key='totals']") |> render_click()
-      assert has_element?(view, "#qa-check-finding-off-by-a-cent", "off by a cent")
-      assert has_element?(view, "[data-qa='qa_check_detail_disagrees']", "only one of them can be right")
-
-      # The row shows every picture filed against it.
-      assert has_element?(view, "#qa-check-detail [data-qa='qa_check_detail_shot']", "The journal entry")
-      assert has_element?(view, "#qa-check-detail [data-qa='qa_check_detail_shot']", "The entry a cent short")
-
-      # The finding opens off the row with only what was attached to it, so
-      # everything under it is proof of that defect.
-      view |> element("#qa-check-finding-off-by-a-cent") |> render_click()
-      refute has_element?(view, "[data-qa='qa_finding_check_shots']")
-      assert has_element?(view, "#qa-evidence-tab-0[aria-selected='true']", "The entry a cent short")
-
-      assert [_its_own] =
-               view |> render() |> Floki.parse_fragment!() |> Floki.find("#qa-finding-detail img")
-
-      assert has_element?(view, ~s(#qa-finding-detail img[src="/tasks/#{task.id}/qa/off-by-a-cent/evidence/0"]))
-
-      assert has_element?(
-               view,
-               ~s(#qa-finding-detail a[href="/tasks/#{task.id}/qa/off-by-a-cent/evidence/0"][target="_blank"]),
-               "Full size"
-             )
-
-      # A Close that arrives when the middle is no longer a picture closes to
-      # nothing rather than crashing the panel.
-      view |> with_target("#qa-stage") |> render_click("close_focus", %{})
-      assert has_element?(view, "[data-qa='qa_finding_detail']", "off by a cent")
-    end
-
-    # Severity is the first thing a reader takes off the list, so every grade has
-    # to be distinguishable, and a fixed finding stops shouting whatever it was
-    # raised as.
-    test "each grade of finding reads as itself", %{conn: conn, task: task} do
-      for finding <- [
-            %{
-              key: "a-blocker",
-              title: "A blocker",
-              check: "check",
-              severity: :blocker,
-              recommendation: :fix,
-              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-            },
-            %{
-              key: "a-major",
-              title: "A major",
-              check: "check",
-              severity: :major,
-              recommendation: :fix,
-              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-            },
-            %{
-              key: "a-minor",
-              title: "A minor",
-              check: "check",
-              severity: :minor,
-              recommendation: :fix,
-              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-            },
-            %{
-              key: "a-nit",
-              title: "A nit",
-              check: "check",
-              severity: :nit,
-              recommendation: :skip,
-              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-            },
-            %{
-              key: "already-fixed",
-              title: "Fixed last round",
-              check: "The bill saves",
-              severity: :major,
-              recommendation: :fix,
-              status: :fixed,
-              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-            }
-          ],
-          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      for key <- ["a-blocker", "a-major", "a-minor", "a-nit"] do
-        assert has_element?(view, "#qa-finding-#{key}")
-      end
-
-      assert has_element?(view, "#qa-finding-already-fixed", "fixed · The bill saves")
-
-      view |> element("#qa-finding-a-major") |> render_click()
-      assert has_element?(view, "[data-qa='qa_finding_detail']", "Major")
-
-      view |> element("#qa-finding-a-minor") |> render_click()
-      assert has_element?(view, "[data-qa='qa_finding_detail']", "Minor")
-
-      # Nothing is left to rule on, so the choice, the remedy and the advice all
-      # go and only the record that it was dealt with is left.
-      view |> element("#qa-finding-already-fixed") |> render_click()
-      assert has_element?(view, "[data-qa='qa_finding_fixed']", "Fixed")
-      refute has_element?(view, "[data-qa='qa_finding_recommendation']")
-    end
-
-    # A verdict is the one thing a reader wants at a glance, and a pass that wrote
-    # a word Rail does not know has still said everything else it said.
-    test "every verdict reads as itself, including one Rail cannot place", %{conn: conn, task: task} do
-      for finding <- [
-            %{
-              key: "a-nit",
-              title: "A nit",
-              check: "check",
-              severity: :nit,
-              recommendation: :skip,
-              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-            }
-          ],
-          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
-
-      report = Path.join([task.scratch_path, "qa", "TLV-1.json"])
-
-      for {written, shown} <- [{"pass", "Passed"}, {"concerns", "Passed with concerns"}, {"sort of", "no verdict"}] do
-        File.write!(report, ~s({"verdict": "#{written}", "summary": "What happened."}))
-
-        assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-        assert has_element?(view, "[data-qa='qa_verdict_label']", shown)
-      end
-    end
-
-    # A captured log is read where the finding is, with the lines that failed
-    # marked, rather than offered as a file to download and open somewhere else.
-    test "a log QA saved is read on the finding, its errors marked, and nothing downloads", %{conn: conn, task: task} do
-      evidence_dir = Path.join([task.scratch_path, "qa", "evidence"])
-
-      File.write!(
-        Path.join(evidence_dir, "server.log"),
-        "[info] POST /bills\n[error] boom in TaxRate.percent/1\n[info] Sent 500\n"
-      )
-
-      File.write!(Path.join(evidence_dir, "dump.bin"), String.duplicate("a", 9_000) <> <<0xFF, 0xFE, 0x00, 0x81>>)
-      File.write!(Path.join(evidence_dir, "long.log"), String.duplicate("a", 300_000))
-      # Saved while there, then gone: a finding cannot cite a file that is not.
-      File.write!(Path.join(evidence_dir, "gone.log"), "went")
-
-      for finding <- [
-            %{
-              key: "total-unrounded",
-              title: "The total is wrong",
-              check: "The total reads as money",
-              severity: :major,
-              recommendation: :fix,
-              evidence: [
-                %{name: "Server log during the export", kind: :log, path: "evidence/server.log"},
-                %{name: "Line items on INV-2025-0412", kind: :query, text: "amount_cents: 123450"},
-                %{name: "a log that went", kind: :log, path: "evidence/gone.log"},
-                %{name: "a dump", kind: :log, path: "evidence/dump.bin"},
-                %{name: "a long log", kind: :log, path: "evidence/long.log"},
-                %{name: "What the network tab showed", kind: :note, text: "POST /exports twice"}
-              ]
-            }
-          ],
-          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
-
-      File.rm!(Path.join(evidence_dir, "gone.log"))
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#qa-evidence-tab-0[aria-selected='true']", "server.log")
-      assert has_element?(view, "#qa-evidence-tab-1", "Line items on INV-2025-0412")
-      assert has_element?(view, "[data-qa='qa_evidence_name']", "Server log during the export")
-      assert has_element?(view, "[data-qa='qa_evidence_line_count']", "3 lines")
-      assert has_element?(view, "[data-qa='qa_evidence_line']", "[info] POST /bills")
-      assert has_element?(view, "#qa-evidence-first-error[data-qa='qa_evidence_line'][data-error]", "[error] boom")
-      refute has_element?(view, "[data-qa='qa_evidence_line'][data-error]", "[info] Sent 500")
-      assert has_element?(view, "[data-qa='qa_evidence_jump'][data-target='qa-evidence-first-error']", "Jump to error")
-      assert has_element?(view, "[data-qa='qa_evidence_copy'][phx-hook='CopyText']", "Copy")
-      assert has_element?(view, "[data-qa='qa_evidence_footer']", "marks lines logged at error level")
-      refute has_element?(view, "[data-qa='qa_evidence_file']")
-      refute has_element?(view, "a[href*='/evidence/']")
-
-      view |> element("#qa-evidence-tab-1") |> render_click()
-
-      assert has_element?(view, "#qa-evidence-tab-1[aria-selected='true']")
-      assert has_element?(view, "[data-qa='qa_evidence_line']", "amount_cents: 123450")
-      refute has_element?(view, "[data-qa='qa_evidence_jump']")
-
-      view |> element("#qa-evidence-tab-2") |> render_click()
-      assert has_element?(view, "[data-qa='qa_evidence_unreadable']", "evidence/gone.log is not there any more.")
-
-      view |> element("#qa-evidence-tab-3") |> render_click()
-      assert has_element?(view, "[data-qa='qa_evidence_unreadable']", "evidence/dump.bin is not text")
-
-      view |> element("#qa-evidence-tab-4") |> render_click()
-      assert has_element?(view, "[data-qa='qa_evidence_truncated']", "256 KB")
-
-      view |> element("#qa-evidence-tab-5[data-kind='note']") |> render_click()
-      assert has_element?(view, "[data-qa='qa_evidence_line']", "POST /exports twice")
-    end
-
-    # Every picture qa_shot files for one check starts with that check's key, so
-    # a tab says what QA called the picture, and a strip too narrow for every tab
-    # scrolls rather than squeezing their names away.
-    test "each evidence tab keeps a name a reader can tell apart", %{conn: conn, task: task} do
-      evidence_dir = Path.join([task.scratch_path, "qa", "evidence"])
-      File.write!(Path.join(evidence_dir, "totals~the-total-before-saving.jpg"), "jpeg bytes")
-      File.write!(Path.join(evidence_dir, "totals~the-total-after-saving.jpg"), "jpeg bytes")
-
-      for finding <- [
-            %{
-              key: "total-unrounded",
-              title: "The total is wrong",
-              check: "totals",
-              severity: :major,
-              recommendation: :fix,
-              evidence: [
-                %{
-                  name: "The total before saving",
-                  kind: :screenshot,
-                  path: "evidence/totals~the-total-before-saving.jpg"
-                },
-                %{name: "The total after saving", kind: :screenshot, path: "evidence/totals~the-total-after-saving.jpg"},
-                %{name: "What the database holds", kind: :query, text: "amount_cents: 123450"}
-              ]
-            }
-          ],
-          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#qa-evidence-tab-0", "The total before saving")
-      assert has_element?(view, "#qa-evidence-tab-1", "The total after saving")
-      refute has_element?(view, "#qa-evidence-tab-0", "totals~")
-
-      document = view |> render() |> Floki.parse_fragment!()
-      assert [strip] = Floki.attribute(document, "#qa-evidence-viewer [role='tablist']", "class")
-      assert "overflow-x-auto" in String.split(strip)
-
-      for tab <- Floki.attribute(document, "[data-qa='qa_evidence_tab']", "class") do
-        assert "shrink-0" in String.split(tab)
-      end
-    end
-
-    # QA picks the kind it cites a file as, and there is no kind for a PDF, so the
-    # tab shows the file as what it holds rather than as what it was called.
-    test "a finding's evidence is shown as what its file holds, whatever it was cited as", %{
-      conn: conn,
-      task: task
-    } do
-      evidence_dir = Path.join([task.scratch_path, "qa", "evidence"])
-      File.write!(Path.join(evidence_dir, "invoice~the-invoice.pdf"), "%PDF-1.7\n" <> <<0xFF, 0xFE, 0x00, 0x81>>)
-      File.write!(Path.join(evidence_dir, "totals~the-total.png"), "png bytes")
-      File.write!(Path.join(evidence_dir, "export~the-archive.bin"), <<0xFF, 0xFE, 0x00, 0x81>>)
-      File.write!(Path.join(evidence_dir, "statement.pdf"), "%PDF-1.7")
-      File.write!(Path.join(evidence_dir, "export~the-output.txt"), "wrote 3 rows")
-      File.write!(Path.join(evidence_dir, "gone.png"), "png bytes")
-
-      for finding <- [
-            %{
-              key: "invoice-wrong",
-              title: "The invoice PDF is wrong",
-              check: "invoice",
-              severity: :major,
-              recommendation: :fix,
-              evidence: [
-                %{name: "The invoice", kind: :log, path: "evidence/invoice~the-invoice.pdf"},
-                %{name: "The total", kind: :log, path: "evidence/totals~the-total.png"},
-                %{name: "The archive", kind: :note, path: "evidence/export~the-archive.bin"},
-                %{name: "The statement", kind: :screenshot, path: "evidence/statement.pdf"},
-                %{name: "A picture that went", kind: :screenshot, path: "evidence/gone.png"},
-                %{name: "The output", kind: :screenshot, path: "evidence/export~the-output.txt"}
-              ]
-            }
-          ],
-          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
-
-      File.rm!(Path.join(evidence_dir, "gone.png"))
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      route = "/tasks/#{task.id}/qa/invoice-wrong/evidence"
-
-      assert has_element?(view, "#qa-evidence-tab-0[data-kind='pdf']", "The invoice")
-      assert has_element?(view, ~s(#qa-finding-detail a[target="_blank"][href="#{route}/0"]), "Open PDF")
-      refute has_element?(view, "[data-qa='qa_evidence_unreadable']")
-
-      view |> element("#qa-evidence-tab-1[data-kind='screenshot']") |> render_click()
-      assert has_element?(view, ~s(#qa-finding-detail img[src="#{route}/1"]))
-
-      view |> element("#qa-evidence-tab-2[data-kind='file']") |> render_click()
-      assert has_element?(view, ~s(#qa-finding-detail a[href="#{route}/2"][download]), "Download")
-      refute has_element?(view, ~s(#qa-finding-detail a[href="#{route}/2"][target]))
-
-      view |> element("#qa-evidence-tab-3[data-kind='pdf']") |> render_click()
-      refute has_element?(view, "#qa-finding-detail img")
-      assert has_element?(view, ~s(#qa-finding-detail a[target="_blank"][href="#{route}/3"]), "Open PDF")
-
-      view |> element("#qa-evidence-tab-4") |> render_click()
-      assert has_element?(view, "[data-qa='qa_evidence_unreadable']", "evidence/gone.png is not there any more.")
-      refute has_element?(view, "#qa-finding-detail img")
-
-      view |> element("#qa-evidence-tab-5[data-kind='text']") |> render_click()
-      assert has_element?(view, "[data-qa='qa_evidence_line']", "wrote 3 rows")
-      refute has_element?(view, "#qa-finding-detail img")
-    end
-
-    # Ruling moves the reader on to the next finding, which opens on its first
-    # piece of evidence rather than on whichever tab the last one was left at.
-    test "ruling on a finding opens the next one on its first piece of evidence", %{conn: conn, task: task} do
-      two = [
-        %{name: "the first", kind: :query, text: "first"},
-        %{name: "the second", kind: :query, text: "second"}
-      ]
-
-      for finding <- [
-            %{key: "a-first", title: "A first", check: "c", severity: :major, recommendation: :fix, evidence: two},
-            %{key: "b-second", title: "B second", check: "c", severity: :major, recommendation: :fix, evidence: two}
-          ],
-          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("#qa-evidence-tab-1") |> render_click()
-      assert has_element?(view, "#qa-evidence-tab-1[aria-selected='true']")
-
-      view |> element("#decide-fix-a-first") |> render_click()
-
-      assert has_element?(view, "[data-qa='qa_finding_detail']", "B second")
-      assert has_element?(view, "#qa-evidence-tab-0[aria-selected='true']")
-    end
-
-    # A finding raised before every finding had to carry evidence still opens.
-    test "a finding with no evidence says so", %{conn: conn, task: task} do
-      Repo.insert!(%QaFinding{
+    # Every explorer and the demo recorder drive a browser of their own, and a page that keeps repainting
+    # would send frames nobody sees. So only the browser the Browser item is open on is heard.
+    test "only the browser the Browser item is open on is heard", %{conn: conn, task: task} do
+      now = DateTime.utc_now()
+      Repo.insert!(%BrowserSession{task_id: task.id, name: "explorer-1", status: :running, started_at: now})
+
+      Repo.insert!(%BrowserSession{
         task_id: task.id,
-        key: "a-nit",
-        title: "A nit",
-        check: "check",
-        severity: :nit,
-        recommendation: :skip
+        name: "demo",
+        status: :running,
+        started_at: DateTime.shift(now, second: 1)
       })
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      assert has_element?(view, "[data-qa='qa_evidence_none']", "QA attached no evidence to this finding.")
-      refute has_element?(view, "[data-qa='qa_evidence_tab']")
-    end
-
-    # Findings show the moment QA saves them, but nobody rules on a pass that is
-    # still going, and a report is never held back or sent back any more.
-    test "a pass still going shows what it saved, without a call or a report held back", %{
-      conn: conn,
-      task: task,
-      qa_run: run,
-      raised: raised
-    } do
-      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-
-      [first | _rest] =
-        for finding <- raised do
-          {:ok, saved} = Pipeline.save_qa_finding(task, finding)
-          saved
-        end
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#qa-finding-#{first.key}")
-      refute has_element?(view, "[data-qa='qa_finding_needs_call']")
-      refute has_element?(view, "#qa-held")
-      refute has_element?(view, "#qa-findings-held")
-      refute has_element?(view, "#qa-held-back")
-      refute render(view) =~ "Reminder"
-
-      view |> element("#qa-finding-#{first.key}") |> render_click()
-
-      assert has_element?(view, "[data-qa='qa_finding_locked']", "Rule on it once QA finishes")
-      refute has_element?(view, "[data-qa='qa_finding_undecided']")
-      refute has_element?(view, "[data-qa^='decide_']")
-    end
-
-    # QA advises and the human decides, and the panel says so in both directions
-    # rather than quietly recording the override.
-    test "a finding the human kept against QA's advice says which way that went", %{conn: conn, task: task} do
-      [nit] =
-        for finding <- [
-              %{
-                key: "a-nit",
-                title: "A nit",
-                check: "check",
-                severity: :nit,
-                recommendation: :skip,
-                evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-              }
-            ] do
-          {:ok, saved} = Pipeline.save_qa_finding(task, finding)
-          saved
-        end
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "[data-qa='qa_finding_recommendation']", "QA recommends leaving this.")
-
-      view |> element("#decide-fix-#{nit.key}") |> render_click()
-
-      assert has_element?(view, "[data-qa='qa_finding_recommendation']", "QA would have left this.")
-    end
-
-    # Every refusal reaches the reader as a sentence rather than as nothing
-    # happening. Each of these is a state that arrived after the button was drawn
-    # - which is the only way a person gets to click one of these at all.
-    test "a send that has gone stale says what is wrong rather than nothing", %{
-      conn: conn,
-      task: task,
-      decide_as_advised: decide_as_advised
-    } do
-      _decided = decide_as_advised.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "#send-qa-findings-to-engineer")
-
-      # A finding raised by a turn that landed while this was on screen, its
-      # broadcast not yet arrived, has nobody's ruling on it yet.
-      late = %{
-        key: "late",
-        title: "Late",
-        check: "c",
-        severity: :nit,
-        recommendation: :skip,
-        evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-      }
-
-      evidence = [%{name: "seen", kind: :note, text: "Seen."}]
-      Repo.insert!(QaFinding.changeset(%QaFinding{task_id: task.id}, Map.put(late, :evidence, evidence)))
-
-      view |> element("#send-qa-findings-to-engineer") |> render_click()
-      assert has_element?(view, "#qa-error", "no decision yet")
-
-      # Everything dismissed leaves the engineer nothing to do.
-      task
-      |> Pipeline.list_qa_findings()
-      |> Enum.each(fn finding -> {:ok, _skipped} = Pipeline.decide_qa_finding(system_scope(), finding, :skip) end)
-
-      view |> element("#send-qa-findings-to-engineer") |> render_click()
-      assert has_element?(view, "#qa-error", "nothing left for the engineer")
-    end
-
-    test "a change with something left to fix does not go to demo", %{
-      conn: conn,
-      task: task,
-      decide_as_advised: decide_as_advised
-    } do
-      findings = decide_as_advised.()
-      Enum.each(findings, fn finding -> {:ok, _skipped} = Pipeline.decide_qa_finding(system_scope(), finding, :skip) end)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "#send-to-demo")
-
-      [kept | _rest] = Pipeline.list_qa_findings(task)
-      {:ok, _kept} = Pipeline.decide_qa_finding(system_scope(), kept, :fix)
-
-      view |> element("#send-to-demo") |> render_click()
-      assert has_element?(view, "#qa-error", "still outstanding")
-
-      {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
-
-      view |> element("#send-to-demo") |> render_click()
-      assert has_element?(view, "#qa-error", "This task is at Review, not QA.")
-    end
-
-    test "a task with something running is not one to rule on", %{
-      conn: conn,
-      task: task,
-      role: role,
-      decide_as_advised: decide_as_advised
-    } do
-      [finding | _rest] = decide_as_advised.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      {:ok, _running} =
-        Pipeline.create_run(%{
-          task_id: task.id,
-          role_id: role.id,
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-
-      view |> element("#decide-skip-#{finding.key}") |> render_click()
-
-      assert has_element?(view, "#qa-error", "still running on this task")
-    end
-
-    test "a task that moved on under the reader refuses the ruling", %{
-      conn: conn,
-      task: task,
-      decide_as_advised: decide_as_advised
-    } do
-      [finding | _rest] = decide_as_advised.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
-
-      view |> element("#decide-skip-#{finding.key}") |> render_click()
-
-      assert has_element?(view, "#qa-error", "This task is at Review, not QA.")
-    end
-
-    # The verdict is read off disk, so nothing else would bring it up to date.
-    test "a turn that lands underneath the reader is picked up", %{conn: conn, task: task, qa_run: run, raised: raised} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "#qa-pending-title", "Nothing to fix")
-
-      for finding <- raised, do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
-      send(view.pid, {:os_process_finished, run, %{}})
-
+      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:explorer-1", {:browser_frame, task.id, "unseen"})
       _settled = render(view)
-      assert has_element?(view, "[data-qa='qa_finding_detail']", "The bill total renders as $1234.5")
+      refute_push_event(view, "browser:frame", %{data: "unseen"}, 100)
+
+      view |> element("#review-item-browser") |> render_click()
+      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:explorer-1", {:browser_frame, task.id, "explorer's"})
+      _settled = render(view)
+      assert_push_event(view, "browser:frame", %{data: "explorer's"})
+
+      send(view.pid, :frame_window_closed)
+      view |> element("#review-browser-demo") |> render_click()
+      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:explorer-1", {:browser_frame, task.id, "not picked"})
+      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:demo", {:browser_frame, task.id, "demo's"})
+      _settled = render(view)
+      assert_push_event(view, "browser:frame", %{data: "demo's"})
+      refute_push_event(view, "browser:frame", %{data: "not picked"}, 100)
+
+      send(view.pid, :frame_window_closed)
+      view |> element("#review-item-findings") |> render_click()
+      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:demo", {:browser_frame, task.id, "item closed"})
+      _settled = render(view)
+      refute_push_event(view, "browser:frame", %{data: "item closed"}, 100)
     end
 
-    test "ruling on a finding keeps the list in place and reads the next one needing a call", %{
-      conn: conn,
-      task: task
-    } do
-      for finding <- [
-            %{
-              key: "a-blocker",
-              title: "A blocker",
-              check: "A check",
-              severity: :blocker,
-              recommendation: :fix,
-              status: :open,
-              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-            },
-            %{
-              key: "a-major",
-              title: "A major",
-              check: "A check",
-              severity: :major,
-              recommendation: :fix,
-              status: :open,
-              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-            },
-            %{
-              key: "a-nit",
-              title: "A nit",
-              check: "A check",
-              severity: :nit,
-              recommendation: :fix,
-              status: :open,
-              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-            }
-          ],
-          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
-
+    # A frame for a task nobody is reading is nothing to send anywhere.
+    test "a frame for another task is ignored", %{conn: conn, task: task} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      view |> element("#decide-fix-a-blocker") |> render_click()
-
-      assert ["qa-finding-a-blocker", "qa-finding-a-major", "qa-finding-a-nit"] =
-               view |> render() |> Floki.parse_fragment!() |> Floki.attribute("[data-qa='qa_finding']", "id")
-
-      assert has_element?(view, "#qa-finding-a-major[aria-current='true']")
-      assert has_element?(view, "[data-qa='qa_finding_detail']", "A major")
-      assert has_element?(view, "[data-qa='qa_finding_position']", "2 of 3")
-    end
-
-    test "a dismissed finding keeps its row", %{conn: conn, task: task} do
-      for finding <- [
-            %{
-              key: "a-blocker",
-              title: "A blocker",
-              check: "A check",
-              severity: :blocker,
-              recommendation: :fix,
-              status: :open,
-              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-            },
-            %{
-              key: "a-nit",
-              title: "A nit",
-              check: "A check",
-              severity: :nit,
-              recommendation: :fix,
-              status: :open,
-              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-            }
-          ],
-          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("#decide-skip-a-blocker") |> render_click()
-
-      assert ["qa-finding-a-blocker", "qa-finding-a-nit"] =
-               view |> render() |> Floki.parse_fragment!() |> Floki.attribute("[data-qa='qa_finding']", "id")
-
-      assert has_element?(view, "#qa-finding-a-blocker[data-state='dismissed']")
-    end
-
-    test "the list marks what still needs a call", %{conn: conn, task: task} do
-      [blocker, _nit] =
-        for finding <- [
-              %{
-                key: "a-blocker",
-                title: "A blocker",
-                check: "A check",
-                severity: :blocker,
-                recommendation: :fix,
-                status: :open,
-                evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-              },
-              %{
-                key: "a-nit",
-                title: "A nit",
-                check: "A check",
-                severity: :nit,
-                recommendation: :fix,
-                status: :open,
-                evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-              }
-            ] do
-          {:ok, saved} = Pipeline.save_qa_finding(task, finding)
-          saved
-        end
-
-      {:ok, _decided} = Pipeline.decide_qa_finding(system_scope(), blocker, :fix)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#qa-finding-a-nit [data-qa='qa_finding_needs_call']", "Needs your call")
-      refute has_element?(view, "#qa-finding-a-blocker [data-qa='qa_finding_needs_call']")
-    end
-
-    test "the last ruling stays where it is and lets the change go on", %{conn: conn, task: task} do
-      [blocker, _nit] =
-        for finding <- [
-              %{
-                key: "a-blocker",
-                title: "A blocker",
-                check: "A check",
-                severity: :blocker,
-                recommendation: :fix,
-                status: :open,
-                evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-              },
-              %{
-                key: "a-nit",
-                title: "A nit",
-                check: "A check",
-                severity: :nit,
-                recommendation: :fix,
-                status: :open,
-                evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-              }
-            ] do
-          {:ok, saved} = Pipeline.save_qa_finding(task, finding)
-          saved
-        end
-
-      {:ok, _decided} = Pipeline.decide_qa_finding(system_scope(), blocker, :fix)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("#qa-finding-a-nit") |> render_click()
-      view |> element("#decide-skip-a-nit") |> render_click()
-
-      assert has_element?(view, "#qa-finding-a-nit[aria-current='true']")
-      refute has_element?(view, "[data-qa='qa_finding_needs_call']")
-      assert has_element?(view, "#send-qa-findings-to-engineer")
-    end
-
-    test "changing a ruling leaves the reader where they are", %{conn: conn, task: task} do
-      [blocker, _major, _nit] =
-        for finding <- [
-              %{
-                key: "a-blocker",
-                title: "A blocker",
-                check: "A check",
-                severity: :blocker,
-                recommendation: :fix,
-                status: :open,
-                evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-              },
-              %{
-                key: "a-major",
-                title: "A major",
-                check: "A check",
-                severity: :major,
-                recommendation: :fix,
-                status: :open,
-                evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-              },
-              %{
-                key: "a-nit",
-                title: "A nit",
-                check: "A check",
-                severity: :nit,
-                recommendation: :fix,
-                status: :open,
-                evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-              }
-            ] do
-          {:ok, saved} = Pipeline.save_qa_finding(task, finding)
-          saved
-        end
-
-      {:ok, _decided} = Pipeline.decide_qa_finding(system_scope(), blocker, :fix)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("#decide-skip-a-blocker") |> render_click()
-
-      assert ["qa-finding-a-blocker", "qa-finding-a-major", "qa-finding-a-nit"] =
-               view |> render() |> Floki.parse_fragment!() |> Floki.attribute("[data-qa='qa_finding']", "id")
-
-      assert has_element?(view, "#qa-finding-a-blocker[aria-current='true'][data-state='dismissed']")
-    end
-
-    test "with nothing needing a call below, the next one is above", %{conn: conn, task: task} do
-      for finding <- [
-            %{
-              key: "a-blocker",
-              title: "A blocker",
-              check: "A check",
-              severity: :blocker,
-              recommendation: :fix,
-              status: :open,
-              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-            },
-            %{
-              key: "a-nit",
-              title: "A nit",
-              check: "A check",
-              severity: :nit,
-              recommendation: :fix,
-              status: :open,
-              evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-            }
-          ],
-          do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("#qa-finding-a-nit") |> render_click()
-      view |> element("#decide-fix-a-nit") |> render_click()
-
-      assert has_element?(view, "#qa-finding-a-blocker[aria-current='true']")
-    end
-
-    # A double click's second click lands on the finding just moved to, which nobody has read.
-    test "a double click rules only the finding that was read", %{conn: conn, task: task} do
-      findings =
-        for {key, severity} <- [{"a-blocker", :blocker}, {"a-major", :major}, {"a-nit", :nit}] do
-          %{
-            key: key,
-            title: key,
-            check: "A check",
-            severity: severity,
-            recommendation: :fix,
-            status: :open,
-            evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-          }
-        end
-
-      for finding <- findings, do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("#decide-skip-a-blocker") |> render_click()
-      view |> element("#decide-skip-a-major") |> render_click()
-
-      assert [%{key: "a-blocker", decision: :skip}, %{key: "a-major", decision: nil}, %{key: "a-nit", decision: nil}] =
-               Pipeline.list_qa_findings(task)
-
-      assert has_element?(view, "#qa-finding-a-major[aria-current='true'] [data-qa='qa_finding_needs_call']")
-    end
-
-    test "the finding moved to can be ruled on once it has been seen", %{conn: conn, task: task} do
-      findings =
-        for {key, severity} <- [{"a-blocker", :blocker}, {"a-major", :major}] do
-          %{
-            key: key,
-            title: key,
-            check: "A check",
-            severity: severity,
-            recommendation: :fix,
-            status: :open,
-            evidence: [%{name: "what QA saw", kind: :note, text: "Seen."}]
-          }
-        end
-
-      for finding <- findings, do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("#decide-skip-a-blocker") |> render_click()
-      Process.sleep(400)
-      view |> element("#decide-skip-a-major") |> render_click()
-
-      assert [%{key: "a-blocker", decision: :skip}, %{key: "a-major", decision: :skip}] =
-               Pipeline.list_qa_findings(task)
-    end
-
-    test "the row being read keeps itself in view", %{conn: conn, task: task, raised: raised} do
-      for finding <- raised, do: {:ok, _saved} = Pipeline.save_qa_finding(task, finding)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert ["CurrentInView", "CurrentInView"] =
-               view |> render() |> Floki.parse_fragment!() |> Floki.attribute("[data-qa='qa_finding']", "phx-hook")
-    end
-  end
-
-  describe "the demo stage" do
-    setup %{project: project, task: task} do
-      {:ok, role} = Roles.get_role(project_id: project.id, stage: :demo)
-
-      {:ok, task} = Pipeline.update_task(task, %{stage: :demo, worktree_path: create_temp_git_repo()})
-
-      {:ok, demo_run} =
-        Pipeline.create_run(%{
-          task_id: task.id,
-          role_id: role.id,
-          status: :finished,
-          stage_outcome: :done,
-          conversation_id: "sess_demo_stage",
-          started_at: DateTime.utc_now()
-        })
-
-      demo_dir = Path.join(task.scratch_path, "demo")
-      File.mkdir_p!(demo_dir)
-
-      recorded = fn ->
-        File.write!(Path.join(demo_dir, "demo.webm"), "webm bytes")
-
-        File.write!(Path.join(demo_dir, "TLV-1.json"), """
-        {"title": "Bills can be filtered by vendor",
-         "summary": "A vendor filter on the invoice index, narrowing the list as you type.",
-         "not_shown": "The Plaid callback, which needs a real bank."}
-        """)
-
-        File.write!(Path.join(demo_dir, "captions.jsonl"), """
-        {"at_ms": 0, "text": "Starting on the invoice index", "criterion": null}
-        {"at_ms": 5200, "text": "Filtering to Sysco", "criterion": "Invoices can be filtered by vendor"}
-        """)
-      end
-
-      %{task: task, role: role, demo_run: demo_run, demo_dir: demo_dir, recorded: recorded}
-    end
-
-    test "working in the question card does not read the demo or its beats again", %{
-      conn: conn,
-      task: task,
-      demo_run: run
-    } do
-      {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
-      blocked = Repo.preload(blocked, task: :issue)
-
-      {:ok, _first} =
-        Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which flow?", options: ["Checkout", "Refund"]})
-
-      {:ok, _second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "How long?"})
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      reject(&Pipeline.read_demo/1)
-      reject(&Pipeline.list_demo_beats/1)
-
-      for typed <- ["C", "Ch", "Checkout", "Checkout, start to paid"] do
-        view |> form("#answer-question-form", %{"answer" => typed}) |> render_change()
-        assert has_element?(view, "#answer-textarea", typed)
-      end
-
-      view |> element("#question-option-1") |> render_click()
-      assert has_element?(view, "#question-option-1.bg-blue-100")
-
-      view |> element("#question-tab-1") |> render_click()
-      assert has_element?(view, "#question-prompt", "How long?")
-    end
-
-    # A demo concludes nothing and moves nothing, so the panel is a player and an
-    # index into it: the task stops here.
-    test "plays the recording with its beats beside it", %{conn: conn, task: task, recorded: recorded} do
-      recorded.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "[data-qa='demo_title']", "Bills can be filtered by vendor")
-      assert has_element?(view, "[data-qa='demo_summary']", "narrowing the list as you type")
-      assert has_element?(view, "#demo-video[data-src='/tasks/#{task.id}/demo/video']")
-      assert has_element?(view, "[data-qa='demo_not_shown']", "The Plaid callback")
-
-      assert has_element?(view, "#demo-beat-0", "Starting on the invoice index")
-      assert has_element?(view, "#demo-beat-5200", "Filtering to Sysco")
-      assert has_element?(view, "#demo-beat-5200 [data-qa='demo_beat_criterion']", "filtered by vendor")
-
-      # A beat is an index into the video: the stamp is what a reader matches
-      # against the player's own clock.
-      assert has_element?(view, "#demo-beat-5200", "0:05")
-    end
-
-    # The hook builds the playing video from the rendered one's data-src, so every
-    # way to the tab without a reload must bring the same hooked placeholder a reload does.
-    test "a recorded demo reached from another tab renders its player", %{
-      conn: conn,
-      task: task,
-      role: role,
-      recorded: recorded
-    } do
-      recorded.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=issue")
-      view |> element("#task-tab-#{role.id}") |> render_click()
-
-      assert has_element?(
-               view,
-               "#demo-video-frame[phx-hook='DemoCaptions'][phx-update='ignore'] #demo-video[data-src='/tasks/#{task.id}/demo/video']"
-             )
-    end
-
-    test "a recorded demo reached by a link elsewhere in Rail renders its player", %{
-      conn: conn,
-      task: task,
-      recorded: recorded
-    } do
-      recorded.()
-
-      assert {:ok, overview, _html} = live(conn, ~p"/")
-      assert {:ok, view, _html} = live_redirect(overview, to: ~p"/tasks/#{task.id}")
-
-      assert has_element?(
-               view,
-               "#demo-video-frame[phx-hook='DemoCaptions'][phx-update='ignore'] #demo-video[data-src='/tasks/#{task.id}/demo/video']"
-             )
-    end
-
-    test "leaving the demo tab and coming back renders the player again", %{
-      conn: conn,
-      task: task,
-      role: role,
-      recorded: recorded
-    } do
-      recorded.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#task-tab-issue") |> render_click()
-      refute has_element?(view, "#demo-video")
-      view |> element("#task-tab-#{role.id}") |> render_click()
-
-      assert has_element?(
-               view,
-               "#demo-video-frame[phx-hook='DemoCaptions'][phx-update='ignore'] #demo-video[data-src='/tasks/#{task.id}/demo/video']"
-             )
-    end
-
-    test "a demo with nothing recorded reached from another tab shows no player", %{
-      conn: conn,
-      task: task,
-      role: role
-    } do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=issue")
-      view |> element("#task-tab-#{role.id}") |> render_click()
-
-      assert has_element?(view, "#demo-pending", "Nothing recorded yet.")
-      refute has_element?(view, "#demo-video")
-    end
-
-    test "a skipped demo reached from another tab shows no player", %{
-      conn: conn,
-      scope: scope,
-      task: task,
-      role: role
-    } do
-      {:ok, _run} = Pipeline.skip_demo(scope, task)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=issue")
-      view |> element("#task-tab-#{role.id}") |> render_click()
-
-      assert has_element?(view, "#demo-pending", "No demo is needed for this change.")
-      refute has_element?(view, "#demo-video")
-    end
-
-    # The whole point of recording the application is seeing the application, so
-    # the caption has a bar of its own under the video rather than a box over it.
-    test "the caption sits under the video, never over it", %{conn: conn, task: task, recorded: recorded} do
-      recorded.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      caption = view |> element("#demo-caption") |> render()
-
-      refute caption =~ "absolute"
-      refute caption =~ "inset"
-
-      # Empty until the player says which beat is up, and holding its height so
-      # the layout does not move when one lands.
-      assert caption =~ "min-h-"
-
-      # The beats reach the player as data rather than as a <track>, which would
-      # render its cues inside the video element.
-      assert has_element?(view, "#demo-video-frame[phx-hook='DemoCaptions']")
-      refute has_element?(view, "#demo-video track")
-    end
-
-    test "stacked below the desktop breakpoint, the beats leave room for the player under them", %{
-      conn: conn,
-      task: task,
-      recorded: recorded
-    } do
-      recorded.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert [class] = view |> render() |> Floki.parse_fragment!() |> Floki.attribute("#demo-beats", "class")
-      assert "max-h-1/2" in String.split(class)
-      assert "lg:max-h-none" in String.split(class)
-    end
-
-    test "a demo the stage was entered without asks whether it is needed", %{
-      conn: conn,
-      task: task,
-      demo_run: run,
-      role: role
-    } do
-      Repo.delete!(run)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#task-tab-#{role.id}[aria-selected='true']")
-      assert has_element?(view, "#demo-pending", "Nothing recorded yet.")
-
-      view |> element("#skip-demo", "No demo needed") |> render_click()
-
-      assert has_element?(view, "#demo-pending", "No demo is needed for this change.")
-      refute has_element?(view, "#skip-demo")
-
-      expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-      view |> element("#record-demo", "Record a demo") |> render_click()
-
-      assert %Task{demo_skipped_at: nil} = Repo.reload!(task)
-    end
-
-    test "a demo already recorded can be recorded again", %{conn: conn, task: task, recorded: recorded} do
-      recorded.()
-
-      expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
-        assert prompt =~ "fresh take"
-        {:ok, %OsProcess{run: spawned}}
-      end)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#rerecord-demo", "Re-record") |> render_click()
-
-      assert has_element?(view, "[data-qa='demo_running']")
-    end
-
-    test "a demo that cannot be recorded says why", %{conn: conn, task: task, demo_run: run} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      {:ok, running} = Pipeline.update_run(run, %{status: :running})
-      view |> with_target("#demo-stage") |> render_click("skip_demo", %{})
-      assert has_element?(view, "#demo-error", "Something is still running on this task.")
-
-      {:ok, _idle} = Pipeline.update_run(running, %{status: :finished})
-      {:ok, _moved} = Pipeline.update_task(task, %{stage: :qa})
-      view |> with_target("#demo-stage") |> render_click("record_demo", %{})
-      assert has_element?(view, "#demo-error", "Could not do that: {:invalid_stage, :qa}")
-    end
-
-    test "a task nothing recorded has nothing to send", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#demo-pending", "Nothing recorded yet")
-      assert has_element?(view, "[data-qa='demo_no_beats']")
-    end
-
-    test "a recording that could not be encoded says so rather than showing nothing", %{
-      conn: conn,
-      task: task,
-      demo_run: run
-    } do
-      {:ok, _failed} =
-        Pipeline.update_run(run, %{error: "The recording could not be encoded: ffmpeg is not installed."})
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#demo-pending", "The last recording did not produce a video.")
-      assert has_element?(view, "#task-error-card", "ffmpeg is not installed")
-    end
-
-    # A recording in flight has no video yet, so what is shown is the browser it
-    # is being made from, with the beats landing as they are narrated.
-    test "a demo still recording shows the browser and what has been said", %{
-      conn: conn,
-      task: task,
-      demo_run: run,
-      demo_dir: demo_dir
-    } do
-      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-
-      File.write!(
-        Path.join(demo_dir, "captions.jsonl"),
-        ~s({"at_ms": 1200, "text": "Opening the invoice index", "criterion": null}\n)
-      )
-
-      _logged =
-        Pipeline.append_run_events(run.id, nil, [
-          "[browser] goto http://localhost:4000/invoices",
-          "[demo] say 0:01 Opening the invoice index",
-          "[browser] do \"filter to Sysco\""
-        ])
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#demo-running", "Recording")
-      assert has_element?(view, "#demo-screencast")
-      assert has_element?(view, "[data-qa='demo_screencast_waiting']")
-      assert has_element?(view, "[data-qa='demo_browser_url']", "localhost:4000/invoices")
-      assert has_element?(view, "[data-qa='demo_doing']", "do")
-      assert has_element?(view, "#demo-beats", "Narrated so far")
-      assert has_element?(view, "#demo-beat-1200", "Opening the invoice index")
-
-      refute has_element?(view, "#demo-video")
-    end
-
-    # A frame goes straight to the client: re-rendering the panel around a picture
-    # arriving several times a second would diff everything else to move one image.
-    # The demo films its own browser, and the pane shows that one.
-    test "the Demo pane shows and hears its own run's browser and no other", %{conn: conn, task: task, demo_run: run} do
-      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-      _logged = Pipeline.append_run_events(run.id, nil, ["[browser] connect"])
-
-      stub(Tools, :get_browser_url, fn
-        _task, "demo" -> "http://localhost:4000/demo-tab"
-        _task, _other -> "http://localhost:4000/somebody-elses-tab"
-      end)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "[data-qa='demo_browser_url']", "localhost:4000/demo-tab")
-
-      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:qa", {:browser_frame, task.id, "the pass's"})
-      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:demo", {:browser_frame, task.id, "the demo's"})
+      send(view.pid, {:browser_frame, "tsk_somebody_else", "some-base64"})
       _settled = render(view)
 
-      assert_push_event(view, "browser:frame", %{data: "the demo's"})
-      refute_push_event(view, "browser:frame", %{data: "the pass's"}, 100)
-    end
-
-    test "frames from the browser reach the panel while it records", %{conn: conn, task: task, demo_run: run} do
-      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      send(view.pid, {:browser_frame, task.id, "some-base64"})
-
-      assert_push_event(view, "browser:frame", %{data: "some-base64"})
-    end
-
-    # The write-up is read off disk, so nothing else would bring it up to date.
-    test "a recording that landed underneath the reader is picked up", %{
-      conn: conn,
-      task: task,
-      demo_run: run,
-      recorded: recorded
-    } do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "#demo-pending")
-
-      recorded.()
-      send(view.pid, {:os_process_finished, run, %{}})
-
-      _settled = render(view)
-      assert has_element?(view, "[data-qa='demo_title']", "Bills can be filtered by vendor")
-    end
-
-    # The panel is the stage's, and the conversation beside it is the page's.
-    test "the conversation sits beside the recording", %{conn: conn, task: task, recorded: recorded} do
-      recorded.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#task-conversation-column")
-      assert has_element?(view, "[data-qa='conversation-tab']")
-    end
-
-    # The captions are on disk, and narrating one says so on the task's topic.
-    test "a beat narrated underneath the reader is picked up", %{conn: conn, task: task, demo_run: run, demo_dir: dir} do
-      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "[data-qa='demo_no_beats']")
-
-      File.write!(Path.join(dir, "captions.jsonl"), ~s({"at_ms": 800, "text": "Saving the bill"}\n))
-      :ok = Pipeline.broadcast_output_saved(task)
-
-      _settled = render(view)
-      assert has_element?(view, "#demo-beat-800", "Saving the bill")
+      refute_push_event(view, "browser:frame", %{data: "some-base64"}, 100)
     end
   end
 
@@ -8014,7 +5874,7 @@ defmodule RailWeb.TaskLiveTest do
       first: first,
       project: project
     } do
-      for stage <- [:review, :qa, :demo, :debugger] do
+      for stage <- [:review_lead, :debugger] do
         {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
 
         {:ok, _run} =

@@ -1,13 +1,15 @@
 defmodule RailWeb.Components.UpNextTest do
-  use ExUnit.Case, async: true
+  use Rail.DataCase, async: true
 
   import Phoenix.LiveViewTest
   import RailWeb.Utils.StageLabel
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias RailWeb.Components.UpNext
 
@@ -23,7 +25,7 @@ defmodule RailWeb.Components.UpNextTest do
         stage_outcome: :done,
         completed_at: ~U[2026-01-01 10:00:00Z],
         questions: [],
-        role: %Role{name: "#{stage} role", icon_name: "pi-robot", stage: stage},
+        role: %Role{name: "#{stage} role", icon_name: "pi-robot", stage: Task.role_stage(stage)},
         task: %Task{stage: stage, scratch_path: scratch, issue: %Issue{identifier: "UPN-1", title: "Invoice filters"}}
       }
     end
@@ -38,7 +40,7 @@ defmodule RailWeb.Components.UpNextTest do
   # A card and the page it opens have to name the errand the same way, so both
   # read it off `StageLabel.approval_label/1`.
   test "names the work each stage is holding out for review", %{waiting: waiting} do
-    for stage <- [:plan, :engineer, :review, :qa] do
+    for stage <- [:plan, :engineer, :review] do
       run = waiting.(stage)
       html = render_component(&UpNext.up_next/1, runs: [run])
 
@@ -47,7 +49,7 @@ defmodule RailWeb.Components.UpNextTest do
   end
 
   test "says what is waiting to be read, however many of it there is", %{waiting: waiting} do
-    for {stage, work} <- [plan: "plan", review: "findings", qa: "QA report"] do
+    for {stage, work} <- [plan: "plan", engineer: "diff", review: "findings"] do
       html = render_component(&UpNext.up_next/1, runs: [waiting.(stage)])
 
       assert html =~ "Waiting on you to read the #{work}."
@@ -154,28 +156,50 @@ defmodule RailWeb.Components.UpNextTest do
     assert render_component(&UpNext.up_next/1, runs: [one, one]) =~ "asked a question"
   end
 
-  test "a change whose demo is recorded is ready to merge, and opens on the demo", %{waiting: waiting} do
-    demo = waiting.(:demo)
-    ready = %{demo | role_id: "rol_demo", task: %{demo.task | pr_url: "https://github.com/org/app/pull/12"}}
+  test "a Review run done with its review finished is ready to merge, and opens on Review", %{
+    project: project,
+    waiting: waiting
+  } do
+    {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
+    task = learnings_task(project, "UPN-2", :review)
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    {:ok, %Task{id: task_id} = task} = Pipeline.update_task(task, %{pr_url: "https://github.com/org/app/pull/12"})
 
-    html = render_component(&UpNext.up_next/1, runs: [ready])
+    {:ok, %Run{id: run_id} = run} =
+      Pipeline.create_run(%{
+        task_id: task_id,
+        role_id: lead.id,
+        status: :finished,
+        stage_outcome: :done,
+        started_at: DateTime.utc_now()
+      })
 
-    assert html =~ ~s(href="/tasks/tsk_demo?tab=rol_demo")
-    assert html =~ "Ready to merge"
-    assert html =~ "The demo is recorded, and the pull request is waiting on you to merge it."
+    {:ok, _pass} = Pipeline.save_review(task)
+    shown = %{run | role: lead, task: task, questions: []}
 
-    html = render_component(&UpNext.up_next/1, runs: [waiting.(:engineer), %{ready | id: "run_ready"}])
+    html = render_component(&UpNext.up_next/1, runs: [shown])
 
-    assert html =~ "demo recorded"
-    assert html =~ ~s(href="/tasks/tsk_demo?tab=rol_demo")
-  end
-
-  test "a recorded demo with no pull request to merge is watched on the task page", %{waiting: waiting} do
-    html = render_component(&UpNext.up_next/1, runs: [waiting.(:demo)])
-
-    assert html =~ "Watch the demo"
-    assert html =~ ~s(href="/tasks/tsk_demo")
+    assert html =~ "Ready for review"
+    assert html =~ "Review the findings"
     refute html =~ "Ready to merge"
+
+    {:ok, %Run{id: ^run_id}} = Pipeline.start_fix_round(run)
+    html = render_component(&UpNext.up_next/1, runs: [shown])
+
+    assert html =~ ~s(href="/tasks/#{task_id}?tab=#{lead.id}")
+    assert html =~ "Ready to merge"
+    assert html =~ "the pull request is waiting on you to merge it."
+
+    html = render_component(&UpNext.up_next/1, runs: [waiting.(:engineer), shown])
+
+    assert html =~ ~r/id="up-next-row-#{run_id}".*>\s*Ready to merge\s*</s
+    assert html =~ ~s(href="/tasks/#{task_id}?tab=#{lead.id}")
+
+    html = render_component(&UpNext.up_next/1, runs: [%{shown | task: %{task | pr_url: nil}}])
+
+    assert html =~ "Ready for review"
+    assert html =~ ~s(href="/tasks/#{task_id}")
+    refute html =~ "?tab="
   end
 
   test "a Plan run with options and no pick asks for the pick, as a card and as a row", %{

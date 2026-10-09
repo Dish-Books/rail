@@ -15,6 +15,7 @@ defmodule RailWeb.Live.RunConversation do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Turn
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
@@ -220,7 +221,7 @@ defmodule RailWeb.Live.RunConversation do
             data-qa="conversation_closed"
             class="shrink-0 px-5 py-4 border-t border-slate-200 dark:border-slate-700 text-[13px] text-slate-500 dark:text-slate-400"
           >
-            The plan is approved, so this conversation is closed.
+            {@closed_reason}
           </p>
 
           <.plan_comment_tray
@@ -642,17 +643,19 @@ defmodule RailWeb.Live.RunConversation do
   attr :worktree_path, :string, required: true
   attr :target, :any, required: true
 
-  # A line naming who Plan handed work to and what their saves came to, opening onto their own
-  # transcript: open while they work, closed after, and a click flips that either way.
+  # A line naming who a lead handed work to, the work it was given and what their saves came to, opening
+  # onto their own transcript: open while they work, closed after, and a click flips that either way.
   def subagent_block(assigns) do
-    %Turn{status: status, turns: turns} = assigns.msg
+    %Turn{status: status, turns: turns, label: label, content: content} = assigns.msg
     key = "sub-#{assigns.idx}"
     saved = subagent_saved(assigns.msg)
+    {name, work} = subagent_name(label, content) || {plan_subagent_name(label, assigns.roles_map), content}
 
     assigns =
       assigns
       |> assign(:key, key)
-      |> assign(:name, subagent_name(assigns.msg.label, assigns.roles_map))
+      |> assign(:name, name)
+      |> assign(:work, work)
       |> assign(:saved, saved)
       |> assign(:open?, turns != [] and status == :running != MapSet.member?(assigns.expanded_activities, key))
 
@@ -699,7 +702,7 @@ defmodule RailWeb.Live.RunConversation do
           data-qa="subagent-description"
           class="text-slate-500 dark:text-slate-400 truncate min-w-0"
         >
-          {@msg.content}
+          {@work}
         </span>
         <span
           data-qa="subagent-saved"
@@ -1168,7 +1171,7 @@ defmodule RailWeb.Live.RunConversation do
     %{task: task, selected_run: run, roles_map: roles_map} = socket.assigns
 
     if retryable?(run, task, roles_map) do
-      {:ok, %Run{} = run} = Pipeline.enter_stage(task, roles_map[run.role_id].stage)
+      {:ok, %Run{} = run} = Pipeline.enter_stage(task, task.stage)
       {:noreply, select(socket, run)}
     else
       {:noreply, socket}
@@ -1296,6 +1299,7 @@ defmodule RailWeb.Live.RunConversation do
     |> assign_new(:lifted_comments, fn -> [] end)
     |> assign_new(:tray_open, fn -> true end)
     |> assign_new(:closed, fn -> false end)
+    |> assign_new(:closed_reason, fn -> "The plan is approved, so this conversation is closed." end)
   end
 
   defp identifier(%{issue: %Issue{identifier: identifier}}), do: identifier
@@ -1375,7 +1379,7 @@ defmodule RailWeb.Live.RunConversation do
     end
   end
 
-  defp subagent_name(label, roles_map) do
+  defp plan_subagent_name(label, roles_map) do
     stage = %{"product" => :product, "designer" => :design, "architect" => :architect}[label]
 
     case Enum.find(Map.values(roles_map), &(stage != nil and &1.stage == stage)) do
@@ -1612,8 +1616,10 @@ defmodule RailWeb.Live.RunConversation do
   defp selected_role(%Run{role_id: role_id}, roles_map), do: resolve_role(role_id, roles_map)
 
   # Only the stage the task is in can be entered again without moving the task.
+  # The run belongs to the stage the task is at, Review's being the Review lead's.
   defp retryable?(%Run{role_id: role_id} = run, %{stage: stage}, %{} = roles_map) do
-    not Run.running?(run) and not Run.resumable?(run) and match?(%{stage: ^stage}, roles_map[role_id])
+    role_stage = Task.role_stage(stage)
+    not Run.running?(run) and not Run.resumable?(run) and match?(%{stage: ^role_stage}, roles_map[role_id])
   end
 
   defp restore_draft(nil, draft), do: draft

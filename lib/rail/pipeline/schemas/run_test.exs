@@ -270,15 +270,27 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     refute Run.needs_attention?(running)
   end
 
-  test "a recorded demo is waiting on the change being merged" do
+  # Review is worked by the Review lead, whose finished round waits on the findings being ruled.
+  test "a done Review lead run is waiting on its findings being ruled" do
     done = %Run{
       status: :finished,
       stage_outcome: :done,
-      role: %Role{stage: :demo},
-      task: %Task{stage: :demo, merged_at: nil, issue: %Issue{}}
+      role: %Role{stage: :review_lead},
+      task: %Task{stage: :review, merged_at: nil, issue: %Issue{}}
     }
 
     assert Run.needs_attention?(done)
+  end
+
+  test "a review subagent's role at Review is not the run the task waits on" do
+    done = %Run{
+      status: :finished,
+      stage_outcome: :done,
+      role: %Role{stage: :review},
+      task: %Task{stage: :review, merged_at: nil, issue: %Issue{}}
+    }
+
+    refute Run.needs_attention?(done)
   end
 
   test "a done Plan run is waiting on its plan to be approved" do
@@ -365,5 +377,16 @@ defmodule Rail.Pipeline.Schemas.RunTest do
 
       refute Run.needs_attention?(failed)
     end
+  end
+
+  test "a run read as its issue was deleted waits on nobody" do
+    orphaned = %Run{
+      status: :finished,
+      error: "It went wrong",
+      role: %Role{stage: :engineer},
+      task: %Task{stage: :engineer, merged_at: nil, issue: nil}
+    }
+
+    refute Run.needs_attention?(orphaned)
   end
 end

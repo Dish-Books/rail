@@ -34,6 +34,15 @@ defmodule Rail.Pipeline.Actions.UpdateBranchTest do
         system_prompt: "You are the engineer."
       })
 
+    {:ok, lead_role} =
+      Roles.create_role(system_scope(), project, %{
+        cli: :claude,
+        stage: :review_lead,
+        name: "review lead role",
+        model: "claude-opus-5-5",
+        system_prompt: "You are the Review lead."
+      })
+
     issue =
       %Issue{}
       |> Issue.changeset(%{
@@ -52,7 +61,7 @@ defmodule Rail.Pipeline.Actions.UpdateBranchTest do
       |> Task.changeset(
         %{
           issue_id: issue.id,
-          stage: :review,
+          stage: :engineer,
           worktree_name: "rbs-1",
           worktree_path: worktree_path,
           scratch_path: Path.join(System.tmp_dir!(), "update_branch_#{System.unique_integer([:positive])}")
@@ -72,7 +81,7 @@ defmodule Rail.Pipeline.Actions.UpdateBranchTest do
         started_at: DateTime.utc_now()
       })
 
-    %{project: project, task: task, run: run, worktree_path: worktree_path}
+    %{project: project, task: task, run: run, lead_role: lead_role, worktree_path: worktree_path}
   end
 
   test "a merge that goes cleanly is pushed without the engineer", %{task: task, run: run} do
@@ -88,42 +97,6 @@ defmodule Rail.Pipeline.Actions.UpdateBranchTest do
     assert {:ok, %Task{is_updating_branch: false}} = Pipeline.update_branch(system_scope(), task)
     assert %Run{status: :finished, stage_outcome: :done, ci_failure_streak: 0} = Repo.reload!(run)
     assert "[rail] Merged origin/main in." in Enum.map(Pipeline.list_run_events(run), & &1.line)
-  end
-
-  # Nothing to merge leaves HEAD where it was, so there is no new code to review.
-  test "a merge that finds the branch up to date leaves the task where it was", %{task: task} do
-    stub(Git, :fetch_default_branch, fn _project, _path -> :ok end)
-    expect(Git, :merge_default_branch, fn _scope, _task -> :ok end)
-    stub(Git, :push_branch, fn _scope, _task -> :ok end)
-
-    Req.Test.stub(Client, fn conn ->
-      conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "Not Found"})
-    end)
-
-    assert {:ok, %Task{stage: :review}} = Pipeline.update_branch(system_scope(), task)
-  end
-
-  test "a merge that brings anything into the branch of a task at QA sends it back to engineer", %{
-    task: task,
-    run: run,
-    worktree_path: worktree_path
-  } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
-    stub(Git, :fetch_default_branch, fn _project, _path -> :ok end)
-
-    expect(Git, :merge_default_branch, fn _scope, %Task{} ->
-      git!(worktree_path, ["commit", "--allow-empty", "-m", "merged main in"])
-      :ok
-    end)
-
-    stub(Git, :push_branch, fn _scope, _task -> :ok end)
-
-    Req.Test.stub(Client, fn conn ->
-      conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "Not Found"})
-    end)
-
-    assert {:ok, %Task{stage: :engineer, is_updating_branch: false}} = Pipeline.update_branch(system_scope(), task)
-    assert %Run{status: :finished, stage_outcome: :done} = Repo.reload!(run)
   end
 
   test "a merge that stops on conflicts goes to the engineer to resolve", %{task: task, run: run} do
@@ -177,7 +150,7 @@ defmodule Rail.Pipeline.Actions.UpdateBranchTest do
 
     assert {:error, "merge: origin/main - not something we can merge"} = Pipeline.update_branch(system_scope(), task)
     assert ["[rail] Merging origin/main in failed."] = Enum.map(Pipeline.list_run_events(run), & &1.line)
-    assert %Task{stage: :review} = Repo.reload!(task)
+    assert %Task{stage: :engineer} = Repo.reload!(task)
   end
 
   test "a fetch that fails merges nothing", %{task: task} do
@@ -185,7 +158,7 @@ defmodule Rail.Pipeline.Actions.UpdateBranchTest do
     reject(&Git.merge_default_branch/2)
 
     assert {:error, "could not read from remote"} = Pipeline.update_branch(system_scope(), task)
-    assert %Task{stage: :review} = Repo.reload!(task)
+    assert %Task{stage: :engineer} = Repo.reload!(task)
   end
 
   test "an engineer that cannot be resumed on the conflicts says why", %{task: task} do
@@ -225,23 +198,100 @@ defmodule Rail.Pipeline.Actions.UpdateBranchTest do
 
     File.write!(Path.join(worktree_path, "loose.ex"), "one\n")
     assert {:error, :uncommitted_changes} = Pipeline.update_branch(system_scope(), task)
-    assert %Task{stage: :review} = Repo.reload!(task)
+    assert %Task{stage: :engineer} = Repo.reload!(task)
     File.rm!(Path.join(worktree_path, "loose.ex"))
 
     {:ok, running} = Pipeline.update_run(run, %{status: :running})
     assert {:error, :task_busy} = Pipeline.update_branch(system_scope(), task)
-    assert %Task{stage: :review} = Repo.reload!(task)
+    assert %Task{stage: :engineer} = Repo.reload!(task)
     {:ok, _idle} = Pipeline.update_run(running, %{status: :finished})
 
     {:ok, gone} = Pipeline.update_task(task, %{worktree_path: "/tmp/gone_#{System.unique_integer([:positive])}"})
     assert {:error, :no_worktree} = Pipeline.update_branch(system_scope(), gone)
-    assert %Task{stage: :review} = Repo.reload!(gone)
+    assert %Task{stage: :engineer} = Repo.reload!(gone)
 
     {:ok, cleaned} = Pipeline.update_task(task, %{cleaned_up_at: DateTime.utc_now()})
     assert {:error, :cleaned_up} = Pipeline.update_branch(system_scope(), cleaned)
 
     Repo.delete!(run)
     {:ok, restored} = Pipeline.update_task(cleaned, %{cleaned_up_at: nil, worktree_path: worktree_path})
-    assert {:error, :no_engineer_run} = Pipeline.update_branch(system_scope(), restored)
+    assert {:error, :no_stage_run} = Pipeline.update_branch(system_scope(), restored)
+  end
+
+  # At Review the branch is the Review lead's, so the merge runs on its run and the task never goes back.
+  describe "at Review" do
+    setup %{task: task, run: run, lead_role: lead_role} do
+      # Its pull request was opened before Review, so a push has nothing to ask GitHub.
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review, pr_number: 3})
+
+      {:ok, lead_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: lead_role.id,
+          status: :finished,
+          stage_outcome: :done,
+          conversation_id: "sess_update_branch_lead",
+          started_at: DateTime.utc_now()
+        })
+
+      stub(Git, :fetch_default_branch, fn _project, _path -> :ok end)
+
+      %{task: task, engineer_run: run, lead_run: lead_run}
+    end
+
+    test "a merge that brings anything in is pushed and starts the lead's next round, and the task stays", %{
+      task: task,
+      engineer_run: engineer_run,
+      lead_run: %Run{id: lead_run_id} = lead_run,
+      worktree_path: worktree_path
+    } do
+      expect(Git, :merge_default_branch, fn _scope, %Task{} ->
+        git!(worktree_path, ["commit", "--allow-empty", "-m", "merged main in"])
+        :ok
+      end)
+
+      expect(Git, :push_branch, fn _scope, _task -> :ok end)
+      expect(Tools, :start_os_process, fn %Run{id: ^lead_run_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      assert {:ok, %Task{stage: :review, is_updating_branch: false}} = Pipeline.update_branch(system_scope(), task)
+      assert %Run{stage_outcome: :in_progress, ci_failure_streak: 0, review_on_ci_pass: false} = Repo.reload!(lead_run)
+      assert %Run{status: :finished, stage_outcome: :done} = Repo.reload!(engineer_run)
+
+      assert ["[rail] Merged origin/main in.", "[rail] Round 1 started after it was pushed"] =
+               Enum.map(Pipeline.list_run_events(lead_run), & &1.line)
+    end
+
+    # Nothing to merge leaves HEAD where it was, so there is no new code for a round to read.
+    test "a merge that finds the branch up to date does nothing more", %{task: task, lead_run: lead_run} do
+      expect(Git, :merge_default_branch, fn _scope, _task -> :ok end)
+      reject(&Git.push_branch/2)
+      reject(Tools, :start_os_process, 2)
+
+      assert {:ok, %Task{stage: :review, is_updating_branch: false}} = Pipeline.update_branch(system_scope(), task)
+      assert %Run{status: :finished, stage_outcome: :done} = Repo.reload!(lead_run)
+      assert ["[rail] Merged origin/main in."] = Enum.map(Pipeline.list_run_events(lead_run), & &1.line)
+    end
+
+    test "a merge that stops on conflicts resumes the Review lead, and the task stays at Review", %{
+      task: task,
+      engineer_run: engineer_run,
+      lead_run: %Run{id: lead_run_id} = lead_run
+    } do
+      expect(Git, :merge_default_branch, fn _scope, _task -> {:conflicts, ["lib/app.ex"]} end)
+
+      # Only the Review lead is spawned with its subagents.
+      expect(Tools, :start_os_process, fn %Run{id: ^lead_run_id} = spawned, argv ->
+        assert "--agents" in argv
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %Task{stage: :review, is_updating_branch: true}} = Pipeline.update_branch(system_scope(), task)
+      assert %Run{status: :running} = Repo.reload!(lead_run)
+      assert %Run{status: :finished} = Repo.reload!(engineer_run)
+
+      assert [
+               "[rail] Merging origin/main in stopped on conflicts in lib/app.ex. Asked the Review lead to resolve them."
+             ] = Enum.map(Pipeline.list_run_events(lead_run), & &1.line)
+    end
   end
 end

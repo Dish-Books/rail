@@ -7,7 +7,7 @@ defmodule Rail.Learnings.Actions.GetLearningStatsTest do
   alias Rail.Roles
 
   setup %{project: project} do
-    {:ok, review} = Roles.get_role(project_id: project.id, stage: :review)
+    {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
     calibration = learning(project, %{rule: "Don't flag a missing @doc", kind: :calibration, pinned: true})
     convention = learning(project, %{rule: "Take the scope first", kind: :convention, pinned: true})
     task = learnings_task(project, "STA-1", :review)
@@ -18,7 +18,7 @@ defmodule Rail.Learnings.Actions.GetLearningStatsTest do
         {:ok, run} =
           Pipeline.create_run(%{
             task_id: task.id,
-            role_id: review.id,
+            role_id: lead.id,
             status: :finished,
             started_at: DateTime.utc_now(),
             conversation_id: "sess_sta_#{task.id}_#{n}"
@@ -32,21 +32,28 @@ defmodule Rail.Learnings.Actions.GetLearningStatsTest do
     finding = fn key, rule ->
       %{
         key: key,
+        kind: :code,
+        raised_by: :code_reviewer,
         title: "Finding #{key}",
+        problem: "A task with no worktree crashes the page.",
         file: "lib/a.ex",
         line: 3,
+        fix: "Guard the nil in the action.",
+        why: "It crashes.",
+        rule: "Every caller handles a missing worktree.",
         severity: :nit,
         recommendation: :fix,
-        status: :open,
-        rule: rule
+        checklist_rule: rule,
+        places: [%{file: "lib/a.ex", line: 3, label: "handle/1"}],
+        evidence: [%{name: "The clause", kind: :code, file: "lib/a.ex", line: 3}]
       }
     end
 
     for finding <- [finding.("doc-a", calibration.id), finding.("broke", convention.id)],
-        do: {:ok, _saved} = Pipeline.save_review_finding(task, finding)
+        do: {:ok, _saved} = Pipeline.save_finding(task, finding)
 
     for finding <- [finding.("doc-b", calibration.id)],
-        do: {:ok, _saved} = Pipeline.save_review_finding(other_task, finding)
+        do: {:ok, _saved} = Pipeline.save_finding(other_task, finding)
 
     %{calibration: calibration, convention: convention, task: task, other_task: other_task}
   end
@@ -55,8 +62,8 @@ defmodule Rail.Learnings.Actions.GetLearningStatsTest do
     calibration: calibration,
     task: task
   } do
-    [doc_a] = for f <- Pipeline.list_review_findings(task), f.key == "doc-a", do: f
-    {:ok, %{id: fixed_id} = fixed} = Pipeline.decide_review_finding(system_scope(), doc_a, :fix)
+    [doc_a] = for f <- Pipeline.list_findings(task), f.key == "doc-a", do: f
+    {:ok, %{id: fixed_id} = fixed} = Pipeline.decide_finding(system_scope(), doc_a, :fix)
     {:ok, _flagged} = Learnings.record_overrides(task, [fixed])
 
     assert %{
