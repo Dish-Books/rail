@@ -55,6 +55,7 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnectTest do
     File.mkdir_p!(Path.join(task.worktree_path, "scripts"))
 
     File.write!(Path.join(task.worktree_path, "scripts/seed.sh"), """
+    echo ran >> runs
     n=$(( $(cat seeded 2>/dev/null || echo 0) + 1 )); echo $n > seeded
     echo "Created explorer-$n@rail.test in Acme $n, see http://127.0.0.1:#{port}/"
     echo "Sign in: http://127.0.0.1:#{port}/signin.html?n=$n."
@@ -81,7 +82,7 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnectTest do
       |> Repo.insert!()
 
     on_exit(fn ->
-      for name <- ["qa", "explorer 1", "explorer 2", "signup"] do
+      for name <- ["qa", "explorer 1", "explorer 2", "signup", "twin"] do
         case Tools.get_browser_session(task, name) do
           pid when is_pid(pid) -> GenServer.stop(pid, :normal, 10_000)
           nil -> :ok
@@ -142,6 +143,41 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnectTest do
 
     assert File.read!(seeded) == "2\n"
     assert Tools.get_browser_url(task, "explorer 1") == link <> "?n=1"
+  end
+
+  # Two connects for one new name at once are one browser: the second waits for the
+  # first to open and sign it in, so the seed runs once and the row keeps the tab.
+  test "connects for one new name at once share one browser, one account and one seed run", %{
+    task: task,
+    project: project,
+    opts: opts
+  } do
+    project |> Ecto.Changeset.change(account_seed_command: "sh scripts/seed.sh") |> Repo.update!()
+    {:ok, task} = Pipeline.get_task(task.id)
+    test = self()
+
+    replies =
+      1..4
+      |> Enum.map(fn _caller ->
+        Task.async(fn ->
+          Ecto.Adapters.SQL.Sandbox.allow(Repo, test, self())
+          run_tool_browser_connect(task, %{"browser" => "twin"}, opts)
+        end)
+      end)
+      |> Task.await_many(60_000)
+
+    # Where the tab is reads as the sign-in link lands, so the replies agree on the tab and the account.
+    assert [["Your tab: " <> _tab, "Signed in as: explorer-1@rail.test" <> _own]] =
+             replies
+             |> Enum.map(fn {:ok, reply} ->
+               ~r/^(?:Your tab|Signed in as): .*$/m |> Regex.scan(reply) |> List.flatten()
+             end)
+             |> Enum.uniq()
+
+    assert File.read!(Path.join(task.worktree_path, "runs")) == "ran\n"
+
+    assert [%Session{status: :running, target_id: "" <> _target, account: "explorer-1@rail.test"}] =
+             Repo.all(from s in Session, where: s.task_id == ^task.id)
   end
 
   test "a browser asked for bare opens with nobody signed in and the seed not run", %{

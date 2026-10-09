@@ -31,8 +31,7 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnect do
   def run_tool_browser_connect(%Task{} = task, arguments, opts) do
     with {:ok, name} <- browser_name(arguments, opts),
          {:ok, account} <- account(arguments),
-         {:ok, session} <- Tools.start_browser_session(task, name, opts),
-         {:ok, signed_in} <- sign_in(task, session, account, opts) do
+         {:ok, session, signed_in} <- opened(task, name, account, opts) do
       %{page_url: page_url} = BrowserSession.details(session)
       driver = Path.join([task.scratch_path, "browser", "driver.mjs"])
       File.mkdir_p!(Path.dirname(driver))
@@ -72,6 +71,16 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnect do
       account when account in ["fresh", "bare"] -> {:ok, account}
       _other -> {:refused, "`account` is `fresh` or `bare`. Nothing was opened."}
     end
+  end
+
+  # Two connects for one new name at once would each start a session and run the
+  # seed; one at a time, the second finds the first's tab already signed in.
+  defp opened(%Task{} = task, name, account, opts) do
+    :global.trans({{:browser_connect, task.id, name}, self()}, fn ->
+      with {:ok, session} <- Tools.start_browser_session(task, name, opts),
+           {:ok, signed_in} <- sign_in(task, session, account, opts),
+           do: {:ok, session, signed_in}
+    end)
   end
 
   # Only a tab nobody has signed in yet is signed in, so a reconnect, or a tab found
