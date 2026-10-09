@@ -3044,6 +3044,10 @@ defmodule RailWeb.TaskLiveTest do
                "The work is in Review now, so this conversation is closed: the Review lead's engineer makes its fixes."
              )
 
+      # A page drawn before the task moved on can still send a message, and the closed conversation drops it.
+      view |> with_target("#conversation-tab-root") |> render_click("send_chat", %{"message" => "One more thing"})
+      refute Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "One more thing"))
+
       File.write!(Path.join(repo, "left_behind.ex"), "uncommitted\n")
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{run.role_id}")

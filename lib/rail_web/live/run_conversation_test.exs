@@ -64,8 +64,15 @@ defmodule RailWeb.Live.RunConversationTest do
     %{project: project, task: task, roles: roles, roles_map: roles_map, signed_in: signed_in}
   end
 
-  test "says so when the role on the tab has not run the task", %{task: task, roles_map: roles_map} do
-    html = render_component(RunConversation, id: "conv", task: task, runs: [], roles_map: roles_map)
+  test "says so to a signed-in reader when the role on the tab has not run the task", %{task: task, roles_map: roles_map} do
+    html =
+      render_component(RunConversation,
+        id: "conv",
+        task: task,
+        runs: [],
+        roles_map: roles_map,
+        current_scope: user_scope()
+      )
 
     assert html =~ ~s(data-qa="conversation_empty_state")
     assert html =~ "This role has not run on the task yet."
@@ -1240,6 +1247,56 @@ defmodule RailWeb.Live.RunConversationTest do
                &{&1 |> Floki.find("[data-qa=subagent-name]") |> Floki.text() |> String.trim(),
                 &1 |> Floki.find("[data-qa=subagent-description]") |> Floki.text() |> String.trim()}
              )
+  end
+
+  test "what Rail did to a browser reads as a column of verbs, a step set under its instruction and a refusal marked", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:review_lead].id,
+        status: :finished,
+        conversation_id: "conv_driving",
+        started_at: DateTime.utc_now()
+      })
+
+    Pipeline.append_run_events(run.id, nil, [
+      "[browser] look",
+      "[qa] plan 3 checks",
+      "[qa] check send-once passed",
+      "[browser]   CLICK \"Save changes\"",
+      "[browser] REFUSED \"Save changes\" is covered",
+      "[demo] goto http://localhost:4000/bills/new"
+    ])
+
+    doc =
+      RunConversation
+      |> render_component(id: "conv", task: task, runs: [run], stage_run: run, roles_map: roles_map)
+      |> Floki.parse_fragment!()
+
+    assert [
+             {"instruction", "look", ""},
+             {"instruction", "plan", "3 checks"},
+             {"instruction", "check", "send-once passed"},
+             {"step", "CLICK", "\"Save changes\""},
+             {"instruction", "REFUSED", "\"Save changes\" is covered"},
+             {"instruction", "goto", "http://localhost:4000/bills/new"}
+           ] =
+             doc
+             |> Floki.find("[data-qa=driving-step]")
+             |> Enum.map(fn step ->
+               [verb, rest] =
+                 step |> Floki.children() |> Enum.filter(&is_tuple/1) |> Enum.map(&String.trim(Floki.text(&1)))
+
+               {step |> Floki.attribute("data-step") |> hd(), verb, rest}
+             end)
+
+    assert [_refused] = Floki.find(doc, "[data-qa=driving-verb].bg-amber-100")
+    assert [_check, _plan] = Floki.find(doc, "[data-qa=driving-verb].bg-emerald-100")
+    assert [_click] = Floki.find(doc, "[data-qa=driving-verb].bg-slate-100")
   end
 
   test "a subagent with a type Rail does not know reads by its type", %{task: task, roles: roles, roles_map: roles_map} do

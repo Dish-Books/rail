@@ -8,7 +8,6 @@ defmodule RailWeb.Helpers do
 
   alias RailWeb.Utils
 
-  defdelegate browser_driving(run, task, name), to: Utils.BrowserDriving
   defdelegate browser_label(name), to: Utils.BrowserLabel
 
   defdelegate build_plan_sheet(content), to: Utils.BuildPlanSheet
