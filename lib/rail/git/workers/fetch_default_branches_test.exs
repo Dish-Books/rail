@@ -1,5 +1,6 @@
 defmodule Rail.Git.Workers.FetchDefaultBranchesTest do
   use Rail.DataCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
   import ExUnit.CaptureLog
 
@@ -7,6 +8,9 @@ defmodule Rail.Git.Workers.FetchDefaultBranchesTest do
   alias Rail.Git.Workers.FetchDefaultBranches
   alias Rail.GitHub.Client
   alias Rail.Projects.Schemas.Project
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.ToolchainInstall
+  alias Rail.Tools.Workers.InstallToolchain
 
   setup do
     stub(Git, :git_repo?, &call_original(Git, :git_repo?, [&1]))
@@ -49,6 +53,34 @@ defmodule Rail.Git.Workers.FetchDefaultBranchesTest do
 
     assert :ok = FetchDefaultBranches.perform(%Oban.Job{args: %{}})
     assert git!(clone, ["rev-parse", "origin/main"]) == git!(remote, ["rev-parse", "main"])
+  end
+
+  test "a project's toolchain command is queued once for each commit its default branch moves to", %{
+    project: project,
+    remote: remote
+  } do
+    Req.Test.stub(Client, &Req.Test.json(&1, %{"token" => "ghs_token"}))
+
+    assert :ok = FetchDefaultBranches.perform(%Oban.Job{args: %{}})
+    assert [] = Tools.list_toolchain_installs()
+
+    project |> Project.changeset(%{toolchain_command: "mise install"}) |> Repo.update!()
+    assert :ok = FetchDefaultBranches.perform(%Oban.Job{args: %{}})
+    assert :ok = FetchDefaultBranches.perform(%Oban.Job{args: %{}})
+
+    head_sha = remote |> git!(["rev-parse", "main"]) |> String.trim()
+
+    assert [%ToolchainInstall{id: install_id, status: :queued, command: "mise install", head_sha: ^head_sha}] =
+             Tools.list_toolchain_installs()
+
+    assert [%Oban.Job{args: %{"install_id" => ^install_id}}] = all_enqueued(worker: InstallToolchain)
+
+    File.write!(Path.join(remote, "mise.toml"), ~s([tools]\nerlang = "28.5.0.7"\n))
+    git!(remote, ["add", "."])
+    git!(remote, ["commit", "-m", "move the pins"])
+
+    assert :ok = FetchDefaultBranches.perform(%Oban.Job{args: %{}})
+    assert [_first, _second] = all_enqueued(worker: InstallToolchain)
   end
 
   test "leaves an inactive project's clone alone", %{project: project} do

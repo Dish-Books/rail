@@ -340,6 +340,27 @@ defmodule RailWeb.Settings.ProjectsLive do
                 </span>
               </div>
 
+              <div>
+                <label
+                  for="project-toolchain-command-input"
+                  class="block text-sm font-medium text-slate-900 dark:text-slate-100"
+                >
+                  Toolchain Command
+                </label>
+                <input
+                  type="text"
+                  name="project[toolchain_command]"
+                  id="project-toolchain-command-input"
+                  value={Ecto.Changeset.get_field(@changeset, :toolchain_command)}
+                  placeholder="mise install"
+                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm font-mono focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                />
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Runs beside Rail, outside any sandbox and its memory limit, in a checkout of the default branch each time it moves.
+                  Sandboxes never install a missing tool themselves, so one fails there until this has run.
+                </p>
+              </div>
+
               <div class="grid grid-cols-3 gap-4">
                 <div class="col-span-2">
                   <label

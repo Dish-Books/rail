@@ -63,6 +63,8 @@ defmodule Rail.Tools.Schemas.OsProcess do
     field :launch, EncryptedBinary, redact: true
     field :ended_at, :utc_datetime_usec
     field :ended_reason, Ecto.Enum, values: @ended_reasons
+    # What was using the most memory when it was last looked at before being killed for it.
+    field :memory_top, {:array, :map}
     belongs_to :stopped_by, User
     # The account an agent turn runs on, stamped when it is placed, so its conversation stays there.
     belongs_to :backend, Backend
@@ -95,6 +97,7 @@ defmodule Rail.Tools.Schemas.OsProcess do
     :launch,
     :ended_at,
     :ended_reason,
+    :memory_top,
     :stopped_by_id,
     :backend_id
   ]
@@ -131,6 +134,19 @@ defmodule Rail.Tools.Schemas.OsProcess do
   line, or the arguments and token a turn waiting for usage keeps.
   """
   def launch_spec(%__MODULE__{launch: launch}) when is_binary(launch), do: Jason.decode!(launch)
+
+  @doc """
+  What `memory_top` holds as a sentence reads it: `cc1plus 1.9 GB (under g++,
+  make, kerl, mise), beam.smp 412 MB`, or nil when nothing was seen.
+  """
+  def describe_memory_top(%__MODULE__{memory_top: [_first | _rest] = top}) do
+    Enum.map_join(top, ", ", fn %{"command" => command, "rss_mb" => rss_mb, "under" => under} ->
+      size = if rss_mb >= 1024, do: "#{Float.round(rss_mb / 1024, 1)} GB", else: "#{rss_mb} MB"
+      if under == [], do: "#{command} #{size}", else: "#{command} #{size} (under #{Enum.join(under, ", ")})"
+    end)
+  end
+
+  def describe_memory_top(%__MODULE__{}), do: nil
 
   @doc "True for a process that holds a reservation while it runs."
   def sandboxed?(%__MODULE__{reserved_cpus: cpus}), do: is_integer(cpus)

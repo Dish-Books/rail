@@ -229,11 +229,15 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
            |> render_submit() =~ "must be a path inside the repository"
 
     view
-    |> form("#project-form", %{"project" => %{"worktree_setup_script" => "scripts/setup-worktree.sh"}})
+    |> form("#project-form", %{
+      "project" => %{"worktree_setup_script" => "scripts/setup-worktree.sh", "toolchain_command" => "mise install"}
+    })
     |> render_submit()
 
     refute has_element?(view, "#project-modal")
-    assert %Project{worktree_setup_script: "scripts/setup-worktree.sh"} = Repo.get!(Project, project_id)
+
+    assert %Project{worktree_setup_script: "scripts/setup-worktree.sh", toolchain_command: "mise install"} =
+             Repo.get!(Project, project_id)
   end
 
   test "sets the command a project's CI runs, and how long it may take", %{admin_conn: conn, admin_user: admin} do

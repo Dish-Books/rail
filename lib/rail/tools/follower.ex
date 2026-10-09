@@ -29,6 +29,7 @@ defmodule Rail.Tools.Follower do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
+  alias Rail.Tools.Clients.Docker
   alias Rail.Tools.FollowerRegistry
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
@@ -38,6 +39,12 @@ defmodule Rail.Tools.Follower do
   # How often a container is asked whether it is still running, so nine Followers
   # are not each on Docker's socket every tail tick.
   @docker_check_interval_ms 1_000
+  # How often a container's processes are listed, so one killed for memory can
+  # say what was using it: its cgroup is gone by the time the kill is seen.
+  @default_memory_sample_interval 2_000
+  @memory_top 3
+  # Wrappers that say nothing about what a process belongs to.
+  @plumbing ["sh", "bash", "dash", "zsh", "env", "timeout", "docker-init", "tini"]
 
   defstruct [
     :os_process_id,
@@ -56,6 +63,9 @@ defmodule Rail.Tools.Follower do
     :batch_interval_ms,
     :exit_code,
     :deadline_at,
+    :memory_sample_interval_ms,
+    :sampled_at,
+    memory_top: [],
     file_offset: 0,
     logged_offset: 0,
     saved_offset: 0,
@@ -124,7 +134,9 @@ defmodule Rail.Tools.Follower do
       event_state: event_state,
       deadline_at: os_process.deadline_at,
       tail_interval_ms: tail_interval_ms,
-      batch_interval_ms: batch_interval_ms
+      batch_interval_ms: batch_interval_ms,
+      memory_sample_interval_ms: Keyword.get(opts, :memory_sample_interval_ms, @default_memory_sample_interval),
+      sampled_at: System.monotonic_time(:millisecond)
     }
 
     Process.send_after(self(), :tail_tick, tail_interval_ms)
@@ -315,10 +327,46 @@ defmodule Rail.Tools.Follower do
     state = %{state | checked_at: System.monotonic_time(:millisecond)}
 
     case state |> sandbox() |> sandbox_state() do
-      :running -> {true, state}
+      :running -> {true, sample_memory(state)}
       {:exited, exit_code, oom_killed?} -> {false, %{state | exit_code: exit_code, oom_killed?: oom_killed?}}
       :gone -> {false, state}
     end
+  end
+
+  defp sample_memory(%__MODULE__{runtime: :docker, container_id: id, checked_at: now} = state)
+       when is_binary(id) and now - state.sampled_at >= state.memory_sample_interval_ms do
+    case Docker.top(id) do
+      {:ok, %{"Processes" => rows}} when is_list(rows) -> %{state | sampled_at: now, memory_top: memory_top(rows)}
+      _unread -> %{state | sampled_at: now}
+    end
+  end
+
+  defp sample_memory(%__MODULE__{} = state), do: state
+
+  # The largest by resident memory, each with the commands it runs under, nearest
+  # first: `cc1plus` alone says little, `under g++, make, kerl, mise` says whose it is.
+  defp memory_top(rows) do
+    processes =
+      for [pid, ppid, rss, command] <- rows, {rss_kb, ""} <- [Integer.parse(rss)], into: %{} do
+        {pid, %{ppid: ppid, rss_kb: rss_kb, command: command}}
+      end
+
+    processes
+    |> Map.values()
+    |> Enum.sort_by(& &1.rss_kb, :desc)
+    |> Enum.take(@memory_top)
+    |> Enum.map(fn process ->
+      under =
+        process.ppid
+        |> Stream.unfold(&with(%{command: command, ppid: ppid} <- processes[&1], do: {command, ppid}))
+        |> Stream.take(32)
+        |> Stream.reject(&(&1 in @plumbing))
+        |> Stream.dedup()
+        |> Enum.reject(&(&1 == process.command))
+        |> Enum.take(5)
+
+      %{"command" => process.command, "rss_mb" => div(process.rss_kb, 1024), "under" => under}
+    end)
   end
 
   defp sandbox(%__MODULE__{} = state) do
@@ -340,7 +388,7 @@ defmodule Rail.Tools.Follower do
 
     case Repo.get(OsProcess, state.os_process_id) do
       %OsProcess{} = os_process ->
-        {exit_code, error} = settle_exit(state, os_process, event_state, raw_stderr)
+        {exit_code, error} = settle_exit(state, %{os_process | memory_top: state.memory_top}, event_state, raw_stderr)
         # Before the line moves, so nothing waiting on the same backend starts only to fail too.
         if Map.get(event_state, :authentication_failed, false), do: reject_turn_token(os_process)
 
@@ -351,6 +399,7 @@ defmodule Rail.Tools.Follower do
             exit_code: exit_code,
             ended_at: DateTime.utc_now(),
             ended_reason: ended_reason(state, exit_code),
+            memory_top: if(state.oom_killed?, do: state.memory_top),
             stopped_by_id: state.stopped_by_id
           })
           |> Repo.update()
@@ -396,8 +445,18 @@ defmodule Rail.Tools.Follower do
   end
 
   # 137 is the SIGKILL the kernel sent when the container reached its limit.
-  defp settle_exit(%__MODULE__{oom_killed?: true, reserved_memory_gb: memory_gb}, %OsProcess{}, _event_state, _raw_stderr) do
-    {137, "Killed: it used more than the #{memory_gb} GB its role reserves."}
+  defp settle_exit(
+         %__MODULE__{oom_killed?: true, reserved_memory_gb: memory_gb},
+         %OsProcess{} = os_process,
+         _event_state,
+         _raw_stderr
+       ) do
+    killed = "Killed: it used more than the #{memory_gb} GB its role reserves."
+
+    case OsProcess.describe_memory_top(os_process) do
+      top when is_binary(top) -> {137, "#{killed} Using the most when last seen: #{top}."}
+      nil -> {137, killed}
+    end
   end
 
   # A command's output is its log, not an error, so all it has to say about its

@@ -7,6 +7,7 @@ defmodule RailWeb.SandboxesLive do
   alias Rail.Scope
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
+  alias Rail.Tools.Schemas.ToolchainInstall
 
   # Usage is read from Docker, which takes a moment per container, so it is
   # re-read on its own clock rather than with everything else.
@@ -62,6 +63,43 @@ defmodule RailWeb.SandboxesLive do
         >
           Rail could not read what this machine has, so nothing new starts until it can.
         </p>
+
+        <section :if={@toolchains != []} id="toolchain-installs">
+          <h2 class="mb-3 text-xs font-medium uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+            Toolchains
+          </h2>
+          <div class="rounded-xl border border-slate-200 dark:border-slate-700/70 divide-y divide-slate-200 dark:divide-slate-700/70">
+            <div :for={install <- @toolchains} id={"toolchain-#{install.id}"} class="px-4 py-3">
+              <div class="flex items-center gap-3">
+                <span class="text-sm text-slate-800 dark:text-slate-200">{install.project.name}</span>
+                <span data-qa="command" class="font-mono text-xs text-slate-700 dark:text-slate-300">
+                  {install.command}
+                </span>
+                <span class="font-mono text-xs text-slate-500 dark:text-slate-400">
+                  {String.slice(install.head_sha, 0, 7)}
+                </span>
+                <.toolchain_status install={install} now={@now} />
+                <button
+                  :if={install.status == :failed}
+                  type="button"
+                  phx-click="retry_toolchain"
+                  phx-value-install_id={install.id}
+                  class="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold text-slate-500 dark:text-slate-400 hover:bg-blue-500/10 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer"
+                >
+                  <.icon name="pi-arrow-clockwise" class="size-3" />Try again
+                </button>
+              </div>
+              <pre
+                :if={install.status == :failed}
+                data-qa="output"
+                class="mt-2 max-h-64 overflow-auto rounded-lg bg-slate-50 dark:bg-slate-800/40 p-3 font-mono text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap"
+              >{install.output}</pre>
+            </div>
+          </div>
+          <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+            A project's toolchain command runs here, outside any sandbox, each time its default branch moves.
+          </p>
+        </section>
 
         <section>
           <h2
@@ -291,6 +329,15 @@ defmodule RailWeb.SandboxesLive do
     {:noreply, load_sandboxes(socket)}
   end
 
+  # Only one in a row this user can see.
+  def handle_event("retry_toolchain", %{"install_id" => install_id}, socket) do
+    with %ToolchainInstall{} = install <- Enum.find(socket.assigns.toolchains, &(&1.id == install_id)) do
+      _queued_or_no_command = Tools.retry_toolchain_install(socket.assigns.current_scope, install)
+    end
+
+    {:noreply, load_sandboxes(socket)}
+  end
+
   def handle_info(:sandboxes_changed, socket), do: {:noreply, load_sandboxes(socket)}
   def handle_info(:read_usage, socket), do: {:noreply, read_usage(socket)}
 
@@ -320,6 +367,44 @@ defmodule RailWeb.SandboxesLive do
         {@sandbox.run.task.issue.title}
       </span>
     </.link>
+    """
+  end
+
+  attr :install, ToolchainInstall, required: true
+  attr :now, DateTime, required: true
+
+  defp toolchain_status(%{install: %ToolchainInstall{status: :failed}} = assigns) do
+    ~H"""
+    <span
+      data-qa="toolchain-status"
+      class="inline-flex items-center gap-1.5 text-xs font-semibold text-red-600 dark:text-red-400"
+    >
+      <.icon name="pi-x-circle" class="size-3.5" />Could not be installed
+    </span>
+    """
+  end
+
+  defp toolchain_status(%{install: %ToolchainInstall{status: :installing}} = assigns) do
+    ~H"""
+    <span
+      data-qa="toolchain-status"
+      class="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-600 dark:text-violet-400"
+    >
+      <.icon name="pi-hourglass-medium" class="size-3.5" />Installing · {format_age(
+        DateTime.diff(@now, @install.started_at)
+      )}
+    </span>
+    """
+  end
+
+  defp toolchain_status(assigns) do
+    ~H"""
+    <span
+      data-qa="toolchain-status"
+      class="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400"
+    >
+      <.icon name="pi-hourglass-medium" class="size-3.5" />Waiting for another install
+    </span>
     """
   end
 
@@ -394,9 +479,16 @@ defmodule RailWeb.SandboxesLive do
         false
     end
 
+    toolchains =
+      Enum.filter(
+        Tools.list_toolchain_installs(),
+        &Scope.can_access_project?(socket.assigns.current_scope, &1.project_id)
+      )
+
     socket
     |> assign(:now, now)
     |> assign(:free, free)
+    |> assign(:toolchains, toolchains)
     |> assign(
       :waiting_rows,
       waiting |> Enum.with_index(1) |> Enum.filter(fn {sandbox, _position} -> visible?.(sandbox) end)
@@ -463,6 +555,14 @@ defmodule RailWeb.SandboxesLive do
 
   defp ending(%OsProcess{ended_reason: reason}) when reason in [:finished, :handed_over],
     do: %{label: "Finished", icon: "pi-check-circle", class: @finished}
+
+  defp ending(%OsProcess{ended_reason: :out_of_memory, memory_top: [%{"command" => command} | _rest]} = sandbox) do
+    %{
+      label: "Killed · used more than its #{sandbox.reserved_memory_gb} GB, most of it #{command}",
+      icon: "pi-x-circle",
+      class: @failed
+    }
+  end
 
   defp ending(%OsProcess{ended_reason: :out_of_memory} = sandbox),
     do: %{label: "Killed · used more than its #{sandbox.reserved_memory_gb} GB", icon: "pi-x-circle", class: @failed}

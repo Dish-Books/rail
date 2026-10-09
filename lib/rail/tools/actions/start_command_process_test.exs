@@ -88,6 +88,23 @@ defmodule Rail.Tools.Actions.StartCommandProcessTest do
     assert output =~ "20400"
   end
 
+  # Runs the real mise, with the settings Rail gives every tool it starts, on a
+  # PATH with no Erlang of its own, as a sandbox has.
+  test "a command needing a tool mise has no install of fails fast, rather than building it", %{
+    run: run,
+    worktree_path: worktree_path
+  } do
+    expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
+    File.write!(Path.join(worktree_path, ".tool-versions"), "erlang 0.0.0-rail\n")
+    command = ~s|PATH="$(dirname "$(command -v mise)"):/usr/bin:/bin" mise exec -- erl -version|
+
+    assert {:ok, %OsProcess{status: :running, stream_path: stream_path} = os_process} =
+             Tools.start_command_process(run, :ci, command)
+
+    eventually(fn -> assert File.read(OsProcess.exit_path(os_process)) == {:ok, "1\n"} end, 10_000)
+    assert File.read!(stream_path) =~ "missing: erlang@0.0.0-rail"
+  end
+
   test "is given a deadline as far off as its timeout, and the commit it runs against", %{run: run} do
     expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
 

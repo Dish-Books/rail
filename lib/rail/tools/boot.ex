@@ -33,6 +33,8 @@ defmodule Rail.Tools.Boot do
   alias Rail.Tools.Clients.Docker
   alias Rail.Tools.FollowerSupervisor
   alias Rail.Tools.Schemas.OsProcess
+  alias Rail.Tools.Schemas.ToolchainInstall
+  alias Rail.Tools.Workers.InstallToolchain
 
   @default_starting_timeout_seconds 60
   @label "dev.railai.sandbox"
@@ -43,7 +45,7 @@ defmodule Rail.Tools.Boot do
   """
   def start_link(opts \\ []) do
     if Rail.adopt_on_boot?() do
-      Task.start_link(__MODULE__, :reconcile, [opts])
+      Task.start_link(__MODULE__, :reconcile, [Keyword.put(opts, :boot, true)])
     else
       :ignore
     end
@@ -52,8 +54,10 @@ defmodule Rail.Tools.Boot do
   @doc """
   Adopts every in-flight os process, once the runs tables exist, then starts
   whatever now fits in the line and removes containers whose rows have settled.
+  With `boot: true`, a toolchain install the last BEAM left unsettled is queued again.
   """
   def reconcile(opts \\ []) do
+    if Keyword.get(opts, :boot, false), do: requeue_toolchain_installs()
     adopted = adopt_live_os_processes(opts)
     _browsers = Tools.reconcile_browser_sessions(opts)
     _admitted = admit_sandboxes()
@@ -66,6 +70,13 @@ defmodule Rail.Tools.Boot do
     _error ->
       :ok
       # coveralls-ignore-stop
+  end
+
+  # Only as Rail boots: whatever was running one went down with the BEAM.
+  defp requeue_toolchain_installs do
+    for id <- Repo.all(from i in ToolchainInstall, where: i.status in [:queued, :installing], select: i.id) do
+      {:ok, _job} = %{install_id: id} |> InstallToolchain.new() |> Oban.insert()
+    end
   end
 
   defp adopt_live_os_processes(opts) do

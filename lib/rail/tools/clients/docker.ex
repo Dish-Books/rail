@@ -51,6 +51,9 @@ defmodule Rail.Tools.Clients.Docker do
   @doc "One reading of a container's CPU and memory, rather than a stream of them."
   def stats(id), do: request(method: :get, url: "/containers/#{id}/stats", params: [stream: false])
 
+  @doc "A container's processes, each `[pid, ppid, rss in KB, command]`, under `Processes`."
+  def top(id), do: request(method: :get, url: "/containers/#{id}/top", params: [ps_args: "-eo pid,ppid,rss,comm"])
+
   @doc """
   Removes a container. `force: true` kills it first if it is still running, which
   Docker otherwise refuses to remove.

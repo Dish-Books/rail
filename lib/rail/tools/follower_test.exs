@@ -1253,6 +1253,102 @@ defmodule Rail.Tools.FollowerTest do
       assert {:ok, %Run{error: "Killed: it used more than the 4 GB its role reserves."}} = Pipeline.get_run(run.id)
     end
 
+    test "killed for memory says what was using the most when it was last looked at", %{
+      run: run,
+      os_process: os_process
+    } do
+      {:ok, sampled} = Agent.start_link(fn -> false end)
+
+      Req.Test.stub(Docker, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"GET", "/containers/c0ffee/top"} ->
+            Agent.update(sampled, fn _not_yet -> true end)
+
+            Req.Test.json(conn, %{
+              "Titles" => ["PID", "PPID", "RSS", "COMMAND"],
+              "Processes" => [
+                ["100", "1", "512", "docker-init"],
+                ["101", "100", "421888", "claude"],
+                ["110", "101", "2048", "bash"],
+                ["111", "110", "30720", "mise"],
+                ["112", "111", "4096", "kerl"],
+                ["113", "112", "2048", "sh"],
+                ["114", "113", "8192", "make"],
+                ["115", "114", "8192", "make"],
+                ["116", "115", "4096", "g++"],
+                ["117", "116", "1992704", "cc1plus"],
+                ["118", "not a row"]
+              ]
+            })
+
+          {"GET", "/containers/c0ffee/json"} ->
+            state =
+              if Agent.get(sampled, & &1),
+                do: %{"Running" => false, "ExitCode" => 137, "OOMKilled" => true},
+                else: %{"Running" => true}
+
+            Req.Test.json(conn, %{"State" => state})
+
+          {"DELETE", "/containers/c0ffee"} ->
+            Plug.Conn.send_resp(conn, 204, "")
+        end
+      end)
+
+      Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+      {:ok, follower_pid} =
+        FollowerSupervisor.start_follower(%{os_process | run: run}, tail_interval_ms: 20, memory_sample_interval_ms: 0)
+
+      Sandbox.allow(Repo, self(), follower_pid)
+
+      error =
+        "Killed: it used more than the 4 GB its role reserves. Using the most when last seen: " <>
+          "cc1plus 1.9 GB (under g++, make, kerl, mise, claude), claude 412 MB, mise 30 MB (under claude)."
+
+      assert_receive {:os_process_finished, %OsProcess{ended_reason: :out_of_memory, memory_top: top}, %{error: ^error}},
+                     5_000
+
+      assert [
+               %{"command" => "cc1plus", "rss_mb" => 1946, "under" => ["g++", "make", "kerl", "mise", "claude"]},
+               %{"command" => "claude", "rss_mb" => 412, "under" => []},
+               %{"command" => "mise", "rss_mb" => 30, "under" => ["claude"]}
+             ] = top
+
+      assert {:ok, %Run{error: ^error}} = Pipeline.get_run(run.id)
+      assert %OsProcess{memory_top: ^top} = Repo.reload!(os_process)
+    end
+
+    test "a sandbox whose processes could not be listed is still followed to its exit", %{
+      run: run,
+      os_process: os_process
+    } do
+      {:ok, asked} = Agent.start_link(fn -> false end)
+
+      Req.Test.stub(Docker, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"GET", "/containers/c0ffee/top"} ->
+            Agent.update(asked, fn _not_yet -> true end)
+            conn |> Plug.Conn.put_status(500) |> Req.Test.json(%{"message" => "ps failed"})
+
+          {"GET", "/containers/c0ffee/json"} ->
+            state = if Agent.get(asked, & &1), do: %{"Running" => false, "ExitCode" => 0}, else: %{"Running" => true}
+            Req.Test.json(conn, %{"State" => state})
+
+          {"DELETE", "/containers/c0ffee"} ->
+            Plug.Conn.send_resp(conn, 204, "")
+        end
+      end)
+
+      Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+      {:ok, follower_pid} =
+        FollowerSupervisor.start_follower(%{os_process | run: run}, tail_interval_ms: 20, memory_sample_interval_ms: 0)
+
+      Sandbox.allow(Repo, self(), follower_pid)
+
+      assert_receive {:os_process_finished, %OsProcess{ended_reason: :finished, memory_top: nil}, _outcome}, 5_000
+    end
+
     test "stopped by someone is given its grace in whole seconds, then settles", %{run: run, os_process: os_process} do
       {:ok, stopped} = Agent.start_link(fn -> false end)
 
