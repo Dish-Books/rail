@@ -31,6 +31,13 @@ defmodule Rail.Slack.Client do
     paginate(token, "conversations.replies", [channel: channel, ts: thread_ts], "messages")
   end
 
+  @doc """
+  Every message posted in `channel` after `oldest`, a Slack ts. Replies inside a thread are not among them.
+  """
+  def history(%SlackWorkspace{token: token}, channel, oldest) do
+    paginate(token, "conversations.history", [channel: channel, oldest: oldest], "messages")
+  end
+
   def user_info(%SlackWorkspace{token: token}, user_id) do
     with {:ok, %{"user" => user}} <- get(token, "users.info", user: user_id), do: {:ok, user}
   end

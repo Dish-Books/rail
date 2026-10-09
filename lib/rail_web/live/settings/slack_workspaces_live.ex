@@ -11,7 +11,7 @@ defmodule RailWeb.Settings.SlackWorkspacesLive do
       socket
       |> assign(:page_title, "Slack Workspaces")
       |> assign(:current_section, :slack_workspaces)
-      |> assign(:slack_workspaces, Projects.list_slack_workspaces())
+      |> assign_workspaces()
       |> assign(:selected_workspace, nil)
       |> assign(:changeset, nil)
 
@@ -93,7 +93,17 @@ defmodule RailWeb.Settings.SlackWorkspacesLive do
                   </span>
                   <span>•</span>
                   <span id={"slack-socket-status-#{workspace.id}"}>
-                    Socket Mode: {socket_status(workspace)}
+                    Socket Mode: {socket_status(workspace, @sockets[workspace.id].status)}
+                  </span>
+                  <span
+                    :if={@sockets[workspace.id].last_frame_at}
+                    id={"slack-socket-last-frame-#{workspace.id}"}
+                  >
+                    • Last frame:
+                    <.local_time
+                      id={"slack-socket-last-frame-at-#{workspace.id}"}
+                      at={@sockets[workspace.id].last_frame_at}
+                    />
                   </span>
                 </div>
               </div>
@@ -230,7 +240,7 @@ defmodule RailWeb.Settings.SlackWorkspacesLive do
       {:ok, _workspace} ->
         socket =
           socket
-          |> assign(:slack_workspaces, Projects.list_slack_workspaces())
+          |> assign_workspaces()
           |> assign(:selected_workspace, nil)
           |> assign(:changeset, nil)
 
@@ -241,18 +251,21 @@ defmodule RailWeb.Settings.SlackWorkspacesLive do
     end
   end
 
-  # What the settings page can see of the connection events arrive on.
-  defp socket_status(%SlackWorkspace{app_token: nil}), do: "no app-level token"
+  # What the settings page can see of each connection events arrive on, as of when it was loaded.
+  defp assign_workspaces(socket) do
+    workspaces = Projects.list_slack_workspaces()
 
-  defp socket_status(%SlackWorkspace{} = workspace) do
-    case Triage.get_slack_socket_status(workspace) do
-      :connected -> "connected"
-      :off -> "not running"
-      {:error, {:slack_error, reason}} -> "failing (#{reason})"
-      {:error, reason} -> "failing (#{inspect(reason)})"
-      :connecting -> "connecting"
-    end
+    socket
+    |> assign(:slack_workspaces, workspaces)
+    |> assign(:sockets, Map.new(workspaces, &{&1.id, Triage.get_slack_socket_status(&1)}))
   end
+
+  defp socket_status(%SlackWorkspace{app_token: nil}, _status), do: "no app-level token"
+  defp socket_status(%SlackWorkspace{}, :connected), do: "connected"
+  defp socket_status(%SlackWorkspace{}, :off), do: "not running"
+  defp socket_status(%SlackWorkspace{}, {:error, {:slack_error, reason}}), do: "failing (#{reason})"
+  defp socket_status(%SlackWorkspace{}, {:error, reason}), do: "failing (#{inspect(reason)})"
+  defp socket_status(%SlackWorkspace{}, :connecting), do: "connecting"
 
   # Only once the form has been touched, so a fresh one is not all red.
   defp errors(%Ecto.Changeset{action: nil}, _field), do: []

@@ -110,11 +110,17 @@ defmodule RailWeb.Settings.SlackWorkspacesLiveTest do
 
   test "each row says whether its Socket Mode connection is up, and why not", %{admin_conn: conn, team_id: team_id} do
     %{url: url} = Rail.FakeSlack.fake_slack(self())
+    test = self()
 
     Req.Test.stub(Rail.Slack, fn conn ->
       case conn.request_path do
-        "/api/auth.test" -> Req.Test.json(conn, %{"ok" => true, "team_id" => "#{team_id}#{System.unique_integer()}"})
-        "/api/apps.connections.open" -> Req.Test.json(conn, %{"ok" => true, "url" => url})
+        "/api/auth.test" ->
+          Req.Test.json(conn, %{"ok" => true, "team_id" => "#{team_id}#{System.unique_integer()}"})
+
+        # Asked by the socket itself before it does anything else, so here is where it joins the test's sandbox.
+        "/api/apps.connections.open" ->
+          Ecto.Adapters.SQL.Sandbox.allow(Repo, test, self())
+          Req.Test.json(conn, %{"ok" => true, "url" => url})
       end
     end)
 
@@ -127,11 +133,16 @@ defmodule RailWeb.Settings.SlackWorkspacesLiveTest do
 
     start_supervised!({SlackSocket, workspace: up, backoff: 10})
     assert_receive {:fake_slack_connected, _socket}, 5_000
-    eventually(fn -> assert :connected = Rail.Triage.get_slack_socket_status(up) end)
+
+    eventually(fn ->
+      assert %{status: :connected, last_frame_at: %DateTime{}} = Rail.Triage.get_slack_socket_status(up)
+    end)
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/slack-workspaces")
     assert has_element?(view, "#slack-socket-status-#{up.id}", "Socket Mode: connected")
+    assert has_element?(view, "#slack-socket-last-frame-#{up.id} time[datetime]")
     assert has_element?(view, "#slack-socket-status-#{idle.id}", "Socket Mode: not running")
+    refute has_element?(view, "#slack-socket-last-frame-#{idle.id}")
     assert has_element?(view, "#slack-socket-status-#{bare.id}", "Socket Mode: no app-level token")
   end
 
@@ -145,7 +156,7 @@ defmodule RailWeb.Settings.SlackWorkspacesLiveTest do
 
     {:ok, down} = Projects.create_slack_workspace(system_scope(), %{"name" => "Down", "token" => "x", "app_token" => "x"})
     start_supervised!({SlackSocket, workspace: down, backoff: 10})
-    eventually(fn -> assert {:error, _reason} = Rail.Triage.get_slack_socket_status(down) end)
+    eventually(fn -> assert %{status: {:error, _reason}} = Rail.Triage.get_slack_socket_status(down) end)
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/slack-workspaces")
     assert has_element?(view, "#slack-socket-status-#{down.id}", "Socket Mode: failing (not_allowed_token_type)")
@@ -176,7 +187,7 @@ defmodule RailWeb.Settings.SlackWorkspacesLiveTest do
     assert has_element?(view, "#slack-socket-status-#{slow.id}", "Socket Mode: connecting")
 
     send(socket, :fail)
-    eventually(fn -> assert {:error, _reason} = Rail.Triage.get_slack_socket_status(slow) end)
+    eventually(fn -> assert %{status: {:error, _reason}} = Rail.Triage.get_slack_socket_status(slow) end)
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/slack-workspaces")
     assert has_element?(view, "#slack-socket-status-#{slow.id}", "Socket Mode: failing (")

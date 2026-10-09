@@ -83,6 +83,16 @@ defmodule Rail.Slack.ClientTest do
     assert {:ok, "https://slack.example/p1"} = Slack.permalink(workspace, "C1", "1.0")
   end
 
+  test "reads what was posted in a channel after a ts", %{workspace: workspace} do
+    Req.Test.expect(Slack, fn conn ->
+      assert conn.request_path == "/api/conversations.history"
+      assert %{"channel" => "C1", "oldest" => "1.0"} = conn.query_params
+      Req.Test.json(conn, %{"ok" => true, "messages" => [%{"ts" => "3.0"}, %{"ts" => "2.0"}]})
+    end)
+
+    assert {:ok, [%{"ts" => "3.0"}, %{"ts" => "2.0"}]} = Slack.history(workspace, "C1", "1.0")
+  end
+
   test "describes one channel on the bot token, and a channel it cannot see is an error", %{workspace: workspace} do
     Req.Test.expect(Slack, fn conn ->
       assert conn.request_path == "/api/conversations.info"

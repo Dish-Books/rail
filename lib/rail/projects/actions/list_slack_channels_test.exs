@@ -36,6 +36,10 @@ defmodule Rail.Projects.Actions.ListSlackChannelsTest do
     assert [] = Projects.list_slack_channels([])
   end
 
+  test "lists a workspace's channels across projects, by name", %{workspace: workspace} do
+    assert [%SlackChannel{name: "alpha"}, %SlackChannel{name: "zebra"}] = Projects.list_slack_channels(workspace)
+  end
+
   test "lists every project's channels marked external", %{other: other, workspace: workspace} do
     assert [] = Projects.list_slack_channels(external: true)
 

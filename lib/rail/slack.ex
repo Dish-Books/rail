@@ -6,6 +6,7 @@ defmodule Rail.Slack do
   defdelegate auth_test(workspace), to: Client
   defdelegate list_channels(workspace), to: Client
   defdelegate replies(workspace, channel, thread_ts), to: Client
+  defdelegate history(workspace, channel, oldest), to: Client
   defdelegate user_info(workspace, user_id), to: Client
   defdelegate channel_info(workspace, channel), to: Client
   defdelegate permalink(workspace, channel, ts), to: Client
