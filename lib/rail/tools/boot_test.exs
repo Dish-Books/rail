@@ -1,5 +1,6 @@
 defmodule Rail.Tools.BootTest do
   use Rail.DataCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -13,6 +14,8 @@ defmodule Rail.Tools.BootTest do
   alias Rail.Tools.FollowerRegistry
   alias Rail.Tools.FollowerSupervisor
   alias Rail.Tools.Schemas.OsProcess
+  alias Rail.Tools.Schemas.ToolchainInstall
+  alias Rail.Tools.Workers.InstallToolchain
 
   # Boot adopts real OS processes, so these run real children.
   @moduletag :real_spawn
@@ -346,6 +349,25 @@ defmodule Rail.Tools.BootTest do
     })
 
     assert Boot.reconcile() == []
+  end
+
+  test "a toolchain install the last BEAM left unsettled is queued again as Rail boots, and only then", %{
+    project: project
+  } do
+    %ToolchainInstall{id: interrupted_id} =
+      %ToolchainInstall{}
+      |> ToolchainInstall.changeset(%{command: "mise install", head_sha: "abc123", status: :installing}, project.id)
+      |> Repo.insert!()
+
+    %ToolchainInstall{}
+    |> ToolchainInstall.changeset(%{command: "mise install", head_sha: "def456", status: :failed}, project.id)
+    |> Repo.insert!()
+
+    Boot.reconcile()
+    assert [] = all_enqueued(worker: InstallToolchain)
+
+    Boot.reconcile(boot: true)
+    assert [%Oban.Job{args: %{"install_id" => ^interrupted_id}}] = all_enqueued(worker: InstallToolchain)
   end
 
   test "start_link/1 stays out of the tree while adoption on boot is off" do

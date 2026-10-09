@@ -32,7 +32,7 @@ config :posthog,
 
 config :rail, Oban,
   repo: Rail.Repo,
-  queues: [issues: 5, tools: 1, git: 1, learnings: 2, learnings_embed: 5],
+  queues: [issues: 5, tools: 1, toolchains: 1, git: 1, learnings: 2, learnings_embed: 5],
   plugins: [
     {Oban.Plugins.Cron,
      crontab: [

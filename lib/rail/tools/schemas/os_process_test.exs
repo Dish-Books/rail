@@ -4,6 +4,19 @@ defmodule Rail.Tools.Schemas.OsProcessTest do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Tools.Schemas.OsProcess
 
+  test "describe_memory_top/1 names what was using the most, with what each ran under" do
+    top = [
+      %{"command" => "cc1plus", "rss_mb" => 1946, "under" => ["g++", "make", "kerl"]},
+      %{"command" => "claude", "rss_mb" => 412, "under" => []}
+    ]
+
+    assert OsProcess.describe_memory_top(%OsProcess{memory_top: top}) ==
+             "cc1plus 1.9 GB (under g++, make, kerl), claude 412 MB"
+
+    assert OsProcess.describe_memory_top(%OsProcess{memory_top: []}) == nil
+    assert OsProcess.describe_memory_top(%OsProcess{}) == nil
+  end
+
   test "changeset/2 with valid attributes" do
     run_id = UXID.generate!(prefix: "run")
     task_id = UXID.generate!(prefix: "tsk")

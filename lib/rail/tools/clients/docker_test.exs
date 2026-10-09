@@ -25,6 +25,16 @@ defmodule Rail.Tools.Clients.DockerTest do
     assert {:ok, %{"Id" => "c0ffee"}} = Docker.create_container("proc_1", %{"Image" => "rail-sandbox:latest"})
   end
 
+  test "lists a container's processes with what each holds in memory" do
+    Req.Test.expect(Docker, fn conn ->
+      assert {conn.method, conn.request_path} == {"GET", "/containers/c0ffee/top"}
+      assert URI.decode_query(conn.query_string) == %{"ps_args" => "-eo pid,ppid,rss,comm"}
+      Req.Test.json(conn, %{"Titles" => ["PID", "PPID", "RSS", "COMMAND"], "Processes" => [["7", "1", "2048", "claude"]]})
+    end)
+
+    assert {:ok, %{"Processes" => [["7", "1", "2048", "claude"]]}} = Docker.top("c0ffee")
+  end
+
   test "starts, stops and removes a container" do
     Req.Test.expect(Docker, 4, fn conn ->
       case {conn.method, conn.request_path, conn.query_string} do

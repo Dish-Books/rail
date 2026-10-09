@@ -30,10 +30,19 @@ defmodule Rail.Tools.Utils.Env do
   ]
   @app_prefixes ["RAIL_", "RELEASE_"]
 
+  # A missing tool fails where it is asked for. Left to install it, mise compiles
+  # Erlang inside a sandbox's memory cap, with a build cache that is thrown away.
+  @mise_vars %{
+    "MISE_AUTO_INSTALL" => "false",
+    "MISE_EXEC_AUTO_INSTALL" => "false",
+    "MISE_NOT_FOUND_AUTO_INSTALL" => "false",
+    "MISE_TASK_RUN_AUTO_INSTALL" => "false"
+  }
+
   @doc """
   Builds the environment a tool process should run with: the current
-  environment without Rail's own configuration, with the tool PATH, plus any
-  extra variables.
+  environment without Rail's own configuration, with the tool PATH and mise
+  told never to install a missing tool on its own, plus any extra variables.
   """
   def env(extra \\ %{})
 
@@ -43,6 +52,7 @@ defmodule Rail.Tools.Utils.Env do
     base =
       System.get_env()
       |> Map.reject(fn {key, _value} -> app_var?(key) end)
+      |> Map.merge(@mise_vars)
       |> Map.put("PATH", merged_path())
 
     Enum.reduce(extra, base, fn {key, value}, acc ->

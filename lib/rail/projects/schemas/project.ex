@@ -22,6 +22,8 @@ defmodule Rail.Projects.Schemas.Project do
     field :active, :boolean, default: true
     # Run once in each new worktree, from its root, before any agent works there.
     field :worktree_setup_script, :string
+    # Run beside Rail, outside any sandbox, in a checkout of the default branch each time it moves.
+    field :toolchain_command, :string
     # Run on every commit the engineer finishes, before it is pushed or reviewed.
     field :ci_command, :string
     field :ci_timeout_minutes, :integer, default: 30
@@ -52,6 +54,7 @@ defmodule Rail.Projects.Schemas.Project do
     :clone_path,
     :active,
     :worktree_setup_script,
+    :toolchain_command,
     :ci_command,
     :ci_timeout_minutes,
     :triage_user_id,

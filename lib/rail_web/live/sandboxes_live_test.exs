@@ -12,6 +12,7 @@ defmodule RailWeb.SandboxesLiveTest do
   alias Rail.Tools
   alias Rail.Tools.Clients.Docker
   alias Rail.Tools.Schemas.OsProcess
+  alias Rail.Tools.Schemas.ToolchainInstall
   alias Rail.Users
 
   setup %{conn: conn, project: project} do
@@ -424,6 +425,83 @@ defmodule RailWeb.SandboxesLiveTest do
     assert has_element?(view, "#sandbox-capacity-unknown")
     refute has_element?(view, "#sandbox-stats")
     assert has_element?(view, "#waiting-#{next.id} [data-qa='short-of']", "—")
+  end
+
+  test "shows a toolchain install while it runs, and what a failed one wrote", %{conn: conn, project: project} do
+    {:ok, view, _html} = live(conn, ~p"/sandboxes")
+    refute has_element?(view, "#toolchain-installs")
+
+    install =
+      %ToolchainInstall{}
+      |> ToolchainInstall.changeset(%{command: "mise install", head_sha: "abc1234def"}, project.id)
+      |> Repo.insert!()
+
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{toolchain_command: "mise install"})
+
+    send(view.pid, :sandboxes_changed)
+    assert has_element?(view, "#toolchain-#{install.id} [data-qa='command']", "mise install")
+    assert has_element?(view, "#toolchain-#{install.id}", "abc1234")
+    assert has_element?(view, "#toolchain-#{install.id} [data-qa='toolchain-status']", "Waiting for another install")
+
+    install =
+      install
+      |> ToolchainInstall.changeset(%{status: :installing, started_at: DateTime.utc_now()}, project.id)
+      |> Repo.update!()
+
+    send(view.pid, :sandboxes_changed)
+    assert has_element?(view, "#toolchain-#{install.id} [data-qa='toolchain-status']", "Installing")
+    refute has_element?(view, "#toolchain-#{install.id} [data-qa='output']")
+
+    install
+    |> ToolchainInstall.changeset(%{status: :failed, output: "cc1plus: out of memory"}, project.id)
+    |> Repo.update!()
+
+    send(view.pid, :sandboxes_changed)
+    assert has_element?(view, "#toolchain-#{install.id} [data-qa='toolchain-status']", "Could not be installed")
+    assert has_element?(view, "#toolchain-#{install.id} [data-qa='output']", "cc1plus: out of memory")
+
+    view |> element("#toolchain-#{install.id} button", "Try again") |> render_click()
+
+    assert [%ToolchainInstall{id: retried_id, status: :queued}] = Tools.list_toolchain_installs()
+    assert has_element?(view, "#toolchain-#{retried_id}")
+    refute has_element?(view, "#toolchain-#{install.id}")
+  end
+
+  test "another project's toolchain install shows no row, and cannot be tried again", %{conn: conn} do
+    {:ok, other} =
+      Projects.create_project(system_scope(), %{
+        name: "Elsewhere #{System.unique_integer([:positive])}",
+        github_repo: "org/elsewhere-#{System.unique_integer([:positive])}",
+        github_installation_id: System.unique_integer([:positive]),
+        linear_team_key: "ELS#{System.unique_integer([:positive])}",
+        default_branch: "main",
+        clone_path: "/tmp/elsewhere"
+      })
+
+    install =
+      %ToolchainInstall{}
+      |> ToolchainInstall.changeset(%{command: "mise install", head_sha: "abc123", status: :failed}, other.id)
+      |> Repo.insert!()
+
+    {:ok, view, _html} = live(conn, ~p"/sandboxes")
+    refute has_element?(view, "#toolchain-installs")
+
+    render_click(view, "retry_toolchain", %{"install_id" => install.id})
+    assert [%ToolchainInstall{status: :failed}] = Tools.list_toolchain_installs()
+  end
+
+  test "a sandbox killed for memory names what was using the most", %{conn: conn, killed: killed} do
+    killed
+    |> Ecto.Changeset.change(memory_top: [%{"command" => "cc1plus", "rss_mb" => 1946, "under" => ["kerl"]}])
+    |> Repo.update!()
+
+    {:ok, view, _html} = live(conn, ~p"/sandboxes")
+
+    assert has_element?(
+             view,
+             "#ended-#{killed.id} [data-qa='ended-how']",
+             "Killed · used more than its 4 GB, most of it cc1plus"
+           )
   end
 
   test "names the one resource a run is short of", %{conn: conn, next: next} do

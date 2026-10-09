@@ -68,6 +68,10 @@ defmodule Rail.Tools do
   defdelegate get_sandbox_capacity(), to: Actions.GetSandboxCapacity
   defdelegate get_queue_position(run), to: Actions.GetQueuePosition
   defdelegate list_sandbox_usage(), to: Actions.ListSandboxUsage
+  defdelegate ensure_toolchain(project), to: Actions.EnsureToolchain
+  defdelegate install_toolchain(install_id), to: Actions.InstallToolchain
+  defdelegate list_toolchain_installs(), to: Actions.ListToolchainInstalls
+  defdelegate retry_toolchain_install(scope, install), to: Actions.RetryToolchainInstall
   defdelegate parse_stream(cli, lines, opts \\ []), to: Actions.ParseStream
   defdelegate plain_text(text), to: Actions.PlainText
 

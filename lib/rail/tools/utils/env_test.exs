@@ -19,6 +19,17 @@ defmodule Rail.Tools.Utils.EnvTest do
     assert env(nil) == env0
   end
 
+  test "env/1 tells mise never to install a missing tool on its own, unless asked otherwise" do
+    assert %{
+             "MISE_AUTO_INSTALL" => "false",
+             "MISE_EXEC_AUTO_INSTALL" => "false",
+             "MISE_NOT_FOUND_AUTO_INSTALL" => "false",
+             "MISE_TASK_RUN_AUTO_INSTALL" => "false"
+           } = env()
+
+    assert env(%{"MISE_AUTO_INSTALL" => "true"})["MISE_AUTO_INSTALL"] == "true"
+  end
+
   describe "Rail's own configuration" do
     # Named for this module alone, so no other async test sees it.
     @var "RAIL_ENV_TEST_SECRET"
