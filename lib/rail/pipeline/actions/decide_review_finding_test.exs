@@ -76,8 +76,15 @@ defmodule Rail.Pipeline.Actions.DecideReviewFindingTest do
     task: task,
     finding: finding
   } do
+    id = System.unique_integer([:positive])
+
     {:ok, %{id: user_id} = user} =
-      Rail.Users.register_oauth_user(%{github_id: "dcf-u", login: "dana", name: "Dana", email: "dana@dcf.example"})
+      Rail.Users.register_oauth_user(%{
+        github_id: "dcf-u-#{id}",
+        login: "dana-#{id}",
+        name: "Dana",
+        email: "dana-#{id}@dcf.example"
+      })
 
     calibration = learning(project, %{rule: "Don't flag this", kind: :calibration})
 

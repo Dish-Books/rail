@@ -13,7 +13,16 @@ defmodule RailWeb.Live.EngineerStageTest do
   alias Rail.Users
 
   setup %{conn: conn, project: project} do
-    {:ok, user} = Users.register_oauth_user(%{github_id: "est-1", login: "dana", name: "Dana", email: "dana@est.example"})
+    id = System.unique_integer([:positive])
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "est-1-#{id}",
+        login: "dana-#{id}",
+        name: "Dana",
+        email: "dana-#{id}@est.example"
+      })
+
     {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 

@@ -80,8 +80,15 @@ defmodule Rail.Pipeline.Actions.DecideQaFindingTest do
   end
 
   test "records who decided", %{finding: finding} do
+    id = System.unique_integer([:positive])
+
     {:ok, %{id: user_id} = user} =
-      Rail.Users.register_oauth_user(%{github_id: "dqf-u", login: "dana", name: "Dana", email: "dana@dqf.example"})
+      Rail.Users.register_oauth_user(%{
+        github_id: "dqf-u-#{id}",
+        login: "dana-#{id}",
+        name: "Dana",
+        email: "dana-#{id}@dqf.example"
+      })
 
     assert {:ok, %{decision: :fix, decided_by_id: ^user_id}} =
              Pipeline.decide_qa_finding(Rail.Scope.for_user(user), finding, :fix)

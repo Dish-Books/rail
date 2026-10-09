@@ -17,8 +17,15 @@ defmodule RailWeb.LearningsLiveTest do
   alias Rail.Users
 
   setup %{conn: conn, project: project} do
+    id = System.unique_integer([:positive])
+
     {:ok, user} =
-      Users.register_oauth_user(%{github_id: "llv-1", login: "dana", name: "Dana Okafor", email: "dana@llv.example"})
+      Users.register_oauth_user(%{
+        github_id: "llv-1-#{id}",
+        login: "dana-#{id}",
+        name: "Dana Okafor",
+        email: "dana-#{id}@llv.example"
+      })
 
     {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
     conn = conn |> log_in_user(user) |> Plug.Conn.put_session(:selected_project_id, project.id)

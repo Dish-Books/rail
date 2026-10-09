@@ -8,7 +8,16 @@ defmodule Rail.Learnings.Actions.ApproveLearningProposalTest do
   alias Rail.Users
 
   setup %{project: project} do
-    {:ok, user} = Users.register_oauth_user(%{github_id: "alp-1", login: "dana", name: "Dana", email: "dana@alp.example"})
+    id = System.unique_integer([:positive])
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "alp-1-#{id}",
+        login: "dana-#{id}",
+        name: "Dana",
+        email: "dana-#{id}@alp.example"
+      })
+
     %{scope: Rail.Scope.for_user(user), user_id: user.id, project_id: project.id}
   end
 

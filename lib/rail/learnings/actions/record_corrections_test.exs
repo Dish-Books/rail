@@ -15,7 +15,16 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
   alias Rail.Users
 
   setup %{project: project} do
-    {:ok, user} = Users.register_oauth_user(%{github_id: "rc-1", login: "dana", name: "Dana", email: "dana@rc.example"})
+    id = System.unique_integer([:positive])
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "rc-1-#{id}",
+        login: "dana-#{id}",
+        name: "Dana",
+        email: "dana-#{id}@rc.example"
+      })
+
     task = learnings_task(project, "COR-1")
 
     records = [

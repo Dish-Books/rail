@@ -162,16 +162,22 @@ defmodule RailWeb.Live.RunConversationTest do
     roles: roles,
     roles_map: roles_map
   } do
+    id = System.unique_integer([:positive])
+
     {:ok, %{id: dana_id}} =
       Rail.Users.register_oauth_user(%{
-        github_id: "gh_cnv_dana",
-        login: "dana",
+        github_id: "gh_cnv_dana_#{id}",
+        login: "dana-#{id}",
         name: "Dana Reyes",
-        email: "d@example.com"
+        email: "d-#{id}@example.com"
       })
 
     {:ok, %{id: reader_id} = reader} =
-      Rail.Users.register_oauth_user(%{github_id: "gh_cnv_reader", login: "reader", email: "r@example.com"})
+      Rail.Users.register_oauth_user(%{
+        github_id: "gh_cnv_reader_#{id}",
+        login: "reader-#{id}",
+        email: "r-#{id}@example.com"
+      })
 
     {:ok, run} =
       Pipeline.create_run(%{
