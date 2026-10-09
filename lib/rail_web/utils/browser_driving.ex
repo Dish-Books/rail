@@ -2,10 +2,11 @@ defmodule RailWeb.Utils.BrowserDriving do
   @moduledoc """
   What a run is doing to the browser right now, for the panels that watch one.
 
-  Two stages drive the same Chrome for different reasons, and a person standing
-  behind either of them asks the same three things: what is it looking at, where
-  is that, and what did it just do. So the answer is one shape read one way -
-  the frame off the session, the rest off the run's own log.
+  Two stages drive the same Chrome for different reasons, each in a tab named for
+  its stage, and a person standing behind either of them asks the same three
+  things: what is it looking at, where is that, and what did it just do. So the
+  answer is one shape read one way - the frame off the named session, the rest off
+  the run's own log.
 
   What is in that log is what Rail executed rather than what the agent asked
   for, so a step that went to the wrong element reads as the wrong element.
@@ -23,19 +24,20 @@ defmodule RailWeb.Utils.BrowserDriving do
   @waiting "Waiting for the first instruction."
 
   @doc """
-  Returns `%{doing:, verb:, target:, url:, frame:}` for `run` driving `task`.
+  Returns `%{doing:, verb:, target:, url:, frame:}` for `run` driving the browser
+  `name` on `task`.
 
   A run that is not executing is driving nothing, whatever is still painted in
   the browser: a Chrome left open by the run before this one would otherwise
   read as this one's first page.
   """
-  def browser_driving(run, %Task{} = task) do
-    if Run.state(run) == :running, do: driving(run, task), else: idle()
+  def browser_driving(run, %Task{} = task, name) do
+    if Run.state(run) == :running, do: driving(run, task, name), else: idle()
   end
 
   defp idle, do: %{doing: nil, verb: "idle", target: @waiting, url: nil, frame: nil}
 
-  defp driving(%Run{} = run, %Task{} = task) do
+  defp driving(%Run{} = run, %Task{} = task, name) do
     lines =
       run
       |> Pipeline.list_run_events(order: :desc, limit: 60)
@@ -49,14 +51,14 @@ defmodule RailWeb.Utils.BrowserDriving do
       doing: doing,
       verb: verb(doing),
       target: target(doing),
-      url: Tools.get_browser_url(task) || Enum.find_value(lines, &opened/1),
-      frame: frame(doing, task)
+      url: Tools.get_browser_url(task, name) || Enum.find_value(lines, &opened/1),
+      frame: frame(doing, task, name)
     }
   end
 
   # A browser this run has not touched yet has nothing to show.
-  defp frame(nil, %Task{}), do: nil
-  defp frame(_doing, %Task{} = task), do: Tools.get_browser_frame(task)
+  defp frame(nil, %Task{}, _name), do: nil
+  defp frame(_doing, %Task{} = task, name), do: Tools.get_browser_frame(task, name)
 
   # `browser_goto` is the only thing that says where the browser went, and the
   # newest one is where it is.

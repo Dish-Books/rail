@@ -16,10 +16,10 @@ defmodule Rail.Tools.BrowserRecorderTest do
   end
 
   test "writes every frame the browser paints, with when it arrived", %{task: task, directory: directory} do
-    {:ok, recorder} = Tools.start_browser_recording(task)
+    {:ok, recorder} = Tools.start_browser_recording(task, "demo")
 
-    Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}", {:browser_frame, task.id, Base.encode64("first")})
-    Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}", {:browser_frame, task.id, Base.encode64("second")})
+    Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:demo", {:browser_frame, task.id, Base.encode64("first")})
+    Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:demo", {:browser_frame, task.id, Base.encode64("second")})
 
     eventually(fn ->
       assert File.read!(Path.join(directory, "frames/000000.jpg")) == "first"
@@ -38,23 +38,35 @@ defmodule Rail.Tools.BrowserRecorderTest do
     assert [%{"file" => "000000.jpg", "at_ms" => 0}, %{"file" => "000001.jpg"}] = written
   end
 
+  # Another agent's browser on the same task is another stream, and not the demo's.
+  test "films only the browser it was started on", %{task: task, directory: directory} do
+    {:ok, recorder} = Tools.start_browser_recording(task, "demo")
+
+    Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:qa", {:browser_frame, task.id, Base.encode64("qa")})
+    Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:demo", {:browser_frame, task.id, Base.encode64("demo")})
+
+    eventually(fn -> assert File.read!(Path.join(directory, "frames/000000.jpg")) == "demo" end)
+    assert BrowserRecorder.finish(recorder)
+    refute File.exists?(Path.join(directory, "frames/000001.jpg"))
+  end
+
   # The clock starts at the first frame rather than at the launch, because a
   # video that opens on two seconds of a browser booting is two seconds nobody
   # watches.
   test "the recording has run for nothing until something paints", %{task: task} do
-    {:ok, recorder} = Tools.start_browser_recording(task)
+    {:ok, recorder} = Tools.start_browser_recording(task, "demo")
 
     assert BrowserRecorder.elapsed_ms(recorder) == 0
 
-    Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}", {:browser_frame, task.id, Base.encode64("painted")})
+    Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:demo", {:browser_frame, task.id, Base.encode64("painted")})
 
     eventually(fn -> assert BrowserRecorder.elapsed_ms(recorder) >= 0 end)
     assert BrowserRecorder.finish(recorder)
   end
 
   test "asking twice films once", %{task: task} do
-    assert {:ok, recorder} = Tools.start_browser_recording(task)
-    assert {:ok, ^recorder} = Tools.start_browser_recording(task)
+    assert {:ok, recorder} = Tools.start_browser_recording(task, "demo")
+    assert {:ok, ^recorder} = Tools.start_browser_recording(task, "demo")
     assert ^recorder = Tools.get_browser_recording(task)
 
     assert BrowserRecorder.finish(recorder)
@@ -65,7 +77,7 @@ defmodule Rail.Tools.BrowserRecorderTest do
     File.mkdir_p!(Path.join(directory, "frames"))
     File.write!(Path.join(directory, "frames/000000.jpg"), "from the last recording")
 
-    {:ok, recorder} = Tools.start_browser_recording(task)
+    {:ok, recorder} = Tools.start_browser_recording(task, "demo")
 
     refute File.exists?(Path.join(directory, "frames/000000.jpg"))
     assert BrowserRecorder.finish(recorder)
@@ -74,7 +86,7 @@ defmodule Rail.Tools.BrowserRecorderTest do
   # The recorder subscribes to a topic the session also broadcasts other things
   # on, and a message it has no use for is not a reason to stop filming.
   test "a message the recording has no use for changes nothing", %{task: task} do
-    {:ok, recorder} = Tools.start_browser_recording(task)
+    {:ok, recorder} = Tools.start_browser_recording(task, "demo")
 
     send(recorder, :something_else)
 
@@ -88,7 +100,7 @@ defmodule Rail.Tools.BrowserRecorderTest do
   end
 
   test "stopping says where the frames went", %{task: task, directory: directory} do
-    {:ok, _recorder} = Tools.start_browser_recording(task)
+    {:ok, _recorder} = Tools.start_browser_recording(task, "demo")
 
     assert Tools.stop_browser_recording(task) == directory
   end

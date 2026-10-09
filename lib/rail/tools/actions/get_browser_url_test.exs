@@ -29,6 +29,6 @@ defmodule Rail.Tools.Actions.GetBrowserUrlTest do
   # The panel asks on every render, including for a pass that ended weeks ago, so
   # no browser is the ordinary case rather than an error.
   test "a task with no browser is nowhere", %{task: task} do
-    assert Tools.get_browser_url(task) == nil
+    assert Tools.get_browser_url(task, "qa") == nil
   end
 end

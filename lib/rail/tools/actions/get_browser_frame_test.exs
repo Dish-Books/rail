@@ -29,6 +29,6 @@ defmodule Rail.Tools.Actions.GetBrowserFrameTest do
   # Every QA panel asks for this on the way in, including the ones opened long
   # after the pass ended, so no browser is the ordinary case rather than an error.
   test "a task with no browser has nothing to show", %{task: task} do
-    assert Tools.get_browser_frame(task) == nil
+    assert Tools.get_browser_frame(task, "qa") == nil
   end
 end

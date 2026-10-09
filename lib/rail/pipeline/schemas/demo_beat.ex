@@ -20,11 +20,11 @@ defmodule Rail.Pipeline.Schemas.DemoBeat do
 
   defstruct [:at_ms, :recorded_ms, :text, :criterion]
 
-  # A caption is read at a few words a second. Short ones still need long enough
-  # to register, and long ones are read by skimming rather than word by word.
-  @ms_per_word 300
-  @min_reading_ms 2_000
-  @max_reading_ms 7_000
+  # A caption is read at four words a second, and stays up under the moving
+  # picture, so even a long one is never given more than three seconds.
+  @ms_per_word 250
+  @min_reading_ms 1_200
+  @max_reading_ms 3_000
 
   @doc """
   How long `beat` has to stay up to be read.

@@ -27,6 +27,8 @@ defmodule Rail.Projects.Schemas.Project do
     # Run on every commit the engineer finishes, before it is pushed or reviewed.
     field :ci_command, :string
     field :ci_timeout_minutes, :integer, default: 30
+    # Run from the worktree root in each agent's sandbox that opens a browser; prints a magic link and an email.
+    field :account_seed_command, :string
 
     # Shared by every project on the same Linear workspace; each project is one team in it.
     belongs_to :linear_workspace, LinearWorkspace
@@ -57,6 +59,7 @@ defmodule Rail.Projects.Schemas.Project do
     :toolchain_command,
     :ci_command,
     :ci_timeout_minutes,
+    :account_seed_command,
     :triage_user_id,
     :learnings_slack_workspace_id,
     :learnings_channel_external_id

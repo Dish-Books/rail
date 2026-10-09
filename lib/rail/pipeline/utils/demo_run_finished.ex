@@ -10,11 +10,10 @@ defmodule Rail.Pipeline.Utils.DemoRunFinished do
   what they asked for, and a walkthrough of the wrong thing is a message back
   rather than a state machine's problem.
 
-  The encode squeezes out the time nothing happened, but never the time a caption
-  needs to be read, so the captions go in as the stretches that must play at real
-  speed and come back as where they landed in the video. That is written onto
-  each caption, beside the moment it was said, so the player shows the words
-  with the frame they describe.
+  The encode squeezes out the time nothing happened and ends once the last caption
+  has been read, so the captions go in with their reading times and come back as
+  where they landed in the video. That is written onto each caption, beside the
+  moment it was said, so the player shows the words with the frame they describe.
 
   Three things a demo run can get wrong, and all three are recorded on the run so
   the stage stays open for the message that fixes it: exiting having never

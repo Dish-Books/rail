@@ -10,15 +10,17 @@ defmodule Rail.Mcp.Utils.RunToolBrowserProblems do
   not a finding anybody can act on.
   """
 
+  import Rail.Mcp.Utils.NamedBrowser
+
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Tools
   alias Rail.Tools.BrowserSession
 
   @doc """
-  Returns what `task`'s browser has complained about, and forgets it.
+  Returns what the browser `arguments["browser"]` names on `task` has complained
+  about, and forgets it.
   """
-  def run_tool_browser_problems(%Task{} = task, _arguments, opts) do
-    with {:ok, session} <- Tools.start_browser_session(task, opts) do
+  def run_tool_browser_problems(%Task{} = task, arguments, opts) do
+    with {:ok, _name, session} <- named_browser(task, arguments, opts) do
       drained(BrowserSession.drain_problems(session))
     end
   end

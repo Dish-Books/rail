@@ -44,6 +44,12 @@ that `Rail.Repo.config()[:database]` is `rail_dev$DB_SUFFIX`. Run code in the no
 
 ## Sign in
 
+When the project has an account seed, `browser_connect` signs your browser in as a fresh account
+of its own and says who: nobody else's records are in it. Each `browser` name you give is another
+browser signed in as another account. To show sign-up, onboarding or billing itself, ask for
+`account: "bare"` under a new name, and the browser opens with nobody signed in.
+
+When `browser_connect` says there is no account seed,
 `http://localhost:$PORT/dev/login?return_to=<path>` signs in `qa-admin@rail.local`, straight onto
 the page you want. `/dev/login/<email>?return_to=<path>` switches to somebody else on camera, for
 anything that turns on whose work it is. Do it before the first beat that matters: nobody watching
@@ -75,9 +81,12 @@ Anything that only happens in the Docker sandbox or in production goes in `not_s
 
 The captions are what turn a screen recording into a demo.
 
-- **One sentence**, in the words the person watching would use. "Answering the Product agent's
-  three questions in one go", not "clicking the Send answers button". They can see the clicking.
-  What they cannot see is why it matters.
+- **One sentence of about twelve words**, in the words the person watching would use. "Answering
+  the Product agent's three questions in one go", not "clicking the Send answers button". They can
+  see the clicking. What they cannot see is why it matters.
+- **Say it just before the action, then act at once.** The caption stays up under the video while
+  the picture moves on, and Rail holds the picture only when the next caption would replace one
+  still being read. Never wait after a caption.
 - **Every acceptance criterion gets a beat.** One you cannot show is one to say so about, not one to
   quietly skip.
 
@@ -92,7 +101,7 @@ A walkthrough, not a tour of the screens.
 - **Setup is not the demo.** The seeded starting state is one beat at the front, narrated in a
   sentence ("a task in review with four findings waiting on a ruling"), and then you move on.
 - **Slow down where it matters.** The moment the change actually does its thing is the moment worth
-  a beat of its own and a second of stillness. Getting between two screens is not.
+  a caption of its own. Getting between two screens is not.
 - **Show the result, not just the action.** Clicking Send is not the point; the run picking the
   answers up and the card clearing is.
 - **Keep it moving.** Ten seconds between one caption and the next is a long time to watch nothing

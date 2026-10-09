@@ -346,7 +346,7 @@ defmodule RailWeb.Live.DemoStage do
     |> assign(:demo, Pipeline.read_demo(task))
     |> assign(:beats, Pipeline.list_demo_beats(task))
     |> assign(:recorded, Task.demo_recorded?(task))
-    |> assign(:driving, browser_driving(socket.assigns.run, task))
+    |> assign(:driving, browser_driving(socket.assigns.run, task, "demo"))
   end
 
   defp waiting_on(nil), do: "Record a walkthrough of the change, or settle the demo as not needed."

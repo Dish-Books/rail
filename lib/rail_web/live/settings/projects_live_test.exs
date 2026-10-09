@@ -265,6 +265,38 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     assert %Project{ci_command: "mise run ci", ci_timeout_minutes: 45} = Repo.get!(Project, project_id)
   end
 
+  test "sets the seed that signs each agent's browser in as a fresh account, and clears it", %{
+    admin_conn: conn,
+    admin_user: admin
+  } do
+    assert {:ok, %Project{id: project_id}} =
+             Projects.create_project(Scope.for_user(admin), %{
+               name: "Seed App",
+               github_repo: "example/seed-#{System.unique_integer([:positive])}",
+               github_installation_id: 336,
+               linear_team_key: "SED",
+               default_branch: "main",
+               clone_path: "/tmp/seed"
+             })
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+    view |> element("#edit-project-#{project_id}") |> render_click()
+    assert has_element?(view, "#project-account-seed-command-input")
+
+    view
+    |> form("#project-form", %{"project" => %{"account_seed_command" => "mix run scripts/seed_account.exs"}})
+    |> render_submit()
+
+    assert %Project{account_seed_command: "mix run scripts/seed_account.exs"} = Repo.get!(Project, project_id)
+
+    view |> element("#edit-project-#{project_id}") |> render_click()
+    assert has_element?(view, "#project-account-seed-command-input[value='mix run scripts/seed_account.exs']")
+
+    view |> form("#project-form", %{"project" => %{"account_seed_command" => ""}}) |> render_submit()
+
+    assert %Project{account_seed_command: nil} = Repo.get!(Project, project_id)
+  end
+
   test "links a project to a Linear workspace picked from the list", %{
     admin_conn: conn,
     admin_user: admin,

@@ -58,7 +58,13 @@ turns reuse them.
 
 ## Sign in
 
-Open `http://localhost:$PORT/dev/login?return_to=<path>`. It creates and signs in
+When the project has an account seed, `browser_connect` signs your browser in as a fresh account
+of its own and says who: nobody else's records are in it. Each `browser` name you give is another
+browser signed in as another account. For a check of sign-up, onboarding or billing itself, ask for
+`account: "bare"` under a new name, and the browser opens with nobody signed in.
+
+When `browser_connect` says there is no account seed, open
+`http://localhost:$PORT/dev/login?return_to=<path>`. It creates and signs in
 `qa-admin@rail.local`, an admin. `/dev/login/<email>` signs in somebody else, for anything that
 turns on whose work it is or on being an admin. A signed-out visit lands on `/sign-in`. Never a
 typed password, and never the real GitHub or Google sign-in.
