@@ -52,6 +52,13 @@ defmodule Rail.Mcp.Utils.McpTools do
 
   alias Rail.Roles.Schemas.Role
 
+  @browser %{
+    "type" => "string",
+    "description" =>
+      "Which of your browsers, by the name you gave it in browser_connect; a name it never opened is " <>
+        "refused. Leave it out for the one named for your stage, `qa` or `demo`."
+  }
+
   @browser_tools [
     %{
       "name" => "browser_connect",
@@ -62,9 +69,32 @@ defmodule Rail.Mcp.Utils.McpTools do
           "evaluate, expect, until, text, shot, resize and drainProblems, all as trusted input " <>
           "events so LiveView sees what a person's would produce. Write a script per check and run " <>
           "it with `node`; the tab stays where each script leaves it, signed in. Rail watches the " <>
-          "same tab, so the panel and a demo recording show what you do. Call it again if the " <>
-          "address stops answering.",
-      "inputSchema" => %{"type" => "object", "properties" => %{}}
+          "same tab, so the panel and a demo recording show what you do. Each `browser` name is a " <>
+          "context and tab of its own; the first call for a name signs it in as a fresh account the " <>
+          "project's seed makes for it, when the project has one, and says who. Call it again with the " <>
+          "same name if the address stops answering, in a later turn, or after Rail restarts: you get " <>
+          "the same tab back, where you left it and signed in as the same account. Only a tab Chrome " <>
+          "lost is opened again, and then signed in as a new account.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{
+          "browser" => %{
+            "type" => "string",
+            "description" =>
+              "A name for this browser, a few letters, digits, spaces or dashes. Leave it out for the one " <>
+                "named for your stage, `qa` or `demo`. Another name is another browser signed in as another account."
+          },
+          "account" => %{
+            "type" => "string",
+            "enum" => ["fresh", "bare"],
+            "description" =>
+              "`fresh`, the default, signs a new browser in as a new account. `bare` opens it with nobody " <>
+                "signed in and the seed not run, for checking sign-up, onboarding or billing itself. It " <>
+                "only applies to a name's first call: a reconnect keeps whoever the browser already is, so " <>
+                "ask for a bare one under a new name."
+          }
+        }
+      }
     },
     %{
       "name" => "browser_problems",
@@ -72,7 +102,7 @@ defmodule Rail.Mcp.Utils.McpTools do
         "Everything the browser complained about since this was last asked: uncaught exceptions, " <>
           "console errors, failed requests, a crashed page. Draining, so what comes back belongs " <>
           "to whatever just ran. Ask often.",
-      "inputSchema" => %{"type" => "object", "properties" => %{}}
+      "inputSchema" => %{"type" => "object", "properties" => %{"browser" => @browser}}
     }
   ]
 
@@ -151,7 +181,8 @@ defmodule Rail.Mcp.Utils.McpTools do
         "type" => "object",
         "properties" => %{
           "check" => %{"type" => "string", "description" => "The key of the check this shows, from qa_plan."},
-          "name" => %{"type" => "string", "description" => "What this picture shows."}
+          "name" => %{"type" => "string", "description" => "What this picture shows."},
+          "browser" => @browser
         },
         "required" => ["check", "name"]
       }
@@ -190,8 +221,8 @@ defmodule Rail.Mcp.Utils.McpTools do
           "all off camera - which is the point. Drive the whole walkthrough once to find out how it " <>
           "behaves, put any data you changed back, and then call this and do the run you now know. " <>
           "Calling it again starts another take and discards the last one, so a walkthrough that " <>
-          "went wrong costs a retake rather than a bad video.",
-      "inputSchema" => %{"type" => "object", "properties" => %{}}
+          "went wrong costs a retake rather than a bad video. It films the browser named `browser`.",
+      "inputSchema" => %{"type" => "object", "properties" => %{"browser" => @browser}}
     },
     %{
       "name" => "demo_say",

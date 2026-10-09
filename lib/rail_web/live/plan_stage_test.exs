@@ -279,6 +279,8 @@ defmodule RailWeb.Live.PlanStageTest do
         ]
       })
 
+    # The save reaches the pane as an update the page sends itself, after the first render it is asked for.
+    _settled = render(view)
     assert has_element?(view, "#plan-split", "Split into 3 children")
     assert has_element?(view, "#plan-split", "2 rounds")
     assert has_element?(view, "#plan-split-child-3", "Three")

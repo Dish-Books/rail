@@ -59,7 +59,7 @@ defmodule Rail.Tools.BrowserSessionTest do
     # row it would settle is rolled back with the test anyway. What must not
     # survive is the Chrome.
     on_exit(fn ->
-      case Tools.get_browser_session(task) do
+      case Tools.get_browser_session(task, "qa") do
         pid when is_pid(pid) -> GenServer.stop(pid, :normal, 10_000)
         nil -> :ok
       end
@@ -71,7 +71,7 @@ defmodule Rail.Tools.BrowserSessionTest do
   end
 
   test "drives a tab in the shared Chrome and records where it is", %{task: task, page: page} do
-    assert {:ok, session} = Tools.start_browser_session(task)
+    assert {:ok, session} = Tools.start_browser_session(task, "qa")
 
     assert %Session{status: :running, debug_port: port, browser_context_id: context, target_id: target} =
              Repo.get_by!(Session, task_id: task.id)
@@ -92,7 +92,7 @@ defmodule Rail.Tools.BrowserSessionTest do
   # The tab is a fixed size, so a check written for a narrow viewport means the
   # same thing on every machine.
   test "the tab is the size Rail asked for", %{task: task, page: page} do
-    {:ok, session} = Tools.start_browser_session(task)
+    {:ok, session} = Tools.start_browser_session(task, "qa")
     {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
 
     assert {:ok, %{"result" => %{"value" => [1920, 1080]}}} =
@@ -109,7 +109,7 @@ defmodule Rail.Tools.BrowserSessionTest do
     task: task,
     page: page
   } do
-    {:ok, session} = Tools.start_browser_session(task)
+    {:ok, session} = Tools.start_browser_session(task, "qa")
     {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
     %{page_url: page_url} = BrowserSession.details(session)
 
@@ -127,8 +127,8 @@ defmodule Rail.Tools.BrowserSessionTest do
   end
 
   test "asking twice gets the tab that is already open", %{task: task} do
-    assert {:ok, session} = Tools.start_browser_session(task)
-    assert {:ok, ^session} = Tools.start_browser_session(task)
+    assert {:ok, session} = Tools.start_browser_session(task, "qa")
+    assert {:ok, ^session} = Tools.start_browser_session(task, "qa")
   end
 
   # One Chrome between them, and nothing signed into one task's app is visible
@@ -149,14 +149,14 @@ defmodule Rail.Tools.BrowserSessionTest do
     {:ok, other} = Pipeline.create_task(issue, :qa)
 
     on_exit(fn ->
-      case Tools.get_browser_session(other) do
+      case Tools.get_browser_session(other, "qa") do
         pid when is_pid(pid) -> GenServer.stop(pid, :normal, 10_000)
         nil -> :ok
       end
     end)
 
-    {:ok, _mine} = Tools.start_browser_session(task)
-    {:ok, _theirs} = Tools.start_browser_session(other)
+    {:ok, _mine} = Tools.start_browser_session(task, "qa")
+    {:ok, _theirs} = Tools.start_browser_session(other, "qa")
 
     mine = Repo.get_by!(Session, task_id: task.id)
     theirs = Repo.get_by!(Session, task_id: other.id)
@@ -165,17 +165,121 @@ defmodule Rail.Tools.BrowserSessionTest do
     assert mine.browser_context_id != theirs.browser_context_id
   end
 
+  # Two agents on one task each drive a context of their own, signed into its own
+  # account, and each browser's frames go only to whoever watches that name.
+  test "two names on one task get two contexts and two frame streams", %{task: task, page: page} do
+    on_exit(fn ->
+      case Tools.get_browser_session(task, "explorer 2") do
+        pid when is_pid(pid) -> GenServer.stop(pid, :normal, 10_000)
+        nil -> :ok
+      end
+    end)
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}:explorer 2")
+
+    {:ok, qa} = Tools.start_browser_session(task, "qa")
+    {:ok, explorer} = Tools.start_browser_session(task, "explorer 2")
+
+    assert qa != explorer
+    assert Tools.get_browser_session(task, "explorer 2") == explorer
+
+    assert [%Session{name: "explorer 2", browser_context_id: theirs}, %Session{name: "qa", browser_context_id: mine}] =
+             Repo.all(from s in Session, where: s.task_id == ^task.id, order_by: s.name)
+
+    assert mine != theirs
+
+    {:ok, _navigated} = BrowserSession.call(explorer, "Page.navigate", %{url: page})
+    assert_receive {:browser_frame, _task_id, _data}, 10_000
+
+    eventually(fn -> assert Tools.get_browser_url(task, "explorer 2") == page end)
+    assert Tools.get_browser_url(task, "qa") in [nil, "about:blank"]
+  end
+
+  # Who a tab was signed in as belongs to the tab, so a deploy in the middle of a
+  # pass comes back to the same account rather than signing in another.
+  test "a tab signed in keeps its account when Rail restarts", %{task: task, page: page} do
+    {:ok, session} = Tools.start_browser_session(task, "qa")
+    assert %{signed_in?: false, account: nil} = BrowserSession.details(session)
+
+    assert :ok = BrowserSession.sign_in(session, page, "explorer-1@rail.test")
+    eventually(fn -> assert BrowserSession.where(session) == page end)
+    assert %Session{account: "explorer-1@rail.test"} = Repo.get_by!(Session, task_id: task.id)
+
+    :ok = GenServer.stop(session, :shutdown, 10_000)
+
+    {:ok, again} = Tools.start_browser_session(task, "qa")
+    assert %{signed_in?: true, account: "explorer-1@rail.test"} = BrowserSession.details(again)
+  end
+
+  # A bare browser is signed in as nobody on purpose, and is not signed in again.
+  test "a tab left bare is settled with nobody signed in", %{task: task} do
+    {:ok, session} = Tools.start_browser_session(task, "qa")
+
+    assert :ok = BrowserSession.sign_in(session, nil, nil)
+    assert %{signed_in?: true, account: nil} = BrowserSession.details(session)
+    assert Tools.get_browser_url(task, "qa") in [nil, "about:blank"]
+  end
+
+  test "a link Chrome will not open leaves the tab to sign in again", %{task: task} do
+    {:ok, session} = Tools.start_browser_session(task, "qa")
+
+    assert {:error, _refused} = BrowserSession.sign_in(session, "not a url", "a@rail.test")
+    assert %{signed_in?: false} = BrowserSession.details(session)
+  end
+
+  # A tool naming a browser acts on one browser_connect opened. A slip in the name
+  # opens nothing, and a tab Rail lost hold of across a restart is still found.
+  test "asking only for a browser the task has opens nothing for a name it has none under", %{task: task} do
+    assert {:error, :no_browser} = Tools.start_browser_session(task, "Explorer 1", existing: true)
+    assert Repo.all(from s in Session, where: s.task_id == ^task.id) == []
+
+    {:ok, session} = Tools.start_browser_session(task, "explorer 1")
+    :ok = GenServer.stop(session, :shutdown, 10_000)
+
+    assert {:ok, again} = Tools.start_browser_session(task, "explorer 1", existing: true)
+    assert again != session
+    assert [%Session{name: "explorer 1", status: :running}] = Repo.all(from s in Session, where: s.task_id == ^task.id)
+  end
+
+  # Two tool calls for a name nobody has opened yet both find nothing and both
+  # insert. The one the index refuses finds the other's browser rather than crashing.
+  test "callers starting one new name at once all get the same browser", %{task: task} do
+    test = self()
+
+    started =
+      1..8
+      |> Enum.map(fn _caller ->
+        Task.async(fn ->
+          Ecto.Adapters.SQL.Sandbox.allow(Repo, test, self())
+          Tools.start_browser_session(task, "qa")
+        end)
+      end)
+      |> Task.await_many(60_000)
+
+    assert [{:ok, session}] = Enum.uniq(started)
+    assert is_pid(session)
+    assert [%Session{status: :running}] = Repo.all(from s in Session, where: s.task_id == ^task.id)
+  end
+
+  # Only the race on the live name is retried. A task deleted under a tool call
+  # fails its foreign key every time, so it raises rather than looping.
+  test "a task deleted under the call raises rather than retrying", %{task: task} do
+    Repo.delete!(task)
+
+    assert_raise CaseClauseError, fn -> Tools.start_browser_session(task, "qa") end
+  end
+
   # Rail stopping is not the task being done with its browser: a deploy in the
   # middle of a pass comes back to the page the pass was on.
   test "a session that ends with Rail leaves its tab, and the next one attaches to it", %{task: task, page: page} do
-    {:ok, session} = Tools.start_browser_session(task)
+    {:ok, session} = Tools.start_browser_session(task, "qa")
     {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
     eventually(fn -> assert BrowserSession.where(session) == page end)
     %Session{id: id, target_id: target} = Repo.get_by!(Session, task_id: task.id)
 
     :ok = GenServer.stop(session, :shutdown, 10_000)
 
-    assert {:ok, again} = Tools.start_browser_session(task)
+    assert {:ok, again} = Tools.start_browser_session(task, "qa")
     assert again != session
     assert %Session{id: ^id, status: :running, target_id: ^target} = Repo.get_by!(Session, task_id: task.id)
     assert BrowserSession.where(again) == page
@@ -184,7 +288,7 @@ defmodule Rail.Tools.BrowserSessionTest do
   # Chrome restarted, or the context was closed from under the row. The row is
   # settled and the task gets a new tab rather than an error.
   test "a tab that is not there any more is replaced", %{task: task} do
-    {:ok, session} = Tools.start_browser_session(task)
+    {:ok, session} = Tools.start_browser_session(task, "qa")
     %Session{id: id, browser_context_id: context, target_id: target} = Repo.get_by!(Session, task_id: task.id)
     :ok = GenServer.stop(session, :shutdown, 10_000)
 
@@ -193,7 +297,7 @@ defmodule Rail.Tools.BrowserSessionTest do
     {:ok, _closed} = Browser.call(connection, "Target.disposeBrowserContext", %{browserContextId: context})
     GenServer.stop(connection)
 
-    assert {:ok, _fresh} = Tools.start_browser_session(task)
+    assert {:ok, _fresh} = Tools.start_browser_session(task, "qa")
 
     assert %Session{status: :finished} = Repo.get!(Session, id)
 
@@ -208,10 +312,10 @@ defmodule Rail.Tools.BrowserSessionTest do
   test "a row that never got a tab is settled and a tab opened", %{task: task} do
     {:ok, %Session{id: stuck}} =
       %Session{}
-      |> Session.changeset(%{task_id: task.id, status: :starting, started_at: DateTime.utc_now()})
+      |> Session.changeset(%{task_id: task.id, name: "qa", status: :starting, started_at: DateTime.utc_now()})
       |> Repo.insert()
 
-    assert {:ok, _session} = Tools.start_browser_session(task)
+    assert {:ok, _session} = Tools.start_browser_session(task, "qa")
 
     assert %Session{status: :finished} = Repo.get!(Session, stuck)
 
@@ -226,7 +330,7 @@ defmodule Rail.Tools.BrowserSessionTest do
   test "a tab that cannot be reached for want of a browser keeps its row", %{task: task} do
     {:ok, %Session{id: id}} =
       %Session{}
-      |> Session.changeset(%{task_id: task.id, status: :running, browser_context_id: "CTX", target_id: "TGT"})
+      |> Session.changeset(%{task_id: task.id, name: "qa", status: :running, browser_context_id: "CTX", target_id: "TGT"})
       |> Repo.insert()
 
     set_mimic_global()
@@ -234,20 +338,20 @@ defmodule Rail.Tools.BrowserSessionTest do
     stub(Rail, :browser_root, fn -> root end)
     stub(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:error, :enoent} end)
 
-    assert {:error, {:browser_unavailable, :enoent}} = Tools.start_browser_session(task)
+    assert {:error, {:browser_unavailable, :enoent}} = Tools.start_browser_session(task, "qa")
     assert %Session{status: :running} = Repo.get!(Session, id)
   end
 
   # An agent that never reaches its last instruction still cannot leave a tab
   # open, because stopping is not the agent's to remember.
   test "stopping closes the tab and its context", %{task: task} do
-    {:ok, _session} = Tools.start_browser_session(task)
+    {:ok, _session} = Tools.start_browser_session(task, "qa")
     %Session{id: id, target_id: target} = Repo.get_by!(Session, task_id: task.id)
 
     assert :ok = Tools.stop_browser_session(task)
 
     assert %Session{status: :finished, finished_at: %DateTime{}} = Repo.get(Session, id)
-    assert Tools.get_browser_session(task) == nil
+    assert Tools.get_browser_session(task, "qa") == nil
 
     {:ok, %{url: url}} = ensure_browser_host(start: false)
     {:ok, connection} = Browser.start_link(url: url)
@@ -257,10 +361,23 @@ defmodule Rail.Tools.BrowserSessionTest do
     refute Enum.any?(targets, &(&1["targetId"] == target))
   end
 
+  test "stopping closes every browser the task has, whatever its name", %{task: task} do
+    {:ok, _qa} = Tools.start_browser_session(task, "qa")
+    {:ok, explorer} = Tools.start_browser_session(task, "explorer 2")
+    :ok = GenServer.stop(explorer, :shutdown, 10_000)
+
+    assert :ok = Tools.stop_browser_session(task)
+
+    assert [%Session{status: :finished}, %Session{status: :finished}] =
+             Repo.all(from s in Session, where: s.task_id == ^task.id)
+
+    assert Tools.get_browser_session(task, "qa") == nil
+  end
+
   # Rail restarted since the tab was opened, so nothing holds it - and it is
   # still a tab to close.
   test "stopping closes a tab nothing is connected to", %{task: task} do
-    {:ok, session} = Tools.start_browser_session(task)
+    {:ok, session} = Tools.start_browser_session(task, "qa")
     %Session{target_id: target} = Repo.get_by!(Session, task_id: task.id)
     :ok = GenServer.stop(session, :shutdown, 10_000)
 
@@ -277,12 +394,12 @@ defmodule Rail.Tools.BrowserSessionTest do
   # Where the tab is comes from Chrome rather than from the run's log: the log
   # says where a pass asked to go, which a redirect makes a different place.
   test "says where the tab went", %{task: task, page: page} do
-    {:ok, session} = Tools.start_browser_session(task)
+    {:ok, session} = Tools.start_browser_session(task, "qa")
     {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
 
     eventually(fn ->
       assert BrowserSession.where(session) == page
-      assert Tools.get_browser_url(task) == page
+      assert Tools.get_browser_url(task, "qa") == page
     end)
   end
 
@@ -294,16 +411,16 @@ defmodule Rail.Tools.BrowserSessionTest do
   # read about it afterwards, and a browser that has already painted has a frame
   # to hand for the panel that has only just arrived.
   test "broadcasts what the tab is looking at", %{task: task, page: page} do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}")
+    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}:qa")
 
-    {:ok, session} = Tools.start_browser_session(task)
+    {:ok, session} = Tools.start_browser_session(task, "qa")
     {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
 
     assert_receive {:browser_frame, task_id, data}, 10_000
     assert task_id == task.id
     assert {:ok, <<0xFF, 0xD8, _rest::binary>>} = Base.decode64(data)
 
-    assert Tools.get_browser_frame(task)
+    assert Tools.get_browser_frame(task, "qa")
   end
 
   # Frames are taken at most about fifteen a second, so a paint that lands while
@@ -327,8 +444,8 @@ defmodule Rail.Tools.BrowserSessionTest do
     </script>
     """)
 
-    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}")
-    {:ok, session} = Tools.start_browser_session(task)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}:qa")
+    {:ok, session} = Tools.start_browser_session(task, "qa")
     {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: "file://#{page}"})
 
     eventually(
@@ -352,7 +469,7 @@ defmodule Rail.Tools.BrowserSessionTest do
             context.drawImage(image, 0, 0)
             resolve(Array.from(context.getImageData(image.width / 2, image.height / 2, 1, 1).data.slice(0, 3)))
           }
-          image.src = 'data:image/jpeg;base64,#{Tools.get_browser_frame(task)}'
+          image.src = 'data:image/jpeg;base64,#{Tools.get_browser_frame(task, "qa")}'
         })
         """
 
@@ -381,8 +498,8 @@ defmodule Rail.Tools.BrowserSessionTest do
       make_ref()
     end)
 
-    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}")
-    {:ok, session} = Tools.start_browser_session(task)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}:qa")
+    {:ok, session} = Tools.start_browser_session(task, "qa")
     {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
     assert_receive :photographing, 10_000
 
@@ -397,13 +514,13 @@ defmodule Rail.Tools.BrowserSessionTest do
   # Chrome's ack is held, so it stops, and no frame the page may since have moved
   # on from is offered. Somebody arriving gets the page as it is.
   test "a tab nobody is watching sends nothing until somebody is", %{task: task, page: page} do
-    {:ok, session} = Tools.start_browser_session(task)
+    {:ok, session} = Tools.start_browser_session(task, "qa")
     {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
 
     eventually(fn -> assert %BrowserSession{holding?: true} = :sys.get_state(session) end, 10_000)
     assert BrowserSession.last_frame(session) == nil
 
-    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}")
+    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}:qa")
     assert_receive {:browser_frame, _task_id, _data}, 10_000
     assert "" <> _frame = BrowserSession.last_frame(session)
   end
@@ -411,8 +528,8 @@ defmodule Rail.Tools.BrowserSessionTest do
   # The tab closed from under the session between its last frame and the
   # photograph of how it settled. The frame it had is the frame it keeps.
   test "a tab that goes before it can be photographed keeps its last frame", %{task: task, page: page} do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}")
-    {:ok, session} = Tools.start_browser_session(task)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}:qa")
+    {:ok, session} = Tools.start_browser_session(task, "qa")
     %Session{browser_context_id: context} = Repo.get_by!(Session, task_id: task.id)
     {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
     assert_receive {:browser_frame, _task_id, _data}, 10_000
@@ -424,14 +541,14 @@ defmodule Rail.Tools.BrowserSessionTest do
 
     Process.sleep(500)
     assert Process.alive?(session)
-    assert Tools.get_browser_frame(task)
+    assert Tools.get_browser_frame(task, "qa")
   end
 
   # What a person doing QA would write down, and nothing else. Sent straight at
   # the session because a page cannot be asked to throw, log, 404 and crash on
   # command - and what matters here is which of those are kept and how they read.
   test "keeps what the browser complains about and drops the rest", %{task: task} do
-    {:ok, session} = Tools.start_browser_session(task)
+    {:ok, session} = Tools.start_browser_session(task, "qa")
 
     events = [
       {"Runtime.exceptionThrown", %{"exceptionDetails" => %{"text" => "x is not a function", "url" => "/bills/new"}}},
@@ -474,7 +591,7 @@ defmodule Rail.Tools.BrowserSessionTest do
   # found through the link rather than exposed, because nothing outside the
   # session has any business holding it.
   test "the session goes when its connection does", %{task: task} do
-    {:ok, session} = Tools.start_browser_session(task)
+    {:ok, session} = Tools.start_browser_session(task, "qa")
 
     {:links, links} = Process.info(session, :links)
 
@@ -501,9 +618,9 @@ defmodule Rail.Tools.BrowserSessionTest do
     stub(Rail, :browser_root, fn -> root end)
     stub(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:error, :enoent} end)
 
-    assert {:error, {:browser_unavailable, :enoent}} = Tools.start_browser_session(task)
+    assert {:error, {:browser_unavailable, :enoent}} = Tools.start_browser_session(task, "qa")
 
     assert %Session{status: :finished, finished_at: %DateTime{}} = Repo.get_by!(Session, task_id: task.id)
-    assert Tools.get_browser_session(task) == nil
+    assert Tools.get_browser_session(task, "qa") == nil
   end
 end

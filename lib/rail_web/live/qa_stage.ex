@@ -1526,7 +1526,7 @@ defmodule RailWeb.Live.QaStage do
     |> assign(:check, check)
     |> assign(:previews, previews(socket.assigns.task, check, files))
     |> assign(:current, current)
-    |> assign(:driving, browser_driving(socket.assigns.run, socket.assigns.task))
+    |> assign(:driving, browser_driving(socket.assigns.run, socket.assigns.task, "qa"))
     |> pane()
   end
 

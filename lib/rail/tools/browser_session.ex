@@ -1,21 +1,21 @@
 defmodule Rail.Tools.BrowserSession do
   @moduledoc """
-  One task's tab in the shared Chrome, and Rail's connection to it.
+  One agent's tab in the shared Chrome, and Rail's connection to it.
 
   The Chrome is `Rail.Tools.Utils.EnsureBrowserHost`'s: one for every task, in a
-  sandbox of its own, outliving Rail. What a session owns is a browser context -
-  cookies and storage nobody else's pass can see - and one tab in it, which the
-  agent drives directly over its own DevTools connection and Rail watches over
-  this one.
+  sandbox of its own, outliving Rail. A session is keyed by its task and the name
+  the agent gave its browser, and owns a browser context - cookies and storage no
+  other session can see - and one tab in it, which the agent drives directly over
+  its own DevTools connection and Rail watches over this one.
 
   The tab outlives this process. Rail stopping takes the connection and leaves
   the tab, so a deploy in the middle of a pass comes back to the same page,
-  signed in: the row keeps the context and target, and the next session for the
-  task attaches to them rather than opening another. Only a stop that means it -
-  `Rail.Tools.stop_browser_session/1`, the task moving on - closes the context.
+  signed in: the row keeps the context and target, and the next session under the
+  same name attaches to them rather than opening another. Only a stop that means
+  it - `Rail.Tools.stop_browser_session/1`, the task moving on - closes the context.
 
   It also broadcasts what the tab is looking at, frame by frame, on
-  `"browser:<task id>"`. Headless is the right default for a pass nobody is
+  `"browser:<task id>:<name>"`. Headless is the right default for a pass nobody is
   watching, but a human who opens the QA panel while one is running wants to see
   it happening rather than read about it afterwards - and Chrome only encodes a
   frame when the page actually changes, so a session nobody is watching costs
@@ -23,11 +23,14 @@ defmodule Rail.Tools.BrowserSession do
   """
   use GenServer, restart: :temporary
 
+  import Ecto.Query
   import Rail.Tools.Utils.EnsureBrowserHost
 
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Repo
   alias Rail.Tools.Browser
   alias Rail.Tools.BrowserRegistry
+  alias Rail.Tools.Schemas.BrowserSession
 
   require Logger
 
@@ -46,6 +49,7 @@ defmodule Rail.Tools.BrowserSession do
   defstruct [
     :session_id,
     :task_id,
+    :name,
     :browser,
     :browser_context_id,
     :target_id,
@@ -54,6 +58,8 @@ defmodule Rail.Tools.BrowserSession do
     :frame,
     :url,
     :capture,
+    :account,
+    signed_in?: false,
     frame_seq: 0,
     holding?: false,
     screenshot_echo?: false,
@@ -61,19 +67,21 @@ defmodule Rail.Tools.BrowserSession do
   ]
 
   @doc """
-  Starts the session for `task` and returns its process.
+  Starts the session for `task` under the browser `name` and returns its process.
 
-  `opts` takes `:resume`, a map with the `:browser_context_id` and `:target_id`
-  of a tab an earlier session opened, to attach to that tab rather than open one.
+  `opts` takes `:resume`, a map with the `:browser_context_id`, `:target_id`,
+  `:account` and `:signed_in?` of a tab an earlier session opened, to attach to
+  that tab rather than open one.
   """
   def start_link(opts) do
     task = Keyword.fetch!(opts, :task)
+    name = Keyword.fetch!(opts, :name)
 
-    GenServer.start_link(__MODULE__, opts, name: {:via, Registry, {BrowserRegistry, task.id}})
+    GenServer.start_link(__MODULE__, opts, name: {:via, Registry, {BrowserRegistry, {task.id, name}}})
   end
 
   @doc """
-  Sends `method` to this task's tab and returns what Chrome answers.
+  Sends `method` to this session's tab and returns what Chrome answers.
 
   The tab is addressed for the caller, so nothing outside here needs to know the
   session id Chrome gave it.
@@ -84,10 +92,18 @@ defmodule Rail.Tools.BrowserSession do
 
   @doc """
   Returns what this session is holding: the context and tab in the shared
-  Chrome, the port Chrome is listening on, and `page_url`, the tab's own DevTools
-  websocket - which is what an agent drives it through.
+  Chrome, the port Chrome is listening on, `page_url`, the tab's own DevTools
+  websocket - which is what an agent drives it through - and whether it has been
+  `signed_in?` and as which `account`.
   """
   def details(pid), do: GenServer.call(pid, :details)
+
+  @doc """
+  Opens `link` in the tab, when there is one, and records `account` as who it
+  signed in as. A tab left bare on purpose is signed in with neither, and either
+  way is not signed in again.
+  """
+  def sign_in(pid, link, account), do: GenServer.call(pid, {:sign_in, link, account}, 40_000)
 
   @doc """
   Returns everything the browser complained about since it was last asked, and
@@ -118,7 +134,12 @@ defmodule Rail.Tools.BrowserSession do
   def init(opts) do
     Process.flag(:trap_exit, true)
     %Task{} = task = Keyword.fetch!(opts, :task)
-    state = %__MODULE__{session_id: Keyword.fetch!(opts, :session_id), task_id: task.id}
+
+    state = %__MODULE__{
+      session_id: Keyword.fetch!(opts, :session_id),
+      task_id: task.id,
+      name: Keyword.fetch!(opts, :name)
+    }
 
     # Opening here rather than in a continue, so that a caller holding the pid
     # holds a tab it can drive. A session still opening its tab is not a session
@@ -140,10 +161,27 @@ defmodule Rail.Tools.BrowserSession do
       browser_context_id: state.browser_context_id,
       target_id: state.target_id,
       cdp_session_id: state.cdp_session_id,
-      page_url: "ws://127.0.0.1:#{state.debug_port}/devtools/page/#{state.target_id}"
+      page_url: "ws://127.0.0.1:#{state.debug_port}/devtools/page/#{state.target_id}",
+      signed_in?: state.signed_in?,
+      account: state.account
     }
 
     {:reply, details, state}
+  end
+
+  def handle_call({:sign_in, link, account}, _from, %__MODULE__{} = state) do
+    case if(is_binary(link), do: command(state, "Page.navigate", %{url: link}), else: {:ok, :bare}) do
+      {:ok, _opened} ->
+        {_recorded, _returning} =
+          Repo.update_all(from(s in BrowserSession, where: s.id == ^state.session_id),
+            set: [account: account, signed_in_at: DateTime.utc_now()]
+          )
+
+        {:reply, :ok, %{state | signed_in?: true, account: account}}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
   end
 
   def handle_call(:drain_problems, _from, %__MODULE__{problems: problems} = state) do
@@ -269,13 +307,15 @@ defmodule Rail.Tools.BrowserSession do
   end
 
   defp show(%__MODULE__{} = state, data) do
-    Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{state.task_id}", {:browser_frame, state.task_id, data})
+    Phoenix.PubSub.broadcast(Rail.PubSub, topic(state), {:browser_frame, state.task_id, data})
 
     %{state | frame: data}
   end
 
   # Phoenix.PubSub keeps its local subscribers in a Registry of its own name.
-  defp watched?(%__MODULE__{task_id: task_id}), do: Registry.count_match(Rail.PubSub, "browser:#{task_id}", :_) > 0
+  defp watched?(%__MODULE__{} = state), do: Registry.count_match(Rail.PubSub, topic(state), :_) > 0
+
+  defp topic(%__MODULE__{task_id: task_id, name: name}), do: "browser:#{task_id}:#{name}"
 
   defp ack(%__MODULE__{} = state, ack) do
     Browser.cast(state.browser, "Page.screencastFrameAck", %{session: state.cdp_session_id, sessionId: ack})
@@ -324,9 +364,15 @@ defmodule Rail.Tools.BrowserSession do
   # there any more - Chrome restarted, the context was closed - is an error rather
   # than a quiet new tab, because the caller is the one who settles the row that
   # pointed at it.
-  defp tab(%__MODULE__{} = state, %{browser_context_id: context, target_id: target})
+  defp tab(%__MODULE__{} = state, %{browser_context_id: context, target_id: target} = resume)
        when is_binary(context) and is_binary(target) do
-    state = %{state | browser_context_id: context, target_id: target}
+    state = %{
+      state
+      | browser_context_id: context,
+        target_id: target,
+        signed_in?: resume[:signed_in?] == true,
+        account: resume[:account]
+    }
 
     # Where the tab is comes from its main frame, as a navigation reports it: the
     # target's own info catches up later, and reads blank in between.

@@ -407,6 +407,28 @@ defmodule RailWeb.Settings.ProjectsLive do
                 </span>
               </div>
 
+              <div>
+                <label
+                  for="project-account-seed-command-input"
+                  class="block text-sm font-medium text-slate-900 dark:text-slate-100"
+                >
+                  Account Seed
+                </label>
+                <input
+                  type="text"
+                  name="project[account_seed_command]"
+                  id="project-account-seed-command-input"
+                  value={Ecto.Changeset.get_field(@changeset, :account_seed_command)}
+                  placeholder="mise exec -- mix run scripts/seed_account.exs"
+                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm font-mono focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                />
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Runs from the worktree's root once for each agent that opens a browser, in that agent's sandbox.
+                  It creates a user and an organization and prints the magic link to sign in with. Leave empty to
+                  sign in as the QA and Demo prompts say.
+                </p>
+              </div>
+
               <div class="flex items-center space-x-2 pt-2">
                 <input type="hidden" name="project[active]" value="false" />
                 <input

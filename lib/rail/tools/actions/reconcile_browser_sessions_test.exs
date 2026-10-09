@@ -31,16 +31,28 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
 
   # The shared Chrome outlives everything, so a tab the task no longer needs is
   # one somebody has to close - and it is closed whatever holds it.
-  test "closes the tab of a task that has left QA and demo", %{task: task} do
-    {:ok, %BrowserSession{id: closed}} =
+  test "closes every named tab of a task that has left QA and demo", %{task: task} do
+    {:ok, %BrowserSession{id: qa}} =
       %BrowserSession{}
-      |> BrowserSession.changeset(%{task_id: task.id, status: :running, started_at: DateTime.utc_now()})
+      |> BrowserSession.changeset(%{task_id: task.id, name: "qa", status: :running, started_at: DateTime.utc_now()})
+      |> Repo.insert()
+
+    {:ok, %BrowserSession{id: explorer}} =
+      %BrowserSession{}
+      |> BrowserSession.changeset(%{
+        task_id: task.id,
+        name: "explorer 2",
+        status: :running,
+        started_at: DateTime.shift(DateTime.utc_now(), second: 1)
+      })
       |> Repo.insert()
 
     task |> Ecto.Changeset.change(stage: :merged) |> Repo.update!()
 
-    assert [%BrowserSession{id: ^closed, status: :finished, finished_at: %DateTime{}}] =
-             Tools.reconcile_browser_sessions()
+    assert [
+             %BrowserSession{id: ^qa, status: :finished, finished_at: %DateTime{}},
+             %BrowserSession{id: ^explorer, status: :finished, finished_at: %DateTime{}}
+           ] = Tools.reconcile_browser_sessions()
   end
 
   # Only one live session is allowed per task, so a row nobody settled is what
@@ -48,7 +60,7 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
   test "a closed session lets its task have a browser again", %{task: task} do
     {:ok, _orphan} =
       %BrowserSession{}
-      |> BrowserSession.changeset(%{task_id: task.id, status: :running})
+      |> BrowserSession.changeset(%{task_id: task.id, name: "qa", status: :running})
       |> Repo.insert()
 
     task |> Ecto.Changeset.change(stage: :engineer) |> Repo.update!()
@@ -57,7 +69,7 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
 
     assert {:ok, _room_now} =
              %BrowserSession{}
-             |> BrowserSession.changeset(%{task_id: task.id, status: :starting})
+             |> BrowserSession.changeset(%{task_id: task.id, name: "qa", status: :starting})
              |> Repo.insert()
   end
 
@@ -67,7 +79,13 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
   test "reconnects to the tab of a pass that is running", %{task: task, project: project} do
     {:ok, _held} =
       %BrowserSession{}
-      |> BrowserSession.changeset(%{task_id: task.id, status: :running, browser_context_id: "ctx", target_id: "tgt"})
+      |> BrowserSession.changeset(%{
+        task_id: task.id,
+        name: "qa",
+        status: :running,
+        browser_context_id: "ctx",
+        target_id: "tgt"
+      })
       |> Repo.insert()
 
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :qa)
@@ -75,7 +93,7 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
     {:ok, _run} =
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
 
-    expect(Tools, :start_browser_session, fn %{id: id}, [] when id == task.id -> {:ok, self()} end)
+    expect(Tools, :start_browser_session, fn %{id: id}, "qa", [] when id == task.id -> {:ok, self()} end)
 
     assert Tools.reconcile_browser_sessions() == []
   end
@@ -85,10 +103,16 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
   test "leaves the tab of a pass that is not running for its next run", %{task: task} do
     {:ok, _waiting} =
       %BrowserSession{}
-      |> BrowserSession.changeset(%{task_id: task.id, status: :running, browser_context_id: "ctx", target_id: "tgt"})
+      |> BrowserSession.changeset(%{
+        task_id: task.id,
+        name: "qa",
+        status: :running,
+        browser_context_id: "ctx",
+        target_id: "tgt"
+      })
       |> Repo.insert()
 
-    reject(Tools, :start_browser_session, 2)
+    reject(Tools, :start_browser_session, 3)
     reject(Tools, :stop_browser_session, 1)
 
     assert Tools.reconcile_browser_sessions() == []
@@ -98,17 +122,17 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
   test "leaves a session something is still driving", %{task: task} do
     {:ok, _held} =
       %BrowserSession{}
-      |> BrowserSession.changeset(%{task_id: task.id, status: :running})
+      |> BrowserSession.changeset(%{task_id: task.id, name: "qa", status: :running})
       |> Repo.insert()
 
     holder =
       spawn(fn ->
-        {:ok, _registered} = Registry.register(BrowserRegistry, task.id, nil)
+        {:ok, _registered} = Registry.register(BrowserRegistry, {task.id, "qa"}, nil)
         receive do: (:release -> :ok)
       end)
 
-    eventually(fn -> assert Registry.lookup(BrowserRegistry, task.id) != [] end)
-    reject(Tools, :start_browser_session, 2)
+    eventually(fn -> assert Registry.lookup(BrowserRegistry, {task.id, "qa"}) != [] end)
+    reject(Tools, :start_browser_session, 3)
 
     assert Tools.reconcile_browser_sessions() == []
 
@@ -120,6 +144,7 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
       %BrowserSession{}
       |> BrowserSession.changeset(%{
         task_id: task.id,
+        name: "qa",
         status: :finished,
         finished_at: DateTime.utc_now()
       })

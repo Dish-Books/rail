@@ -67,6 +67,41 @@ defmodule Rail.Tools.Clients.Docker do
     request(method: :get, url: "/containers/json", params: [all: true, filters: Jason.encode!(%{label: [label]})])
   end
 
+  @doc """
+  Runs `command`, an argv, inside the running container `id` as the sandbox's
+  user, from `working_dir` with `env` added to the container's own, and returns
+  `{:ok, %{output:, exit_code:}}`, stdout and stderr interleaved as written.
+  """
+  def exec_in_container(id, command, env, working_dir) when is_list(command) and is_map(env) do
+    body = %{
+      "Cmd" => command,
+      "Env" => Enum.map(env, fn {key, value} -> "#{key}=#{value}" end),
+      "WorkingDir" => working_dir,
+      "User" => "1000:1000",
+      "AttachStdout" => true,
+      "AttachStderr" => true
+    }
+
+    # The caller bounds how long a command may take, so the stream is waited on for as long as it runs.
+    with {:ok, %{"Id" => exec}} <- request(method: :post, url: "/containers/#{id}/exec", json: body),
+         {:ok, stream} <-
+           request(
+             method: :post,
+             url: "/exec/#{exec}/start",
+             json: %{Detach: false, Tty: false},
+             receive_timeout: :infinity
+           ),
+         {:ok, %{"ExitCode" => exit_code}} <- request(method: :get, url: "/exec/#{exec}/json") do
+      {:ok, %{output: demultiplex(stream, []), exit_code: exit_code}}
+    end
+  end
+
+  # Without a TTY Docker frames each write with its stream and length.
+  defp demultiplex(<<_stream, 0, 0, 0, size::32, payload::binary-size(size), rest::binary>>, acc),
+    do: demultiplex(rest, [acc, payload])
+
+  defp demultiplex(_end_or_partial, acc), do: IO.iodata_to_binary(acc)
+
   defp request(options) do
     [base_url: "http://docker", unix_socket: Keyword.get(config(), :socket_path, "/var/run/docker.sock")]
     |> Req.new()

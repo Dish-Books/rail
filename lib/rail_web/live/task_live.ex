@@ -81,7 +81,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:assignee_query, "")
       |> assign(:comment_nonce, 0)
       |> assign(:subscribed_run_ids, MapSet.new())
-      |> assign(:watched_browser_task_id, nil)
+      |> assign(:watched_browser, nil)
       |> assign(:watched_comments_task_id, nil)
       |> assign(:watched_outputs_task_id, nil)
       |> assign(:frame_window_open?, false)
@@ -883,7 +883,7 @@ defmodule RailWeb.TaskLive do
     |> assign_family(task)
     |> assign(:engineer_tab, engineer_tab(started))
     |> assign(:subscribed_run_ids, sync_run_subscriptions(socket, task.runs))
-    |> assign(:watched_browser_task_id, watch_browser(socket, task, role, selected_run))
+    |> assign(:watched_browser, watch_browser(socket, task, role, selected_run))
     |> assign(:round_questions, round_questions)
     |> assign(:suggestions, suggestions(round_questions))
     |> load_issue(task)
@@ -1246,19 +1246,20 @@ defmodule RailWeb.TaskLive do
     current
   end
 
-  # One topic per task, carrying whatever its browser is painting, heard only while
-  # the panel can show it: on the QA or demo tab, with its run running. A finished
+  # One topic per task and browser name, carrying whatever that browser is painting,
+  # heard only while the panel can show it: the QA or demo tab's own run's browser,
+  # named for its stage, while that run is running. A finished
   # pass leaves its tab open until the task moves on, and a page that keeps
   # repainting would otherwise send every viewer frames nobody sees, which every
   # click on the page waits behind. Being heard is also what keeps Chrome painting
   # them, so a tab nobody can see costs nothing.
   defp watch_browser(socket, %Task{id: task_id}, role, run) do
-    watched = socket.assigns.watched_browser_task_id
-    wanted = if pane(role) in [:qa, :demo] and Run.running?(run), do: task_id
+    watched = socket.assigns.watched_browser
+    wanted = if pane(role) in [:qa, :demo] and Run.running?(run), do: "browser:#{task_id}:#{role.stage}"
 
     if connected?(socket) and watched != wanted do
-      if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "browser:#{watched}")
-      if wanted, do: Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{wanted}")
+      if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, watched)
+      if wanted, do: Phoenix.PubSub.subscribe(Rail.PubSub, wanted)
     end
 
     if connected?(socket), do: wanted, else: watched

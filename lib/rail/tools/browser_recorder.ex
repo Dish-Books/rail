@@ -1,10 +1,10 @@
 defmodule Rail.Tools.BrowserRecorder do
   @moduledoc """
-  Films what a task's browser is looking at, for as long as the task is being
-  demonstrated.
+  Films what one of a task's browsers is looking at, for as long as the task is
+  being demonstrated.
 
   `Rail.Tools.BrowserSession` already broadcasts every frame Chrome encodes on
-  `"browser:<task id>"`, and Chrome only encodes one when the page actually
+  `"browser:<task id>:<name>"`, and Chrome only encodes one when the page actually
   changes. So a recording is a subscriber and nothing more: the session does not
   know it is being filmed, a QA pass costs exactly what it costs today, and the
   frames arrive already compressed.
@@ -28,7 +28,7 @@ defmodule Rail.Tools.BrowserRecorder do
   alias Rail.Tools.RecorderRegistry
 
   @doc """
-  Starts the recording for `task` and returns its process.
+  Starts the recording of `task`'s browser `:name` and returns its process.
   """
   def start_link(opts) do
     task = Keyword.fetch!(opts, :task)
@@ -66,7 +66,7 @@ defmodule Rail.Tools.BrowserRecorder do
     File.rm_rf(directory)
     File.mkdir_p!(Path.join(directory, "frames"))
 
-    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}")
+    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}:#{Keyword.fetch!(opts, :name)}")
 
     {:ok, %{directory: directory, started_at: nil, count: 0}}
   end

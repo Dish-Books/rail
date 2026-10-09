@@ -113,6 +113,19 @@ defmodule Rail.Pipeline.Actions.StartDemoRunTest do
     assert {:ok, %OsProcess{}} = Pipeline.start_demo_run(run)
   end
 
+  # Rail times the captions now, so a wait the agent adds is a still picture in the video.
+  test "no longer asks for a wait after each caption", %{run: run} do
+    expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
+      assert ["-p", prompt | _rest] = argv
+      refute prompt =~ "let about five seconds pass"
+      refute prompt =~ "`wait` a beat after each `demo_say`"
+
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_demo_run(run)
+  end
+
   # Craft belongs to the role's prompt, which the project owns: repeating it on
   # every run is Rail having an opinion it has no business having.
   test "leaves how to make a good walkthrough to the role's own prompt", %{run: run} do

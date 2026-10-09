@@ -6328,7 +6328,7 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}", {:browser_frame, task.id, "while running"})
+      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:qa", {:browser_frame, task.id, "while running"})
       _settled = render(view)
       assert_push_event(view, "browser:frame", %{data: "while running"})
 
@@ -6337,9 +6337,37 @@ defmodule RailWeb.TaskLiveTest do
       send(view.pid, :frame_window_closed)
       _settled = render(view)
 
-      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}", {:browser_frame, task.id, "after it finished"})
+      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:qa", {:browser_frame, task.id, "after it finished"})
       _settled = render(view)
       refute_push_event(view, "browser:frame", %{data: "after it finished"}, 100)
+    end
+
+    # Each agent drives a browser of its own, and the QA pane is the QA run's.
+    test "the QA pane shows and hears its own run's browser and no other", %{conn: conn, task: task, qa_run: run} do
+      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+      _logged = Pipeline.append_run_events(run.id, nil, ["[browser] connect"])
+
+      stub(Tools, :get_browser_url, fn
+        _task, "qa" -> "http://localhost:4000/qa-tab"
+        _task, _other -> "http://localhost:4000/somebody-elses-tab"
+      end)
+
+      stub(Tools, :get_browser_frame, fn
+        _task, "qa" -> Base.encode64("qa frame")
+        _task, _other -> Base.encode64("somebody else's frame")
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-qa='qa_browser_url']", "localhost:4000/qa-tab")
+      assert render(view) =~ Base.encode64("qa frame")
+
+      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:demo", {:browser_frame, task.id, "the demo's"})
+      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:qa", {:browser_frame, task.id, "the pass's"})
+      _settled = render(view)
+
+      assert_push_event(view, "browser:frame", %{data: "the pass's"})
+      refute_push_event(view, "browser:frame", %{data: "the demo's"}, 100)
     end
 
     # A frame for a task nobody is reading, or while another pane is in front, is
@@ -7520,6 +7548,28 @@ defmodule RailWeb.TaskLiveTest do
 
     # A frame goes straight to the client: re-rendering the panel around a picture
     # arriving several times a second would diff everything else to move one image.
+    # The demo films its own browser, and the pane shows that one.
+    test "the Demo pane shows and hears its own run's browser and no other", %{conn: conn, task: task, demo_run: run} do
+      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+      _logged = Pipeline.append_run_events(run.id, nil, ["[browser] connect"])
+
+      stub(Tools, :get_browser_url, fn
+        _task, "demo" -> "http://localhost:4000/demo-tab"
+        _task, _other -> "http://localhost:4000/somebody-elses-tab"
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-qa='demo_browser_url']", "localhost:4000/demo-tab")
+
+      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:qa", {:browser_frame, task.id, "the pass's"})
+      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:demo", {:browser_frame, task.id, "the demo's"})
+      _settled = render(view)
+
+      assert_push_event(view, "browser:frame", %{data: "the demo's"})
+      refute_push_event(view, "browser:frame", %{data: "the pass's"}, 100)
+    end
+
     test "frames from the browser reach the panel while it records", %{conn: conn, task: task, demo_run: run} do
       {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
 

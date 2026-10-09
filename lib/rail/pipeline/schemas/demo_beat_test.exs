@@ -13,11 +13,12 @@ defmodule Rail.Pipeline.Schemas.DemoBeatTest do
     assert DemoBeat.stamp(605_000) == "10:05"
   end
 
-  # A caption is only worth anything if there is time to read it, and the encode
-  # keeps that much of the recording at real speed however still the page is.
-  test "a caption stays up long enough to be read" do
-    assert DemoBeat.reading_ms(%DemoBeat{text: "Saved."}) == 2_000
-    assert DemoBeat.reading_ms(%DemoBeat{text: String.duplicate("word ", 10)}) == 3_000
-    assert DemoBeat.reading_ms(%DemoBeat{text: String.duplicate("word ", 60)}) == 7_000
+  # A caption is read at four words a second, and the picture moves on under it,
+  # so a long one is never given the seven seconds it once was.
+  test "a caption's reading time is 250 ms a word, between 1.2 and 3 seconds" do
+    assert DemoBeat.reading_ms(%DemoBeat{text: "Saved."}) == 1_200
+    assert DemoBeat.reading_ms(%DemoBeat{text: String.duplicate("word ", 8)}) == 2_000
+    assert DemoBeat.reading_ms(%DemoBeat{text: String.duplicate("word ", 12)}) == 3_000
+    assert DemoBeat.reading_ms(%DemoBeat{text: String.duplicate("word ", 60)}) == 3_000
   end
 end
