@@ -5,6 +5,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Workers.AdvanceLinearState
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Learnings.Workers.IssueFinished
   alias Rail.Pipeline
@@ -134,15 +135,16 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
 
     user |> Ecto.Changeset.change(linear_user_id: "lin_usr_wh_assignee") |> Repo.update!()
 
-    %Issue{}
-    |> Issue.linear_changeset(%{
-      project_id: project.id,
-      external_id: "lin_wh_owner",
-      identifier: "HWH-9",
-      title: "Owner Issue",
-      state: :triage
-    })
-    |> Repo.insert!()
+    %Issue{id: issue_id} =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_wh_owner",
+        identifier: "HWH-9",
+        title: "Owner Issue",
+        state: :triage
+      })
+      |> Repo.insert!()
 
     data = %{"id" => "lin_wh_owner", "teamId" => "lin_team_id", "identifier" => "HWH-9", "title" => "Owner Issue"}
 
@@ -152,6 +154,9 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
                "action" => "update",
                "data" => Map.put(data, "assigneeId", "lin_usr_wh_assignee")
              })
+
+    # It had no owner, so its Linear status was held back and now catches up with its task.
+    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: issue_id})
 
     assert {:ok, %Issue{owner_user_id: nil}} =
              Issues.handle_linear_webhook(workspace, %{
@@ -205,6 +210,69 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
              Issues.handle_linear_webhook(workspace, %{"type" => "Issue", "action" => "update", "data" => data})
 
     assert %Issue{owner_user_id: ^user_id} = Repo.reload!(child.issue)
+    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: parent_issue.id})
+    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: child.issue_id})
+  end
+
+  test "an issue update older than the one already applied is dropped, whichever arrives first", %{
+    project: project,
+    workspace: workspace
+  } do
+    {:ok, %{id: user_id} = user} =
+      Users.register_oauth_user(%{github_id: "gh_wh_order", login: "wh_order", email: "wh_order@example.com"})
+
+    user |> Ecto.Changeset.change(linear_user_id: "lin_usr_wh_order") |> Repo.update!()
+
+    %Issue{id: issue_id} =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_wh_order",
+        identifier: "HWH-40",
+        title: "Out of order",
+        state: :backlog
+      })
+      |> Repo.insert!()
+
+    data = %{"id" => "lin_wh_order", "teamId" => "lin_team_id", "identifier" => "HWH-40", "title" => "Out of order"}
+
+    # Linear moved the ticket to In Progress, then assigned it 250 ms later. Each event carries the whole ticket.
+    state_change =
+      Map.merge(data, %{
+        "state" => %{"id" => "st_started", "name" => "In Progress", "type" => "started"},
+        "updatedAt" => "2026-10-08T15:00:00.000Z"
+      })
+
+    assignee_change =
+      Map.merge(state_change, %{"assigneeId" => "lin_usr_wh_order", "updatedAt" => "2026-10-08T15:00:00.250Z"})
+
+    assert {:ok, %Issue{state: :in_progress, owner_user_id: ^user_id}} =
+             Issues.handle_linear_webhook(workspace, %{"type" => "Issue", "action" => "update", "data" => assignee_change})
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+
+    assert :ok =
+             Issues.handle_linear_webhook(workspace, %{"type" => "Issue", "action" => "update", "data" => state_change})
+
+    refute_receive {:issue_changed, ^issue_id}
+
+    assert %Issue{state: :in_progress, owner_user_id: ^user_id, linear_updated_at: ~U[2026-10-08 15:00:00.250000Z]} =
+             Repo.get!(Issue, issue_id)
+
+    # The same event sent again, and one with no time on it, are still applied.
+    assert {:ok, %Issue{title: "Renamed"}} =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Issue",
+               "action" => "update",
+               "data" => Map.put(assignee_change, "title", "Renamed")
+             })
+
+    assert {:ok, %Issue{title: "Renamed again"}} =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Issue",
+               "action" => "update",
+               "data" => assignee_change |> Map.delete("updatedAt") |> Map.put("title", "Renamed again")
+             })
   end
 
   test "an issue remove deletes the row and its task, broadcasts, and a second remove is a no-op", %{

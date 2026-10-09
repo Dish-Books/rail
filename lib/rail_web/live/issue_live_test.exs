@@ -8,6 +8,7 @@ defmodule RailWeb.IssueLiveTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Workers.AdvanceLinearState
   alias Rail.Issues.Workers.LinearSync
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline
@@ -118,6 +119,8 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-owner", "Paulo Teammate")
     assert %Issue{owner_user_id: ^teammate_id} = Repo.get!(Issue, issue.id)
     assert_enqueued(worker: SyncIssue, args: %{issue_id: issue.id, fields: ["owner_user_id"]})
+    # It had no owner, so its Linear status was held back and now catches up with its task.
+    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: issue.id})
 
     view |> element("#issue-assign-none") |> render_click()
 

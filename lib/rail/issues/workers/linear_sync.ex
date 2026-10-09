@@ -26,6 +26,7 @@ defmodule Rail.Issues.Workers.LinearSync do
 
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Workers.AdvanceLinearState
   alias Rail.Linear.Client, as: Linear
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
@@ -46,6 +47,7 @@ defmodule Rail.Issues.Workers.LinearSync do
     :branch_name,
     :url,
     :completed_at,
+    :linear_updated_at,
     :updated_at
   ]
 
@@ -218,6 +220,15 @@ defmodule Rail.Issues.Workers.LinearSync do
         })
       end)
 
+    # Read before the write, which goes round the changeset that would have queued the catch-up.
+    unowned =
+      Repo.all(
+        from(i in Issue,
+          where: i.external_id in ^Enum.map(rows, & &1.external_id) and is_nil(i.owner_user_id),
+          select: i.external_id
+        )
+      )
+
     {_count, issues} =
       Repo.insert_all(Issue, rows,
         on_conflict: {:replace, @replace_issue},
@@ -225,7 +236,14 @@ defmodule Rail.Issues.Workers.LinearSync do
         returning: [:id, :external_id]
       )
 
-    Map.new(issues, &{&1.external_id, &1.id})
+    issue_ids = Map.new(issues, &{&1.external_id, &1.id})
+
+    for %{external_id: external_id, owner_user_id: owner_user_id} <- rows,
+        is_binary(owner_user_id) and external_id in unowned do
+      %{issue_id: Map.fetch!(issue_ids, external_id)} |> AdvanceLinearState.new() |> Oban.insert!()
+    end
+
+    issue_ids
   end
 
   defp upsert_comments(comments, issue_ids, users, parent_ids) do
