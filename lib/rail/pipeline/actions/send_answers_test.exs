@@ -69,8 +69,15 @@ defmodule Rail.Pipeline.Actions.SendAnswersTest do
 
   describe "answers Rail took from past answers" do
     setup %{project: project} do
+      id = System.unique_integer([:positive])
+
       {:ok, dana} =
-        Rail.Users.register_oauth_user(%{github_id: "sna-1", login: "dana", name: "Dana", email: "dana@sna.example"})
+        Rail.Users.register_oauth_user(%{
+          github_id: "sna-1-#{id}",
+          login: "dana-#{id}",
+          name: "Dana",
+          email: "dana-#{id}@sna.example"
+        })
 
       earlier = learnings_task(project, "SNA-0")
       past = %Question{id: "qst_sna_past", prompt: "Which database?", answer: "Postgres.", status: :answered}

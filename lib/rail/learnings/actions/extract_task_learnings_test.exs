@@ -17,8 +17,15 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
   alias Rail.Users
 
   setup %{project: project} do
+    id = System.unique_integer([:positive])
+
     {:ok, user} =
-      Users.register_oauth_user(%{github_id: "ext-1", login: "dana", name: "Dana Okafor", email: "dana@ext.example"})
+      Users.register_oauth_user(%{
+        github_id: "ext-1-#{id}",
+        login: "dana-#{id}",
+        name: "Dana Okafor",
+        email: "dana-#{id}@ext.example"
+      })
 
     {:ok, review} = Roles.get_role(project_id: project.id, stage: :review)
     task = learnings_task(project, "EXT-1", :review)

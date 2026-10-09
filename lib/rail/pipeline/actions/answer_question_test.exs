@@ -163,8 +163,15 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
   end
 
   test "records who answered, and a person's answer is no longer Rail's", %{run: run} do
+    id = System.unique_integer([:positive])
+
     {:ok, %{id: user_id} = user} =
-      Rail.Users.register_oauth_user(%{github_id: "ans-u", login: "dana", name: "Dana", email: "dana@ans.example"})
+      Rail.Users.register_oauth_user(%{
+        github_id: "ans-u-#{id}",
+        login: "dana-#{id}",
+        name: "Dana",
+        email: "dana-#{id}@ans.example"
+      })
 
     {:ok, question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
 

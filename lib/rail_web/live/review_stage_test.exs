@@ -10,7 +10,16 @@ defmodule RailWeb.Live.ReviewStageTest do
   alias Rail.Users
 
   setup %{conn: conn, project: project} do
-    {:ok, user} = Users.register_oauth_user(%{github_id: "rst-1", login: "dana", name: "Dana", email: "dana@rst.example"})
+    id = System.unique_integer([:positive])
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "rst-1-#{id}",
+        login: "dana-#{id}",
+        name: "Dana",
+        email: "dana-#{id}@rst.example"
+      })
+
     {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
     {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
     {:ok, review} = Roles.get_role(project_id: project.id, stage: :review)

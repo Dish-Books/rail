@@ -10,8 +10,15 @@ defmodule Rail.Learnings.Actions.CreateLearningTest do
   test "a person's rule is active at once, approved by them, queued for embedding and broadcast", %{
     project: %{id: project_id} = project
   } do
+    id = System.unique_integer([:positive])
+
     {:ok, %{id: user_id} = user} =
-      Users.register_oauth_user(%{github_id: "cl-1", login: "dana", name: "Dana", email: "dana@example.com"})
+      Users.register_oauth_user(%{
+        github_id: "cl-1-#{id}",
+        login: "dana-#{id}",
+        name: "Dana",
+        email: "dana-#{id}@example.com"
+      })
 
     Phoenix.PubSub.subscribe(Rail.PubSub, "learnings")
 
