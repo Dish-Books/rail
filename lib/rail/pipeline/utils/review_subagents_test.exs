@@ -20,7 +20,10 @@ defmodule Rail.Pipeline.Utils.ReviewSubagentsTest do
              %{name: "demo-recorder", prompt: recorder, description: "demo role"}
            ] = subagents = review_subagents(task)
 
-    for subagent <- subagents, do: assert(Enum.sort(Map.keys(subagent)) == [:description, :model, :name, :prompt])
+    for subagent <- subagents do
+      assert [:description, :model, :name, :prompt] = Enum.sort(Map.keys(subagent))
+      assert subagent.prompt =~ "call knowledge_search for more"
+    end
 
     assert reviewer =~ ~r/\AYou are the review agent.\n\n## Working inside Review/
     assert explorer =~ ~r/\AYou are the qa agent.\n\n## Working inside Review/

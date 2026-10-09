@@ -18,7 +18,8 @@ defmodule Rail.Pipeline.Actions.SaveDemo do
   alias Rail.Tools
 
   @doc """
-  Saves `attrs` as `task`'s demo write-up and queues the encode. Returns `{:ok, demo}` or `{:error, changeset}`.
+  Saves `attrs` as `task`'s demo write-up and queues the encode of a take not yet encoded. Returns
+  `{:ok, demo}` or `{:error, changeset}`.
   """
   def save_demo(%Task{} = task, attrs) when is_map(attrs) do
     %Task{issue: %Issue{identifier: identifier}} = task = Repo.preload(task, :issue)
@@ -28,8 +29,13 @@ defmodule Rail.Pipeline.Actions.SaveDemo do
       body = %{title: demo.title, summary: demo.summary, not_shown: demo.not_shown, commit: head}
 
       write_scratch_file(Path.join([task.scratch_path, "demo", "#{identifier}.json"]), Jason.encode!(body, pretty: true))
-      _directory = Tools.stop_browser_recording(task)
-      {:ok, _job} = %{task_id: task.id} |> EncodeDemo.new() |> Oban.insert()
+      directory = Tools.stop_browser_recording(task)
+
+      # The encode publishes to Linear, so a take already encoded gets a new write-up and nothing else; with
+      # no video yet the encode still runs, to say why there is none.
+      if is_binary(directory) or not Task.demo_recorded?(task),
+        do: {:ok, _job} = %{task_id: task.id} |> EncodeDemo.new() |> Oban.insert()
+
       Pipeline.broadcast_output_saved(task)
 
       {:ok, %{demo | commit: head}}

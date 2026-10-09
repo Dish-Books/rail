@@ -10,6 +10,7 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommit do
   alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.FindingPlace
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -180,7 +181,9 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommit do
         for(
           %{finding: finding, covered: covered} <- fixes,
           n <- covered,
-          file = Enum.at(finding.places, n - 1).file,
+          place <- [Enum.at(finding.places, n - 1)],
+          is_struct(place, FindingPlace),
+          file = place.file,
           do: file
         ) ++
           for(%{test: %{"file" => file}} <- fixes, do: String.trim(file)) ++

@@ -10,7 +10,8 @@ defmodule Rail.Pipeline.Workers.EncodeDemo do
   """
   use Oban.Worker,
     queue: :issues,
-    max_attempts: 1,
+    # A second attempt is what Oban's lifeline rescues an encode a deploy cut off into.
+    max_attempts: 2,
     unique: [keys: [:task_id], states: [:available, :scheduled, :executing, :retryable], period: :infinity]
 
   alias Rail.GitHub.Client, as: GitHub

@@ -197,6 +197,21 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
              )
   end
 
+  # Cleanup takes the review file with the scratch folder, so the commit Review last read comes off its run.
+  test "with the scratch folder gone, what changed after Review is still compared", %{task: task} do
+    File.rm_rf!(task.scratch_path)
+    test = self()
+
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
+      send(test, {:compare, File.read(Path.join(opts[:cd], "compare.diff"))})
+      File.write!(Path.join(opts[:cd], "result.json"), ~s({"observations": []}))
+      {:ok, ""}
+    end)
+
+    assert {:ok, %Task{learnings_extracted_at: %DateTime{}}} = Learnings.extract_task_learnings(task)
+    assert_received {:compare, {:ok, "--- lib/a.ex\n-Repo.insert!\n+Factory.insert\n"}}
+  end
+
   test "an abandoned task's observations say so, and a processed PR is not queued again", %{project: project, task: task} do
     {:ok, _issue} = Issues.update_issue(task.issue, %{state: :canceled})
     Repo.insert!(%ProcessedPullRequest{project_id: project.id, number: 7})

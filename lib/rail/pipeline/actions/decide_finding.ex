@@ -3,9 +3,11 @@ defmodule Rail.Pipeline.Actions.DecideFinding do
   Records the human's call on one finding, with a note in the round it was made.
 
   The lead recommends; this is the only thing that writes what is actually going to happen. It is refused
-  once the task has left Review and while the run works, because that is the run whose findings are being
-  ruled on. Nothing is learned here: a ruling can still change until the fix round starts.
+  once the task has left Review, while the run works, because that is the run whose findings are being
+  ruled on, and once the review is finished. Nothing is learned here: a ruling can change until then.
   """
+
+  import Rail.Pipeline.Utils.BroadcastPipelineChanged
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
@@ -38,6 +40,8 @@ defmodule Rail.Pipeline.Actions.DecideFinding do
            |> Finding.note_changeset(%{note: note})
            |> Repo.update() do
       Pipeline.broadcast_output_saved(task)
+      # The tab badges and the board count what is left to rule, and they reload on this.
+      broadcast_pipeline_changed(task)
       {:ok, decided}
     end
   end
@@ -45,6 +49,10 @@ defmodule Rail.Pipeline.Actions.DecideFinding do
   defp decidable(%Task{stage: stage}) when stage != :review, do: {:error, {:invalid_stage, stage}}
 
   defp decidable(%Task{} = task) do
-    if Task.running?(task), do: {:error, :stage_running}, else: :ok
+    cond do
+      Task.running?(task) -> {:error, :stage_running}
+      match?(%{finished_at: %DateTime{}}, List.last(Pipeline.read_review(task))) -> {:error, :review_finished}
+      true -> :ok
+    end
   end
 end

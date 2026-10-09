@@ -108,6 +108,25 @@ defmodule RailWeb.Components.FindingDetailTest do
     assert picked |> Floki.find("[data-qa=finding_evidence_taken] a[href='/evidence/2']") |> Floki.text() =~ "Open"
   end
 
+  test "the picked piece is the one at that place in the whole evidence list, the code range counted" do
+    shot = %FindingEvidence{kind: :screenshot, name: "Send twice", path: "evidence/send-twice/1-a.png"}
+    log = %FindingEvidence{kind: :log, name: "server log", path: "evidence/send-twice/2-a.log", text: "boom"}
+
+    # Index 0 is the code range, which gets no evidence tab of its own.
+    filed = [
+      %{index: 1, evidence: shot, kind: :screenshot, url: "/evidence/1"},
+      %{index: 2, evidence: log, kind: :inline, url: "/evidence/2"}
+    ]
+
+    doc =
+      (&FindingDetail.finding_detail/1)
+      |> render_component([finding: @finding, filed: filed, filed_index: 2] ++ @attrs)
+      |> Floki.parse_fragment!()
+
+    assert "boom" = doc |> Floki.find("[data-qa=finding_evidence_text]") |> Floki.text()
+    assert ["true"] = doc |> Floki.find("#finding-evidence-2") |> Floki.attribute("aria-selected")
+  end
+
   test "the history reads each note in its round, naming who ruled and what each fix covered" do
     finding = %{
       @finding

@@ -4880,6 +4880,25 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#task-tab-#{role.id} [data-qa='task-tab-badge']", "1")
     end
 
+    test "ruling the last finding to rule takes the count off the Review tab", %{
+      conn: conn,
+      task: task,
+      role: role,
+      code: code
+    } do
+      {:ok, _saved} = Pipeline.save_finding(task, code)
+      {:ok, _pass} = Pipeline.save_review(task)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#task-tab-#{role.id} [data-qa='task-tab-badge']", "1")
+
+      view |> element("#decide-skip-unhandled-nil") |> render_click()
+
+      # The ruling's broadcast reaches the page after the click returns.
+      _settled = render(view)
+      refute has_element?(view, "#task-tab-#{role.id} [data-qa='task-tab-badge']")
+    end
+
     test "the header says whether Review is running, failed, waiting on the findings or ready to merge", %{
       conn: conn,
       task: task,

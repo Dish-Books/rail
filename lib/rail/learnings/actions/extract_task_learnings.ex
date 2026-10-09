@@ -100,7 +100,7 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearnings do
 
     runs = Pipeline.list_runs(task_id: task.id, include_cleaned_up: true, preload: :role)
     Enum.each(runs, &write_transcript(&1, dir))
-    write_compare(task, Pipeline.read_review(task), dir)
+    write_compare(task, runs, dir)
   end
 
   defp findings_file(%Task{} = task) do
@@ -165,8 +165,14 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearnings do
 
   # What changed between the code Review last read and the code that merged is
   # what people did after Rail, which is the clearest correction there is.
-  defp write_compare(%Task{pr_number: number, project: %Project{} = project}, passes, dir) when is_integer(number) do
-    with %{head: base_sha} when is_binary(base_sha) <- List.last(passes),
+  # The commit Review last read is on the lead's run row, since the review file goes with the scratch folder.
+  defp write_compare(%Task{pr_number: number, project: %Project{} = project}, runs, dir) when is_integer(number) do
+    base =
+      runs
+      |> Enum.filter(&(&1.role.stage == :review_lead and is_binary(&1.stage_fingerprint_head_sha)))
+      |> List.last()
+
+    with %Run{stage_fingerprint_head_sha: base_sha} <- base,
          {:ok, token} <- GitHub.installation_token(project.github_installation_id),
          {:ok, %{"head" => %{"sha" => head_sha}}} <- GitHub.get_pull_request(token, project.github_repo, number),
          {:ok, %{"files" => files}} <- GitHub.compare_commits(token, project.github_repo, base_sha, head_sha) do
@@ -175,7 +181,7 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearnings do
     end
   end
 
-  defp write_compare(%Task{}, _passes, _dir), do: :ok
+  defp write_compare(%Task{}, _runs, _dir), do: :ok
 
   defp brief(%Task{issue: %Issue{} = issue} = task, dir) do
     result = Path.join(dir, "result.json")

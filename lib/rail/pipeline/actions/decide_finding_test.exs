@@ -5,6 +5,7 @@ defmodule Rail.Pipeline.Actions.DecideFindingTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.FindingNote
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Roles
   alias Rail.Users
 
@@ -47,7 +48,7 @@ defmodule Rail.Pipeline.Actions.DecideFindingTest do
     %{task: task, finding: finding}
   end
 
-  test "a ruling is the human's, noted in the round it was made, and said to the page", %{
+  test "a ruling is the human's, noted in the round it was made, and said to the page and the board", %{
     task: %{id: task_id},
     finding: finding
   } do
@@ -63,6 +64,7 @@ defmodule Rail.Pipeline.Actions.DecideFindingTest do
 
     scope = user_scope(user: user)
     Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task_id}")
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
 
     assert {:ok,
             %Finding{
@@ -76,6 +78,7 @@ defmodule Rail.Pipeline.Actions.DecideFindingTest do
             }} = Pipeline.decide_finding(scope, finding, :skip)
 
     assert_received {:output_saved, ^task_id}
+    assert_receive {:pipeline_changed, ^task_id}
   end
 
   test "a ruling changed before the fix round notes each, and the same ruling twice notes it once", %{
@@ -101,5 +104,18 @@ defmodule Rail.Pipeline.Actions.DecideFindingTest do
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
 
     assert {:error, :stage_running} = Pipeline.decide_finding(system_scope(), finding, :fix)
+  end
+
+  test "a finished review's rulings are settled", %{task: task, project: project, finding: %{id: finding_id} = finding} do
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
+
+    {:ok, run} =
+      Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :finished, started_at: DateTime.utc_now()})
+
+    {:ok, _skipped} = Pipeline.decide_finding(system_scope(), finding, :skip)
+    {:ok, %Run{status: :finished}} = Pipeline.start_fix_round(run)
+
+    assert {:error, :review_finished} = Pipeline.decide_finding(system_scope(), finding, :fix)
+    assert %Finding{id: ^finding_id, decision: :skip} = Repo.get!(Finding, finding_id)
   end
 end

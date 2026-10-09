@@ -10,6 +10,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
   """
 
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
+  import Rail.Pipeline.Utils.CiPassed
   import Rail.Pipeline.Utils.FinishReview
   import Rail.Pipeline.Utils.SendBack
 
@@ -19,20 +20,24 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
   alias Rail.Pipeline.Schemas.FindingPlace
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
 
   @doc """
   Starts the fix round on `run`, the task's Review run. Returns `{:ok, run}` as it now stands, or
-  `{:error, reason}` while a finding is undecided, the run works, or there is nothing left to start.
+  `{:error, reason}` while a finding is undecided, the run works, there is nothing left to start, or a
+  review with nothing to fix would finish on a commit CI has not passed.
   """
   def start_fix_round(%Run{} = run) do
-    run = Run |> Repo.get!(run.id) |> Repo.preload([task: [:issue, :runs]], force: true)
+    run = Run |> Repo.get!(run.id) |> Repo.preload([task: [:issue, :project, :runs]], force: true)
     findings = Pipeline.list_findings(run.task)
     passes = Pipeline.read_review(run.task)
 
-    with :ok <- startable(run.task, findings, passes) do
-      fix = Enum.filter(findings, &Finding.outstanding?/1)
+    fix = Enum.filter(findings, &Finding.outstanding?/1)
+
+    with :ok <- startable(run.task, findings, passes),
+         :ok <- finishable(run.task, fix) do
       {overrides, corrections} = Enum.split_with(fix, &is_binary(&1.suppressed_by_id))
       {:ok, _flagged} = Learnings.record_overrides(run.task, overrides)
       {:ok, _learned} = Learnings.record_corrections(run.task, corrections)
@@ -51,6 +56,13 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
       true -> :ok
     end
   end
+
+  # A fix whose commit has not passed CI is still waiting on it, however it was ruled.
+  defp finishable(%Task{project: %Project{ci_command: command}} = task, []) when command not in [nil, ""] do
+    if ci_passed?(task), do: :ok, else: {:error, :ci_not_passed}
+  end
+
+  defp finishable(%Task{}, _fix), do: :ok
 
   # Finishing the review is when its run completes, which every page showing the task hears.
   defp finish(%Run{} = run) do

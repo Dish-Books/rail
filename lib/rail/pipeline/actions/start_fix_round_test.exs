@@ -8,6 +8,7 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
@@ -100,8 +101,10 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
   } do
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
+    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 1"])
     {:ok, _fixed} = Pipeline.save_finding(task, %{key: "nil-crash", status: "fixed"})
     {:ok, %{round: 2}} = Pipeline.save_review(task)
+    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Merge main"])
     {:ok, %Finding{carried_round: 3}} = Pipeline.save_finding(task, %{key: "nil-crash", status: "not_fixed"})
     {:ok, %{round: 3}} = Pipeline.save_review(task)
 
@@ -135,6 +138,60 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
     assert %Task{pr_is_draft: false} = Repo.reload!(task)
     assert [%{finished_at: %DateTime{}}] = Pipeline.read_review(task)
     assert {:error, :nothing_to_start} = Pipeline.start_fix_round(run)
+  end
+
+  # A fix's commit not yet through CI is still waiting on it, however the findings were ruled.
+  test "on a project with CI, nothing ruled Fix finishes only once CI passed on HEAD", %{
+    project: project,
+    task: task,
+    run: run,
+    crash: crash,
+    nit: nit
+  } do
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+    {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
+    {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
+    head = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
+
+    Repo.insert!(%OsProcess{
+      run_id: run.id,
+      task_id: task.id,
+      kind: :ci,
+      command: "mise run ci",
+      stream_path: "/dev/null",
+      status: :finished,
+      exit_code: 1,
+      head_sha: head,
+      started_at: DateTime.utc_now()
+    })
+
+    assert {:error, :ci_not_passed} = Pipeline.start_fix_round(run)
+    assert %Task{pr_is_draft: true} = Repo.reload!(task)
+    assert [%{finished_at: nil}] = Pipeline.read_review(task)
+
+    Repo.insert!(%OsProcess{
+      run_id: run.id,
+      task_id: task.id,
+      kind: :ci,
+      command: "mise run ci",
+      stream_path: "/dev/null",
+      status: :finished,
+      exit_code: 0,
+      head_sha: head,
+      started_at: DateTime.utc_now()
+    })
+
+    Req.Test.expect(Client, 3, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"POST", "/app/installations/1/access_tokens"} -> Req.Test.json(conn, %{"token" => "ghs_token"})
+        {"GET", "/repos/example/test-seed/pulls/9"} -> Req.Test.json(conn, %{"number" => 9, "node_id" => "PR_9"})
+        {"POST", "/graphql"} -> Req.Test.json(conn, %{"data" => %{"markPullRequestReadyForReview" => %{}}})
+      end
+    end)
+
+    assert {:ok, %Run{status: :finished}} = Pipeline.start_fix_round(run)
+    assert %Task{pr_is_draft: false} = Repo.reload!(task)
+    assert [%{finished_at: %DateTime{}}] = Pipeline.read_review(task)
   end
 
   test "a second start while the round it started works is refused", %{task: task, run: run, crash: crash, nit: nit} do

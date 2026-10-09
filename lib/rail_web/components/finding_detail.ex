@@ -27,7 +27,9 @@ defmodule RailWeb.Components.FindingDetail do
   attr :target, :any, required: true
 
   def finding_detail(assigns) do
-    assigns = assign(assigns, :picked, Enum.at(assigns.filed, assigns.filed_index) || List.first(assigns.filed))
+    # A piece keeps its place in the whole evidence list, code ranges included, which the tabs leave out.
+    picked = Enum.find(assigns.filed, &(&1.index == assigns.filed_index)) || List.first(assigns.filed)
+    assigns = assign(assigns, :picked, picked)
 
     ~H"""
     <div

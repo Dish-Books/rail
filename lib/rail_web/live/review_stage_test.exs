@@ -114,15 +114,18 @@ defmodule RailWeb.Live.ReviewStageTest do
 
   test "the list groups findings by round, newest first, with a Fix finding still failing carried into the round", %{
     conn: conn,
-    task: task,
+    task: %{worktree_path: worktree} = task,
     code: code,
     screen: screen
   } do
     {:ok, carried} = Pipeline.save_finding(task, Map.put(screen, :key, "send-twice"))
     {:ok, _pass} = Pipeline.save_review(task)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), carried, :fix)
+    # A round is a read of a new HEAD, so each fix round commits before its pass.
+    git!(worktree, ["commit", "--allow-empty", "-m", "fix round 1"])
     {:ok, _fixed} = Pipeline.save_finding(task, %{key: "send-twice", status: "fixed"})
     {:ok, _pass} = Pipeline.save_review(task)
+    git!(worktree, ["commit", "--allow-empty", "-m", "fix round 2"])
     {:ok, _new} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
     {:ok, %Finding{carried_round: 3}} = Pipeline.save_finding(task, %{key: "send-twice", status: "not_fixed"})
     {:ok, _pass} = Pipeline.save_review(task)
@@ -172,21 +175,21 @@ defmodule RailWeb.Live.ReviewStageTest do
     assert %{stage_outcome: :in_progress} = Repo.reload!(run)
   end
 
-  test "Start fix round reads Finish review when every finding is ruled Don't fix, and is gone once finished", %{
-    conn: conn,
-    task: task,
-    code: code
-  } do
+  test "Start fix round reads Finish review when every finding is ruled Don't fix, and it and the rulings are gone once finished",
+       %{conn: conn, task: task, code: code} do
     {:ok, finding} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
     {:ok, _pass} = Pipeline.save_review(task)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), finding, :skip)
 
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
     assert has_element?(view, "#start-fix-round", "Finish review")
+    assert has_element?(view, "#decide-fix-view-only-send")
 
     view |> element("#start-fix-round") |> render_click()
 
     refute has_element?(view, "#start-fix-round")
+    refute has_element?(view, "#decide-fix-view-only-send")
+    refute has_element?(view, "#decide-skip-view-only-send")
     assert has_element?(view, "#review-status[data-phase=finished]", "Nothing left to rule")
     assert has_element?(view, "#review-item-findings [data-qa=review_item_done]")
     assert has_element?(view, "#task-status-chip", "Ready to merge")
@@ -348,6 +351,55 @@ defmodule RailWeb.Live.ReviewStageTest do
 
     assert has_element?(view, "#review-status[data-phase=ci_failed]", "CI failed 3 times on fix round 1")
     assert has_element?(view, "#review-item-findings [data-qa=review_item_failed]")
+  end
+
+  test "with every finding fixed, Finish review waits on a fix commit CI failed", %{
+    conn: conn,
+    project: project,
+    task: task,
+    run: run,
+    head: head,
+    code: code
+  } do
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+    {:ok, finding} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
+    {:ok, _pass} = Pipeline.save_review(task)
+    {:ok, _ruled} = Pipeline.decide_finding(system_scope(), finding, :fix)
+    {:ok, %Finding{status: :fixed}} = Pipeline.save_finding(task, %{key: "view-only-send", status: "fixed"})
+    {:ok, _stopped} = Pipeline.update_run(run, %{ci_failure_streak: 3, error: "CI failed 3 times"})
+
+    {:ok, _failed} =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: task.id,
+        kind: :ci,
+        command: "mise run ci",
+        stream_path: Path.join(System.tmp_dir!(), "rst_ci_failed_#{run.id}.log"),
+        status: :finished,
+        exit_code: 1,
+        head_sha: head,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert()
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    assert has_element?(view, "#review-status[data-phase=ci_failed]")
+    assert has_element?(view, "#start-fix-round[disabled][title='CI failed on the fix commit']", "Finish review")
+  end
+
+  test "Finish review on a commit CI has not passed says so", %{conn: conn, project: project, task: task, code: code} do
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+    {:ok, finding} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
+    {:ok, _pass} = Pipeline.save_review(task)
+    {:ok, _ruled} = Pipeline.decide_finding(system_scope(), finding, :skip)
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    view |> element("#start-fix-round:not([disabled])", "Finish review") |> render_click()
+
+    assert has_element?(view, "#review-error", "CI has not passed on the fix commit, so the review cannot finish yet.")
+    assert has_element?(view, "#start-fix-round", "Finish review")
   end
 
   test "a fix round in progress says the engineer is fixing, and the footer counts what is being fixed", %{
@@ -593,5 +645,17 @@ defmodule RailWeb.Live.ReviewStageTest do
 
       assert has_element?(view, "#review-error", said)
     end
+  end
+
+  # The page hides Fix and Don't fix once the review finishes, so only a ruling made as it finishes is refused.
+  test "a ruling that is refused says why", %{conn: conn, task: task, code: code} do
+    {:ok, _finding} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
+    {:ok, _pass} = Pipeline.save_review(task)
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    expect(Pipeline, :decide_finding, fn _scope, _finding, :fix -> {:error, :review_finished} end)
+    view |> element("#decide-fix-view-only-send") |> render_click()
+
+    assert has_element?(view, "#review-error", "The review is finished, so its rulings are settled.")
   end
 end

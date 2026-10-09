@@ -5,11 +5,12 @@ defmodule Rail.Pipeline.Actions.CommitWork do
   """
 
   import Rail.Pipeline.Utils.CommitMessage
-  import Rail.Pipeline.Utils.RecordFixes
   import Rail.Pipeline.Utils.SendBranchOn
 
   alias Rail.Git
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.FindingPlace
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -51,4 +52,49 @@ defmodule Rail.Pipeline.Actions.CommitWork do
   end
 
   defp fix_round(%Task{} = task), do: max(length(Pipeline.read_review(task)), 1)
+
+  defp record_fixes(%Task{} = task, %Run{} = run, round, sha, fixes, others) do
+    now = DateTime.utc_now()
+
+    for %{finding: finding, covered: covered, left: left, test: test} <- fixes do
+      places =
+        finding.places
+        |> Enum.with_index(1)
+        |> Enum.map(fn {place, n} ->
+          case List.keyfind(left, n, 0) do
+            {^n, reason} -> FindingPlace.leave_changeset(place, reason)
+            nil -> place
+          end
+        end)
+
+      # A finding from before places has none to name, so its note names none.
+      note = %{
+        round: round,
+        kind: :fix,
+        at: now,
+        commit: sha,
+        covered: for(n <- covered, %FindingPlace{} = place <- [place(finding, n)], do: FindingPlace.describe(place)),
+        left:
+          for(
+            {n, reason} <- left,
+            %FindingPlace{} = place <- [place(finding, n)],
+            do: "#{FindingPlace.describe(place)}: #{reason}"
+          ),
+        test: "#{String.trim(test["file"])}: #{String.trim(test["name"])}"
+      }
+
+      finding
+      |> Finding.note_changeset(%{status: :fixed, fixed_in: sha, note: note})
+      |> Ecto.Changeset.put_embed(:places, places)
+      |> Repo.update!()
+    end
+
+    lines =
+      for %{"path" => path, "reason" => reason} <- others, do: "[rail] #{path} changed in fix round #{round}: #{reason}"
+
+    if lines != [], do: Pipeline.append_run_events(run.id, nil, lines)
+    Pipeline.broadcast_output_saved(task)
+  end
+
+  defp place(%Finding{places: places}, n), do: Enum.at(places, n - 1)
 end

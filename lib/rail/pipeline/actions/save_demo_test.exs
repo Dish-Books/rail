@@ -58,6 +58,26 @@ defmodule Rail.Pipeline.Actions.SaveDemoTest do
     assert_enqueued(worker: EncodeDemo, args: %{task_id: task_id})
   end
 
+  # The encode publishes to Linear, so a take already encoded is posted again only when there is a new one.
+  test "a write-up saved over a take already encoded queues no encode", %{task: %{id: task_id} = task} do
+    File.mkdir_p!(Path.join(task.scratch_path, "demo"))
+    File.write!(Path.join([task.scratch_path, "demo", "demo.webm"]), "webm bytes")
+    expect(Tools, :stop_browser_recording, fn %{id: ^task_id} -> nil end)
+
+    assert {:ok, %Demo{}} = Pipeline.save_demo(task, %{"title" => "Filters", "summary" => "It filters by vendor."})
+    refute_enqueued(worker: EncodeDemo)
+  end
+
+  test "a new take queues its encode over one already encoded", %{task: %{id: task_id} = task} do
+    File.mkdir_p!(Path.join(task.scratch_path, "demo"))
+    File.write!(Path.join([task.scratch_path, "demo", "demo.webm"]), "webm bytes")
+    frames = Path.join([task.scratch_path, "demo", "frames"])
+    expect(Tools, :stop_browser_recording, fn %{id: ^task_id} -> frames end)
+
+    assert {:ok, %Demo{}} = Pipeline.save_demo(task, %{"title" => "Filters", "summary" => "It filters by vendor."})
+    assert_enqueued(worker: EncodeDemo, args: %{task_id: task_id})
+  end
+
   test "a write-up saved again queues no second encode", %{task: %{id: task_id} = task} do
     assert {:ok, %Demo{}} = Pipeline.save_demo(task, %{"title" => "Filters", "summary" => "It filters."})
     assert {:ok, %Demo{}} = Pipeline.save_demo(task, %{"title" => "Filters", "summary" => "It filters by vendor."})

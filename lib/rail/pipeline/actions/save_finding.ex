@@ -7,15 +7,20 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
   """
 
   import Ecto.Changeset
-  import Rail.Pipeline.Utils.AttachEvidence
+  import Rail.Pipeline.Utils.QaEvidenceKind
+  import Rail.Pipeline.Utils.ReadTextHead
 
   alias Rail.Git
   alias Rail.Learnings
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.FindingEvidence
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
+
+  # Enough of a log to read the failure in; the whole file is a click away.
+  @text_limit 16_384
 
   @doc """
   Saves the finding in `attrs` on `task`. Returns `{:ok, finding}` as the row now stands, or
@@ -24,7 +29,8 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
   def save_finding(%Task{} = task, attrs) when is_map(attrs) do
     task = Repo.preload(task, :issue)
     attrs = stringify(attrs)
-    said = %{round: length(Pipeline.read_review(task)) + 1, at: DateTime.utc_now(), commit: head(task)}
+    head = head(task)
+    said = %{round: round(Pipeline.read_review(task), head), at: DateTime.utc_now(), commit: head}
 
     result =
       case is_binary(attrs["key"]) && Repo.get_by(Finding, task_id: task.id, key: attrs["key"]) do
@@ -113,4 +119,68 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
 
   defp stringify(list) when is_list(list), do: Enum.map(list, &stringify/1)
   defp stringify(value), do: value
+
+  # A round is a read of a new HEAD, so a save at the HEAD the open pass read belongs to that pass.
+  defp round(passes, head) do
+    case List.last(passes) do
+      %{head: ^head, finished_at: nil} when is_binary(head) -> length(passes)
+      _new_head -> length(passes) + 1
+    end
+  end
+
+  # Every cited file is checked before any is copied, so a refusal leaves nothing behind.
+  defp attach_evidence(%Task{scratch_path: scratch_path}, key, entries, %{commit: _commit, at: _at} = said)
+       when is_list(entries) do
+    qa = Path.join(scratch_path, "qa")
+    found = Enum.map(entries, &find(qa, &1))
+
+    case Enum.find(found, &match?({:error, _text}, &1)) do
+      {:error, text} -> {:error, text}
+      nil -> {:ok, Enum.map(found, &attach(qa, key, &1, said))}
+    end
+  end
+
+  # What an agent says about when and on which commit is not taken: Rail knows both.
+  defp find(qa, %{"path" => path} = entry) when is_binary(path) do
+    with true <- FindingEvidence.confined?(path),
+         {:ok, %File.Stat{type: :regular, mtime: taken_at}} <- File.lstat(Path.join(qa, path), time: :posix) do
+      {:file, Map.drop(entry, ["commit", "taken_at"]), DateTime.from_unix!(taken_at)}
+    else
+      _not_a_file -> {:error, "#{path} is not a file in #{qa}"}
+    end
+  end
+
+  defp find(_qa, %{} = entry), do: {:said, Map.drop(entry, ["commit", "taken_at"])}
+
+  defp attach(qa, key, {:file, entry, taken_at}, said),
+    do: Map.merge(copy(qa, key, entry), %{"commit" => said.commit, "taken_at" => taken_at})
+
+  defp attach(_qa, _key, {:said, entry}, said), do: Map.merge(entry, %{"commit" => said.commit, "taken_at" => said.at})
+
+  # A file already in the finding's folder is one an earlier save attached, cited again.
+  defp copy(qa, key, %{"path" => path} = entry) do
+    folder = "evidence/#{key}/"
+
+    if String.starts_with?(path, folder) do
+      entry
+    else
+      attached = "#{folder}#{System.unique_integer([:positive])}-#{Path.basename(path)}"
+      File.mkdir_p!(Path.join(qa, folder))
+      File.cp!(Path.join(qa, path), Path.join(qa, attached))
+      read_in(%{entry | "path" => attached}, Path.join(qa, attached))
+    end
+  end
+
+  defp read_in(%{"text" => text} = entry, _file) when is_binary(text), do: entry
+
+  # A log holding tool-call markup, as Rail's own do, stays a file to open: read in, the markup check refuses it.
+  defp read_in(entry, file) do
+    with :text <- qa_evidence_kind(file),
+         {:text, text, truncated} <- read_text_head(file, @text_limit),
+         false <- Finding.markup?(text) do
+      Map.put(entry, "text", if(truncated, do: text <> "\n[cut short here; open the file for the rest]", else: text))
+    else
+      _not_text -> entry
+    end
+  end
 end

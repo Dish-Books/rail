@@ -90,7 +90,7 @@ defmodule RailWeb.Live.ReviewStage do
                     finding={@selected}
                     position={@position}
                     count={length(@findings)}
-                    decidable={@approvable and @phase not in [:round, :fixing, :ci]}
+                    decidable={@approvable and @phase not in [:round, :fixing, :ci, :finished]}
                     running={@phase == :round}
                     hunk={@hunk}
                     diff_link={diff_link(@task, @engineer_tab, @hunk)}
@@ -402,6 +402,10 @@ defmodule RailWeb.Live.ReviewStage do
     }
   end
 
+  # A fix whose commit fails CI is still waiting, so the review cannot finish on it.
+  defp button(:ci_failed, %{fix: 0}, _passes, true),
+    do: %{label: "Finish review", icon: "pi-check", disabled: true, title: "CI failed on the fix commit"}
+
   defp button(_phase, %{fix: 0}, _passes, true),
     do: %{label: "Finish review", icon: "pi-check", disabled: false, title: nil}
 
@@ -578,4 +582,6 @@ defmodule RailWeb.Live.ReviewStage do
   defp message_for(:findings_undecided), do: "Some findings have no ruling yet. Rule on every one first."
   defp message_for(:nothing_to_start), do: "There is nothing left to start: the review is finished."
   defp message_for(:dispatch_disabled), do: "Dispatch is off, so the Review lead was not resumed."
+  defp message_for(:review_finished), do: "The review is finished, so its rulings are settled."
+  defp message_for(:ci_not_passed), do: "CI has not passed on the fix commit, so the review cannot finish yet."
 end

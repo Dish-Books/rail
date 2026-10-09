@@ -20,21 +20,22 @@ defmodule Rail.Mcp.Utils.RunToolQaShotTest do
   end
 
   # The reply carries the path a finding cites, never the picture itself.
-  test "photographs the stage's own browser and says where it was saved", %{task: task} do
-    expect(Tools, :start_browser_session, fn ^task, "review_lead", [{:existing, false} | _opts] -> {:ok, self()} end)
+  test "photographs the browser it names and says where it was saved", %{task: task} do
+    expect(Tools, :start_browser_session, fn ^task, "explorer-1", [{:existing, true} | _opts] -> {:ok, self()} end)
 
     assert {:ok, "Saved as shots/the-saved-bill-" <> _rest} =
-             run_tool_qa_shot(task, %{"name" => "The saved bill"}, stage: :review_lead)
+             run_tool_qa_shot(task, %{"name" => "The saved bill", "browser" => "explorer-1"}, stage: :review_lead)
 
     assert [saved] = Path.wildcard(Path.join([task.scratch_path, "qa", "shots", "the-saved-bill-*.jpg"]))
     assert File.read!(saved) == "jpeg bytes"
   end
 
-  test "photographs the browser it names", %{task: task} do
-    expect(Tools, :start_browser_session, fn ^task, "explorer-1", [{:existing, true} | _opts] -> {:ok, self()} end)
+  # Each explorer has a browser of its own, so a shot from the lead's run says whose it is.
+  test "a shot from the Review lead's run that names no browser is refused before any browser", %{task: task} do
+    reject(Tools, :start_browser_session, 3)
 
-    assert {:ok, "Saved as shots/signed-in-" <> _rest} =
-             run_tool_qa_shot(task, %{"name" => "Signed in", "browser" => "explorer-1"}, stage: :review_lead)
+    assert {:refused, "Pass `browser`, the name the lead gave you" <> _rest} =
+             run_tool_qa_shot(task, %{"name" => "Signed in"}, stage: :review_lead)
   end
 
   # A blank picture from a browser nobody drove would read as evidence.
@@ -58,6 +59,7 @@ defmodule Rail.Mcp.Utils.RunToolQaShotTest do
     stub(Tools, :start_browser_session, fn _task, _name, _opts -> {:ok, self()} end)
     stub(BrowserSession, :call, fn _session, _method, _params -> {:ok, %{"data" => "not base64 at all!"}} end)
 
-    assert {:error, :unreadable_screenshot} = run_tool_qa_shot(task, %{"name" => "Blank"}, stage: :review_lead)
+    assert {:error, :unreadable_screenshot} =
+             run_tool_qa_shot(task, %{"name" => "Blank", "browser" => "explorer-1"}, stage: :review_lead)
   end
 end

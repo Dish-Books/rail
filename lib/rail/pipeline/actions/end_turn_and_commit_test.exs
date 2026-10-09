@@ -703,6 +703,63 @@ defmodule Rail.Pipeline.Actions.EndTurnAndCommitTest do
                %Run{id: run_id} |> Pipeline.list_run_events() |> Enum.map(& &1.line) |> Enum.filter(&(&1 =~ "Round 2"))
     end
 
+    # The migration leaves a finding with no file or screen without places, and it is still fixed by one.
+    test "a Fix finding with no places is committed, its note naming none", %{
+      task: task,
+      lead_run: %Run{id: run_id},
+      repo: repo,
+      lead_process: lead_process,
+      round: round
+    } do
+      %Finding{id: placeless_id} =
+        Repo.insert!(%Finding{
+          task_id: task.id,
+          key: "old-crash",
+          kind: :code,
+          raised_by: :code_reviewer,
+          round: 1,
+          title: "An old crash",
+          problem: "It crashes.",
+          fix: "Guard it.",
+          why: "It crashes.",
+          rule: "Every caller handles nil.",
+          severity: :major,
+          recommendation: :fix,
+          decision: :fix,
+          places: []
+        })
+
+      File.mkdir_p!(Path.join(repo, "lib"))
+      File.mkdir_p!(Path.join(repo, "test"))
+      File.write!(Path.join([repo, "lib", "a.ex"]), "guarded\n")
+      File.write!(Path.join([repo, "test", "a_test.exs"]), "test\n")
+      File.write!(Path.join([repo, "lib", "c.ex"]), "guarded\n")
+      File.write!(Path.join([repo, "test", "c_test.exs"]), "test\n")
+      stub(Tools, :stop_os_process, fn _scope, _os_process, _opts -> {:ok, lead_process} end)
+      expect(Git, :push_branch, fn _scope, _task -> :ok end)
+      expect(Tools, :start_os_process, fn %Run{} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      placeless = %{
+        "key" => "old-crash",
+        "covered" => [1],
+        "test" => %{"file" => "test/c_test.exs", "name" => "an old crash does not crash"}
+      }
+
+      other = [%{"path" => "lib/c.ex", "reason" => "The old crash's guard."}]
+
+      assert {:ok, :committing} =
+               Pipeline.end_turn_and_commit(
+                 task,
+                 lead_process,
+                 Map.merge(round, %{"findings" => [placeless | round["findings"]], "other_files" => other})
+               )
+
+      assert_receive {:run_changed, ^run_id}, 5_000
+
+      assert %Finding{status: :fixed, notes: [%FindingNote{kind: :fix, covered: [], left: []}]} =
+               Repo.get!(Finding, placeless_id)
+    end
+
     test "on a project with CI the round runs CI on the lead's run, and after a failure nothing changed runs it again", %{
       project: project,
       task: task,

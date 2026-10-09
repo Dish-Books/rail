@@ -91,7 +91,9 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
 
     {:ok, %{round: 1}} = Pipeline.save_review(task)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), finding, :fix)
+    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 1"])
     {:ok, %{round: 2}} = Pipeline.save_review(task)
+    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 2"])
     {:ok, _carried} = Pipeline.save_finding(task, %{key: "send-twice", status: "not_fixed", note: "Still twice."})
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->

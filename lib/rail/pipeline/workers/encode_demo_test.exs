@@ -290,6 +290,11 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
     assert :ok = perform_job(EncodeDemo, %{task_id: task.id})
   end
 
+  # A deploy that cuts an encode off leaves it executing; Oban's lifeline rescues it only into an attempt left.
+  test "an encode cut off once is tried a second time", %{task: %{id: task_id}} do
+    assert %{max_attempts: 2} = EncodeDemo.new(%{task_id: task_id}).changes
+  end
+
   test "a task gone before its encode ran has nothing to encode" do
     reject(&Tools.encode_recording/2)
 

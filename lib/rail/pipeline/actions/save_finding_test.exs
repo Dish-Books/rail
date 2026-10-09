@@ -70,8 +70,9 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
     assert_received {:output_saved, ^task_id}
   end
 
-  test "a finding saved after round 1 was closed is raised in round 2", %{task: task, attrs: attrs} do
+  test "a finding saved on a commit after round 1 was closed is raised in round 2", %{task: task, attrs: attrs} do
     {:ok, %{round: 1}} = Pipeline.save_review(task)
+    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 1"])
 
     assert {:ok, %Finding{round: 2, notes: [%FindingNote{round: 2}]}} = Pipeline.save_finding(task, attrs)
   end
@@ -298,13 +299,26 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
              Pipeline.list_findings(task)
   end
 
+  # A round is a read of a new HEAD, so a pass saved again on the commit round 1 read is still round 1.
+  test "saving a known key again at the HEAD round 1 read notes round 1", %{task: task, head: head, attrs: attrs} do
+    {:ok, %Finding{id: id}} = Pipeline.save_finding(task, attrs)
+    {:ok, %{round: 1}} = Pipeline.save_review(task)
+
+    assert {:ok,
+            %Finding{
+              id: ^id,
+              notes: [%FindingNote{kind: :raised, round: 1}, %FindingNote{kind: :pass, round: 1, commit: ^head}]
+            }} = Pipeline.save_finding(task, %{"key" => "send-twice", "status" => "fixed", "note" => "Sent once now."})
+  end
+
   test "saving a known key again notes the round and commit, and leaves what it said as raised", %{
     task: task,
-    head: head,
     attrs: attrs
   } do
     {:ok, %Finding{id: id}} = Pipeline.save_finding(task, attrs)
     {:ok, %{round: 1}} = Pipeline.save_review(task)
+    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 1"])
+    head = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
 
     assert {:ok,
             %Finding{
@@ -334,19 +348,19 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
     {:ok, raised} = Pipeline.save_finding(task, attrs)
     {:ok, %{round: 1}} = Pipeline.save_review(task)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), raised, :fix)
-    {:ok, %{round: 2}} = Pipeline.save_review(task)
+    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 1"])
     still_failing = %{"key" => "send-twice", "status" => "not_fixed", "note" => "Still sends twice."}
 
     assert {:ok,
             %Finding{
-              carried_round: 3,
+              carried_round: 2,
               decision: :fix,
               status: :not_fixed,
               notes: [
                 %FindingNote{kind: :raised},
                 %FindingNote{kind: :ruling},
-                %FindingNote{kind: :pass, round: 3, status: :not_fixed},
-                %FindingNote{kind: :carried, round: 3}
+                %FindingNote{kind: :pass, round: 2, status: :not_fixed},
+                %FindingNote{kind: :carried, round: 2}
               ]
             } = carried} = Pipeline.save_finding(task, still_failing)
 

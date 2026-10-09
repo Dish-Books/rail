@@ -81,6 +81,7 @@ defmodule Rail.Pipeline.Utils.ReviewSubagents do
     - Call `save_demo` straight after the last beat: saving is what stops the recording and has Rail encode it, so nothing after it is filmed, and a demo never saved is never seen.
     - Never call `save_finding` or `qa_check`. Something broken you walk into goes in your last message for the lead.
     - Keep the scripts that set up your starting state under #{scratch_path}, so a retake is one command.
+    - The rules this project has learned that bear on your recording come in the lead's message; call knowledge_search for more.
     """)
   end
 end

@@ -103,10 +103,12 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
   # Rehearsing is driving the application without filming it, which is the whole
   # of what `demo_start` buys: the camera is off until the agent says otherwise.
   test "a run is not filmed until it starts a take", %{context: context, task: task} do
-    assert {:ok, _rehearsed} = Mcp.call_run_tool(context, "browser_connect", %{})
+    assert {:ok, _rehearsed} = Mcp.call_run_tool(context, "browser_connect", %{"browser" => "demo"})
     refute Tools.get_browser_recording(task)
 
-    assert {:ok, %{"content" => [%{"text" => rolling}]}} = Mcp.call_run_tool(context, "demo_start", %{})
+    assert {:ok, %{"content" => [%{"text" => rolling}]}} =
+             Mcp.call_run_tool(context, "demo_start", %{"browser" => "demo"})
+
     assert rolling =~ "Recording."
 
     assert is_pid(Tools.get_browser_recording(task))
@@ -117,17 +119,17 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
   test "another take discards the one before it", %{context: context, task: task} do
     captions = Path.join([task.scratch_path, "demo", "captions.jsonl"])
 
-    {:ok, _rolling} = Mcp.call_run_tool(context, "demo_start", %{})
+    {:ok, _rolling} = Mcp.call_run_tool(context, "demo_start", %{"browser" => "demo"})
     {:ok, _said} = Mcp.call_run_tool(context, "demo_say", %{"text" => "A take that went wrong"})
     assert File.exists?(captions)
 
-    {:ok, _again} = Mcp.call_run_tool(context, "demo_start", %{})
+    {:ok, _again} = Mcp.call_run_tool(context, "demo_start", %{"browser" => "demo"})
 
     refute File.exists?(captions)
   end
 
   test "a caption is filed under the demo and says when it landed", %{context: context, task: task} do
-    {:ok, _rolling} = Mcp.call_run_tool(context, "demo_start", %{})
+    {:ok, _rolling} = Mcp.call_run_tool(context, "demo_start", %{"browser" => "demo"})
 
     assert {:ok, %{"content" => [%{"text" => said}]}} =
              Mcp.call_run_tool(context, "demo_say", %{"text" => "Entering a bill for Sysco"})
@@ -145,7 +147,7 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
   # What a caption said and when it landed is what a person reading the log back
   # wants; the receipt the agent read is not.
   test "the log carries the caption and the moment it landed", %{context: context, run: run} do
-    {:ok, _rolling} = Mcp.call_run_tool(context, "demo_start", %{})
+    {:ok, _rolling} = Mcp.call_run_tool(context, "demo_start", %{"browser" => "demo"})
     {:ok, _said} = Mcp.call_run_tool(context, "demo_say", %{"text" => "Entering a bill for Sysco"})
 
     # A caption with no words is still a call somebody has to see having happened.
@@ -229,12 +231,13 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
   # The agent drives the tab itself, so what it is handed is the tab's address
   # and a driver at a path its sandbox can see.
   test "connecting opens the tab without being asked and hands over the driver", %{context: context, task: task, run: run} do
-    expect(Tools, :start_browser_session, fn started, "review_lead", _opts ->
+    expect(Tools, :start_browser_session, fn started, "explorer-1", _opts ->
       assert started.id == task.id
       {:ok, self()}
     end)
 
-    assert {:ok, %{"content" => [%{"text" => text}]}} = Mcp.call_run_tool(context, "browser_connect", %{})
+    assert {:ok, %{"content" => [%{"text" => text}]}} =
+             Mcp.call_run_tool(context, "browser_connect", %{"browser" => "explorer-1"})
 
     driver = Path.join([task.scratch_path, "browser", "driver.mjs"])
 
@@ -246,30 +249,31 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     assert run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line) =~ "[browser] connect"
   end
 
-  # An agent driving two browsers asks about the one it names, and about the one
-  # named for its role when it names none.
+  # An agent driving two browsers asks about the one it names.
   test "a browser tool acts on the browser it names", %{context: context} do
-    expect(Tools, :start_browser_session, fn _task, "explorer 2", opts ->
-      assert opts[:existing]
-      {:ok, self()}
-    end)
-
-    expect(Tools, :start_browser_session, fn _task, "review_lead", opts ->
-      refute opts[:existing]
-      {:ok, self()}
-    end)
-
-    expect(Tools, :start_browser_session, fn _task, "explorer 2", opts ->
+    expect(Tools, :start_browser_session, 2, fn _task, "explorer 2", opts ->
       assert opts[:existing]
       {:ok, self()}
     end)
 
     assert {:ok, _drained} = Mcp.call_run_tool(context, "browser_problems", %{"browser" => "explorer 2"})
-    assert {:ok, _drained} = Mcp.call_run_tool(context, "browser_problems", %{})
     assert {:ok, _filed} = Mcp.call_run_tool(context, "qa_shot", %{"name" => "Signed in", "browser" => "explorer 2"})
 
     assert {:error, {:refused, "`browser` is a name" <> _rest}} =
              Mcp.call_run_tool(context, "qa_shot", %{"name" => "Signed in", "browser" => "../x"})
+  end
+
+  # Each explorer and the recorder has a browser and an account of its own, so one
+  # left unnamed would be a tab two of them share.
+  test "the Review lead's run that names no browser is refused and opens none", %{context: context, task: task} do
+    reject(Tools, :start_browser_session, 3)
+    said = "Pass `browser`, the name the lead gave you, such as `explorer-1` or `demo`."
+
+    assert {:error, {:refused, ^said}} = Mcp.call_run_tool(context, "browser_connect", %{})
+    assert {:error, {:refused, ^said}} = Mcp.call_run_tool(context, "demo_start", %{})
+    assert {:error, {:refused, ^said}} = Mcp.call_run_tool(context, "browser_connect", %{"browser" => nil})
+
+    refute Tools.get_browser_recording(task)
   end
 
   # A name nobody connected is a slip, and a blank picture or a clean drain from a
@@ -307,7 +311,7 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
   # Rail names the file, so nothing arriving from a model becomes a path.
   test "a screenshot is described rather than located", %{context: context, task: task} do
     assert {:ok, %{"content" => [%{"text" => "Saved as shots/the-bill-total-as-rendered-" <> _rest}]}} =
-             Mcp.call_run_tool(context, "qa_shot", %{"name" => "The bill total as rendered"})
+             Mcp.call_run_tool(context, "qa_shot", %{"name" => "The bill total as rendered", "browser" => "explorer-1"})
 
     assert [_saved] = Path.wildcard(Path.join([task.scratch_path, "qa", "shots", "the-bill-total-as-rendered-*.jpg"]))
   end
@@ -316,10 +320,10 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     expect(BrowserSession, :drain_problems, fn _session -> [%{kind: :console, detail: "total is unrounded"}] end)
 
     assert {:ok, %{"content" => [%{"text" => "[console] total is unrounded"}]}} =
-             Mcp.call_run_tool(context, "browser_problems", %{})
+             Mcp.call_run_tool(context, "browser_problems", %{"browser" => "explorer-1"})
 
     assert {:ok, %{"content" => [%{"text" => "Nothing since the last check."}]}} =
-             Mcp.call_run_tool(context, "browser_problems", %{})
+             Mcp.call_run_tool(context, "browser_problems", %{"browser" => "explorer-1"})
   end
 
   # A request that failed says which one, because "something 404'd" is not a
@@ -330,7 +334,7 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     end)
 
     assert {:ok, %{"content" => [%{"text" => "[response] 404 Not Found (file:///nowhere-at-all.png)"}]}} =
-             Mcp.call_run_tool(context, "browser_problems", %{})
+             Mcp.call_run_tool(context, "browser_problems", %{"browser" => "explorer-1"})
   end
 
   # Called outside a pass - which is every call made while testing this - there
@@ -372,9 +376,9 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     stub(Tools, :start_browser_session, fn _task, _name, _opts -> {:error, {:browser_unavailable, :chrome_not_found}} end)
 
     assert {:error, {:rail_failed, {:browser_unavailable, :chrome_not_found}}} =
-             Mcp.call_run_tool(context, "browser_connect", %{})
+             Mcp.call_run_tool(context, "browser_connect", %{"browser" => "explorer-1"})
 
     assert {:error, {:rail_failed, {:browser_unavailable, :chrome_not_found}}} =
-             Mcp.call_run_tool(context, "browser_problems", %{})
+             Mcp.call_run_tool(context, "browser_problems", %{"browser" => "explorer-1"})
   end
 end
