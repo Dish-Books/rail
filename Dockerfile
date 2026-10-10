@@ -109,9 +109,13 @@ RUN groupadd -g 1000 rail && \
 USER rail
 WORKDIR /home/rail
 
-# Claude Code and mise, from their official installers, into ~/.local/bin.
-RUN curl -fsSL https://mise.run | sh \
-  && curl -fsSL https://claude.ai/install.sh | bash
+# mise, from its official installer, into ~/.local/bin.
+RUN curl -fsSL https://mise.run | sh
+
+# Claude Code, pinned: the layer is cached and the auto-updater is off, so the
+# version only moves when this does. Bump it to pick up a new model.
+ARG CLAUDE_CODE_VERSION=2.1.296
+RUN curl -fsSL https://claude.ai/install.sh | bash -s -- "${CLAUDE_CODE_VERSION}"
 
 # prek on PATH, not only through mise. A pre-push hook calls prek by the path it
 # was installed from, and falls back to a bare `prek` when that path is gone -
