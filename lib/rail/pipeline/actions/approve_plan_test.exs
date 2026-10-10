@@ -444,6 +444,50 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
       assert_received {:pipeline_changed, ^task_id}
     end
 
+    test "only a child marked as building the screen gets the picked design, in its scratch and its brief", %{
+      task: %Task{id: task_id} = task,
+      run: run,
+      created: created,
+      picked: picked,
+      uploaded: uploaded
+    } do
+      picked.()
+      {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan, design: "table"})
+
+      {:ok, _split} =
+        Pipeline.save_split(task, %{
+          "children" => [
+            %{"title" => "First", "ticket" => "The backend.", "plan" => @part},
+            %{"title" => "Second", "ticket" => "The screen.", "plan" => @part, "builds_screen" => true}
+          ]
+        })
+
+      uploaded.()
+      created.([{"First", 2}, {"Second", 3}])
+      test_pid = self()
+
+      stub(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+        send(test_pid, {:brief, spawned.task_id, prompt})
+        {:ok, %OsProcess{run: spawned, task: task}}
+      end)
+
+      assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(system_scope(), run)
+      assert :ok = perform_job(AdvanceSplit, %{parent_task_id: task_id})
+
+      assert [%Task{id: first_id} = first, %Task{id: second_id} = second] =
+               Pipeline.list_tasks(parent_task_id: task.id)
+
+      on_exit(fn -> Enum.each([first, second], &File.rm_rf(&1.scratch_path)) end)
+
+      refute File.exists?(Path.join(first.scratch_path, "design"))
+      assert %{picked: "table", options: [%{key: "table", html: "<h1>table</h1>"}]} = Pipeline.read_design(second)
+
+      assert_received {:brief, ^first_id, first_brief}
+      refute first_brief =~ "approved the design"
+      assert_received {:brief, ^second_id, second_brief}
+      assert second_brief =~ ~s(<design title="Table">\n<h1>table</h1>\n</design>)
+    end
+
     test "a second approval is refused before anything reaches Linear again", %{task: task, run: run, created: created} do
       created.([{"First", 2}, {"Second", 3}, {"Third", 4}])
       assert {:ok, _approved} = Pipeline.approve_plan(system_scope(), run)

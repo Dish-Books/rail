@@ -110,7 +110,14 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
              "description" => description,
              "inputSchema" => %{
                "required" => ["children"],
-               "properties" => %{"children" => %{"items" => %{"required" => ["title", "ticket", "plan"]}}}
+               "properties" => %{
+                 "children" => %{
+                   "items" => %{
+                     "required" => ["title", "ticket", "plan"],
+                     "properties" => %{"builds_screen" => %{"type" => "boolean"}}
+                   }
+                 }
+               }
              }
            } = %Role{stage: :plan} |> mcp_tools() |> Enum.find(&(&1["name"] == "save_split"))
 

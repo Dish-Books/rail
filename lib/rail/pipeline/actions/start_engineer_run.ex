@@ -23,6 +23,12 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools
 
+  # A URI ends at the first quote, closing parenthesis, whitespace or tag, which is where every base64 one ends.
+  @data_uri ~r/data:([^;,"')\s<]*)[^"')\s<]*/
+  @inline_limit 1_024
+  @page_limit 300_000
+  @build_the_screen "Build that screen. Its markup carries the layout, states and copy the ticket only describes, so take them from it rather than inventing near-misses. Where the code cannot reasonably produce what the page shows, say so rather than quietly building something else."
+
   @doc """
   Spawns `run`'s role to build its task.
 
@@ -103,28 +109,47 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
     """)
   end
 
-  # The ticket carries the approved design as a screenshot, which says what the
-  # screen looks like and nothing about how it is built. The page itself is what
-  # the engineer transcribes, so it goes in whole rather than as a path it might
-  # not open.
+  # The ticket carries the approved design as a screenshot, which says nothing about how the screen is
+  # built, so the page goes in too. Its large inline images would only push the brief past the model's limit.
   defp design(%Task{} = task) do
     with %{picked: key, options: options} when is_binary(key) <- Pipeline.read_design(task),
-         %{title: title, html: html, html_path: html_path} when is_binary(html) <-
-           Enum.find(options, &(&1.key == key)) do
-      """
+         %{title: title, html: html} = option when is_binary(html) <- Enum.find(options, &(&1.key == key)) do
+      page = @data_uri |> Regex.replace(html, &leave_out_data_uri/2) |> String.trim()
 
-      The human approved the design "#{title}", and this is the page it was approved as. It is also on disk at #{html_path}.
+      if String.length(page) <= @page_limit do
+        """
 
-      <design title="#{title}">
-      #{String.trim(html)}
-      </design>
+        The human approved the design "#{title}", and this is the page it was approved as. It is also on disk at #{option.html_path}, with its screenshot at #{option.screenshot_path}. Rail left each inline image over 1 KB out of the page below, naming its media type and size where it was; the file on disk still has them.
 
-      Build that screen. Its markup carries the layout, states and copy the ticket only describes, so take them from it rather than inventing near-misses. Where the code cannot reasonably produce what the page shows, say so rather than quietly building something else.
-      """
+        <design title="#{title}">
+        #{page}
+        </design>
+
+        #{@build_the_screen}
+        """
+      else
+        """
+
+        The human approved the design "#{title}". Its page is at #{option.html_path} and its screenshot at #{option.screenshot_path}. The page was too large to include in this brief, even with its inline images left out, so read it from disk, and strip its `data:` URIs with `sed` before you read it whole.
+
+        #{@build_the_screen}
+        """
+      end
     else
       _no_approved_design -> ""
     end
   end
+
+  defp leave_out_data_uri(uri, media_type) when byte_size(uri) > @inline_limit do
+    size =
+      if byte_size(uri) >= 1_000_000,
+        do: "#{Float.round(byte_size(uri) / 1_000_000, 1)} MB",
+        else: "#{round(byte_size(uri) / 1_000)} KB"
+
+    "[#{if media_type == "", do: "text/plain", else: media_type}, #{size}, left out of this brief]"
+  end
+
+  defp leave_out_data_uri(uri, _media_type), do: uri
 
   defp plan_text(%Task{} = task) do
     case Pipeline.get_implementation_plan(task) do

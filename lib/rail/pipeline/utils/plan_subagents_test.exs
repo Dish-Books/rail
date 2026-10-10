@@ -40,6 +40,7 @@ defmodule Rail.Pipeline.Utils.PlanSubagentsTest do
     assert designer =~ "A comment on the design names its element by a CSS selector. Find the element with that selector"
     assert designer =~ "save under the same key"
     assert designer =~ "Keep the ids and structure of elements nobody commented on"
+    assert designer =~ "Put no image in the page as a `data:` URI"
 
     assert architect =~ ~r/\AYou are the architect agent./
     assert architect =~ "Start as soon as the ticket is saved, while the Designer works"

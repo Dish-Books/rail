@@ -48,7 +48,8 @@ defmodule Rail.Pipeline.Actions.SaveSplitTest do
         "ticket" => "QA.",
         "estimate" => 2,
         "plan" => @part,
-        "builds_on" => [1]
+        "builds_on" => [1],
+        "builds_screen" => true
       }
     ]
 
@@ -62,14 +63,31 @@ defmodule Rail.Pipeline.Actions.SaveSplitTest do
     assert {:ok,
             %{
               children: [
-                %{number: 1, title: "Preview deploys", ticket: "Deploys.", estimate: 3, builds_on: []},
-                %{number: 2, title: "QA on previews", plan: @part, builds_on: [1]}
+                %{
+                  number: 1,
+                  title: "Preview deploys",
+                  ticket: "Deploys.",
+                  estimate: 3,
+                  builds_on: [],
+                  builds_screen: false
+                },
+                %{number: 2, title: "QA on previews", plan: @part, builds_on: [1], builds_screen: true}
               ],
               saved_at: %DateTime{}
             }} = Pipeline.save_split(task, %{"children" => children})
 
-    assert %{children: [%{number: 1}, %{number: 2}]} = Pipeline.read_split(task)
+    assert %{children: [%{number: 1, builds_screen: false}, %{number: 2, builds_screen: true}]} =
+             Pipeline.read_split(task)
+
     assert_received {:output_saved, ^task_id}
+  end
+
+  # An agent leaves out a field it means as false, or sends it as null.
+  test "a child sent with builds_screen null or left out builds no screen", %{task: task, children: [first, second]} do
+    assert {:ok, %{children: [%{builds_screen: false}, %{builds_screen: false}]}} =
+             Pipeline.save_split(task, %{"children" => [first, Map.put(second, "builds_screen", nil)]})
+
+    assert %{children: [%{builds_screen: false}, %{builds_screen: false}]} = Pipeline.read_split(task)
   end
 
   test "a child missing its title, ticket or part of the plan is refused naming it, and the last save stays", %{

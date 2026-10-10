@@ -359,6 +359,12 @@ defmodule Rail.Mcp.Utils.McpTools do
                   "description" =>
                     "The numbers of the earlier children, counted from 1, that must merge before this one starts. " <>
                       "Empty when it can start at once."
+                },
+                "builds_screen" => %{
+                  "type" => "boolean",
+                  "description" =>
+                    "True for each child that builds the screen the approved design shows. Only those children " <>
+                      "get the design."
                 }
               },
               "required" => ["title", "ticket", "plan"]
