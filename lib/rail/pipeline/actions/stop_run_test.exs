@@ -115,6 +115,39 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
     assert_received {:run_changed, ^run_id}
   end
 
+  # The latch says the lead's latest turn ended with its review saved, which a turn stopped half way did not.
+  test "a Review lead an earlier round latched, messaged and then stopped, reads stopped", %{
+    project: project,
+    task: task
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
+    {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
+
+    {:ok, %Run{id: run_id} = run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: lead.id,
+        status: :finished,
+        stage_outcome: :done,
+        conversation_id: "sess_stop_latched_lead",
+        started_at: DateTime.utc_now()
+      })
+
+    test_pid = self()
+    stub(Rail.Pipeline.Utils.PrepareTurn, :prepare_turn, fn %Run{} -> "" end)
+
+    expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, _argv ->
+      send(test_pid, :spawned)
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, :sent, %Run{}} = Pipeline.send_message(system_scope(), run, "Are you sure about the nil?")
+    assert_receive :spawned
+
+    assert {:ok, %Run{stage_outcome: :in_progress} = stopped, nil} = Pipeline.stop_run(system_scope(), run)
+    assert :stopped = stopped |> Repo.preload(:questions) |> Run.state()
+  end
+
   test "an undelivered message comes back rather than being discarded", %{working: working} do
     run = working.(%{pending_chat: "Please add a test"})
 

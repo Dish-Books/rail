@@ -396,7 +396,7 @@ defmodule RailWeb.OverviewLive do
       task: task,
       state: state,
       label: stage_label(task, run),
-      style: run_state_style(run),
+      style: run_state_style(run, task),
       # Amber means waiting on the viewer, the same work the Waiting on you stat counts.
       is_waiting: state in [:done, :blocked] and task.issue.owner_user_id == user_id,
       changed_at: changed_at,

@@ -830,11 +830,33 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     end
 
     # CI Rail ran on its own, such as Run CI from the diff, asked for no round.
-    test "that passed on a commit that did not ask for review only pushes", %{task: task, exited: exited} do
+    test "that passed on a commit that did not ask for review pushes and starts no round", %{
+      task: task,
+      exited: exited
+    } do
+      {:ok, _finding} =
+        Pipeline.save_finding(task, %{
+          key: "unhandled-nil",
+          kind: :code,
+          raised_by: :code_reviewer,
+          title: "Nil is not handled",
+          problem: "It crashes.",
+          file: "lib/a.ex",
+          line: 3,
+          fix: "Guard it.",
+          why: "It crashes.",
+          rule: "Every caller handles nil.",
+          severity: :major,
+          recommendation: :fix,
+          places: [%{file: "lib/a.ex", line: 3}],
+          evidence: [%{name: "range", kind: :code, file: "lib/a.ex", line: 3}]
+        })
+
       {run, os_process} = exited.(:review_lead, %{ci_failure_streak: 1, stage_outcome: :done})
       os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
 
       expect(Git, :push_branch, fn _scope, _task -> :ok end)
+      stub(Git, :branch_unpushed?, fn _path -> false end)
       reject(Tools, :start_os_process, 2)
 
       assert {:ok, %Run{ci_failure_streak: 0, stage_outcome: :done, error: nil, review_on_ci_pass: false}} =
@@ -1059,6 +1081,81 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert [%{prompt: "Keep both migrations?"}] = pending_questions(task.id)
+  end
+
+  describe "a Review lead an earlier round latched, then messaged" do
+    setup %{task: task, roles: roles} do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
+
+      {:ok, %Run{id: run_id} = run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:review_lead].id,
+          status: :finished,
+          stage_outcome: :done,
+          conversation_id: "sess_run_finished_latched",
+          started_at: DateTime.utc_now()
+        })
+
+      test_pid = self()
+      stub(Rail.Pipeline.Utils.PrepareTurn, :prepare_turn, fn %Run{} -> "" end)
+      # Review takes a branch the engineer's hand-over pushed, so these turns have nothing to send on.
+      stub(Git, :branch_unpushed?, fn _path -> false end)
+
+      # The turn the message starts is a real process, so its exit can be settled.
+      stub(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, _argv ->
+        os_process =
+          %OsProcess{}
+          |> OsProcess.changeset(%{
+            run_id: run_id,
+            task_id: spawned.task_id,
+            stream_path: "/tmp/run_finished/#{run_id}.ndjson",
+            status: :running,
+            started_at: DateTime.utc_now()
+          })
+          |> Repo.insert!()
+
+        send(test_pid, {:spawned, os_process})
+        {:ok, os_process}
+      end)
+
+      %{task: task, run: run}
+    end
+
+    test "ends without saving its review and reads failed with that error", %{run: run} do
+      {:ok, :sent, %Run{}} = Pipeline.send_message(system_scope(), run, "Are you sure about the nil?")
+      assert_receive {:spawned, os_process}
+
+      assert {:ok, %Run{stage_outcome: :in_progress, error: "The Review lead did not save its review."} = failed} =
+               Pipeline.run_finished(os_process, %{exit_code: 0})
+
+      assert :failed = failed |> Repo.preload(:questions, force: true) |> Run.state()
+    end
+
+    test "asks a question after a saved round and reads blocked, stopped or not", %{task: task, run: run} do
+      {:ok, _pass} = Pipeline.save_review(Repo.preload(task, :issue))
+      {:ok, :sent, %Run{}} = Pipeline.send_message(system_scope(), run, "Are you sure about the nil?")
+      assert_receive {:spawned, os_process}
+      now = DateTime.utc_now()
+
+      Repo.insert_all(RunEvent, [
+        %{
+          id: UXID.generate!(),
+          run_id: run.id,
+          os_process_id: os_process.id,
+          line: "[QUESTION: Keep the guard?]",
+          inserted_at: now,
+          updated_at: now
+        }
+      ])
+
+      assert {:ok, %Run{} = asked} = Pipeline.run_finished(os_process, %{exit_code: 0})
+      assert :blocked = asked |> Repo.preload(:questions, force: true) |> Run.state()
+
+      {:ok, stopped, nil} = Pipeline.stop_run(system_scope(), asked)
+      assert %Run{status: :finished} = stopped
+      assert :blocked = stopped |> Repo.preload(:questions, force: true) |> Run.state()
+    end
   end
 
   describe "a round Rail answered from past answers" do

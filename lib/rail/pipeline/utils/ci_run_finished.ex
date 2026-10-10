@@ -4,13 +4,15 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
 
   A pass is what lets the branch be pushed, and a commit that asked for review
   then gets it: the engineer's work goes to Review, and the Review lead starts
-  its next round. A failure goes back to that run's own agent
-  with the output that says why, until it has failed three times in a row with
-  nobody stepping in; then it waits for a person.
+  its next round, or ends the round as a turn that committed nothing does. A
+  failure goes back to that run's own agent with the output that says why, until
+  it has failed three times in a row with nobody stepping in; then it waits for a person.
   """
 
   import Rail.Pipeline.Utils.OpenPullRequest
+  import Rail.Pipeline.Utils.QuestionQueue
   import Rail.Pipeline.Utils.ReviewPushedBranch
+  import Rail.Pipeline.Utils.ReviewRunFinished
 
   alias Rail.Git
   alias Rail.Pipeline
@@ -32,7 +34,7 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
       :ok ->
         attrs = Map.merge(%{ci_failure_streak: 0, error: nil, review_on_ci_pass: false}, settled(run))
         pushed = %{update(run, attrs) | task: open_pull_request(task, run)}
-        if review?(run), do: review(pushed, ci), else: pushed
+        if review?(run), do: review(pushed, ci), else: round_ended(pushed)
 
       {:error, reason} ->
         update(run, %{
@@ -110,6 +112,17 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   # has settled; the lead reads it in its next round.
   defp review?(%Run{role: %Role{stage: :review_lead}, review_on_ci_pass: review?}), do: review?
   defp review?(%Run{review_on_ci_pass: review?, pending_chat: queued}), do: review? and is_nil(queued)
+
+  # The lead's round ends here as it ends without commits, but while it asked something it waits on the answer.
+  defp round_ended(%Run{role: %Role{stage: :review_lead}, id: run_id} = pushed) do
+    finished = review_run_finished(pushed, [])
+
+    if is_binary(finished.error) or Enum.any?(pending_questions(pushed.task_id), &(&1.run_id == run_id)),
+      do: finished,
+      else: update(finished, %{stage_outcome: :done})
+  end
+
+  defp round_ended(%Run{} = pushed), do: pushed
 
   defp review(%Run{role: %Role{stage: :review_lead}} = pushed, %OsProcess{head_sha: sha}) do
     short = if sha, do: " on #{String.slice(sha, 0, 7)}", else: ""

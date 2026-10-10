@@ -701,6 +701,48 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#task-link-#{issue.id}", "Review running")
   end
 
+  test "a task whose Review round waits on a person reads Review", %{conn: conn, project: project} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_review_waiting",
+        login: "issues_live_user_review_waiting",
+        email: "issues_live_user_review_waiting@example.com",
+        admin: true
+      })
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_review_waiting_1", "identifier" => "RVW-1", "title" => "Findings to rule"}
+          }
+        }
+      })
+    end)
+
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Findings to rule"})
+    {:ok, issue} = Issues.update_issue(issue, %{state: :backlog})
+    {:ok, task} = Pipeline.create_task(issue, :review)
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
+
+    {:ok, _waiting} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: lead.id,
+        status: :finished,
+        stage_outcome: :done,
+        started_at: DateTime.utc_now()
+      })
+
+    {:ok, _pass} = Pipeline.save_review(task)
+
+    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/issues")
+
+    assert has_element?(view, "#task-link-#{issue.id}", ~r/^\s*Review\s*$/)
+  end
+
   # The row's task is loaded without its issue, and the review file it reads is named for the issue.
   test "a task whose review is finished reads Ready to merge, as its own page does", %{conn: conn, project: project} do
     {:ok, user} =
