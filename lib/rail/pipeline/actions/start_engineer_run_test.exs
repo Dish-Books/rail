@@ -102,7 +102,10 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
       assert prompt =~ "End every commit message with the line `Ticket: SEN-1`."
       assert prompt =~ "check your branch against `origin/main`, which Rail fetched as the turn started"
       assert prompt =~ "bring it up to date by merging it in"
-      assert prompt =~ "Never rewrite commit history: no rebase, no amend, no reset or squash of a commit, nothing forced."
+
+      assert prompt =~
+               "Never rewrite commit history: no rebase, no amend, no reset or squash of a commit, nothing forced."
+
       refute prompt =~ "`commit`"
       refute prompt =~ "request_merge"
       refute prompt =~ "<<'MSG'"
