@@ -72,7 +72,14 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         for {{identifier, builds_on}, number} <- Enum.with_index([{"CLT-11", []}, {"CLT-12", [1]}], 1) do
           attrs = %{title: "Child #{identifier}", parent: parent_issue}
           {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
-          part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+
+          part = %{
+            number: number,
+            builds_on: builds_on,
+            builds_screen: false,
+            plan: "## Implementation plan\n\nPart #{number}."
+          }
+
           {:ok, child} = Pipeline.create_child_task(parent, issue, part)
           Repo.preload(child, [:issue, :project])
         end

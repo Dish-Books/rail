@@ -463,7 +463,14 @@ defmodule RailWeb.OverviewLiveTest do
         for {{identifier, builds_on}, number} <- Enum.with_index([{"OVB-2", []}, {"OVB-3", [1]}], 1) do
           attrs = %{title: "Child #{identifier}", parent: parent_issue, owner_user_id: user.id}
           {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
-          part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+
+          part = %{
+            number: number,
+            builds_on: builds_on,
+            builds_screen: false,
+            plan: "## Implementation plan\n\nPart #{number}."
+          }
+
           {:ok, child} = Pipeline.create_child_task(parent, issue, part)
           Repo.preload(child, [:issue, :project])
         end
@@ -512,7 +519,14 @@ defmodule RailWeb.OverviewLiveTest do
         for {{identifier, builds_on}, number} <- Enum.with_index([{"OVR-2", []}, {"OVR-3", []}], 1) do
           attrs = %{title: "Child #{identifier}", parent: parent_issue, owner_user_id: rival.id}
           {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
-          part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+
+          part = %{
+            number: number,
+            builds_on: builds_on,
+            builds_screen: false,
+            plan: "## Implementation plan\n\nPart #{number}."
+          }
+
           {:ok, child} = Pipeline.create_child_task(parent, issue, part)
           Repo.preload(child, [:issue, :project])
         end
@@ -566,7 +580,14 @@ defmodule RailWeb.OverviewLiveTest do
         for {{identifier, builds_on}, number} <- Enum.with_index([{"OVC-2", []}, {"OVC-3", [1]}], 1) do
           attrs = %{title: "Child #{identifier}", parent: parent_issue, owner_user_id: user.id}
           {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
-          part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+
+          part = %{
+            number: number,
+            builds_on: builds_on,
+            builds_screen: false,
+            plan: "## Implementation plan\n\nPart #{number}."
+          }
+
           {:ok, child} = Pipeline.create_child_task(parent, issue, part)
           Repo.preload(child, [:issue, :project])
         end
@@ -615,7 +636,14 @@ defmodule RailWeb.OverviewLiveTest do
         for {{identifier, builds_on}, number} <- Enum.with_index([{"OVS-2", []}, {"OVS-3", [1]}, {"OVS-4", []}], 1) do
           attrs = %{title: "Child #{identifier}", parent: parent_issue, owner_user_id: user.id}
           {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
-          part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+
+          part = %{
+            number: number,
+            builds_on: builds_on,
+            builds_screen: false,
+            plan: "## Implementation plan\n\nPart #{number}."
+          }
+
           {:ok, child} = Pipeline.create_child_task(parent, issue, part)
           Repo.preload(child, [:issue, :project])
         end

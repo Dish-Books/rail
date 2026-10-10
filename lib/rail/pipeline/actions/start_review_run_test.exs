@@ -67,6 +67,31 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     assert File.dir?(Path.join(task.scratch_path, "demo"))
   end
 
+  test "neither the lead nor any subagent is handed the design page or its images", %{task: task, run: run} do
+    design_dir = Path.join(task.scratch_path, "design")
+    File.mkdir_p!(design_dir)
+    File.write!(Path.join(design_dir, "manifest.json"), ~s({"options": [{"key": "cards", "title": "Cards"}]}))
+    File.write!(Path.join(design_dir, "picked"), "cards")
+
+    File.write!(
+      Path.join(design_dir, "cards.html"),
+      ~s(<h1>REVIEW-DESIGN-MARKER</h1><img src="data:image/png;base64,#{String.duplicate("iVBORw0K", 1_000)}">)
+    )
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] = argv ->
+      [json] = for ["--agents", json] <- Enum.chunk_every(argv, 2, 1), do: json
+
+      for brief <- [prompt | json |> Jason.decode!() |> Map.values() |> Enum.map(& &1["prompt"])] do
+        refute brief =~ "REVIEW-DESIGN-MARKER"
+        refute brief =~ "data:image"
+      end
+
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_review_run(run)
+  end
+
   test "the brief lists the findings already on the task with their rounds, rulings, places and notes", %{
     task: task,
     run: run

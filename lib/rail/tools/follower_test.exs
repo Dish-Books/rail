@@ -673,6 +673,57 @@ defmodule Rail.Tools.FollowerTest do
     assert outcome2.error =~ "stderr text here"
   end
 
+  test "a turn the CLI ended on a prompt too long fails, saying so, even though its process exited cleanly", %{
+    role: role,
+    tmp_dir: tmp_dir
+  } do
+    run =
+      %Run{}
+      |> Run.changeset(%{
+        task_id: UXID.generate!(prefix: "tsk"),
+        role_id: role.id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+      |> Repo.preload(:role)
+
+    stream = Path.join(tmp_dir, "prompt_too_long.ndjson")
+
+    File.write!(
+      stream,
+      ~s({"type":"result","subtype":"success","is_error":false,"terminal_reason":"prompt_too_long","result":"Prompt is too long","session_id":"sess-long"}\n)
+    )
+
+    File.write!("#{stream}.err", "")
+
+    port = Port.open({:spawn_executable, "/bin/sh"}, [:binary, :exit_status, args: ["-c", "sleep 0.05; exit 0"]])
+    {:os_pid, pid} = Port.info(port, :os_pid)
+
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
+        stream_path: stream,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+    {:ok, follower_pid} =
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run}, port: port, tail_interval_ms: 10)
+
+    Sandbox.allow(Repo, self(), follower_pid)
+    Process.unlink(port)
+
+    assert_receive {:os_process_finished, _finished,
+                    %{error: "the prompt was too long for the model: Prompt is too long", exit_code: 1}},
+                   5_000
+  end
+
   test "records exit_status from port message and sets exit_code on clean exit", %{role: role, tmp_dir: tmp_dir} do
     run =
       %Run{}

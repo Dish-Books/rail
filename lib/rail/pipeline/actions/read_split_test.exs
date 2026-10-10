@@ -26,16 +26,30 @@ defmodule Rail.Pipeline.Actions.ReadSplitTest do
       path,
       Jason.encode!(%{
         children: [
-          %{title: "First", ticket: "One.", estimate: nil, plan: "## Implementation plan", builds_on: []},
-          %{title: "Second", ticket: "Two.", estimate: 1, plan: "## Implementation plan", builds_on: [1]}
+          %{
+            title: "First",
+            ticket: "One.",
+            estimate: nil,
+            plan: "## Implementation plan",
+            builds_on: [],
+            builds_screen: false
+          },
+          %{
+            title: "Second",
+            ticket: "Two.",
+            estimate: 1,
+            plan: "## Implementation plan",
+            builds_on: [1],
+            builds_screen: true
+          }
         ]
       })
     )
 
     assert %{
              children: [
-               %{number: 1, title: "First", ticket: "One.", estimate: nil, builds_on: []},
-               %{number: 2, title: "Second", estimate: 1, builds_on: [1]}
+               %{number: 1, title: "First", ticket: "One.", estimate: nil, builds_on: [], builds_screen: false},
+               %{number: 2, title: "Second", estimate: 1, builds_on: [1], builds_screen: true}
              ],
              saved_at: %DateTime{}
            } = Pipeline.read_split(task)

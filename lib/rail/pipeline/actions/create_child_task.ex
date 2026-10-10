@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.CreateChildTask do
   @moduledoc """
-  Creates one child of a split at Engineer, under its parent, with its part of the parent's plan as
-  the plan it builds from and the parent's picked design in its own scratch, where Engineer reads it.
+  Creates one child of a split at Engineer, under its parent, with its part of the parent's plan as the plan
+  it builds from. A child marked as building the screen gets the parent's design in its scratch, where Engineer reads it.
   """
 
   import Rail.Pipeline.Utils.BuildTask
@@ -27,7 +27,7 @@ defmodule Rail.Pipeline.Actions.CreateChildTask do
            |> Repo.insert() do
       design = Path.join(parent.scratch_path, "design")
 
-      if File.dir?(design) do
+      if child.builds_screen and File.dir?(design) do
         File.mkdir_p!(task.scratch_path)
         File.cp_r!(design, Path.join(task.scratch_path, "design"))
       end

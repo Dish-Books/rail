@@ -320,7 +320,14 @@ defmodule RailWeb.Live.PlanStageTest do
       for {{identifier, builds_on}, number} <- Enum.with_index([{"PST-11", []}, {"PST-12", []}, {"PST-13", [1, 2]}], 1) do
         attrs = %{title: "Child #{identifier}", parent: parent_issue}
         {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
-        part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+
+        part = %{
+          number: number,
+          builds_on: builds_on,
+          builds_screen: false,
+          plan: "## Implementation plan\n\nPart #{number}."
+        }
+
         {:ok, child} = Pipeline.create_child_task(parent, issue, part)
         Repo.preload(child, [:issue, :project])
       end

@@ -288,6 +288,43 @@ defmodule Rail.Tools.ClaudeEventsTest do
            ]
   end
 
+  # The CLI reports a prompt the model refused as too long as a success, with only its terminal reason to tell.
+  test "a result whose turn ended on a prompt too long fails the run, saying so" do
+    event = %{
+      "type" => "result",
+      "subtype" => "success",
+      "is_error" => false,
+      "terminal_reason" => "prompt_too_long",
+      "result" => "Prompt is too long"
+    }
+
+    state = ClaudeEvents.handle_event(ClaudeEvents.new(), event)
+
+    assert %ClaudeEvents{result_error: "the prompt was too long for the model: Prompt is too long"} = state
+    assert ClaudeEvents.reported_failure?(state)
+    refute ClaudeEvents.success?(state)
+    assert "[error] the prompt was too long for the model: Prompt is too long" in state.logs
+
+    silent = ClaudeEvents.handle_event(ClaudeEvents.new(), %{event | "result" => ""})
+    assert %ClaudeEvents{result_error: "the prompt was too long for the model"} = silent
+  end
+
+  test "a result whose turn completed is still a success" do
+    event = %{
+      "type" => "result",
+      "subtype" => "success",
+      "is_error" => false,
+      "terminal_reason" => "completed",
+      "result" => "Done."
+    }
+
+    state = ClaudeEvents.handle_event(ClaudeEvents.new(), event)
+
+    assert %ClaudeEvents{result_error: nil} = state
+    assert ClaudeEvents.success?(state)
+    refute Enum.any?(state.logs, &String.starts_with?(&1, "[error]"))
+  end
+
   test "parse_line decodes NDJSON or logs non-JSON stdout" do
     state = ClaudeEvents.new()
 

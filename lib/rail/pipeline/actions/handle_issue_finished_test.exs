@@ -25,7 +25,12 @@ defmodule Rail.Pipeline.Actions.HandleIssueFinishedTest do
     {:ok, child_issue} = Issues.create_issue(system_scope(), project, %{title: "HIF-2", parent: parent_issue})
 
     {:ok, _child} =
-      Pipeline.create_child_task(parent, child_issue, %{number: 1, builds_on: [], plan: "## Implementation plan"})
+      Pipeline.create_child_task(parent, child_issue, %{
+        number: 1,
+        builds_on: [],
+        builds_screen: false,
+        plan: "## Implementation plan"
+      })
 
     %{parent: parent, parent_issue: parent_issue, child_issue: child_issue}
   end

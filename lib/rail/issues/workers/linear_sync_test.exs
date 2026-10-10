@@ -521,7 +521,12 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
       child_issue = insert.("lin_split_child", :todo)
 
       {:ok, %Task{id: child_id}} =
-        Pipeline.create_child_task(parent, child_issue, %{number: 1, builds_on: [], plan: "## Implementation plan"})
+        Pipeline.create_child_task(parent, child_issue, %{
+          number: 1,
+          builds_on: [],
+          builds_screen: false,
+          plan: "## Implementation plan"
+        })
 
       started_at = DateTime.to_iso8601(DateTime.utc_now())
       last_page.([])
