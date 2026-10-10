@@ -161,7 +161,7 @@ defmodule RailWeb.Live.ReviewStageTest do
     assert has_element?(view, "#finding-view-only-send [data-qa=review_finding_state]", "Needs your call")
   end
 
-  test "Start fix round is disabled until every finding is ruled, then starts the round; ruling moves on to the next", %{
+  test "Send is disabled until every finding is ruled, then starts the round; ruling moves on to the next", %{
     conn: conn,
     task: task,
     run: run,
@@ -174,8 +174,10 @@ defmodule RailWeb.Live.ReviewStageTest do
 
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-    assert has_element?(view, "#start-fix-round[disabled][title='Rule on 2 more first']", "Start fix round 1")
+    assert has_element?(view, "#finish-review[disabled]")
+    assert has_element?(view, "#review-send-tray-hint", "Rule on 2 more findings before you send.")
     assert has_element?(view, "#review-finding-footer", "2 to rule")
+    refute has_element?(view, "#review-finding-footer button")
 
     view |> element("#decide-fix-view-only-send") |> render_click()
     assert has_element?(view, "#finding-send-twice[aria-current=true]")
@@ -185,27 +187,32 @@ defmodule RailWeb.Live.ReviewStageTest do
     Process.sleep(400)
     view |> element("#decide-skip-send-twice") |> render_click()
     assert has_element?(view, "#review-finding-footer", "1 to fix · 1 not fixing")
-    refute has_element?(view, "#start-fix-round[disabled]")
+    assert has_element?(view, "#review-tray-finding-view-only-send", "A view-only member can send diff comments")
+    refute has_element?(view, "#review-tray-finding-send-twice")
+    refute has_element?(view, "#send-review-tray[disabled]")
 
     expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: %{spawned | status: :running}}} end)
-    view |> element("#start-fix-round") |> render_click()
+    view |> element("#send-review-tray", "Send 1") |> render_click()
 
     assert %{stage_outcome: :in_progress} = Repo.reload!(run)
   end
 
-  test "Start fix round reads Finish review when every finding is ruled Don't fix, and it and the rulings are gone once finished",
+  test "the tray reads Finish review when every finding is ruled Don't fix, and it and the rulings are gone once finished",
        %{conn: conn, task: task, code: code} do
     {:ok, finding} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
     {:ok, _pass} = Pipeline.save_review(task)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), finding, :skip)
 
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-    assert has_element?(view, "#start-fix-round", "Finish review")
+    assert has_element?(view, "#review-send-tray", "Nothing to send")
+    assert has_element?(view, "#review-send-tray-hint", "Nothing to fix. Finish review closes the review.")
     assert has_element?(view, "#decide-fix-view-only-send")
 
-    view |> element("#start-fix-round") |> render_click()
+    view |> element("#finish-review") |> render_click()
+    # The stage hands the tray its gate through the page, which queues behind a render already asked for.
+    _settled = render(view)
 
-    refute has_element?(view, "#start-fix-round")
+    refute has_element?(view, "#review-send-tray")
     refute has_element?(view, "#decide-fix-view-only-send")
     refute has_element?(view, "#decide-skip-view-only-send")
     assert has_element?(view, "#review-status[data-phase=finished]", "Nothing left to rule")
@@ -322,7 +329,8 @@ defmodule RailWeb.Live.ReviewStageTest do
     assert has_element?(view, "[data-qa=review_status_agent]", "QA explorer 1")
     assert has_element?(view, "[data-qa=review_status_agent]", "Checks 1 and 2")
     assert has_element?(view, "#review-item-findings [data-qa=review_item_running]")
-    assert has_element?(view, "#start-fix-round[disabled][title='Round 1 is still running']")
+    assert has_element?(view, "#finish-review[disabled]")
+    assert has_element?(view, "#review-send-tray-hint", "The Review lead is working. Send waits until it stops.")
     assert has_element?(view, "#review-finding-footer", "1 so far · rule once round 1 finishes")
     refute has_element?(view, "#decide-fix-view-only-send")
     refute has_element?(view, "[data-qa=review_finding_state]", "Needs your call")
@@ -361,7 +369,7 @@ defmodule RailWeb.Live.ReviewStageTest do
     assert has_element?(view, "#review-status[data-phase=ci]", "CI running on #{short} · Fix round 1")
     assert has_element?(view, "[data-qa=review_status_log]", "Running ExUnit")
     assert has_element?(view, "#review-item-findings[title='Findings: CI running on #{short}']")
-    refute has_element?(view, "#start-fix-round")
+    assert has_element?(view, "#finish-review[disabled]")
 
     {:ok, _failed} = ci |> OsProcess.changeset(%{status: :finished, exit_code: 1}) |> Repo.update()
     {:ok, _stopped} = Pipeline.update_run(run, %{status: :finished, ci_failure_streak: 3, error: "CI failed 3 times"})
@@ -412,7 +420,8 @@ defmodule RailWeb.Live.ReviewStageTest do
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
     assert has_element?(view, "#review-status[data-phase=ci_failed]")
-    assert has_element?(view, "#start-fix-round[disabled][title='CI failed on the fix commit']", "Finish review")
+    assert has_element?(view, "#finish-review[disabled]")
+    assert has_element?(view, "#review-send-tray-hint", "CI failed on the fix commit")
   end
 
   test "Finish review on a commit CI has not passed says so", %{conn: conn, project: project, task: task, code: code} do
@@ -422,10 +431,15 @@ defmodule RailWeb.Live.ReviewStageTest do
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), finding, :skip)
 
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-    view |> element("#start-fix-round:not([disabled])", "Finish review") |> render_click()
+    view |> element("#finish-review:not([disabled])") |> render_click()
 
-    assert has_element?(view, "#review-error", "CI has not passed on the fix commit, so the review cannot finish yet.")
-    assert has_element?(view, "#start-fix-round", "Finish review")
+    assert has_element?(
+             view,
+             "#review-send-tray-hint",
+             "CI has not passed on the fix commit, so the review cannot finish yet."
+           )
+
+    assert has_element?(view, "#finish-review")
   end
 
   test "a fix round in progress says the engineer is fixing, and the footer counts what is being fixed", %{
@@ -443,11 +457,13 @@ defmodule RailWeb.Live.ReviewStageTest do
 
     assert has_element?(view, "#review-status[data-phase=fixing]", "Fix round 1 · Engineer fixing 1 finding")
     assert has_element?(view, "#review-finding-footer", "1 fixing")
-    refute has_element?(view, "#start-fix-round")
+    assert has_element?(view, "#send-review-tray[disabled]", "Send 1")
   end
 
-  test "the next round's status names the commit it re-reviews", %{conn: conn, task: task, run: run, head: head} do
+  test "the next round's status names the commit it re-reviews", %{conn: conn, task: task, run: run} do
     {:ok, _pass} = Pipeline.save_review(task)
+    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 1"])
+    head = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
     {:ok, _working} = Pipeline.update_run(run, %{status: :running})
 
     stub(Pipeline, :get_ci_status, fn _run ->
@@ -652,7 +668,7 @@ defmodule RailWeb.Live.ReviewStageTest do
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{run.role_id}")
 
     assert has_element?(view, "#finding-view-only-send")
-    refute has_element?(view, "#start-fix-round")
+    refute has_element?(view, "#review-send-tray")
     refute has_element?(view, "#decide-fix-view-only-send")
   end
 
@@ -663,13 +679,17 @@ defmodule RailWeb.Live.ReviewStageTest do
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
     for {reason, said} <- [
-          nothing_to_start: "There is nothing left to start: the review is finished.",
-          dispatch_disabled: "Dispatch is off, so the Review lead was not resumed."
+          nothing_to_start: "There is nothing to send: the review is finished.",
+          dispatch_disabled: "Dispatch is off, so the Review lead was not resumed.",
+          stage_running: "The Review lead is working. Send waits until it stops.",
+          findings_undecided: "Some findings have no ruling yet. Rule on every one first.",
+          invalid_stage: "This task is at Merged, not Review."
         ] do
-      expect(Pipeline, :start_fix_round, fn _run -> {:error, reason} end)
-      view |> element("#start-fix-round") |> render_click()
+      error = if reason == :invalid_stage, do: {:invalid_stage, :merged}, else: reason
+      expect(Pipeline, :start_fix_round, fn _scope, _run -> {:error, error} end)
+      view |> element("#send-review-tray") |> render_click()
 
-      assert has_element?(view, "#review-error", said)
+      assert has_element?(view, "#review-send-tray-hint", said)
     end
   end
 
@@ -747,80 +767,191 @@ defmodule RailWeb.Live.ReviewStageTest do
       assert has_element?(view, "#diff-commit-picker", "Whole branch")
     end
 
-    test "the Screens item sets each state's latest shot beside an earlier commit's, with the findings citing it", %{
+    test "the Screens item shows each state's one shot, and the screen view steps through them in the grid's order", %{
       conn: conn,
       task: %{worktree_path: worktree} = task,
-      screen: screen,
-      fix: fix
+      screen: screen
     } do
-      folder = Path.join([task.scratch_path, "qa", "screens", "file-list-after-send"])
-      File.mkdir_p!(folder)
-      File.write!(Path.join(folder, "1.jpg"), "first")
-
-      {:ok, _first} =
-        Pipeline.save_screen(task, %{
-          key: "file-list-after-send",
-          label: "File list",
-          file: "screens/file-list-after-send/1.jpg"
-        })
-
       {:ok, %{round: 2}} = Pipeline.save_review(task)
       git!(worktree, ["commit", "--allow-empty", "-m", "Fix 1 finding from round 2"])
       latest = worktree |> git!(["rev-parse", "HEAD"]) |> String.trim()
-      File.write!(Path.join(folder, "2.jpg"), "second")
 
-      {:ok, _second} =
-        Pipeline.save_screen(task, %{
-          key: "file-list-after-send",
-          label: "File list just after Send",
-          file: "screens/file-list-after-send/2.jpg"
-        })
+      for {key, label} <- [{"toolbar", "Toolbar"}, {"file-list-after-send", "File list just after Send"}] do
+        File.mkdir_p!(Path.join([task.scratch_path, "qa", "screens", key]))
+        File.write!(Path.join([task.scratch_path, "qa", "screens", key, "1.jpg"]), "jpeg")
+        {:ok, _shot} = Pipeline.save_screen(task, %{key: key, label: label, file: "screens/#{key}/1.jpg"})
+      end
 
       {:ok, _cited} =
         Pipeline.save_finding(
           task,
           screen
           |> Map.put(:key, "send-twice")
-          |> Map.put(:evidence, [%{name: "The list", kind: :screenshot, path: "screens/file-list-after-send/2.jpg"}])
+          |> Map.put(:evidence, [%{name: "The list", kind: :screenshot, path: "screens/file-list-after-send/1.jpg"}])
         )
 
       {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      assert has_element?(view, "#review-item-screens[title='Screens: 1 screen · on #{String.slice(latest, 0, 7)}']")
+      assert has_element?(view, "#review-item-screens[title='Screens: 2 screens · on #{String.slice(latest, 0, 7)}']")
 
       view |> element("#review-item-screens") |> render_click()
 
-      assert has_element?(view, "[data-qa=review_screens_count]", "1")
+      assert has_element?(view, "[data-qa=review_screens_count]", "2")
       assert has_element?(view, "[data-qa=review_screens_on]", "latest taken on #{String.slice(latest, 0, 7)}")
-      assert has_element?(view, "#screen-file-list-after-send", "File list just after Send")
       assert has_element?(view, "#screen-file-list-after-send", "Fix round 2")
-      assert has_element?(view, "#screen-file-list-after-send", "1 earlier")
+      refute has_element?(view, "#screen-file-list-after-send", "earlier")
 
       assert has_element?(
                view,
-               "#screen-file-list-after-send img[src='/tasks/#{task.id}/screens/file-list-after-send/1']"
+               "#screen-file-list-after-send img[src^='/tasks/#{task.id}/screens/file-list-after-send?at=']"
              )
 
       view |> element("#screen-file-list-after-send") |> render_click()
 
-      assert has_element?(view, "[data-qa=screen_latest] img[src$='/screens/file-list-after-send/1']")
-      assert has_element?(view, "[data-qa=screen_earlier] img[src$='/screens/file-list-after-send/0']")
-      assert has_element?(view, "[data-qa=screen_earlier] option[selected]", "#{String.slice(fix, 0, 7)} Fix round 1")
-      assert has_element?(view, "[data-qa=screen_latest]", "Fix round 2")
+      assert has_element?(view, "#screen-view-position", "1 of 2")
+      assert has_element?(view, "#screen-view-name", "File list just after Send")
+      assert has_element?(view, "#screen-view-previous[aria-disabled=true]")
 
-      view |> form("#screen-earlier-form", %{"index" => "0"}) |> render_change()
-      assert has_element?(view, "[data-qa=screen_earlier] img[src$='/screens/file-list-after-send/0']")
+      view |> element("#screen-view-next") |> render_click()
+      assert has_element?(view, "#screen-view-name", "Toolbar")
+      assert has_element?(view, "#screen-view-next[aria-disabled=true]")
+      view |> element("#screen-view-next") |> render_click()
+      assert has_element?(view, "#screen-view-name", "Toolbar")
 
+      view |> element("#screen-view-panel") |> render_keydown(%{"key" => "ArrowLeft"})
+      assert has_element?(view, "#screen-view-name", "File list just after Send")
+      view |> element("#screen-view-panel") |> render_keydown(%{"key" => "ArrowLeft"})
+      view |> element("#screen-view-panel") |> render_keydown(%{"key" => "Enter"})
+      assert has_element?(view, "#screen-view-position", "1 of 2")
+      view |> element("#screen-view-panel") |> render_keydown(%{"key" => "ArrowRight"})
+      assert has_element?(view, "#screen-view-position", "2 of 2")
+      view |> element("#screen-view-previous") |> render_click()
+
+      # While the comment box is open the arrow keys are the box's.
+      view |> element("#screen-view-comment") |> render_click()
+      assert has_element?(view, "#screen-view-comment[aria-pressed=true]")
+      refute has_element?(view, "#screen-view-panel[phx-window-keydown]")
+      view |> with_target("#review-stage") |> render_hook("screen_key", %{"key" => "ArrowRight"})
+      assert has_element?(view, "#screen-view-name", "File list just after Send")
+      view |> element("#screen-comment-form [data-qa=screen_comment_cancel]") |> render_click()
+      assert has_element?(view, "#screen-view-panel[phx-window-keydown]")
+
+      view |> element("#screen-view-close") |> render_click()
+      refute has_element?(view, "#screen-view")
+      assert has_element?(view, "#screen-file-list-after-send")
+
+      view |> element("#screen-file-list-after-send") |> render_click()
       view |> element("[data-qa=screen_finding]", "Send stays enabled") |> render_click()
+      refute has_element?(view, "#screen-view")
       assert has_element?(view, "#review-pane[data-item=findings]")
       assert has_element?(view, "[data-qa=review_finding_detail]", "Send stays enabled")
+    end
 
-      # The state opened stays open to come back to, until it is closed.
+    test "a comment saved in the screen view shows there, on its card and in the tray, also after Finish review", %{
+      conn: conn,
+      task: task,
+      run: run
+    } do
+      File.mkdir_p!(Path.join([task.scratch_path, "qa", "screens", "toolbar"]))
+      File.write!(Path.join([task.scratch_path, "qa", "screens", "toolbar", "1.jpg"]), "jpeg")
+      {:ok, _shot} = Pipeline.save_screen(task, %{key: "toolbar", label: "Toolbar", file: "screens/toolbar/1.jpg"})
+      {:ok, %{round: 2}} = Pipeline.save_review(task)
+      {:ok, _finished} = Pipeline.start_fix_round(system_scope(), run)
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      refute has_element?(view, "#review-send-tray")
       view |> element("#review-item-screens") |> render_click()
-      assert has_element?(view, "[data-qa=screen_open]", "File list just after Send")
-      view |> element("#screen-close") |> render_click()
-      refute has_element?(view, "[data-qa=screen_open]")
-      assert has_element?(view, "#screen-file-list-after-send")
+      view |> element("#screen-toolbar") |> render_click()
+      view |> element("#screen-view-comment") |> render_click()
+      view |> form("#screen-comment-form", %{"body" => "   "}) |> render_submit()
+      assert has_element?(view, "#screen-comment-form")
+      view |> form("#screen-comment-form", %{"body" => "The count wraps."}) |> render_change()
+      view |> form("#screen-comment-form", %{"body" => "The count wraps."}) |> render_submit()
+
+      refute has_element?(view, "#screen-comment-form")
+      assert has_element?(view, "#screen-view [data-qa=screen_comment]", "The count wraps.")
+      assert has_element?(view, "#screen-toolbar [data-qa=screen_card_unsent]", "1 not sent")
+      assert has_element?(view, "#review-send-tray [data-kind=screen]", "The count wraps.")
+
+      assert has_element?(
+               view,
+               "#review-send-tray-hint",
+               "The review is finished. Send reopens it with a fix round on your comments."
+             )
+
+      expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
+        assert prompt =~ "The count wraps."
+        {:ok, %OsProcess{run: %{spawned | status: :running}}}
+      end)
+
+      view |> element("#send-review-tray", "Send 1") |> render_click()
+      _settled = render(view)
+
+      refute has_element?(view, "#screen-view [data-qa=screen_comment]")
+      refute has_element?(view, "[data-qa=screen_card_unsent]")
+      assert has_element?(view, "#review-item-findings[title='Findings: Fix round 2 running']")
+    end
+
+    test "Remove takes a comment out of the screen view, and a state a retake took away closes it", %{
+      conn: conn,
+      task: task,
+      user: user
+    } do
+      File.mkdir_p!(Path.join([task.scratch_path, "qa", "screens", "toolbar"]))
+      File.write!(Path.join([task.scratch_path, "qa", "screens", "toolbar", "1.jpg"]), "jpeg")
+      {:ok, _shot} = Pipeline.save_screen(task, %{key: "toolbar", label: "Toolbar", file: "screens/toolbar/1.jpg"})
+
+      {:ok, _comment} =
+        Pipeline.create_screen_comment(user_scope(user: user), task, %{"key" => "toolbar", "body" => "Hi."})
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#review-item-screens") |> render_click()
+      view |> element("#screen-toolbar") |> render_click()
+      view |> element("#screen-view [data-qa=screen_comment_remove]") |> render_click()
+
+      refute has_element?(view, "#screen-view [data-qa=screen_comment]")
+      view |> with_target("#review-stage") |> render_click("remove_screen_comment", %{"id" => "scm_gone"})
+
+      File.rm_rf!(Path.join([task.scratch_path, "qa", "screens"]))
+      send(view.pid, {:output_saved, task.id})
+      _settled = render(view)
+
+      refute has_element?(view, "#screen-view")
+    end
+
+    test "a saved comment a task that moved on refuses says why", %{conn: conn, task: task} do
+      File.mkdir_p!(Path.join([task.scratch_path, "qa", "screens", "toolbar"]))
+      File.write!(Path.join([task.scratch_path, "qa", "screens", "toolbar", "1.jpg"]), "jpeg")
+      {:ok, _shot} = Pipeline.save_screen(task, %{key: "toolbar", label: "Toolbar", file: "screens/toolbar/1.jpg"})
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#review-item-screens") |> render_click()
+      view |> element("#screen-toolbar") |> render_click()
+      view |> element("#screen-view-comment") |> render_click()
+
+      for {reason, said} <- [
+            cleaned_up: "This task is cleaned up, so it takes no more comments.",
+            not_found: "That screen is gone: a retake or a cleanup removed it."
+          ] do
+        expect(Pipeline, :create_screen_comment, fn _scope, _task, _attrs -> {:error, reason} end)
+        view |> form("#screen-comment-form", %{"body" => "Fold it."}) |> render_submit()
+
+        assert has_element?(view, "#review-error", said)
+      end
+    end
+
+    # A Send of comments alone resumes the lead on the commit the last pass read.
+    test "a round working on the commit the last pass read is a fix round, with no Fix finding", %{
+      conn: conn,
+      task: task,
+      run: run
+    } do
+      {:ok, %{round: 2}} = Pipeline.save_review(task)
+      {:ok, _working} = Pipeline.update_run(run, %{status: :running})
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#review-status[data-phase=fixing]")
     end
 
     test "with no screens the Screens item says so, and a state a stale page names opens nothing", %{
@@ -849,7 +980,7 @@ defmodule RailWeb.Live.ReviewStageTest do
       assert has_element?(view, "[data-qa=diff_empty_state]", "Nothing has been changed on this branch yet.")
     end
 
-    test "a state shot once opens with nothing earlier beside it", %{conn: conn, task: task} do
+    test "a retake that lands while a state is open shows its new shot", %{conn: conn, task: task} do
       folder = Path.join([task.scratch_path, "qa", "screens", "toolbar"])
       File.mkdir_p!(folder)
       File.write!(Path.join(folder, "1.jpg"), "only")
@@ -859,11 +990,9 @@ defmodule RailWeb.Live.ReviewStageTest do
       view |> element("#review-item-screens") |> render_click()
       view |> element("#screen-toolbar") |> render_click()
 
-      refute has_element?(view, "[data-qa=screen_earlier]")
-      assert has_element?(view, "[data-qa=screen_open]", "No earlier shot")
+      assert has_element?(view, "#screen-view-picture-toolbar-1")
+      refute has_element?(view, "#screen-view-position")
 
-      # A retake that lands while the state is open is set beside the shot it follows.
-      git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix 1 finding from round 2"])
       File.write!(Path.join(folder, "2.jpg"), "retaken")
       {:ok, _retaken} = Pipeline.save_screen(task, %{key: "toolbar", label: "Toolbar", file: "screens/toolbar/2.jpg"})
       send(view.pid, {:output_saved, task.id})
@@ -871,9 +1000,7 @@ defmodule RailWeb.Live.ReviewStageTest do
       _settled = render(view)
       _settled = render(view)
 
-      assert has_element?(view, "[data-qa=screen_earlier] img[src$='/screens/toolbar/0']")
-      assert has_element?(view, "[data-qa=screen_latest] img[src$='/screens/toolbar/1']")
-      refute has_element?(view, "[data-qa=screen_open]", "No earlier shot")
+      assert has_element?(view, "#screen-view-picture-toolbar-2")
     end
 
     test "a demo the branch has moved past says so in slate with Re-record, and the rail marks it", %{

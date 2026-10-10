@@ -40,6 +40,7 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
         picker: %{view: :branch, history: %{commits: []}, dirty?: false, parent: nil},
         running?: false,
         agent: "Engineer",
+        sends?: true,
         commentable?: true
       }
     }

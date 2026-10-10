@@ -106,6 +106,36 @@ defmodule Rail.Pipeline.Actions.ListDiffCommentsTest do
     end
   end
 
+  # The Review tray holds only what the reader's Send would send.
+  test "the unsent filter lists only the reader's unsent comments", %{
+    project: project,
+    task: task,
+    ada: ada,
+    grace: grace
+  } do
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :finished,
+        conversation_id: "sess_list_unsent_diff_comments",
+        started_at: DateTime.utc_now()
+      })
+
+    comment = %{path: "lib/a.ex", line_kind: :added, line: 1, line_text: "x", filter: :branch}
+    {:ok, _sent} = Pipeline.create_diff_comment(ada, task, Map.put(comment, :body, "Sent."))
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    {:ok, :sent, _run} = Pipeline.send_diff_comments(ada, run)
+    {:ok, %{id: unsent_id}} = Pipeline.create_diff_comment(ada, task, Map.put(comment, :body, "Unsent."))
+    {:ok, _theirs} = Pipeline.create_diff_comment(grace, task, Map.put(comment, :body, "Grace's."))
+
+    assert [%DiffComment{id: ^unsent_id, user: %{login: "ada"}}] = Pipeline.list_diff_comments(ada, task, unsent: true)
+    assert [%DiffComment{body: "Grace's."}] = Pipeline.list_diff_comments(grace, task, unsent: true)
+    assert [%DiffComment{body: "Sent."}, %DiffComment{body: "Unsent."}] = Pipeline.list_diff_comments(ada, task)
+  end
+
   test "a scope with nobody in it has none while nothing is sent", %{task: task} do
     assert Pipeline.list_diff_comments(system_scope(), task) == []
   end

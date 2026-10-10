@@ -5,16 +5,20 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
   """
 
   import Ecto.Query
+  import Rail.Pipeline.Utils.BroadcastDiffComments
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
+  import Rail.Pipeline.Utils.BroadcastScreenComments
   import Rail.Pipeline.Utils.RemoveTaskFiles
 
+  alias Rail.Pipeline.Schemas.DiffComment
+  alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
 
   @doc """
   Cleans up worktree, branch, and scratch artifacts for a task, then stamps it
-  `cleaned_up_at` so its issue can be started again. The row, its runs and its
-  questions are kept as history.
+  `cleaned_up_at` so its issue can be started again. The row, its runs, its
+  questions and its sent comments are kept as history; its unsent comments go.
 
   Every run on the task has to be stopped, not just the one for the stage it sits
   at: the worktree this deletes is the one all of them are working in. A split parent
@@ -34,7 +38,19 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
 
   defp execute_cleanup(%Task{} = task) do
     remove_task_files(task)
+    delete_unsent_comments(task)
     mark_cleaned_up(task)
+  end
+
+  # Nothing can send them once the worktree and branch are gone.
+  defp delete_unsent_comments(%Task{id: task_id}) do
+    {_deleted, nil} = Repo.delete_all(from c in DiffComment, where: c.task_id == ^task_id and c.status == :unsent)
+
+    {_deleted, authors} =
+      Repo.delete_all(from(c in ScreenComment, where: c.task_id == ^task_id and c.status == :unsent, select: c.user_id))
+
+    broadcast_diff_comments(task_id, :everyone)
+    for user_id <- Enum.uniq(authors), do: broadcast_screen_comments(task_id, user_id)
   end
 
   defp mark_cleaned_up(%Task{cleaned_up_at: nil} = task) do

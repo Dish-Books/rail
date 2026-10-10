@@ -1,48 +1,61 @@
 defmodule Rail.Pipeline.Actions.StartFixRound do
   @moduledoc """
-  What a person's Start fix round does once every finding is ruled: the Review run is reopened and resumed
-  on the findings ruled Fix, a carried one included, with their rules and places, and the task stays at
-  Review. With nothing ruled Fix it reads Finish review, which finishes the review and takes the pull
-  request out of draft.
+  What a person's Send in the Review tray does once every finding is ruled: the Review run is reopened and resumed
+  on the findings ruled Fix, a carried one included, with their rules and places, then the sender's unsent diff and
+  screen comments, as one message, and the task stays at Review. With nothing to send it reads Finish review, which
+  finishes the review and takes the pull request out of draft. After that, a Send of comments resumes the lead on
+  them alone.
 
-  What was ruled is learned from, since a ruling can change until now: a Fix on a suppressed finding
-  overrides its rule, and every other Fix is a correction.
+  What was ruled and sent is learned from, since a ruling can change until now: a Fix on a suppressed finding
+  overrides its rule, and every other Fix and every comment is a correction.
   """
 
+  import Ecto.Query
+  import Rail.Pipeline.Utils.BroadcastDiffComments
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
+  import Rail.Pipeline.Utils.BroadcastScreenComments
   import Rail.Pipeline.Utils.CiPassed
   import Rail.Pipeline.Utils.FinishReview
   import Rail.Pipeline.Utils.SendBack
 
   alias Rail.Learnings
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.FindingPlace
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
+  alias Rail.Scope
+
+  @running [:starting, :running, :waiting_for_resources, :waiting_for_usage]
+
+  @fix_steps "Hand them to the engineer whole, every place included. Have the code reviewer read the uncommitted diff against them, and an explorer re-check any screen a fix touched, then have the engineer commit the fixes. Save each finding with `save_finding`, status fixed, the places its fix covered and those it left with why, the test that failed first and the files it changed, and end your turn: Rail sends the commit on."
+
+  @comment_steps "The comments are not findings: never save one with `save_finding`. Have the engineer act on each in this round, open a screen comment's picture at the path it gives, and have the engineer commit what they change. In your last message, say what was done with each comment, by its number, and why."
 
   @doc """
-  Starts the fix round on `run`, the task's Review run. Returns `{:ok, run}` as it now stands, or
-  `{:error, reason}` while a finding is undecided, the run works, there is nothing left to start, or a
-  review with nothing to fix would finish on a commit CI has not passed.
+  Sends the Review tray of the scope user on `run`, the task's Review run. Returns `{:ok, run}` as it now stands, or
+  `{:error, reason}` while a finding is undecided, the run works, there is nothing left to start, or a review with
+  nothing to fix would finish on a commit CI has not passed.
   """
-  def start_fix_round(%Run{} = run) do
+  def start_fix_round(%Scope{} = scope, %Run{} = run) do
     run = Run |> Repo.get!(run.id) |> Repo.preload([task: [:issue, :project, :runs]], force: true)
     findings = Pipeline.list_findings(run.task)
     passes = Pipeline.read_review(run.task)
+    finished? = passes != [] and List.last(passes).finished_at != nil
 
     fix = Enum.filter(findings, &Finding.outstanding?/1)
 
     with :ok <- startable(run.task, findings, passes),
-         :ok <- finishable(run.task, fix) do
-      {overrides, corrections} = Enum.split_with(fix, &is_binary(&1.suppressed_by_id))
-      {:ok, _flagged} = Learnings.record_overrides(run.task, overrides)
-      {:ok, _learned} = Learnings.record_corrections(run.task, corrections)
-
-      if fix == [], do: finish(run), else: resume(run, fix, length(passes))
+         {diff, screen} = claim(scope, run.task),
+         :ok <- sendable(run.task, finished?, fix, diff ++ screen) do
+      if fix == [] and diff == [] and screen == [],
+        do: finish(run),
+        else: resume(run, %{fix: fix, diff: diff, screen: screen}, length(passes))
     end
   end
 
@@ -51,18 +64,49 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
   defp startable(%Task{} = task, findings, passes) do
     cond do
       Task.running?(task) -> {:error, :stage_running}
-      passes == [] or List.last(passes).finished_at != nil -> {:error, :nothing_to_start}
+      passes == [] -> {:error, :nothing_to_start}
       Enum.any?(findings, &Finding.undecided?/1) -> {:error, :findings_undecided}
       true -> :ok
     end
   end
 
+  # A finished review is finished once, so only comments can resume it.
+  defp sendable(%Task{}, true, _fix, []), do: {:error, :nothing_to_start}
+  defp sendable(%Task{}, true, _fix, _comments), do: :ok
+
   # A fix whose commit has not passed CI is still waiting on it, however it was ruled.
-  defp finishable(%Task{project: %Project{ci_command: command}} = task, []) when command not in [nil, ""] do
+  defp sendable(%Task{project: %Project{ci_command: command}} = task, false, [], []) when command not in [nil, ""] do
     if ci_passed?(task), do: :ok, else: {:error, :ci_not_passed}
   end
 
-  defp finishable(%Task{}, _fix), do: :ok
+  defp sendable(%Task{}, false, _fix, _comments), do: :ok
+
+  # Claimed before sending, so a second tab's Send finds nothing left to send. Committed rather than held in a
+  # transaction: the spawn reads the run from another process, which would not see an uncommitted note.
+  defp claim(%Scope{user: %{id: user_id}}, %Task{id: task_id}) do
+    now = DateTime.utc_now()
+
+    {_claimed, diff} =
+      Repo.update_all(
+        from(c in DiffComment, where: c.task_id == ^task_id and c.user_id == ^user_id and c.status == :unsent, select: c),
+        set: [status: :sent, updated_at: now]
+      )
+
+    {_claimed, screen} =
+      Repo.update_all(
+        from(c in ScreenComment,
+          where: c.task_id == ^task_id and c.user_id == ^user_id and c.status == :unsent,
+          select: c
+        ),
+        set: [status: :sent, updated_at: now]
+      )
+
+    # The order the tray numbers them in.
+    {Enum.sort_by(diff, &{&1.path, DateTime.to_unix(&1.inserted_at, :microsecond), &1.id}),
+     Enum.sort_by(screen, &{DateTime.to_unix(&1.inserted_at, :microsecond), &1.id})}
+  end
+
+  defp claim(%Scope{}, %Task{}), do: {[], []}
 
   # Finishing the review is when its run completes, which every page showing the task hears.
   defp finish(%Run{} = run) do
@@ -73,47 +117,111 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
     {:ok, finished}
   end
 
-  # The note is consumed by the spawn and never written anywhere, so the conversation keeps it too. The run
-  # reads running from here, so a second click finds the stage busy and the page shows the fix round.
-  defp resume(%Run{} = run, fix, round) do
-    note = note(fix, round)
-    send_back(run.task, :review_lead, note)
+  # The note is consumed by the spawn and never written anywhere, so the conversation keeps it too. The run reads
+  # running from here, and only one of two Sends racing for it moves it there, so only one spawns.
+  defp resume(%Run{} = run, sent, round) do
+    note = note(sent, round, Pipeline.list_screens(run.task), run.task.scratch_path)
+    {:ok, role} = Roles.get_role(id: run.role_id)
 
-    {:ok, reopened} =
-      run
-      |> Run.changeset(%{
+    case reopen(run, note) do
+      {1, [reopened]} ->
+        send_back(run.task, :review_lead, note)
+
+        case Pipeline.start_review_run(%{reopened | task: run.task, role: role}) do
+          {:ok, os_process} -> sent(run.task, sent, os_process.run)
+          {:error, {:spawn_failed, _reason, %Run{} = failed}} -> sent(run.task, sent, failed)
+          {:error, :dispatch_disabled} -> unstarted(reopened, sent, :dispatch_disabled)
+        end
+
+      {0, []} ->
+        unsend(sent)
+        {:error, :stage_running}
+    end
+  end
+
+  defp reopen(%Run{id: id}, note) do
+    Repo.update_all(
+      from(r in Run, where: r.id == ^id and r.status not in ^@running, select: r),
+      set: [
         status: :running,
         stage_outcome: :in_progress,
         error: nil,
         ci_failure_streak: 0,
-        pending_answer: note
-      })
-      |> Repo.update()
-
-    {:ok, role} = Roles.get_role(id: run.role_id)
-
-    case Pipeline.start_review_run(%{reopened | task: run.task, role: role}) do
-      {:ok, os_process} -> {:ok, os_process.run}
-      {:error, {:spawn_failed, _reason, %Run{} = failed}} -> {:ok, failed}
-      {:error, :dispatch_disabled} -> unstarted(reopened, :dispatch_disabled)
-    end
+        completed_at: nil,
+        pending_answer: note,
+        updated_at: DateTime.utc_now()
+      ]
+    )
   end
 
-  # Marked running before the spawn so a second click is refused, it goes back when nothing was spawned.
-  defp unstarted(%Run{} = run, reason) do
+  defp sent(%Task{} = task, %{fix: fix, diff: diff, screen: screen}, %Run{} = run) do
+    {overrides, corrections} = Enum.split_with(fix, &is_binary(&1.suppressed_by_id))
+    {:ok, _flagged} = Learnings.record_overrides(task, overrides)
+    {:ok, _learned} = Learnings.record_corrections(task, corrections ++ diff ++ screen)
+
+    if diff != [], do: broadcast_diff_comments(task.id, :everyone)
+    for user_id <- screen |> Enum.map(& &1.user_id) |> Enum.uniq(), do: broadcast_screen_comments(task.id, user_id)
+    broadcast_pipeline_changed(task)
+
+    {:ok, run}
+  end
+
+  # Marked running before the spawn so a second click is refused; it and the comments go back when nothing spawned.
+  defp unstarted(%Run{} = run, sent, reason) do
     {:ok, _settled} = run |> Run.changeset(%{status: :finished}) |> Repo.update()
+    unsend(sent)
     {:error, reason}
   end
 
-  defp note(fix, round) do
-    """
-    Start fix round #{round}. The human ruled these #{length(fix)} findings Fix, and they are all of them: anything not here was ruled Don't fix or is already fixed.
+  defp unsend(%{diff: diff, screen: screen}) do
+    for {schema, comments} <- [{DiffComment, diff}, {ScreenComment, screen}], comments != [] do
+      ids = Enum.map(comments, & &1.id)
 
-    #{Enum.map_join(fix, "\n\n", &finding/1)}
+      Repo.update_all(from(c in schema, where: c.id in ^ids and c.status == :sent),
+        set: [status: :unsent, updated_at: DateTime.utc_now()]
+      )
+    end
 
-    Hand them to the engineer whole, every place included. Have the code reviewer read the uncommitted diff against them, and an explorer re-check any screen a fix touched, then have the engineer commit the fixes. Save each finding with `save_finding`, status fixed, the places its fix covered and those it left with why, the test that failed first and the files it changed, and end your turn: Rail sends the commit on.
-    """
+    :ok
   end
+
+  defp note(%{fix: fix, diff: diff, screen: screen}, round, screens, scratch_path) do
+    comments = Enum.map(diff, &{"On the diff", DiffComment.calculate_block(&1)})
+
+    comments =
+      comments ++
+        Enum.map(screen, fn comment ->
+          {"On a screen",
+           ScreenComment.calculate_block(comment, Enum.find(screens, &(&1.key == comment.key)), scratch_path)}
+        end)
+
+    numbered = comments |> Enum.with_index(1) |> Enum.map(fn {{on, block}, n} -> "#{n}. #{on}:\n#{block}" end)
+
+    sections = [
+      opening(fix, comments, round),
+      Enum.map(fix, &finding/1),
+      fix != [] && @fix_steps,
+      numbered,
+      comments != [] && @comment_steps
+    ]
+
+    (sections |> List.flatten() |> Enum.filter(&is_binary/1) |> Enum.join("\n\n")) <> "\n"
+  end
+
+  defp opening([], comments, round),
+    do:
+      "Start fix round #{round} on the human's #{count(comments, "comment")}. Nothing is ruled Fix this time: the comments are all of it."
+
+  defp opening(fix, [], round),
+    do:
+      "Start fix round #{round}. The human ruled these #{length(fix)} findings Fix, and they are all of them: anything not here was ruled Don't fix or is already fixed."
+
+  defp opening(fix, comments, round),
+    do:
+      "Start fix round #{round}. The human ruled these #{length(fix)} findings Fix, and they are all of them: anything not here was ruled Don't fix or is already fixed. Their #{count(comments, "comment")} follow the findings."
+
+  defp count(items, word) when length(items) == 1, do: "1 #{word}"
+  defp count(items, word), do: "#{length(items)} #{word}s"
 
   # Tagged the way an issue's comments are, since the lead's own prose could otherwise read as the next finding.
   defp finding(%Finding{} = finding) do

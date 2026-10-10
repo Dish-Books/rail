@@ -2,11 +2,11 @@ defmodule RailWeb.Live.ReviewStage do
   @moduledoc """
   Review, read the way Plan lists its own items: a slim rail of Findings, Diff, Screens, Demo and Browser
   beside the picked item's pane. Findings is the list beside one finding, with what the run is doing above
-  them while it works or waits; ruling moves on to the next finding, and Start fix round, or Finish review,
-  is the list's footer. Diff is the branch, or one commit of it, which a finding's commits open. Screens
-  sets each screen state's latest shot beside an earlier one, Demo plays the latest recording with its
-  walkthrough and says when the branch has moved past it, and Browser watches any tab the explorers and
-  the demo recorder have open.
+  them while it works or waits; ruling moves on to the next finding. What Send would send and whether it
+  can is handed to the page for the conversation's tray. Diff is the branch, or one commit of it, which a
+  finding's commits open. Screens is each screen state's one shot, opened over the page to step through and
+  comment on, Demo plays the latest recording with its walkthrough and says when the branch has moved past
+  it, and Browser watches any tab the explorers and the demo recorder have open.
   """
   use RailWeb, :live_component
 
@@ -16,6 +16,7 @@ defmodule RailWeb.Live.ReviewStage do
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.FindingEvidence
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Turn
   alias Rail.Tools
@@ -24,7 +25,18 @@ defmodule RailWeb.Live.ReviewStage do
 
   @double_click_ms 400
 
+  # The conversation's tray asked for a finding or a screen state, which this stage shows.
   @impl true
+  def update(%{open_finding: key}, socket) do
+    socket = socket |> assign(:item, :findings) |> assign(:selected_key, key) |> assign(:filed_index, 0) |> load()
+    {:ok, socket}
+  end
+
+  def update(%{open_screen: key}, socket) do
+    socket = socket |> assign(:item, :screens) |> open_screen(key) |> load()
+    {:ok, socket}
+  end
+
   def update(assigns, socket) do
     socket =
       socket
@@ -38,7 +50,7 @@ defmodule RailWeb.Live.ReviewStage do
       |> assign_new(:diff_open, fn -> nil end)
       |> assign_new(:diff_file, fn -> nil end)
       |> assign_new(:screen_open, fn -> nil end)
-      |> assign_new(:screen_earlier, fn -> nil end)
+      |> assign_new(:screen_draft, fn -> nil end)
       |> load()
 
     {:ok, socket}
@@ -92,7 +104,6 @@ defmodule RailWeb.Live.ReviewStage do
                     selected_key={@selected_key}
                     running={@phase == :round}
                     tally={@tally}
-                    button={@button}
                     target={@myself}
                   />
                   <.finding_detail
@@ -135,16 +146,16 @@ defmodule RailWeb.Live.ReviewStage do
                   current_scope={@current_scope}
                   focus_file={@diff_file}
                   open={@diff_open}
+                  sends={false}
                 />
               </div>
 
-              <.screen_compare
+              <.screen_grid
                 :if={@item == :screens}
                 task_id={@task.id}
                 screens={@screens}
                 labels={@labels}
-                open={@screen_open}
-                earlier={@screen_earlier}
+                unsent={@unsent_screens}
                 target={@myself}
               />
 
@@ -174,6 +185,18 @@ defmodule RailWeb.Live.ReviewStage do
 
         <:sidebar>{render_slot(@sidebar)}</:sidebar>
       </.task_layout>
+
+      <.screen_view
+        :if={@opened}
+        task_id={@task.id}
+        screen={@opened.screen}
+        position={@opened.position}
+        count={length(@screens)}
+        labels={@labels}
+        comments={@opened.comments}
+        draft={@screen_draft}
+        target={@myself}
+      />
     </div>
     """
   end
@@ -196,24 +219,75 @@ defmodule RailWeb.Live.ReviewStage do
     {:noreply, socket}
   end
 
-  # Nothing is picked yet, so the shot set beside the latest is the one just before it.
   def handle_event("open_screen", %{"key" => key}, socket) do
-    socket = socket |> assign(:screen_open, key) |> assign(:screen_earlier, nil)
+    socket = socket |> open_screen(key) |> assign_opened()
     {:noreply, socket}
   end
 
-  def handle_event("pick_earlier", %{"index" => index}, socket) do
-    socket = assign(socket, :screen_earlier, String.to_integer(index))
-    {:noreply, socket}
-  end
+  def handle_event("step_screen", %{"direction" => "next"}, socket), do: {:noreply, step_screen(socket, 1)}
+  def handle_event("step_screen", %{"direction" => "previous"}, socket), do: {:noreply, step_screen(socket, -1)}
+  def handle_event("screen_key", %{"key" => "ArrowRight"}, socket), do: {:noreply, step_screen(socket, 1)}
+  def handle_event("screen_key", %{"key" => "ArrowLeft"}, socket), do: {:noreply, step_screen(socket, -1)}
+  def handle_event("screen_key", _other_key, socket), do: {:noreply, socket}
 
   def handle_event("close_screen", _params, socket) do
-    socket = socket |> assign(:screen_open, nil) |> assign(:screen_earlier, nil)
+    socket = socket |> open_screen(nil) |> assign_opened()
     {:noreply, socket}
   end
 
+  def handle_event("toggle_screen_comment", _params, socket) do
+    socket = socket |> assign(:screen_draft, if(socket.assigns.screen_draft, do: nil, else: "")) |> assign_opened()
+    {:noreply, socket}
+  end
+
+  def handle_event("screen_comment_change", %{"body" => body}, socket) do
+    {:noreply, assign(socket, :screen_draft, body)}
+  end
+
+  def handle_event("cancel_screen_comment", _params, socket) do
+    socket = socket |> assign(:screen_draft, nil) |> assign_opened()
+    {:noreply, socket}
+  end
+
+  # A blank comment keeps the box open, and the comment shows once the reader's list is read again.
+  def handle_event("save_screen_comment", %{"body" => body}, socket) do
+    %{current_scope: scope, task: task, screen_open: key} = socket.assigns
+
+    case Pipeline.create_screen_comment(scope, task, %{"key" => key, "body" => body}) do
+      {:ok, _comment} ->
+        socket = socket |> assign(:screen_draft, nil) |> assign(:error, nil) |> assign_screen_comments()
+        {:noreply, socket}
+
+      {:error, %Ecto.Changeset{}} ->
+        {:noreply, assign(socket, :screen_draft, body)}
+
+      {:error, reason} ->
+        {:noreply, assign(socket, :error, message_for(reason))}
+    end
+  end
+
+  # Read back rather than dropped from the list, since another tab may have sent it.
+  def handle_event("remove_screen_comment", %{"id" => id}, socket) do
+    case Enum.find(socket.assigns.screen_comments, &(&1.id == id)) do
+      %ScreenComment{} = comment ->
+        {:ok, _removed} = Pipeline.delete_screen_comment(socket.assigns.current_scope, comment)
+        {:noreply, assign_screen_comments(socket)}
+
+      nil ->
+        {:noreply, socket}
+    end
+  end
+
+  # A finding the screen view cites is opened in Findings, so the view closes over it.
   def handle_event("open_finding", %{"key" => key}, socket) do
-    socket = socket |> assign(:item, :findings) |> assign(:selected_key, key) |> assign(:filed_index, 0) |> load()
+    socket =
+      socket
+      |> open_screen(nil)
+      |> assign(:item, :findings)
+      |> assign(:selected_key, key)
+      |> assign(:filed_index, 0)
+      |> load()
+
     {:noreply, socket}
   end
 
@@ -270,17 +344,6 @@ defmodule RailWeb.Live.ReviewStage do
     {:noreply, socket}
   end
 
-  def handle_event("start_fix_round", _params, socket) do
-    case Pipeline.start_fix_round(socket.assigns.run) do
-      {:ok, _run} ->
-        send(self(), :task_changed)
-        {:noreply, assign(socket, :error, nil)}
-
-      {:error, reason} ->
-        {:noreply, assign(socket, :error, message_for(reason))}
-    end
-  end
-
   # Everything the open item shows is read off the rows and the disk again; what only one item needs is
   # read only while it is the one open.
   defp load(socket) do
@@ -288,7 +351,7 @@ defmodule RailWeb.Live.ReviewStage do
     findings = Pipeline.list_findings(task)
     passes = Pipeline.read_review(task)
     ci = Pipeline.get_ci_status(run)
-    phase = phase(run, task, passes, findings, ci)
+    phase = phase(run, task, passes, ci)
     counts = counts(findings)
     beats = Pipeline.list_demo_beats(task)
     recording = Tools.get_browser_recording(task) != nil
@@ -308,8 +371,8 @@ defmodule RailWeb.Live.ReviewStage do
       if(socket.assigns.item == :findings and phase in [:round, :fixing], do: agents(run), else: [])
     )
     |> assign(:tally, tally(phase, counts, findings, passes))
-    |> assign(:button, button(phase, counts, passes, socket.assigns.approvable))
     |> assign_branch(passes)
+    |> assign_screen_comments()
     |> assign(:beats, beats)
     |> assign(:recorded, Task.demo_recorded?(task))
     |> assign(:recording, recording)
@@ -319,7 +382,58 @@ defmodule RailWeb.Live.ReviewStage do
     |> assign_items()
     |> assign_selected(selected, findings)
     |> watch(browser)
+    |> tray(findings, passes, phase, counts)
   end
+
+  # The conversation's tray shows what Send sends and whether it can; the page holds both and hands them on.
+  defp tray(socket, findings, passes, phase, counts) do
+    gate = %{
+      working: phase in [:round, :fixing, :ci],
+      undecided: counts.undecided,
+      finished: passes != [] and List.last(passes).finished_at != nil,
+      ci_failed: phase == :ci_failed,
+      saved: passes != []
+    }
+
+    # A task that has left Review sends nothing from it.
+    tray = if socket.assigns.task.stage == :review, do: %{fix: Enum.filter(findings, &Finding.outstanding?/1), gate: gate}
+    send(self(), {:review_tray, tray})
+    socket
+  end
+
+  # The reader's unsent screen comments mark the grid's cards and list in the screen view.
+  defp assign_screen_comments(%{assigns: %{current_scope: %{user: %{}} = scope, task: task}} = socket) do
+    comments = Pipeline.list_screen_comments(scope, task)
+
+    socket
+    |> assign(:screen_comments, comments)
+    |> assign(:unsent_screens, Enum.frequencies_by(comments, & &1.key))
+    |> assign_opened()
+  end
+
+  # A state a retake or a cleanup took away closes the view, and its box with it.
+  defp assign_opened(%{assigns: %{screens: screens, screen_open: key}} = socket) do
+    case Enum.find_index(screens, &(&1.key == key)) do
+      index when is_integer(index) ->
+        comments = Enum.filter(socket.assigns.screen_comments, &(&1.key == key))
+        assign(socket, :opened, %{screen: Enum.at(screens, index), position: index + 1, comments: comments})
+
+      nil ->
+        socket |> assign(:opened, nil) |> assign(:screen_draft, nil)
+    end
+  end
+
+  defp open_screen(socket, key), do: socket |> assign(:screen_open, key) |> assign(:screen_draft, nil)
+
+  # A step never runs past either end, and leaves a box being written in alone.
+  defp step_screen(%{assigns: %{opened: %{position: position}, screens: screens, screen_draft: nil}} = socket, step) do
+    case Enum.at(screens, position - 1 + step) do
+      %{key: key} when position + step >= 1 -> socket |> open_screen(key) |> assign_opened()
+      _end -> socket
+    end
+  end
+
+  defp step_screen(socket, _step), do: socket
 
   # The branch's commits label each finding's and screen's commit, count the Diff item and date the demo.
   # The commits each round read are what tell the engineer's apart from each fix round's.
@@ -443,12 +557,12 @@ defmodule RailWeb.Live.ReviewStage do
     assign(socket, :items, [findings, diff, screens, demo, browser])
   end
 
-  # What the run is doing, read off the run, its CI and the passes it saved. A run working with a Fix
-  # finding the last pass read and nothing committed since is fixing; any other working run is a round.
-  defp phase(%Run{} = run, %Task{} = task, passes, findings, ci) do
+  # What the run is doing, read off the run, its CI and the passes it saved. A run working on the commit the
+  # last pass read is fixing, since a Send of comments alone is a fix round too; any other working run is a round.
+  defp phase(%Run{} = run, %Task{} = task, passes, ci) do
     cond do
       match?(%{state: :running}, ci) -> :ci
-      Run.running?(run) and fixing?(task, passes, findings) -> :fixing
+      Run.running?(run) and fixing?(task, passes) -> :fixing
       Run.running?(run) -> :round
       passes != [] and List.last(passes).finished_at != nil -> :finished
       match?(%{state: :failed, failures: failures} when failures >= 3, ci) -> :ci_failed
@@ -456,12 +570,10 @@ defmodule RailWeb.Live.ReviewStage do
     end
   end
 
-  defp fixing?(%Task{} = task, [_first | _rest] = passes, findings) do
-    Enum.any?(findings, &Finding.outstanding?/1) and
-      List.last(passes).head in [nil, (Git.branch_fingerprint(task.worktree_path) || %{})[:head_sha]]
-  end
+  defp fixing?(%Task{} = task, [_first | _rest] = passes),
+    do: List.last(passes).head in [nil, (Git.branch_fingerprint(task.worktree_path) || %{})[:head_sha]]
 
-  defp fixing?(%Task{}, [], _findings), do: false
+  defp fixing?(%Task{}, []), do: false
 
   defp round(:round, passes), do: length(passes) + 1
   defp round(_phase, passes), do: max(length(passes), 1)
@@ -499,35 +611,6 @@ defmodule RailWeb.Live.ReviewStage do
     |> Enum.map_join(" · ", fn {count, word} -> "#{count} #{word}" end)
   end
 
-  # Disabled until every finding is ruled; gone while a fix round runs and once nothing is left.
-  defp button(:round, _counts, passes, _approvable) do
-    round = length(passes) + 1
-    %{label: "Start fix round #{round}", icon: "pi-wrench", disabled: true, title: "Round #{round} is still running"}
-  end
-
-  defp button(phase, _counts, _passes, _approvable) when phase in [:fixing, :ci, :finished], do: nil
-  defp button(_phase, _counts, [], _approvable), do: nil
-  defp button(_phase, _counts, _passes, false), do: nil
-
-  defp button(_phase, %{undecided: undecided}, passes, true) when undecided > 0 do
-    %{
-      label: "Start fix round #{length(passes)}",
-      icon: "pi-wrench",
-      disabled: true,
-      title: "Rule on #{undecided} more first"
-    }
-  end
-
-  # A fix whose commit fails CI is still waiting, so the review cannot finish on it.
-  defp button(:ci_failed, %{fix: 0}, _passes, true),
-    do: %{label: "Finish review", icon: "pi-check", disabled: true, title: "CI failed on the fix commit"}
-
-  defp button(_phase, %{fix: 0}, _passes, true),
-    do: %{label: "Finish review", icon: "pi-check", disabled: false, title: nil}
-
-  defp button(_phase, _counts, passes, true),
-    do: %{label: "Start fix round #{length(passes)}", icon: "pi-wrench", disabled: false, title: nil}
-
   defp findings_state(:round, _counts, assigns), do: "Round #{assigns.round} running"
   defp findings_state(:fixing, _counts, assigns), do: "Fix round #{assigns.round} running"
   defp findings_state(:ci, _counts, %{sha: sha}), do: "CI running" <> if(sha, do: " on #{sha}", else: "")
@@ -549,7 +632,7 @@ defmodule RailWeb.Live.ReviewStage do
   defp screens_state([]), do: "No screens yet"
 
   defp screens_state(screens) do
-    latest = screens |> Enum.map(&List.last(&1.shots)) |> Enum.max_by(& &1.taken_at, DateTime)
+    latest = Enum.max_by(screens, & &1.taken_at, DateTime)
     on = if latest.commit, do: " · on #{String.slice(latest.commit, 0, 7)}", else: ""
     "#{plural(length(screens), "screen")}#{on}"
   end
@@ -726,9 +809,7 @@ defmodule RailWeb.Live.ReviewStage do
   defp message_for(:no_stage_run), do: "Review has no run to ask yet."
   defp message_for(:chat_unavailable), do: "The Review lead has no conversation to ask yet."
   defp message_for({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not Review."
-  defp message_for(:findings_undecided), do: "Some findings have no ruling yet. Rule on every one first."
-  defp message_for(:nothing_to_start), do: "There is nothing left to start: the review is finished."
-  defp message_for(:dispatch_disabled), do: "Dispatch is off, so the Review lead was not resumed."
   defp message_for(:review_finished), do: "The review is finished, so its rulings are settled."
-  defp message_for(:ci_not_passed), do: "CI has not passed on the fix commit, so the review cannot finish yet."
+  defp message_for(:cleaned_up), do: "This task is cleaned up, so it takes no more comments."
+  defp message_for(:not_found), do: "That screen is gone: a retake or a cleanup removed it."
 end

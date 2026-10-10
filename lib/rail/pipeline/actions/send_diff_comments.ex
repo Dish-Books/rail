@@ -1,7 +1,8 @@
 defmodule Rail.Pipeline.Actions.SendDiffComments do
   @moduledoc """
   Sends the comments a person left on the diff and has not sent yet to the
-  engineer, as one message, and marks them sent.
+  engineer, as one message, and marks them sent. At Review they go out with the
+  tray's Send instead, so a stale page cannot send them to the lead on their own.
 
   Each quotes the code around its line as written, since line numbers move as the
   engineer edits. What was sent is learned from.
@@ -21,10 +22,17 @@ defmodule Rail.Pipeline.Actions.SendDiffComments do
   @doc """
   Sends the scope user's unsent comments on `run`'s task to `run`.
 
-  Returns what `Rail.Pipeline.send_message/2` does, or `{:error, :nothing_to_send}`
-  when none are unsent.
+  Returns what `Rail.Pipeline.send_message/2` does, `{:error, :nothing_to_send}`
+  when none are unsent, or `{:error, {:invalid_stage, :review}}` at Review.
   """
-  def send_diff_comments(%Scope{user: %{id: user_id}} = scope, %Run{task_id: task_id} = run) do
+  def send_diff_comments(%Scope{} = scope, %Run{task_id: task_id} = run) do
+    case Repo.get!(Task, task_id) do
+      %Task{stage: :review} -> {:error, {:invalid_stage, :review}}
+      %Task{} = task -> send_comments(scope, run, task)
+    end
+  end
+
+  defp send_comments(%Scope{user: %{id: user_id}} = scope, %Run{task_id: task_id} = run, %Task{} = task) do
     mine = from comment in DiffComment, where: comment.task_id == ^task_id and comment.user_id == ^user_id
 
     # Claimed before sending, so a second tab's Send finds nothing left to send.
@@ -39,7 +47,7 @@ defmodule Rail.Pipeline.Actions.SendDiffComments do
 
     with [_first | _rest] <- comments,
          {:ok, _delivery, _run} = sent <- Pipeline.send_message(scope, run, format(comments)) do
-      {:ok, _learned} = Learnings.record_corrections(Repo.get!(Task, task_id), comments)
+      {:ok, _learned} = Learnings.record_corrections(task, comments)
       broadcast_diff_comments(task_id, :everyone)
       sent
     else
@@ -60,26 +68,6 @@ defmodule Rail.Pipeline.Actions.SendDiffComments do
   defp format(comments) do
     heading = if length(comments) == 1, do: "1 comment on the diff", else: "#{length(comments)} comments on the diff"
 
-    Enum.join([heading | Enum.map(comments, &block/1)], "\n\n")
+    Enum.join([heading | Enum.map(comments, &DiffComment.calculate_block/1)], "\n\n")
   end
-
-  defp block(%DiffComment{} = comment) do
-    "#{comment.path}, #{line_label(comment)}#{in_commit(comment)}\n#{quote_code(comment)}\n#{comment.body}"
-  end
-
-  # A commit's line numbers are that commit's, so the engineer is told which.
-  defp in_commit(%DiffComment{commit: commit}) when is_binary(commit), do: " in commit #{String.slice(commit, 0, 7)}"
-  defp in_commit(%DiffComment{}), do: ""
-
-  # A comment saved before blocks were kept has only its line to quote.
-  defp quote_code(%DiffComment{context_text: context}) when is_binary(context) and context != "", do: context
-
-  defp quote_code(%DiffComment{} = comment), do: "#{glyph(comment.line_kind)} #{String.trim_trailing(comment.line_text)}"
-
-  defp line_label(%DiffComment{line_kind: :deleted, line: line}), do: "removed line #{line}"
-  defp line_label(%DiffComment{line: line}), do: "line #{line}"
-
-  defp glyph(:added), do: "+"
-  defp glyph(:deleted), do: "-"
-  defp glyph(:context), do: " "
 end

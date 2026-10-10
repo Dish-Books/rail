@@ -15,6 +15,7 @@ defmodule RailWeb.Components.CommentBox do
   attr :cancel, :string, required: true
   attr :target, :any, required: true
   attr :class, :any, default: "max-w-[760px] shadow-xs"
+  attr :narrow, :boolean, default: false, doc: "puts the hint on a line of its own, for a box in a narrow column"
   attr :rest, :global
 
   slot :heading
@@ -48,8 +49,11 @@ defmodule RailWeb.Components.CommentBox do
         class="block w-full min-h-[52px] resize-y px-3 py-2 text-sm leading-[18px] rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-600 dark:focus:border-blue-500 focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500"
       >{@body}</textarea>
 
-      <div class="mt-1.5 flex items-center gap-2">
-        <span class="pl-1 min-w-0 truncate text-[11px] text-slate-500 dark:text-slate-400">
+      <div class={["mt-1.5 flex items-center gap-2", @narrow && "flex-wrap"]}>
+        <span class={[
+          "pl-1 min-w-0 truncate text-[11px] text-slate-500 dark:text-slate-400",
+          @narrow && "basis-full"
+        ]}>
           Only you see this until you send it.
         </span>
         <button

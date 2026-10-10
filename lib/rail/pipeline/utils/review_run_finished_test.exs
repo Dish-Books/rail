@@ -10,6 +10,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles
+  alias Rail.Users
 
   setup %{project: project} do
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
@@ -120,6 +121,42 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
 
     assert %Run{error: nil} = review_run_finished(%{run | pending_chat: "One more thing"}, [])
     assert [%{finished_at: nil}] = Pipeline.read_review(task)
+  end
+
+  # Send or Finish review is theirs, so nobody's comments are left behind a review that finished itself.
+  test "anyone's unsent diff or screen comment holds the review open, and it finishes once there are none", %{
+    task: task,
+    run: run
+  } do
+    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_rfn_ada", login: "ada", email: "ada@example.com"})
+    ada = user_scope(user: ada)
+    File.mkdir_p!(Path.join([task.scratch_path, "qa", "screens", "toolbar"]))
+    File.write!(Path.join([task.scratch_path, "qa", "screens", "toolbar", "1.jpg"]), "jpeg")
+    {:ok, _shot} = Pipeline.save_screen(task, %{key: "toolbar", label: "Toolbar", file: "screens/toolbar/1.jpg"})
+    {:ok, _closed} = Pipeline.save_review(task)
+
+    {:ok, diff} =
+      Pipeline.create_diff_comment(ada, task, %{
+        path: "lib/a.ex",
+        line_kind: :added,
+        line: 1,
+        line_text: "x",
+        filter: :branch,
+        body: "Name it."
+      })
+
+    {:ok, screen} = Pipeline.create_screen_comment(ada, task, %{"key" => "toolbar", "body" => "Fold it."})
+
+    assert %Run{error: nil} = review_run_finished(run, [])
+    {:ok, _removed} = Pipeline.delete_diff_comment(ada, diff)
+    assert %Run{error: nil} = review_run_finished(run, [])
+    assert [%{finished_at: nil}] = Pipeline.read_review(task)
+
+    {:ok, _removed} = Pipeline.delete_screen_comment(ada, screen)
+    {:ok, task} = Pipeline.update_task(task, %{pr_is_draft: false})
+
+    assert %Run{error: nil} = review_run_finished(%{run | task: task}, [])
+    assert [%{finished_at: %DateTime{}}] = Pipeline.read_review(task)
   end
 
   test "a turn that ends without saving its review records that, and moves nothing", %{task: task, run: run} do

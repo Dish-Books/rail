@@ -183,7 +183,7 @@ defmodule RailWeb.Components.UpNextTest do
     assert html =~ "Review the findings"
     refute html =~ "Ready to merge"
 
-    {:ok, %Run{id: ^run_id}} = Pipeline.start_fix_round(run)
+    {:ok, %Run{id: ^run_id}} = Pipeline.start_fix_round(system_scope(), run)
     html = render_component(&UpNext.up_next/1, runs: [shown])
 
     assert html =~ ~s(href="/tasks/#{task_id}?tab=#{lead.id}")

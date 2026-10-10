@@ -738,7 +738,7 @@ defmodule RailWeb.IssuesLiveTest do
       })
 
     {:ok, _pass} = Pipeline.save_review(task)
-    {:ok, _finished} = Pipeline.start_fix_round(run)
+    {:ok, _finished} = Pipeline.start_fix_round(system_scope(), run)
 
     assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/issues")
 

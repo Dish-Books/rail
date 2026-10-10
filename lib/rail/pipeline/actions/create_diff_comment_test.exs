@@ -56,6 +56,19 @@ defmodule Rail.Pipeline.Actions.CreateDiffCommentTest do
              })
   end
 
+  # Review comments can be left until cleanup, after Finish review included; after it the worktree is gone.
+  test "saves during Review and after the review is finished, and refuses a cleaned-up task", %{task: task, ada: ada} do
+    attrs = %{path: "lib/a.ex", line_kind: :added, line: 1, line_text: "x", filter: :branch, body: "Name it."}
+    {:ok, review} = Pipeline.update_task(task, %{stage: :review})
+
+    assert {:ok, %DiffComment{}} = Pipeline.create_diff_comment(ada, review, attrs)
+
+    {:ok, _finished} = Pipeline.update_task(review, %{cleaned_up_at: DateTime.utc_now()})
+
+    assert {:error, :cleaned_up} = Pipeline.create_diff_comment(ada, review, attrs)
+    assert [%DiffComment{}] = Pipeline.list_diff_comments(ada, task)
+  end
+
   test "a blank line can be commented on", %{task: task, ada: ada} do
     attrs = %{path: "lib/a.ex", line_kind: :added, line: 3, line_text: "", filter: :branch, body: "Drop this gap."}
 

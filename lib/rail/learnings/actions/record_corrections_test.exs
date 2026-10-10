@@ -11,6 +11,7 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.PlanCommentCapture
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Users
 
   setup %{project: project} do
@@ -267,6 +268,44 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
     comment = %DiffComment{id: "dcm_rc_old", path: "a.ex", line_text: "old line", context_text: "", body: "Rename it"}
 
     assert {:ok, [%Learning{why: "From a diff comment on a.ex:\n\nold line"}]} =
+             Learnings.record_corrections(task, [comment])
+  end
+
+  # A screen comment is on what QA drives and the engineer builds, as a Fix on a screen finding is.
+  test "a screen comment becomes one provisional rule for the engineer and QA, its reason the state and commit", %{
+    task: %{id: task_id} = task,
+    user_id: user_id
+  } do
+    comment = %ScreenComment{
+      id: "scm_rc_1",
+      user_id: user_id,
+      key: "file-list",
+      label: "File list after Send",
+      commit: "e52a0bd91",
+      body: "Keep the count on one line."
+    }
+
+    assert {:ok,
+            [
+              %Learning{
+                kind: :convention,
+                status: :provisional,
+                roles: [:engineer, :qa],
+                rule: "Keep the count on one line.",
+                why: "From a screen comment on File list after Send (file-list), shot on e52a0bd"
+              }
+            ]} = Learnings.record_corrections(task, [comment])
+
+    assert {:ok, []} = Learnings.record_corrections(task, [%{comment | commit: nil}])
+
+    assert [%Observation{source_kind: :screen_comment, actor_id: ^user_id, excerpt: "File list after Send" <> _rest}] =
+             Repo.all(from o in Observation, where: o.task_id == ^task_id)
+  end
+
+  test "a screen comment written on no commit names only its state", %{task: task} do
+    comment = %ScreenComment{id: "scm_rc_2", key: "toolbar", label: "Toolbar", body: "Fold it."}
+
+    assert {:ok, [%Learning{why: "From a screen comment on Toolbar (toolbar)"}]} =
              Learnings.record_corrections(task, [comment])
   end
 

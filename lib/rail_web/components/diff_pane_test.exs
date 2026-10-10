@@ -50,6 +50,7 @@ defmodule RailWeb.Components.DiffPaneTest do
       },
       running?: false,
       agent: "Engineer",
+      sends?: true,
       commentable?: true
     }
 

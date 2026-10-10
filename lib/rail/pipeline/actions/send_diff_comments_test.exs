@@ -90,17 +90,23 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
                  """
                  3 comments on the diff
 
+                 <diff_comment>
                  lib/ledger/billing/invoice_query.ex, line 38
                  +     where(query, [i], i.status != :paid)
                  Void invoices are not overdue.
+                 </diff_comment>
 
+                 <diff_comment>
                  lib/ledger/billing/invoice_query.ex, removed line 28
                  -   defp newest_first(query)
                  Keep this ordering.
+                 </diff_comment>
 
+                 <diff_comment>
                  lib/ledger_web/live/invoice_live/index.ex, line 39
                        filters = Filters.parse(params)
-                 An unknown status should fall back to All.\
+                 An unknown status should fall back to All.
+                 </diff_comment>\
                  """,
                  "\n"
                ),
@@ -164,7 +170,11 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
         body: "Name it."
       })
 
-    assert {:ok, :queued, %Run{pending_chat: "1 comment on the diff\n\nlib/a.ex, line 3\n+ x = 1\nName it."}} =
+    assert {:ok, :queued,
+            %Run{
+              pending_chat:
+                "1 comment on the diff\n\n<diff_comment>\nlib/a.ex, line 3\n+ x = 1\nName it.\n</diff_comment>"
+            }} =
              Pipeline.send_diff_comments(ada, running)
 
     assert [%DiffComment{status: :sent}] = Pipeline.list_diff_comments(ada, task)
@@ -186,8 +196,31 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
       })
 
     assert {:ok, :queued,
-            %Run{pending_chat: "1 comment on the diff\n\nlib/a.ex, line 3 in commit 9c41e07\n+ x = 1\nName it."}} =
+            %Run{
+              pending_chat:
+                "1 comment on the diff\n\n<diff_comment>\nlib/a.ex, line 3 in commit 9c41e07\n+ x = 1\nName it.\n</diff_comment>"
+            }} =
              Pipeline.send_diff_comments(ada, running)
+  end
+
+  # At Review the tray's Send carries them, so a stale Engineer page cannot send them to the lead alone.
+  test "a task at Review is refused and its comments stay unsent", %{task: task, run: run, ada: ada} do
+    {:ok, _only} =
+      Pipeline.create_diff_comment(ada, task, %{
+        path: "lib/a.ex",
+        line_kind: :added,
+        line: 3,
+        line_text: "x = 1",
+        filter: :branch,
+        body: "Name it."
+      })
+
+    {:ok, _review} = Pipeline.update_task(task, %{stage: :review})
+    reject(Tools, :start_os_process, 2)
+
+    assert {:error, {:invalid_stage, :review}} = Pipeline.send_diff_comments(ada, run)
+    assert [%DiffComment{status: :unsent}] = Pipeline.list_diff_comments(ada, task)
+    assert Pipeline.list_run_events(run) == []
   end
 
   test "with nothing unsent nothing is sent", %{run: run, ada: ada} do
@@ -290,11 +323,13 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
       assert Enum.map(Pipeline.list_run_events(run), & &1.line) == [
                "#{tag} 1 comment on the diff",
                "#{tag} ",
+               "#{tag} <diff_comment>",
                "#{tag} test/a_test.exs, line 4",
                "#{tag}   + row = %Row{}",
                "#{tag} > + Repo.insert!(row)",
                "#{tag}     end",
-               "#{tag} Use the factory here."
+               "#{tag} Use the factory here.",
+               "#{tag} </diff_comment>"
              ]
 
       assert [

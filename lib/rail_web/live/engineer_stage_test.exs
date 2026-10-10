@@ -45,7 +45,7 @@ defmodule RailWeb.Live.EngineerStageTest do
         started_at: DateTime.utc_now()
       })
 
-    %{conn: log_in_user(conn, user), task: task, repo: repo}
+    %{conn: log_in_user(conn, user), user: user, task: task, repo: repo}
   end
 
   test "once the task is in Review, the Engineer tab offers no Commit, CI, send or chat", %{
@@ -64,5 +64,31 @@ defmodule RailWeb.Live.EngineerStageTest do
     refute has_element?(view, "#send-to-review")
     refute has_element?(view, "#chat-input")
     assert has_element?(view, "#conversation-closed", "The work is in Review now, so this conversation is closed")
+  end
+
+  # At Review the tray sends diff comments with everything else, so the Engineer tab's diff has no Send.
+  test "at Engineer the diff keeps its Send, and once the task is in Review it has none", %{
+    conn: conn,
+    task: task,
+    user: user
+  } do
+    {:ok, _unsent} =
+      Pipeline.create_diff_comment(user_scope(user: user), task, %{
+        path: "rows.ex",
+        line_kind: :added,
+        line: 3,
+        line_text: "line 3",
+        filter: :branch,
+        body: "Name it."
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=rol_test_seed_engineer")
+    assert has_element?(view, "#send-diff-comments", "Send 1")
+
+    {:ok, _review} = Pipeline.update_task(task, %{stage: :review})
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=rol_test_seed_engineer")
+
+    assert has_element?(view, "[data-qa=diff_comment_unsent]")
+    refute has_element?(view, "#send-diff-comments")
   end
 end

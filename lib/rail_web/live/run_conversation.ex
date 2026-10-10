@@ -53,6 +53,17 @@ defmodule RailWeb.Live.RunConversation do
     {:ok, assign_plan_comments(socket)}
   end
 
+  # Another of the reader's tabs saved, removed or sent diff or screen comments, which the Review tray lists.
+  def update(%{reload_review_comments: true}, socket) do
+    {:ok, assign_review_comments(socket)}
+  end
+
+  # What Send sends of the findings and whether it can, which the Review stage works out and the page hands on.
+  def update(%{review_tray: tray}, socket) do
+    socket = socket |> assign_defaults() |> assign(:review_tray, tray)
+    {:ok, socket}
+  end
+
   def update(%{lifted_plan_comments: ids}, socket) do
     socket = socket |> assign_defaults() |> assign(:lifted_comments, ids)
     {:ok, socket}
@@ -71,13 +82,17 @@ defmodule RailWeb.Live.RunConversation do
       |> assign_line(selected_run)
       |> assign_run_events(load_run_events(selected_run))
       |> assign_plan_comments()
+      |> assign_review_comments()
 
     {:ok, socket}
   end
 
   @impl true
   def render(assigns) do
-    assigns = assign(assigns, :has_runs, assigns.selected_run != nil)
+    assigns =
+      assigns
+      |> assign(:has_runs, assigns.selected_run != nil)
+      |> assign(:show_review_tray, not assigns.show_raw_log and review_run?(assigns) and assigns.review_tray != nil)
 
     ~H"""
     <div
@@ -232,6 +247,17 @@ defmodule RailWeb.Live.RunConversation do
             open={@tray_open}
             can_send={Run.can_chat?(@selected_run)}
             plan_running={Run.running?(@selected_run)}
+            target={@myself}
+          />
+
+          <.review_comment_tray
+            :if={@show_review_tray}
+            fix={@review_tray.fix}
+            diff_comments={@review_diff_comments}
+            screen_comments={@review_screen_comments}
+            gate={@review_tray.gate}
+            open={@tray_open}
+            error={@tray_error}
             target={@myself}
           />
 
@@ -1208,6 +1234,48 @@ defmodule RailWeb.Live.RunConversation do
     end
   end
 
+  def handle_event("toggle_review_tray", _params, socket) do
+    {:noreply, assign(socket, :tray_open, not socket.assigns.tray_open)}
+  end
+
+  # One Send is Start fix round and Finish review both; a refusal says why in the tray's hint.
+  def handle_event("send_review_tray", _params, socket) do
+    case Pipeline.start_fix_round(socket.assigns.current_scope, socket.assigns.selected_run) do
+      {:ok, run} ->
+        send(self(), :task_changed)
+        socket = socket |> assign(:tray_error, nil) |> select(run) |> assign_review_comments()
+        {:noreply, socket}
+
+      {:error, reason} ->
+        socket = socket |> assign(:tray_error, tray_message(reason)) |> assign_review_comments()
+        {:noreply, socket}
+    end
+  end
+
+  # Read back rather than dropped from the list, since another tab may have sent it.
+  def handle_event("remove_review_tray_comment", %{"kind" => kind, "id" => id}, socket) do
+    %{current_scope: scope, review_diff_comments: diff, review_screen_comments: screen} = socket.assigns
+
+    case {kind, Enum.find(if(kind == "diff", do: diff, else: screen), &(&1.id == id))} do
+      {_kind, nil} -> :ok
+      {"diff", comment} -> {:ok, _removed} = Pipeline.delete_diff_comment(scope, comment)
+      {"screen", comment} -> {:ok, _removed} = Pipeline.delete_screen_comment(scope, comment)
+    end
+
+    {:noreply, assign_review_comments(socket)}
+  end
+
+  # The finding and the state open in the Review stage, which the page tells.
+  def handle_event("open_tray_finding", %{"key" => key}, socket) do
+    send(self(), {:open_review_finding, key})
+    {:noreply, socket}
+  end
+
+  def handle_event("open_tray_screen", %{"key" => key}, socket) do
+    send(self(), {:open_review_screen, key})
+    {:noreply, socket}
+  end
+
   # The frame reports which comments' elements it could not find on the page it loaded.
   def handle_event("plan_comment_anchors", %{"missing" => missing}, socket) when is_list(missing) do
     {:noreply, assign(socket, :missing_anchors, Enum.filter(missing, &is_binary/1))}
@@ -1298,6 +1366,10 @@ defmodule RailWeb.Live.RunConversation do
     |> assign_new(:missing_anchors, fn -> [] end)
     |> assign_new(:lifted_comments, fn -> [] end)
     |> assign_new(:tray_open, fn -> true end)
+    |> assign_new(:review_tray, fn -> nil end)
+    |> assign_new(:review_diff_comments, fn -> [] end)
+    |> assign_new(:review_screen_comments, fn -> [] end)
+    |> assign_new(:tray_error, fn -> nil end)
     |> assign_new(:closed, fn -> false end)
     |> assign_new(:closed_reason, fn -> "The plan is approved, so this conversation is closed." end)
   end
@@ -1313,6 +1385,32 @@ defmodule RailWeb.Live.RunConversation do
   end
 
   defp assign_plan_comments(socket), do: assign(socket, :plan_comments, [])
+
+  # Only the Review lead's conversation is where diff and screen comments wait to be sent.
+  defp assign_review_comments(%{assigns: %{current_scope: %{user: %{}} = scope, task: task}} = socket) do
+    if review_run?(socket.assigns) do
+      socket
+      |> assign(:review_diff_comments, Pipeline.list_diff_comments(scope, task, unsent: true))
+      |> assign(:review_screen_comments, Pipeline.list_screen_comments(scope, task))
+    else
+      socket |> assign(:review_diff_comments, []) |> assign(:review_screen_comments, [])
+    end
+  end
+
+  defp assign_review_comments(socket),
+    do: socket |> assign(:review_diff_comments, []) |> assign(:review_screen_comments, [])
+
+  defp review_run?(%{selected_run: %Run{role_id: role_id}, roles_map: %{} = roles_map}),
+    do: match?(%{stage: :review_lead}, roles_map[role_id])
+
+  defp review_run?(_assigns), do: false
+
+  defp tray_message(:stage_running), do: "The Review lead is working. Send waits until it stops."
+  defp tray_message(:findings_undecided), do: "Some findings have no ruling yet. Rule on every one first."
+  defp tray_message(:nothing_to_start), do: "There is nothing to send: the review is finished."
+  defp tray_message(:dispatch_disabled), do: "Dispatch is off, so the Review lead was not resumed."
+  defp tray_message(:ci_not_passed), do: "CI has not passed on the fix commit, so the review cannot finish yet."
+  defp tray_message({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not Review."
 
   # The log the component holds; the rendered lines and the turns read out of it
   # are both derived from it, so an appended batch only updates one list. The log
