@@ -202,4 +202,27 @@ defmodule RailWeb.Utils.ChildStatusTest do
       assert %{line: ^line} = child_status(task, [task])
     end
   end
+
+  test "every state has one cell per child stage, in order, so a row always fills the board's stage columns", %{
+    child: child,
+    run: run,
+    now: now
+  } do
+    merged = child.(1, issue: %Issue{identifier: "SPL-1", completed_at: now})
+    canceled = child.(2, issue: %Issue{identifier: "SPL-2", state: :canceled})
+    blocked = child.(3, builds_on: [2])
+    waiting = child.(4, builds_on: [5])
+    at_engineer = child.(5, runs: [run.(:engineer, status: :running)])
+    at_review = child.(6, stage: :review, runs: [run.(:review_lead, status: :finished, stage_outcome: :done)])
+    siblings = [merged, canceled, blocked, waiting, at_engineer, at_review]
+
+    assert child_stages() == [:engineer, :review]
+
+    assert [:merged, :canceled, :blocked_by_canceled, :waiting_on, :running, :done] =
+             for(sibling <- siblings, do: child_status(sibling, siblings).state)
+
+    for sibling <- siblings do
+      assert [%{stage: :engineer}, %{stage: :review}] = child_status(sibling, siblings).cells
+    end
+  end
 end
