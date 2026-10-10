@@ -4834,8 +4834,12 @@ defmodule RailWeb.TaskLiveTest do
     test "the header says whether Review is running, failed, waiting on the findings or ready to merge", %{
       conn: conn,
       task: task,
+      role: role,
+      engineer_role: engineer_role,
       review_run: run
     } do
+      {:ok, plan_role} = Roles.get_role(project_id: task.project_id, stage: :plan)
+
       {:ok, running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert has_element?(view, "[data-qa='task_status_chip']", "Review running")
@@ -4847,11 +4851,26 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, done} = Pipeline.update_run(failed, %{stage_outcome: :done, error: nil})
       {:ok, _pass} = Pipeline.save_review(task)
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "[data-qa='task_status_chip']", "Review the findings")
+      assert has_element?(view, "[data-qa='task_status_chip']", ~r/^\s*Review\s*$/)
+      assert has_element?(view, "[data-qa='task_status_chip'] .pi-list-checks")
+      assert has_element?(view, "#task-tab-#{role.id}", ~r/\breview\s*$/)
+      assert has_element?(view, "#task-tab-#{role.id} [data-qa='task-tab-dot'][data-tone='blocked']")
+      assert has_element?(view, "#task-tab-#{engineer_role.id} [data-qa='task-tab-dot'][data-tone='done']")
+      assert has_element?(view, "#task-tab-#{plan_role.id} [data-qa='task-tab-dot'][data-tone='done']")
 
+      {:ok, stopped} = Pipeline.update_run(done, %{stage_outcome: :in_progress})
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "[data-qa='task_status_chip']", "Review stopped")
+      refute has_element?(view, "[data-qa='task_status_chip'] .pi-list-checks")
+      assert has_element?(view, "#task-tab-#{role.id} [data-qa='task-tab-dot'][data-tone='stopped']")
+
+      {:ok, done} = Pipeline.update_run(stopped, %{stage_outcome: :done})
       {:ok, _finished} = Pipeline.start_fix_round(done)
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert has_element?(view, "[data-qa='task_status_chip']", "Ready to merge")
+      assert has_element?(view, "[data-qa='task_status_chip'] .pi-check-circle")
+      refute has_element?(view, "[data-qa='task_status_chip'] .pi-list-checks")
+      assert has_element?(view, "#task-tab-#{role.id} [data-qa='task-tab-dot'][data-tone='done']")
     end
 
     test "working in the question card does not read the findings again", %{conn: conn, task: task, review_run: run} do

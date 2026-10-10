@@ -143,12 +143,12 @@ defmodule RailWeb.Utils.ChildStatusTest do
       )
 
     assert %{
-             label: "Review the findings",
+             label: "Review",
              cells: [%{mark: :done}, %{mark: :current, chip: %{label: "Findings"}}],
              line: "Findings to rule",
              needs_attention: true,
              badge: :dot,
-             action: %{label: "Review the findings", tab: "rol_review_lead"}
+             action: %{label: "Review", tab: "rol_review_lead"}
            } = child_status(at_review, [at_review])
   end
 

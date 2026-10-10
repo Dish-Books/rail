@@ -7,6 +7,8 @@ defmodule RailWeb.Utils.RunStateStyle do
   `:blocked` is.
   """
 
+  import RailWeb.Utils.StageLabel, only: [review_waiting?: 2]
+
   alias Rail.Pipeline.Schemas.Run
 
   @doc """
@@ -32,6 +34,14 @@ defmodule RailWeb.Utils.RunStateStyle do
       chip_class: classes(color, :chip),
       pill_label: pill_label(state)
     }
+  end
+
+  @doc """
+  The look of `run`'s state on `task`, which gives a Review round waiting on a person the Findings icon.
+  """
+  def run_state_style(run, task) do
+    style = run_state_style(run)
+    if review_waiting?(task, run), do: %{style | icon: "pi-list-checks"}, else: style
   end
 
   defp icon_for(:running), do: "pi-play-circle"

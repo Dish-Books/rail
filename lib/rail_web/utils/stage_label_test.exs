@@ -4,8 +4,10 @@ defmodule RailWeb.Utils.StageLabelTest do
   import RailWeb.Utils.StageLabel
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Roles.Schemas.Role
 
   test "a child of a split with no run reads what its earlier siblings hold it on" do
     siblings = [
@@ -61,7 +63,7 @@ defmodule RailWeb.Utils.StageLabelTest do
 
     assert stage_label(%Task{stage: :plan, scratch_path: scratch}, done) == "Review the plan"
     assert stage_label(%Task{stage: :engineer}, done) == "Review the diff"
-    assert stage_label(%Task{stage: :review}, done) == "Review the findings"
+    assert stage_label(%Task{stage: :review}, done) == "Review"
     assert approval_label(%Task{stage: :merged}) == "Waiting on you"
   end
 
@@ -72,7 +74,7 @@ defmodule RailWeb.Utils.StageLabelTest do
     task = %Task{stage: :review, scratch_path: scratch, issue: %Issue{identifier: "STL-1"}}
     File.mkdir_p!(Path.join(scratch, "reviews"))
 
-    assert approval_label(task) == "Review the findings"
+    assert approval_label(task) == "Review"
     refute ready_to_merge?(task, done)
 
     File.write!(
@@ -80,7 +82,7 @@ defmodule RailWeb.Utils.StageLabelTest do
       ~s({"passes": [{"round": 1, "saved_at": "2026-10-01T10:00:00Z", "head": "abc"}]})
     )
 
-    assert stage_label(task, done) == "Review the findings"
+    assert stage_label(task, done) == "Review"
     refute ready_to_merge?(task, done)
 
     File.write!(
@@ -92,6 +94,51 @@ defmodule RailWeb.Utils.StageLabelTest do
     assert ready_to_merge?(task, done)
     refute ready_to_merge?(task, %Run{status: :running})
     refute ready_to_merge?(%{task | stage: :engineer}, done)
+  end
+
+  test "a Review lead run that stopped, failed or asked reads so, even with a saved pass on disk" do
+    scratch = Path.join(System.tmp_dir!(), "stage_label_#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf(scratch) end)
+    task = %Task{stage: :review, scratch_path: scratch, issue: %Issue{identifier: "STL-2"}}
+    File.mkdir_p!(Path.join(scratch, "reviews"))
+
+    File.write!(
+      Path.join(scratch, "reviews/STL-2.json"),
+      ~s({"passes": [{"round": 1, "saved_at": "2026-10-01T10:00:00Z", "head": "abc"}]})
+    )
+
+    lead = %Run{status: :finished, role: %Role{stage: :review_lead}, questions: []}
+
+    assert stage_label(task, lead) == "Review stopped"
+    assert stage_label(task, %{lead | error: "The Review lead did not save its review."}) == "Review failed"
+    assert stage_label(task, %{lead | questions: [%Question{status: :pending}]}) == "Review needs an answer"
+    assert stage_label(task, %{lead | status: :blocked_on_input}) == "Review needs an answer"
+  end
+
+  test "only a done Review lead run at Review that is not ready to merge waits on a review" do
+    scratch = Path.join(System.tmp_dir!(), "stage_label_#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf(scratch) end)
+    task = %Task{stage: :review, scratch_path: scratch, issue: %Issue{identifier: "STL-3"}}
+    done = %Run{status: :finished, stage_outcome: :done, role: %Role{stage: :review_lead}}
+
+    assert review_waiting?(task, done)
+
+    refute review_waiting?(task, %{done | status: :blocked_on_input})
+    refute review_waiting?(task, %{done | stage_outcome: :in_progress})
+    refute review_waiting?(task, %{done | stage_outcome: :in_progress, error: "boom"})
+    refute review_waiting?(task, %{done | role: %Role{stage: :plan}})
+    refute review_waiting?(%{task | stage: :plan}, %{done | role: %Role{stage: :plan}})
+    refute review_waiting?(%{task | stage: :engineer}, %{done | role: %Role{stage: :engineer}})
+    refute review_waiting?(task, nil)
+
+    File.mkdir_p!(Path.join(scratch, "reviews"))
+
+    File.write!(
+      Path.join(scratch, "reviews/STL-3.json"),
+      ~s({"passes": [{"round": 1, "saved_at": "2026-10-01T10:00:00Z", "head": "abc", "finished_at": "2026-10-01T11:00:00Z"}]})
+    )
+
+    refute review_waiting?(task, done)
   end
 
   test "a Plan run done with options and no pick asks for the pick, and once picked for the review" do
