@@ -288,7 +288,8 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
                      "head" => "cmw-1",
                      "base" => "main",
                      "draft" => true,
-                     "body" => "https://linear.app/rail/issue/CMW-1\n\nOpened by Rail as a draft." <> _rest
+                     "body" =>
+                       "Closes CMW-1\n\nhttps://linear.app/rail/issue/CMW-1\n\nOpened by Rail as a draft." <> _rest
                    } = Jason.decode!(body)
 
             conn
@@ -334,7 +335,11 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
 
             conn
             |> Plug.Conn.put_status(201)
-            |> Req.Test.json(%{"number" => 13, "html_url" => "https://github.com/example/test-gh/pull/13", "draft" => true})
+            |> Req.Test.json(%{
+              "number" => 13,
+              "html_url" => "https://github.com/example/test-gh/pull/13",
+              "draft" => true
+            })
         end
       end)
 

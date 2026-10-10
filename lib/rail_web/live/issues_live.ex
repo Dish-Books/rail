@@ -367,7 +367,7 @@ defmodule RailWeb.IssuesLive do
   defp project_subtitle(nil), do: "Issues across all projects"
 
   defp project_subtitle(%{tracker: tracker, name: name} = project),
-    do: "#{Issue.tracker_label(tracker)} issues in #{project.key || project.linear_team_key} (#{name})"
+    do: "#{Issue.tracker_label(tracker)} issues in #{project.key} (#{name})"
 
   # --- Private Helpers ---
 

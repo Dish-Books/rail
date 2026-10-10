@@ -228,7 +228,7 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
         github_issue_json(%{
           "number" => 7,
           "state" => "closed",
-          "labels" => [%{"name" => "rail: triage"}, %{"name" => "bug"}]
+          "labels" => [%{"name" => "rail:triage"}, %{"name" => "bug"}]
         })
 
       Req.Test.expect(Client, 5, fn conn ->
@@ -246,10 +246,10 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
             Req.Test.json(conn, live)
 
           {"POST", "/repos/example/test-gh/issues/7/labels"} ->
-            assert %{"labels" => ["rail: todo"]} == Jason.decode!(body)
+            assert %{"labels" => ["rail:todo"]} == Jason.decode!(body)
             Req.Test.json(conn, [])
 
-          {"DELETE", "/repos/example/test-gh/issues/7/labels/rail%3A%20triage"} ->
+          {"DELETE", "/repos/example/test-gh/issues/7/labels/rail%3Atriage"} ->
             Req.Test.json(conn, [])
         end
       end)
@@ -283,7 +283,7 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
 
     test "swaps its priority label", %{github: issue} do
       {:ok, issue} = Issues.update_issue(issue, %{priority: :urgent})
-      live = github_issue_json(%{"number" => 7, "labels" => [%{"name" => "rail: priority medium"}]})
+      live = github_issue_json(%{"number" => 7, "labels" => [%{"name" => "rail:medium"}]})
 
       Req.Test.expect(Client, 4, fn conn ->
         {:ok, body, conn} = Plug.Conn.read_body(conn)
@@ -296,10 +296,10 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
             Req.Test.json(conn, live)
 
           {"POST", "/repos/example/test-gh/issues/7/labels"} ->
-            assert %{"labels" => ["rail: priority urgent"]} == Jason.decode!(body)
+            assert %{"labels" => ["rail:urgent"]} == Jason.decode!(body)
             Req.Test.json(conn, [])
 
-          {"DELETE", "/repos/example/test-gh/issues/7/labels/rail%3A%20priority%20medium"} ->
+          {"DELETE", "/repos/example/test-gh/issues/7/labels/rail%3Amedium"} ->
             conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{})
         end
       end)
@@ -354,7 +354,7 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
 
     test "an open issue moving between open states only has its labels moved", %{github: issue} do
       {:ok, issue} = Issues.update_issue(issue, %{state: :in_progress})
-      live = github_issue_json(%{"number" => 7, "labels" => [%{"name" => "rail: triage"}]})
+      live = github_issue_json(%{"number" => 7, "labels" => [%{"name" => "rail:triage"}]})
 
       Req.Test.expect(Client, 4, fn conn ->
         case {conn.method, conn.request_path} do
@@ -367,7 +367,7 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
           {"POST", "/repos/example/test-gh/issues/7/labels"} ->
             Req.Test.json(conn, [])
 
-          {"DELETE", "/repos/example/test-gh/issues/7/labels/rail%3A%20triage"} ->
+          {"DELETE", "/repos/example/test-gh/issues/7/labels/rail%3Atriage"} ->
             conn |> Plug.Conn.put_status(500) |> Req.Test.json(%{})
         end
       end)

@@ -340,7 +340,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
         name: "Webhook Remove Project",
         github_repo: "org/wh-remove",
         github_installation_id: 12_955,
-        linear_team_key: "WHR",
+        key: "WHR",
         default_branch: "main",
         clone_path: clone_path,
         linear_workspace_id: workspace_id
@@ -543,7 +543,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
         name: "Unlinked Project",
         github_repo: "org/unlinked",
         github_installation_id: 12_952,
-        linear_team_key: "UNL",
+        key: "UNL",
         default_branch: "main",
         clone_path: "/tmp/repos/unlinked"
       })
@@ -616,7 +616,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
         name: "Other Team Project",
         github_repo: "org/other-team",
         github_installation_id: 12_951,
-        linear_team_key: "OTH",
+        key: "OTH",
         default_branch: "main",
         clone_path: "/tmp/repos/other-team",
         linear_workspace_id: workspace_id

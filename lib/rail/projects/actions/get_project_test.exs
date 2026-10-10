@@ -15,7 +15,7 @@ defmodule Rail.Projects.Actions.GetProjectTest do
                name: "Rail Core",
                github_repo: repo,
                github_installation_id: 11_223,
-               linear_team_key: "RC",
+               key: "RC",
                default_branch: "main",
                clone_path: "/tmp/get"
              })

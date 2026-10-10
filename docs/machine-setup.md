@@ -1,6 +1,8 @@
-# Machine setup
+# Machine setup (running from source)
 
-What a machine needs before Rail runs on it, and how to tell it is ready.
+What a machine needs before Rail runs on it from a checkout, with `mix phx.server`, and how to tell it is ready. Agents, worktree setup, CI and Chrome then run as processes beside Rail, not in containers.
+
+The deployed stack is different: `docker-compose.yml`, brought up by `scripts/deploy.sh`, runs Postgres, Rail and every sandbox in containers. The `rail-sandbox` image carries Chrome and ffmpeg, so that machine needs Docker rather than steps 1 to 4.
 
 **Checking a machine with an LLM.** Give this file to a coding agent (Claude Code, for example) on the machine and ask: "Go through docs/machine-setup.md. Run every check, tell me which pass and which fail, and for each failure the fix this file gives." Every item below has a check whose expected result is stated, so the agent never has to guess. It should only report and suggest; installing packages needs `sudo`, which is yours to run.
 
@@ -32,7 +34,7 @@ The learnings tables store embeddings, so the first migration runs `CREATE EXTEN
 
 ## 4. Chrome and ffmpeg
 
-The QA and demo stages drive Chrome; a demo's frames are encoded with ffmpeg.
+The QA and demo stages drive Chrome; a demo's frames are encoded with ffmpeg. Running from source, Rail starts the host's Chrome; with `RAIL_SANDBOX_RUNTIME=docker` it runs in the `rail-browser` container instead, and this step does not apply.
 
 - Check: one of `google-chrome --version`, `chromium --version` or `chromium-browser --version` prints a version.
 - Check: `ffmpeg -version` prints a version. Without it a demo still records, but its video cannot be encoded.

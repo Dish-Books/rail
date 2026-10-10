@@ -34,7 +34,7 @@ defmodule Rail.Learnings.Actions.BackfillLearningsTest do
         github_repo: "example/backfill",
         github_installation_id: 1,
         default_branch: "main",
-        linear_team_key: "BFL",
+        key: "BFL",
         linear_workspace_id: "lw_test_seed",
         clone_path: "/tmp/repos/backfill.#{unique}"
       })

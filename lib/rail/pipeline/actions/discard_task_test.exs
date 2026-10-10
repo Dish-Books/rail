@@ -109,7 +109,7 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
         name: "Discard Task Project",
         github_repo: "org/discard-task",
         github_installation_id: 8706,
-        linear_team_key: "DSC",
+        key: "DSC",
         default_branch: "main",
         clone_path: clone_path,
         linear_workspace_id: workspace_id

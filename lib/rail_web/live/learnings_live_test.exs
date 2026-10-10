@@ -467,7 +467,7 @@ defmodule RailWeb.LearningsLiveTest do
         github_repo: "example/hidden",
         github_installation_id: 1,
         default_branch: "main",
-        linear_team_key: "HID",
+        key: "HID",
         clone_path: "/tmp/repos/hidden"
       })
 
@@ -817,7 +817,7 @@ defmodule RailWeb.LearningsLiveTest do
         github_repo: "example/keep-rule",
         github_installation_id: 1,
         default_branch: "main",
-        linear_team_key: "KPR",
+        key: "KPR",
         clone_path: "/tmp/repos/keep-rule"
       })
 

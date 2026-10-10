@@ -37,7 +37,7 @@ defmodule RailWeb.GithubWebhookControllerTest do
     sign: sign,
     github_project: %{id: project_id}
   } do
-    issue = github_issue_json(%{"number" => 77, "title" => "Filed on GitHub", "labels" => [%{"name" => "rail: todo"}]})
+    issue = github_issue_json(%{"number" => 77, "title" => "Filed on GitHub", "labels" => [%{"name" => "rail:todo"}]})
 
     body =
       Jason.encode!(%{

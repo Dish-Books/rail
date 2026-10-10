@@ -117,8 +117,8 @@ defmodule RailWeb.Components.NavTest do
   end
 
   test "top_app_bar renders section title, project pill, theme toggle, and new issue button" do
-    p1 = %Project{id: "prj_1", name: "Core API", active: true, linear_team_key: "COR"}
-    p2 = %Project{id: "prj_2", name: "Web UI", active: true, linear_team_key: "WEB"}
+    p1 = %Project{id: "prj_1", name: "Core API", active: true, key: "COR"}
+    p2 = %Project{id: "prj_2", name: "Web UI", active: true, key: "WEB"}
 
     html =
       render_component(&Nav.top_app_bar/1,
@@ -159,7 +159,7 @@ defmodule RailWeb.Components.NavTest do
   end
 
   test "top_app_bar renders selected project name when filtered" do
-    p1 = %Project{id: "prj_1", name: "Alpha App", active: true, linear_team_key: "ALP"}
+    p1 = %Project{id: "prj_1", name: "Alpha App", active: true, key: "ALP"}
 
     html =
       render_component(&Nav.top_app_bar/1,
@@ -177,7 +177,7 @@ defmodule RailWeb.Components.NavTest do
   end
 
   test "top_app_bar renders project switcher dialog when open" do
-    p1 = %Project{id: "prj_1", name: "Beta Project", active: true, linear_team_key: "BET"}
+    p1 = %Project{id: "prj_1", name: "Beta Project", active: true, key: "BET"}
 
     html =
       render_component(&Nav.top_app_bar/1,

@@ -31,7 +31,7 @@ default_project =
       github_repo: "Rail-AI-dev/rail",
       github_installation_id: 1,
       default_branch: "main",
-      linear_team_key: "RAIL",
+      key: "RAIL",
       clone_path: "/var/rail/worktrees/rail",
       active: true
     })

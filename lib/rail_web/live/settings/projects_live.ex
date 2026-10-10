@@ -145,7 +145,7 @@ defmodule RailWeb.Settings.ProjectsLive do
                   <span id={"project-team-key-#{project.id}"}>
                     Key:
                     <span class="font-semibold text-slate-900 dark:text-slate-100">
-                      {project.key || project.linear_team_key}
+                      {project.key}
                     </span>
                     <span class="text-slate-500 dark:text-slate-400">({tracker_label(project.tracker)})</span>
                   </span>
@@ -305,17 +305,19 @@ defmodule RailWeb.Settings.ProjectsLive do
                 </span>
               </fieldset>
 
-              <div :if={@show_github_fields}>
-                <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">Key</label>
+              <div>
+                <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">
+                  {if @show_linear_fields, do: "Linear Team Key", else: "Key"}
+                </label>
                 <input
                   type="text"
                   name="project[key]"
                   id="project-key-input"
                   value={Ecto.Changeset.get_field(@changeset, :key)}
-                  placeholder="the repository's name"
+                  placeholder={if @show_linear_fields, do: "e.g. DIS", else: "the repository's name"}
                   class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                 />
-                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                <p :if={@show_github_fields} class="mt-1 text-xs text-slate-500 dark:text-slate-400">
                   Names its issues, as in key#123. Fixed once the project has issues. The GitHub App needs Issues: read and write.
                 </p>
                 <span
@@ -324,25 +326,6 @@ defmodule RailWeb.Settings.ProjectsLive do
                   id="project-key-error"
                 >
                   {elem(@changeset.errors[:key], 0)}
-                </span>
-              </div>
-
-              <div :if={@show_linear_fields}>
-                <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">Linear Team Key</label>
-                <input
-                  type="text"
-                  name="project[linear_team_key]"
-                  id="project-linear-team-key-input"
-                  value={Ecto.Changeset.get_field(@changeset, :linear_team_key)}
-                  placeholder="e.g. DIS"
-                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                />
-                <span
-                  :if={@changeset.errors[:linear_team_key]}
-                  class="text-xs text-red-600"
-                  id="project-linear-team-key-error"
-                >
-                  {elem(@changeset.errors[:linear_team_key], 0)}
                 </span>
               </div>
 

@@ -221,7 +221,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
         name: "Other Project",
         github_repo: "org/other-slot",
         github_installation_id: 44_002,
-        linear_team_key: "OTH",
+        key: "OTH",
         default_branch: "main",
         clone_path: "/tmp/repos/other-slot"
       })

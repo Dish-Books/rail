@@ -10,7 +10,7 @@ Create it in the org: Settings > Developer settings > GitHub Apps > New GitHub A
 
 - Homepage URL: Rail's URL (`http://localhost:4000` on a laptop).
 - Callback URL and Setup URL: leave empty.
-- Webhook: Active, URL `https://<rail-host>/webhooks/github`, and a secret you generate (`openssl rand -hex 32`), which also goes in Rail's `GITHUB_WEBHOOK_SECRET`. Rail refuses every delivery while that variable is unset.
+- Webhook: Active, URL `https://<rail-host>/webhooks/github`, and a secret you generate (`openssl rand -hex 32`), which also goes in Rail's `GITHUB_WEBHOOK_SECRET`. Unset, Rail falls back to a placeholder, as it does for its other variables, so set it before turning the webhook on.
 - Repository permissions:
 
   | Permission | Access | Why |
@@ -42,7 +42,7 @@ Only needed if people sign in with GitHub rather than `/dev/login`. Create an OA
 
 Each project picks one, and keeps it once it has issues.
 
-- **GitHub Issues.** Nothing to set up beyond the App's Issues permission and webhook. Saving the project creates nine `rail:` labels in the repository (states and priorities). The Issues page's Sync button pulls every open issue and those closed in the last 30 days; after that, the App's webhook brings each change as it happens. An open issue with no `rail:` label counts as Backlog. Issues are named `<key>#<number>`, such as `foo#267`, and a pull request Rail opens closes its issue on merge (`Closes #N`).
+- **GitHub Issues.** Nothing to set up beyond the App's Issues permission and webhook. Saving the project creates nine `rail:` labels in the repository (states and priorities). The Issues page's Sync button pulls every open issue and those closed in the last 30 days; after that, the App's webhook brings each change as it happens. An open issue with no `rail:` label counts as Backlog. Issues are named `<key>#<number>`, such as `foo#267`, and a pull request Rail opens closes its issue on merge (`Closes #N`; on Linear, `Closes ENG-123` does it when the workspace has Linear's GitHub integration).
 - **Linear.** Add the workspace in Settings > Linear Workspaces, then give the project its team key.
 
 ## 4. Preparing each repository
@@ -94,8 +94,8 @@ Settings > Projects > New Project:
 | Installation ID | from step 1 |
 | Default Branch | usually `main` |
 | Issue Tracker | GitHub Issues or Linear |
-| Key | GitHub Issues: names its issues (`key#123`), defaults to the repo's name, fixed once there are issues |
-| Linear Team Key, Linear Workspace | Linear only |
+| Key | Linear: the team's key. GitHub Issues: names its issues (`key#123`), defaults to the repo's name. Fixed once there are issues |
+| Linear Workspace | Linear only |
 | Clone Path | the clone from step 5 |
 | Worktree Setup Script | the script from step 4, relative to the repo root |
 | CI command | from step 4 |
@@ -112,4 +112,4 @@ Check: Settings > Roles lists a role for each of plan (with product, design and 
 
 ## 8. First task
 
-Pick a small issue, claim it (Rail moves a tracker's status forward only once the issue has an owner), and start Plan. A run tab appears on the task within seconds. On a GitHub-tracked project the issue's label moves to `rail: in progress`, then `rail: in review` once review starts.
+Pick a small issue, claim it (Rail moves a tracker's status forward only once the issue has an owner), and start Plan. A run tab appears on the task within seconds. On a GitHub-tracked project the issue's label moves to `rail:in-progress`, then `rail:in-review` once review starts.

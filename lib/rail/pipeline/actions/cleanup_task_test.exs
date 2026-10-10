@@ -139,7 +139,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         name: "Cleanup Task Project",
         github_repo: "org/cleanup-task",
         github_installation_id: 8705,
-        linear_team_key: "CLN",
+        key: "CLN",
         default_branch: "main",
         clone_path: clone_path,
         linear_workspace_id: workspace_id

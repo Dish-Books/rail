@@ -4,7 +4,6 @@ defmodule Rail.Issues.Workers.AdvanceTrackerStateTest do
 
   alias Rail.GitHub.Client
   alias Rail.Issues
-  alias Rail.Issues.Workers.AdvanceLinearState
   alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Pipeline
   alias Rail.Repo
@@ -497,7 +496,7 @@ defmodule Rail.Issues.Workers.AdvanceTrackerStateTest do
 
     test "Plan moves a Triage issue to in progress", %{issue: issue} do
       live =
-        github_issue_json(%{"number" => 9, "labels" => [%{"name" => "rail: triage"}, %{"name" => "rail: priority high"}]})
+        github_issue_json(%{"number" => 9, "labels" => [%{"name" => "rail:triage"}, %{"name" => "rail:high"}]})
 
       Req.Test.expect(Client, 4, fn conn ->
         {:ok, body, conn} = Plug.Conn.read_body(conn)
@@ -510,10 +509,10 @@ defmodule Rail.Issues.Workers.AdvanceTrackerStateTest do
             Req.Test.json(conn, live)
 
           {"POST", "/repos/example/test-gh/issues/9/labels"} ->
-            assert %{"labels" => ["rail: in progress"]} == Jason.decode!(body)
+            assert %{"labels" => ["rail:in-progress"]} == Jason.decode!(body)
             Req.Test.json(conn, [])
 
-          {"DELETE", "/repos/example/test-gh/issues/9/labels/rail%3A%20triage"} ->
+          {"DELETE", "/repos/example/test-gh/issues/9/labels/rail%3Atriage"} ->
             Req.Test.json(conn, [])
         end
       end)
@@ -523,14 +522,14 @@ defmodule Rail.Issues.Workers.AdvanceTrackerStateTest do
 
     test "review moves an in progress issue to in review", %{issue: issue, task: task} do
       {:ok, _task} = Pipeline.update_task(task, %{stage: :review})
-      live = github_issue_json(%{"number" => 9, "labels" => [%{"name" => "rail: in progress"}]})
+      live = github_issue_json(%{"number" => 9, "labels" => [%{"name" => "rail:in-progress"}]})
 
       Req.Test.expect(Client, 4, fn conn ->
         case {conn.method, conn.request_path} do
           {"POST", "/app/installations/1/access_tokens"} -> Req.Test.json(conn, %{"token" => "ghs_token"})
           {"GET", "/repos/example/test-gh/issues/9"} -> Req.Test.json(conn, live)
           {"POST", "/repos/example/test-gh/issues/9/labels"} -> Req.Test.json(conn, [])
-          {"DELETE", "/repos/example/test-gh/issues/9/labels/rail%3A%20in%20progress"} -> Req.Test.json(conn, [])
+          {"DELETE", "/repos/example/test-gh/issues/9/labels/rail%3Ain-progress"} -> Req.Test.json(conn, [])
         end
       end)
 
@@ -539,7 +538,7 @@ defmodule Rail.Issues.Workers.AdvanceTrackerStateTest do
 
     test "Merged closes an issue the pull request's merge left open", %{issue: issue, task: task} do
       {:ok, _task} = Pipeline.update_task(task, %{stage: :merged})
-      live = github_issue_json(%{"number" => 9, "labels" => [%{"name" => "rail: in review"}]})
+      live = github_issue_json(%{"number" => 9, "labels" => [%{"name" => "rail:in-review"}]})
 
       Req.Test.expect(Client, 3, fn conn ->
         {:ok, body, conn} = Plug.Conn.read_body(conn)
@@ -564,7 +563,7 @@ defmodule Rail.Issues.Workers.AdvanceTrackerStateTest do
       {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
 
       for live <- [
-            github_issue_json(%{"number" => 9, "labels" => [%{"name" => "rail: in review"}]}),
+            github_issue_json(%{"number" => 9, "labels" => [%{"name" => "rail:in-review"}]}),
             github_issue_json(%{"number" => 9, "state" => "closed", "state_reason" => "completed"})
           ] do
         Req.Test.expect(Client, 2, fn conn ->
@@ -585,13 +584,13 @@ defmodule Rail.Issues.Workers.AdvanceTrackerStateTest do
             Req.Test.json(conn, %{"token" => "ghs_token"})
 
           {"GET", "/repos/example/test-gh/issues/9"} ->
-            Req.Test.json(conn, github_issue_json(%{"number" => 9, "labels" => [%{"name" => "rail: todo"}]}))
+            Req.Test.json(conn, github_issue_json(%{"number" => 9, "labels" => [%{"name" => "rail:todo"}]}))
 
           {"POST", "/repos/example/test-gh/issues/9/labels"} ->
             {:ok, _task} = Pipeline.update_task(task, %{stage: :review})
             Req.Test.json(conn, [])
 
-          {"DELETE", "/repos/example/test-gh/issues/9/labels/rail%3A%20todo"} ->
+          {"DELETE", "/repos/example/test-gh/issues/9/labels/rail%3Atodo"} ->
             conn |> Plug.Conn.put_status(500) |> Req.Test.json(%{})
         end
       end)
@@ -623,9 +622,5 @@ defmodule Rail.Issues.Workers.AdvanceTrackerStateTest do
       Repo.delete!(unowned)
       assert :ok = perform_job(AdvanceTrackerState, %{issue_id: unowned.id})
     end
-  end
-
-  test "a job queued under the worker's old name still runs" do
-    assert :ok = perform_job(AdvanceLinearState, %{issue_id: "iss_gone"})
   end
 end

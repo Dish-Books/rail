@@ -66,7 +66,7 @@ defmodule RailWeb.IssuesLiveTest do
                name: "Issues Project",
                github_repo: "example/issues-project",
                github_installation_id: 601,
-               linear_team_key: "ISS",
+               key: "ISS",
                default_branch: "main",
                clone_path: "/tmp/issues-project",
                active: true,
@@ -379,7 +379,7 @@ defmodule RailWeb.IssuesLiveTest do
         name: "Hidden Project",
         github_repo: "example/hidden",
         github_installation_id: 556,
-        linear_team_key: "HID",
+        key: "HID",
         default_branch: "main",
         clone_path: "/tmp/hidden"
       })
@@ -790,7 +790,7 @@ defmodule RailWeb.IssuesLiveTest do
         name: "Sync Project",
         github_repo: "example/sync",
         github_installation_id: 555,
-        linear_team_key: "SYN",
+        key: "SYN",
         default_branch: "main",
         clone_path: "/tmp/sync"
       })
@@ -958,7 +958,7 @@ defmodule RailWeb.IssuesLiveTest do
         name: "Pruned Project",
         github_repo: "example/pruned",
         github_installation_id: 556,
-        linear_team_key: "PRU",
+        key: "PRU",
         default_branch: "main",
         clone_path: "/tmp/pruned",
         linear_workspace_id: "lw_test_seed"
@@ -1099,7 +1099,7 @@ defmodule RailWeb.IssuesLiveTest do
                name: "With Key Project",
                github_repo: "example/with-key",
                github_installation_id: 801,
-               linear_team_key: "KEY",
+               key: "KEY",
                default_branch: "main",
                clone_path: "/tmp/with-key",
                active: true,

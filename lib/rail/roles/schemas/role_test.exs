@@ -13,7 +13,7 @@ defmodule Rail.Roles.Schemas.RoleTest do
         name: "Role Schema Project",
         github_repo: "org/role-schema",
         github_installation_id: 4401,
-        linear_team_key: "RSC",
+        key: "RSC",
         default_branch: "main",
         clone_path: "/tmp/repos/role-schema"
       })

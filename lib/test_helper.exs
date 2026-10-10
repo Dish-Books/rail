@@ -1,6 +1,3 @@
-alias Rail.Issues.Tracker
-alias Rail.Issues.Tracker.GithubMock
-alias Rail.Issues.Tracker.LinearMock
 alias Rail.Projects.Schemas.LinearWorkspace
 alias Rail.Projects.Schemas.Project
 alias Rail.Roles.Schemas.Role
@@ -51,15 +48,8 @@ Mimic.copy(Rail.Roles)
 Mimic.copy(Rail.Tools.Browser)
 Mimic.copy(Rail.Tools.BrowserSession)
 Mimic.copy(Rail.Tools.FollowerSupervisor)
-
-# Each tracker goes through a mock of its behaviour; Rail.DataCase stubs it with the real one.
-Mox.defmock(LinearMock, for: Tracker)
-Mox.defmock(GithubMock, for: Tracker)
-
-Application.put_env(:rail, :issue_trackers, %{
-  linear: LinearMock,
-  github: GithubMock
-})
+Mimic.copy(Rail.Issues.Tracker.Linear)
+Mimic.copy(Rail.Issues.Tracker.Github)
 
 # Ensure that all Req calls are mocked by default
 Req.default_options(adapter: fn req -> raise "Unmocked call to #{req.url}" end)
@@ -92,7 +82,7 @@ project =
       github_repo: "example/test-seed",
       github_installation_id: 1,
       default_branch: "main",
-      linear_team_key: "TST",
+      key: "TST",
       linear_team_id: "lin_team_id",
       linear_state_ids: %{
         "triage" => "st_triage",

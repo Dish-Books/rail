@@ -54,7 +54,7 @@ defmodule RailWeb.ScreenControllerTest do
         github_repo: "org/other-screens",
         github_installation_id: 2,
         default_branch: "main",
-        linear_team_key: "OTH",
+        key: "OTH",
         clone_path: "/tmp/repos/other-screens"
       })
 

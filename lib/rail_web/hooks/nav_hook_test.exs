@@ -18,7 +18,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         name: "Nav Hook Other Project",
         github_repo: "org/nav-hook-other",
         github_installation_id: 13_120,
-        linear_team_key: "OTH",
+        key: "OTH",
         default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-other",
         linear_state_ids: %{"triage" => "st_triage"},

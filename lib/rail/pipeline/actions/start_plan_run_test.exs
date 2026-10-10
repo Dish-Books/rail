@@ -77,7 +77,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
         name: "Start Plan Project",
         github_repo: "org/start-plan",
         github_installation_id: 7002,
-        linear_team_key: "SPL",
+        key: "SPL",
         default_branch: "main",
         clone_path: clone_path,
         linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"},

@@ -342,7 +342,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
           name: "Last Page Project",
           github_repo: "org/last-page",
           github_installation_id: 12_954,
-          linear_team_key: "LPG",
+          key: "LPG",
           default_branch: "main",
           clone_path: create_temp_git_repo(prefix: "rail_last_page"),
           linear_workspace_id: "lw_test_seed"
@@ -636,7 +636,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
           name: "Other Sync Project",
           github_repo: "org/other-sync",
           github_installation_id: 12_953,
-          linear_team_key: "OSY",
+          key: "OSY",
           default_branch: "main",
           clone_path: "/tmp/repos/other-sync"
         })

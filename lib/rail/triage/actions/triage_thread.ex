@@ -309,7 +309,7 @@ defmodule Rail.Triage.Actions.TriageThread do
 
     You have the code and nothing else: no production data, logs or application state. Where a bug turns on something you cannot see, reason from the code and state what you could not check as an assumption.
 
-    Before you draft any issue, search Linear for one that already covers the item, with the Linear tools you were offered, on the #{thread.project.linear_team_key} team. Include finished issues, and try at least two phrasings, the thread's own words and the names you found in the code, before you decide none does. Open a likely match and read it before you cite it.
+    Before you draft any issue, search Linear for one that already covers the item, with the Linear tools you were offered, on the #{thread.project.key} team. Include finished issues, and try at least two phrasings, the thread's own words and the names you found in the code, before you decide none does. Open a likely match and read it before you cite it.
     #{rules(thread, role)}#{forced(thread)}
     #{items(thread)}
     #{notes(thread)}

@@ -59,7 +59,7 @@ defmodule Rail.Issues.Actions.GetAssetTest do
         name: "Get Asset No Workspace",
         github_repo: "org/get-asset-none",
         github_installation_id: 5302,
-        linear_team_key: "GAN",
+        key: "GAN",
         default_branch: "main",
         clone_path: "/tmp/repos/get-asset-none"
       })

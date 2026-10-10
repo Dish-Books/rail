@@ -15,7 +15,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
         name: "List Issues Project Two",
         github_repo: "org/list-issues-two",
         github_installation_id: 5702,
-        linear_team_key: "LI2",
+        key: "LI2",
         default_branch: "main",
         clone_path: "/tmp/repos/list-issues-two"
       })

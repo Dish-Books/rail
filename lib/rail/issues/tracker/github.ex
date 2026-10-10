@@ -75,13 +75,6 @@ defmodule Rail.Issues.Tracker.Github do
     end
   end
 
-  # A merge into the default branch closes the issue through the pull request's `Closes #N`; this
-  # closes one the merge did not, such as a split parent's.
-  defp close_issue(token, %Project{github_repo: repo}, %Issue{number: number}) do
-    with {:ok, _closed} <- GitHub.update_issue(token, repo, number, %{state: "closed", state_reason: "completed"}),
-         do: :ok
-  end
-
   # GitHub comments are flat, so a reply goes up as a new comment quoting the one it answers.
   @impl true
   def create_comment(_scope, %Issue{} = issue, body, parent) do
@@ -175,6 +168,13 @@ defmodule Rail.Issues.Tracker.Github do
 
   defp relabel(token, project, %Issue{} = issue, live, true, kind),
     do: swap_label(token, project, issue, live, kind, Map.fetch!(issue, kind))
+
+  # A merge into the default branch closes the issue through the pull request's `Closes #N`; this
+  # closes one the merge did not, such as a split parent's.
+  defp close_issue(token, %Project{github_repo: repo}, %Issue{number: number}) do
+    with {:ok, _closed} <- GitHub.update_issue(token, repo, number, %{state: "closed", state_reason: "completed"}),
+         do: :ok
+  end
 
   # Adds the label for `value` of `kind` (`:state` or `:priority`) and takes off the others of that kind.
   defp swap_label(token, %Project{github_repo: repo}, %Issue{number: number}, live, kind, value) do

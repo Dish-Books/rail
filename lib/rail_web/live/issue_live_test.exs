@@ -622,7 +622,7 @@ defmodule RailWeb.IssueLiveTest do
         name: "Hidden Project",
         github_repo: "example/hidden-issue",
         github_installation_id: 557,
-        linear_team_key: "HID",
+        key: "HID",
         default_branch: "main",
         clone_path: "/tmp/hidden-issue"
       })

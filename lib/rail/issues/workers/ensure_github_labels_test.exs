@@ -33,12 +33,12 @@ defmodule Rail.Issues.Workers.EnsureGithubLabelsTest do
 
         {"POST", "/repos/example/test-gh/labels"} ->
           case Jason.decode!(body) do
-            %{"name" => "rail: triage", "color" => "d4c5f9", "description" => "Rail: waiting to be sorted"} ->
+            %{"name" => "rail:triage", "color" => "d4c5f9", "description" => "Rail: waiting to be sorted"} ->
               conn
               |> Plug.Conn.put_status(422)
               |> Req.Test.json(%{"errors" => [%{"resource" => "Label", "code" => "already_exists", "field" => "name"}]})
 
-            %{"name" => "rail: " <> _rest} ->
+            %{"name" => "rail:" <> _rest} ->
               conn |> Plug.Conn.put_status(201) |> Req.Test.json(%{})
           end
       end

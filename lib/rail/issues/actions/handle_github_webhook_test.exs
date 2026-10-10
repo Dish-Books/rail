@@ -14,7 +14,7 @@ defmodule Rail.Issues.Actions.HandleGithubWebhookTest do
       Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
 
       payload =
-        github_issue_json(%{"number" => 81, "title" => "From GitHub", "labels" => [%{"name" => "rail: priority high"}]})
+        github_issue_json(%{"number" => 81, "title" => "From GitHub", "labels" => [%{"name" => "rail:high"}]})
 
       assert {:ok, %Issue{id: issue_id, identifier: "tgh#81", state: :backlog, priority: :high, project_id: ^project_id}} =
                Issues.handle_github_webhook(project, "issues", %{"action" => "opened", "issue" => payload})
@@ -33,7 +33,7 @@ defmodule Rail.Issues.Actions.HandleGithubWebhookTest do
       assert {:ok, %Issue{state: :in_progress}} =
                Issues.handle_github_webhook(project, "issues", %{
                  "action" => "labeled",
-                 "issue" => Map.put(later.(1), "labels", [%{"name" => "rail: in progress"}])
+                 "issue" => Map.put(later.(1), "labels", [%{"name" => "rail:in-progress"}])
                })
 
       closed =

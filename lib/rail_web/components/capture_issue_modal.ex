@@ -272,7 +272,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
       else: active_projects |> List.first(%{}) |> Map.get(:id)
   end
 
-  defp project_label(%{name: name} = project), do: "#{name} (#{project.key || project.linear_team_key})"
+  defp project_label(%{name: name} = project), do: "#{name} (#{project.key})"
 
   defp error_message(%Ecto.Changeset{}), do: "Could not create the issue"
 
