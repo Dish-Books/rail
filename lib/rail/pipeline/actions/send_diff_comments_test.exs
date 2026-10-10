@@ -170,6 +170,26 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
     assert [%DiffComment{status: :sent}] = Pipeline.list_diff_comments(ada, task)
   end
 
+  # A commit's line numbers are that commit's, so the message says which commit they are in.
+  test "a comment written in one commit's view names the commit", %{task: task, run: run, ada: ada} do
+    {:ok, running} = Pipeline.update_run(run, %{status: :running})
+
+    {:ok, _only} =
+      Pipeline.create_diff_comment(ada, task, %{
+        path: "lib/a.ex",
+        line_kind: :added,
+        line: 3,
+        line_text: "x = 1",
+        filter: :commit,
+        commit: "9c41e07aa",
+        body: "Name it."
+      })
+
+    assert {:ok, :queued,
+            %Run{pending_chat: "1 comment on the diff\n\nlib/a.ex, line 3 in commit 9c41e07\n+ x = 1\nName it."}} =
+             Pipeline.send_diff_comments(ada, running)
+  end
+
   test "with nothing unsent nothing is sent", %{run: run, ada: ada} do
     assert {:error, :nothing_to_send} = Pipeline.send_diff_comments(ada, run)
     assert Pipeline.list_run_events(run) == []

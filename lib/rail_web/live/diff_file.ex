@@ -1,7 +1,8 @@
 defmodule RailWeb.Live.DiffFile do
   @moduledoc """
   One file of the diff pane, a component of its own so that marking it reviewed
-  or re-reading it patches this file and not every line of the pane.
+  or re-reading it patches this file and not every line of the pane. Its lines
+  take comments unless the view is a merge's.
   """
   use RailWeb, :live_component
 
@@ -126,7 +127,7 @@ defmodule RailWeb.Live.DiffFile do
               row={row}
               expanded={expanded(@expanded_gaps, row)}
               target={@target}
-              commentable={true}
+              commentable={@commentable?}
             />
             <div :for={comment <- segment.comments} class="diff-comment-row">
               <.diff_comment

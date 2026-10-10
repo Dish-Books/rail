@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Tools
@@ -108,6 +109,39 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
       assert prompt =~ "  Round 1, ruled Fix"
       assert prompt =~ ~r/  Round 3, not_fixed on [0-9a-f]{7}: Still twice\./
       assert prompt =~ ~r/  Round 3, carried on [0-9a-f]{7}/
+
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_review_run(run)
+  end
+
+  # The engineer commits and keeps the branch up to date; Rail only pushes what a turn leaves committed.
+  test "briefs the lead that its engineer commits, Rail pushes, and the branch is checked against main each turn", %{
+    task: %Task{worktree_path: worktree_path},
+    run: run
+  } do
+    test_pid = self()
+
+    expect(Rail.Pipeline.Utils.PrepareTurn, :prepare_turn, fn %Run{task: %Task{worktree_path: ^worktree_path}} ->
+      send(test_pid, :prepared)
+      "The branch is behind origin/main.\n\n"
+    end)
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned,
+                                        ["-p", "The branch is behind origin/main.\n\n" <> _brief = prompt | _rest] ->
+      assert_received :prepared
+      assert prompt =~ "the engineer makes and commits every change"
+      assert prompt =~ "ending each commit message with the line `Ticket: SRV-1`"
+      assert prompt =~ "Nobody pushes: a turn that ends with commits the remote does not have yet hands them to Rail"
+      assert prompt =~ "check the branch against `origin/main`, which Rail fetched as the turn started"
+      assert prompt =~ "have the engineer bring it up to date by merging it in"
+      assert prompt =~ "nobody rewrites commit history: no rebase, no amend, no reset or squash of a commit"
+      assert prompt =~ "Save each Fix finding with `save_finding`, `status` fixed"
+      assert prompt =~ "A turn that committed while a Fix finding is not saved fixed is held"
+      refute prompt =~ "`commit`"
+      refute prompt =~ "request_merge"
+      refute prompt =~ "merge_follow_up"
 
       {:ok, %OsProcess{run: spawned}}
     end)

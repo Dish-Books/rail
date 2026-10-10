@@ -21,7 +21,7 @@ defmodule RailWeb.Live.DiffFileTree do
         :if={@show?}
         id="diff-file-tree"
         data-qa="diff-tree diff_file_tree"
-        class="w-[248px] shrink-0 overflow-y-auto border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/30 p-2"
+        class="hidden @xl:block w-[248px] shrink-0 overflow-y-auto border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/30 p-2"
       >
         <.segmented_control
           id="diff-list"

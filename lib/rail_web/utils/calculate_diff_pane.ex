@@ -3,9 +3,9 @@ defmodule RailWeb.Utils.CalculateDiffPane do
   What each part of the diff pane draws, split the way LiveView patches it.
 
   The browser redraws everything under whatever a patch touches, so the toolbar,
-  the file list and each file are live components of their own. The pane draws
-  itself whole only when its frame moves; the stage owning it compares these
-  parts to send any other change to the part it moved.
+  the file list and each file are live components of their own. `RailWeb.Live.DiffView`
+  assigns each part on its own, so a change reaches only the part it moved, in the
+  same reply as the event that moved it.
   """
 
   @doc """
@@ -16,6 +16,7 @@ defmodule RailWeb.Utils.CalculateDiffPane do
   after each line with comments or the comment being written under it, and the
   comments that no longer have their line are `lifted` to the top of it. Only
   unsent comments are counted, since the counts are of what Send would send.
+  `filter` is the view: `:branch`, `:uncommitted` or `{:commit, sha}`.
   """
   def calculate_diff_pane(assigns) do
     %{files: files, query: query, target: target} = assigns
@@ -37,7 +38,7 @@ defmodule RailWeb.Utils.CalculateDiffPane do
       toolbar: %{
         target: target,
         show_file_tree: assigns.show_file_tree,
-        filter: assigns.filter,
+        picker: assigns.picker,
         wrap: assigns.wrap,
         query: query,
         additions: Enum.sum_by(files, & &1.additions),
@@ -45,7 +46,9 @@ defmodule RailWeb.Utils.CalculateDiffPane do
         viewed: Enum.count(files, & &1.viewed?),
         total: length(files),
         unsent: Enum.count(assigns.comments, &(&1.status == :unsent)),
-        engineer_running?: assigns.engineer_running?
+        running?: assigns.running?,
+        agent: assigns.agent,
+        commentable?: assigns.commentable?
       },
       tree: if(files != [], do: tree(visible, shared, comments, assigns)),
       sections: Enum.map(visible, &{section_id(&1, shared), section(&1, Map.get(comments, &1.path, []), open, assigns)})
@@ -137,6 +140,7 @@ defmodule RailWeb.Utils.CalculateDiffPane do
       unsent: unsent(comments),
       open: for(comment <- comments, MapSet.member?(open, comment.id), do: comment.id),
       reader_id: assigns.reader_id,
+      commentable?: assigns.commentable?,
       viewed?: file.viewed?,
       collapsed?: file.path in assigns.collapsed,
       expanded_gaps: Map.take(assigns.expanded_gaps, gap_keys)
@@ -166,8 +170,9 @@ defmodule RailWeb.Utils.CalculateDiffPane do
     Enum.reverse(done)
   end
 
-  # The drawn line a comment still belongs to: the same side, number and text,
-  # and for a removed line the same view, since old-side numbers differ by view.
+  # The drawn line a comment still belongs to: the same side, number and text, for
+  # a removed line the same view, since old-side numbers differ by view, and for a
+  # commit's line only that commit's view, since its numbers are that commit's.
   defp anchor(comment, rows, filter) do
     if comparable?(comment, filter),
       do: Enum.find(rows, &(at?(&1, comment) and &1.text == comment.line_text))
@@ -178,6 +183,8 @@ defmodule RailWeb.Utils.CalculateDiffPane do
     comparable?(comment, filter) and Enum.any?(rows, &(at?(&1, comment) and &1.text != comment.line_text))
   end
 
+  defp comparable?(%{filter: :commit, commit: commit}, filter), do: filter == {:commit, commit}
+  defp comparable?(_comment, {:commit, _sha}), do: false
   defp comparable?(%{line_kind: :deleted, filter: written_in}, filter), do: written_in == filter
   defp comparable?(_comment, _filter), do: true
 

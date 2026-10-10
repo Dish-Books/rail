@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Schemas.DiffComment do
 
   It is drawn under its line only while a line on the same side, at the same
   number, still reads `line_text`; otherwise it is lifted to the top of its file.
+  One written in a single commit's view is drawn under its line only in that view.
 
   `context_text` is the code around the line as it read then, which the engineer
   and the rule learned from it are given, since the line itself may move.
@@ -23,9 +24,11 @@ defmodule Rail.Pipeline.Schemas.DiffComment do
     field :line, :integer
     field :line_text, :string, default: ""
     field :context_text, :string, default: ""
-    # Old-side numbers differ between the two views, so a removed line is only
-    # the same line in the view it was written in.
-    field :filter, Ecto.Enum, values: [:branch, :uncommitted]
+    # Old-side numbers differ between the views, so a removed line is only the same
+    # line in the view it was written in; one commit's lines are only that commit's.
+    field :filter, Ecto.Enum, values: [:branch, :uncommitted, :commit]
+    # The commit whose view it was written in, which a merge's never is.
+    field :commit, :string
     field :body, :string
     # Left out of the changeset, so only the actions that send or resolve move it.
     field :status, Ecto.Enum, values: [:unsent, :sent, :resolved], default: :unsent
@@ -37,6 +40,7 @@ defmodule Rail.Pipeline.Schemas.DiffComment do
   end
 
   @cast_fields [:path, :line_kind, :line, :line_text, :filter, :body]
+  @sha ~r/\A[0-9a-f]{7,40}\z/
 
   # As much either side of the line as a finding's hunk shows beside it.
   @context 6
@@ -46,11 +50,12 @@ defmodule Rail.Pipeline.Schemas.DiffComment do
   """
   def changeset(diff_comment, attrs) do
     diff_comment
-    |> cast(attrs, @cast_fields -- [:line_text])
+    |> cast(attrs, [:commit | @cast_fields -- [:line_text]])
     # A blank line is still a line, so its empty text is kept rather than nulled.
     |> cast(attrs, [:line_text, :context_text], empty_values: [])
     |> validate_required(@cast_fields -- [:line_text])
     |> validate_number(:line, greater_than: 0)
+    |> validate_commit()
     |> foreign_key_constraint(:task_id)
     |> foreign_key_constraint(:user_id)
   end
@@ -77,6 +82,12 @@ defmodule Rail.Pipeline.Schemas.DiffComment do
       nil ->
         ""
     end
+  end
+
+  defp validate_commit(changeset) do
+    if get_field(changeset, :filter) == :commit,
+      do: changeset |> validate_required([:commit]) |> validate_format(:commit, @sha),
+      else: put_change(changeset, :commit, nil)
   end
 
   defp glyph(:added), do: "+"

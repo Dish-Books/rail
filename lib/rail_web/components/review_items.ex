@@ -1,15 +1,17 @@
 defmodule RailWeb.Components.ReviewItems do
   @moduledoc """
-  Review's slim rail: Findings, Demo and Browser, each an icon over a short label, the picked one filled
-  blue. Each item's state is its hover title and its screen-reader text; Findings carries the amber count
-  still to rule, and a dot marks anything running, red while recording. Under 576px of main column it is
-  one row across the top.
+  Review's slim rail: Findings, Diff, Screens, Demo and Browser, each an icon over a short label, the picked
+  one filled blue. Each item's state is its hover title and its screen-reader text; Findings carries the
+  amber count still to rule, a dot marks anything running, red while recording, and a clock marks a demo
+  the branch has moved past. Under 576px of main column it is one row across the top.
   """
   use RailWeb, :html
 
   attr :items, :list,
     required: true,
-    doc: "`%{key:, label:, icon:, picked_icon:, state:, badge:, dot:, mark:}`, `dot` `:running`, `:recording` or nil"
+    doc:
+      "`%{key:, label:, icon:, picked_icon:, state:, badge:, dot:, mark:}`, `dot` `:running`, `:recording` or nil, " <>
+        "`mark` `:done`, `:failed`, `:stale` or nil"
 
   attr :picked, :atom, required: true
   attr :target, :any, required: true
@@ -78,6 +80,11 @@ defmodule RailWeb.Components.ReviewItems do
               :if={item.mark == :failed}
               name="pi-warning-circle-fill"
               class="size-3.5 text-red-500"
+            />
+            <.icon
+              :if={item.mark == :stale}
+              name="pi-clock-counter-clockwise-bold"
+              class="size-[13px] text-slate-400 dark:text-slate-300"
             />
           </span>
         </span>

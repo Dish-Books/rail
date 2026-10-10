@@ -6,9 +6,9 @@ defmodule Rail.Git.Actions.PushBranch do
   than passed in: a token is not something a caller should be holding, and the
   installation is what keeps a branch pushable after whoever was assigned leaves.
 
-  Never forced: Rail only ever adds to a branch, merging its base in rather than
-  rebasing onto it, so a push that does not extend what the remote has is one
-  made outside Rail, and is refused rather than overwritten.
+  Never forced: the agents only ever add to a branch, merging its base in rather
+  than rewriting its history, so a push that does not extend what the remote has
+  is refused rather than overwritten. `check_push/1` says which way it would be.
 
   The repository's own pre-push hooks run. A project whose CI runs before Rail
   pushes leaves a record a hook can recognise, so they should cost nothing; one

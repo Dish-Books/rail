@@ -34,6 +34,7 @@ defmodule RailWeb.TaskLive do
   alias Rail.Scope
   alias Rail.Tools
   alias Rail.Users
+  alias RailWeb.Live.DiffView
   alias RailWeb.Live.EngineerStage
   alias RailWeb.Live.PlanStage
   alias RailWeb.Live.QuestionCard
@@ -91,7 +92,6 @@ defmodule RailWeb.TaskLive do
       |> assign(:suggestions, %{})
       |> assign(:cleaning_up, false)
       |> assign(:focus_file, nil)
-      |> assign(:engineer_tab, nil)
       |> assign(:url_id, nil)
       |> assign(:child, nil)
       |> assign(:parent, nil)
@@ -182,7 +182,6 @@ defmodule RailWeb.TaskLive do
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
-            <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
           </:actions>
           <:sidebar>
@@ -221,7 +220,6 @@ defmodule RailWeb.TaskLive do
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
-            <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
           </:actions>
           <:sidebar>
@@ -248,7 +246,6 @@ defmodule RailWeb.TaskLive do
           line={@line}
           approvable={@approvable}
           current_scope={@current_scope}
-          engineer_tab={@engineer_tab}
         >
           <:breadcrumb :if={@show_switcher}>
             <.child_switcher
@@ -261,7 +258,6 @@ defmodule RailWeb.TaskLive do
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
-            <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
           </:actions>
           <:sidebar>
@@ -297,7 +293,6 @@ defmodule RailWeb.TaskLive do
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
-            <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
           </:actions>
           <.issue_view
@@ -349,7 +344,6 @@ defmodule RailWeb.TaskLive do
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
-            <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
           </:actions>
           <div
@@ -413,16 +407,6 @@ defmodule RailWeb.TaskLive do
     {:noreply, refresh_task(socket)}
   end
 
-  def handle_event("update_branch", _params, socket) do
-    socket =
-      case Pipeline.update_branch(socket.assigns.current_scope, socket.assigns.task) do
-        {:ok, _task} -> socket
-        {:error, reason} -> put_flash(socket, :error, update_branch_error(reason))
-      end
-
-    {:noreply, push_patch(socket, to: task_path(socket, merge_tab(socket.assigns)))}
-  end
-
   def handle_info({:run_events, run_id, events}, socket) do
     if MapSet.member?(socket.assigns.subscribed_run_ids, run_id) do
       send_update(RunConversation, id: "run-conversation", run_id: run_id, appended_events: events)
@@ -464,10 +448,11 @@ defmodule RailWeb.TaskLive do
   end
 
   # Comments the reader sees moved, in another tab or this one. Only the comments
-  # are read again: the diff under them has not moved.
+  # are read again: the diff under them has not moved. The Review tab draws the diff
+  # only while its Diff item is open, and an update to a diff not drawn goes nowhere.
   def handle_info({:diff_comments_changed, task_id}, socket) do
-    with %{pane: :engineer, task_id: ^task_id, selected_role: %Role{} = role} <- socket.assigns do
-      send_update(EngineerStage, id: stage_component_id(role), reload_comments: true)
+    with %{pane: pane, task_id: ^task_id} when pane in [:engineer, :review] <- socket.assigns do
+      send_update(DiffView, id: "diff-view", reload_comments: true)
     end
 
     {:noreply, socket}
@@ -582,29 +567,6 @@ defmodule RailWeb.TaskLive do
   end
 
   attr :task, :any, required: true
-  attr :engineer_tab, :any, required: true
-
-  # Only a branch the engineer has built has anything to merge into, and only a
-  # task nothing is working on can have its branch updated under it.
-  defp update_branch_button(assigns) do
-    ~H"""
-    <button
-      :if={@task.cleaned_up_at == nil and @engineer_tab != nil}
-      type="button"
-      id="update-branch"
-      data-qa="update_branch"
-      phx-click="update_branch"
-      phx-disable-with="Updating…"
-      disabled={Task.running?(@task)}
-      title={"Merge origin/#{@task.project.default_branch} into this branch"}
-      class="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-sm font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-    >
-      {if @task.is_updating_branch and Task.running?(@task), do: "Updating…", else: "Update branch"}
-    </button>
-    """
-  end
-
-  attr :task, :any, required: true
 
   # Nobody owns an issue until somebody claims it, and a child of a split is owned through its parent.
   defp claim_button(assigns) do
@@ -695,20 +657,24 @@ defmodule RailWeb.TaskLive do
 
       %{pane: :engineer, task: task, selected_role: role} ->
         send_update(EngineerStage, id: stage_component_id(role), task: task)
+        send_update(DiffView, id: "diff-view", reload: true)
 
       %{pane: :review, task: task, selected_role: role} ->
         send_update(ReviewStage, id: stage_component_id(role), task: task)
+        send_update(DiffView, id: "diff-view", reload: true)
 
       _no_stage_on_disk ->
         :ok
     end
   end
 
-  defp refresh_diff(%{assigns: %{pane: :engineer, selected_role: %Role{} = role, task: %Task{} = task}} = socket) do
+  defp refresh_diff(%{assigns: %{pane: pane, selected_role: %Role{} = role, task: %Task{} = task}} = socket)
+       when pane in [:engineer, :review] do
     now = System.monotonic_time(:millisecond)
 
     if due?(socket.assigns.diff_refreshed_at, now) do
-      send_update(EngineerStage, id: stage_component_id(role), task: task)
+      if pane == :engineer, do: send_update(EngineerStage, id: stage_component_id(role), task: task)
+      send_update(DiffView, id: "diff-view", reload: true)
       assign(socket, :diff_refreshed_at, now)
     else
       socket
@@ -811,7 +777,6 @@ defmodule RailWeb.TaskLive do
       )
     )
     |> assign_family(task)
-    |> assign(:engineer_tab, engineer_tab(started))
     |> assign(:subscribed_run_ids, sync_run_subscriptions(socket, task.runs))
     |> assign_watched_browser(task)
     |> assign(:round_questions, round_questions)
@@ -953,16 +918,6 @@ defmodule RailWeb.TaskLive do
 
   defp sync_tab_url(%{assigns: %{selected_tab: tab}} = socket) do
     push_patch(socket, to: task_path(socket, tab))
-  end
-
-  # The merge runs on the run of the stage the task is at, the Review lead's at Review, and shows on its tab.
-  defp merge_tab(%{task: %Task{stage: :review}, stage_run: %Run{role_id: role_id}}), do: role_id
-  defp merge_tab(%{engineer_tab: engineer_tab}), do: engineer_tab
-
-  # A finding names a file, and the diff that file changed in is the engineer's
-  # tab, so review can only link there once the engineer has a tab to link to.
-  defp engineer_tab(started) do
-    Enum.find_value(started, fn {role, _run} -> role.stage == :engineer and role.id end)
   end
 
   defp pane(nil), do: :issue
@@ -1252,10 +1207,4 @@ defmodule RailWeb.TaskLive do
 
   defp claim_error(:already_assigned), do: "Somebody else claimed this issue first"
   defp claim_error(:linear_not_linked), do: "Link your Linear account in Settings before claiming an issue"
-
-  defp update_branch_error(:task_busy), do: "Stop the task's run before updating its branch"
-  defp update_branch_error(:uncommitted_changes), do: "Commit the engineer's work before updating the branch"
-  defp update_branch_error(:no_worktree), do: "The task's worktree is gone, so there is nothing to update"
-  defp update_branch_error(reason) when is_binary(reason), do: "Could not update the branch: #{reason}"
-  defp update_branch_error(reason), do: "Could not update the branch: #{inspect(reason)}"
 end

@@ -64,8 +64,12 @@ defmodule Rail.Pipeline.Actions.SendDiffComments do
   end
 
   defp block(%DiffComment{} = comment) do
-    "#{comment.path}, #{line_label(comment)}\n#{quote_code(comment)}\n#{comment.body}"
+    "#{comment.path}, #{line_label(comment)}#{in_commit(comment)}\n#{quote_code(comment)}\n#{comment.body}"
   end
+
+  # A commit's line numbers are that commit's, so the engineer is told which.
+  defp in_commit(%DiffComment{commit: commit}) when is_binary(commit), do: " in commit #{String.slice(commit, 0, 7)}"
+  defp in_commit(%DiffComment{}), do: ""
 
   # A comment saved before blocks were kept has only its line to quote.
   defp quote_code(%DiffComment{context_text: context}) when is_binary(context) and context != "", do: context

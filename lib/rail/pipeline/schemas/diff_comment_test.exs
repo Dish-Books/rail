@@ -53,4 +53,24 @@ defmodule Rail.Pipeline.Schemas.DiffCommentTest do
     assert changeset.valid?
     assert Ecto.Changeset.get_field(changeset, :context_text) == ""
   end
+
+  test "a comment in one commit's view carries that commit, and only there" do
+    attrs = %{path: "a.ex", line_kind: :added, line: 3, line_text: "x", body: "Why?"}
+
+    assert %{valid?: true, changes: %{commit: "9c41e07"}} =
+             DiffComment.changeset(%DiffComment{}, Map.merge(attrs, %{filter: :commit, commit: "9c41e07"}))
+
+    assert Rail.DataCase.errors_on(DiffComment.changeset(%DiffComment{}, Map.put(attrs, :filter, :commit))) == %{
+             commit: ["can't be blank"]
+           }
+
+    assert Rail.DataCase.errors_on(
+             DiffComment.changeset(%DiffComment{}, Map.merge(attrs, %{filter: :commit, commit: "--all"}))
+           ) == %{commit: ["has invalid format"]}
+
+    refute Ecto.Changeset.get_field(
+             DiffComment.changeset(%DiffComment{}, Map.merge(attrs, %{filter: :branch, commit: "9c41e07"})),
+             :commit
+           )
+  end
 end

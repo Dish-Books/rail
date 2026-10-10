@@ -40,6 +40,15 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidenceTest do
     assert File.read!(Path.join([task.scratch_path, "qa", file])) == "jpeg bytes"
   end
 
+  test "a screen state's shot goes in that state's folder, named for when it was taken", %{task: task} do
+    stub(BrowserSession, :call, fn _session, _method, _params -> {:ok, %{"data" => Base.encode64("jpeg")}} end)
+
+    assert {:ok, "screens/file-list-after-send/" <> stamp} =
+             Tools.capture_browser_evidence(:session, task, "File list just after Send", "file-list-after-send")
+
+    assert {_microseconds, ".jpg"} = Integer.parse(stamp)
+  end
+
   # Two pictures with one caption are two pictures, so neither writes over the other.
   test "the same caption twice saves two files", %{task: task} do
     stub(BrowserSession, :call, fn _session, _method, _params -> {:ok, %{"data" => Base.encode64("jpeg")}} end)

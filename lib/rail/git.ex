@@ -1,16 +1,14 @@
 defmodule Rail.Git do
   @moduledoc """
-  Public context for Git: the worktree a run works in, the commits Rail makes out
-  of it, and the diff a human reads it back as.
+  Public context for Git: the worktree a run works in, the identity its agent
+  commits as, and the diff a human reads it back as.
 
   A run works in a worktree of its own, so making one is on the path of every
-  stage. Committing and pushing are Rail's job rather than the agent's: the
-  identity a commit carries and the key it is signed with are decisions Rail
-  makes, not ones an agent should be trusted to get right — so the actions that
-  commit and push resolve the identity, the signing key and the push credential
-  themselves rather than taking them from a caller. Reading the result is the
-  other half of the same thing, so parsing a diff and remembering who has read
-  which file of it live here too.
+  stage. The agent commits there itself, as the ticket's owner and signed with
+  their key, which Rail writes into the worktree's own config for as long as the
+  worktree lasts. Pushing stays Rail's, since the credential is the project's.
+  Reading the result is the other half of the same thing, so parsing a diff and
+  remembering who has read which file of it live here too.
   """
 
   alias Rail.Git.Actions
@@ -26,23 +24,25 @@ defmodule Rail.Git do
 
   defdelegate worktree_dirty?(worktree_path), to: Actions.WorktreeDirty
   defdelegate list_changed_paths(worktree_path), to: Actions.ListChangedPaths
-  defdelegate load_branch_history(task), to: Actions.LoadBranchHistory
+  defdelegate load_branch_history(task, rounds \\ []), to: Actions.LoadBranchHistory
   defdelegate branch_unpushed?(worktree_path), to: Actions.BranchUnpushed
+  defdelegate up_to_date_with?(worktree_path, base_branch), to: Actions.UpToDateWith
   defdelegate branch_changed?(task), to: Actions.BranchChanged
-  defdelegate commit_worktree(scope, task, message), to: Actions.CommitWorktree
   defdelegate push_branch(scope, task), to: Actions.PushBranch
+  defdelegate check_push(task), to: Actions.CheckPush
+  defdelegate set_commit_identity(task), to: Actions.SetCommitIdentity
   defdelegate credential_env(project), to: Actions.CredentialEnv
   defdelegate ci_env(project, task), to: Actions.CiEnv
   defdelegate fetch_default_branch(project, worktree_path), to: Actions.FetchDefaultBranch
   defdelegate read_default_branch_file(project, path), to: Actions.ReadDefaultBranchFile
-  defdelegate up_to_date_with?(worktree_path, base_branch), to: Actions.UpToDateWith
-  defdelegate merge_in_progress?(worktree_path), to: Actions.MergeInProgress
-  defdelegate conflicted_files(worktree_path), to: Actions.ConflictedFiles
-  defdelegate merge_default_branch(scope, task), to: Actions.MergeDefaultBranch
 
+  # `filter` is `:branch`, `:uncommitted`, or `{:commit, sha}` for one commit against its first parent.
   defdelegate load_diff(scope, task, filter \\ :branch, previous_files \\ []), to: Actions.LoadDiff
   defdelegate load_diff_hunk(scope, task, path, line \\ nil), to: Actions.LoadDiffHunk
-  defdelegate expand_diff_gap(task, path, gap_index, start_line, end_line), to: Actions.ExpandDiffGap
+
+  defdelegate expand_diff_gap(task, path, gap_index, start_line, end_line, revision \\ :worktree),
+    to: Actions.ExpandDiffGap
+
   defdelegate list_viewed_files(scope, task), to: Actions.ListViewedFiles
   defdelegate set_file_viewed(scope, task, path, digest, viewed), to: Actions.SetFileViewed
 end

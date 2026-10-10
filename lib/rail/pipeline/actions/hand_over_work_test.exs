@@ -1,10 +1,12 @@
-defmodule Rail.Pipeline.Actions.CommitWorkTest do
+defmodule Rail.Pipeline.Actions.HandOverWorkTest do
   use Rail.DataCase, async: true
 
   alias Rail.Git
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.FindingNote
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.RunEvent
   alias Rail.Pipeline.Schemas.Task
@@ -23,7 +25,7 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
           "issueCreate" => %{
             "success" => true,
             "issue" => %{
-              "id" => "lin_commit_work_1",
+              "id" => "lin_hand_over_work_1",
               "identifier" => "CMW-1",
               "title" => "Invoice filters",
               "url" => "https://linear.app/rail/issue/CMW-1"
@@ -42,6 +44,9 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
     repo = create_temp_git_repo()
     git!(repo, ["remote", "add", "origin", remote])
     git!(repo, ["push", "--set-upstream", "origin", "main"])
+    File.write!(Path.join(repo, "feature.ex"), "one\n")
+    git!(repo, ["add", "."])
+    git!(repo, ["commit", "-m", "CMW-1: add the vendor filter"])
 
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: repo})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
@@ -50,6 +55,9 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
       git!(path, ["push", "origin", "HEAD"])
       :ok
     end)
+
+    # The check fetches with a token of its own, which the pull request tests would count.
+    stub(Git, :check_push, fn _task -> :ok end)
 
     # Every push opens the task's pull request if it has none.
     Req.Test.stub(Client, fn conn ->
@@ -77,7 +85,7 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
         task_id: task.id,
         role_id: role.id,
         status: :finished,
-        conversation_id: "sess_commit_work",
+        conversation_id: "sess_hand_over_work",
         started_at: DateTime.utc_now()
       })
 
@@ -85,88 +93,65 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
   end
 
   describe "at Engineer" do
-    test "commits under the message it is handed, with the trailers naming the ticket and Rail", %{
-      scope: scope,
-      run: run,
-      repo: repo
-    } do
-      File.write!(Path.join(repo, "feature.ex"), "one\n")
-
-      assert {:ok, %Run{}} =
-               Pipeline.commit_work(scope, run, %{
-                 message: "CMW-1: add the vendor filter\n\nFilters invoices by vendor.\n"
-               })
-
-      message = git!(repo, ["log", "-1", "--pretty=%B"])
-      assert message =~ "CMW-1: add the vendor filter"
-      assert message =~ "Filters invoices by vendor."
-      assert message =~ "Ticket: CMW-1 https://linear.app/rail/issue/CMW-1"
-      assert message =~ "Co-Authored-By: Rail <rail[bot]@railai.dev>"
-      refute message =~ "Rail-Step"
-    end
-
-    # The human pressed the button, so nobody wrote the message. A file an engineer
-    # wrote before commits were handed over by tool is never read.
-    test "falls back to a subject naming the ticket when no message is given", %{
-      scope: scope,
-      run: run,
-      task: task,
-      repo: repo
-    } do
-      File.write!(Path.join(repo, "feature.ex"), "one\n")
-      File.mkdir_p!(Path.join(task.scratch_path, "commits"))
-      File.write!(Path.join([task.scratch_path, "commits", "CMW-1.md"]), "CMW-1: an old message\n")
-
-      assert {:ok, %Run{}} = Pipeline.commit_work(scope, run)
-      assert git!(repo, ["log", "-1", "--pretty=%s"]) =~ "CMW-1: follow-up changes"
-    end
-
     test "with no CI, the pushed commit goes on to review", %{scope: scope, run: run, task: task, repo: repo} do
-      File.write!(Path.join(repo, "feature.ex"), "one\n")
       {:ok, run} = Pipeline.update_run(run, %{error: "CI passed, but the branch could not be pushed: rejected"})
 
-      assert {:ok, %Run{stage_outcome: :done}} = Pipeline.commit_work(scope, run)
+      assert {:ok, %Run{stage_outcome: :done}} = Pipeline.hand_over_work(scope, run)
       refute Git.branch_unpushed?(repo)
       assert %Task{stage: :review} = Repo.reload!(task)
       assert %Run{stage_outcome: :done, review_on_ci_pass: false, error: nil} = Repo.reload!(run)
     end
 
-    test "a clean worktree commits nothing and still sends the branch on", %{
+    # Work left uncommitted is not handed over: the agent commits what is finished.
+    test "a branch with nothing unpushed is refused with nothing sent", %{
       scope: scope,
       run: run,
       task: task,
       repo: repo
     } do
-      commits = git!(repo, ["rev-list", "--count", "HEAD"])
+      git!(repo, ["push", "origin", "HEAD"])
+      File.write!(Path.join(repo, "later.ex"), "uncommitted\n")
+      reject(&Git.push_branch/2)
 
-      assert {:ok, %Run{}} = Pipeline.commit_work(scope, run)
-      assert git!(repo, ["rev-list", "--count", "HEAD"]) == commits
-      assert %Task{stage: :review} = Repo.reload!(task)
+      assert {:error, :nothing_to_send} = Pipeline.hand_over_work(scope, run)
+      assert %Task{stage: :engineer} = Repo.reload!(task)
     end
 
-    # A push that failed left a commit made and never sent. Running again has
-    # nothing to commit and everything still to push, which is what the button offers.
-    test "a push that failed sends nothing on and drops the go-ahead, and running again only pushes", %{
+    # Rail never force-pushes, so a branch that rewrote what it pushed is refused before CI or a push.
+    test "a branch that rewrote commits already pushed is refused, with nothing pushed", %{
       scope: scope,
       run: run,
       task: task,
       repo: repo
     } do
-      File.write!(Path.join(repo, "feature.ex"), "one\n")
+      {:ok, task} = Pipeline.update_task(task, %{worktree_name: "main"})
+      stub(Git, :check_push, &call_original(Git, :check_push, [&1]))
+      git!(repo, ["push", "origin", "HEAD"])
+      git!(repo, ["commit", "--amend", "--allow-empty", "-m", "CMW-1: add the vendor filter, reworded"])
+      reject(&Git.push_branch/2)
+
+      assert {:error, :history_rewritten} = Pipeline.hand_over_work(scope, run)
+      assert %Task{stage: :engineer} = Repo.reload!(task)
+    end
+
+    # A push that failed left a commit never sent, which is what the button offers again.
+    test "a push that failed sends nothing on and drops the go-ahead, and running again pushes", %{
+      scope: scope,
+      run: run,
+      task: task
+    } do
       stub(Git, :push_branch, fn _scope, _task -> {:error, "remote rejected"} end)
 
-      assert {:error, "remote rejected"} = Pipeline.commit_work(scope, run, %{message: "CMW-1: add the vendor filter"})
+      assert {:error, "remote rejected"} = Pipeline.hand_over_work(scope, run)
       assert %Run{review_on_ci_pass: false} = Repo.reload!(run)
       assert %Task{stage: :engineer} = Repo.reload!(task)
-      commits = git!(repo, ["rev-list", "--count", "HEAD"])
 
       stub(Git, :push_branch, fn _scope, %Task{worktree_path: path} ->
         git!(path, ["push", "origin", "HEAD"])
         :ok
       end)
 
-      assert {:ok, %Run{}} = Pipeline.commit_work(scope, run)
-      assert git!(repo, ["rev-list", "--count", "HEAD"]) == commits
+      assert {:ok, %Run{}} = Pipeline.hand_over_work(scope, run)
       assert %Task{stage: :review} = Repo.reload!(task)
     end
 
@@ -188,54 +173,46 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
         })
 
       {:ok, run} = Pipeline.update_run(run, %{error: "CI passed, but the branch could not be pushed: rejected"})
-      File.write!(Path.join(repo, "feature.ex"), "one\n")
 
-      assert {:error, :stage_running} = Pipeline.commit_work(scope, run)
+      assert {:error, :stage_running} = Pipeline.hand_over_work(scope, run)
       refute Git.branch_unpushed?(repo)
       assert %Run{error: nil} = Repo.reload!(run)
       assert %Task{stage: :engineer} = Repo.reload!(task)
     end
 
-    # Once Engineer hands the branch on it is Review's, and the Review lead commits its fixes.
-    test "the engineer's commit on a task at Review is refused, with nothing committed and no go-ahead left", %{
+    # Once Engineer hands the branch on it is Review's, and the Review lead hands its fixes on.
+    test "the engineer's hand-over on a task at Review is refused, with nothing pushed and no go-ahead left", %{
       scope: scope,
       run: run,
-      task: task,
-      repo: repo
+      task: task
     } do
       {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
-      File.write!(Path.join(repo, "feature.ex"), "one\n")
-      reject(&Git.commit_worktree/3)
       reject(&Git.push_branch/2)
 
-      assert {:error, {:invalid_stage, :review}} = Pipeline.commit_work(scope, run, %{message: "CMW-1: add it"})
+      assert {:error, {:invalid_stage, :review}} = Pipeline.hand_over_work(scope, run)
       assert %Run{review_on_ci_pass: false} = Repo.reload!(run)
       assert %Task{stage: :review} = Repo.reload!(task)
     end
 
     # The diff pane can hold a run whose task it loaded before someone else sent it on.
-    test "a commit from a page that still thinks the task is at engineer is refused", %{
+    test "a push from a page that still thinks the task is at engineer is refused", %{
       scope: scope,
       run: run,
-      task: task,
-      repo: repo
+      task: task
     } do
       {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
-      File.write!(Path.join(repo, "feature.ex"), "one\n")
-      reject(&Git.commit_worktree/3)
+      reject(&Git.push_branch/2)
 
-      assert {:error, {:invalid_stage, :review}} = Pipeline.commit_work(scope, %{run | task: task})
+      assert {:error, {:invalid_stage, :review}} = Pipeline.hand_over_work(scope, %{run | task: task})
     end
 
     test "with CI, the commit waits on CI, holding the go-ahead for when it passes", %{
       scope: scope,
       project: project,
       run: run,
-      task: task,
-      repo: repo
+      task: task
     } do
       {:ok, _project} = Projects.update_project(scope, project, %{ci_command: "mise run ci"})
-      File.write!(Path.join(repo, "feature.ex"), "one\n")
 
       reject(&Git.push_branch/2)
       stub(Git, :credential_env, fn _project -> {:ok, %{}} end)
@@ -245,8 +222,23 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
       end)
 
       assert {:ok, %Run{status: :running, review_on_ci_pass: true}} =
-               Pipeline.commit_work(scope, run, %{message: "CMW-1: add the vendor filter"})
+               Pipeline.hand_over_work(scope, run)
 
+      assert %Task{stage: :engineer} = Repo.reload!(task)
+    end
+
+    test "with CI that cannot start, says why and drops the go-ahead", %{
+      scope: scope,
+      project: project,
+      run: run,
+      task: task
+    } do
+      {:ok, _project} = Projects.update_project(scope, project, %{ci_command: "mise run ci"})
+      stub(Git, :credential_env, fn _project -> {:error, {:github_api_error, 401, %{}}} end)
+      reject(&Git.push_branch/2)
+
+      assert {:error, "Could not start CI: {:github_api_error, 401, %{}}"} = Pipeline.hand_over_work(scope, run)
+      assert %Run{status: :finished, review_on_ci_pass: false} = Repo.reload!(run)
       assert %Task{stage: :engineer} = Repo.reload!(task)
     end
 
@@ -258,9 +250,6 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
       repo: repo
     } do
       {:ok, _project} = Projects.update_project(scope, project, %{ci_command: "mise run ci"})
-      File.write!(Path.join(repo, "feature.ex"), "one\n")
-      git!(repo, ["add", "."])
-      git!(repo, ["commit", "-m", "never pushed"])
 
       %OsProcess{}
       |> OsProcess.changeset(%{
@@ -277,7 +266,7 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
 
       reject(Tools, :start_command_process, 4)
 
-      assert {:ok, %Run{}} = Pipeline.commit_work(scope, run)
+      assert {:ok, %Run{}} = Pipeline.hand_over_work(scope, run)
       refute Git.branch_unpushed?(repo)
       assert %Task{stage: :review} = Repo.reload!(task)
     end
@@ -312,7 +301,7 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
         end
       end)
 
-      assert {:ok, %Run{}} = Pipeline.commit_work(scope, run)
+      assert {:ok, %Run{}} = Pipeline.hand_over_work(scope, run)
 
       assert %Task{pr_number: 12, pr_url: "https://github.com/example/test-seed/pull/12", pr_is_draft: true} =
                Repo.reload!(task)
@@ -331,7 +320,7 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
         end
       end)
 
-      assert {:ok, %Run{}} = Pipeline.commit_work(scope, run)
+      assert {:ok, %Run{}} = Pipeline.hand_over_work(scope, run)
       assert %Task{pr_number: 9, pr_is_draft: false} = Repo.reload!(task)
     end
 
@@ -339,7 +328,7 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
       {:ok, _opened} = Pipeline.update_task(task, %{pr_number: 5, pr_url: "https://github.com/example/test-seed/pull/5"})
       Req.Test.stub(Client, fn _conn -> flunk("asked GitHub about a pull request the task already has") end)
 
-      assert {:ok, %Run{}} = Pipeline.commit_work(scope, run)
+      assert {:ok, %Run{}} = Pipeline.hand_over_work(scope, run)
     end
 
     test "a pull request that cannot be opened is said in the run's log, and the push still stands", %{
@@ -351,7 +340,7 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
         conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "Not Found"})
       end)
 
-      assert {:ok, %Run{}} = Pipeline.commit_work(scope, run)
+      assert {:ok, %Run{}} = Pipeline.hand_over_work(scope, run)
       assert %Task{pr_number: nil, stage: :review} = Repo.reload!(task)
 
       assert [%RunEvent{line: "[rail] Could not open the pull request: " <> _reason}] =
@@ -387,7 +376,7 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
         end
       end)
 
-      assert {:ok, %Run{}} = Pipeline.commit_work(scope, run)
+      assert {:ok, %Run{}} = Pipeline.hand_over_work(scope, run)
       assert %Task{pr_number: 21} = Repo.reload!(task)
     end
 
@@ -428,7 +417,7 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
         end
       end)
 
-      assert {:ok, %Run{}} = Pipeline.commit_work(scope, run)
+      assert {:ok, %Run{}} = Pipeline.hand_over_work(scope, run)
       assert %Task{pr_number: 22} = Repo.reload!(task)
     end
   end
@@ -445,20 +434,20 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
           role_id: role.id,
           status: :finished,
           stage_outcome: :done,
-          conversation_id: "sess_commit_work_lead",
+          conversation_id: "sess_hand_over_work_lead",
           started_at: DateTime.utc_now()
         })
 
       %{task: task, lead_run: lead_run}
     end
 
-    test "the lead's commit is labeled its fix round, pushed, and starts the next round", %{
+    test "the lead's commit is pushed and starts the next round", %{
       scope: scope,
       task: task,
       lead_run: %Run{id: lead_run_id} = lead_run,
       repo: repo
     } do
-      File.write!(Path.join(repo, "feature.ex"), "fixed\n")
+      git!(repo, ["commit", "--allow-empty", "-m", "Guard the nil"])
       test_pid = self()
 
       # Resumed as running, so the page shows the re-review and nothing can start another turn under it.
@@ -468,15 +457,78 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
       end)
 
       assert {:ok, %Run{id: ^lead_run_id, stage_outcome: :in_progress, status: :running}} =
-               Pipeline.commit_work(scope, lead_run, %{message: "Guard the nil"})
+               Pipeline.hand_over_work(scope, lead_run)
 
-      assert git!(repo, ["log", "-1", "--pretty=%B"]) =~ ~r/\AGuard the nil\n\nTicket: CMW-1 .*\nRail-Step: Fix round 1\n/
       refute Git.branch_unpushed?(repo)
       assert_received :resumed
       assert %Task{stage: :review} = Repo.reload!(task)
 
       assert ["[rail] Round 2 started after it was pushed"] =
                lead_run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
+    end
+
+    # The lead saves a fix before or after the engineer commits it; either way it is in the commit handed over.
+    test "a finding the lead saved fixed is noted as fixed in the commit handed over", %{
+      scope: scope,
+      task: %Task{id: task_id} = task,
+      lead_run: lead_run,
+      repo: repo
+    } do
+      {:ok, raised} =
+        Pipeline.save_finding(task, %{
+          key: "unhandled-nil",
+          kind: :code,
+          raised_by: :code_reviewer,
+          title: "Nil is not handled",
+          problem: "It crashes.",
+          file: "feature.ex",
+          line: 1,
+          fix: "Guard it.",
+          why: "It crashes.",
+          rule: "Every caller handles nil.",
+          severity: :major,
+          recommendation: :fix,
+          places: [%{file: "feature.ex", line: 1}],
+          evidence: [%{name: "range", kind: :code, file: "feature.ex", line: 1}]
+        })
+
+      {:ok, _ruled} = Pipeline.decide_finding(scope, raised, :fix)
+
+      {:ok, _fixed} =
+        Pipeline.save_finding(task, %{
+          "key" => "unhandled-nil",
+          "status" => "fixed",
+          "covered" => [1],
+          "test" => %{"file" => "feature_test.exs", "name" => "handles nil"},
+          "files" => ["feature.ex"]
+        })
+
+      git!(repo, ["commit", "--allow-empty", "-m", "Guard the nil"])
+      head = String.trim(git!(repo, ["rev-parse", "HEAD"]))
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task_id}")
+
+      assert {:ok, %Run{}} = Pipeline.hand_over_work(scope, lead_run)
+
+      assert [%Finding{status: :fixed, fixed_in: ^head, notes: notes}] = Pipeline.list_findings(task)
+      assert %FindingNote{kind: :fix, commit: ^head, test: "feature_test.exs: handles nil"} = List.last(notes)
+      assert_received {:output_saved, ^task_id}
+    end
+
+    # A round is a read of a new HEAD, so a branch the last round already read is only pushed.
+    test "a branch the last round already read is pushed and starts no round", %{
+      scope: scope,
+      task: task,
+      lead_run: lead_run,
+      repo: repo
+    } do
+      git!(repo, ["commit", "--allow-empty", "-m", "Guard the nil"])
+      {:ok, %{round: 2}} = Pipeline.save_review(task)
+      reject(Tools, :start_os_process, 2)
+
+      assert {:ok, %Run{status: :finished, review_on_ci_pass: false}} = Pipeline.hand_over_work(scope, lead_run)
+      refute Git.branch_unpushed?(repo)
+      assert [] = Pipeline.list_run_events(lead_run)
     end
 
     test "with CI, the lead's commit runs CI on its run, and CI passing starts the next round", %{
@@ -487,7 +539,7 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
       repo: repo
     } do
       {:ok, _project} = Projects.update_project(scope, project, %{ci_command: "mise run ci"})
-      File.write!(Path.join(repo, "feature.ex"), "fixed\n")
+      git!(repo, ["commit", "--allow-empty", "-m", "Guard the nil"])
       stub(Git, :credential_env, fn _project -> {:ok, %{}} end)
 
       expect(Tools, :start_command_process, fn %Run{id: ^lead_run_id} = spawned, :ci, "mise run ci", _opts ->
@@ -495,8 +547,7 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
         {:ok, %OsProcess{kind: :ci, run: spawned}}
       end)
 
-      assert {:ok, %Run{status: :running, review_on_ci_pass: true}} =
-               Pipeline.commit_work(scope, lead_run, %{message: "Guard the nil"})
+      assert {:ok, %Run{status: :running, review_on_ci_pass: true}} = Pipeline.hand_over_work(scope, lead_run)
 
       # CI holds the push, and the round, until it passes.
       assert Git.branch_unpushed?(repo)
@@ -537,28 +588,25 @@ defmodule Rail.Pipeline.Actions.CommitWorkTest do
       lead_run: lead_run,
       repo: repo
     } do
-      File.write!(Path.join(repo, "feature.ex"), "fixed\n")
+      git!(repo, ["commit", "--allow-empty", "-m", "Guard the nil"])
       expect(Tools, :start_os_process, fn _spawned, _argv -> {:error, :dispatch_disabled} end)
 
-      assert {:error, "Dispatch is off, so round 2 was not started."} =
-               Pipeline.commit_work(scope, lead_run, %{message: "Guard the nil"})
-
+      assert {:error, "Dispatch is off, so round 2 was not started."} = Pipeline.hand_over_work(scope, lead_run)
       refute Git.branch_unpushed?(repo)
       assert %Run{status: :finished} = Repo.reload!(lead_run)
     end
 
-    test "the lead's commit on a task back at Engineer is refused, with nothing committed", %{
+    test "the lead's hand-over on a task back at Engineer is refused, with nothing pushed", %{
       scope: scope,
       task: task,
       lead_run: lead_run,
       repo: repo
     } do
       {:ok, _moved} = Pipeline.update_task(task, %{stage: :engineer})
-      File.write!(Path.join(repo, "feature.ex"), "fixed\n")
-      reject(&Git.commit_worktree/3)
+      git!(repo, ["commit", "--allow-empty", "-m", "Guard the nil"])
       reject(&Git.push_branch/2)
 
-      assert {:error, {:invalid_stage, :engineer}} = Pipeline.commit_work(scope, lead_run, %{message: "Guard the nil"})
+      assert {:error, {:invalid_stage, :engineer}} = Pipeline.hand_over_work(scope, lead_run)
     end
   end
 end

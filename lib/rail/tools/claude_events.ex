@@ -305,8 +305,8 @@ defmodule Rail.Tools.ClaudeEvents do
     end
   end
 
-  # The result carries the turn's total, but a turn stopped before it, as `commit`
-  # stops one, says nothing; so each message is counted once as it streams.
+  # The result carries the turn's total, but a turn a person stopped before it
+  # says nothing; so each message is counted once as it streams.
   defp stream_usage(state, %{"id" => id, "usage" => %{} = usage}) when is_binary(id) do
     messages = Map.put(state.message_usage, id, usage_from(usage))
     %{state | message_usage: messages, usage: Enum.reduce(Map.values(messages), state.base_usage, &Run.add_usage(&2, &1))}

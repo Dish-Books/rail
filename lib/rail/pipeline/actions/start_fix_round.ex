@@ -111,7 +111,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
 
     #{Enum.map_join(fix, "\n\n", &finding/1)}
 
-    Hand them to the engineer whole, every place included. Have the code reviewer read the uncommitted diff against them, and an explorer re-check any screen a fix touched, then call `commit`.
+    Hand them to the engineer whole, every place included. Have the code reviewer read the uncommitted diff against them, and an explorer re-check any screen a fix touched, then have the engineer commit the fixes. Save each finding with `save_finding`, status fixed, the places its fix covered and those it left with why, the test that failed first and the files it changed, and end your turn: Rail sends the commit on.
     """
   end
 

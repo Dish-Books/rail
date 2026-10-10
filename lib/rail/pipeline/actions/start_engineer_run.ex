@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.StartEngineerRun do
   @moduledoc """
-  Spawns the engineer stage's run: the brief naming the plan to build and the
-  `commit` call that says the build is finished, and the process that does it.
+  Spawns the engineer stage's run: the brief naming the plan to build and how
+  its commits are handed on, and the process that does it.
 
   `enter_stage/3` has already claimed the stage, started the run and made the
   worktree; this is the part only engineer knows about.
@@ -10,6 +10,8 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
   import Rail.Pipeline.Utils.FormatComments
   import Rail.Pipeline.Utils.FormatTicket
   import Rail.Pipeline.Utils.LearningsBrief
+  import Rail.Pipeline.Utils.PrepareTurn
+  import Rail.Pipeline.Utils.TicketTrailer
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -32,14 +34,16 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
     task = Repo.preload(task, [:project, issue: [comments: :replies]])
     # The brief promises a workspace that survives between turns.
     File.mkdir_p!(task.scratch_path)
+    behind = prepare_turn(%{run | task: task})
 
     prompt =
-      Pipeline.build_prompt(
-        task: task,
-        context_snippet: brief(task, run),
-        pending_answer: run.pending_answer,
-        conversation_id: run.conversation_id
-      )
+      behind <>
+        Pipeline.build_prompt(
+          task: task,
+          context_snippet: brief(task, run),
+          pending_answer: run.pending_answer,
+          conversation_id: run.conversation_id
+        )
 
     args =
       Tools.build_args(
@@ -58,21 +62,21 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
     String.trim("""
     Build the approved plan below. #{workspace(task)}
 
-    Git is yours to use, except for what Rail does for you. No commit, no push, no merge, no rebase, no pull request, and nothing like them that writes history or moves the branch: no amend, no reset, no cherry-pick, and never switch or rename the branch you are on. Rail commits your worktree for you once you are finished, authored by the person the ticket is assigned to and signed with their key, which is exactly why it is not yours to do.
+    Git is yours to use, commits included, except for what Rail does for you: no push and no pull request, and never switch or rename the branch you are on. For each turn Rail sets the worktree to commit as the person the ticket is assigned to, signed with their key, so commit as it is set and never change who commits. End every commit message with the line `#{ticket_trailer(issue)}`. Never rewrite commit history: no rebase, no amend, no reset or squash of a commit, nothing forced. Rail never force-pushes, so a branch whose history was rewritten is not pushed, and comes back to you to merge what was pushed back in.
 
-    Nothing under #{scratch_path} is part of the change. It is your workspace, and Rail keeps it out of the commit. It survives between turns; `/tmp` and anything you left running do not.
+    At the start of every turn, check your branch against `origin/#{task.project.default_branch}`, which Rail fetched as the turn started. When it is behind, bring it up to date by merging it in, resolve every conflict the way both sides meant it, and follow what the default branch changed through the code, tests and comments your branch relies on.
+
+    Nothing under #{scratch_path} is part of the change. It is your workspace, and never committed. It survives between turns; `/tmp` and anything you left running do not.
 
     The machine is Rail's. Do not ask about it: work around what you can, and say in your last message what you could not. A headless Chrome you start yourself needs `--no-sandbox` here.
 
-    Calling the `commit` tool is how you say the work is finished, and it is the last thing you do: the call ends your turn on the spot, and Rail commits your worktree under its `message` and sends it on. The message is one line saying what this change does, a blank line, then what changed and why, as a commit body.
+    A turn that ends with commits the remote does not have yet hands them over: Rail sends them on and the task moves to Review. So commit only finished work: commit when the work is done and the tests for what you changed pass, then end your turn. A commit message is one line saying what this change does, a blank line, then what changed and why. Work you leave uncommitted is not sent on; Rail warns that it is there and it waits for your next turn.
 
-    Since nothing you write after the call is ever read, write your last message to the human first, alongside the call: what you changed, how you checked it, and anything you could not do or disagreed with. The human reads that message, not the commit body, so a turn whose last words are "Running the tests now:" tells them nothing.
+    Your last message is what the human reads, not the commit body: what you changed, how you checked it, and anything you could not do or disagreed with. A turn whose last words are "Running the tests now:" tells them nothing.
 
-    - Call it only when the work is actually finished and the tests for what you changed pass. A test that fails only where your change does not touch is not a reason to hold it back: name the test in the commit body and finish. If you stop part way, for a question or anything else, do not call it, and the task waits for you rather than committing half a change.
-    - `commit` is the only way to hand over your work. Write no commit message file.
-    - `request_merge` asks Rail to merge #{task.project.default_branch} into a clean worktree, for example when CI failed on a change that landed there. It ends your turn too, so say why you are asking in the same message, and conflicts come back to you as a new turn.#{ci(task)}
+    - A test that fails only where your change does not touch is not a reason to hold the work back: name the test in the commit body and finish. If you stop part way, for a question or anything else, do not commit half a change, and the task waits for you.#{ci(task)}
     - Run every command in the foreground and wait for it, test runs included. Never start one in the background meaning to read it when it finishes: your turn ends the moment you stop writing, the CLI carrying you exits, and it kills whatever you left running. Nothing wakes you when it is done, so "I have started X and will check it shortly" is the end of the round with X unread and the work unfinished. A single command is cut off at ten minutes, so give a long one a `timeout` under that, or run it in parts, rather than backgrounding it.
-    - Review and QA findings come back as further turns of this same conversation. Each round ends with `commit` again and becomes a commit of its own, so describe that round's change, not the whole ticket over again.
+    - Review and QA findings come back as further turns of this same conversation. Commit each round as a commit of its own, describing that round's change, not the whole ticket over again.
     - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or a named assumption is not a question.
 
     #{plan(task)}
@@ -90,7 +94,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
     do: "\n- This project has no CI command for Rail to run, so run its own checks yourself before you finish."
 
   defp ci(%Task{project: %Project{ci_command: command}}) do
-    "\n- Once your commit is made, Rail runs `#{command}` on it before anything else sees it. If that fails, its output comes back to you as the next turn of this conversation. So never run `#{command}` or the whole test suite yourself: it would only run twice. Run the tests for the files you changed."
+    "\n- Once your turn hands your commits over, Rail runs `#{command}` on them before anything else sees them. If that fails, its output comes back to you as the next turn of this conversation. So never run `#{command}` or the whole test suite yourself: it would only run twice. Run the tests for the files you changed."
   end
 
   defp workspace(%Task{worktree_path: worktree_path, worktree_name: branch, project: %Project{} = project}) do

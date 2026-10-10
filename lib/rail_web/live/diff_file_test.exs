@@ -33,6 +33,7 @@ defmodule RailWeb.Live.DiffFileTest do
         unsent: 0,
         open: [],
         reader_id: "usr_reader",
+        commentable?: true,
         viewed?: false,
         collapsed?: false,
         expanded_gaps: %{}
@@ -134,6 +135,12 @@ defmodule RailWeb.Live.DiffFileTest do
     test "offers a comment on each line it draws", %{section: section} do
       assert html = render_component(DiffFile, section)
       assert [_opening, _removed, _added] = html |> Floki.parse_fragment!() |> Floki.find("[data-qa='diff_comment_add']")
+    end
+
+    test "a merge's lines take no comment", %{section: section} do
+      html = render_component(DiffFile, %{section | commentable?: false})
+
+      assert [] = html |> Floki.parse_fragment!() |> Floki.find("[data-qa='diff_comment_add']")
     end
 
     test "puts a comment whose line has changed first, saying it is still sent", %{

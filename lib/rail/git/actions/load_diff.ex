@@ -2,12 +2,13 @@ defmodule Rail.Git.Actions.LoadDiff do
   @moduledoc """
   Everything a diff pane needs to draw a task's worktree, in one call.
 
-  Two views, because the two questions are different. `:branch` is everything the
+  Three views, because the questions are different. `:branch` is everything the
   branch did against the base it forked from, committed or not, which is what
   review means. `:uncommitted` is only what has not been committed yet, which is
-  what "what has the engineer changed since I last looked" means. Untracked files
-  are written into both by hand: git will not diff a file it has never seen, but
-  the human still has to read it.
+  what "what has the engineer changed since I last looked" means. `{:commit, sha}`
+  is one commit against its first parent, so a merge shows what main brought in.
+  Untracked files are written into the first two by hand: git will not diff a file
+  it has never seen, but the human still has to read it.
 
   The files come back already parsed into rows, already highlighted and already
   marked with whether this reader has read them, because there is nothing a
@@ -26,6 +27,8 @@ defmodule Rail.Git.Actions.LoadDiff do
   alias Rail.Scope
   alias Rail.Tools
 
+  @sha ~r/\A[0-9a-f]{7,40}\z/
+
   @doc """
   Loads `task`'s diff under `filter` for `scope`.
 
@@ -36,13 +39,13 @@ defmodule Rail.Git.Actions.LoadDiff do
     if Task.worktree_present?(task) do
       viewed = Git.list_viewed_files(scope, task)
       drawn = Map.new(previous_files, &{{&1.path, &1.digest}, &1.rows})
-      base = base(task, filter)
-      parsed = task |> raw_diff(base) |> parse_diff()
+      sides = sides(task, filter)
+      parsed = task |> raw_diff(filter, sides) |> parse_diff()
 
       highlighted =
         parsed
         |> Enum.reject(&Map.has_key?(drawn, {&1.path, &1.digest}))
-        |> Elixir.Task.async_stream(&highlight(&1, task.worktree_path, base),
+        |> Elixir.Task.async_stream(&highlight(&1, task.worktree_path, sides),
           ordered: true,
           max_concurrency: System.schedulers_online(),
           timeout: :infinity
@@ -68,13 +71,13 @@ defmodule Rail.Git.Actions.LoadDiff do
 
   # A line's color depends on where it sits in its file, so each side is highlighted
   # whole: the old one as it was at the diff's base, and only when a deleted row needs it.
-  defp highlight(%{rows: rows, path: path} = file, worktree_path, base) do
+  defp highlight(%{rows: rows, path: path} = file, worktree_path, {base, revision}) do
     old =
       if Enum.any?(rows, &(&1[:line_kind] == :deleted)),
         do: colors(rows, :deleted, :old_line, path, fn -> file_lines(worktree_path, file.old_path, base) end),
         else: %{}
 
-    new = colors(rows, :added, :new_line, path, fn -> file_lines(worktree_path, path) end)
+    new = colors(rows, :added, :new_line, path, fn -> file_lines(worktree_path, path, revision) end)
 
     %{file | rows: Enum.map(rows, &stamp(&1, old, new))}
   end
@@ -117,10 +120,17 @@ defmodule Rail.Git.Actions.LoadDiff do
   defp stamp(%{kind: :line, new_line: line} = row, _old, new), do: Map.put(row, :html, new[line])
   defp stamp(row, _old, _new), do: row
 
-  defp base(%Task{}, :uncommitted), do: "HEAD"
-  defp base(%Task{} = task, :branch), do: branch_base(task)
+  # The revision each side is read at: the diff's base, and the worktree or the commit itself.
+  defp sides(%Task{}, :uncommitted), do: {"HEAD", :worktree}
+  defp sides(%Task{} = task, :branch), do: {branch_base(task), :worktree}
+  defp sides(%Task{}, {:commit, sha}), do: {"#{sha}^1", sha}
 
-  defp raw_diff(%Task{worktree_path: worktree_path}, base) do
+  # The sha comes from a page, so only a commit name, never an option, reaches git.
+  defp raw_diff(%Task{worktree_path: worktree_path}, {:commit, sha}, {base, sha}) do
+    if sha =~ @sha, do: diff(worktree_path, ["diff", base, sha]), else: ""
+  end
+
+  defp raw_diff(%Task{worktree_path: worktree_path}, _filter, {base, :worktree}) do
     diff(worktree_path, ["diff", base]) <>
       Enum.map_join(untracked_paths(worktree_path), "", &synthesize(worktree_path, &1))
   end

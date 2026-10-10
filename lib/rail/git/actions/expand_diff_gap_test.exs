@@ -35,6 +35,16 @@ defmodule Rail.Git.Actions.ExpandDiffGapTest do
     assert Enum.map(lines, & &1.text) == ["line 3", "line 4", "line 5"]
   end
 
+  test "reads a commit's gap as the file was at that commit", %{task: task, repo: repo} do
+    git!(repo, ["add", "tracked.txt"])
+    git!(repo, ["commit", "-m", "tracked"])
+    sha = repo |> git!(["rev-parse", "HEAD"]) |> String.trim()
+    File.write!(Path.join(repo, "tracked.txt"), "rewritten\n")
+
+    assert {"tracked.txt:1", [%{text: "line 2"}, %{text: "line 3"}]} =
+             Git.expand_diff_gap(task, "tracked.txt", 1, 2, 3, sha)
+  end
+
   # A gap is drawn by the same row the hunks around it are, so it carries the
   # same highlighted html they do.
   test "highlights what it read", %{task: task} do

@@ -7,10 +7,9 @@ defmodule Rail.Pipeline.Actions.SendToReview do
   door the earlier stages have: the task leaves Engineer, and the fixes Review
   asks for are made inside Review.
 
-  A worktree with uncommitted work in it is refused rather than swept up, since
-  a commit made without anyone naming it is a commit nobody meant, and so is a
-  branch the remote has never heard of, which is not a branch anyone else can
-  review. The diff pane has a button for both.
+  A branch the remote has never heard of is refused, since it is not a branch
+  anyone else can review; the diff pane's Push sends it. Work left uncommitted is
+  not the engineer's to hand over, so it stays behind in the worktree.
   """
 
   import Rail.Pipeline.Utils.CiPassed
@@ -43,7 +42,6 @@ defmodule Rail.Pipeline.Actions.SendToReview do
   defp sendable(%Task{} = task) do
     cond do
       Task.running?(task) -> {:error, :stage_running}
-      Git.worktree_dirty?(task.worktree_path) -> {:error, :uncommitted_changes}
       Git.branch_unpushed?(task.worktree_path) -> {:error, :unpushed_changes}
       ci_required?(task) and not ci_passed?(task) -> {:error, :ci_not_passed}
       true -> :ok

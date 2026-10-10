@@ -66,11 +66,14 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
     assert %Task{stage: :review} = Repo.reload!(task)
   end
 
-  test "refuses work nobody has committed", %{task: task, run: run, worktree_path: repo} do
+  # The engineer commits its own work, so what it left uncommitted stays behind rather than holding Review up.
+  test "sends the pushed work on with work left uncommitted beside it", %{task: task, run: run, worktree_path: repo} do
     File.write!(Path.join(repo, "uncommitted.ex"), "one\n")
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
-    assert {:error, :uncommitted_changes} = Pipeline.send_to_review(run)
-    assert %Task{stage: :engineer} = Repo.reload!(task)
+    assert {:ok, %Run{}} = Pipeline.send_to_review(run)
+    assert %Task{stage: :review} = Repo.reload!(task)
+    assert File.exists?(Path.join(repo, "uncommitted.ex"))
   end
 
   # A commit nobody else can see is not a change anyone can review.

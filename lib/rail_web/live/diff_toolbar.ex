@@ -1,8 +1,10 @@
 defmodule RailWeb.Live.DiffToolbar do
   @moduledoc """
   The diff pane's toolbar, a component of its own so that its counts move
-  without patching every line of the pane. It folds at `@5xl` and again at `@3xl`
-  of its own width, which is what a 1440 and a 1280 window leave it.
+  without patching every line of the pane. The commit picker leads it, and a picked
+  commit says which first parent it is shown against. It folds at `@5xl` and again at
+  `@3xl` of its own width, which is what a 1440 and a 1280 window leave it. A merge's
+  view takes no comments, so it offers no Send.
   """
   use RailWeb, :live_component
 
@@ -22,22 +24,26 @@ defmodule RailWeb.Live.DiffToolbar do
         phx-target={@target}
         aria-pressed={to_string(@show_file_tree)}
         title="Show or hide the file list"
-        class="size-8 shrink-0 grid place-items-center rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 cursor-pointer"
+        class="hidden @xl:grid size-8 shrink-0 place-items-center rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 cursor-pointer"
       >
         <.icon name="pi-list" class="size-4" />
       </button>
 
-      <.segmented_control
-        id="diff-filter"
-        data-qa="diff_filter"
-        class="shrink-0"
-        options={[branch: "All changes", uncommitted: "Uncommitted"]}
-        selected={@filter}
-        event="select_diff_filter"
+      <.commit_picker
+        view={@picker.view}
+        history={@picker.history}
+        dirty?={@picker.dirty?}
         target={@target}
-        value_name="filter"
-        option_qa="diff_filter_option"
       />
+
+      <span
+        :if={@picker.parent}
+        data-qa="diff_first_parent"
+        class="hidden @3xl:inline min-w-0 truncate text-[11px] text-slate-500 dark:text-slate-400"
+      >
+        {@picker.parent.short_sha} against its first parent
+        <span class="font-mono">{@picker.parent.parent}</span>
+      </span>
 
       <%!-- Wrap is this browser's choice, which the hook applies and tells the stage. --%>
       <.segmented_control
@@ -55,7 +61,10 @@ defmodule RailWeb.Live.DiffToolbar do
         option_qa="diff_wrap_option"
       />
 
-      <.diff_stat additions={@additions} deletions={@deletions} class="shrink-0" />
+      <%!-- Wrapped, since the stat's own display would beat a hidden class on it. --%>
+      <span class="hidden @2xl:inline-flex shrink-0">
+        <.diff_stat additions={@additions} deletions={@deletions} />
+      </span>
 
       <div
         id="diff-viewed-progress"
@@ -92,34 +101,52 @@ defmodule RailWeb.Live.DiffToolbar do
       </form>
 
       <span
-        :if={@unsent > 0}
+        :if={@unsent > 0 and @commentable?}
         data-qa="diff_comments_hint"
         class="hidden @5xl:inline-flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap"
       >
         <span class={[
           "size-1.5 rounded-full",
-          @engineer_running? && "bg-green-500",
-          not @engineer_running? && "bg-slate-400"
+          @running? && "bg-green-500",
+          not @running? && "bg-slate-400"
         ]} />
-        {hint(@engineer_running?)}
+        {hint(@agent, @running?)}
       </span>
 
+      <%!-- The pane is marked loading from the click until the reply that redraws every comment as Sent. --%>
       <button
-        :if={@unsent > 0}
+        :if={@unsent > 0 and @commentable?}
         type="button"
         id="send-diff-comments"
         data-qa="send_diff_comments"
-        phx-click="send_diff_comments"
-        phx-disable-with="Sending…"
-        phx-target={@target}
-        title={hint(@engineer_running?)}
-        class="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 shadow-xs cursor-pointer whitespace-nowrap"
+        data-busy-self
+        phx-click={JS.push("send_diff_comments", target: @target, loading: "#diff-pane")}
+        title={hint(@agent, @running?)}
+        class="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 shadow-xs cursor-pointer whitespace-nowrap group-[.phx-click-loading]/diff:opacity-60 group-[.phx-click-loading]/diff:pointer-events-none"
       >
-        <.icon name="pi-paper-plane-tilt" class="size-4" />
-        <span>
-          Send {@unsent}<span data-qa="send_noun" class="hidden @3xl:inline">{noun(@unsent)}</span>
+        <span class="inline-flex group-[.phx-click-loading]/diff:hidden items-center gap-1.5">
+          <.icon name="pi-paper-plane-tilt" class="size-4" />
+          <span>
+            Send {@unsent}<span data-qa="send_noun" class="hidden @3xl:inline">{noun(@unsent)}</span>
+          </span>
+        </span>
+        <span
+          data-qa="send_diff_comments_sending"
+          class="hidden group-[.phx-click-loading]/diff:inline-flex items-center gap-1.5"
+        >
+          <.icon name="pi-circle-notch-bold" class="size-4 motion-safe:animate-spin" />Sending {@unsent}
         </span>
       </button>
+
+      <span
+        :if={not @commentable?}
+        data-qa="diff_no_comments"
+        title="No comments on a merge"
+        class="shrink-0 inline-flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap"
+      >
+        <.icon name="pi-chat-slash" class="size-3.5" />
+        <span class="hidden @3xl:inline">No comments on a merge</span>
+      </span>
     </div>
     """
   end
@@ -127,8 +154,8 @@ defmodule RailWeb.Live.DiffToolbar do
   defp read(0, _viewed), do: 0
   defp read(total, viewed), do: div(viewed * 100, total)
 
-  defp hint(true), do: "Engineer is working. These wait until its turn ends."
-  defp hint(false), do: "Engineer is idle and starts on these at once."
+  defp hint(agent, true), do: "#{agent} is working. These wait until its turn ends."
+  defp hint(agent, false), do: "#{agent} is idle and starts on these at once."
 
   defp noun(1), do: " comment"
   defp noun(_unsent), do: " comments"

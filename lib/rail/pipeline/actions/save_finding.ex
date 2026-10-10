@@ -3,7 +3,9 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
   Saves what the Review lead says about one finding. A new key is raised in the current round against HEAD's
   commit and checked whole; a known key only gets a dated note in the round it is said in, and its status,
   so nothing it said when raised is ever rewritten. A Fix finding a pass finds still failing is carried into
-  that round with its ruling, and one ruled Don't fix is not argued again.
+  that round with its ruling, and one ruled Don't fix is not argued again. A Fix finding saved fixed is the
+  fix round's report on it, refused until it names every place covered or left, the test that failed first
+  and the files it changed; the commit is noted once the turn hands it over.
   """
 
   import Ecto.Changeset
@@ -16,6 +18,7 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.FindingEvidence
+  alias Rail.Pipeline.Schemas.FindingPlace
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
 
@@ -38,7 +41,9 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
           {:error, finding |> change() |> add_error(:key, "was ruled Don't fix by the human, so leave it be")}
 
         %Finding{} = finding ->
-          note(task, finding, attrs, said)
+          if Finding.outstanding?(finding) and to_string(attrs["status"]) == "fixed",
+            do: fix(task, finding, attrs, said),
+            else: note(task, finding, attrs, said)
 
         _new ->
           raise_finding(task, attrs, said)
@@ -86,6 +91,99 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
       Repo.update(changeset)
     end
   end
+
+  # Every place the rule applies is covered by the fix or left with a reason, and the test that failed first
+  # is named, as the round reports it.
+  defp fix(%Task{} = task, %Finding{places: places} = finding, attrs, said) do
+    numbers = 1..max(length(places), 1)//1
+    covered = for n <- entries(attrs["covered"]), is_integer(n), n in numbers, uniq: true, do: n
+
+    left =
+      for %{"place" => n, "reason" => reason} <- entries(attrs["left"]),
+          is_integer(n) and is_binary(reason),
+          do: {n, reason}
+
+    files =
+      for file <- entries(attrs["files"]), is_binary(file), String.trim(file) != "", uniq: true, do: String.trim(file)
+
+    unaccounted = Enum.reject(numbers, &(&1 in covered or List.keymember?(left, &1, 0)))
+
+    cond do
+      places != [] and covered == [] ->
+        refuse(finding, :covered, "is the numbers of the places, from 1, the fix covers")
+
+      not test?(attrs["test"]) ->
+        refuse(finding, :test, "is the `file` and `name` of the test that failed before the fix")
+
+      Enum.any?(left, fn {_n, reason} -> String.trim(reason) == "" end) ->
+        refuse(finding, :left, "needs the reason the fix leaves each place it lists")
+
+      places != [] and unaccounted != [] ->
+        refuse(
+          finding,
+          :covered,
+          "leaves place #{Enum.join(unaccounted, ", ")} unaccounted for: cover it, or list it in `left` with the reason the fix leaves it"
+        )
+
+      true ->
+        save_fix(task, finding, %{covered: covered, left: left, files: files, test: attrs["test"]}, attrs, said)
+    end
+  end
+
+  defp save_fix(%Task{} = task, %Finding{} = finding, fix, attrs, said) do
+    places =
+      finding.places
+      |> Enum.with_index(1)
+      |> Enum.map(fn {place, n} ->
+        case List.keyfind(fix.left, n, 0) do
+          {^n, reason} -> FindingPlace.leave_changeset(place, reason)
+          nil -> place
+        end
+      end)
+
+    # A finding from before places has none to name, so its note names none. The commit is the one handed over.
+    note = %{
+      round: max(length(Pipeline.read_review(task)), 1),
+      kind: :fix,
+      at: said.at,
+      commit: nil,
+      text: attrs["note"],
+      covered:
+        for(
+          n <- fix.covered,
+          %FindingPlace{} = place <- [Enum.at(finding.places, n - 1)],
+          do: FindingPlace.describe(place)
+        ),
+      left:
+        for(
+          {n, reason} <- fix.left,
+          %FindingPlace{} = place <- [Enum.at(finding.places, n - 1)],
+          do: "#{FindingPlace.describe(place)}: #{String.trim(reason)}"
+        ),
+      files: fix.files,
+      test: "#{String.trim(fix.test["file"])}: #{String.trim(fix.test["name"])}"
+    }
+
+    build = fn evidence ->
+      finding
+      |> Finding.note_changeset(%{status: :fixed, fixed_in: nil, evidence: evidence, note: note})
+      |> put_embed(:places, places)
+    end
+
+    with {:ok, changeset} <- attach_then(build, task, finding.key, attrs["evidence"], said) do
+      Repo.update(changeset)
+    end
+  end
+
+  defp test?(%{"file" => file, "name" => name}) when is_binary(file) and is_binary(name),
+    do: String.trim(file) != "" and String.trim(name) != ""
+
+  defp test?(_none), do: false
+
+  defp entries(entries) when is_list(entries), do: entries
+  defp entries(_none), do: []
+
+  defp refuse(%Finding{} = finding, field, message), do: {:error, finding |> change() |> add_error(field, message)}
 
   # Checked as cited before anything is copied, so a refused save leaves no file behind in the finding's folder.
   defp attach_then(build, %Task{} = task, key, cited, said) do

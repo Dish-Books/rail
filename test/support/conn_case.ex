@@ -26,6 +26,7 @@ defmodule RailWeb.ConnCase do
       setup {Rail.DataCase, :stub_agent_spawn}
       setup {Rail.DataCase, :stub_git_repo_check}
       setup {Rail.DataCase, :stub_worktree_slot}
+      setup {Rail.DataCase, :stub_prepare_turn}
     end
   end
 

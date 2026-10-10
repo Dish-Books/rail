@@ -18,6 +18,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate child_switcher(assigns), to: Components.ChildSwitcher
   defdelegate comment_box(assigns), to: Components.CommentBox
   defdelegate commentable_line(assigns), to: Components.CommentableLine
+  defdelegate commit_picker(assigns), to: Components.CommitPicker
   defdelegate design_comment_control(assigns), to: Components.DesignCommentControl
   defdelegate diff_comment(assigns), to: Components.DiffComment
   defdelegate diff_comment_list(assigns), to: Components.DiffCommentList
@@ -58,6 +59,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate sandbox_meters(assigns), to: Components.SandboxMeters
   defdelegate sandbox_stats(assigns), to: Components.SandboxStats
   defdelegate sandbox_usage_meter(assigns), to: Components.SandboxUsageMeter
+  defdelegate screen_compare(assigns), to: Components.ScreenCompare
   defdelegate segmented_control(assigns), to: Components.SegmentedControl
   defdelegate settings_nav(assigns), to: Components.SettingsNav
   defdelegate side_sheet(assigns), to: Components.SideSheet

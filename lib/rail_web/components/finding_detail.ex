@@ -2,7 +2,8 @@ defmodule RailWeb.Components.FindingDetail do
   @moduledoc """
   One finding, read whole: what is wrong, where, the fix that points the way and why, the evidence, the
   rule with every place it applies, the commits it was raised and fixed in, and its dated history, a note
-  per pass, ruling and fix, each in its round. Fix and Don't fix sit in its header.
+  per pass, ruling and fix, each in its round. Fix and Don't fix sit in its header. Each commit on the
+  branch, and Open in Diff, opens that commit in the Diff item at the finding's file.
   """
   use RailWeb, :html
 
@@ -16,10 +17,13 @@ defmodule RailWeb.Components.FindingDetail do
   attr :decidable, :boolean, required: true
   attr :running, :boolean, required: true
   attr :hunk, :any, default: nil, doc: "the code range the finding points at, as `Rail.Git.load_diff_hunk/4` reads it"
-  attr :diff_link, :string, default: nil
   attr :filed, :list, default: [], doc: "`%{index:, evidence:, kind:, url:}` for each attached piece"
   attr :filed_index, :integer, default: 0
-  attr :labels, :map, default: %{}, doc: "each commit on the branch to what made it, as Engineer or Fix round N"
+
+  attr :labels, :map,
+    default: %{},
+    doc: "each commit on the branch to what made it, as Engineer or Fix round N; only these open in the Diff item"
+
   attr :names, :map, default: %{}, doc: "who ruled, by user id"
   attr :viewer_id, :string, default: nil
   attr :suppressor, :any, default: nil
@@ -177,15 +181,19 @@ defmodule RailWeb.Components.FindingDetail do
                 {@hunk.display_path}
               </span>
               <.diff_stat additions={@hunk.additions} deletions={@hunk.deletions} font_size={11} />
-              <.link
-                :if={@diff_link}
-                patch={@diff_link}
+              <button
+                type="button"
                 id="finding-open-in-diff"
                 data-qa="finding_open_in_diff"
-                class="ml-auto shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold text-blue-600 dark:text-blue-400 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                phx-click="open_diff"
+                phx-value-commit={on_branch(@finding.raised_in, @labels)}
+                phx-value-file={@hunk.path}
+                phx-target={@target}
+                class="ml-auto shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
               >
-                Open in diff <.icon name="pi-arrow-up-right" class="size-3" />
-              </.link>
+                Open{if on_branch(@finding.raised_in, @labels), do: " #{short(@finding.raised_in)}"} in Diff
+                <.icon name="pi-arrow-up-right" class="size-3" />
+              </button>
             </div>
             <.diff_hunk rows={@hunk.rows} />
             <p
@@ -321,10 +329,22 @@ defmodule RailWeb.Components.FindingDetail do
 
           <div data-qa="finding_commits" class="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span class="text-[11.5px] font-semibold text-slate-600 dark:text-slate-300">Raised in</span>
-            <.commit commit={@finding.raised_in} labels={@labels} qa="finding_raised_in" />
+            <.commit
+              commit={@finding.raised_in}
+              labels={@labels}
+              file={@finding.file}
+              target={@target}
+              qa="finding_raised_in"
+            />
             <span class="mx-1 text-slate-300 dark:text-slate-600">·</span>
             <span class="text-[11.5px] font-semibold text-slate-600 dark:text-slate-300">Fixed in</span>
-            <.commit commit={@finding.fixed_in} labels={@labels} qa="finding_fixed_in" />
+            <.commit
+              commit={@finding.fixed_in}
+              labels={@labels}
+              file={@finding.file}
+              target={@target}
+              qa="finding_fixed_in"
+            />
           </div>
 
           <div :if={@finding.notes != []}>
@@ -388,6 +408,8 @@ defmodule RailWeb.Components.FindingDetail do
 
   attr :commit, :string, default: nil
   attr :labels, :map, required: true
+  attr :file, :string, default: nil
+  attr :target, :any, required: true
   attr :qa, :string, required: true
 
   defp commit(%{commit: nil} = assigns) do
@@ -396,10 +418,27 @@ defmodule RailWeb.Components.FindingDetail do
     """
   end
 
+  # A commit the branch no longer has, after a rebase say, has no view to open.
   defp commit(assigns) do
     ~H"""
     <span data-qa={@qa} class="inline-flex items-center gap-1.5">
-      <span class="inline-flex items-center gap-1 font-mono text-[11.5px] text-blue-600 dark:text-blue-400">
+      <button
+        :if={@labels[@commit]}
+        type="button"
+        title={"Open #{short(@commit)} in Diff"}
+        data-qa="finding_commit_link"
+        phx-click="open_diff"
+        phx-value-commit={@commit}
+        phx-value-file={@file}
+        phx-target={@target}
+        class="inline-flex items-center gap-1 font-mono text-[11.5px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+      >
+        <.icon name="pi-git-commit" class="size-[13px]" />{short(@commit)}
+      </button>
+      <span
+        :if={!@labels[@commit]}
+        class="inline-flex items-center gap-1 font-mono text-[11.5px] text-slate-600 dark:text-slate-300"
+      >
         <.icon name="pi-git-commit" class="size-[13px]" />{short(@commit)}
       </span>
       <span :if={@labels[@commit]} class="text-[11.5px] text-slate-500 dark:text-slate-400">{@labels[
@@ -435,7 +474,7 @@ defmodule RailWeb.Components.FindingDetail do
   defp note(%{note: %FindingNote{kind: :fix}} = assigns) do
     ~H"""
     <span class="text-[12.5px] text-emerald-600 dark:text-emerald-500 wrap-anywhere">
-      Fixed in {short(@note.commit)}{covered(@note)}; test that failed first: {@note.test}
+      Fixed{fixed_in(@note.commit)}{covered(@note)}; test that failed first: {@note.test}
     </span>
     """
   end
@@ -478,6 +517,10 @@ defmodule RailWeb.Components.FindingDetail do
   defp on(nil), do: ""
   defp on(commit), do: " on #{short(commit)}"
 
+  # The lead saves a fix as the round reports it; its commit is noted once the turn hands it over.
+  defp fixed_in(nil), do: ", not yet sent on"
+  defp fixed_in(commit), do: " in #{short(commit)}"
+
   defp words(nil), do: ""
   defp words(text), do: ": #{text}"
 
@@ -492,6 +535,8 @@ defmodule RailWeb.Components.FindingDetail do
   end
 
   defp short(commit), do: String.slice(commit, 0, 7)
+
+  defp on_branch(commit, labels), do: if(is_binary(commit) and Map.has_key?(labels, commit), do: commit)
 
   defp places([_one]), do: "1 place"
   defp places(places), do: "#{length(places)} places"

@@ -74,6 +74,53 @@ defmodule Rail.Git.Actions.LoadDiffTest do
     assert {:ok, [%{path: "wip.ex"}]} = Git.load_diff(scope, task, :uncommitted)
   end
 
+  test "a commit's view holds only what that commit changed, against its first parent", %{
+    scope: scope,
+    task: task,
+    repo: repo
+  } do
+    File.write!(Path.join(repo, "shipped.ex"), "committed\nagain\n")
+    File.write!(Path.join(repo, "later.ex"), "defmodule Later do\nend\n")
+    git!(repo, ["add", "shipped.ex", "later.ex"])
+    git!(repo, ["commit", "-m", "later change"])
+    File.write!(Path.join(repo, "later.ex"), "defmodule Later do\n  :moved_on\nend\n")
+    sha = repo |> git!(["rev-parse", "HEAD"]) |> String.trim()
+
+    assert {:ok, [later, shipped]} = Git.load_diff(scope, task, {:commit, sha})
+
+    assert %{path: "later.ex", rows: [_header, %{text: "defmodule Later do", html: html}, %{text: "end"}]} = later
+    assert html =~ "l-keyword"
+    assert %{path: "shipped.ex", additions: 1, rows: [_header, %{line_kind: :context}, %{text: "again"}]} = shipped
+  end
+
+  # A merge's first parent is the branch before it, so its view is what main brought in.
+  test "a merge's view is what the default branch brought in", %{scope: scope, task: task, repo: repo, remote: remote} do
+    File.write!(Path.join(remote, "upstream.ex"), "theirs\n")
+    git!(remote, ["add", "."])
+    git!(remote, ["commit", "-m", "upstream change"])
+    git!(repo, ["fetch", "origin", "main"])
+    git!(repo, ["merge", "--no-edit", "origin/main"])
+    sha = repo |> git!(["rev-parse", "HEAD"]) |> String.trim()
+
+    assert {:ok, [%{path: "upstream.ex", status: :added}]} = Git.load_diff(scope, task, {:commit, sha})
+  end
+
+  test "a commit name that is not a commit shows nothing, and is never handed to git as an option", %{
+    scope: scope,
+    task: task
+  } do
+    test_pid = self()
+
+    stub(Tools, :run, fn executable, args, opts ->
+      send(test_pid, {:ran, args})
+      call_original(Tools, :run, [executable, args, opts])
+    end)
+
+    assert {:ok, []} = Git.load_diff(scope, task, {:commit, "--output=/tmp/x"})
+    assert {:ok, []} = Git.load_diff(scope, task, {:commit, "0000000000"})
+    refute_received {:ran, ["diff", "--output=/tmp/x^1" | _rest]}
+  end
+
   test "every file comes back with the rows that draw it", %{scope: scope, task: task} do
     assert {:ok, files} = Git.load_diff(scope, task, :branch)
     shipped = Enum.find(files, &(&1.path == "shipped.ex"))

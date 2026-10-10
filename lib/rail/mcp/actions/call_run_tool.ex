@@ -29,19 +29,18 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   import Rail.Mcp.Utils.McpTools
   import Rail.Mcp.Utils.RunToolBrowserConnect
   import Rail.Mcp.Utils.RunToolBrowserProblems
-  import Rail.Mcp.Utils.RunToolCommit
   import Rail.Mcp.Utils.RunToolDemoSay
   import Rail.Mcp.Utils.RunToolDemoStart
   import Rail.Mcp.Utils.RunToolKnowledgeSearch
   import Rail.Mcp.Utils.RunToolQaCheck
   import Rail.Mcp.Utils.RunToolQaPlan
   import Rail.Mcp.Utils.RunToolQaShot
-  import Rail.Mcp.Utils.RunToolRequestMerge
   import Rail.Mcp.Utils.RunToolSaveDemo
   import Rail.Mcp.Utils.RunToolSaveDesignOption
   import Rail.Mcp.Utils.RunToolSaveFinding
   import Rail.Mcp.Utils.RunToolSavePlan
   import Rail.Mcp.Utils.RunToolSaveReview
+  import Rail.Mcp.Utils.RunToolSaveScreen
   import Rail.Mcp.Utils.RunToolSaveSplit
   import Rail.Mcp.Utils.RunToolSaveTicket
   import Rail.Mcp.Utils.ToolAllowed
@@ -59,11 +58,10 @@ defmodule Rail.Mcp.Actions.CallRunTool do
     "save_design_option",
     "save_plan",
     "save_split",
-    "commit",
-    "request_merge",
     "save_finding",
     "save_review",
-    "save_demo"
+    "save_demo",
+    "save_screen"
   ]
 
   @doc """
@@ -220,14 +218,13 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp run("qa_plan", task, arguments, opts), do: run_tool_qa_plan(task, arguments, opts)
   defp run("qa_check", task, arguments, opts), do: run_tool_qa_check(task, arguments, opts)
   defp run("qa_shot", task, arguments, opts), do: run_tool_qa_shot(task, arguments, opts)
+  defp run("save_screen", task, arguments, opts), do: run_tool_save_screen(task, arguments, opts)
   defp run("demo_start", task, arguments, opts), do: run_tool_demo_start(task, arguments, opts)
   defp run("demo_say", task, arguments, opts), do: run_tool_demo_say(task, arguments, opts)
   defp run("save_ticket", task, arguments, opts), do: run_tool_save_ticket(task, arguments, opts)
   defp run("save_design_option", task, arguments, opts), do: run_tool_save_design_option(task, arguments, opts)
   defp run("save_plan", task, arguments, opts), do: run_tool_save_plan(task, arguments, opts)
   defp run("save_split", task, arguments, opts), do: run_tool_save_split(task, arguments, opts)
-  defp run("commit", task, arguments, opts), do: run_tool_commit(task, arguments, opts)
-  defp run("request_merge", task, arguments, opts), do: run_tool_request_merge(task, arguments, opts)
   defp run("save_finding", task, arguments, opts), do: run_tool_save_finding(task, arguments, opts)
   defp run("save_review", task, arguments, opts), do: run_tool_save_review(task, arguments, opts)
 

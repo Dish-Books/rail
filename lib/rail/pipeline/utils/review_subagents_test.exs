@@ -30,6 +30,13 @@ defmodule Rail.Pipeline.Utils.ReviewSubagentsTest do
     assert engineer =~ ~r/\AYou are the engineer agent.\n\n## Working inside Review/
     assert recorder =~ ~r/\AYou are the demo agent.\n\n## Working inside Review/
     assert explorer =~ "/tmp/rail/scratch/tsk_review_subagents"
+
+    # The engineer commits its fixes and brings the branch up to date; only Rail pushes.
+    assert engineer =~ "Commit your fixes yourself"
+    assert engineer =~ "Never push: Rail pushes what the lead's turn leaves committed."
+    assert engineer =~ "merge `origin/<default branch>` in"
+    assert engineer =~ "Never rewrite commit history: no rebase, no amend, no reset or squash of a commit."
+    refute reviewer =~ "`commit`"
   end
 
   test "changing one role's model changes that subagent's and no other", %{project: project, task: task} do
