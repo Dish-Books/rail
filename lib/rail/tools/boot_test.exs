@@ -13,6 +13,8 @@ defmodule Rail.Tools.BootTest do
   alias Rail.Tools.Clients.Docker
   alias Rail.Tools.FollowerRegistry
   alias Rail.Tools.FollowerSupervisor
+  alias Rail.Tools.HostRegistry
+  alias Rail.Tools.HostSupervisor
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Tools.Schemas.ToolchainInstall
   alias Rail.Tools.Workers.InstallToolchain
@@ -911,6 +913,26 @@ defmodule Rail.Tools.BootTest do
       assert_received {:removed, "c-settled", "force=true"}
       assert_received {:removed, "c-unknown", "force=true"}
       refute_received {:removed, "c-live", _query}
+    end
+
+    test "brings up a connection for each extra host" do
+      Req.Test.stub(Docker, fn conn ->
+        case conn.request_path do
+          "/info" -> Req.Test.json(conn, %{"NCPU" => 4, "MemTotal" => 8 * 1024 ** 3})
+          "/containers/json" -> Req.Test.json(conn, [])
+        end
+      end)
+
+      {:ok, host} =
+        Tools.create_sandbox_host(Rail.Scope.for_system(), %{name: "build-02", ssh_address: "rail@127.0.0.1:1"})
+
+      [{pid, _status}] = Registry.lookup(HostRegistry, host.id)
+      on_exit(fn -> DynamicSupervisor.terminate_child(HostSupervisor, pid) end)
+      DynamicSupervisor.terminate_child(HostSupervisor, pid)
+
+      assert [] = Boot.reconcile()
+      assert [{reconnected, %{address: "rail@127.0.0.1:1"}}] = Registry.lookup(HostRegistry, host.id)
+      on_exit(fn -> DynamicSupervisor.terminate_child(HostSupervisor, reconnected) end)
     end
   end
 end

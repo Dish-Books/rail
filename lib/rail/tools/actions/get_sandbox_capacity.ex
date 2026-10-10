@@ -49,7 +49,7 @@ defmodule Rail.Tools.Actions.GetSandboxCapacity do
   defp machine do
     case {Rail.sandbox_runtime(), Rail.local_cpus()} do
       {:docker, _local} ->
-        with {:ok, %{"NCPU" => cpus, "MemTotal" => memory}} <- Docker.info() do
+        with {:ok, %{"NCPU" => cpus, "MemTotal" => memory}} <- Docker.info(nil) do
           {:ok, cpus, div(memory, 1024 ** 3)}
         end
 

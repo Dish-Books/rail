@@ -32,7 +32,9 @@ defmodule RailWeb.CoreComponents do
   defdelegate element_preview(assigns), to: Components.ElementPreview
   defdelegate finding_detail(assigns), to: Components.FindingDetail
   defdelegate finding_list(assigns), to: Components.FindingList
+  defdelegate host_status(assigns), to: Components.HostStatus
   defdelegate icon(assigns), to: Components.Icon
+  defdelegate image_status(assigns), to: Components.ImageStatus
   defdelegate in_progress_tasks(assigns), to: Components.InProgressTasks
   defdelegate input(assigns), to: Components.Input
   defdelegate issue_card(assigns), to: Components.IssueCard

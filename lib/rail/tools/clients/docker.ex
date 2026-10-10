@@ -1,19 +1,71 @@
 defmodule Rail.Tools.Clients.Docker do
   @moduledoc """
-  The Docker Engine API, over the host's socket, for the containers Rail runs
-  sandboxes in.
+  The Docker Engine API, over Rail's own socket or, for an extra host, the
+  loopback port its SSH connection bridges to the host's Docker.
 
   It makes the call and hands back what Docker said: `{:ok, body}` for any 2xx or
   a 304 (already started, already stopped), `{:error, {:docker_api_error, status,
   body}}` for the rest, and `{:error, reason}` for a request that never got there.
+  A host whose connection is down answers `{:error, :host_unreachable}`.
   """
 
+  alias Rail.Tools.HostConnection
+
   @label "dev.railai.sandbox"
+  @chunk_bytes 1_048_576
 
   def config, do: Application.get_env(:rail, :docker, [])
 
-  @doc "What the machine has: `NCPU`, `MemTotal` and the rest of `docker info`."
-  def info, do: request(method: :get, url: "/info")
+  @doc "What host `host_id` has, nil for Rail's machine: `NCPU`, `MemTotal` and the rest of `docker info`."
+  def info(host_id), do: request(host_id, method: :get, url: "/info")
+
+  def inspect_image(host_id, name), do: request(host_id, method: :get, url: "/images/#{name}/json")
+
+  @doc "Writes image `name` as a tarball to `path`."
+  def export_image(host_id, name, path) do
+    request(host_id,
+      method: :get,
+      url: "/images/get",
+      params: [names: name],
+      into: File.stream!(path, @chunk_bytes),
+      decode_body: false
+    )
+  end
+
+  @doc """
+  Loads the tarball at `path`, calling `on_progress` with the bytes sent so far as
+  it goes. Docker reports a broken tarball inside a 200, so that is an error here too.
+  """
+  def load_image(host_id, path, on_progress) when is_function(on_progress, 1) do
+    body =
+      path
+      |> File.stream!(@chunk_bytes)
+      |> Stream.transform(0, fn chunk, sent ->
+        sent = sent + byte_size(chunk)
+        on_progress.(sent)
+        {[chunk], sent}
+      end)
+
+    with {:ok, output} <-
+           request(host_id,
+             method: :post,
+             url: "/images/load",
+             params: [quiet: true],
+             headers: [content_type: "application/x-tar"],
+             body: body,
+             decode_body: false,
+             receive_timeout: :infinity
+           ) do
+      output
+      |> String.split("\n", trim: true)
+      |> Enum.find_value({:ok, output}, fn line ->
+        case Jason.decode(line) do
+          {:ok, %{"error" => message}} -> {:error, {:load_failed, message}}
+          _progress_or_unreadable -> nil
+        end
+      end)
+    end
+  end
 
   @doc """
   Creates the container for OS process `os_process_id` from a create `body`,
@@ -102,15 +154,24 @@ defmodule Rail.Tools.Clients.Docker do
 
   defp demultiplex(_end_or_partial, acc), do: IO.iodata_to_binary(acc)
 
-  defp request(options) do
-    [base_url: "http://docker", unix_socket: Keyword.get(config(), :socket_path, "/var/run/docker.sock")]
-    |> Req.new()
-    |> Req.merge(Keyword.get(config(), :req_options, []))
-    |> Req.request(options)
-    |> case do
-      {:ok, %{status: status, body: body}} when status in 200..299 or status == 304 -> {:ok, body}
-      {:ok, %{status: status, body: body}} -> {:error, {:docker_api_error, status, body}}
-      {:error, reason} -> {:error, reason}
+  defp request(host_id \\ nil, options) do
+    with {:ok, base} <- base(host_id) do
+      base
+      |> Req.new()
+      |> Req.merge(Keyword.get(config(), :req_options, []))
+      |> Req.request(options)
+      |> case do
+        {:ok, %{status: status, body: body}} when status in 200..299 or status == 304 -> {:ok, body}
+        {:ok, %{status: status, body: body}} -> {:error, {:docker_api_error, status, body}}
+        {:error, reason} -> {:error, reason}
+      end
     end
+  end
+
+  defp base(nil),
+    do: {:ok, base_url: "http://docker", unix_socket: Keyword.get(config(), :socket_path, "/var/run/docker.sock")}
+
+  defp base(host_id) do
+    with {:ok, port} <- HostConnection.docker_port(host_id), do: {:ok, base_url: "http://127.0.0.1:#{port}"}
   end
 end
