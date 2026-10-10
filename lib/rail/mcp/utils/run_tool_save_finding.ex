@@ -28,7 +28,11 @@ defmodule Rail.Mcp.Utils.RunToolSaveFinding do
     "recommendation",
     "checklist_rule",
     "status",
-    "note"
+    "note",
+    "covered",
+    "left",
+    "test",
+    "files"
   ]
 
   @doc """
