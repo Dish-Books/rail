@@ -196,16 +196,9 @@ defmodule RailWeb.Live.ReviewStage do
     {:noreply, socket}
   end
 
-  # The earlier shot set beside the latest starts as the one just before it.
+  # Nothing is picked yet, so the shot set beside the latest is the one just before it.
   def handle_event("open_screen", %{"key" => key}, socket) do
-    earlier =
-      case Enum.find(socket.assigns.screens, &(&1.key == key)) do
-        %{shots: [_one]} -> nil
-        %{shots: shots} -> length(shots) - 2
-        nil -> nil
-      end
-
-    socket = socket |> assign(:screen_open, key) |> assign(:screen_earlier, earlier)
+    socket = socket |> assign(:screen_open, key) |> assign(:screen_earlier, nil)
     {:noreply, socket}
   end
 
@@ -631,14 +624,19 @@ defmodule RailWeb.Live.ReviewStage do
   end
 
   # How many of the branch's commits came after the one the demo was recorded on, counted when the tab draws.
-  defp stale(%{commit: commit}, %{commits: commits}) when is_binary(commit) do
+  # A commit the branch no longer has, after a rebase, is behind by a count nobody can give.
+  defp stale(%{commit: commit}, %{commits: [_latest | _earlier] = commits}) when is_binary(commit) do
     case Enum.find_index(commits, &(&1.sha == commit)) do
-      behind when is_integer(behind) and behind > 0 -> %{commit: commit, behind: behind}
-      _latest_or_unknown -> nil
+      0 -> nil
+      behind when is_integer(behind) -> %{commit: commit, behind: behind}
+      nil -> %{commit: commit, behind: nil}
     end
   end
 
   defp stale(_demo, _history), do: nil
+
+  defp stale_text(%{commit: commit, behind: nil}),
+    do: "Recorded on #{String.slice(commit, 0, 7)}, which the branch no longer has; may be out of date"
 
   defp stale_text(%{commit: commit, behind: behind}),
     do: "Recorded on #{String.slice(commit, 0, 7)}, #{plural(behind, "commit")} ago; may be out of date"

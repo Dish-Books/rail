@@ -11,6 +11,7 @@ defmodule RailWeb.Live.DiffViewTest do
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
+  alias RailWeb.Live.DiffView
 
   # The branch has the engineer's commit, a merge of main and a fix on top, newest last.
   setup %{conn: conn, project: project} do
@@ -97,6 +98,32 @@ defmodule RailWeb.Live.DiffViewTest do
     assert has_element?(view, "#diff-commit-picker", "Whole branch")
     assert has_element?(view, "[data-qa='diff_file_section'][data-path='rows.ex']")
     assert has_element?(view, "[data-qa='diff_file_section'][data-path='fix.ex']")
+  end
+
+  # A link names the commit a round read, which need not be the one that wrote the file it was sent for.
+  test "a link to a commit that does not touch its file opens the whole branch at the file", %{
+    conn: conn,
+    task: task,
+    engineer: engineer,
+    fix: fix
+  } do
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    Phoenix.LiveView.send_update(view.pid, DiffView, id: "diff-view", open: %{commit: fix, at: 1}, focus_file: "rows.ex")
+
+    assert has_element?(view, "#diff-commit-picker", "Whole branch")
+    assert has_element?(view, "[data-qa='diff_file_section'][data-path='rows.ex']")
+    assert has_element?(view, "[data-qa='diff_file_section'][data-path='fix.ex']")
+
+    Phoenix.LiveView.send_update(view.pid, DiffView,
+      id: "diff-view",
+      open: %{commit: engineer, at: 2},
+      focus_file: "rows.ex"
+    )
+
+    assert has_element?(view, "#diff-commit-picker", "Engineer")
+    assert has_element?(view, "[data-qa='diff_file_section'][data-path='rows.ex']")
+    refute has_element?(view, "[data-qa='diff_file_section'][data-path='fix.ex']")
   end
 
   test "picking a commit shows only what it changed, and a comment there keeps its commit", %{
@@ -257,7 +284,7 @@ defmodule RailWeb.Live.DiffViewTest do
 
     view |> element("#diff-commit-option-#{String.slice(fix, 0, 7)}") |> render_click()
     git!(repo, ["reset", "--hard", "HEAD~1"])
-    Phoenix.LiveView.send_update(view.pid, RailWeb.Live.DiffView, id: "diff-view", reload: true)
+    Phoenix.LiveView.send_update(view.pid, DiffView, id: "diff-view", reload: true)
 
     assert has_element?(view, "#diff-commit-picker", "Whole branch")
     refute has_element?(view, "[data-qa='diff_file_section'][data-path='fix.ex']")

@@ -715,12 +715,12 @@ defmodule RailWeb.Live.ReviewStageTest do
       assert has_element?(view, "[data-qa='diff_file_section'][data-path='b.ex']")
     end
 
-    test "Raised in, Fixed in and Open in Diff open their commit in the Diff item at the finding's file", %{
+    # Round 1 read the fix commit, which never touched a.ex, so Raised in lands on the branch that has it.
+    test "Raised in, Fixed in and Open in Diff open their commit at the finding's file, or the branch without it", %{
       conn: conn,
       task: task,
       code: code,
-      engineer: engineer,
-      fix: fix
+      engineer: engineer
     } do
       {:ok, finding} = Pipeline.save_finding(task, Map.put(%{code | file: "a.ex", line: 1}, :key, "view-only-send"))
       {:ok, _fixed} = finding |> Ecto.Changeset.change(fixed_in: engineer) |> Repo.update()
@@ -730,10 +730,9 @@ defmodule RailWeb.Live.ReviewStageTest do
 
       view |> element("[data-qa=finding_raised_in] [data-qa=finding_commit_link]") |> render_click()
 
-      assert has_element?(view, "#review-pane[data-item=diff] #diff-commit-picker", String.slice(fix, 0, 7))
+      assert has_element?(view, "#review-pane[data-item=diff] #diff-commit-picker", "Whole branch")
       assert has_element?(view, "#diff-scroller[data-scroll-to='a.ex']")
-      assert has_element?(view, "[data-qa='diff_file_section'][data-path='b.ex']")
-      refute has_element?(view, "[data-qa='diff_file_section'][data-path='a.ex']")
+      assert has_element?(view, "[data-qa='diff_file_section'][data-path='a.ex']")
 
       view |> element("#review-item-findings") |> render_click()
       view |> element("[data-qa=finding_fixed_in] [data-qa=finding_commit_link]") |> render_click()
@@ -862,6 +861,16 @@ defmodule RailWeb.Live.ReviewStageTest do
 
       refute has_element?(view, "[data-qa=screen_earlier]")
       assert has_element?(view, "[data-qa=screen_open]", "No earlier shot")
+
+      # A retake that lands while the state is open is set beside the shot it follows.
+      git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix 1 finding from round 2"])
+      File.write!(Path.join(folder, "2.jpg"), "retaken")
+      {:ok, _retaken} = Pipeline.save_screen(task, %{key: "toolbar", label: "Toolbar", file: "screens/toolbar/2.jpg"})
+      send(view.pid, {:output_saved, task.id})
+
+      assert has_element?(view, "[data-qa=screen_earlier] img[src$='/screens/toolbar/0']")
+      assert has_element?(view, "[data-qa=screen_latest] img[src$='/screens/toolbar/1']")
+      refute has_element?(view, "[data-qa=screen_open]", "No earlier shot")
     end
 
     test "a demo the branch has moved past says so in slate with Re-record, and the rail marks it", %{
@@ -913,6 +922,41 @@ defmodule RailWeb.Live.ReviewStageTest do
       refute has_element?(latest, "#review-item-demo [data-qa=review_item_stale]")
       latest |> element("#review-item-demo") |> render_click()
       refute has_element?(latest, "#demo-stale")
+    end
+
+    # A rebase leaves the branch without the commit the demo was recorded on, which is when it is most out of date.
+    test "a demo on a commit the branch no longer has is stale, with nothing to open", %{
+      conn: conn,
+      task: %{worktree_path: worktree} = task
+    } do
+      git!(worktree, ["commit", "--allow-empty", "-m", "Rebased away"])
+      gone = worktree |> git!(["rev-parse", "HEAD"]) |> String.trim()
+      git!(worktree, ["reset", "--quiet", "--hard", "HEAD~1"])
+      demo_dir = Path.join(task.scratch_path, "demo")
+      File.mkdir_p!(demo_dir)
+      File.write!(Path.join(demo_dir, "demo.webm"), "webm")
+
+      File.write!(
+        Path.join(demo_dir, "RST-1.json"),
+        Jason.encode!(%{title: "Filters", summary: "It filters.", commit: gone})
+      )
+
+      short = String.slice(gone, 0, 7)
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(
+               view,
+               "#review-item-demo[title='Demo: Recorded on #{short}, which the branch no longer has; may be out of date']"
+             )
+
+      assert has_element?(view, "#review-item-demo [data-qa=review_item_stale]")
+
+      view |> element("#review-item-demo") |> render_click()
+
+      assert has_element?(view, "[data-qa=demo_stale]", "Recorded on #{short}, which the branch no longer has")
+      assert has_element?(view, "#demo-rerecord")
+      refute has_element?(view, "#demo-stale button[phx-click=open_diff]")
     end
 
     test "a demo two commits behind counts them, and a Re-record Review cannot take says why", %{

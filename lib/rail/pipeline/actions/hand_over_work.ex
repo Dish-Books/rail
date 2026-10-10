@@ -5,7 +5,10 @@ defmodule Rail.Pipeline.Actions.HandOverWork do
   lead saved fixed is noted as fixed in the commit handed over.
   """
 
-  import Rail.Pipeline.Utils.SendBranchOn
+  import Rail.Pipeline.Utils.CiPassed
+  import Rail.Pipeline.Utils.OpenPullRequest
+  import Rail.Pipeline.Utils.ReviewPushedBranch
+  import Rail.Pipeline.Utils.StartCi
 
   alias Rail.Git
   alias Rail.Pipeline
@@ -13,6 +16,7 @@ defmodule Rail.Pipeline.Actions.HandOverWork do
   alias Rail.Pipeline.Schemas.FindingNote
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
@@ -23,11 +27,17 @@ defmodule Rail.Pipeline.Actions.HandOverWork do
   GitHub, CI or review refused. Safe to run again after a push that failed.
   """
   def hand_over_work(%Scope{} = scope, %Run{} = run) do
-    %Run{task: %Task{} = task} =
+    %Run{task: %Task{project: %Project{ci_command: command}} = task} =
       run = Run |> Repo.get!(run.id) |> Repo.preload([:role, task: [:issue, :project]], force: true)
 
     with :ok <- handable(task, run) do
-      send_branch_on(scope, run, review?(task, run))
+      review? = review?(task, run)
+      # Set before CI starts, so a CI that finishes fast still finds it.
+      flagged = update(run, %{review_on_ci_pass: review?})
+
+      if command in [nil, ""] or ci_passed?(task),
+        do: push(scope, flagged, review?),
+        else: run_ci(flagged)
     end
   end
 
@@ -73,4 +83,33 @@ defmodule Rail.Pipeline.Actions.HandOverWork do
 
   defp in_commit(%FindingNote{kind: :fix, commit: nil} = note, head), do: %{note | commit: head}
   defp in_commit(%FindingNote{} = note, _head), do: note
+
+  # Pushed once CI has passed on HEAD, and reviewed once pushed when asked; CI's finish does both where it runs.
+  defp push(%Scope{} = scope, %Run{task: %Task{} = task} = run, review?) do
+    case Git.push_branch(scope, task) do
+      :ok ->
+        pushed = %{update(run, %{review_on_ci_pass: false, error: nil}) | task: open_pull_request(task, run)}
+        if review?, do: review_pushed_branch(pushed, "it was pushed"), else: {:ok, pushed}
+
+      {:error, reason} ->
+        _cleared = update(run, %{review_on_ci_pass: false})
+        {:error, reason}
+    end
+  end
+
+  defp run_ci(%Run{} = run) do
+    case start_ci(run) do
+      {:ok, _os_process} ->
+        {:ok, %{Repo.get!(Run, run.id) | task: run.task, role: run.role}}
+
+      {:error, %Run{error: error} = failed} ->
+        _cleared = update(failed, %{review_on_ci_pass: false})
+        {:error, error}
+    end
+  end
+
+  defp update(%Run{} = run, attrs) do
+    {:ok, updated} = run |> Run.changeset(attrs) |> Repo.update()
+    %{updated | task: run.task, role: run.role}
+  end
 end

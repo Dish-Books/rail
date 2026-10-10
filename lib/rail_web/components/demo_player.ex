@@ -14,7 +14,11 @@ defmodule RailWeb.Components.DemoPlayer do
   attr :beats, :list, required: true
   attr :recorded, :boolean, required: true
   attr :recording, :boolean, required: true
-  attr :stale, :map, default: nil, doc: "`%{commit:, behind:}` when commits came after the recording"
+
+  attr :stale, :map,
+    default: nil,
+    doc: "`%{commit:, behind:}` when commits came after the recording; `behind` is nil when the branch lost it"
+
   attr :rerecordable, :boolean, default: false, doc: "the Review lead is idle and can be asked to record again"
   attr :target, :any, default: nil
 
@@ -57,7 +61,9 @@ defmodule RailWeb.Components.DemoPlayer do
                 class="size-4 shrink-0 text-slate-500 dark:text-slate-300"
               />
               <p class="min-w-0 flex-1 text-[12.5px] text-slate-700 dark:text-slate-200">
-                Recorded on <button
+                Recorded on
+                <button
+                  :if={@stale.behind}
                   type="button"
                   phx-click="open_diff"
                   phx-value-commit={@stale.commit}
@@ -66,9 +72,9 @@ defmodule RailWeb.Components.DemoPlayer do
                   class="font-mono text-blue-600 dark:text-blue-400 hover:underline cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                 >
                   {String.slice(@stale.commit, 0, 7)}
-                </button>, {commits(
-                  @stale.behind
-                )} ago; may be out of date
+                </button><span :if={is_nil(@stale.behind)} class="font-mono">{String.slice(@stale.commit, 0, 7)}</span>{if @stale.behind,
+                  do: ", #{commits(@stale.behind)} ago",
+                  else: ", which the branch no longer has"}; may be out of date
               </p>
               <button
                 type="button"

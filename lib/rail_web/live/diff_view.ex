@@ -71,7 +71,7 @@ defmodule RailWeb.Live.DiffView do
     socket =
       cond do
         not connected?(socket) -> socket
-        picked? or socket.assigns.fingerprint != fingerprint(socket.assigns.task) -> load_diff(socket)
+        picked? or socket.assigns.fingerprint != fingerprint(socket.assigns.task) -> load_diff(socket, picked?)
         true -> sync_pane(socket)
       end
 
@@ -411,7 +411,7 @@ defmodule RailWeb.Live.DiffView do
   end
 
   # A commit the branch no longer has, after a rebase say, is the whole branch again.
-  defp load_diff(socket) do
+  defp load_diff(socket, followed? \\ false) do
     %{current_scope: scope, task: task, highlighted: highlighted} = socket.assigns
     history = Git.load_branch_history(task, for(%{head: head} <- Pipeline.read_review(task), is_binary(head), do: head))
 
@@ -423,7 +423,15 @@ defmodule RailWeb.Live.DiffView do
         _known -> socket.assigns.view
       end
 
-    files = diff(scope, task, view, Enum.concat(Map.values(highlighted)))
+    previous = Enum.concat(Map.values(highlighted))
+    files = diff(scope, task, view, previous)
+
+    # A link names the commit a round read, which need not touch the file the reader came for; the branch has it.
+    {view, files} =
+      if followed? and lacks_file?(view, files, socket.assigns.focus_file),
+        do: {:branch, diff(scope, task, :branch, previous)},
+        else: {view, files}
+
     present? = Task.worktree_present?(task)
 
     socket
@@ -438,6 +446,9 @@ defmodule RailWeb.Live.DiffView do
     |> assign(:loading?, false)
     |> sync_pane()
   end
+
+  defp lacks_file?({:commit, _sha}, files, file) when is_binary(file), do: not Enum.any?(files, &(&1.path == file))
+  defp lacks_file?(_view, _files, _file), do: false
 
   defp sync_pane(socket) do
     pane = socket.assigns |> pane_state() |> calculate_diff_pane()

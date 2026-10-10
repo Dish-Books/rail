@@ -10,14 +10,17 @@ defmodule RailWeb.Components.ScreenCompare do
   attr :screens, :list, required: true, doc: "the screen states as `Rail.Pipeline.list_screens/1` reads them"
   attr :labels, :map, default: %{}, doc: "each commit on the branch to what made it"
   attr :open, :string, default: nil, doc: "the key of the state opened"
-  attr :earlier, :integer, default: nil, doc: "the index of the earlier shot set beside the latest"
+  attr :earlier, :integer, default: nil, doc: "the index of the earlier shot picked, if one was"
   attr :target, :any, required: true
 
   def screen_compare(assigns) do
+    opened = Enum.find(assigns.screens, &(&1.key == assigns.open))
+
     assigns =
       assigns
       |> assign(:latest, latest(assigns.screens))
-      |> assign(:opened, Enum.find(assigns.screens, &(&1.key == assigns.open)))
+      |> assign(:opened, opened)
+      |> assign(:earlier, earlier(opened, assigns.earlier))
 
     ~H"""
     <div
@@ -203,4 +206,11 @@ defmodule RailWeb.Components.ScreenCompare do
   defp option(shot, _labels), do: "Shot #{shot.index + 1}"
 
   defp short(commit), do: String.slice(commit, 0, 7)
+
+  # The shot just before the latest until one is picked, worked out on every draw so a retake that lands
+  # while the state is open is set beside the shot it follows.
+  defp earlier(%{shots: shots}, picked) when is_integer(picked) and picked >= 0 and picked < length(shots) - 1, do: picked
+
+  defp earlier(%{shots: [_first, _second | _more] = shots}, _picked), do: length(shots) - 2
+  defp earlier(_opened, _picked), do: nil
 end
