@@ -91,7 +91,7 @@ defmodule RailWeb.Live.DiffViewTest do
       view
       |> render()
       |> Floki.parse_document!()
-      |> Floki.find("#diff-commit-listbox [role='option'] .whitespace-nowrap")
+      |> Floki.find("#diff-commit-listbox [data-qa='diff_commit_title']")
       |> Enum.map(&String.trim(Floki.text(&1)))
 
     assert labels == ["Whole branch", "Fix round 1", "Merge main", "Engineer"]

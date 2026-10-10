@@ -143,7 +143,10 @@ defmodule RailWeb.Components.CommitPicker do
       <.icon name={@icon} class="mt-0.5 size-[15px] shrink-0 text-slate-400" />
       <span class="min-w-0 flex-1">
         <span class="flex items-center gap-2 min-w-0">
-          <span class="whitespace-nowrap text-[13px] font-semibold text-slate-900 dark:text-slate-100">
+          <span
+            data-qa="diff_commit_title"
+            class="min-w-0 truncate text-[13px] font-semibold text-slate-900 dark:text-slate-100"
+          >
             {@title}
           </span>
           <span :if={@sha} class="font-mono text-[11px] text-slate-500 dark:text-slate-400">{@sha}</span>
@@ -186,7 +189,7 @@ defmodule RailWeb.Components.CommitPicker do
 
   defp whole(%{base: base}), do: "Everything since #{base}"
 
-  defp subject(%{merge?: true, merged: merged}, base), do: "Merge origin/#{base} (#{merged})"
+  defp subject(%{main?: true, merged: merged}, base), do: "Merge origin/#{base} (#{merged})"
   defp subject(%{subject: subject}, _base), do: subject
 
   defp plural(1, word), do: "1 #{word}"

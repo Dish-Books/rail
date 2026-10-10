@@ -106,6 +106,37 @@ defmodule Rail.Git.Actions.LoadBranchHistoryTest do
              Git.load_branch_history(task)
   end
 
+  # Merging what someone pushed to the branch itself brings in none of main, so it is not labeled as main.
+  test "a merge of the branch's own remote is labeled by that branch, with its own subject", %{
+    task: task,
+    repo: repo,
+    remote: remote
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{worktree_name: "feature"})
+    git!(repo, ["commit", "--allow-empty", "-m", "The engineer's work"])
+    git!(repo, ["push", "--quiet", "origin", "feature"])
+    git!(remote, ["checkout", "--quiet", "feature"])
+    git!(remote, ["commit", "--allow-empty", "-m", "Add Sam's review notes"])
+    theirs = remote |> git!(["rev-parse", "--short", "HEAD"]) |> String.trim()
+    git!(repo, ["commit", "--allow-empty", "-m", "More of the engineer's work"])
+    git!(repo, ["fetch", "--quiet", "origin", "feature"])
+    git!(repo, ["merge", "--no-edit", "-m", "Merge remote-tracking branch 'origin/feature'", "origin/feature"])
+
+    assert %{
+             commits: [
+               %{
+                 label: "Merge origin/feature",
+                 subject: "Merge remote-tracking branch 'origin/feature'",
+                 merge?: true,
+                 main?: false,
+                 merged: ^theirs
+               },
+               %{label: "Engineer", main?: false},
+               %{label: "Engineer"}
+             ]
+           } = Git.load_branch_history(task)
+  end
+
   # A rebase replaces the commits a round read, so what is on the branch now came after it.
   test "a round whose commit a rebase replaced read nothing still on the branch", %{task: task, repo: repo} do
     git!(repo, ["commit", "--allow-empty", "-m", "The engineer's work"])

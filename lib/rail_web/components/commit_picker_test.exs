@@ -14,6 +14,7 @@ defmodule RailWeb.Components.CommitPickerTest do
       at: ~U[2026-10-07 16:42:00Z],
       label: "Fix round 1",
       merge?: false,
+      main?: false,
       merged: nil,
       conflicts: 0,
       files: 6,
@@ -29,6 +30,7 @@ defmodule RailWeb.Components.CommitPickerTest do
         subject: "Merge remote-tracking branch 'origin/main' into feature",
         label: "Merge main",
         merge?: true,
+        main?: true,
         merged: "41d9f3c",
         conflicts: 1,
         additions: 56,
@@ -57,6 +59,33 @@ defmodule RailWeb.Components.CommitPickerTest do
     assert Floki.text(fix) =~ ~r/\+97.*-31/s
     assert [] = Floki.find(fix, "[data-qa='diff_commit_conflicts']")
     refute Floki.text(html) =~ "Uncommitted"
+  end
+
+  # What was pushed to the branch outside Rail and merged back in is none of main, so it says what it is.
+  test "a merge of the branch's own remote reads as its label and its own subject", %{history: history, merge: merge} do
+    branch_merge = %{
+      merge
+      | sha: "f1ecd8aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        short_sha: "f1ecd8a",
+        subject: "Merge remote-tracking branch 'origin/rail-52-a-branch-name-long-enough-to-run-past-the-list'",
+        label: "Merge origin/rail-52-a-branch-name-long-enough-to-run-past-the-list",
+        main?: false,
+        merged: "9fb9877"
+    }
+
+    html =
+      (&CommitPicker.commit_picker/1)
+      |> render_component(view: :branch, history: %{history | commits: [branch_merge | history.commits]}, target: nil)
+      |> Floki.parse_fragment!()
+
+    assert [option] = Floki.find(html, "#diff-commit-option-f1ecd8a")
+    assert Floki.text(option) =~ "Merge origin/rail-52-a-branch-name-long-enough-to-run-past-the-list"
+    assert Floki.text(option) =~ "Merge remote-tracking branch 'origin/rail-52-"
+    refute Floki.text(option) =~ "Merge main"
+    refute Floki.text(option) =~ "9fb9877"
+    # A long branch name is cut short rather than run out of the list.
+    assert [classes] = option |> Floki.find("[data-qa='diff_commit_title']") |> Floki.attribute("class")
+    assert classes =~ "truncate"
   end
 
   # A pick closes the list and tells the view, which keeps nothing a stale page could name.
