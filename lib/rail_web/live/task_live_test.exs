@@ -3559,6 +3559,30 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "#push-work")
     end
 
+    # Rail never force-pushes, so a branch that does not extend what was pushed waits for the engineer to merge.
+    test "a push Rail will not make over the remote says why", %{conn: conn, task: task, repo: repo} do
+      git!(repo, ["commit", "--allow-empty", "-m", "never pushed"])
+      reject(&Git.push_branch/2)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      expect(Git, :check_push, fn _task -> {:error, :history_rewritten} end)
+      view |> element("#push-work") |> render_click()
+      render_async(view, 5_000)
+
+      assert has_element?(
+               view,
+               "#engineer-error",
+               "The branch rewrote commits already pushed, so Rail will not push it."
+             )
+
+      expect(Git, :check_push, fn _task -> {:error, :pushed_outside_rail} end)
+      view |> element("#push-work") |> render_click()
+      render_async(view, 5_000)
+
+      assert has_element?(view, "#engineer-error", "Someone pushed to this branch outside Rail.")
+    end
+
     test "a push GitHub would not authorize says what came back", %{conn: conn, task: task, repo: repo} do
       git!(repo, ["commit", "--allow-empty", "-m", "never pushed"])
 

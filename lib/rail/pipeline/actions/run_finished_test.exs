@@ -685,7 +685,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert prompt =~ "The whole log is #{stream_path}"
     assert prompt =~ "Fix what it reports and commit the fix."
     assert prompt =~ "end your turn without changing anything and Rail runs CI again on the same commit"
-    assert prompt =~ "bring your branch up to date with it first"
+    assert prompt =~ "merge it into your branch first"
 
     assert [%{line: "[rail] CI failed, so its output went back to the engineer (1 of 3)."}] =
              Pipeline.list_run_events(run)

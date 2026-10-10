@@ -33,6 +33,9 @@ defmodule Rail.Pipeline.Utils.PrepareTurnTest do
     {:ok, run} =
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
 
+    # Checking the task's own branch fetches it with a token; Git.check_push has its own tests.
+    stub(Git, :check_push, fn _task -> :ok end)
+
     %{run: %{run | task: task}, task: task}
   end
 
@@ -60,7 +63,7 @@ defmodule Rail.Pipeline.Utils.PrepareTurnTest do
 
     assert prepare_turn(run) ==
              "Rail fetched origin/main as this turn started, and the branch is behind it: bring the branch up " <>
-               "to date with it, by merge or rebase, before anything else.\n\n"
+               "to date with it, by merging it in, before anything else.\n\n"
 
     git!(worktree_path, ["merge", "--quiet", "--no-edit", "origin/main"])
     expect(Git, :fetch_default_branch, fn _project, _path -> :ok end)
@@ -97,9 +100,30 @@ defmodule Rail.Pipeline.Utils.PrepareTurnTest do
     assert said =~ "{:github_api_error, 404, %{}}"
   end
 
+  # Rail never pushes over the remote branch, so the turn merges what it lacks first rather than at hand-over.
+  test "opens a turn whose branch lacks what was pushed to it by saying so", %{
+    run: run,
+    task: %Task{id: task_id, worktree_name: branch}
+  } do
+    stub(Git, :fetch_default_branch, fn _project, _path -> :ok end)
+    stub(Git, :set_commit_identity, fn _task -> :ok end)
+    expect(Git, :check_push, fn %Task{id: ^task_id} -> {:error, :pushed_outside_rail} end)
+
+    assert prepare_turn(run) ==
+             "Someone pushed to origin/#{branch} outside Rail, and the branch does not have those commits: merge " <>
+               "origin/#{branch} in before anything else, so Rail can push the branch when this turn ends.\n\n"
+
+    expect(Git, :check_push, fn _task -> {:error, :history_rewritten} end)
+
+    assert prepare_turn(run) ==
+             "The branch has rewritten commits already pushed to origin/#{branch}, which Rail never pushes over: " <>
+               "merge origin/#{branch} in before anything else, so Rail can push the branch when this turn ends.\n\n"
+  end
+
   test "leaves a worktree that is gone alone", %{run: %Run{task: task} = run} do
     reject(&Git.fetch_default_branch/2)
     reject(&Git.set_commit_identity/1)
+    reject(&Git.check_push/1)
 
     assert "" = prepare_turn(%{run | task: %{task | worktree_path: "/nonexistent/ptn"}})
   end

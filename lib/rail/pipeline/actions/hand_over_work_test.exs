@@ -56,6 +56,9 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
       :ok
     end)
 
+    # The check fetches with a token of its own, which the pull request tests would count.
+    stub(Git, :check_push, fn _task -> :ok end)
+
     # Every push opens the task's pull request if it has none.
     Req.Test.stub(Client, fn conn ->
       case {conn.method, conn.request_path} do
@@ -111,6 +114,23 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
       reject(&Git.push_branch/2)
 
       assert {:error, :nothing_to_send} = Pipeline.hand_over_work(scope, run)
+      assert %Task{stage: :engineer} = Repo.reload!(task)
+    end
+
+    # Rail never force-pushes, so a branch that rewrote what it pushed is refused before CI or a push.
+    test "a branch that rewrote commits already pushed is refused, with nothing pushed", %{
+      scope: scope,
+      run: run,
+      task: task,
+      repo: repo
+    } do
+      {:ok, task} = Pipeline.update_task(task, %{worktree_name: "main"})
+      stub(Git, :check_push, &call_original(Git, :check_push, [&1]))
+      git!(repo, ["push", "origin", "HEAD"])
+      git!(repo, ["commit", "--amend", "--allow-empty", "-m", "CMW-1: add the vendor filter, reworded"])
+      reject(&Git.push_branch/2)
+
+      assert {:error, :history_rewritten} = Pipeline.hand_over_work(scope, run)
       assert %Task{stage: :engineer} = Repo.reload!(task)
     end
 

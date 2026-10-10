@@ -62,9 +62,9 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
     String.trim("""
     Build the approved plan below. #{workspace(task)}
 
-    Git is yours to use, commits included, except for what Rail does for you: no push and no pull request, and never switch or rename the branch you are on. For each turn Rail sets the worktree to commit as the person the ticket is assigned to, signed with their key, so commit as it is set and never change who commits. End every commit message with the line `#{ticket_trailer(issue)}`. Never rewrite a commit Rail has already pushed except by bringing the branch up to date.
+    Git is yours to use, commits included, except for what Rail does for you: no push and no pull request, and never switch or rename the branch you are on. For each turn Rail sets the worktree to commit as the person the ticket is assigned to, signed with their key, so commit as it is set and never change who commits. End every commit message with the line `#{ticket_trailer(issue)}`. Never rewrite commit history: no rebase, no amend, no reset or squash of a commit, nothing forced. Rail never force-pushes, so a branch whose history was rewritten is not pushed, and comes back to you to merge what was pushed back in.
 
-    At the start of every turn, check your branch against `origin/#{task.project.default_branch}`, which Rail fetched as the turn started. When it is behind, bring it up to date by merge or rebase, as suits the change, resolve every conflict the way both sides meant it, and follow what the default branch changed through the code, tests and comments your branch relies on.
+    At the start of every turn, check your branch against `origin/#{task.project.default_branch}`, which Rail fetched as the turn started. When it is behind, bring it up to date by merging it in, resolve every conflict the way both sides meant it, and follow what the default branch changed through the code, tests and comments your branch relies on.
 
     Nothing under #{scratch_path} is part of the change. It is your workspace, and never committed. It survives between turns; `/tmp` and anything you left running do not.
 

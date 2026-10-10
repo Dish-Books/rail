@@ -297,6 +297,13 @@ defmodule RailWeb.Live.EngineerStage do
   defp message_for(:stage_running), do: "Something is still running on this task."
   defp message_for(:unpushed_changes), do: "Push the engineer's commits before sending them to review."
   defp message_for(:nothing_to_send), do: "There is nothing left to push."
+
+  defp message_for(:history_rewritten),
+    do: "The branch rewrote commits already pushed, so Rail will not push it. Ask the engineer to merge them back in."
+
+  defp message_for(:pushed_outside_rail),
+    do: "Someone pushed to this branch outside Rail. Ask the engineer to merge their commits in, then push."
+
   defp message_for(:ci_not_passed), do: "CI has to pass on the latest commit before this goes to review."
   defp message_for(reason) when is_binary(reason), do: reason
   defp message_for(reason), do: "Could not finish that: #{inspect(reason)}"

@@ -191,6 +191,17 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
       assert %Run{error: nil} = review_run_finished(%{run | pending_chat: "One more thing"}, [])
     end
 
+    test "whose branch someone pushed to outside Rail goes back to the lead", %{run: %Run{id: run_id} = run} do
+      expect(Pipeline, :hand_over_work, fn _scope, _run -> {:error, :pushed_outside_rail} end)
+
+      expect(Rail.Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, ["-p", prompt | _rest] ->
+        assert prompt =~ "Have the engineer merge"
+        {:ok, %Rail.Tools.Schemas.OsProcess{run: spawned}}
+      end)
+
+      assert %Run{id: ^run_id, error: nil} = review_run_finished(run, [])
+    end
+
     test "whose commits could not be sent on says why", %{run: run} do
       expect(Pipeline, :hand_over_work, fn _scope, _run -> {:error, "remote rejected"} end)
 

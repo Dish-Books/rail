@@ -29,6 +29,7 @@ defmodule Rail.Git do
   defdelegate up_to_date_with?(worktree_path, base_branch), to: Actions.UpToDateWith
   defdelegate branch_changed?(task), to: Actions.BranchChanged
   defdelegate push_branch(scope, task), to: Actions.PushBranch
+  defdelegate check_push(task), to: Actions.CheckPush
   defdelegate set_commit_identity(task), to: Actions.SetCommitIdentity
   defdelegate credential_env(project), to: Actions.CredentialEnv
   defdelegate ci_env(project, task), to: Actions.CiEnv

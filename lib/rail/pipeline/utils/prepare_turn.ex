@@ -1,9 +1,9 @@
 defmodule Rail.Pipeline.Utils.PrepareTurn do
   @moduledoc """
   Readies a task's worktree for an engineer's or Review lead's turn: the default branch fetched from
-  `origin`, so the agent can tell whether its branch is behind, and the ticket owner's identity and signing
-  key written in, so the agent's own commits are theirs. Neither failing stops the turn: it is said in the
-  conversation instead.
+  `origin`, so the agent can tell whether its branch is behind, the task's own branch checked against what
+  was pushed to it, and the ticket owner's identity and signing key written in, so the agent's own commits
+  are theirs. Nothing failing stops the turn: it is said in the conversation instead.
   """
 
   alias Rail.Git
@@ -15,7 +15,7 @@ defmodule Rail.Pipeline.Utils.PrepareTurn do
 
   @doc """
   Fetches the default branch and sets the commit identity for `run`'s next turn. Returns what the turn's
-  prompt opens with: a line saying the branch is behind the default branch, or `""` when it is not.
+  prompt opens with: a line for each thing the branch must merge in before Rail can push it, or `""`.
   """
   def prepare_turn(%Run{task: %Task{} = task} = run) do
     %Project{default_branch: base} = project = Repo.get!(Project, task.project_id)
@@ -32,7 +32,7 @@ defmodule Rail.Pipeline.Utils.PrepareTurn do
         say(run, "Could not set who this turn commits as, so its commits may not be signed: #{reason}")
       end
 
-      behind(task, base)
+      behind(task, base) <> pushed(task)
     else
       ""
     end
@@ -45,7 +45,24 @@ defmodule Rail.Pipeline.Utils.PrepareTurn do
       do: "",
       else:
         "Rail fetched origin/#{base} as this turn started, and the branch is behind it: bring the branch up " <>
-          "to date with it, by merge or rebase, before anything else.\n\n"
+          "to date with it, by merging it in, before anything else.\n\n"
+  end
+
+  # Rail never pushes over the remote branch, so what was pushed to it that the branch lacks is merged in first,
+  # rather than found when Rail goes to push at the end of the turn.
+  defp pushed(%Task{worktree_name: branch} = task) do
+    case Git.check_push(task) do
+      :ok ->
+        ""
+
+      {:error, :pushed_outside_rail} ->
+        "Someone pushed to origin/#{branch} outside Rail, and the branch does not have those commits: merge " <>
+          "origin/#{branch} in before anything else, so Rail can push the branch when this turn ends.\n\n"
+
+      {:error, :history_rewritten} ->
+        "The branch has rewritten commits already pushed to origin/#{branch}, which Rail never pushes over: " <>
+          "merge origin/#{branch} in before anything else, so Rail can push the branch when this turn ends.\n\n"
+    end
   end
 
   # One line, since a log line that wraps reads its tail as the agent's words.

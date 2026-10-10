@@ -83,8 +83,7 @@ defmodule Rail.Git.Actions.PushBranchTest do
     assert {:error, {:github_api_error, 404, _body}} = Git.push_branch(scope, task)
   end
 
-  # The agent may rebase onto the default branch, which rewrites what Rail pushed before.
-  test "pushes a branch rewritten since it was last pushed over what it pushed then", %{
+  test "refuses a branch rewritten since it was last pushed", %{
     scope: scope,
     task: task,
     repo: repo,
@@ -100,9 +99,9 @@ defmodule Rail.Git.Actions.PushBranchTest do
 
     git!(repo, ["commit", "--amend", "-m", "feature, rewritten"])
 
-    assert :ok = Git.push_branch(scope, task)
-    refute git!(remote, ["rev-parse", "main"]) == pushed
-    assert git!(repo, ["rev-parse", "HEAD"]) == git!(remote, ["rev-parse", "main"])
+    assert {:error, output} = Git.push_branch(scope, task)
+    assert output =~ "[rejected]"
+    assert git!(remote, ["rev-parse", "main"]) == pushed
   end
 
   # A push cut off after the remote took it, but before git wrote down that it
@@ -152,37 +151,6 @@ defmodule Rail.Git.Actions.PushBranchTest do
     File.write!(Path.join(repo, "feature.ex"), "one\n")
     git!(repo, ["add", "."])
     git!(repo, ["commit", "-m", "feature"])
-
-    assert {:error, output} = Git.push_branch(scope, task)
-    assert output =~ "[rejected]"
-    assert git!(elsewhere, ["rev-parse", "HEAD"]) == git!(remote, ["rev-parse", "main"])
-  end
-
-  # The lease is the remote's tip as fetched, so a push someone made is refused even once the branch has
-  # fetched it: the branch never held that commit.
-  test "refuses to overwrite someone else's push the branch has fetched but never held", %{
-    scope: scope,
-    task: task,
-    repo: repo,
-    remote: remote
-  } do
-    Req.Test.expect(Client, 2, &Req.Test.json(&1, %{"token" => "ghs_installation_token"}))
-
-    File.write!(Path.join(repo, "feature.ex"), "one\n")
-    git!(repo, ["add", "."])
-    git!(repo, ["commit", "-m", "feature"])
-    assert :ok = Git.push_branch(scope, task)
-
-    elsewhere = Path.join(System.tmp_dir!(), "rail_git_elsewhere_#{System.unique_integer([:positive])}")
-    on_exit(fn -> File.rm_rf(elsewhere) end)
-    git!(System.tmp_dir!(), ["clone", remote, elsewhere])
-    git!(elsewhere, ["config", "user.email", "else@rail.local"])
-    git!(elsewhere, ["config", "user.name", "Someone Else"])
-    git!(elsewhere, ["commit", "--allow-empty", "-m", "theirs"])
-    git!(elsewhere, ["push", "origin", "main"])
-
-    git!(repo, ["fetch", "origin"])
-    git!(repo, ["commit", "--amend", "-m", "feature, rewritten"])
 
     assert {:error, output} = Git.push_branch(scope, task)
     assert output =~ "[rejected]"

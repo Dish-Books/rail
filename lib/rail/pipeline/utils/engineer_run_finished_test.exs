@@ -61,6 +61,18 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
     assert %Task{stage: :engineer} = Repo.reload!(task)
   end
 
+  # Rail never force-pushes, so a branch it will not push goes back to the engineer to merge.
+  test "a turn whose branch rewrote what was pushed goes back to the engineer", %{run: %Run{id: run_id} = run} do
+    expect(Pipeline, :hand_over_work, fn _scope, _run -> {:error, :history_rewritten} end)
+
+    expect(Rail.Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "so Rail did not push it"
+      {:ok, %Rail.Tools.Schemas.OsProcess{run: spawned}}
+    end)
+
+    assert %Run{id: ^run_id, error: nil} = engineer_run_finished(run, [])
+  end
+
   test "a turn refused a hand-over says why", %{run: run} do
     expect(Pipeline, :hand_over_work, fn _scope, _run -> {:error, {:invalid_stage, :review}} end)
 

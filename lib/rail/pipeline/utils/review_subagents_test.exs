@@ -34,7 +34,8 @@ defmodule Rail.Pipeline.Utils.ReviewSubagentsTest do
     # The engineer commits its fixes and brings the branch up to date; only Rail pushes.
     assert engineer =~ "Commit your fixes yourself"
     assert engineer =~ "Never push: Rail pushes what the lead's turn leaves committed."
-    assert engineer =~ "merge or rebase onto `origin/<default branch>`"
+    assert engineer =~ "merge `origin/<default branch>` in"
+    assert engineer =~ "Never rewrite commit history: no rebase, no amend, no reset or squash of a commit."
     refute reviewer =~ "`commit`"
   end
 

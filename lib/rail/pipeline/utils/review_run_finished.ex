@@ -9,12 +9,13 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
 
   A turn that leaves commits the remote has not had hands them over: through CI and pushed, and to the next
   round when the branch moved past what the last round read. Fixes are held back while a Fix finding is not
-  saved fixed with its report. What else a turn can get wrong is ending without `save_review` when a round
+  saved fixed with its report, and a branch Rail will not push goes back to the lead to merge. What else a turn can get wrong is ending without `save_review` when a round
   was due, which is any time the branch has moved since the last pass read it. Both are recorded on the run,
   so the stage stays open for the message that settles them.
   """
 
   import Rail.Pipeline.Utils.FinishReview
+  import Rail.Pipeline.Utils.SendBackRefusedPush
 
   alias Rail.Git
   alias Rail.Pipeline
@@ -53,8 +54,14 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
 
   defp hand_over(%Run{} = run) do
     case Pipeline.hand_over_work(Scope.for_system(), run) do
-      {:ok, %Run{} = sent} -> %{sent | task: run.task, role: run.role}
-      {:error, reason} -> fail(run, "The Review lead's commits could not be sent on: #{describe(reason)}")
+      {:ok, %Run{} = sent} ->
+        %{sent | task: run.task, role: run.role}
+
+      {:error, reason} when reason in [:history_rewritten, :pushed_outside_rail] ->
+        send_back_refused_push(run, reason)
+
+      {:error, reason} ->
+        fail(run, "The Review lead's commits could not be sent on: #{describe(reason)}")
     end
   end
 

@@ -161,14 +161,14 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
       "last message why each file changed. Rail runs CI again on what your turn leaves committed. When the " <>
       "failure is not the change's to fix, such as a flaky test elsewhere, end your turn without changing " <>
       "anything and Rail runs CI again on the same commit. When it failed on a change that landed on the default " <>
-      "branch, have the engineer bring the branch up to date with it first."
+      "branch, have the engineer merge it in first."
   end
 
   defp next_step(%Run{}) do
     "Fix what it reports and commit the fix. Rail runs CI again on what your turn leaves committed. When the " <>
       "failure is not your change's to fix, such as a flaky test elsewhere, end your turn without changing " <>
       "anything and Rail runs CI again on the same commit. When it failed on a change that landed on the default " <>
-      "branch, bring your branch up to date with it first."
+      "branch, merge it into your branch first."
   end
 
   defp update(%Run{} = run, attrs) do

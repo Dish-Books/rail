@@ -23,14 +23,16 @@ defmodule Rail.Pipeline.Actions.HandOverWork do
 
   @doc """
   Sends on the commits on `run`'s branch that the remote does not have yet. Returns `{:ok, run}`, running
-  while CI decides, or `{:error, reason}` when the run is not its stage's, there is nothing to send, or git,
-  GitHub, CI or review refused. Safe to run again after a push that failed.
+  while CI decides, or `{:error, reason}` when the run is not its stage's, there is nothing to send, the
+  branch does not extend what its remote branch holds (`:history_rewritten`, `:pushed_outside_rail`), or
+  git, GitHub, CI or review refused. Safe to run again after a push that failed.
   """
   def hand_over_work(%Scope{} = scope, %Run{} = run) do
     %Run{task: %Task{project: %Project{ci_command: command}} = task} =
       run = Run |> Repo.get!(run.id) |> Repo.preload([:role, task: [:issue, :project]], force: true)
 
-    with :ok <- handable(task, run) do
+    with :ok <- handable(task, run),
+         :ok <- Git.check_push(task) do
       review? = review?(task, run)
       # Set before CI starts, so a CI that finishes fast still finds it.
       flagged = update(run, %{review_on_ci_pass: review?})
