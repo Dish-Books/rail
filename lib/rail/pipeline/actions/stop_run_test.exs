@@ -134,7 +134,6 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
       })
 
     test_pid = self()
-    stub(Rail.Pipeline.Utils.PrepareTurn, :prepare_turn, fn %Run{} -> "" end)
 
     expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, _argv ->
       send(test_pid, :spawned)

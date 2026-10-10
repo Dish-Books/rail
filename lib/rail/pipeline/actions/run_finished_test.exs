@@ -1098,7 +1098,6 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
         })
 
       test_pid = self()
-      stub(Rail.Pipeline.Utils.PrepareTurn, :prepare_turn, fn %Run{} -> "" end)
       # Review takes a branch the engineer's hand-over pushed, so these turns have nothing to send on.
       stub(Git, :branch_unpushed?, fn _path -> false end)
 
