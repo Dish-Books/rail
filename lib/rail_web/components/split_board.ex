@@ -5,33 +5,49 @@ defmodule RailWeb.Components.SplitBoard do
   """
   use RailWeb, :html
 
+  import RailWeb.Utils.ChildStatus
+
+  alias Rail.Pipeline.Schemas.Task
+
   # Each entry is `RailWeb.Utils.ChildStatus.child_status/2` for one child, in order.
   attr :statuses, :list, required: true
   attr :parent_id, :string, required: true
 
   def split_board(assigns) do
+    identifiers = Enum.map(assigns.statuses, & &1.identifier)
+    # Longest first, so SPL-10 is not read as SPL-1 followed by a 0.
+    alternatives = identifiers |> Enum.sort_by(&(-byte_size(&1))) |> Enum.map_join("|", &Regex.escape/1)
+
+    assigns =
+      assigns
+      |> assign(:identifiers, identifiers)
+      |> assign(:identifier_pattern, Regex.compile!("(#{alternatives})"))
+
     ~H"""
     <div id="split-board" data-qa="split-board">
-      <div class="rounded-xl border border-slate-200 dark:border-slate-700 overflow-x-auto">
-        <table class="w-full min-w-[56rem] table-fixed text-left">
+      <%!-- Relative so the screen-reader text in each cell scrolls with the frame instead of widening the page. --%>
+      <div class="relative rounded-xl border border-slate-200 dark:border-slate-700 overflow-x-auto">
+        <table class="w-full min-w-[60rem] table-fixed text-left">
           <colgroup>
             <col class="w-[48px]" />
             <col />
-            <col :for={_stage <- 1..4} class="w-[84px]" />
-            <col class="w-[92px]" />
-            <col class="w-[26%]" />
+            <col :for={_stage <- child_stages()} class="w-[112px]" />
+            <col class="w-[112px]" />
+            <col class="w-[16rem]" />
           </colgroup>
           <thead class="bg-slate-50 dark:bg-slate-800/40 text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">
             <tr>
-              <th class="pl-4 py-2 font-medium">#</th>
-              <th class="px-3 py-2 font-medium">Child</th>
+              <th scope="col" class="pl-4 py-2 font-medium">#</th>
+              <th scope="col" class="px-3 py-2 font-medium">Child</th>
               <th
-                :for={label <- ["Engineer", "Review", "Merged"]}
+                :for={stage <- child_stages()}
+                scope="col"
                 class="px-2 py-2 text-center font-medium"
               >
-                {label}
+                {Task.stage_label(stage)}
               </th>
-              <th class="px-3 py-2 font-medium">Where it stands</th>
+              <th scope="col" class="px-2 py-2 text-center font-medium">Merged</th>
+              <th scope="col" class="px-3 py-2 font-medium">Where it stands</th>
             </tr>
           </thead>
           <tbody>
@@ -47,7 +63,7 @@ defmodule RailWeb.Components.SplitBoard do
               ]}
             >
               <td class={[
-                "pl-0 pr-3 py-3 border-l-2",
+                "pl-0 pr-2 py-3 border-l-2 align-top",
                 status.state == :failed && "border-l-red-500",
                 (status.state != :failed and status.needs_attention) && "border-l-amber-500",
                 (status.state != :failed and not status.needs_attention) && "border-l-transparent"
@@ -56,7 +72,7 @@ defmodule RailWeb.Components.SplitBoard do
                   {status.task.split_position}
                 </span>
               </td>
-              <td class="px-3 py-3 min-w-0">
+              <td class="px-3 py-3 min-w-0 align-top">
                 <.link
                   patch={~p"/tasks/#{@parent_id}?child=#{status.identifier}"}
                   id={"split-open-#{status.identifier}"}
@@ -74,39 +90,55 @@ defmodule RailWeb.Components.SplitBoard do
                     </span>
                   </span>
                   <span
-                    class="mt-0.5 block text-sm font-semibold leading-snug text-slate-900 dark:text-slate-100 line-clamp-2 wrap-break-word"
+                    data-qa="split-row-title"
+                    class="mt-0.5 line-clamp-2 text-sm font-semibold leading-snug text-slate-900 dark:text-slate-100 wrap-break-word"
                     title={status.task.issue.title}
                   >
                     {status.task.issue.title}
                   </span>
                 </.link>
               </td>
-              <td :for={cell <- status.cells} class="px-2 py-3 text-center">
+              <td :for={cell <- status.cells} class="px-2 py-3 text-center align-top">
                 <.stage_cell mark={cell.mark} chip={cell.chip} />
               </td>
-              <td class="px-2 py-3 text-center">
+              <td class="px-2 py-3 text-center align-top">
                 <.stage_cell mark={status.merged.mark} chip={status.merged.chip} />
               </td>
-              <td class="px-3 py-3">
-                <span class="flex items-center gap-3 min-w-0">
-                  <.icon name={status.icon} class={["size-[15px]", status.text_class]} />
-                  <span
-                    data-qa="split-row-line"
-                    class={["min-w-0 flex-1 truncate text-[13px]", status.line_class]}
-                    title={status.line}
-                  >
-                    {status.line}
+              <td class="px-3 py-3 align-top">
+                <span class="flex items-start gap-3 min-w-0">
+                  <span class="mt-0.5">
+                    <.icon name={status.icon} class={["size-[15px]", status.text_class]} />
                   </span>
-                  <.link
-                    :if={status.action}
-                    patch={
-                      ~p"/tasks/#{@parent_id}?child=#{status.identifier}&tab=#{status.action.tab}"
-                    }
-                    id={"split-action-#{status.identifier}"}
-                    class="shrink-0 text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline"
-                  >
-                    {status.action.label}
-                  </.link>
+                  <span class="min-w-0 flex-1">
+                    <span
+                      data-qa="split-row-line"
+                      class={[
+                        "text-[13px] leading-snug line-clamp-2 wrap-break-word",
+                        status.line_class
+                      ]}
+                      title={status.line}
+                    ><span
+                      :for={
+                        piece <-
+                          Regex.split(@identifier_pattern, status.line,
+                            include_captures: true,
+                            trim: true
+                          )
+                      }
+                      class={piece in @identifiers && "whitespace-nowrap"}
+                    >{piece}</span></span>
+                    <span :if={status.action} class="mt-1 block">
+                      <.link
+                        patch={
+                          ~p"/tasks/#{@parent_id}?child=#{status.identifier}&tab=#{status.action.tab}"
+                        }
+                        id={"split-action-#{status.identifier}"}
+                        class="whitespace-nowrap text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      >
+                        {status.action.label}
+                      </.link>
+                    </span>
+                  </span>
                 </span>
               </td>
             </tr>
@@ -125,12 +157,15 @@ defmodule RailWeb.Components.SplitBoard do
 
   defp stage_cell(%{mark: :current} = assigns) do
     ~H"""
-    <span class="inline-flex justify-center w-full">
-      <span class={[
-        "inline-flex items-center gap-1 h-6 px-2 rounded-full text-[11px] font-semibold",
-        @chip.class
-      ]}>
-        <.icon name={@chip.icon} class="size-3" />{@chip.label}
+    <span class="inline-flex justify-center w-full min-w-0">
+      <span
+        title={@chip.label}
+        class={[
+          "inline-flex items-center gap-1 h-6 px-2 max-w-full rounded-full text-[11px] font-semibold",
+          @chip.class
+        ]}
+      >
+        <.icon name={@chip.icon} class="size-3" /><span class="truncate">{@chip.label}</span>
       </span>
     </span>
     """
@@ -140,6 +175,7 @@ defmodule RailWeb.Components.SplitBoard do
     ~H"""
     <span class="inline-flex justify-center w-full" title="Done">
       <.icon name="pi-check-bold" class="size-[13px] text-emerald-500 dark:text-emerald-400" />
+      <span class="sr-only">Done</span>
     </span>
     """
   end

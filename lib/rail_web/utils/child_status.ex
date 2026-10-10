@@ -17,6 +17,9 @@ defmodule RailWeb.Utils.ChildStatus do
   @amber "bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200"
   @slate_text "text-slate-500 dark:text-slate-400"
 
+  @doc "The stages a child passes through before Merged, one board column and one status cell each."
+  def child_stages, do: @stages
+
   @doc """
   Says where `child` stands among `siblings`, every child of its split, each with its `issue` and its
   `runs` with their `role` and `questions` loaded. The board, switcher and overview read the same map.
