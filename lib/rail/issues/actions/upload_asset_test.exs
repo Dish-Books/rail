@@ -47,7 +47,7 @@ defmodule Rail.Issues.Actions.UploadAssetTest do
         name: "Upload Asset No Workspace",
         github_repo: "org/upload-asset-none",
         github_installation_id: 5202,
-        linear_team_key: "UPN",
+        key: "UPN",
         default_branch: "main",
         clone_path: "/tmp/repos/upload-asset-none"
       })

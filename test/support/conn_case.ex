@@ -23,8 +23,6 @@ defmodule RailWeb.ConnCase do
       @endpoint RailWeb.Endpoint
 
       setup :verify_on_exit!
-      setup {Mox, :verify_on_exit!}
-      setup {Rail.DataCase, :stub_trackers}
       setup {Rail.DataCase, :stub_agent_spawn}
       setup {Rail.DataCase, :stub_git_repo_check}
       setup {Rail.DataCase, :stub_worktree_slot}

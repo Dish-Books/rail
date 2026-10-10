@@ -15,11 +15,11 @@ defmodule Rail.Projects.Schemas.Project do
     field :name, :string
     field :github_repo, :string
     field :github_installation_id, :integer
-    # Where its issues live. GitHub issues are named `<key>#<number>`, so the key is fixed once there are any.
+    # Where its issues live, and the key they are named by: a Linear project's team key, or the prefix a
+    # GitHub project's issues are named `<key>#<number>` with. Fixed once there are any.
     field :tracker, Ecto.Enum, values: [:linear, :github], default: :linear
     field :key, :string
     field :default_branch, :string
-    field :linear_team_key, :string
     field :linear_team_id, :string
     field :linear_state_ids, :map, default: %{}
     field :clone_path, :string
@@ -56,7 +56,6 @@ defmodule Rail.Projects.Schemas.Project do
     :tracker,
     :key,
     :default_branch,
-    :linear_team_key,
     :linear_state_ids,
     :linear_workspace_id,
     :clone_path,
@@ -75,6 +74,7 @@ defmodule Rail.Projects.Schemas.Project do
     :name,
     :github_repo,
     :github_installation_id,
+    :key,
     :default_branch,
     :clone_path
   ]
@@ -83,7 +83,7 @@ defmodule Rail.Projects.Schemas.Project do
     project
     |> cast(attrs, @fields)
     |> put_default_key()
-    |> validate_tracker_fields()
+    |> validate_required(@required_fields)
     |> validate_format(:key, ~r/^[a-z0-9][a-z0-9_-]*$/i, message: "use letters, digits, - and _")
     |> validate_length(:key, max: 20)
     |> unique_constraint(:key)
@@ -109,13 +109,6 @@ defmodule Rail.Projects.Schemas.Project do
       put_change(changeset, :key, name)
     else
       _keep -> changeset
-    end
-  end
-
-  defp validate_tracker_fields(changeset) do
-    case get_field(changeset, :tracker) do
-      :github -> validate_required(changeset, [:key | @required_fields])
-      _linear -> validate_required(changeset, [:linear_team_key | @required_fields])
     end
   end
 
@@ -159,13 +152,13 @@ defmodule Rail.Projects.Schemas.Project do
 
   # People know a Linear team by its key; Linear's API wants its id, and the ids
   # of its workflow states. Both are looked up as the row is written, and only
-  # when the key or the workspace it is read through changed, so a form being
+  # when the key, the tracker or the workspace it is read through changed, so a form being
   # filled in never calls Linear. With no workspace to ask through there is
   # nothing to look up yet.
   defp put_linear_team_id(%Ecto.Changeset{valid?: true} = changeset) do
     linear? = get_field(changeset, :tracker) == :linear
 
-    if linear? and (changed?(changeset, :linear_team_key) or changed?(changeset, :linear_workspace_id)) do
+    if linear? and Enum.any?([:tracker, :key, :linear_workspace_id], &changed?(changeset, &1)) do
       prepare_changes(changeset, &look_up_linear_team_id/1)
     else
       changeset
@@ -187,10 +180,10 @@ defmodule Rail.Projects.Schemas.Project do
         put_change(changeset, :linear_team_id, nil)
 
       {:ok, _no_team} ->
-        changeset |> add_error(:linear_team_key, "no Linear team has this key") |> changeset.repo.rollback()
+        changeset |> add_error(:key, "no Linear team has this key") |> changeset.repo.rollback()
 
       {:error, _reason} ->
-        changeset |> add_error(:linear_team_key, "could not be checked with Linear") |> changeset.repo.rollback()
+        changeset |> add_error(:key, "could not be checked with Linear") |> changeset.repo.rollback()
     end
   end
 

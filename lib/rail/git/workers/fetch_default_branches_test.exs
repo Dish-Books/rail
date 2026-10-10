@@ -26,7 +26,7 @@ defmodule Rail.Git.Workers.FetchDefaultBranchesTest do
         name: "Fetch All #{id}",
         github_repo: "org/fetch-all-#{id}",
         github_installation_id: id,
-        linear_team_key: "FA#{id}",
+        key: "FA#{id}",
         default_branch: "main",
         clone_path: clone
       })

@@ -3,8 +3,7 @@ defmodule Rail.Issues.Tracker do
   Where a project's issues live: Linear or GitHub Issues. Every tracker implements the same
   callbacks, so the actions work an issue without asking which one holds it.
 
-  The implementations are `Rail.Issues.Tracker.Linear` and `Rail.Issues.Tracker.Github`, picked
-  through `config :rail, :issue_trackers`; tests point it at a Mox mock of this behaviour.
+  The implementations are `Rail.Issues.Tracker.Linear` and `Rail.Issues.Tracker.Github`.
   """
 
   alias Rail.Issues.Schemas.Comment
@@ -79,9 +78,7 @@ defmodule Rail.Issues.Tracker do
   @doc """
   The tracker module for a project, an issue, or a Linear workspace.
   """
-  def tracker(%Project{tracker: tracker}), do: lookup(tracker)
-  def tracker(%Issue{tracker: tracker}), do: lookup(tracker)
-  def tracker(%LinearWorkspace{}), do: lookup(:linear)
-
-  defp lookup(tracker), do: :rail |> Application.get_env(:issue_trackers, @trackers) |> Map.fetch!(tracker)
+  def tracker(%Project{tracker: tracker}), do: Map.fetch!(@trackers, tracker)
+  def tracker(%Issue{tracker: tracker}), do: Map.fetch!(@trackers, tracker)
+  def tracker(%LinearWorkspace{}), do: @trackers.linear
 end

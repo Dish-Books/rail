@@ -26,7 +26,7 @@ defmodule Rail.Tools.FollowerSupervisorTest do
         name: "Supervisor Project",
         github_repo: "org/supervisor-#{System.unique_integer([:positive])}",
         github_installation_id: System.unique_integer([:positive]),
-        linear_team_key: "SUP",
+        key: "SUP",
         default_branch: "main",
         clone_path: Path.join(tmp_dir, "clone")
       })

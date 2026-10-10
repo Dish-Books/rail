@@ -14,7 +14,7 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
       name: "Rail Admin Project",
       github_repo: repo,
       github_installation_id: 12_345,
-      linear_team_key: "RAIL",
+      key: "RAIL",
       default_branch: "main",
       clone_path: "/tmp/rail"
     }
@@ -31,7 +31,7 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
       name: "System Project",
       github_repo: repo,
       github_installation_id: 67_890,
-      linear_team_key: "SYS",
+      key: "SYS",
       default_branch: "main",
       clone_path: "/tmp/sys"
     }
@@ -49,7 +49,7 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
              name: ["can't be blank"],
              github_repo: ["can't be blank"],
              github_installation_id: ["can't be blank"],
-             linear_team_key: ["can't be blank"],
+             key: ["can't be blank"],
              clone_path: ["can't be blank"]
            } = errors_on(changeset)
   end
@@ -74,7 +74,7 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
       name: "Linked Project",
       github_repo: "example/linked-#{System.unique_integer([:positive])}",
       github_installation_id: 12_346,
-      linear_team_key: "LNK",
+      key: "LNK",
       default_branch: "main",
       clone_path: "/tmp/linked"
     }
@@ -89,7 +89,7 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
              Projects.create_project(
                scope,
                Map.put(
-                 %{attrs | github_repo: "example/unlinked", linear_team_key: "UNL"},
+                 %{attrs | github_repo: "example/unlinked", key: "UNL"},
                  :linear_workspace_id,
                  "lw_missing"
                )
@@ -107,7 +107,7 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
       name: "Not A Checkout",
       github_repo: "example/not-a-checkout-#{System.unique_integer([:positive])}",
       github_installation_id: 44_444,
-      linear_team_key: "NAC",
+      key: "NAC",
       default_branch: "main",
       clone_path: "/tmp/not-a-checkout"
     }
@@ -124,7 +124,7 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
       name: "First Project",
       github_repo: repo,
       github_installation_id: 11_111,
-      linear_team_key: "FIRST",
+      key: "FIRST",
       default_branch: "main",
       clone_path: "/tmp/first"
     }
@@ -145,7 +145,7 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
       name: "Unauthorized Project",
       github_repo: repo,
       github_installation_id: 22_222,
-      linear_team_key: "UNAUTH",
+      key: "UNAUTH",
       default_branch: "main",
       clone_path: "/tmp/unauth"
     }
@@ -160,7 +160,7 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
       name: "Nil Scope Project",
       github_repo: repo,
       github_installation_id: 33_333,
-      linear_team_key: "NIL",
+      key: "NIL",
       default_branch: "main",
       clone_path: "/tmp/nil"
     }

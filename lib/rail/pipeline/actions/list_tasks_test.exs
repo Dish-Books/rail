@@ -142,7 +142,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         name: "List Tasks Project 7108",
         github_repo: "org/list-tasks-7108",
         github_installation_id: 7108,
-        linear_team_key: "P7108",
+        key: "P7108",
         default_branch: "main",
         clone_path: "/tmp/repos/list-tasks-7108",
         linear_state_ids: %{

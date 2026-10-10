@@ -22,8 +22,6 @@ defmodule Rail.DataCase do
       alias Rail.Repo
 
       setup :verify_on_exit!
-      setup {Mox, :verify_on_exit!}
-      setup :stub_trackers
       setup :stub_agent_spawn
       setup :stub_git_repo_check
       setup :stub_worktree_slot
@@ -50,16 +48,6 @@ defmodule Rail.DataCase do
       project: :persistent_term.get({RailTest, :project}),
       github_project: :persistent_term.get({RailTest, :github_project})
     }
-  end
-
-  @doc """
-  Has each tracker mock act as the real tracker, which still reaches its API only through
-  `Req.Test`. A test about what the actions ask of a tracker sets `Mox.expect/3` on the mock instead.
-  """
-  def stub_trackers(_context) do
-    Mox.stub_with(Rail.Issues.Tracker.LinearMock, Rail.Issues.Tracker.Linear)
-    Mox.stub_with(Rail.Issues.Tracker.GithubMock, Rail.Issues.Tracker.Github)
-    :ok
   end
 
   @doc """

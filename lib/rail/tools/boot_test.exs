@@ -35,7 +35,7 @@ defmodule Rail.Tools.BootTest do
         name: "Boot Project",
         github_repo: "org/boot-#{System.unique_integer([:positive])}",
         github_installation_id: System.unique_integer([:positive]),
-        linear_team_key: "BOO",
+        key: "BOO",
         default_branch: "main",
         clone_path: Path.join(tmp_dir, "clone")
       })

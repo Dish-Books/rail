@@ -185,7 +185,7 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
         name: "No Team Project",
         github_repo: "org/create-issue-no-team",
         github_installation_id: 6120,
-        linear_team_key: "NTP",
+        key: "NTP",
         default_branch: "main",
         clone_path: "/tmp/repos/create-issue-no-team"
       })
@@ -205,9 +205,9 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
   describe "a GitHub project" do
     test "opens the issue in triage, labelled with its priority, assigned to its owner", %{github_project: project} do
       {:ok, %{id: owner_id}} =
-        Rail.Users.register_oauth_user(%{github_id: "gh_gi_owner", login: "gi-owner", email: "gi@example.com"})
+        Users.register_oauth_user(%{github_id: "gh_gi_owner", login: "gi-owner", email: "gi@example.com"})
 
-      created = github_issue_json(%{"title" => "Fix the login redirect", "labels" => [%{"name" => "rail: triage"}]})
+      created = github_issue_json(%{"title" => "Fix the login redirect", "labels" => [%{"name" => "rail:triage"}]})
 
       Req.Test.expect(Client, 2, fn conn ->
         case {conn.method, conn.request_path} do
@@ -220,7 +220,7 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
             assert %{
                      "title" => "Fix the login redirect",
                      "body" => "It sends people home",
-                     "labels" => ["rail: triage", "rail: priority high"],
+                     "labels" => ["rail:triage", "rail:high"],
                      "assignees" => ["gi-owner"]
                    } == Jason.decode!(body)
 
@@ -252,7 +252,7 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
     end
 
     test "keeps the row a poll saved first instead of failing on it", %{github_project: project} do
-      created = github_issue_json(%{"labels" => [%{"name" => "rail: triage"}]})
+      created = github_issue_json(%{"labels" => [%{"name" => "rail:triage"}]})
 
       %Issue{id: mirrored_id} =
         github_issue(project, %{external_id: created["node_id"], number: 42, identifier: "tgh#42"})
@@ -286,7 +286,7 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
   test "keeps what the tracker names the ticket and adds Rail's own fields", %{
     github_project: %{id: project_id} = project
   } do
-    Mox.expect(Rail.Issues.Tracker.GithubMock, :create_issue, fn _scope, ^project, %{title: "Contract"} ->
+    expect(Rail.Issues.Tracker.Github, :create_issue, fn _scope, ^project, %{title: "Contract"} ->
       {:ok, %{external_id: "I_contract", identifier: "tgh#5000", title: "Contract", state: :triage, number: 5000}}
     end)
 

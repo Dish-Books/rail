@@ -12,7 +12,7 @@ defmodule Rail.Roles.Actions.GetRoleTest do
         name: "Get Role Project",
         github_repo: "org/get-role",
         github_installation_id: 4404,
-        linear_team_key: "GRL",
+        key: "GRL",
         default_branch: "main",
         clone_path: "/tmp/repos/get-role"
       })

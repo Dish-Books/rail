@@ -37,7 +37,7 @@ defmodule Rail.Issues.Workers.GithubSyncTest do
             github_issue_json(%{
               "number" => 2,
               "title" => "Filed on GitHub",
-              "labels" => [%{"name" => "rail: todo"}, %{"name" => "rail: priority low"}],
+              "labels" => [%{"name" => "rail:todo"}, %{"name" => "rail:low"}],
               "assignees" => [%{"id" => 777}, %{"id" => 5150}]
             }),
             github_issue_json(%{"number" => 3, "pull_request" => %{"url" => "https://api.github.com/pulls/3"}})

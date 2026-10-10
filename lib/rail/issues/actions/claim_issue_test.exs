@@ -71,7 +71,7 @@ defmodule Rail.Issues.Actions.ClaimIssueTest do
   test "a user the issue's tracker cannot take as owner is told why, and nothing changes", %{github_project: project} do
     {:ok, user} = Users.register_oauth_user(%{github_id: "gh_refused", login: "refused", email: "refused@example.com"})
     issue = github_issue(project)
-    Mox.expect(Rail.Issues.Tracker.GithubMock, :check_assignable, fn %{id: _user_id} -> {:error, :not_on_github} end)
+    expect(Rail.Issues.Tracker.Github, :check_assignable, fn %{id: _user_id} -> {:error, :not_on_github} end)
 
     assert {:error, :not_on_github} = Issues.claim_issue(Scope.for_user(user), issue)
     assert %Issue{owner_user_id: nil} = Repo.reload!(issue)

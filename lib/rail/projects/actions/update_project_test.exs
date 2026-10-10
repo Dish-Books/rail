@@ -18,7 +18,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                name: "Original Name",
                github_repo: repo,
                github_installation_id: 55_667,
-               linear_team_key: "ORIG",
+               key: "ORIG",
                default_branch: "main",
                clone_path: "/tmp/orig"
              })
@@ -39,7 +39,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                name: "Tracked",
                github_repo: "example/tracked-#{System.unique_integer([:positive])}",
                github_installation_id: 55_669,
-               linear_team_key: "TRK",
+               key: "TRK",
                default_branch: "main",
                clone_path: "/tmp/tracked"
              })
@@ -107,7 +107,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                name: "Moving Project",
                github_repo: "example/moving-#{System.unique_integer([:positive])}",
                github_installation_id: 55_668,
-               linear_team_key: "MOV",
+               key: "MOV",
                default_branch: "main",
                clone_path: "/tmp/move",
                linear_workspace_id: old_id
@@ -131,7 +131,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                name: "Valid Project",
                github_repo: repo,
                github_installation_id: 55_669,
-               linear_team_key: "INV",
+               key: "INV",
                default_branch: "main",
                clone_path: "/tmp/inv"
              })
@@ -149,7 +149,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                name: "Project to Guard",
                github_repo: repo,
                github_installation_id: 55_670,
-               linear_team_key: "GRD",
+               key: "GRD",
                default_branch: "main",
                clone_path: "/tmp/guard"
              })
@@ -167,7 +167,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                name: "Project to Guard Nil",
                github_repo: repo,
                github_installation_id: 55_671,
-               linear_team_key: "GRDN",
+               key: "GRDN",
                default_branch: "main",
                clone_path: "/tmp/guard_nil"
              })
@@ -183,7 +183,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                name: "Setup Project",
                github_repo: "example/setup-repo-#{System.unique_integer([:positive])}",
                github_installation_id: 55_670,
-               linear_team_key: "SET",
+               key: "SET",
                default_branch: "main",
                clone_path: "/tmp/set"
              })
@@ -321,7 +321,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
           name: "Other",
           github_repo: "example/other-#{System.unique_integer([:positive])}",
           github_installation_id: 2,
-          linear_team_key: "OTH",
+          key: "OTH",
           default_branch: "main",
           clone_path: "/tmp/other"
         })
@@ -406,7 +406,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
           name: "Other",
           github_repo: "example/other-#{System.unique_integer([:positive])}",
           github_installation_id: 2,
-          linear_team_key: "OTH",
+          key: "OTH",
           default_branch: "main",
           clone_path: "/tmp/other"
         })

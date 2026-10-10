@@ -14,7 +14,7 @@ defmodule RailWeb.Components.ProjectBadge do
         @class
       ]}
     >
-      {@project.key || @project.linear_team_key}
+      {@project.key}
     </span>
     """
   end
