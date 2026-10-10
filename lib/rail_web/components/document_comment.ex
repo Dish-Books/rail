@@ -1,7 +1,7 @@
 defmodule RailWeb.Components.DocumentComment do
   @moduledoc """
-  One of the reader's unsent comments on a line of the ticket or the plan, carrying its number in the tray. A comment
-  whose line no longer reads as it did is drawn dashed and changed, quoting the line as it read when it was written.
+  One of the reader's unsent comments on a line of the ticket or the plan, or a piece of a Review finding, carrying its
+  number in the tray. A comment whose line no longer reads as it did is drawn dashed and changed, quoting the line.
   """
   use RailWeb, :html
 
@@ -9,6 +9,7 @@ defmodule RailWeb.Components.DocumentComment do
   attr :number, :integer, required: true, doc: "its number in the tray"
   attr :named, :boolean, default: false, doc: "names its line, for a card not drawn directly under it"
   attr :lifted, :boolean, default: false, doc: "its line no longer reads as it did"
+  attr :remove, :string, default: "remove_plan_comment", doc: "the event its Remove sends"
   attr :target, :any, required: true
 
   def document_comment(%{lifted: true} = assigns) do
@@ -35,7 +36,7 @@ defmodule RailWeb.Components.DocumentComment do
         <span class="min-w-0 truncate font-mono text-[10.5px] text-slate-500 dark:text-slate-400">
           {@comment.element_label} as you commented on it
         </span>
-        <.remove comment={@comment} target={@target} />
+        <.remove comment={@comment} event={@remove} target={@target} />
       </div>
       <blockquote
         phx-no-format
@@ -78,7 +79,7 @@ defmodule RailWeb.Components.DocumentComment do
         >
           {name(@comment)}
         </span>
-        <.remove comment={@comment} target={@target} />
+        <.remove comment={@comment} event={@remove} target={@target} />
       </div>
       <p
         phx-no-format
@@ -89,13 +90,14 @@ defmodule RailWeb.Components.DocumentComment do
   end
 
   attr :comment, :map, required: true
+  attr :event, :string, required: true
   attr :target, :any, required: true
 
   defp remove(assigns) do
     ~H"""
     <button
       type="button"
-      phx-click="remove_plan_comment"
+      phx-click={@event}
       phx-value-id={@comment.id}
       phx-target={@target}
       data-qa="document_comment_remove"

@@ -7,6 +7,7 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.FindingComment
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
@@ -323,6 +324,129 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
                run |> Pipeline.list_run_events() |> Enum.filter(&(&1.line =~ "[human] 2. On a screen:"))
     end
 
+    # The tray lists finding comments first among the comments, so the note numbers them the same.
+    test "finding comments go after the Fix findings and before the diff's and the screens', numbered as the tray does",
+         %{
+           task: %{id: task_id} = task,
+           run: %{id: run_id} = run,
+           crash: crash,
+           nit: nit,
+           ada: ada,
+           grace: grace,
+           diff: diff
+         } do
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
+      {:ok, _comment} = Pipeline.create_screen_comment(ada, task, %{"key" => "file-list", "body" => "Fold it."})
+      {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "Name it."))
+
+      {:ok, %{id: on_nit_id}} =
+        Pipeline.create_finding_comment(ada, task, %{"finding_id" => nit.id, "piece" => "title", "body" => "Not a nit."})
+
+      {:ok, %{id: on_place_id}} =
+        Pipeline.create_finding_comment(ada, task, %{
+          "finding_id" => crash.id,
+          "piece" => "place",
+          "index" => 0,
+          "body" => "And its caller."
+        })
+
+      {:ok, _theirs} =
+        Pipeline.create_finding_comment(grace, task, %{"finding_id" => crash.id, "piece" => "fix", "body" => "Grace's."})
+
+      assert [%FindingComment{id: ^on_nit_id}, %FindingComment{id: ^on_place_id}] =
+               Pipeline.list_finding_comments(ada, task)
+
+      Phoenix.PubSub.subscribe(Rail.PubSub, "finding_comments:#{task_id}:#{ada.user.id}")
+
+      # Each marker is found after the one before it: the Fix finding, then each comment's number, key and body.
+      expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, ["-p", prompt | _rest] ->
+        Enum.reduce(
+          [
+            "Nil crashes the page",
+            "lib/b.ex:9",
+            "\n1. ",
+            "a-nit",
+            "Not a nit.",
+            "\n2. ",
+            "nil-crash",
+            "Place 1, handle/1",
+            "lib/a.ex:3",
+            "And its caller.",
+            "\n3. ",
+            "Name it.",
+            "\n4. ",
+            "Fold it."
+          ],
+          0,
+          fn marker, from ->
+            assert {at, length} = :binary.match(prompt, marker, scope: {from, byte_size(prompt) - from})
+            at + length
+          end
+        )
+
+        refute prompt =~ "Grace's."
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %Run{id: ^run_id}} = Pipeline.start_fix_round(ada, run)
+      assert %FindingComment{status: :sent} = Repo.get!(FindingComment, on_place_id)
+      assert Pipeline.list_finding_comments(ada, task) == []
+      assert [%FindingComment{body: "Grace's.", status: :unsent}] = Pipeline.list_finding_comments(grace, task)
+      assert_received {:finding_comments_changed, ^task_id}
+
+      assert [%Observation{source_kind: :finding_comment}, %Observation{source_kind: :finding_comment}] =
+               Repo.all(from o in Observation, where: o.task_id == ^task_id and o.source_kind == :finding_comment)
+    end
+
+    test "finding comments alone start a fix round", %{task: task, run: run, crash: crash, nit: nit, ada: ada} do
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
+
+      {:ok, _comment} =
+        Pipeline.create_finding_comment(ada, task, %{"finding_id" => crash.id, "piece" => "why", "body" => "It does."})
+
+      # The comment's key, ruling, piece, quote and body, in that order, and no Fix finding's own fix.
+      expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+        Enum.reduce(["\n1. ", "nil-crash", "Don't fix", "Why fix", "It crashes.", "It does."], 0, fn marker, from ->
+          assert {at, length} = :binary.match(prompt, marker, scope: {from, byte_size(prompt) - from})
+          at + length
+        end)
+
+        refute prompt =~ "Guard it."
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %Run{status: :running}} = Pipeline.start_fix_round(ada, run)
+      assert [%{finished_at: nil}] = Pipeline.read_review(task)
+    end
+
+    # Nothing delivers the note a failed start leaves, so its finding comments wait to be sent again.
+    test "a lead that cannot be spawned puts its finding comments back unsent and learns nothing from them", %{
+      task: %{id: task_id} = task,
+      run: run,
+      crash: crash,
+      nit: nit,
+      ada: ada
+    } do
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
+
+      {:ok, %{id: comment_id}} =
+        Pipeline.create_finding_comment(ada, task, %{"finding_id" => crash.id, "piece" => "rule", "body" => "Too wide."})
+
+      Phoenix.PubSub.subscribe(Rail.PubSub, "finding_comments:#{task_id}:#{ada.user.id}")
+
+      expect(Tools, :start_os_process, fn %Run{} = spawned, _argv ->
+        {:error, {:spawn_failed, :enoent, %{spawned | error: "Could not start"}}}
+      end)
+
+      assert {:ok, %Run{error: "Could not start"}} = Pipeline.start_fix_round(ada, run)
+      assert [%FindingComment{id: ^comment_id, status: :unsent}] = Pipeline.list_finding_comments(ada, task)
+      refute Repo.exists?(from o in Observation, where: o.task_id == ^task_id)
+      assert_received {:finding_comments_changed, ^task_id}
+    end
+
     test "comments alone start a fix round, and one written before a retake points at the picture there is", %{
       task: task,
       run: run,
@@ -438,11 +562,16 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
       {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "Name it."))
       {:ok, _comment} = Pipeline.create_screen_comment(ada, task, %{"key" => "file-list", "body" => "Fold it."})
+
+      {:ok, _comment} =
+        Pipeline.create_finding_comment(ada, task, %{"finding_id" => crash.id, "piece" => "fix", "body" => "Higher."})
+
       expect(Tools, :start_os_process, fn %Run{}, _argv -> {:error, :dispatch_disabled} end)
 
       assert {:error, :dispatch_disabled} = Pipeline.start_fix_round(ada, run)
       assert [%DiffComment{status: :unsent}] = Pipeline.list_diff_comments(ada, task)
       assert [%ScreenComment{status: :unsent}] = Pipeline.list_screen_comments(ada, task)
+      assert [%FindingComment{status: :unsent}] = Pipeline.list_finding_comments(ada, task)
       assert %Run{status: :finished} = Repo.reload!(run)
       refute Repo.exists?(from o in Observation, where: o.task_id == ^task.id)
     end

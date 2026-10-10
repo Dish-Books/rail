@@ -1,8 +1,8 @@
 defmodule RailWeb.Components.ReviewCommentTray do
   @moduledoc """
   What the Review tray's Send will send, above the Review lead's composer in send order: the findings ruled Fix,
-  which every reader sees, then the reader's own unsent diff and screen comments, numbered, with the gate's reason
-  under them. Empty while the review is open it offers Finish review; empty once it is finished it draws nothing.
+  which every reader sees, then the reader's own unsent finding, diff and screen comments, numbered, with the gate's
+  reason under them. Empty while the review is open it offers Finish review; empty once finished it draws nothing.
   """
   use RailWeb, :html
 
@@ -10,6 +10,7 @@ defmodule RailWeb.Components.ReviewCommentTray do
   alias Rail.Pipeline.Schemas.Finding
 
   attr :fix, :list, required: true, doc: "the findings ruled Fix, in the Findings list's order"
+  attr :finding_comments, :list, required: true, doc: "the reader's unsent finding comments, in send order"
   attr :diff_comments, :list, required: true, doc: "the reader's unsent diff comments, in send order"
   attr :screen_comments, :list, required: true, doc: "the reader's unsent screen comments, in send order"
 
@@ -22,19 +23,20 @@ defmodule RailWeb.Components.ReviewCommentTray do
   attr :target, :any, required: true
 
   def review_comment_tray(assigns) do
-    %{fix: fix, diff_comments: diff, screen_comments: screen, gate: gate} = assigns
-    count = length(fix) + length(diff) + length(screen)
-    {hint, working} = hint(gate, fix, diff ++ screen, assigns.error)
+    %{fix: fix, finding_comments: finding, diff_comments: diff, screen_comments: screen, gate: gate} = assigns
+    comments = Enum.map(finding, &{:finding, &1}) ++ Enum.map(diff, &{:diff, &1}) ++ Enum.map(screen, &{:screen, &1})
+    count = length(fix) + length(comments)
+    {hint, working} = hint(gate, fix, comments, assigns.error)
 
     assigns =
       assigns
       |> assign(:count, count)
       |> assign(:show_tray, count > 0 or not gate.finished)
       |> assign(:empty, count == 0)
-      |> assign(:mine, diff ++ screen != [])
+      |> assign(:mine, comments != [])
       |> assign(:show_rows, assigns.open and count > 0)
       |> assign(:can_send, not gate.working and gate.saved and gate.undecided == 0 and (count > 0 or not gate.ci_failed))
-      |> assign(:comments, Enum.with_index(Enum.map(diff, &{:diff, &1}) ++ Enum.map(screen, &{:screen, &1}), 1))
+      |> assign(:comments, Enum.with_index(comments, 1))
       |> assign(:hint, hint)
       |> assign(:working, working)
 
@@ -155,6 +157,26 @@ defmodule RailWeb.Components.ReviewCommentTray do
           </span>
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-1.5 min-w-0 text-[10.5px] text-slate-500 dark:text-slate-400">
+              <span
+                :if={kind == :finding}
+                class="shrink-0 font-semibold text-slate-600 dark:text-slate-300"
+              >
+                Finding
+              </span>
+              <button
+                :if={kind == :finding}
+                type="button"
+                title="Open in Findings"
+                data-qa="review_tray_finding_comment"
+                phx-click="open_tray_finding"
+                phx-value-key={comment.finding.key}
+                phx-target={@target}
+                class="min-w-0 flex items-center gap-1.5 text-left hover:text-slate-900 dark:hover:text-slate-100 cursor-pointer rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+              >
+                <span class="min-w-0 truncate hover:underline">{comment.finding.title}</span>
+                <span class="shrink-0">·</span>
+                <span class="max-w-[45%] shrink-0 truncate">{comment.label}</span>
+              </button>
               <span
                 :if={kind == :diff}
                 class="shrink-0 font-semibold text-slate-600 dark:text-slate-300"

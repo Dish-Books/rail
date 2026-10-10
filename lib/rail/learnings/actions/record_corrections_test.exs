@@ -8,6 +8,7 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
   alias Rail.Learnings.Workers.EmbedLearning
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.FindingComment
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.PlanCommentCapture
   alias Rail.Pipeline.Schemas.Question
@@ -300,6 +301,45 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
 
     assert [%Observation{source_kind: :screen_comment, actor_id: ^user_id, excerpt: "File list after Send" <> _rest}] =
              Repo.all(from o in Observation, where: o.task_id == ^task_id)
+  end
+
+  # A comment on a finding corrects whoever raised it.
+  test "a finding comment becomes one provisional rule for the role that raised the finding, quoting the piece", %{
+    task: %{id: task_id} = task,
+    user_id: user_id
+  } do
+    finding = %Finding{title: "Send stays enabled", raised_by: :code_reviewer}
+
+    comment = %FindingComment{
+      id: "fcm_rc_1",
+      user_id: user_id,
+      finding: finding,
+      piece: :where,
+      label: "Where",
+      quote: "Engineer tab\n1. Click Send",
+      body: "It is the Review tray too."
+    }
+
+    assert {:ok,
+            [
+              %Learning{
+                kind: :convention,
+                status: :provisional,
+                roles: [:review],
+                rule: "It is the Review tray too.",
+                why: "From a finding comment on \"Send stays enabled\", its Where:\n\n> Engineer tab\n> 1. Click Send"
+              }
+            ]} = Learnings.record_corrections(task, [comment])
+
+    assert {:ok, []} = Learnings.record_corrections(task, [comment])
+
+    assert [%Observation{source_kind: :finding_comment, actor_id: ^user_id, excerpt: "Engineer tab\n1. Click Send"}] =
+             Repo.all(from o in Observation, where: o.task_id == ^task_id)
+
+    for {raised_by, role, id} <- [{:explorer, :qa, "fcm_rc_2"}, {:review_lead, :review_lead, "fcm_rc_3"}] do
+      raised = %{comment | id: id, finding: %{finding | raised_by: raised_by}}
+      assert {:ok, [%Learning{roles: [^role]}]} = Learnings.record_corrections(task, [raised])
+    end
   end
 
   test "a screen comment written on no commit names only its state", %{task: task} do

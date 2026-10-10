@@ -6,11 +6,13 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
 
   import Ecto.Query
   import Rail.Pipeline.Utils.BroadcastDiffComments
+  import Rail.Pipeline.Utils.BroadcastFindingComments
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.BroadcastScreenComments
   import Rail.Pipeline.Utils.RemoveTaskFiles
 
   alias Rail.Pipeline.Schemas.DiffComment
+  alias Rail.Pipeline.Schemas.FindingComment
   alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -49,8 +51,12 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
     {_deleted, authors} =
       Repo.delete_all(from(c in ScreenComment, where: c.task_id == ^task_id and c.status == :unsent, select: c.user_id))
 
+    {_deleted, finding_authors} =
+      Repo.delete_all(from(c in FindingComment, where: c.task_id == ^task_id and c.status == :unsent, select: c.user_id))
+
     broadcast_diff_comments(task_id, :everyone)
     for user_id <- Enum.uniq(authors), do: broadcast_screen_comments(task_id, user_id)
+    for user_id <- Enum.uniq(finding_authors), do: broadcast_finding_comments(task_id, user_id)
   end
 
   defp mark_cleaned_up(%Task{cleaned_up_at: nil} = task) do

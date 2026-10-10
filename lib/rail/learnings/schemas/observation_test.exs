@@ -11,6 +11,7 @@ defmodule Rail.Learnings.Schemas.ObservationTest do
              "Ticket comment",
              "Plan comment",
              "Screen comment",
+             "Finding comment",
              "Fix on a review finding",
              "Fix on a QA finding",
              "Answer",

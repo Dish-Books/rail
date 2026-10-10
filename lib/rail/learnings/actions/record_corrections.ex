@@ -13,6 +13,7 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.FindingComment
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.ScreenComment
@@ -20,7 +21,7 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
   alias Rail.Repo
 
   @doc """
-  Records `records`, diff, plan and screen comments, Fix findings and answered questions
+  Records `records`, diff, plan, screen and finding comments, Fix findings and answered questions
   of `task`. Returns `{:ok, learnings}`, the provisional rules it added.
   """
   def record_corrections(%Task{id: task_id, project_id: project_id}, records) when is_list(records) do
@@ -79,6 +80,16 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
       actor_id: comment.user_id,
       text: comment.body,
       excerpt: screen_line(comment)
+    }
+  end
+
+  defp observation(%FindingComment{} = comment, _suggested) do
+    %{
+      source_kind: :finding_comment,
+      source_id: comment.id,
+      actor_id: comment.user_id,
+      text: comment.body,
+      excerpt: comment.quote
     }
   end
 
@@ -154,6 +165,18 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
     }
   end
 
+  # A comment on a finding corrects the role that raised it.
+  defp rule(%FindingComment{finding: %Finding{} = finding} = comment, _observation) do
+    quoted = comment.quote |> clip() |> String.split("\n") |> Enum.map_join("\n", &"> #{&1}")
+
+    %{
+      kind: :convention,
+      roles: [raiser_role(finding)],
+      rule: clip(comment.body),
+      why: "From a finding comment on \"#{finding.title}\", its #{comment.label}:\n\n#{quoted}"
+    }
+  end
+
   defp rule(%PlanComment{target: :design} = comment, _observation) do
     %{
       kind: :design,
@@ -202,6 +225,10 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
     quoted = comment.element_text |> clip() |> String.split("\n") |> Enum.map_join("\n", &"> #{&1}")
     "From #{document} comment on #{comment.element_label}:\n\n#{quoted}"
   end
+
+  defp raiser_role(%Finding{raised_by: :code_reviewer}), do: :review
+  defp raiser_role(%Finding{raised_by: :explorer}), do: :qa
+  defp raiser_role(%Finding{raised_by: :review_lead}), do: :review_lead
 
   defp why(parts), do: parts |> Enum.reject(&is_nil/1) |> Enum.join("\n\n")
 

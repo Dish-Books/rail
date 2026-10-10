@@ -252,6 +252,132 @@ defmodule RailWeb.Live.ReviewStageTest do
     assert has_element?(view, "[data-qa=finding_recommendation]", "QA explorer recommends Fix")
   end
 
+  test "a comment written on a piece of a finding shows under it and in the tray, and leaves both once sent", %{
+    conn: conn,
+    task: task,
+    run: run,
+    code: code
+  } do
+    {:ok, finding} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
+    {:ok, _pass} = Pipeline.save_review(task)
+    {:ok, _ruled} = Pipeline.decide_finding(system_scope(), finding, :skip)
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    view |> element("[data-qa=finding_place]:nth-child(2) [data-qa=finding_comment_add]") |> render_click()
+    view |> form("#finding-comment-form", %{"body" => "   "}) |> render_submit()
+    assert has_element?(view, "[data-qa=finding_place]:nth-child(2) #finding-comment-form")
+
+    view |> form("#finding-comment-form", %{"body" => "It is the caller too."}) |> render_change()
+    view |> form("#finding-comment-form", %{"body" => "It is the caller too."}) |> render_submit()
+
+    refute has_element?(view, "#finding-comment-form")
+
+    assert has_element?(
+             view,
+             "[data-qa=finding_place]:nth-child(2) [data-qa=document_comment]",
+             "It is the caller too."
+           )
+
+    assert has_element?(view, "#review-send-tray [data-kind=finding]", "Place 2, send_diff_comments/2")
+    assert has_element?(view, "#review-send-tray [data-kind=finding]", "It is the caller too.")
+    assert has_element?(view, "#send-review-tray", "Send 1")
+
+    expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "lib/rail/pipeline/actions/send_diff_comments.ex:22"
+      assert prompt =~ "It is the caller too."
+      {:ok, %OsProcess{run: %{spawned | status: :running}}}
+    end)
+
+    view |> element("#send-review-tray", "Send 1") |> render_click()
+    _settled = render(view)
+
+    refute has_element?(view, "#review-finding-detail [data-qa=document_comment]")
+    refute has_element?(view, "#review-send-tray [data-kind=finding]")
+    assert %{stage_outcome: :in_progress} = Repo.reload!(run)
+  end
+
+  test "a finding comment's box cancels, closes on another finding, and Remove takes a comment out", %{
+    conn: conn,
+    user: user,
+    task: task,
+    code: code,
+    screen: screen
+  } do
+    {:ok, finding} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
+    {:ok, _other} = Pipeline.save_finding(task, Map.put(screen, :key, "send-twice"))
+    {:ok, _pass} = Pipeline.save_review(task)
+
+    {:ok, _comment} =
+      Pipeline.create_finding_comment(user_scope(user: user), task, %{
+        "finding_id" => finding.id,
+        "piece" => "title",
+        "body" => "Say who."
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    view |> element("#finding-view-only-send") |> render_click()
+    assert has_element?(view, "[data-qa=finding_title_comments] [data-qa=document_comment]", "Say who.")
+
+    view |> element("[data-qa=finding_rule_text] [data-qa=finding_comment_add]") |> render_click()
+    view |> element("#finding-comment-form [data-qa=finding_comment_cancel]") |> render_click()
+    refute has_element?(view, "#finding-comment-form")
+
+    # A piece this finding does not have, or a stale page's, opens nothing.
+    for params <- [%{"piece" => "place", "index" => "7"}, %{"piece" => "verdict"}] do
+      view |> with_target("#review-stage") |> render_click("open_finding_comment", params)
+      refute has_element?(view, "#finding-comment-form")
+    end
+
+    view |> element("[data-qa=finding_rule_text] [data-qa=finding_comment_add]") |> render_click()
+    view |> element("#finding-send-twice") |> render_click()
+    refute has_element?(view, "#finding-comment-form")
+    refute has_element?(view, "[data-qa=finding_title_comments] [data-qa=document_comment]")
+
+    view |> element("#finding-view-only-send") |> render_click()
+    view |> element("[data-qa=finding_title_comments] [data-qa=document_comment_remove]") |> render_click()
+    refute has_element?(view, "[data-qa=finding_title_comments] [data-qa=document_comment]")
+    refute has_element?(view, "#review-send-tray [data-kind=finding]")
+
+    view |> with_target("#review-stage") |> render_click("remove_finding_comment", %{"id" => "fcm_gone"})
+    view |> with_target("#review-stage") |> render_click("save_finding_comment", %{"body" => "No box."})
+    view |> with_target("#review-stage") |> render_click("change_finding_comment", %{"body" => "No box."})
+    assert Pipeline.list_finding_comments(user_scope(user: user), task) == []
+  end
+
+  test "a finding comment a task that moved on refuses says why, and closes the box", %{
+    conn: conn,
+    task: task,
+    code: code
+  } do
+    {:ok, _finding} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
+    {:ok, _pass} = Pipeline.save_review(task)
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    for {reason, said} <- [
+          cleaned_up: "This task is cleaned up, so it takes no more comments.",
+          not_found: "That finding has no such piece to comment on."
+        ] do
+      view |> element("[data-qa=finding_fix] [data-qa=finding_comment_add]") |> render_click()
+      expect(Pipeline, :create_finding_comment, fn _scope, _task, _attrs -> {:error, reason} end)
+      view |> form("#finding-comment-form", %{"body" => "Fold it."}) |> render_submit()
+
+      assert has_element?(view, "#review-error", said)
+      refute has_element?(view, "#finding-comment-form")
+    end
+  end
+
+  test "a task that has left Review offers no + on its findings", %{conn: conn, task: task, code: code} do
+    {:ok, _finding} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
+    {:ok, _pass} = Pipeline.save_review(task)
+    {:ok, _cleaned} = Pipeline.update_task(task, %{cleaned_up_at: DateTime.utc_now()})
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    assert has_element?(view, "[data-qa=finding_fix]")
+    refute has_element?(view, "[data-qa=finding_comment_add]")
+  end
+
   test "a fix round's note says what it covered, left and tested, and Fixed in names the commit", %{
     conn: conn,
     task: task,

@@ -14,6 +14,7 @@ defmodule RailWeb.Live.ReviewStage do
   alias Rail.Learnings
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.FindingComment
   alias Rail.Pipeline.Schemas.FindingEvidence
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.ScreenComment
@@ -51,6 +52,7 @@ defmodule RailWeb.Live.ReviewStage do
       |> assign_new(:diff_file, fn -> nil end)
       |> assign_new(:screen_open, fn -> nil end)
       |> assign_new(:screen_draft, fn -> nil end)
+      |> assign_new(:finding_draft, fn -> nil end)
       |> load()
 
     {:ok, socket}
@@ -121,6 +123,9 @@ defmodule RailWeb.Live.ReviewStage do
                     viewer_id={@current_scope.user && @current_scope.user.id}
                     suppressor={@suppressor}
                     neighbours={@neighbours}
+                    comments={@finding_placed}
+                    draft={@finding_draft}
+                    offered={@commentable}
                     target={@myself}
                   />
                   <p
@@ -278,6 +283,72 @@ defmodule RailWeb.Live.ReviewStage do
     end
   end
 
+  # The piece is read off the finding this tab shows, so only a piece it draws can be commented on.
+  def handle_event("open_finding_comment", %{"piece" => piece} = params, socket) do
+    %{selected: selected, commentable: commentable} = socket.assigns
+    piece = Enum.find(Ecto.Enum.values(FindingComment, :piece), &(Atom.to_string(&1) == piece))
+
+    index =
+      case Integer.parse(params["index"] || "") do
+        {index, ""} -> index
+        _no_index -> nil
+      end
+
+    socket =
+      if commentable and selected != nil and FindingComment.calculate_piece(selected, piece, index) != nil,
+        do: assign(socket, :finding_draft, %{finding_id: selected.id, piece: piece, index: index, body: nil}),
+        else: socket
+
+    {:noreply, socket}
+  end
+
+  def handle_event("change_finding_comment", %{"body" => body}, %{assigns: %{finding_draft: %{} = draft}} = socket) do
+    {:noreply, assign(socket, :finding_draft, %{draft | body: body})}
+  end
+
+  def handle_event("change_finding_comment", _params, socket), do: {:noreply, socket}
+
+  def handle_event("cancel_finding_comment", _params, socket) do
+    {:noreply, assign(socket, :finding_draft, nil)}
+  end
+
+  # A blank comment keeps the box open on what was typed.
+  def handle_event("save_finding_comment", %{"body" => body}, %{assigns: %{finding_draft: %{} = draft}} = socket) do
+    %{current_scope: scope, task: task} = socket.assigns
+    attrs = %{"finding_id" => draft.finding_id, "piece" => draft.piece, "index" => draft.index, "body" => body}
+
+    case Pipeline.create_finding_comment(scope, task, attrs) do
+      {:ok, _comment} ->
+        socket = socket |> assign(:finding_draft, nil) |> assign(:error, nil) |> assign_finding_comments()
+        {:noreply, socket}
+
+      {:error, %Ecto.Changeset{}} ->
+        {:noreply, assign(socket, :finding_draft, %{draft | body: body})}
+
+      {:error, :not_found} ->
+        socket = socket |> assign(:finding_draft, nil) |> assign(:error, "That finding has no such piece to comment on.")
+        {:noreply, socket}
+
+      {:error, reason} ->
+        socket = socket |> assign(:finding_draft, nil) |> assign(:error, message_for(reason))
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("save_finding_comment", _params, socket), do: {:noreply, socket}
+
+  # Read back rather than dropped from the list, since another tab may have sent it.
+  def handle_event("remove_finding_comment", %{"id" => id}, socket) do
+    case Enum.find(socket.assigns.finding_comments, &(&1.id == id)) do
+      %FindingComment{} = comment ->
+        {:ok, _removed} = Pipeline.delete_finding_comment(socket.assigns.current_scope, comment)
+        {:noreply, assign_finding_comments(socket)}
+
+      nil ->
+        {:noreply, assign_finding_comments(socket)}
+    end
+  end
+
   # A finding the screen view cites is opened in Findings, so the view closes over it.
   def handle_event("open_finding", %{"key" => key}, socket) do
     socket =
@@ -381,6 +452,8 @@ defmodule RailWeb.Live.ReviewStage do
     |> assign(:url, browser && socket.assigns.item == :browser && Tools.get_browser_url(task, browser))
     |> assign_items()
     |> assign_selected(selected, findings)
+    |> assign(:commentable, task.stage == :review and is_nil(task.cleaned_up_at))
+    |> assign_finding_comments()
     |> watch(browser)
     |> tray(findings, passes, phase, counts)
   end
@@ -409,6 +482,27 @@ defmodule RailWeb.Live.ReviewStage do
     |> assign(:screen_comments, comments)
     |> assign(:unsent_screens, Enum.frequencies_by(comments, & &1.key))
     |> assign_opened()
+  end
+
+  # Numbered as the tray numbers them, which lists finding comments first; the open finding's go under their pieces.
+  defp assign_finding_comments(%{assigns: %{current_scope: %{user: %{}} = scope, task: task}} = socket) do
+    comments = Pipeline.list_finding_comments(scope, task)
+    %{selected: selected, finding_draft: draft, commentable: commentable} = socket.assigns
+    selected_id = selected && selected.id
+
+    placed =
+      comments
+      |> Enum.with_index(1)
+      |> Enum.filter(fn {comment, _number} -> comment.finding_id == selected_id end)
+      |> Enum.group_by(fn {comment, _number} -> {comment.piece, comment.index} end)
+
+    # A box left open on another finding, or on a task that stopped taking comments, closes.
+    draft = if commentable and match?(%{finding_id: ^selected_id}, draft), do: draft
+
+    socket
+    |> assign(:finding_comments, comments)
+    |> assign(:finding_placed, placed)
+    |> assign(:finding_draft, draft)
   end
 
   # A state a retake or a cleanup took away closes the view, and its box with it.

@@ -13,7 +13,7 @@ defmodule Rail.Pipeline do
   engineer and a demo recorder as its subagents. A round reads the code and drives
   the running application, the demo is recorded beside it, and the findings land in
   one list for the human to rule on. The Review tray's Send has the engineer fix
-  what was ruled Fix, and act on the sender's diff and screen comments, inside
+  what was ruled Fix, and act on the sender's finding, diff and screen comments, inside
   Review and commit it, and the next round starts once CI passes on
   what the turn committed. A task never goes back to Engineer, and it waits at
   Review, ready to merge, once nothing is left to rule or fix.
@@ -99,6 +99,9 @@ defmodule Rail.Pipeline do
   defdelegate create_screen_comment(scope, task, attrs), to: Actions.CreateScreenComment
   defdelegate list_screen_comments(scope, task), to: Actions.ListScreenComments
   defdelegate delete_screen_comment(scope, comment), to: Actions.DeleteScreenComment
+  defdelegate create_finding_comment(scope, task, attrs), to: Actions.CreateFindingComment
+  defdelegate list_finding_comments(scope, task), to: Actions.ListFindingComments
+  defdelegate delete_finding_comment(scope, comment), to: Actions.DeleteFindingComment
   defdelegate create_plan_comment(scope, run, attrs), to: Actions.CreatePlanComment
   defdelegate list_plan_comments(scope, task), to: Actions.ListPlanComments
   defdelegate delete_plan_comment(scope, comment), to: Actions.DeletePlanComment

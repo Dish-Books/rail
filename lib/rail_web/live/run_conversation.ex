@@ -53,7 +53,7 @@ defmodule RailWeb.Live.RunConversation do
     {:ok, assign_plan_comments(socket)}
   end
 
-  # Another of the reader's tabs saved, removed or sent diff or screen comments, which the Review tray lists.
+  # Another of the reader's tabs saved, removed or sent finding, diff or screen comments, which the Review tray lists.
   def update(%{reload_review_comments: true}, socket) do
     {:ok, assign_review_comments(socket)}
   end
@@ -253,6 +253,7 @@ defmodule RailWeb.Live.RunConversation do
           <.review_comment_tray
             :if={@show_review_tray}
             fix={@review_tray.fix}
+            finding_comments={@review_finding_comments}
             diff_comments={@review_diff_comments}
             screen_comments={@review_screen_comments}
             gate={@review_tray.gate}
@@ -1254,10 +1255,23 @@ defmodule RailWeb.Live.RunConversation do
 
   # Read back rather than dropped from the list, since another tab may have sent it.
   def handle_event("remove_review_tray_comment", %{"kind" => kind, "id" => id}, socket) do
-    %{current_scope: scope, review_diff_comments: diff, review_screen_comments: screen} = socket.assigns
+    %{
+      current_scope: scope,
+      review_finding_comments: finding,
+      review_diff_comments: diff,
+      review_screen_comments: screen
+    } = socket.assigns
 
-    case {kind, Enum.find(if(kind == "diff", do: diff, else: screen), &(&1.id == id))} do
+    comments =
+      case kind do
+        "finding" -> finding
+        "diff" -> diff
+        _screen -> screen
+      end
+
+    case {kind, Enum.find(comments, &(&1.id == id))} do
       {_kind, nil} -> :ok
+      {"finding", comment} -> {:ok, _removed} = Pipeline.delete_finding_comment(scope, comment)
       {"diff", comment} -> {:ok, _removed} = Pipeline.delete_diff_comment(scope, comment)
       {"screen", comment} -> {:ok, _removed} = Pipeline.delete_screen_comment(scope, comment)
     end
@@ -1367,6 +1381,7 @@ defmodule RailWeb.Live.RunConversation do
     |> assign_new(:lifted_comments, fn -> [] end)
     |> assign_new(:tray_open, fn -> true end)
     |> assign_new(:review_tray, fn -> nil end)
+    |> assign_new(:review_finding_comments, fn -> [] end)
     |> assign_new(:review_diff_comments, fn -> [] end)
     |> assign_new(:review_screen_comments, fn -> [] end)
     |> assign_new(:tray_error, fn -> nil end)
@@ -1386,19 +1401,26 @@ defmodule RailWeb.Live.RunConversation do
 
   defp assign_plan_comments(socket), do: assign(socket, :plan_comments, [])
 
-  # Only the Review lead's conversation is where diff and screen comments wait to be sent.
+  # Only the Review lead's conversation is where finding, diff and screen comments wait to be sent.
   defp assign_review_comments(%{assigns: %{current_scope: %{user: %{}} = scope, task: task}} = socket) do
     if review_run?(socket.assigns) do
       socket
+      |> assign(:review_finding_comments, Pipeline.list_finding_comments(scope, task))
       |> assign(:review_diff_comments, Pipeline.list_diff_comments(scope, task, unsent: true))
       |> assign(:review_screen_comments, Pipeline.list_screen_comments(scope, task))
     else
-      socket |> assign(:review_diff_comments, []) |> assign(:review_screen_comments, [])
+      no_review_comments(socket)
     end
   end
 
-  defp assign_review_comments(socket),
-    do: socket |> assign(:review_diff_comments, []) |> assign(:review_screen_comments, [])
+  defp assign_review_comments(socket), do: no_review_comments(socket)
+
+  defp no_review_comments(socket) do
+    socket
+    |> assign(:review_finding_comments, [])
+    |> assign(:review_diff_comments, [])
+    |> assign(:review_screen_comments, [])
+  end
 
   defp review_run?(%{selected_run: %Run{role_id: role_id}, roles_map: %{} = roles_map}),
     do: match?(%{stage: :review_lead}, roles_map[role_id])

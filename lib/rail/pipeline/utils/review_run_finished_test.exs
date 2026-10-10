@@ -159,6 +159,30 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
     assert [%{finished_at: %DateTime{}}] = Pipeline.read_review(task)
   end
 
+  test "anyone's unsent finding comment holds the review open, also on a finding ruled Don't fix", %{
+    task: task,
+    run: run,
+    finding: finding
+  } do
+    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_rfn_fc", login: "ada_fc", email: "ada_fc@example.com"})
+    ada = user_scope(user: ada)
+    {:ok, saved} = Pipeline.save_finding(task, finding)
+    {:ok, _closed} = Pipeline.save_review(task)
+    {:ok, _ruled} = Pipeline.decide_finding(system_scope(), saved, :skip)
+
+    {:ok, comment} =
+      Pipeline.create_finding_comment(ada, task, %{"finding_id" => saved.id, "piece" => "title", "body" => "Fix it."})
+
+    assert %Run{error: nil} = review_run_finished(run, [])
+    assert [%{finished_at: nil}] = Pipeline.read_review(task)
+
+    {:ok, _removed} = Pipeline.delete_finding_comment(ada, comment)
+    {:ok, task} = Pipeline.update_task(task, %{pr_is_draft: false})
+
+    assert %Run{error: nil} = review_run_finished(%{run | task: task}, [])
+    assert [%{finished_at: %DateTime{}}] = Pipeline.read_review(task)
+  end
+
   test "a turn that ends without saving its review records that, and moves nothing", %{task: task, run: run} do
     assert %Run{error: "The Review lead did not save its review."} = review_run_finished(run, [])
     assert %Task{stage: :review} = Repo.reload!(task)

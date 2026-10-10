@@ -464,6 +464,11 @@ defmodule RailWeb.TaskLive do
     {:noreply, reload_review_comments(socket, task_id)}
   end
 
+  # The reader's unsent finding comments moved: the Review stage draws them under their pieces and the tray lists them.
+  def handle_info({:finding_comments_changed, task_id}, socket) do
+    {:noreply, reload_review_comments(socket, task_id)}
+  end
+
   # What Review's Send would send of the findings, and whether it can, for the conversation's tray.
   def handle_info({:review_tray, tray}, socket) do
     send_update(RunConversation, id: "run-conversation", review_tray: tray)
@@ -1201,8 +1206,8 @@ defmodule RailWeb.TaskLive do
   end
 
   # Sent and resolved comments are everyone's, so the task has a topic; unsent ones
-  # are the reader's alone, so every tab of theirs also hears their own topic. Plan
-  # and screen comments are only ever unsent on the page, so they have only the reader's topic.
+  # are the reader's alone, so every tab of theirs also hears their own topic. Plan,
+  # screen and finding comments are only ever unsent on the page, so they have only the reader's topic.
   defp watch_diff_comments(socket, %Task{id: task_id}) do
     watched = socket.assigns.watched_comments_task_id
     user_id = socket.assigns.current_scope.user.id
@@ -1212,10 +1217,12 @@ defmodule RailWeb.TaskLive do
       if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "diff_comments:#{watched}:#{user_id}")
       if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "plan_comments:#{watched}:#{user_id}")
       if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "screen_comments:#{watched}:#{user_id}")
+      if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "finding_comments:#{watched}:#{user_id}")
       Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task_id}")
       Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task_id}:#{user_id}")
       Phoenix.PubSub.subscribe(Rail.PubSub, "plan_comments:#{task_id}:#{user_id}")
       Phoenix.PubSub.subscribe(Rail.PubSub, "screen_comments:#{task_id}:#{user_id}")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "finding_comments:#{task_id}:#{user_id}")
     end
 
     assign(socket, :watched_comments_task_id, if(connected?(socket), do: task_id, else: watched))

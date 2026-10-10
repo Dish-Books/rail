@@ -1,10 +1,10 @@
 defmodule Rail.Pipeline.Actions.StartFixRound do
   @moduledoc """
   What a person's Send in the Review tray does once every finding is ruled: the Review run is reopened and resumed
-  on the findings ruled Fix, a carried one included, with their rules and places, then the sender's unsent diff and
-  screen comments, as one message, and the task stays at Review. With nothing to send it reads Finish review, which
-  finishes the review and takes the pull request out of draft. After that, a Send of comments resumes the lead on
-  them alone.
+  on the findings ruled Fix, a carried one included, with their rules and places, then the sender's unsent finding,
+  diff and screen comments, as one message, and the task stays at Review. With nothing to send it reads Finish
+  review, which finishes the review and takes the pull request out of draft. After that, a Send of comments resumes
+  the lead on them alone.
 
   What was ruled and sent is learned from, since a ruling can change until now: a Fix on a suppressed finding
   overrides its rule, and every other Fix and every comment is a correction.
@@ -12,6 +12,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
 
   import Ecto.Query
   import Rail.Pipeline.Utils.BroadcastDiffComments
+  import Rail.Pipeline.Utils.BroadcastFindingComments
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.BroadcastScreenComments
   import Rail.Pipeline.Utils.CiPassed
@@ -22,6 +23,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.FindingComment
   alias Rail.Pipeline.Schemas.FindingPlace
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.ScreenComment
@@ -51,11 +53,12 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
     fix = Enum.filter(findings, &Finding.outstanding?/1)
 
     with :ok <- startable(run.task, findings, passes),
-         {diff, screen} = claim(scope, run.task),
-         :ok <- sendable(run.task, finished?, fix, diff ++ screen) do
-      if fix == [] and diff == [] and screen == [],
+         claimed = claim(scope, run.task),
+         comments = claimed.finding ++ claimed.diff ++ claimed.screen,
+         :ok <- sendable(run.task, finished?, fix, comments) do
+      if fix == [] and comments == [],
         do: finish(run),
-        else: resume(run, %{fix: fix, diff: diff, screen: screen}, length(passes))
+        else: resume(run, Map.put(claimed, :fix, fix), length(passes))
     end
   end
 
@@ -86,6 +89,15 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
   defp claim(%Scope{user: %{id: user_id}}, %Task{id: task_id}) do
     now = DateTime.utc_now()
 
+    {_claimed, finding} =
+      Repo.update_all(
+        from(c in FindingComment,
+          where: c.task_id == ^task_id and c.user_id == ^user_id and c.status == :unsent,
+          select: c
+        ),
+        set: [status: :sent, updated_at: now]
+      )
+
     {_claimed, diff} =
       Repo.update_all(
         from(c in DiffComment, where: c.task_id == ^task_id and c.user_id == ^user_id and c.status == :unsent, select: c),
@@ -102,11 +114,14 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
       )
 
     # The order the tray numbers them in.
-    {Enum.sort_by(diff, &{&1.path, DateTime.to_unix(&1.inserted_at, :microsecond), &1.id}),
-     Enum.sort_by(screen, &{DateTime.to_unix(&1.inserted_at, :microsecond), &1.id})}
+    %{
+      finding: finding |> Repo.preload(:finding) |> FindingComment.calculate_order(),
+      diff: Enum.sort_by(diff, &{&1.path, DateTime.to_unix(&1.inserted_at, :microsecond), &1.id}),
+      screen: Enum.sort_by(screen, &{DateTime.to_unix(&1.inserted_at, :microsecond), &1.id})
+    }
   end
 
-  defp claim(%Scope{}, %Task{}), do: {[], []}
+  defp claim(%Scope{}, %Task{}), do: %{finding: [], diff: [], screen: []}
 
   # Finishing the review is when its run completes, which every page showing the task hears.
   defp finish(%Run{} = run) do
@@ -129,7 +144,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
 
         case Pipeline.start_review_run(%{reopened | task: run.task, role: role}) do
           {:ok, os_process} -> sent(run.task, sent, os_process.run)
-          {:error, {:spawn_failed, _reason, %Run{} = failed}} -> sent(run.task, sent, failed)
+          {:error, {:spawn_failed, _reason, %Run{} = failed}} -> spawn_failed(run.task, sent, failed)
           {:error, :dispatch_disabled} -> unstarted(reopened, sent, :dispatch_disabled)
         end
 
@@ -154,16 +169,25 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
     )
   end
 
-  defp sent(%Task{} = task, %{fix: fix, diff: diff, screen: screen}, %Run{} = run) do
+  defp sent(%Task{} = task, %{fix: fix, finding: finding, diff: diff, screen: screen}, %Run{} = run) do
     {overrides, corrections} = Enum.split_with(fix, &is_binary(&1.suppressed_by_id))
     {:ok, _flagged} = Learnings.record_overrides(task, overrides)
-    {:ok, _learned} = Learnings.record_corrections(task, corrections ++ diff ++ screen)
+    {:ok, _learned} = Learnings.record_corrections(task, corrections ++ finding ++ diff ++ screen)
 
+    broadcast_authors(task, finding)
     if diff != [], do: broadcast_diff_comments(task.id, :everyone)
     for user_id <- screen |> Enum.map(& &1.user_id) |> Enum.uniq(), do: broadcast_screen_comments(task.id, user_id)
     broadcast_pipeline_changed(task)
 
     {:ok, run}
+  end
+
+  # Nothing delivers the note a failed start leaves, so its finding comments go back unlearned. The start already
+  # settled the run.
+  defp spawn_failed(%Task{} = task, sent, %Run{} = failed) do
+    unsend(%{sent | diff: [], screen: []})
+    broadcast_authors(task, sent.finding)
+    sent(task, %{sent | finding: []}, failed)
   end
 
   # Marked running before the spawn so a second click is refused; it and the comments go back when nothing spawned.
@@ -173,8 +197,13 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
     {:error, reason}
   end
 
-  defp unsend(%{diff: diff, screen: screen}) do
-    for {schema, comments} <- [{DiffComment, diff}, {ScreenComment, screen}], comments != [] do
+  defp broadcast_authors(%Task{id: task_id}, finding) do
+    for user_id <- finding |> Enum.map(& &1.user_id) |> Enum.uniq(), do: broadcast_finding_comments(task_id, user_id)
+  end
+
+  defp unsend(%{finding: finding, diff: diff, screen: screen}) do
+    for {schema, comments} <- [{FindingComment, finding}, {DiffComment, diff}, {ScreenComment, screen}],
+        comments != [] do
       ids = Enum.map(comments, & &1.id)
 
       Repo.update_all(from(c in schema, where: c.id in ^ids and c.status == :sent),
@@ -185,8 +214,10 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
     :ok
   end
 
-  defp note(%{fix: fix, diff: diff, screen: screen}, round, screens, scratch_path) do
-    comments = Enum.map(diff, &{"On the diff", DiffComment.calculate_block(&1)})
+  defp note(%{fix: fix, finding: finding, diff: diff, screen: screen}, round, screens, scratch_path) do
+    comments =
+      Enum.map(finding, &{"On a finding", FindingComment.calculate_block(&1)}) ++
+        Enum.map(diff, &{"On the diff", DiffComment.calculate_block(&1)})
 
     comments =
       comments ++

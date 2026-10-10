@@ -4,6 +4,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
+  alias Rail.Pipeline.Schemas.FindingComment
   alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
@@ -102,7 +103,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     end
 
     # Nothing can send them once the worktree is gone, and what was sent stays as history.
-    test "deletes its own and its children's unsent comments, and keeps the sent ones", %{
+    test "deletes its own and its children's unsent diff, screen and finding comments, and keeps the sent ones", %{
       parent: parent,
       children: [first, _second]
     } do
@@ -124,12 +125,38 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
       Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{first.id}")
       Phoenix.PubSub.subscribe(Rail.PubSub, "screen_comments:#{first.id}:#{ada.user.id}")
 
+      {:ok, finding} =
+        Pipeline.save_finding(first, %{
+          key: "nil-crash",
+          kind: :code,
+          raised_by: :code_reviewer,
+          title: "Nil crashes the page",
+          problem: "It crashes.",
+          file: "lib/a.ex",
+          line: 3,
+          fix: "Guard it.",
+          why: "It crashes.",
+          rule: "Every caller handles nil.",
+          severity: :major,
+          recommendation: :fix,
+          places: [%{file: "lib/a.ex", line: 3}],
+          evidence: [%{name: "range", kind: :code, file: "lib/a.ex", line: 3}]
+        })
+
+      on_finding = %{"finding_id" => finding.id, "piece" => "fix"}
+      {:ok, _unsent} = Pipeline.create_finding_comment(ada, first, Map.put(on_finding, "body", "Higher."))
+      {:ok, %{id: sent_finding_id}} = Pipeline.create_finding_comment(ada, first, Map.put(on_finding, "body", "Sent."))
+      Repo.update_all(from(c in FindingComment, where: c.id == ^sent_finding_id), set: [status: :sent])
+      Phoenix.PubSub.subscribe(Rail.PubSub, "finding_comments:#{first.id}:#{ada.user.id}")
+
       assert {:ok, %Task{}} = Pipeline.cleanup_task(parent)
 
       assert [%DiffComment{id: ^sent_diff_id}] = Repo.all(DiffComment)
       assert [%ScreenComment{id: ^sent_screen_id}] = Repo.all(ScreenComment)
+      assert [%FindingComment{id: ^sent_finding_id}] = Repo.all(FindingComment)
       assert_received {:diff_comments_changed, ^first_id}
       assert_received {:screen_comments_changed, ^first_id}
+      assert_received {:finding_comments_changed, ^first_id}
     end
 
     test "is refused, and cleans nothing, while a child is still working", %{

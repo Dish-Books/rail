@@ -1666,6 +1666,39 @@ defmodule RailWeb.Live.RunConversationTest do
       refute has_element?(view, "[data-qa=review_tray_comment]")
     end
 
+    test "a finding comment saved in another tab appears without a reload, opens its finding, and Remove takes it out",
+         %{task: task, ada: ada, grace: grace, ada_conn: ada_conn} do
+      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
+      view |> element("#review-item-screens") |> render_click()
+      nit = Repo.get_by!(Finding, task_id: task.id, key: "a-nit")
+
+      {:ok, %{id: comment_id}} =
+        Pipeline.create_finding_comment(ada, task, %{"finding_id" => nit.id, "piece" => "rule", "body" => "Too wide."})
+
+      {:ok, _theirs} =
+        Pipeline.create_finding_comment(grace, task, %{"finding_id" => nit.id, "piece" => "fix", "body" => "Grace's."})
+
+      _settled = render(view)
+
+      assert has_element?(view, "#review-tray-finding-#{comment_id}", "A nit")
+      assert has_element?(view, "#review-tray-finding-#{comment_id}", "Rule")
+      refute has_element?(view, "#review-send-tray", "Grace's.")
+
+      view |> element("#review-tray-finding-#{comment_id} [data-qa=review_tray_finding_comment]") |> render_click()
+      _settled = render(view)
+
+      assert has_element?(view, "#review-pane[data-item=findings]")
+      assert has_element?(view, "#finding-a-nit[aria-current=true]")
+      assert has_element?(view, "[data-qa=finding_rule_text] [data-qa=document_comment]", "Too wide.")
+
+      view |> element("#remove-review-tray-finding-#{comment_id}") |> render_click()
+      _settled = render(view)
+
+      refute has_element?(view, "#review-tray-finding-#{comment_id}")
+      refute has_element?(view, "[data-qa=finding_rule_text] [data-qa=document_comment]")
+      assert Pipeline.list_finding_comments(ada, task) == []
+    end
+
     test "the tray folds, and a Send refused says why in its hint", %{task: task, ada_conn: ada_conn} do
       {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
 

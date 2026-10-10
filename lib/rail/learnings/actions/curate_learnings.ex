@@ -37,6 +37,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
     ticket_comment: {"ticket comment", "ticket comments"},
     plan_comment: {"plan comment", "plan comments"},
     screen_comment: {"screen comment", "screen comments"},
+    finding_comment: {"finding comment", "finding comments"},
     review_finding: {"Fix decision", "Fix decisions"},
     qa_finding: {"Fix decision", "Fix decisions"},
     answer: {"answer", "answers"},
@@ -52,6 +53,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
     ticket_comment: "a ticket comment",
     plan_comment: "a plan comment",
     screen_comment: "a screen comment",
+    finding_comment: "a finding comment",
     review_finding: "a Fix in review",
     qa_finding: "a Fix in QA",
     answer: "an answer"

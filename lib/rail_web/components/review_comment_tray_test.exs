@@ -5,6 +5,7 @@ defmodule RailWeb.Components.ReviewCommentTrayTest do
 
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.FindingComment
   alias Rail.Pipeline.Schemas.ScreenComment
   alias RailWeb.Components.ReviewCommentTray
 
@@ -14,6 +15,14 @@ defmodule RailWeb.Components.ReviewCommentTrayTest do
         %Finding{key: "send-twice", kind: :code, title: "Send stays enabled", file: "lib/a/tray.ex", line: 52},
         %Finding{key: "removed", kind: :screen, title: "Removed comment comes back", screen: "Plan tab"}
       ],
+      finding: [
+        %FindingComment{
+          id: "fcm_1",
+          finding: %Finding{key: "removed", title: "Removed comment comes back"},
+          label: "Place 2, Plan tab",
+          body: "It is the tray too."
+        }
+      ],
       diff: [%DiffComment{id: "dcm_1", path: "lib/a/tray.ex", line: 61, body: "Keep one hint."}],
       screen: [%ScreenComment{id: "scm_1", key: "toolbar", label: "Toolbar", commit: "e52a0bd91", body: "It wraps."}],
       gate: %{working: false, undecided: 0, finished: false, ci_failed: false, saved: true}
@@ -22,18 +31,27 @@ defmodule RailWeb.Components.ReviewCommentTrayTest do
 
   test "rows go in send order: Fix findings with Open and no Remove, then the reader's comments numbered", %{
     fix: fix,
+    finding: finding,
     diff: diff,
     screen: screen,
     gate: gate
   } do
     doc =
       (&ReviewCommentTray.review_comment_tray/1)
-      |> render_component(fix: fix, diff_comments: diff, screen_comments: screen, gate: gate, target: nil)
+      |> render_component(
+        fix: fix,
+        finding_comments: finding,
+        diff_comments: diff,
+        screen_comments: screen,
+        gate: gate,
+        target: nil
+      )
       |> Floki.parse_fragment!()
 
     assert [
              "review-tray-finding-send-twice",
              "review-tray-finding-removed",
+             "review-tray-finding-fcm_1",
              "review-tray-diff-dcm_1",
              "review-tray-screen-scm_1"
            ] =
@@ -44,15 +62,26 @@ defmodule RailWeb.Components.ReviewCommentTrayTest do
     assert [] = Floki.find(finding, "[data-qa=remove_review_tray_comment]")
     assert doc |> Floki.find("#review-tray-finding-removed") |> Floki.text() =~ "Plan tab"
 
+    [finding_row] = Floki.find(doc, "#review-tray-finding-fcm_1")
+
+    assert Floki.text(finding_row) =~
+             ~r/1\s+Finding\s+Removed comment comes back\s*·\s*Place 2, Plan tab\s*Remove\s+It is the tray too./
+
+    assert ["removed"] =
+             finding_row |> Floki.find("[data-qa=review_tray_finding_comment]") |> Floki.attribute("phx-value-key")
+
+    assert ["finding"] =
+             finding_row |> Floki.find("[data-qa=remove_review_tray_comment]") |> Floki.attribute("phx-value-kind")
+
     [diff_row] = Floki.find(doc, "#review-tray-diff-dcm_1")
-    assert Floki.text(diff_row) =~ ~r/1\s+Diff\s+tray.ex:61\s+Remove\s+Keep one hint./
+    assert Floki.text(diff_row) =~ ~r/2\s+Diff\s+tray.ex:61\s+Remove\s+Keep one hint./
 
     [screen_row] = Floki.find(doc, "#review-tray-screen-scm_1")
-    assert Floki.text(screen_row) =~ ~r/2\s+Screen\s+Toolbar\s+e52a0bd\s+Remove\s+It wraps./
+    assert Floki.text(screen_row) =~ ~r/3\s+Screen\s+Toolbar\s+e52a0bd\s+Remove\s+It wraps./
     assert screen_row |> Floki.find("[data-qa=review_tray_screen]") |> Floki.attribute("phx-value-key") == ["toolbar"]
 
-    assert doc |> Floki.find("#review-send-tray") |> Floki.text() =~ ~r/Not sent\s+4\s+your comments only you see/
-    assert doc |> Floki.find("#send-review-tray:not([disabled])") |> Floki.text() =~ "Send 4"
+    assert doc |> Floki.find("#review-send-tray") |> Floki.text() =~ ~r/Not sent\s+5\s+your comments only you see/
+    assert doc |> Floki.find("#send-review-tray:not([disabled])") |> Floki.text() =~ "Send 5"
 
     assert doc |> Floki.find("#review-send-tray-hint") |> Floki.text() =~
              "The Review lead is idle and starts a fix round on these at once."
@@ -69,7 +98,12 @@ defmodule RailWeb.Components.ReviewCommentTrayTest do
            "The review is finished. Send reopens it with a fix round on your comments.", false},
           {%{error: "Dispatch is off."}, "Dispatch is off.", false}
         ] do
-      attrs = Map.merge(%{fix: fix, diff_comments: diff, screen_comments: [], gate: gate, target: nil}, assigns)
+      attrs =
+        Map.merge(
+          %{fix: fix, finding_comments: [], diff_comments: diff, screen_comments: [], gate: gate, target: nil},
+          assigns
+        )
+
       doc = (&ReviewCommentTray.review_comment_tray/1) |> render_component(attrs) |> Floki.parse_fragment!()
 
       assert doc |> Floki.find("#review-send-tray-hint") |> Floki.text() =~ said
@@ -82,14 +116,14 @@ defmodule RailWeb.Components.ReviewCommentTrayTest do
 
     doc =
       (&ReviewCommentTray.review_comment_tray/1)
-      |> render_component(fix: [], diff_comments: [], screen_comments: [], gate: gate, target: nil)
+      |> render_component(fix: [], finding_comments: [], diff_comments: [], screen_comments: [], gate: gate, target: nil)
       |> Floki.parse_fragment!()
 
     assert [_dot] = Floki.find(doc, "#review-send-tray-hint .bg-green-500")
   end
 
   test "empty while the review is open it offers Finish review, which CI failing on the fix holds", %{gate: gate} do
-    attrs = %{fix: [], diff_comments: [], screen_comments: [], gate: gate, target: nil}
+    attrs = %{fix: [], finding_comments: [], diff_comments: [], screen_comments: [], gate: gate, target: nil}
     doc = (&ReviewCommentTray.review_comment_tray/1) |> render_component(attrs) |> Floki.parse_fragment!()
 
     assert doc |> Floki.find("#review-send-tray") |> Floki.text() =~ "Nothing to send"
@@ -110,9 +144,33 @@ defmodule RailWeb.Components.ReviewCommentTrayTest do
     assert doc |> Floki.find("#review-send-tray-hint") |> Floki.text() =~ "CI failed on the fix commit"
   end
 
+  test "finding comments alone are the reader's comments, and the hint reads for comments", %{
+    finding: finding,
+    gate: gate
+  } do
+    doc =
+      (&ReviewCommentTray.review_comment_tray/1)
+      |> render_component(
+        fix: [],
+        finding_comments: finding,
+        diff_comments: [],
+        screen_comments: [],
+        gate: %{gate | finished: true},
+        target: nil
+      )
+      |> Floki.parse_fragment!()
+
+    assert doc |> Floki.find("#review-send-tray") |> Floki.text() =~ ~r/Not sent\s+1\s+your comments only you see/
+    assert doc |> Floki.find("#send-review-tray:not([disabled])") |> Floki.text() =~ "Send 1"
+
+    assert doc |> Floki.find("#review-send-tray-hint") |> Floki.text() =~
+             "The review is finished. Send reopens it with a fix round on your comments."
+  end
+
   test "empty once the review is finished it draws nothing", %{gate: gate} do
     assert render_component(&ReviewCommentTray.review_comment_tray/1,
              fix: [],
+             finding_comments: [],
              diff_comments: [],
              screen_comments: [],
              gate: %{gate | finished: true},
@@ -123,7 +181,15 @@ defmodule RailWeb.Components.ReviewCommentTrayTest do
   test "folded hides the rows and keeps the header and the hint", %{fix: fix, diff: diff, gate: gate} do
     doc =
       (&ReviewCommentTray.review_comment_tray/1)
-      |> render_component(fix: fix, diff_comments: diff, screen_comments: [], gate: gate, open: false, target: nil)
+      |> render_component(
+        fix: fix,
+        finding_comments: [],
+        diff_comments: diff,
+        screen_comments: [],
+        gate: gate,
+        open: false,
+        target: nil
+      )
       |> Floki.parse_fragment!()
 
     assert ["false"] = doc |> Floki.find("#review-send-tray-fold") |> Floki.attribute("aria-expanded")
