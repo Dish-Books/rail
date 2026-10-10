@@ -324,6 +324,62 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
       assert {:error, :unknown_tool} = Mcp.call_run_tool(lead, "commit", %{"message" => "Scope the round query"})
     end
 
+    # A runner passes on only the fields it lists, so one its schema offers and the list lacks never reaches the save.
+    test "every field a save tool offers reaches its save", %{task: task} do
+      test_pid = self()
+
+      saves = [
+        {:plan, "save_ticket", :save_ticket},
+        {:plan, "save_design_option", :save_design_option},
+        {:plan, "save_plan", :save_plan},
+        {:plan, "save_split", :save_split},
+        {:review_lead, "save_finding", :save_finding},
+        {:review_lead, "save_demo", :save_demo}
+      ]
+
+      dropped =
+        for {stage, name, save} <- saves, reduce: [] do
+          dropped ->
+            context = %RunContext{os_process: %OsProcess{task_id: task.id}, role: %Role{stage: stage, mcp_tools: []}}
+            {:ok, offered} = Mcp.list_run_tools(context)
+            %{"inputSchema" => %{"properties" => properties}} = Enum.find(offered, &(&1["name"] == name))
+
+            expect(Pipeline, save, fn _task, attrs ->
+              send(test_pid, {:saved, name, attrs})
+              {:error, Ecto.Changeset.change({%{}, %{}})}
+            end)
+
+            {:error, {:refused, _nothing_saved}} =
+              Mcp.call_run_tool(context, name, Map.new(properties, &{elem(&1, 0), 1}))
+
+            assert_received {:saved, ^name, passed}
+
+            dropped ++ for field <- Map.keys(properties), not Map.has_key?(passed, field), do: {name, field}
+        end
+
+      assert dropped == []
+    end
+
+    test "a fix report naming no test is refused naming `test`, and the finding stays to be fixed", %{
+      lead: lead,
+      run: run,
+      finding: finding,
+      task: task
+    } do
+      {:ok, _raised} = Mcp.call_run_tool(lead, "save_finding", finding)
+      {:ok, _finished} = Pipeline.update_run(run, %{status: :finished, finished_at: DateTime.utc_now()})
+      [raised] = Pipeline.list_findings(task)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), raised, :fix)
+
+      report = %{"key" => "round-query-scope", "status" => "fixed", "covered" => [1], "files" => ["lib/a.ex"]}
+
+      assert {:error,
+              {:refused, "Refused, nothing saved. test: is the `file` and `name` of the test that failed before the fix."}} =
+               Mcp.call_run_tool(lead, "save_finding", report)
+
+      assert [%Finding{key: "round-query-scope", status: :open, decision: :fix}] = Pipeline.list_findings(task)
+    end
+
     test "saves and their refusals append nothing to the run's log", %{lead: lead, run: run, task: task} do
       {:ok, _closed} = Mcp.call_run_tool(lead, "save_review", %{})
       {:error, {:refused, _refused}} = Mcp.call_run_tool(lead, "save_finding", %{})
