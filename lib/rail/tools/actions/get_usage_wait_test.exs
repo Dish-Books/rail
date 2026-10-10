@@ -49,7 +49,9 @@ defmodule Rail.Tools.Actions.GetUsageWaitTest do
     {:ok, run} =
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :starting, started_at: DateTime.utc_now()})
 
-    at = fn hours -> DateTime.utc_now() |> DateTime.shift(hour: hours) |> DateTime.truncate(:second) end
+    # One clock for the whole test, so a reset and the one expected of it never fall either side of a second.
+    now = DateTime.utc_now()
+    at = fn hours -> now |> DateTime.shift(hour: hours) |> DateTime.truncate(:second) end
 
     # A signed-in account offering the role's model, each window `{label, percent left, hours to its reset}`.
     ready_backend = fn windows, attrs ->

@@ -164,7 +164,7 @@ defmodule RailWeb.Utils.ChildStatus do
 
   defp working(%Task{stage: stage} = child, run) do
     state = Run.state(run)
-    style = run_state_style(run)
+    style = run_state_style(run, child)
     needs = run != nil and Run.needs_attention?(%{run | task: child})
     pending = if run, do: Enum.count(run.questions, &(&1.status == :pending)), else: 0
     reached = Enum.find_index(@stages, &(&1 == stage)) || 0
@@ -205,7 +205,7 @@ defmodule RailWeb.Utils.ChildStatus do
 
   defp chip(:running, _stage, _style), do: %{label: "Running", icon: "pi-play-circle", class: blue()}
   defp chip(:blocked, _stage, _style), do: %{label: "Questions", icon: "pi-question", class: @amber}
-  defp chip(:done, :review, _style), do: %{label: "Findings", icon: "pi-chat-text", class: @amber}
+  defp chip(:done, :review, style), do: %{label: "Findings", icon: style.icon, class: @amber}
   defp chip(:done, :engineer, _style), do: %{label: "Diff", icon: "pi-chat-text", class: @amber}
 
   defp chip(:failed, _stage, _style),

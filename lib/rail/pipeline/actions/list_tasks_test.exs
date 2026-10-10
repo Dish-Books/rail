@@ -267,7 +267,12 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Child", parent: owner.issue})
 
         {:ok, child} =
-          Pipeline.create_child_task(owner, issue, %{number: number, builds_on: [], plan: "## Implementation plan"})
+          Pipeline.create_child_task(owner, issue, %{
+            number: number,
+            builds_on: [],
+            builds_screen: false,
+            plan: "## Implementation plan"
+          })
 
         child
       end

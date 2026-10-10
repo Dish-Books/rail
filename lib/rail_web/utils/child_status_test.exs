@@ -143,12 +143,51 @@ defmodule RailWeb.Utils.ChildStatusTest do
       )
 
     assert %{
-             label: "Review the findings",
+             label: "Review",
              cells: [%{mark: :done}, %{mark: :current, chip: %{label: "Findings"}}],
              line: "Findings to rule",
              needs_attention: true,
              badge: :dot,
-             action: %{label: "Review the findings", tab: "rol_review_lead"}
+             action: %{label: "Review", tab: "rol_review_lead"}
+           } = child_status(at_review, [at_review])
+  end
+
+  test "a child whose Review round waits on a person takes the Findings icon, until it is ready to merge", %{
+    child: child,
+    run: run
+  } do
+    scratch = Path.join(System.tmp_dir!(), "child_status_#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf(scratch) end)
+
+    at_review =
+      child.(1,
+        stage: :review,
+        scratch_path: scratch,
+        runs: [run.(:review_lead, status: :finished, stage_outcome: :done)]
+      )
+
+    diff_ready = child.(2, runs: [run.(:engineer, status: :finished, stage_outcome: :done)])
+
+    assert %{
+             icon: "pi-list-checks",
+             text_class: "text-amber" <> _amber,
+             cells: [%{mark: :done}, %{chip: %{label: "Findings", icon: "pi-list-checks"}}]
+           } = child_status(at_review, [at_review])
+
+    assert %{icon: "pi-chat-text", cells: [%{chip: %{label: "Diff", icon: "pi-chat-text"}}, _review]} =
+             child_status(diff_ready, [diff_ready])
+
+    File.mkdir_p!(Path.join(scratch, "reviews"))
+
+    File.write!(
+      Path.join(scratch, "reviews/SPL-1.json"),
+      ~s({"passes": [{"round": 1, "saved_at": "2026-10-01T10:00:00Z", "head": "abc", "finished_at": "2026-10-01T11:00:00Z"}]})
+    )
+
+    assert %{
+             label: "Ready to merge",
+             icon: "pi-chat-text",
+             cells: [_engineer, %{chip: %{label: "Findings", icon: "pi-chat-text"}}]
            } = child_status(at_review, [at_review])
   end
 

@@ -58,7 +58,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   # A worktree that still needs setting up gets that first, with the message left
   # queued: the setup's finish drains it.
   defp execute(%Run{} = run, opts) do
-    with %Run{task: %Task{}, role: %Role{}} = run <- reload(run),
+    with %Run{task: %Task{}, role: %Role{}} = run <- run |> reload() |> reopen(),
          {:ok, role} <- Roles.get_role(id: run.role_id),
          %Project{} = project <- Repo.get(Project, run.task.project_id),
          {:ok, task, worktree_path} <- worktree(project, run.task) do
@@ -81,6 +81,16 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   end
 
   defp reload(%Run{id: id}), do: Run |> Repo.get(id) |> Repo.preload([:task, :role])
+
+  # The lead's latch says its latest turn ended with its review saved, so a turn a person starts must earn it again.
+  defp reopen(%Run{role: %Role{stage: :review_lead}, stage_outcome: :done, pending_chat: queued} = run)
+       when queued not in [nil, ""] do
+    {:ok, reopened} = run |> Run.changeset(%{stage_outcome: :in_progress}) |> Repo.update()
+    broadcast_changed(reopened)
+    %{reopened | task: run.task, role: run.role}
+  end
+
+  defp reopen(run), do: run
 
   defp worktree(%Project{} = project, %Task{} = task) do
     case prepare_worktree(project, task) do

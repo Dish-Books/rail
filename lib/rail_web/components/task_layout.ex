@@ -9,7 +9,7 @@ defmodule RailWeb.Components.TaskLayout do
   """
   use RailWeb, :html
 
-  import RailWeb.Utils.StageLabel, only: [ready_to_merge?: 2]
+  import RailWeb.Utils.StageLabel, only: [ready_to_merge?: 2, review_waiting?: 2]
 
   attr :task, :any, required: true
   attr :run, :any, default: nil
@@ -81,7 +81,10 @@ defmodule RailWeb.Components.TaskLayout do
             ]}
           >
             <.icon
-              :if={@line != nil or ready_to_merge?(@task, @stage_run)}
+              :if={
+                @line != nil or ready_to_merge?(@task, @stage_run) or
+                  review_waiting?(@task, @stage_run)
+              }
               name={chip_style(@task, @stage_run).icon}
               class="h-4 w-4"
             />
@@ -178,6 +181,6 @@ defmodule RailWeb.Components.TaskLayout do
   defp chip_style(task, run) do
     if ready_to_merge?(task, run),
       do: %{text_class: "text-emerald-600 dark:text-emerald-400", icon: "pi-check-circle"},
-      else: run_state_style(run)
+      else: run_state_style(run, task)
   end
 end

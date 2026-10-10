@@ -17,6 +17,7 @@ defmodule Rail.Pipeline.Schemas.Split do
       field :estimate, :integer
       field :plan, :string
       field :builds_on, {:array, :integer}, default: []
+      field :builds_screen, :boolean, default: false
     end
   end
 
@@ -37,12 +38,13 @@ defmodule Rail.Pipeline.Schemas.Split do
 
   defp child_changeset(child, attrs, index) do
     child
-    |> cast(attrs, [:title, :ticket, :estimate, :plan, :builds_on])
+    |> cast(attrs, [:title, :ticket, :estimate, :plan, :builds_on, :builds_screen])
     |> update_change(:title, &String.trim/1)
     |> update_change(:ticket, &String.trim/1)
     |> update_change(:plan, &String.trim/1)
     # An agent says "builds on nothing" as null as often as an empty list.
     |> update_change(:builds_on, &(&1 || []))
+    |> update_change(:builds_screen, &(&1 || false))
     |> validate_required([:title, :ticket, :plan])
     |> validate_format(:title, ~r/\A[^\n]*\z/, message: "must be one line")
     |> validate_number(:estimate, greater_than_or_equal_to: 0, message: "must be zero or more")
