@@ -14,6 +14,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
 
   import Rail.Pipeline.Utils.DeliverPlanComments
   import Rail.Pipeline.Utils.PlanSubagents
+  import Rail.Pipeline.Utils.PrepareTurn
   import Rail.Pipeline.Utils.PrepareWorktree
   import Rail.Pipeline.Utils.ReviewSubagents
   import Rail.Pipeline.Utils.StartWorktreeSetup
@@ -117,7 +118,9 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
 
     broadcast_changed(run)
 
-    {:ok, _task} = task |> Task.changeset(%{worktree_path: worktree_path}) |> Repo.update()
+    {:ok, task} = task |> Task.changeset(%{worktree_path: worktree_path}) |> Repo.update()
+    # The agents that commit to the branch start every turn on a fresh default branch, as themselves.
+    if role.stage in [:engineer, :review_lead], do: :ok = prepare_turn(%{run | task: task})
 
     argv =
       Tools.build_args(

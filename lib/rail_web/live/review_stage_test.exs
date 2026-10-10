@@ -133,7 +133,15 @@ defmodule RailWeb.Live.ReviewStageTest do
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), carried, :fix)
     # A round is a read of a new HEAD, so each fix round commits before its pass.
     git!(worktree, ["commit", "--allow-empty", "-m", "fix round 1"])
-    {:ok, _fixed} = Pipeline.save_finding(task, %{key: "send-twice", status: "fixed"})
+
+    {:ok, _fixed} =
+      Pipeline.save_finding(task, %{
+        key: "send-twice",
+        status: "fixed",
+        covered: [1],
+        test: %{file: "test/send_test.exs", name: "sends once"}
+      })
+
     {:ok, _pass} = Pipeline.save_review(task)
     git!(worktree, ["commit", "--allow-empty", "-m", "fix round 2"])
     {:ok, _new} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
@@ -375,7 +383,15 @@ defmodule RailWeb.Live.ReviewStageTest do
     {:ok, finding} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
     {:ok, _pass} = Pipeline.save_review(task)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), finding, :fix)
-    {:ok, %Finding{status: :fixed}} = Pipeline.save_finding(task, %{key: "view-only-send", status: "fixed"})
+
+    {:ok, %Finding{status: :fixed}} =
+      Pipeline.save_finding(task, %{
+        key: "view-only-send",
+        status: "fixed",
+        covered: [1, 2],
+        test: %{file: "test/send_test.exs", name: "checks the role"}
+      })
+
     {:ok, _stopped} = Pipeline.update_run(run, %{ci_failure_streak: 3, error: "CI failed 3 times"})
 
     {:ok, _failed} =
@@ -670,16 +686,18 @@ defmodule RailWeb.Live.ReviewStageTest do
   end
 
   describe "with the branch's commits" do
-    # The branch forked from origin/main at the first commit, then the engineer and a fix round each committed.
-    setup %{task: %{worktree_path: worktree}} do
+    # The branch forked from origin/main at the first commit, then the engineer committed, round 1 read it,
+    # and the fix round it led to committed.
+    setup %{task: %{worktree_path: worktree} = task} do
       git!(worktree, ["update-ref", "refs/remotes/origin/main", "HEAD"])
       File.write!(Path.join(worktree, "a.ex"), "defmodule A do\nend\n")
       git!(worktree, ["add", "."])
       git!(worktree, ["commit", "-m", "Send comments as one round"])
       engineer = worktree |> git!(["rev-parse", "HEAD"]) |> String.trim()
+      {:ok, %{round: 1}} = Pipeline.save_review(task)
       File.write!(Path.join(worktree, "b.ex"), "defmodule B do\nend\n")
       git!(worktree, ["add", "."])
-      git!(worktree, ["commit", "-m", "Fix 1 finding from round 1\n\nRail-Step: Fix round 1"])
+      git!(worktree, ["commit", "-m", "Fix 1 finding from round 1"])
       fix = worktree |> git!(["rev-parse", "HEAD"]) |> String.trim()
 
       %{engineer: engineer, fix: fix}
@@ -747,7 +765,8 @@ defmodule RailWeb.Live.ReviewStageTest do
           file: "screens/file-list-after-send/1.jpg"
         })
 
-      git!(worktree, ["commit", "--allow-empty", "-m", "Fix round 2\n\nRail-Step: Fix round 2"])
+      {:ok, %{round: 2}} = Pipeline.save_review(task)
+      git!(worktree, ["commit", "--allow-empty", "-m", "Fix 1 finding from round 2"])
       latest = worktree |> git!(["rev-parse", "HEAD"]) |> String.trim()
       File.write!(Path.join(folder, "2.jpg"), "second")
 
@@ -944,24 +963,6 @@ defmodule RailWeb.Live.ReviewStageTest do
       view |> element("#review-item-demo") |> render_click()
 
       assert has_element?(view, "#demo-rerecord[disabled]")
-    end
-
-    test "a merge of main in progress says what it is resolving, and the Diff item that it is merging", %{
-      conn: conn,
-      task: task,
-      run: run
-    } do
-      {:ok, _merging} = Pipeline.update_task(task, %{is_updating_branch: true})
-      {:ok, _working} = Pipeline.update_run(run, %{status: :running})
-      stub(Rail.Git, :conflicted_files, fn _path -> ["lib/rail/pipeline/schemas/diff_comment.ex"] end)
-
-      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#review-status[data-phase=merging]", "Merging origin/main into the branch")
-      assert has_element?(view, "#review-status", "Resolving 1 conflict in diff_comment.ex.")
-      assert has_element?(view, "#review-item-findings[title='Findings: Merge of main running']")
-      assert has_element?(view, "#review-item-diff[title='Diff: Merging origin/main'] [data-qa=review_item_running]")
-      refute has_element?(view, "#start-fix-round")
     end
   end
 end

@@ -21,7 +21,7 @@ defmodule RailWeb.Live.EngineerStage do
       socket
       |> assign(assigns)
       |> assign_new(:error, fn -> nil end)
-      |> assign_new(:committing, fn -> false end)
+      |> assign_new(:pushing, fn -> false end)
       |> load_status()
 
     {:ok, socket}
@@ -74,18 +74,18 @@ defmodule RailWeb.Live.EngineerStage do
           </button>
 
           <button
-            :if={(@dirty? or @unpushed? or @committing) and @at_engineer and not @show_run_ci?}
+            :if={(@unpushed? or @pushing) and @at_engineer and not @show_run_ci?}
             type="button"
-            id="commit-work"
-            data-qa="commit_work"
-            phx-click="commit"
+            id="push-work"
+            data-qa="push_work"
+            phx-click="push"
             phx-target={@myself}
-            disabled={@committing or Run.running?(@run)}
-            aria-busy={to_string(@committing)}
+            disabled={@pushing or Run.running?(@run)}
+            aria-busy={to_string(@pushing)}
             class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-sm font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <.icon :if={@committing} name="pi-circle-notch" class="size-4 motion-safe:animate-spin" />
-            {commit_label(@dirty?, @committing)}
+            <.icon :if={@pushing} name="pi-circle-notch" class="size-4 motion-safe:animate-spin" />
+            {if @pushing, do: "Pushing…", else: "Push"}
           </button>
 
           <button
@@ -95,7 +95,7 @@ defmodule RailWeb.Live.EngineerStage do
             data-qa="send_to_review"
             phx-click="send_to_review"
             phx-target={@myself}
-            disabled={@committing or not ci_passed?(@ci)}
+            disabled={@pushing or not ci_passed?(@ci)}
             title={if not ci_passed?(@ci), do: "CI has to pass on the latest commit first"}
             class="px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
           >
@@ -137,20 +137,20 @@ defmodule RailWeb.Live.EngineerStage do
   # A push runs the repository's own pre-push hooks, which can take minutes, so it
   # goes off the LiveView process and the button says it is in flight. A second
   # click while it is would only race the first.
-  def handle_event("commit", _params, %{assigns: %{committing: true}} = socket), do: {:noreply, socket}
+  def handle_event("push", _params, %{assigns: %{pushing: true}} = socket), do: {:noreply, socket}
 
-  def handle_event("commit", _params, socket) do
+  def handle_event("push", _params, socket) do
     %{current_scope: scope, run: run} = socket.assigns
 
     socket =
       socket
-      |> assign(:committing, true)
+      |> assign(:pushing, true)
       |> assign(:error, nil)
-      |> start_async(:commit, fn ->
-        # Unlinked, so leaving the page does not cut a commit off between its go-ahead
+      |> start_async(:push, fn ->
+        # Unlinked, so leaving the page does not cut a hand-over off between its go-ahead
         # and the push, CI or review that settles it.
         Rail.TaskSupervisor
-        |> Elixir.Task.Supervisor.async_nolink(fn -> Pipeline.commit_work(scope, run) end)
+        |> Elixir.Task.Supervisor.async_nolink(fn -> Pipeline.hand_over_work(scope, run) end)
         |> Elixir.Task.await(:infinity)
       end)
 
@@ -180,25 +180,24 @@ defmodule RailWeb.Live.EngineerStage do
   end
 
   # The action clears the run's own error, since it can finish after the page is
-  # gone. Failing half way still moved the worktree, so either way the status is
-  # read again, and the diff with it: what is left outstanding is what the button offers next.
+  # gone. Either way the status is read again: what is left unpushed is what the button offers next.
   @impl true
-  def handle_async(:commit, {:ok, {:ok, _run}}, socket) do
+  def handle_async(:push, {:ok, {:ok, _run}}, socket) do
     send(self(), :task_changed)
 
-    socket = socket |> assign(:committing, false) |> assign(:error, nil) |> load_status()
+    socket = socket |> assign(:pushing, false) |> assign(:error, nil) |> load_status()
 
     {:noreply, socket}
   end
 
-  def handle_async(:commit, {:ok, {:error, reason}}, socket) do
-    socket = socket |> assign(:committing, false) |> assign(:error, message_for(reason)) |> load_status()
+  def handle_async(:push, {:ok, {:error, reason}}, socket) do
+    socket = socket |> assign(:pushing, false) |> assign(:error, message_for(reason)) |> load_status()
 
     {:noreply, socket}
   end
 
-  def handle_async(:commit, {:exit, reason}, socket) do
-    socket = socket |> assign(:committing, false) |> assign(:error, message_for(reason)) |> load_status()
+  def handle_async(:push, {:exit, reason}, socket) do
+    socket = socket |> assign(:pushing, false) |> assign(:error, message_for(reason)) |> load_status()
 
     {:noreply, socket}
   end
@@ -257,26 +256,21 @@ defmodule RailWeb.Live.EngineerStage do
 
   defp load_status(socket) do
     %{task: task} = socket.assigns
-    present? = Task.worktree_present?(task)
-
-    dirty? = present? and Git.worktree_dirty?(task.worktree_path)
-    unpushed? = present? and Git.branch_unpushed?(task.worktree_path)
+    unpushed? = Task.worktree_present?(task) and Git.branch_unpushed?(task.worktree_path)
     ci = Pipeline.get_ci_status(socket.assigns.run)
 
     socket
-    |> assign(:dirty?, dirty?)
     |> assign(:unpushed?, unpushed?)
     |> assign(:work?, Git.branch_changed?(task))
     |> assign(:ci, ci)
-    |> assign(:show_run_ci?, show_run_ci?(ci, dirty?))
-    # Past Engineer the branch is Review's, whose fix rounds commit it.
+    |> assign(:show_run_ci?, show_run_ci?(ci))
+    # Past Engineer the branch is Review's, whose lead hands its fix rounds on.
     |> assign(:at_engineer, task.stage == :engineer)
   end
 
-  # A commit waiting on CI is sent on by running it, not by pushing: CI pushes it
-  # once it passes. Anything uncommitted is committed first, which runs CI anyway.
-  defp show_run_ci?(%{state: state}, false) when state in [:pending, :failed], do: true
-  defp show_run_ci?(_ci, _dirty?), do: false
+  # A commit waiting on CI is sent on by running it, not by pushing: CI pushes it once it passes.
+  defp show_run_ci?(%{state: state}) when state in [:pending, :failed], do: true
+  defp show_run_ci?(_ci), do: false
 
   defp ci_passed?(nil), do: true
   defp ci_passed?(%{state: state}), do: state == :passed
@@ -300,15 +294,9 @@ defmodule RailWeb.Live.EngineerStage do
   defp ci_icon(:failed), do: "pi-x-circle"
   defp ci_icon(:pending), do: "pi-clock"
 
-  defp commit_label(true, true), do: "Committing…"
-  defp commit_label(false, true), do: "Pushing…"
-  defp commit_label(true, false), do: "Commit"
-  defp commit_label(false, false), do: "Push"
-
   defp message_for(:stage_running), do: "Something is still running on this task."
-  defp message_for(:uncommitted_changes), do: "Commit the engineer's work before sending it to review."
   defp message_for(:unpushed_changes), do: "Push the engineer's commits before sending them to review."
-  defp message_for(:nothing_to_commit), do: "There is nothing left to commit."
+  defp message_for(:nothing_to_send), do: "There is nothing left to push."
   defp message_for(:ci_not_passed), do: "CI has to pass on the latest commit before this goes to review."
   defp message_for(reason) when is_binary(reason), do: reason
   defp message_for(reason), do: "Could not finish that: #{inspect(reason)}"

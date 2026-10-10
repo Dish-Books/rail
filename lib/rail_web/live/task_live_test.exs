@@ -2827,7 +2827,7 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#engineer-diff")
       assert has_element?(view, "[data-qa='diff-file-row']", "shipped.ex")
       assert has_element?(view, "#send-to-review")
-      refute has_element?(view, "#commit-work")
+      refute has_element?(view, "#push-work")
     end
 
     test "with CI, the change waits on a pass before it can go to review", %{
@@ -2847,7 +2847,7 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "#ci-status", "CI not run")
       assert has_element?(view, "#send-to-review[disabled]")
-      refute has_element?(view, "#commit-work")
+      refute has_element?(view, "#push-work")
 
       view |> with_target("#engineer-stage") |> render_click("send_to_review", %{})
       assert has_element?(view, "#engineer-error", "CI has to pass on the latest commit before this goes to review.")
@@ -2973,124 +2973,8 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "#task-pull-request", "Draft")
     end
 
-    test "updating the branch hands conflicts to the engineer and says it is updating", %{
-      conn: conn,
-      task: task,
-      engineer_run: run
-    } do
-      expect(Git, :fetch_default_branch, fn _project, _path -> :ok end)
-      expect(Git, :merge_default_branch, fn _scope, _task -> {:conflicts, ["shipped.ex"]} end)
-
-      expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
-        assert prompt =~ "- shipped.ex"
-        {:ok, %OsProcess{run: spawned}}
-      end)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "#update-branch[title='Merge origin/main into this branch']", "Update branch")
-      assert has_element?(view, "#update-branch[phx-disable-with='Updating…']")
-
-      view |> element("#update-branch") |> render_click()
-
-      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{run.role_id}")
-      assert %Task{is_updating_branch: true} = Repo.reload!(task)
-      assert %Run{status: :running} = Repo.reload!(run)
-      assert has_element?(view, "#update-branch[disabled]", "Updating…")
-    end
-
-    # At Review the branch is the Review lead's: the merge runs on its run and shows on its tab.
-    test "a clean merge into a task at Review leaves it there, pushes and starts the lead's next round", %{
-      conn: conn,
-      scope: %{user: %{id: user_id}},
-      project: project,
-      task: task,
-      repo: repo
-    } do
-      {:ok, task} = Pipeline.update_task(task, %{stage: :review, pr_number: 7})
-      {:ok, lead_role} = Roles.get_role(project_id: project.id, stage: :review_lead)
-
-      {:ok, %Run{id: lead_run_id} = lead_run} =
-        Pipeline.create_run(%{
-          task_id: task.id,
-          role_id: lead_role.id,
-          status: :finished,
-          stage_outcome: :done,
-          started_at: DateTime.utc_now()
-        })
-
-      expect(Git, :fetch_default_branch, fn _project, _path -> :ok end)
-
-      expect(Git, :merge_default_branch, fn _scope, _task ->
-        git!(repo, ["commit", "--allow-empty", "-m", "merged main in"])
-        :ok
-      end)
-
-      expect(Git, :push_branch, fn _scope, _task ->
-        git!(repo, ["push", "origin", "feature"])
-        :ok
-      end)
-
-      expect(Tools, :start_os_process, fn %Run{id: ^lead_run_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("#update-branch") |> render_click()
-
-      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{lead_role.id}")
-      assert %Task{stage: :review, is_updating_branch: false} = Repo.reload!(task)
-      refute Git.branch_unpushed?(repo)
-
-      merged = repo |> git!(["rev-parse", "--short=7", "HEAD"]) |> String.trim()
-
-      assert [
-               "[human:" <> ^user_id <> "] Update branch",
-               "[rail] Merged origin/main in as " <> ^merged <> ".",
-               "[rail] Round 1 started after it was pushed"
-             ] = lead_run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
-
-      assert has_element?(view, "#review-stage")
-    end
-
-    test "updating the branch says why for each way it can be refused", %{
-      conn: conn,
-      task: task,
-      engineer_run: run,
-      repo: repo
-    } do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      expect(Git, :fetch_default_branch, fn _project, _path -> {:error, "could not read from remote"} end)
-      view |> element("#update-branch") |> render_click()
-      assert render(view) =~ "Could not update the branch: could not read from remote"
-
-      expect(Git, :fetch_default_branch, fn _project, _path -> :ok end)
-      expect(Git, :merge_default_branch, fn _scope, _task -> {:conflicts, ["shipped.ex"]} end)
-      expect(Tools, :start_os_process, fn _spawned, _argv -> {:error, :dispatch_disabled} end)
-      view |> element("#update-branch") |> render_click()
-      assert render(view) =~ "Could not update the branch: :dispatch_disabled"
-
-      {:ok, running} = Pipeline.update_run(Repo.reload!(run), %{status: :running})
-      render_click(view, "update_branch", %{})
-      assert render(view) =~ "Stop the task&#39;s run before updating its branch"
-
-      {:ok, _idle} = Pipeline.update_run(running, %{status: :finished})
-      File.rm_rf!(repo)
-      render_click(view, "update_branch", %{})
-      assert render(view) =~ "The task&#39;s worktree is gone, so there is nothing to update"
-    end
-
-    test "updating the branch says why when the branch cannot be handed back", %{conn: conn, task: task, repo: repo} do
-      File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#update-branch") |> render_click()
-
-      assert render(view) =~ "Commit the engineer&#39;s work before updating the branch"
-      assert has_element?(view, "#update-branch:not([disabled])", "Update branch")
-    end
-
-    # Once Review has the task, its lead's engineer makes the fixes, so nothing here may commit or message.
-    test "once the task has left Engineer, its tab offers no Commit, Run CI, Send to review or composer", %{
+    # Once Review has the task, its lead hands the fixes on, so nothing here may push or message.
+    test "once the task has left Engineer, its tab offers no Push, Run CI, Send to review or composer", %{
       conn: conn,
       project: project,
       task: task,
@@ -3120,7 +3004,7 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{run.role_id}")
 
-      refute has_element?(view, "#commit-work")
+      refute has_element?(view, "#push-work")
     end
 
     test "says so when the engineer has changed nothing", %{conn: conn, task: task, repo: repo} do
@@ -3161,18 +3045,18 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='diff-file-row']", "shipped.ex")
     end
 
-    # The commit was made and the push was refused, so what is outstanding is the
+    # The engineer committed and the push was refused, so what is outstanding is the
     # push, and pressing the button again is what sends it.
     test "a push that failed is retried from the pane", %{conn: conn, task: task, engineer_run: run, repo: repo} do
-      File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
+      git!(repo, ["commit", "--allow-empty", "-m", "never pushed"])
       stub(Git, :push_branch, fn _scope, _task -> {:error, "remote rejected"} end)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#commit-work") |> render_click()
+      view |> element("#push-work") |> render_click()
       render_async(view, 5_000)
 
       assert has_element?(view, "#engineer-error", "remote rejected")
-      assert has_element?(view, "#commit-work", "Push")
+      assert has_element?(view, "#push-work", "Push")
 
       stub(Git, :push_branch, fn _scope, %Task{worktree_path: path} ->
         git!(path, ["push", "--set-upstream", "origin", "HEAD"])
@@ -3181,10 +3065,10 @@ defmodule RailWeb.TaskLiveTest do
 
       expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 
-      view |> element("#commit-work") |> render_click()
+      view |> element("#push-work") |> render_click()
       render_async(view, 5_000)
 
-      refute has_element?(view, "#commit-work")
+      refute has_element?(view, "#push-work")
       assert %Run{error: nil} = Repo.reload!(run)
       assert %Task{stage: :review} = Repo.reload!(task)
     end
@@ -3208,33 +3092,33 @@ defmodule RailWeb.TaskLiveTest do
       end)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#commit-work", "Push") |> render_click()
+      view |> element("#push-work", "Push") |> render_click()
 
       assert_receive {:pushing, pusher}
-      assert has_element?(view, "#commit-work[disabled][aria-busy='true']", "Pushing…")
+      assert has_element?(view, "#push-work[disabled][aria-busy='true']", "Pushing…")
       assert has_element?(view, "#send-to-review[disabled]")
 
       # A second click while the first is in flight would only race it. The
       # button is disabled, so this is the event arriving anyway.
-      view |> with_target("#engineer-stage") |> render_click("commit", %{})
-      assert has_element?(view, "#commit-work[disabled][aria-busy='true']", "Pushing…")
+      view |> with_target("#engineer-stage") |> render_click("push", %{})
+      assert has_element?(view, "#push-work[disabled][aria-busy='true']", "Pushing…")
 
       send(pusher, :release)
       render_async(view, 5_000)
 
-      refute has_element?(view, "#commit-work")
+      refute has_element?(view, "#push-work")
       refute has_element?(view, "#send-to-review[disabled]")
     end
 
     # A push lasts as long as the repository's hooks do, and leaving the page
-    # meanwhile takes back neither the commit nor the go-ahead that came with it.
-    test "a commit carries on to review after the page is left", %{
+    # meanwhile takes back neither the push nor the go-ahead that came with it.
+    test "a push carries on to review after the page is left", %{
       conn: conn,
       task: task,
       engineer_run: run,
       repo: repo
     } do
-      File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
+      git!(repo, ["commit", "--allow-empty", "-m", "never pushed"])
       {:ok, run} = Pipeline.update_run(run, %{error: "CI passed, but the branch could not be pushed: rejected"})
       test_pid = self()
 
@@ -3251,7 +3135,7 @@ defmodule RailWeb.TaskLiveTest do
       expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#commit-work") |> render_click()
+      view |> element("#push-work") |> render_click()
       assert_receive {:pushing, pusher}
 
       Process.flag(:trap_exit, true)
@@ -3274,11 +3158,11 @@ defmodule RailWeb.TaskLiveTest do
       stub(Git, :push_branch, fn _scope, _task -> exit(:killed) end)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#commit-work", "Push") |> render_click()
+      view |> element("#push-work", "Push") |> render_click()
       render_async(view, 5_000)
 
       assert has_element?(view, "#engineer-error")
-      refute has_element?(view, "#commit-work[aria-busy='true']")
+      refute has_element?(view, "#push-work[aria-busy='true']")
     end
 
     test "marking a file read collapses it, for this reader only", %{conn: conn, task: task, scope: scope} do
@@ -3538,30 +3422,14 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "#diff-file-tree")
     end
 
-    test "uncommitted work offers a commit and refuses review until it is taken", %{
-      conn: conn,
-      task: task,
-      repo: repo
-    } do
+    # The engineer commits its own work, so what it left uncommitted is not Rail's to push.
+    test "uncommitted work offers no push", %{conn: conn, task: task, repo: repo} do
       File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      stub(Git, :push_branch, fn _scope, %Task{worktree_path: path} ->
-        git!(path, ["push", "--set-upstream", "origin", "HEAD"])
-        :ok
-      end)
-
-      assert has_element?(view, "#commit-work")
-
-      view |> element("#send-to-review") |> render_click()
-      assert has_element?(view, "#engineer-error", "Commit the engineer's work before sending it to review.")
-
-      view |> element("#commit-work") |> render_click()
-      render_async(view, 5_000)
-
-      assert git!(repo, ["log", "-1", "--pretty=%s"]) =~ "TLV-1: follow-up changes"
-      refute has_element?(view, "#commit-work")
+      assert has_element?(view, "[data-qa='diff-file-row']", "wip.ex")
+      refute has_element?(view, "#push-work")
     end
 
     test "review is refused while the remote has not heard of the commits", %{
@@ -3591,9 +3459,9 @@ defmodule RailWeb.TaskLiveTest do
       assert %Task{stage: :review} = Repo.reload!(task)
     end
 
-    # A human's commit already says the work is ready, so nobody has to click on.
-    test "committing the diff moves the task to review once it is pushed", %{conn: conn, task: task, repo: repo} do
-      File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
+    # A human's push already says the work is ready, so nobody has to click on.
+    test "pushing the engineer's commits moves the task to review", %{conn: conn, task: task, repo: repo} do
+      git!(repo, ["commit", "--allow-empty", "-m", "never pushed"])
 
       stub(Git, :push_branch, fn _scope, %Task{worktree_path: path} ->
         git!(path, ["push", "origin", "HEAD"])
@@ -3604,7 +3472,7 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      view |> element("#commit-work") |> render_click()
+      view |> element("#push-work") |> render_click()
       render_async(view, 5_000)
 
       assert %Task{stage: :review} = Repo.reload!(task)
@@ -3677,32 +3545,22 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='diff_line_row']", "line 30")
     end
 
-    test "a commit git refused says why", %{conn: conn, task: task, repo: repo} do
-      File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
-      stub(Git, :commit_worktree, fn _scope, _task, _message -> {:error, :nothing_to_commit} end)
+    # Another tab, or the engineer's own turn ending, can push the commits first.
+    test "a push with nothing left to send says so", %{conn: conn, task: task, repo: repo} do
+      git!(repo, ["commit", "--allow-empty", "-m", "never pushed"])
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      git!(repo, ["push", "origin", "HEAD"])
 
-      view |> element("#commit-work") |> render_click()
+      view |> element("#push-work") |> render_click()
       render_async(view, 5_000)
 
-      assert has_element?(view, "#engineer-error", "nothing left to commit")
-    end
-
-    test "a commit git refused in its own words repeats them", %{conn: conn, task: task, repo: repo} do
-      File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
-      stub(Git, :commit_worktree, fn _scope, _task, _message -> {:error, "index.lock exists"} end)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("#commit-work") |> render_click()
-      render_async(view, 5_000)
-
-      assert has_element?(view, "#engineer-error", "index.lock exists")
+      assert has_element?(view, "#engineer-error", "There is nothing left to push.")
+      refute has_element?(view, "#push-work")
     end
 
     test "a push GitHub would not authorize says what came back", %{conn: conn, task: task, repo: repo} do
-      File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
+      git!(repo, ["commit", "--allow-empty", "-m", "never pushed"])
 
       Req.Test.stub(Client, fn req_conn ->
         req_conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "Not Found"})
@@ -3710,7 +3568,7 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      view |> element("#commit-work") |> render_click()
+      view |> element("#push-work") |> render_click()
       render_async(view, 5_000)
 
       assert has_element?(view, "#engineer-error", "Could not finish that:")
@@ -5813,24 +5671,10 @@ defmodule RailWeb.TaskLiveTest do
       assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-12")
     end
 
-    test "a selected child offers Update branch, and its tabs keep it in the URL", %{
-      conn: conn,
-      parent: parent,
-      first: first,
-      roles: roles
-    } do
+    test "a selected child's tabs keep it in the URL", %{conn: conn, parent: parent} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-11")
 
-      assert has_element?(view, "#update-branch")
       assert has_element?(view, "#child-switcher")
-
-      expect(Pipeline, :update_branch, fn _scope, %Task{id: id} = task ->
-        assert id == first.id
-        {:ok, task}
-      end)
-
-      view |> element("#update-branch") |> render_click()
-      assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-11&tab=#{roles[:engineer].id}")
 
       view |> element("#task-tab-issue") |> render_click()
       assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-11&tab=issue")

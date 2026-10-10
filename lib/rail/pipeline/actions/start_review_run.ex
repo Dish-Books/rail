@@ -10,7 +10,9 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
   import Rail.Pipeline.Utils.FormatComments
   import Rail.Pipeline.Utils.FormatTicket
   import Rail.Pipeline.Utils.LearningsBrief
+  import Rail.Pipeline.Utils.PrepareTurn
   import Rail.Pipeline.Utils.ReviewSubagents
+  import Rail.Pipeline.Utils.TicketTrailer
 
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
@@ -38,6 +40,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     task = Repo.preload(task, [:project, issue: [comments: :replies]], force: true)
     File.mkdir_p!(Path.join([task.scratch_path, "qa", "evidence"]))
     File.mkdir_p!(Path.join(task.scratch_path, "demo"))
+    :ok = prepare_turn(%{run | task: task})
 
     prompt =
       Pipeline.build_prompt(
@@ -65,7 +68,9 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     String.trim("""
     You lead Rail's Review step for the change below: one run that reads the code, drives the built app and records the demo, and, once the human has ruled on what it found, has the fixes they ruled Fix made, a round at a time. The code reviewer, the QA explorers, the engineer and the demo recorder are your subagents: hand each its work with the Task tool, naming it, and start an explorer's description with its browser name, as in `explorer-1: Checks 1 and 2`. A subagent sees only what you write it. #{workspace(task)}
 
-    You change nothing in the worktree yourself, and you leave to Rail the git it does itself: no commit, no push, no merge, no rebase. `commit` is how a fix round is committed. Nothing under #{scratch_path} is part of the change.
+    You change nothing in the worktree yourself: the engineer makes and commits every change, committing as the ticket's owner, which Rail sets for each turn, and ending each commit message with the line `#{ticket_trailer(issue)}`, which you hand it. Nobody pushes: a turn that ends with commits the remote does not have yet hands them to Rail, which runs CI, pushes them and starts the next round. Work left uncommitted is not sent on. Nothing under #{scratch_path} is part of the change.
+
+    At the start of every turn, check the branch against `origin/#{task.project.default_branch}`, which Rail fetched as the turn started. When it is behind, have the engineer bring it up to date by merge or rebase, as suits the change, resolve every conflict the way both sides meant it, and commit; have the code reviewer read what came in against what the branch relies on, and the engineer follow it through the branch's code, tests and comments.
 
     How a round works:
 
@@ -88,18 +93,12 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     - A save missing a field, over a limit or holding tool-call markup is refused naming the field: fix it and save it again in the same turn.
     - A finding already on the task is saved again by its `key` with only its `status` (`fixed`, `not_fixed` or `open`), a `note` of at most 300 characters on what this round checked and saw, and any new `evidence`. What it said when raised never changes. A Fix finding still failing is carried into this round with its ruling, never raised again under a new key. One the human ruled Don't fix is not argued again.
 
-    After a merge:
-
-    - Update branch merges origin/#{task.project.default_branch} in inside Review. Conflicts come to you as a turn: hand them to the engineer to resolve and `git add`, and end your turn once every one is staged; Rail commits the merge.
-    - Once the merge is in, Rail resumes you to follow main's changes through before the next round: the code reviewer reads what the merge brought in against what the branch relies on, and the engineer updates the branch's code, tests and comments to match. Call `commit` with `merge_follow_up` set, no `findings`, and every changed file in `other_files` with why; Rail commits it as a Merge follow-up and starts the next round once CI passes. When nothing needs changing, run the round straight away.
-    - When CI fails on a change that landed on origin/#{task.project.default_branch}, call `request_merge` with a clean worktree; it ends your turn, and Rail merges it in and resumes you as above.
-
     A fix round:
 
     1. Start fix round arrives as a message listing the findings the human ruled Fix, with their rules and places. Hand them to the engineer whole, every place included.
     2. When the engineer reports, have the code reviewer read the uncommitted diff against those findings, and an explorer re-check any screen a fix touched, before anything is committed. Send what they find back to the engineer.
-    3. Call `commit` with a commit `message`, every Fix finding with the places its fix covered, those it left and why, the files its fix changed, and the test that failed first, and every other changed file, one no finding asked for, with its reason, which the human reads. It refuses a round that leaves a Fix finding out, lists one without a place or a test, or holds a changed file nothing explains: settle what it names and call it again. It ends your turn, and Rail commits the round, runs CI and starts the next round once CI passes.
-    4. When CI fails, Rail resumes you with its output: have the engineer fix it and call `commit` again, or call it with nothing changed to run CI again when the failure is not the change's.
+    3. Have the engineer commit the fixes. Save each Fix finding with `save_finding`, `status` fixed, the places its fix `covered` and those it `left` with why, the `test` that failed first and the `files` it changed. It refuses a report that leaves a place unaccounted for or has no test: settle what it names and save it again. In your last message, give every other changed file, one no finding asked for, with its reason, which the human reads. End your turn: Rail runs CI on the commits, pushes them and starts the next round once CI passes. A turn that committed while a Fix finding is not saved fixed is held, and nothing is sent on until it is.
+    4. When CI fails, Rail resumes you with its output: have the engineer fix it and commit, or end your turn with nothing changed to run CI again when the failure is not the change's.
 
     Questions:
 

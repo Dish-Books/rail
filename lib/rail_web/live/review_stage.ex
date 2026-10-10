@@ -74,7 +74,7 @@ defmodule RailWeb.Live.ReviewStage do
               <.review_status
                 :if={
                   @item == :findings and
-                    @phase in [:round, :fixing, :ci, :ci_failed, :finished, :merging]
+                    @phase in [:round, :fixing, :ci, :ci_failed, :finished]
                 }
                 phase={@phase}
                 round={@round}
@@ -83,8 +83,6 @@ defmodule RailWeb.Live.ReviewStage do
                 agents={@agents}
                 tail={@tail}
                 pr_number={@task.pr_number}
-                base={@task.project.default_branch}
-                conflicts={@conflicts}
               />
 
               <div :if={@item == :findings} class="@container flex-1 min-h-0">
@@ -102,9 +100,7 @@ defmodule RailWeb.Live.ReviewStage do
                     finding={@selected}
                     position={@position}
                     count={length(@findings)}
-                    decidable={
-                      @approvable and @phase not in [:round, :fixing, :ci, :finished, :merging]
-                    }
+                    decidable={@approvable and @phase not in [:round, :fixing, :ci, :finished]}
                     running={@phase == :round}
                     hunk={@hunk}
                     filed={@filed}
@@ -316,11 +312,11 @@ defmodule RailWeb.Live.ReviewStage do
     |> assign(:tail, if(ci, do: ci.tail, else: []))
     |> assign(
       :agents,
-      if(socket.assigns.item == :findings and phase in [:round, :fixing, :merging], do: agents(run), else: [])
+      if(socket.assigns.item == :findings and phase in [:round, :fixing], do: agents(run), else: [])
     )
     |> assign(:tally, tally(phase, counts, findings, passes))
     |> assign(:button, button(phase, counts, passes, socket.assigns.approvable))
-    |> assign_branch(phase)
+    |> assign_branch(passes)
     |> assign(:beats, beats)
     |> assign(:recorded, Task.demo_recorded?(task))
     |> assign(:recording, recording)
@@ -333,15 +329,15 @@ defmodule RailWeb.Live.ReviewStage do
   end
 
   # The branch's commits label each finding's and screen's commit, count the Diff item and date the demo.
-  defp assign_branch(%{assigns: %{task: task}} = socket, phase) do
-    history = Git.load_branch_history(task)
+  # The commits each round read are what tell the engineer's apart from each fix round's.
+  defp assign_branch(%{assigns: %{task: task}} = socket, passes) do
+    history = Git.load_branch_history(task, for(%{head: head} <- passes, is_binary(head), do: head))
     demo = Pipeline.read_demo(task)
 
     socket
     |> assign(:demo, demo)
     |> assign(:history, history)
     |> assign(:labels, Map.new(history.commits, &{&1.sha, &1.label}))
-    |> assign(:conflicts, if(phase == :merging, do: Git.conflicted_files(task.worktree_path), else: []))
     |> assign(:screens, Pipeline.list_screens(task))
     |> assign(:stale, stale(demo, history))
   end
@@ -392,8 +388,8 @@ defmodule RailWeb.Live.ReviewStage do
       icon: "pi-list-checks",
       picked_icon: "pi-list-checks-fill",
       state: findings_state(phase, counts, socket.assigns),
-      badge: if(phase not in [:round, :fixing, :ci, :merging] and counts.undecided > 0, do: counts.undecided),
-      dot: if(phase in [:round, :fixing, :ci, :merging], do: :running),
+      badge: if(phase not in [:round, :fixing, :ci] and counts.undecided > 0, do: counts.undecided),
+      dot: if(phase in [:round, :fixing, :ci], do: :running),
       mark:
         cond do
           phase == :finished -> :done
@@ -407,9 +403,9 @@ defmodule RailWeb.Live.ReviewStage do
       label: "Diff",
       icon: "pi-git-diff",
       picked_icon: "pi-git-diff-fill",
-      state: diff_state(phase, socket.assigns),
+      state: diff_state(socket.assigns.history),
       badge: nil,
-      dot: if(phase == :merging, do: :running),
+      dot: nil,
       mark: nil
     }
 
@@ -458,7 +454,6 @@ defmodule RailWeb.Live.ReviewStage do
   # finding the last pass read and nothing committed since is fixing; any other working run is a round.
   defp phase(%Run{} = run, %Task{} = task, passes, findings, ci) do
     cond do
-      task.is_updating_branch -> :merging
       match?(%{state: :running}, ci) -> :ci
       Run.running?(run) and fixing?(task, passes, findings) -> :fixing
       Run.running?(run) -> :round
@@ -491,7 +486,7 @@ defmodule RailWeb.Live.ReviewStage do
   defp tally(:round, counts, _findings, passes),
     do: "#{counts.total} so far · rule once round #{length(passes) + 1} finishes"
 
-  defp tally(phase, counts, _findings, _passes) when phase in [:fixing, :ci, :merging],
+  defp tally(phase, counts, _findings, _passes) when phase in [:fixing, :ci],
     do: said([{counts.fix, "fixing"}, {counts.fixed, "fixed"}, {counts.dismissed, "not fixing"}])
 
   defp tally(_phase, %{total: 0}, _findings, _passes), do: "No findings"
@@ -517,7 +512,7 @@ defmodule RailWeb.Live.ReviewStage do
     %{label: "Start fix round #{round}", icon: "pi-wrench", disabled: true, title: "Round #{round} is still running"}
   end
 
-  defp button(phase, _counts, _passes, _approvable) when phase in [:fixing, :ci, :finished, :merging], do: nil
+  defp button(phase, _counts, _passes, _approvable) when phase in [:fixing, :ci, :finished], do: nil
   defp button(_phase, _counts, [], _approvable), do: nil
   defp button(_phase, _counts, _passes, false), do: nil
 
@@ -545,7 +540,6 @@ defmodule RailWeb.Live.ReviewStage do
   defp findings_state(:ci, _counts, %{sha: sha}), do: "CI running" <> if(sha, do: " on #{sha}", else: "")
   defp findings_state(:ci_failed, _counts, %{sha: sha}), do: "CI failed" <> if(sha, do: " on #{sha}", else: "")
   defp findings_state(:finished, _counts, _assigns), do: "Nothing left to rule"
-  defp findings_state(:merging, _counts, _assigns), do: "Merge of main running"
 
   defp findings_state(:ruling, counts, _assigns) do
     case said([{counts.undecided, "to rule"}, {counts.fix, "to fix"}]) do
@@ -554,10 +548,9 @@ defmodule RailWeb.Live.ReviewStage do
     end
   end
 
-  defp diff_state(:merging, %{task: task}), do: "Merging origin/#{task.project.default_branch}"
-  defp diff_state(_phase, %{history: %{commits: []}}), do: "No commits yet"
+  defp diff_state(%{commits: []}), do: "No commits yet"
 
-  defp diff_state(_phase, %{history: history}),
+  defp diff_state(history),
     do: "#{plural(length(history.commits), "commit")} · +#{history.additions} -#{history.deletions}"
 
   defp screens_state([]), do: "No screens yet"

@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
@@ -62,7 +63,10 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     %{project: project, task: task, run: run}
   end
 
-  test "briefs the engineer on the plan it builds and the commit that says it is done", %{task: task, run: run} do
+  test "briefs the engineer on the plan it builds and how its commits are handed over", %{
+    task: %Task{worktree_path: worktree_path} = task,
+    run: run
+  } do
     %ImplementationPlan{}
     |> ImplementationPlan.changeset(%{
       task_id: task.id,
@@ -73,21 +77,32 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     |> Repo.insert!()
 
     commits_dir = Path.join(task.scratch_path, "commits")
+    test_pid = self()
+
+    # Each turn starts on a fresh default branch, committing as the ticket's owner.
+    expect(Rail.Pipeline.Utils.PrepareTurn, :prepare_turn, fn %Run{task: %Task{worktree_path: ^worktree_path}} ->
+      send(test_pid, :prepared)
+      :ok
+    end)
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
+      assert_received :prepared
       assert ["-p", prompt | _rest] = argv
       assert prompt =~ "Build the approved plan below."
       assert prompt =~ "Extend the invoices module."
       assert prompt =~ ~s(```mermaid\nflowchart LR\n  A["InvoicesLive"] --> B["Invoices"]\n```)
       assert prompt =~ "```elixir\ndef list_invoices(scope, filters)\n```"
-      assert prompt =~ "Calling the `commit` tool is how you say the work is finished"
-      assert prompt =~ "the call ends your turn on the spot"
-      assert prompt =~ "write your last message to the human first, alongside the call"
-      assert prompt =~ "`request_merge` asks Rail to merge main into a clean worktree"
+      assert prompt =~ "A turn that ends with commits the remote does not have yet hands them over"
+      assert prompt =~ "Work you leave uncommitted is not sent on"
+      assert prompt =~ "Your last message is what the human reads, not the commit body"
+      assert prompt =~ "End every commit message with the line `Ticket: SEN-1`."
+      assert prompt =~ "check your branch against `origin/main`, which Rail fetched as the turn started"
+      assert prompt =~ "bring it up to date by merge or rebase"
+      refute prompt =~ "`commit`"
+      refute prompt =~ "request_merge"
       refute prompt =~ "<<'MSG'"
       refute prompt =~ commits_dir
-      assert prompt =~ "Git is yours to use, except for what Rail does for you."
-      assert prompt =~ "No commit, no push, no merge, no rebase"
+      assert prompt =~ "Git is yours to use, commits included, except for what Rail does for you: no push"
       assert prompt =~ "Your worktree is #{task.worktree_path}"
       assert prompt =~ "The branch #{task.worktree_name} is already checked out"
       assert prompt =~ "its base is main on remote `origin`"
@@ -259,7 +274,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
-      assert prompt =~ "Rail runs `mise run ci` on it before anything else sees it"
+      assert prompt =~ "Rail runs `mise run ci` on them before anything else sees them"
       {:ok, %OsProcess{run: spawned}}
     end)
 

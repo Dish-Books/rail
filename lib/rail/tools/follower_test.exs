@@ -423,7 +423,7 @@ defmodule Rail.Tools.FollowerTest do
     assert stopped2.status == :finished
   end
 
-  # A turn the agent ended itself, by `commit`, is recorded as handed over rather
+  # A turn stopped to hand its work over is recorded as handed over rather
   # than stopped, whether its follower settles it or the fallback does.
   test "a stop that hands the turn over says so on the row", %{os_process: os_process, run: run} do
     port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["10"]])

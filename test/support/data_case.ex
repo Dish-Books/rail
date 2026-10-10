@@ -25,6 +25,7 @@ defmodule Rail.DataCase do
       setup :stub_agent_spawn
       setup :stub_git_repo_check
       setup :stub_worktree_slot
+      setup :stub_prepare_turn
     end
   end
 
@@ -106,6 +107,18 @@ defmodule Rail.DataCase do
 
       Mimic.call_original(module, :prepare_worktree, [project, task])
     end)
+
+    :ok
+  end
+
+  @doc """
+  Keeps every agent turn off the network: readying a turn fetches the default branch with a token minted
+  from GitHub. `@tag :real_prepare_turn` opts out.
+  """
+  def stub_prepare_turn(%{real_prepare_turn: true}), do: :ok
+
+  def stub_prepare_turn(_context) do
+    Mimic.stub(Rail.Pipeline.Utils.PrepareTurn, :prepare_turn, fn _run -> :ok end)
 
     :ok
   end

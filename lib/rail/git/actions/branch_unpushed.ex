@@ -4,19 +4,18 @@ defmodule Rail.Git.Actions.BranchUnpushed do
   alias Rail.Tools
 
   @doc """
-  True when the branch has commits the remote has not been told about.
+  True when HEAD has commits no ref fetched from a remote has: work committed here and not yet pushed.
 
-  A branch with no upstream at all counts: it has never been pushed, so whatever
-  is on it is only here. This is what makes a push that failed recoverable — the
-  commit was made, and the only thing left outstanding says so.
+  A fresh branch Rail made from the default branch has nothing of its own yet, so it is not unpushed for
+  having no upstream; one rebased since its push is, since its rewritten commits are only here.
   """
   def branch_unpushed?(worktree_path) when is_binary(worktree_path) do
-    case Tools.run("git", ["rev-list", "--count", "@{upstream}..HEAD"],
+    case Tools.run("git", ["rev-list", "--count", "HEAD", "--not", "--remotes"],
            cd: worktree_path,
            stderr_to_stdout: true
          ) do
       {output, 0} -> String.trim(output) != "0"
-      _no_upstream -> true
+      _unreadable -> true
     end
   end
 end

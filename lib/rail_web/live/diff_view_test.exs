@@ -47,14 +47,16 @@ defmodule RailWeb.Live.DiffViewTest do
     git!(repo, ["merge", "--no-edit", "origin/main"])
     merge = repo |> git!(["rev-parse", "HEAD"]) |> String.trim()
 
-    File.write!(Path.join(repo, "fix.ex"), "defmodule Fix do\nend\n")
-    git!(repo, ["add", "."])
-    git!(repo, ["commit", "-m", "Fix 1 finding from round 1\n\nRail-Step: Fix round 1"])
-    fix = repo |> git!(["rev-parse", "HEAD"]) |> String.trim()
-    git!(repo, ["push", "--set-upstream", "origin", "feature"])
-
+    # Round 1 read the branch up to the merge, so what came after is the fix round it led to.
     task = learnings_task(project, "DVW-1")
     {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: repo})
+    {:ok, %{round: 1}} = Pipeline.save_review(task)
+
+    File.write!(Path.join(repo, "fix.ex"), "defmodule Fix do\nend\n")
+    git!(repo, ["add", "."])
+    git!(repo, ["commit", "-m", "Fix 1 finding from round 1"])
+    fix = repo |> git!(["rev-parse", "HEAD"]) |> String.trim()
+    git!(repo, ["push", "--set-upstream", "origin", "feature"])
 
     {:ok, run} =
       Pipeline.create_run(%{

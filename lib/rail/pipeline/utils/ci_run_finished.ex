@@ -157,17 +157,18 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   end
 
   defp next_step(%Run{role: %Role{stage: :review_lead}}) do
-    "Have the engineer fix what it reports, have the code reviewer read the change, then call `commit` " <>
-      "again, listing each changed file in `other_files` with why. When the failure is not the change's to fix, " <>
-      "such as a flaky test elsewhere, call `commit` without changing anything and Rail runs CI again on the " <>
-      "same commit."
+    "Have the engineer fix what it reports and commit the fix, have the code reviewer read it, and say in your " <>
+      "last message why each file changed. Rail runs CI again on what your turn leaves committed. When the " <>
+      "failure is not the change's to fix, such as a flaky test elsewhere, end your turn without changing " <>
+      "anything and Rail runs CI again on the same commit. When it failed on a change that landed on the default " <>
+      "branch, have the engineer bring the branch up to date with it first."
   end
 
   defp next_step(%Run{}) do
-    "Fix what it reports, then call `commit` again with a message for this round. Rail runs CI once more when " <>
-      "you do. When the failure is not your change's to fix, such as a flaky test elsewhere, call `commit` without " <>
-      "changing anything and Rail runs CI again on the same commit. When it failed on a change that landed on the " <>
-      "default branch, call `request_merge` instead."
+    "Fix what it reports and commit the fix. Rail runs CI again on what your turn leaves committed. When the " <>
+      "failure is not your change's to fix, such as a flaky test elsewhere, end your turn without changing " <>
+      "anything and Rail runs CI again on the same commit. When it failed on a change that landed on the default " <>
+      "branch, bring your branch up to date with it first."
   end
 
   defp update(%Run{} = run, attrs) do

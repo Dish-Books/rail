@@ -6,14 +6,15 @@ defmodule Rail.Pipeline do
   Architect as subagents to a ticket, three design options when the change has a
   screen, and one implementation plan. The human picks an option, and one approval
   publishes the ticket and the picked design and records the plan. Engineer
-  builds it: Rail commits what it leaves and, once CI passes, sends it to Review.
+  builds it and commits it, keeping the branch up to date with the default branch
+  itself; Rail pushes the commits a turn leaves and, once CI passes, sends them to Review.
 
   Review is one run led by a Review lead, with the code reviewer, QA explorers, an
   engineer and a demo recorder as its subagents. A round reads the code and drives
   the running application, the demo is recorded beside it, and the findings land in
   one list for the human to rule on. Start fix round has the engineer fix what was
-  ruled Fix inside Review, committed as one commit per round, and the next round
-  starts once CI passes on it. A task never goes back to Engineer, and it waits at
+  ruled Fix inside Review and commit it, and the next round starts once CI passes on
+  what the turn committed. A task never goes back to Engineer, and it waits at
   Review, ready to merge, once nothing is left to rule or fix.
 
   Plan can also end with a split: approval then makes each child an issue and a task of its own at
@@ -46,12 +47,9 @@ defmodule Rail.Pipeline do
   defdelegate share_owner_with_children(issue), to: Actions.ShareOwnerWithChildren
 
   defdelegate start_engineer_run(run), to: Actions.StartEngineerRun
-  defdelegate end_turn_and_commit(task, os_process, arguments), to: Actions.EndTurnAndCommit
-  defdelegate end_turn_and_merge(task, os_process), to: Actions.EndTurnAndMerge
-  defdelegate commit_work(scope, run, attrs \\ %{}), to: Actions.CommitWork
+  defdelegate hand_over_work(scope, run), to: Actions.HandOverWork
   defdelegate send_to_review(run), to: Actions.SendToReview
   defdelegate run_ci(scope, run), to: Actions.RunCi
-  defdelegate update_branch(scope, task), to: Actions.UpdateBranch
   defdelegate get_ci_status(run), to: Actions.GetCiStatus
 
   defdelegate start_review_run(run), to: Actions.StartReviewRun

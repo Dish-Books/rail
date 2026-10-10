@@ -61,24 +61,4 @@ defmodule RailWeb.Components.ReviewStatusTest do
     assert ["  4 tests, 1 failure", "exit 1"] =
              doc |> Floki.find("[data-qa=review_status_log] .whitespace-pre") |> Enum.map(&Floki.text/1)
   end
-
-  # Once every conflict is staged the merge is Rail's to commit, and the follow-through is still to come.
-  test "a merge names the files still conflicted, and once none are left what follows it" do
-    resolving =
-      render_component(&ReviewStatus.review_status/1,
-        phase: :merging,
-        round: 2,
-        counts: @counts,
-        base: "trunk",
-        conflicts: ["lib/a.ex", "lib/b.ex"]
-      )
-
-    resolved = render_component(&ReviewStatus.review_status/1, phase: :merging, round: 2, counts: @counts)
-
-    assert resolving =~ "Merging origin/trunk into the branch"
-    assert resolving =~ "Resolving 2 conflicts in a.ex, b.ex."
-    assert resolved =~ "Merging origin/main into the branch"
-    assert resolved =~ "Main&#39;s changes are followed through once it is in, then the next round re-reviews."
-    refute resolved =~ "Resolving"
-  end
 end

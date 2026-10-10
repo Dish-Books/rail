@@ -40,8 +40,6 @@ defmodule Rail.Pipeline.Schemas.Task do
     field :pr_number, :integer
     field :pr_url, :string
     field :pr_is_draft, :boolean
-    # The default branch is being merged in, and has stopped on conflicts or not yet been sent on.
-    field :is_updating_branch, :boolean, default: false
     # Set once the curator has distilled the finished task, so it is never read twice.
     field :learnings_extracted_at, :utc_datetime_usec
     # A child of a split: its place in it, from 1, and the earlier places it waits on to merge.
@@ -75,7 +73,6 @@ defmodule Rail.Pipeline.Schemas.Task do
     :pr_number,
     :pr_url,
     :pr_is_draft,
-    :is_updating_branch,
     :learnings_extracted_at,
     :split_position,
     :builds_on

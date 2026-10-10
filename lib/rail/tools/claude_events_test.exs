@@ -151,7 +151,7 @@ defmodule Rail.Tools.ClaudeEventsTest do
            ]
   end
 
-  # A turn `commit` stops never writes its result event, so what it spent is
+  # A turn stopped part way never writes its result event, so what it spent is
   # counted from each message as it streams, one message arriving in several events.
   test "usage is counted per message as it streams, and the result's own total wins when it comes" do
     said = fn id, input, output ->

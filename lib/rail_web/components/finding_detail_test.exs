@@ -273,6 +273,22 @@ defmodule RailWeb.Components.FindingDetailTest do
     assert [] = Floki.find(doc, "[data-qa=decide_fix]")
   end
 
+  test "a fix saved before its turn handed the commit over says it is not sent on yet" do
+    finding = %{
+      @finding
+      | status: :fixed,
+        notes: [%FindingNote{round: 1, kind: :fix, at: @at, commit: nil, test: "test/a_test.exs: sends once"}]
+    }
+
+    doc =
+      (&FindingDetail.finding_detail/1)
+      |> render_component([finding: finding] ++ @attrs)
+      |> Floki.parse_fragment!()
+
+    assert doc |> Floki.find("[data-qa=finding_note]") |> Floki.text() |> String.split() |> Enum.join(" ") =~
+             "Fixed, not yet sent on; test that failed first: test/a_test.exs: sends once"
+  end
+
   test "every severity, state and raiser reads as itself" do
     cases = [
       {%{@finding | severity: :blocker, raised_by: :review_lead}, true, "Rule on it once the round finishes",

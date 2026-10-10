@@ -92,7 +92,6 @@ defmodule RailWeb.TaskLive do
       |> assign(:suggestions, %{})
       |> assign(:cleaning_up, false)
       |> assign(:focus_file, nil)
-      |> assign(:engineer_tab, nil)
       |> assign(:url_id, nil)
       |> assign(:child, nil)
       |> assign(:parent, nil)
@@ -183,7 +182,6 @@ defmodule RailWeb.TaskLive do
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
-            <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
           </:actions>
           <:sidebar>
@@ -222,7 +220,6 @@ defmodule RailWeb.TaskLive do
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
-            <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
           </:actions>
           <:sidebar>
@@ -261,7 +258,6 @@ defmodule RailWeb.TaskLive do
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
-            <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
           </:actions>
           <:sidebar>
@@ -297,7 +293,6 @@ defmodule RailWeb.TaskLive do
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
-            <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
           </:actions>
           <.issue_view
@@ -349,7 +344,6 @@ defmodule RailWeb.TaskLive do
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
-            <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
           </:actions>
           <div
@@ -411,16 +405,6 @@ defmodule RailWeb.TaskLive do
       end
 
     {:noreply, refresh_task(socket)}
-  end
-
-  def handle_event("update_branch", _params, socket) do
-    socket =
-      case Pipeline.update_branch(socket.assigns.current_scope, socket.assigns.task) do
-        {:ok, _task} -> socket
-        {:error, reason} -> put_flash(socket, :error, update_branch_error(reason))
-      end
-
-    {:noreply, push_patch(socket, to: task_path(socket, merge_tab(socket.assigns)))}
   end
 
   def handle_info({:run_events, run_id, events}, socket) do
@@ -580,29 +564,6 @@ defmodule RailWeb.TaskLive do
       |> refresh_task()
 
     {:noreply, socket}
-  end
-
-  attr :task, :any, required: true
-  attr :engineer_tab, :any, required: true
-
-  # Only a branch the engineer has built has anything to merge into, and only a
-  # task nothing is working on can have its branch updated under it.
-  defp update_branch_button(assigns) do
-    ~H"""
-    <button
-      :if={@task.cleaned_up_at == nil and @engineer_tab != nil}
-      type="button"
-      id="update-branch"
-      data-qa="update_branch"
-      phx-click="update_branch"
-      phx-disable-with="Updating…"
-      disabled={Task.running?(@task)}
-      title={"Merge origin/#{@task.project.default_branch} into this branch"}
-      class="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-sm font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-    >
-      {if @task.is_updating_branch and Task.running?(@task), do: "Updating…", else: "Update branch"}
-    </button>
-    """
   end
 
   attr :task, :any, required: true
@@ -816,7 +777,6 @@ defmodule RailWeb.TaskLive do
       )
     )
     |> assign_family(task)
-    |> assign(:engineer_tab, engineer_tab(started))
     |> assign(:subscribed_run_ids, sync_run_subscriptions(socket, task.runs))
     |> assign_watched_browser(task)
     |> assign(:round_questions, round_questions)
@@ -958,16 +918,6 @@ defmodule RailWeb.TaskLive do
 
   defp sync_tab_url(%{assigns: %{selected_tab: tab}} = socket) do
     push_patch(socket, to: task_path(socket, tab))
-  end
-
-  # The merge runs on the run of the stage the task is at, the Review lead's at Review, and shows on its tab.
-  defp merge_tab(%{task: %Task{stage: :review}, stage_run: %Run{role_id: role_id}}), do: role_id
-  defp merge_tab(%{engineer_tab: engineer_tab}), do: engineer_tab
-
-  # A branch the engineer has built is one there is anything to merge into, and its
-  # tab is where Update branch lands before Review.
-  defp engineer_tab(started) do
-    Enum.find_value(started, fn {role, _run} -> role.stage == :engineer and role.id end)
   end
 
   defp pane(nil), do: :issue
@@ -1257,10 +1207,4 @@ defmodule RailWeb.TaskLive do
 
   defp claim_error(:already_assigned), do: "Somebody else claimed this issue first"
   defp claim_error(:linear_not_linked), do: "Link your Linear account in Settings before claiming an issue"
-
-  defp update_branch_error(:task_busy), do: "Stop the task's run before updating its branch"
-  defp update_branch_error(:uncommitted_changes), do: "Commit the engineer's work before updating the branch"
-  defp update_branch_error(:no_worktree), do: "The task's worktree is gone, so there is nothing to update"
-  defp update_branch_error(reason) when is_binary(reason), do: "Could not update the branch: #{reason}"
-  defp update_branch_error(reason), do: "Could not update the branch: #{inspect(reason)}"
 end

@@ -287,7 +287,7 @@ defmodule RailWeb.SandboxesLiveTest do
     refute has_element?(view, "#ended-sandboxes thead", "Freed")
     refute has_element?(view, "#ended-#{killed.id} [data-qa='freed']")
     assert has_element?(view, "#ended-#{stopped.id} [data-qa='ended-how']", "Stopped by Lucas Stellet")
-    # An engineer turn ended by `commit` finished; nobody stopped it.
+    # An engineer turn stopped to hand its work over finished; nobody stopped it.
     assert has_element?(view, "#ended-#{handed_over.id} [data-qa='ended-how']", "Finished")
     assert has_element?(view, "#ended-#{timed_out.id} [data-qa='ended-how']", "Timed out")
     assert has_element?(view, "#ended-#{killed_otherwise.id} [data-qa='ended-how']", "Killed")

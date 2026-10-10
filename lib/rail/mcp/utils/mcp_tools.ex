@@ -370,94 +370,6 @@ defmodule Rail.Mcp.Utils.McpTools do
     }
   ]
 
-  @commit_tool %{
-    "name" => "commit",
-    "description" =>
-      "Hand over finished work. Call it once the work is finished and its tests pass: it ends your turn on " <>
-        "the spot, and Rail commits the worktree under your message and sends it on, through CI where the " <>
-        "project has it: the engineer's work to Review, and at Review the fix round to the next round. Nothing " <>
-        "you write after it is read, so write your summary for the human in the same message, before the " <>
-        "call. At Review, list every finding ruled Fix in `findings` and every other changed file in " <>
-        "`other_files`; it refuses a round that leaves a Fix finding out, lists one without a place or a test, " <>
-        "or holds a changed file nothing listed explains. Right after a merge of the default branch, set " <>
-        "`merge_follow_up` with no `findings` to commit the branch's updates to what main changed. After a CI " <>
-        "failure that was not the change's to fix, call it with nothing changed and CI runs again.",
-    "inputSchema" => %{
-      "type" => "object",
-      "properties" => %{
-        "message" => %{
-          "type" => "string",
-          "description" =>
-            "One line saying what this change does, a blank line, then what changed and why, as a commit body."
-        },
-        "findings" => %{
-          "type" => "array",
-          "description" => "At Review: every finding ruled Fix and still to fix.",
-          "items" => %{
-            "type" => "object",
-            "properties" => %{
-              "key" => %{"type" => "string"},
-              "covered" => %{
-                "type" => "array",
-                "items" => %{"type" => "integer"},
-                "description" => "The numbers of the places, from 1, its fix covers."
-              },
-              "files" => %{
-                "type" => "array",
-                "items" => %{"type" => "string"},
-                "description" =>
-                  "The files its fix changed, a screen finding's especially, since a screen place names none."
-              },
-              "left" => %{
-                "type" => "array",
-                "description" => "The places the fix leaves as they are, and why.",
-                "items" => %{
-                  "type" => "object",
-                  "properties" => %{"place" => %{"type" => "integer"}, "reason" => %{"type" => "string"}},
-                  "required" => ["place", "reason"]
-                }
-              },
-              "test" => %{
-                "type" => "object",
-                "description" => "The test that failed before the fix.",
-                "properties" => %{"file" => %{"type" => "string"}, "name" => %{"type" => "string"}},
-                "required" => ["file", "name"]
-              }
-            },
-            "required" => ["key", "covered", "test"]
-          }
-        },
-        "merge_follow_up" => %{
-          "type" => "boolean",
-          "description" =>
-            "At Review, right after Rail merged the default branch in: this commit follows main's changes " <>
-              "through. List no findings, and every changed file in `other_files`."
-        },
-        "other_files" => %{
-          "type" => "array",
-          "description" => "At Review: every other changed file, with the reason the human reads.",
-          "items" => %{
-            "type" => "object",
-            "properties" => %{"path" => %{"type" => "string"}, "reason" => %{"type" => "string"}},
-            "required" => ["path", "reason"]
-          }
-        }
-      },
-      "required" => ["message"]
-    }
-  }
-
-  @merge_tools [
-    %{
-      "name" => "request_merge",
-      "description" =>
-        "Ask Rail to merge the default branch into a clean worktree, for example when CI failed on a change " <>
-          "that landed there. It ends your turn on the spot, so say why in the same message, before the call. A clean merge is sent on, and conflicts come back " <>
-          "to you as a new turn.",
-      "inputSchema" => %{"type" => "object", "properties" => %{}}
-    }
-  ]
-
   @review_lead_tools [
     %{
       "name" => "save_finding",
@@ -550,9 +462,38 @@ defmodule Rail.Mcp.Utils.McpTools do
           "status" => %{
             "type" => "string",
             "enum" => ["open", "fixed", "not_fixed"],
-            "description" => "On a later round, whether a finding raised before is now fixed."
+            "description" =>
+              "On a later round, whether a finding raised before is now fixed. A finding ruled Fix saved fixed " <>
+                "in a fix round is its fix report, and needs `covered`, `left` where a place is left, `test` " <>
+                "and `files`."
           },
-          "note" => %{"type" => "string", "description" => "What this round checked and saw, 300 characters."}
+          "note" => %{"type" => "string", "description" => "What this round checked and saw, 300 characters."},
+          "covered" => %{
+            "type" => "array",
+            "items" => %{"type" => "integer"},
+            "description" => "In a fix report: the numbers of the places, from 1, the fix covers."
+          },
+          "left" => %{
+            "type" => "array",
+            "description" => "In a fix report: the places the fix leaves as they are, and why.",
+            "items" => %{
+              "type" => "object",
+              "properties" => %{"place" => %{"type" => "integer"}, "reason" => %{"type" => "string"}},
+              "required" => ["place", "reason"]
+            }
+          },
+          "test" => %{
+            "type" => "object",
+            "description" => "In a fix report: the test that failed before the fix.",
+            "properties" => %{"file" => %{"type" => "string"}, "name" => %{"type" => "string"}},
+            "required" => ["file", "name"]
+          },
+          "files" => %{
+            "type" => "array",
+            "items" => %{"type" => "string"},
+            "description" =>
+              "In a fix report: the files the fix changed, a screen finding's especially, since a screen place names none."
+          }
         },
         "required" => ["key"]
       }
@@ -614,13 +555,10 @@ defmodule Rail.Mcp.Utils.McpTools do
   output over with, and the knowledge base for all.
   """
   def mcp_tools(%Role{stage: :plan}), do: @plan_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :engineer}), do: [@commit_tool | @merge_tools] ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :engineer}), do: @knowledge_tools
 
   def mcp_tools(%Role{stage: :review_lead}),
-    do:
-      @browser_tools ++
-        @qa_tools ++
-        @demo_tools ++ @review_lead_tools ++ [@commit_tool | @merge_tools] ++ @demo_report_tools ++ @knowledge_tools
+    do: @browser_tools ++ @qa_tools ++ @demo_tools ++ @review_lead_tools ++ @demo_report_tools ++ @knowledge_tools
 
   def mcp_tools(%Role{}), do: @knowledge_tools
 end

@@ -83,7 +83,8 @@ defmodule Rail.Git.Actions.PushBranchTest do
     assert {:error, {:github_api_error, 404, _body}} = Git.push_branch(scope, task)
   end
 
-  test "refuses a branch rewritten since it was last pushed", %{
+  # The agent may rebase onto the default branch, which rewrites what Rail pushed before.
+  test "pushes a branch rewritten since it was last pushed over what it pushed then", %{
     scope: scope,
     task: task,
     repo: repo,
@@ -99,9 +100,9 @@ defmodule Rail.Git.Actions.PushBranchTest do
 
     git!(repo, ["commit", "--amend", "-m", "feature, rewritten"])
 
-    assert {:error, output} = Git.push_branch(scope, task)
-    assert output =~ "[rejected]"
-    assert git!(remote, ["rev-parse", "main"]) == pushed
+    assert :ok = Git.push_branch(scope, task)
+    refute git!(remote, ["rev-parse", "main"]) == pushed
+    assert git!(repo, ["rev-parse", "HEAD"]) == git!(remote, ["rev-parse", "main"])
   end
 
   # A push cut off after the remote took it, but before git wrote down that it

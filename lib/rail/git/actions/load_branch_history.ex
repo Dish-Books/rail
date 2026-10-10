@@ -1,8 +1,9 @@
 defmodule Rail.Git.Actions.LoadBranchHistory do
   @moduledoc """
-  The branch's own commits along its first parent, newest first, each labeled by what made it: the
-  engineer, a fix round or a merge follow-up by the step trailer Rail wrote on it, or a merge of the
-  default branch. Each carries its stat against its first parent, so a merge's is what main brought in.
+  The branch's own commits along its first parent, newest first, each labeled by what made it: a merge
+  of the default branch, the engineer's work before Review's first round read it, or the fix round whose
+  commits came after that round's read. Each carries its stat against its first parent, so a merge's is
+  what main brought in, and a merge the conflicts git met in it.
   """
 
   alias Rail.Pipeline.Schemas.Task
@@ -12,19 +13,18 @@ defmodule Rail.Git.Actions.LoadBranchHistory do
 
   @field <<31>>
   @record <<30>>
-  @step ~r/^Rail-Step: (Fix round \d+|Merge follow-up)\s*$/m
-  @conflicts ~r/^Rail-Conflicts: (\d+)\s*$/m
 
   @doc """
   Returns `task`'s branch as `%{base:, head:, files:, additions:, deletions:, commits:}`: the default
-  branch's name, HEAD's short sha, and what the branch changed in all since it forked. Each commit is
-  `%{sha:, short_sha:, parent:, subject:, at:, label:, merge?:, merged:, conflicts:, files:, additions:,
+  branch's name, HEAD's short sha, and what the branch changed in all since it forked. `rounds` are the
+  commits Review's rounds read, in order, which label what came between them. Each commit is `%{sha:,
+  short_sha:, parent:, subject:, at:, label:, merge?:, merged:, conflicts:, files:, additions:,
   deletions:}`, with `merged` the default branch's commit a merge brought in. A branch git cannot read
   has no commits and no head.
   """
-  def load_branch_history(%Task{worktree_path: worktree_path} = task) do
+  def load_branch_history(%Task{worktree_path: worktree_path} = task, rounds) do
     %Project{default_branch: base} = Repo.get!(Project, task.project_id)
-    format = @record <> Enum.join(["%H", "%h", "%p", "%s", "%cI", "%B"], @field) <> @field
+    format = @record <> Enum.join(["%H", "%h", "%p", "%s", "%cI"], @field) <> @field
 
     args = [
       "log",
@@ -38,7 +38,8 @@ defmodule Rail.Git.Actions.LoadBranchHistory do
     with {log, 0} <- Tools.run("git", args, cd: worktree_path, stderr_to_stdout: true),
          {stat, 0} <- Tools.run("git", ["diff", "--numstat", "origin/#{base}...HEAD"], cd: worktree_path),
          {head, 0} <- Tools.run("git", ["rev-parse", "--short", "HEAD"], cd: worktree_path, stderr_to_stdout: true) do
-      commits = log |> String.split(@record, trim: true) |> Enum.flat_map(&commit/1)
+      read = Enum.map(rounds, &read_by(worktree_path, base, &1))
+      commits = log |> String.split(@record, trim: true) |> Enum.flat_map(&commit(&1, worktree_path, read))
 
       Map.merge(%{base: base, head: String.trim(head), commits: commits}, numstat(stat))
     else
@@ -46,9 +47,17 @@ defmodule Rail.Git.Actions.LoadBranchHistory do
     end
   end
 
-  defp commit(record) do
+  # The branch's commits a round read; one a rebase has since replaced is no longer on the branch.
+  defp read_by(worktree_path, base, head) do
+    case Tools.run("git", ["rev-list", "origin/#{base}..#{head}"], cd: worktree_path, stderr_to_stdout: true) do
+      {shas, 0} -> MapSet.new(String.split(shas))
+      _gone -> MapSet.new()
+    end
+  end
+
+  defp commit(record, worktree_path, read) do
     case String.split(record, @field) do
-      [sha, short_sha, parents, subject, at, body, stat] ->
+      [sha, short_sha, parents, subject, at, stat] ->
         {:ok, at, _offset} = DateTime.from_iso8601(at)
         parents = String.split(parents)
 
@@ -60,10 +69,10 @@ defmodule Rail.Git.Actions.LoadBranchHistory do
               parent: List.first(parents),
               subject: subject,
               at: at,
-              label: label(parents, body),
+              label: label(sha, parents, read),
               merge?: length(parents) > 1,
               merged: Enum.at(parents, 1),
-              conflicts: conflicts(body)
+              conflicts: conflicts(worktree_path, parents)
             },
             numstat(stat)
           )
@@ -74,23 +83,30 @@ defmodule Rail.Git.Actions.LoadBranchHistory do
     end
   end
 
-  defp label([_first, _second | _more], _body), do: "Merge main"
+  defp label(_sha, [_first, _second | _more], _read), do: "Merge main"
 
-  defp label(_parents, body) do
-    case Regex.run(@step, body, capture: :all_but_first) do
-      [step] -> step
-      nil -> "Engineer"
+  # The first round to read a commit is the one it was made before: none is the engineer's, round N's the
+  # fix round N led to; one no round has read yet is the fix round under way.
+  defp label(sha, _parents, read), do: read |> Enum.find_index(&MapSet.member?(&1, sha)) |> round_label(length(read))
+
+  defp round_label(0, _rounds), do: "Engineer"
+  defp round_label(nil, 0), do: "Engineer"
+  defp round_label(nil, rounds), do: "Fix round #{rounds}"
+  defp round_label(round, _rounds), do: "Fix round #{round}"
+
+  # Git says which files the two sides changed apart; a merge with none had nothing to resolve.
+  defp conflicts(worktree_path, [first, second]) do
+    case Tools.run("git", ["merge-tree", "--write-tree", "--name-only", "--no-messages", first, second],
+           cd: worktree_path,
+           stderr_to_stdout: true
+         ) do
+      {output, 1} -> output |> String.split("\n", trim: true) |> length() |> Kernel.-(1)
+      _clean -> 0
     end
   end
 
-  defp conflicts(body) do
-    case Regex.run(@conflicts, body, capture: :all_but_first) do
-      [count] -> String.to_integer(count)
-      nil -> 0
-    end
-  end
+  defp conflicts(_worktree_path, _parents), do: 0
 
-  # A binary file's lines are `-`, which count as none.
   defp numstat(stat) do
     rows =
       for line <- String.split(stat, "\n", trim: true),

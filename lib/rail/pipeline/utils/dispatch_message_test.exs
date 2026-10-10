@@ -8,6 +8,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.RunEvent
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
@@ -47,6 +48,14 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
         started_at: DateTime.utc_now()
       })
 
+    # Says which task's turn was readied, so a test can tell a turn that commits from one that does not.
+    test_pid = self()
+
+    stub(Rail.Pipeline.Utils.PrepareTurn, :prepare_turn, fn %Run{task_id: task_id} ->
+      send(test_pid, {:prepared, task_id})
+      :ok
+    end)
+
     %{project: project, task: task, run: run, run_id: run_id}
   end
 
@@ -61,6 +70,8 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
     assert %Run{pending_chat: nil, status: :running} = Repo.reload!(run)
     assert_received {:run_changed, ^run_id}
+    # Plan never commits, so its turn needs neither a fresh default branch nor the owner's key.
+    refute_received {:prepared, _task_id}
   end
 
   test "each turn carries the prompt merged to the project's .rail/prompts at the time", %{
@@ -133,7 +144,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
   # Subagents are a spawn flag, not part of the saved session, so the lead's every turn passes them again.
   test "a message to the Review lead spawns with the code reviewer, explorer, engineer and demo recorder", %{
     project: project,
-    task: task
+    task: %Task{id: task_id} = task
   } do
     {:ok, task} = Pipeline.update_task(task, %{stage: :review})
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
@@ -158,10 +169,12 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     end)
 
     assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
+    assert_received {:prepared, ^task_id}
   end
 
+  # The engineer's turn starts on a fresh default branch, committing as the ticket's owner.
   test "a message to a run that leads nobody spawns with no subagents", %{project: project, task: task} do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
+    {:ok, %Task{id: task_id} = task} = Pipeline.update_task(task, %{stage: :engineer})
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
     {:ok, run} =
@@ -175,6 +188,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
       })
 
     expect(Tools, :start_os_process, fn spawned, argv ->
+      assert_received {:prepared, ^task_id}
       refute "--agents" in argv
       {:ok, %OsProcess{run: spawned}}
     end)

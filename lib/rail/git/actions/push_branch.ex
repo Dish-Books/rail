@@ -6,9 +6,10 @@ defmodule Rail.Git.Actions.PushBranch do
   than passed in: a token is not something a caller should be holding, and the
   installation is what keeps a branch pushable after whoever was assigned leaves.
 
-  Never forced: Rail only ever adds to a branch, merging its base in rather than
-  rebasing onto it, so a push that does not extend what the remote has is one
-  made outside Rail, and is refused rather than overwritten.
+  The agent keeps its branch up to date itself, by a merge or a rebase, and a
+  rebased branch no longer extends what the remote has. A push git refuses is
+  tried once more with a lease, which overwrites only what Rail last pushed there,
+  so a remote holding work Rail never saw is still refused.
 
   The repository's own pre-push hooks run. A project whose CI runs before Rail
   pushes leaves a record a hook can recognise, so they should cost nothing; one
@@ -33,19 +34,31 @@ defmodule Rail.Git.Actions.PushBranch do
     end
   end
 
-  defp push(worktree_path, branch, env) do
-    case Tools.run("git", ["push", "--set-upstream", "origin", branch],
+  defp push(worktree_path, branch, env, force \\ []) do
+    case Tools.run("git", ["push" | force] ++ ["--set-upstream", "origin", branch],
            cd: worktree_path,
            env: env,
            stderr_to_stdout: true,
            timeout: @timeout_ms
          ) do
-      {_output, 0} -> :ok
+      {_output, 0} ->
+        :ok
+
+      {output, code} when is_binary(output) and is_integer(code) and force == [] ->
+        if output =~ "[rejected]",
+          do: push(worktree_path, branch, env, ["--force-with-lease"]),
+          else: {:error, String.trim(output)}
+
       # coveralls-ignore-next-line (a hook that runs for ten minutes)
-      {:error, :timeout} -> {:error, "The push was still running after ten minutes, so it was stopped."}
-      {output, code} when is_binary(output) and is_integer(code) -> {:error, String.trim(output)}
+      {:error, :timeout} ->
+        {:error, "The push was still running after ten minutes, so it was stopped."}
+
+      {output, code} when is_binary(output) and is_integer(code) ->
+        {:error, String.trim(output)}
+
       # coveralls-ignore-next-line (git itself could not be started)
-      {:error, reason} -> {:error, reason}
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 end

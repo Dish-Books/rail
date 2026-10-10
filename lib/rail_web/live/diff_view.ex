@@ -413,7 +413,7 @@ defmodule RailWeb.Live.DiffView do
   # A commit the branch no longer has, after a rebase say, is the whole branch again.
   defp load_diff(socket) do
     %{current_scope: scope, task: task, highlighted: highlighted} = socket.assigns
-    history = Git.load_branch_history(task)
+    history = Git.load_branch_history(task, for(%{head: head} <- Pipeline.read_review(task), is_binary(head), do: head))
 
     view =
       with {:commit, sha} <- socket.assigns.view,

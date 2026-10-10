@@ -105,7 +105,16 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
     git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 1"])
-    {:ok, _fixed} = Pipeline.save_finding(task, %{key: "nil-crash", status: "fixed"})
+
+    {:ok, _fixed} =
+      Pipeline.save_finding(task, %{
+        key: "nil-crash",
+        status: "fixed",
+        covered: [1],
+        left: [%{place: 2, reason: "Generated from the first."}],
+        test: %{file: "test/crash_test.exs", name: "handles nil"}
+      })
+
     {:ok, %{round: 2}} = Pipeline.save_review(task)
     git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Merge main"])
     {:ok, %Finding{carried_round: 3}} = Pipeline.save_finding(task, %{key: "nil-crash", status: "not_fixed"})

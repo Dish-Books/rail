@@ -474,7 +474,7 @@ defmodule RailWeb.Components.FindingDetail do
   defp note(%{note: %FindingNote{kind: :fix}} = assigns) do
     ~H"""
     <span class="text-[12.5px] text-emerald-600 dark:text-emerald-500 wrap-anywhere">
-      Fixed in {short(@note.commit)}{covered(@note)}; test that failed first: {@note.test}
+      Fixed{fixed_in(@note.commit)}{covered(@note)}; test that failed first: {@note.test}
     </span>
     """
   end
@@ -516,6 +516,10 @@ defmodule RailWeb.Components.FindingDetail do
 
   defp on(nil), do: ""
   defp on(commit), do: " on #{short(commit)}"
+
+  # The lead saves a fix as the round reports it; its commit is noted once the turn hands it over.
+  defp fixed_in(nil), do: ", not yet sent on"
+  defp fixed_in(commit), do: " in #{short(commit)}"
 
   defp words(nil), do: ""
   defp words(text), do: ": #{text}"

@@ -31,8 +31,8 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   import Rail.Pipeline.Utils.ReviewRunFinished
   import Rail.Pipeline.Utils.SetupRunFinished
   import Rail.Pipeline.Utils.UnsentRound
-  import Rail.Pipeline.Utils.UpdateBranchRunFinished
 
+  alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -50,6 +50,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
         run =
           os_process
           |> settle_run(outcome)
+          |> end_turn(os_process)
           |> finish(os_process, opts)
           |> drain_queued_message(opts)
           |> send_rail_answers(os_process)
@@ -112,22 +113,26 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp usage(%{"usage" => usage}) when is_map(usage), do: struct(Run.Usage, usage)
   defp usage(_other), do: nil
 
+  # The agents that commit to the branch had the owner's key for the turn, which goes with it, and work they
+  # left uncommitted is said, since Rail sends on only what is committed.
+  defp end_turn(%Run{role: %Role{stage: stage}, task: %Task{} = task} = run, %OsProcess{kind: :agent})
+       when stage in [:engineer, :review_lead] do
+    :ok = Git.clear_commit_identity(task)
+
+    if Task.worktree_present?(task) and Git.worktree_dirty?(task.worktree_path) do
+      Pipeline.append_run_events(run.id, nil, [
+        "[rail] This turn left uncommitted changes in the worktree. Rail sends on only what is committed, so they wait for the next turn to commit them."
+      ])
+    end
+
+    run
+  end
+
+  defp end_turn(%Run{} = run, %OsProcess{}), do: run
+
   # A setup script asks no questions and concludes nothing about its stage.
   defp finish(%Run{} = run, %OsProcess{kind: :setup}, opts), do: setup_run_finished(run, opts)
   defp finish(%Run{} = run, %OsProcess{kind: :ci} = os_process, _opts), do: ci_run_finished(run, os_process)
-
-  # A merge is judged by the branch, whatever the stage had already concluded.
-  defp finish(
-         %Run{role: %Role{stage: stage}, task: %Task{is_updating_branch: true}} = run,
-         %OsProcess{} = os_process,
-         _opts
-       )
-       when stage in [:engineer, :review_lead] do
-    case register_asked_questions(os_process, run) do
-      [] -> update_branch_run_finished(run)
-      _asked -> run
-    end
-  end
 
   defp finish(%Run{} = run, %OsProcess{} = os_process, opts) do
     case register_asked_questions(os_process, run) do
@@ -136,9 +141,13 @@ defmodule Rail.Pipeline.Actions.RunFinished do
     end
   end
 
+  # A finish with nothing to conclude yet, such as an engineer turn that committed nothing, leaves the stage open.
   defp maybe_finish(%Run{} = run, opts) do
     if concluded?(run) do
-      run |> apply_finish(opts) |> latch_done()
+      case apply_finish(run, opts) do
+        {:open, open} -> open
+        finished -> latch_done(finished)
+      end
     else
       run
     end
@@ -162,8 +171,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
 
   # Every other run only concludes by saying so, having actually finished: a
   # non-zero exit and a run still parked on a question are both runs that have
-  # not. An engineer turn that called `commit` was stopped, so it never concludes
-  # here: Rail is already committing what it left.
+  # not.
   defp concluded?(%Run{} = run) do
     run.stage_outcome == :in_progress and
       run.exit_code == 0 and
@@ -183,8 +191,11 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp finish_action(%Run{}), do: fn run, _opts -> run end
 
   # A finish that recorded an error did not conclude anything, so it stays open
-  # for the message that fixes it.
+  # for the message that fixes it, and one that started CI is settled by CI's finish.
   defp latch_done(%Run{error: error} = run) when is_binary(error), do: run
+
+  defp latch_done(%Run{status: status} = run) when status in [:running, :waiting_for_resources, :waiting_for_usage],
+    do: run
 
   defp latch_done(%Run{} = run) do
     {:ok, latched} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()

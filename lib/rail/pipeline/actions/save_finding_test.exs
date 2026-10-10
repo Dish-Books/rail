@@ -389,6 +389,92 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
     assert [:raised, :ruling, :pass, :carried, :pass] = Enum.map(notes, & &1.kind)
   end
 
+  describe "a Fix finding saved fixed" do
+    setup %{task: task, attrs: attrs} do
+      places = [%{"file" => "lib/send.ex", "line" => 3}, %{"file" => "lib/resend.ex", "line" => 9}]
+      {:ok, raised} = Pipeline.save_finding(task, %{attrs | "places" => places})
+      {:ok, ruled} = Pipeline.decide_finding(system_scope(), raised, :fix)
+
+      %{
+        ruled: ruled,
+        report: %{
+          "key" => "send-twice",
+          "status" => "fixed",
+          "covered" => [1],
+          "left" => [%{"place" => 2, "reason" => " Generated from send.ex. "}],
+          "test" => %{"file" => "test/send_test.exs", "name" => "sends once"},
+          "files" => ["lib/send.ex", "lib/send.ex", " "],
+          "note" => "Disabled on click."
+        }
+      }
+    end
+
+    test "is the fix round's report, with the commit left for the hand-over to note", %{task: task, report: report} do
+      assert {:ok,
+              %Finding{
+                status: :fixed,
+                fixed_in: nil,
+                places: [%{left_reason: nil}, %{left_reason: "Generated from send.ex."}],
+                notes: [
+                  %FindingNote{kind: :raised},
+                  %FindingNote{kind: :ruling},
+                  %FindingNote{
+                    kind: :fix,
+                    round: 1,
+                    commit: nil,
+                    covered: ["lib/send.ex:3"],
+                    left: ["lib/resend.ex:9: Generated from send.ex."],
+                    files: ["lib/send.ex"],
+                    test: "test/send_test.exs: sends once",
+                    text: "Disabled on click."
+                  }
+                ]
+              } = fixed} = Pipeline.save_finding(task, report)
+
+      refute Finding.outstanding?(fixed)
+    end
+
+    test "that covers no place is refused", %{task: task, report: report} do
+      assert {:error, changeset} = Pipeline.save_finding(task, Map.delete(report, "covered"))
+      assert %{covered: ["is the numbers of the places, from 1, the fix covers"]} = errors_on(changeset)
+    end
+
+    test "that names no test is refused", %{task: task, report: report} do
+      for test <- [nil, %{"file" => "test/send_test.exs"}, %{"file" => " ", "name" => "sends once"}] do
+        assert {:error, changeset} = Pipeline.save_finding(task, %{report | "test" => test})
+        assert %{test: ["is the `file` and `name` of the test that failed before the fix"]} = errors_on(changeset)
+      end
+    end
+
+    test "that leaves a place without a reason is refused", %{task: task, report: report} do
+      assert {:error, changeset} = Pipeline.save_finding(task, %{report | "left" => [%{"place" => 2, "reason" => " "}]})
+      assert %{left: ["needs the reason the fix leaves each place it lists"]} = errors_on(changeset)
+    end
+
+    test "that leaves a place unaccounted for is refused, and saves nothing", %{task: task, report: report} do
+      assert {:error, changeset} = Pipeline.save_finding(task, Map.delete(report, "left"))
+
+      assert %{
+               covered: [
+                 "leaves place 2 unaccounted for: cover it, or list it in `left` with the reason the fix leaves it"
+               ]
+             } =
+               errors_on(changeset)
+
+      assert [%Finding{status: :open}] = Pipeline.list_findings(task)
+    end
+
+    # A finding from before places has none to account for, so the test is the whole report.
+    test "with no places needs only its test", %{task: task, ruled: ruled, report: report} do
+      ruled |> Ecto.Changeset.change() |> Ecto.Changeset.put_embed(:places, []) |> Repo.update!()
+
+      assert {:ok, %Finding{status: :fixed, notes: notes}} =
+               Pipeline.save_finding(task, Map.drop(report, ["covered", "left", "files"]))
+
+      assert %FindingNote{kind: :fix, covered: [], left: [], files: []} = List.last(notes)
+    end
+  end
+
   test "a finding ruled Don't fix is not argued again", %{task: task, attrs: attrs} do
     {:ok, raised} = Pipeline.save_finding(task, attrs)
     {:ok, _dismissed} = Pipeline.decide_finding(system_scope(), raised, :skip)
