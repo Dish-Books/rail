@@ -157,4 +157,35 @@ defmodule Rail.Git.Actions.PushBranchTest do
     assert output =~ "[rejected]"
     assert git!(elsewhere, ["rev-parse", "HEAD"]) == git!(remote, ["rev-parse", "main"])
   end
+
+  # The lease is the remote's tip as fetched, so a push someone made is refused even once the branch has
+  # fetched it: the branch never held that commit.
+  test "refuses to overwrite someone else's push the branch has fetched but never held", %{
+    scope: scope,
+    task: task,
+    repo: repo,
+    remote: remote
+  } do
+    Req.Test.expect(Client, 2, &Req.Test.json(&1, %{"token" => "ghs_installation_token"}))
+
+    File.write!(Path.join(repo, "feature.ex"), "one\n")
+    git!(repo, ["add", "."])
+    git!(repo, ["commit", "-m", "feature"])
+    assert :ok = Git.push_branch(scope, task)
+
+    elsewhere = Path.join(System.tmp_dir!(), "rail_git_elsewhere_#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf(elsewhere) end)
+    git!(System.tmp_dir!(), ["clone", remote, elsewhere])
+    git!(elsewhere, ["config", "user.email", "else@rail.local"])
+    git!(elsewhere, ["config", "user.name", "Someone Else"])
+    git!(elsewhere, ["commit", "--allow-empty", "-m", "theirs"])
+    git!(elsewhere, ["push", "origin", "main"])
+
+    git!(repo, ["fetch", "origin"])
+    git!(repo, ["commit", "--amend", "-m", "feature, rewritten"])
+
+    assert {:error, output} = Git.push_branch(scope, task)
+    assert output =~ "[rejected]"
+    assert git!(elsewhere, ["rev-parse", "HEAD"]) == git!(remote, ["rev-parse", "main"])
+  end
 end

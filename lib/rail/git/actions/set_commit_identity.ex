@@ -1,15 +1,15 @@
 defmodule Rail.Git.Actions.SetCommitIdentity do
   @moduledoc """
-  Has a task's worktree commit as the person its ticket belongs to, signed with their key, for the turn
-  about to start: the agent commits there itself. Written to the worktree's own config, so no other
-  worktree of the clone commits as them, and taken out again by `clear_commit_identity/1` when the turn ends.
+  Has a task's worktree commit as the person its ticket belongs to, signed with their key: the agent
+  commits there itself. Written to the worktree's own config, so no other worktree of the clone commits as
+  them, and kept for the worktree's life; set again before each turn, so a ticket that changed hands
+  commits as its new owner. The key goes with the task's scratch folder.
 
   Author and committer are one identity, because GitHub verifies an SSH signature against the account
   owning the committer email. A ticket with nobody on it commits as the Rail bot, unsigned.
   """
 
   import Rail.Git.Utils.CommitAuthor
-  import Rail.Git.Utils.SigningKeyPath
 
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Tools
@@ -41,11 +41,11 @@ defmodule Rail.Git.Actions.SetCommitIdentity do
   defp args(:worktree), do: ["--worktree"]
   defp args(nil), do: []
 
-  # Commits go unsigned rather than not at all when the owner has registered no key, whatever the
-  # machine's own config says.
-  defp signing(%Task{} = task, %{signing_key: key, signing_public_key: public})
+  # The key sits in the task's scratch folder, which the sandbox sees and the commit never holds. With no
+  # key the commits go unsigned rather than not at all, whatever the machine's own config says.
+  defp signing(%Task{scratch_path: scratch_path}, %{signing_key: key, signing_public_key: public})
        when is_binary(key) and is_binary(public) do
-    path = signing_key_path(task)
+    path = Path.join([scratch_path, ".signing", "key"])
     File.mkdir_p!(Path.dirname(path))
     File.rm(path)
     File.write!(path, key, [:exclusive])

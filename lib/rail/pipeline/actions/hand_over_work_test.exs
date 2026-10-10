@@ -207,6 +207,21 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
       assert %Task{stage: :engineer} = Repo.reload!(task)
     end
 
+    test "with CI that cannot start, says why and drops the go-ahead", %{
+      scope: scope,
+      project: project,
+      run: run,
+      task: task
+    } do
+      {:ok, _project} = Projects.update_project(scope, project, %{ci_command: "mise run ci"})
+      stub(Git, :credential_env, fn _project -> {:error, {:github_api_error, 401, %{}}} end)
+      reject(&Git.push_branch/2)
+
+      assert {:error, "Could not start CI: {:github_api_error, 401, %{}}"} = Pipeline.hand_over_work(scope, run)
+      assert %Run{status: :finished, review_on_ci_pass: false} = Repo.reload!(run)
+      assert %Task{stage: :engineer} = Repo.reload!(task)
+    end
+
     test "a commit CI already passed is pushed without running CI again, and goes on to review", %{
       scope: scope,
       project: project,

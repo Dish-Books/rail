@@ -340,19 +340,12 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
   end
 
-  # The owner's key is on disk only while an agent of theirs works, and what the turn left uncommitted
-  # is not sent on, so it is said rather than lost.
-  test "an engineer turn takes its commit identity out and says what it left uncommitted", %{
-    task: task,
-    exited: exited
-  } do
-    {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
-
+  # What the turn left uncommitted is not sent on, so it is said rather than lost.
+  test "an engineer turn says what it left uncommitted", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
     File.write!(Path.join(task.worktree_path, "tracked.txt"), "changed\n")
     {run, os_process} = exited.(:engineer, %{})
 
-    expect(Git, :clear_commit_identity, fn %Task{id: ^task_id} -> :ok end)
     stub(Git, :branch_unpushed?, fn _path -> false end)
 
     assert {:ok, %Run{stage_outcome: :in_progress, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})

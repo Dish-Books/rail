@@ -113,12 +113,9 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp usage(%{"usage" => usage}) when is_map(usage), do: struct(Run.Usage, usage)
   defp usage(_other), do: nil
 
-  # The agents that commit to the branch had the owner's key for the turn, which goes with it, and work they
-  # left uncommitted is said, since Rail sends on only what is committed.
+  # Rail sends on only what the agents that commit to the branch committed, so work left uncommitted is said.
   defp end_turn(%Run{role: %Role{stage: stage}, task: %Task{} = task} = run, %OsProcess{kind: :agent})
        when stage in [:engineer, :review_lead] do
-    :ok = Git.clear_commit_identity(task)
-
     if Task.worktree_present?(task) and Git.worktree_dirty?(task.worktree_path) do
       Pipeline.append_run_events(run.id, nil, [
         "[rail] This turn left uncommitted changes in the worktree. Rail sends on only what is committed, so they wait for the next turn to commit them."

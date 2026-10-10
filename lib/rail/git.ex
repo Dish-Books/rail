@@ -5,8 +5,8 @@ defmodule Rail.Git do
 
   A run works in a worktree of its own, so making one is on the path of every
   stage. The agent commits there itself, as the ticket's owner and signed with
-  their key, which Rail writes into the worktree's config for the turn and takes
-  out again after it. Pushing stays Rail's, since the credential is the project's.
+  their key, which Rail writes into the worktree's own config for as long as the
+  worktree lasts. Pushing stays Rail's, since the credential is the project's.
   Reading the result is the other half of the same thing, so parsing a diff and
   remembering who has read which file of it live here too.
   """
@@ -29,7 +29,6 @@ defmodule Rail.Git do
   defdelegate branch_changed?(task), to: Actions.BranchChanged
   defdelegate push_branch(scope, task), to: Actions.PushBranch
   defdelegate set_commit_identity(task), to: Actions.SetCommitIdentity
-  defdelegate clear_commit_identity(task), to: Actions.ClearCommitIdentity
   defdelegate credential_env(project), to: Actions.CredentialEnv
   defdelegate ci_env(project, task), to: Actions.CiEnv
   defdelegate fetch_default_branch(project, worktree_path), to: Actions.FetchDefaultBranch
