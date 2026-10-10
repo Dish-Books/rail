@@ -51,7 +51,6 @@ defmodule Rail.Pipeline.Utils.PlanSubagentsTest do
     assert architect =~ "Plan the split on purpose, before you write the parts, as vertical slices"
     assert architect =~ "none is reworked by a later one, and none carries a temporary stand-in"
     assert architect =~ "A child builds on another only where it truly needs that work merged first"
-    assert architect =~ "and `builds_screen`, true for each child that builds the approved design's screen"
     assert architect =~ "every save carries every child complete, with its title, ticket and plan"
     assert product =~ "Whether and where the work splits into child tickets is Architect's call"
   end

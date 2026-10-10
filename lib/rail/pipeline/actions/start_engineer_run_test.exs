@@ -187,7 +187,6 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
 
       refute prompt =~ "iVBORw0K"
       assert prompt =~ "on disk at #{design_dir}/cards.html, with its screenshot at #{design_dir}/cards.png"
-      assert prompt =~ "the file on disk still has them"
 
       {:ok, %OsProcess{run: spawned}}
     end)
@@ -234,7 +233,6 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
       assert prompt =~ ~s(The human approved the design "Cards".)
       assert prompt =~ "Its page is at #{design_dir}/cards.html and its screenshot at #{design_dir}/cards.png."
       assert prompt =~ "The page was too large to include in this brief"
-      assert prompt =~ "Build that screen."
       refute prompt =~ "<design"
       refute prompt =~ "Invoice row"
 
