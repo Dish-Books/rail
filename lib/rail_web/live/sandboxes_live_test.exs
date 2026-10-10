@@ -321,7 +321,7 @@ defmodule RailWeb.SandboxesLiveTest do
         name: "Hidden Sandboxes",
         github_repo: "example/hidden-sandboxes",
         github_installation_id: 558,
-        linear_team_key: "HSB",
+        key: "HSB",
         default_branch: "main",
         clone_path: "/tmp/hidden-sandboxes"
       })
@@ -473,7 +473,7 @@ defmodule RailWeb.SandboxesLiveTest do
         name: "Elsewhere #{System.unique_integer([:positive])}",
         github_repo: "org/elsewhere-#{System.unique_integer([:positive])}",
         github_installation_id: System.unique_integer([:positive]),
-        linear_team_key: "ELS#{System.unique_integer([:positive])}",
+        key: "ELS#{System.unique_integer([:positive])}",
         default_branch: "main",
         clone_path: "/tmp/elsewhere"
       })

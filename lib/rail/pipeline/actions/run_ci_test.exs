@@ -18,7 +18,7 @@ defmodule Rail.Pipeline.Actions.RunCiTest do
         name: "Run CI Project",
         github_repo: "org/run-ci",
         github_installation_id: 47_041,
-        linear_team_key: "RCI",
+        key: "RCI",
         default_branch: "main",
         clone_path: "/tmp/repos/run-ci",
         ci_command: "mise run ci",

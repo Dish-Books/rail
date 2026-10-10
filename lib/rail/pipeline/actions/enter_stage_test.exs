@@ -4,7 +4,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Issues.Workers.AdvanceLinearState
+  alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -74,7 +74,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
 
     for stage <- [:plan, :engineer, :review, :merged] do
       assert {:ok, _run_or_task} = Pipeline.enter_stage(task, stage, start: stage != :merged)
-      assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: task.issue_id})
+      assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: task.issue_id})
 
       # Finish it, since a queued move would absorb the next stage's.
       Repo.update_all(Oban.Job, set: [state: "completed"])
@@ -85,7 +85,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     assert {:ok, %Task{stage: :debugger}} = Pipeline.enter_stage(task, :debugger, start: false)
     assert {:ok, %Task{stage: :split}} = Pipeline.enter_stage(task, :split, start: false)
 
-    refute_enqueued(worker: AdvanceLinearState)
+    refute_enqueued(worker: AdvanceTrackerState)
   end
 
   test "Plan is spawned with its own brief and its subagents, so Retry restarts it on that brief", %{
@@ -101,7 +101,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     end)
 
     assert {:ok, %Run{role_id: ^plan_role_id, status: :running}} = Pipeline.enter_stage(task, :plan)
-    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: task.issue_id})
+    assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: task.issue_id})
   end
 
   test "Review is spawned as the Review lead, with its own brief and its subagents", %{task: task, roles: roles} do
@@ -221,7 +221,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
         name: "Other Project",
         github_repo: "org/other-slot",
         github_installation_id: 44_002,
-        linear_team_key: "OTH",
+        key: "OTH",
         default_branch: "main",
         clone_path: "/tmp/repos/other-slot"
       })

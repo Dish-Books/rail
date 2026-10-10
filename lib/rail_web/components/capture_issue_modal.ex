@@ -272,9 +272,14 @@ defmodule RailWeb.Components.CaptureIssueModal do
       else: active_projects |> List.first(%{}) |> Map.get(:id)
   end
 
-  defp project_label(%{linear_team_key: key, name: name}), do: "#{name} (#{key})"
+  defp project_label(%{name: name} = project), do: "#{name} (#{project.key})"
 
   defp error_message(%Ecto.Changeset{}), do: "Could not create the issue"
+
+  defp error_message(:github_issues_permission_missing),
+    do: "The GitHub App needs Issues: read and write on this repository"
+
+  defp error_message(:github_issues_disabled), do: "Issues are turned off on this repository"
   defp error_message(reason) when is_binary(reason), do: reason
   defp error_message(reason), do: inspect(reason)
 end

@@ -13,7 +13,7 @@ defmodule Rail.Roles.Actions.UpdateRoleTest do
         name: "Update Role Project",
         github_repo: "org/update-role",
         github_installation_id: 4405,
-        linear_team_key: "URL",
+        key: "URL",
         default_branch: "main",
         clone_path: "/tmp/repos/update-role"
       })

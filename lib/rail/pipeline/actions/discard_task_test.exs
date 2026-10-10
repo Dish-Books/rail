@@ -13,7 +13,7 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
   test "stops only the runs still going and stamps nothing on the task", %{project: project} do
     {:ok, %Task{id: task_id} = task} =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_discard_runs",
         identifier: "DSC-1",
@@ -47,7 +47,7 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
     [{:ok, %Task{id: task_id} = task}, {:ok, %Task{id: other_task_id}}] =
       for external_id <- ["lin_discard_rows", "lin_discard_neighbor"] do
         %Issue{}
-        |> Issue.linear_changeset(%{
+        |> Issue.tracker_changeset(%{
           project_id: project.id,
           external_id: external_id,
           identifier: external_id,
@@ -109,7 +109,7 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
         name: "Discard Task Project",
         github_repo: "org/discard-task",
         github_installation_id: 8706,
-        linear_team_key: "DSC",
+        key: "DSC",
         default_branch: "main",
         clone_path: clone_path,
         linear_workspace_id: workspace_id
@@ -117,7 +117,7 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
 
     {:ok, task} =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_discard_files",
         identifier: "DSC-2",

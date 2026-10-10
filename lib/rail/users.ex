@@ -16,7 +16,7 @@ defmodule Rail.Users do
 
   defdelegate get_user(by), to: Actions.GetUser
   defdelegate list_users_by_ids(scope, ids), to: Actions.ListUsersByIds
-  defdelegate list_linear_users(opts \\ []), to: Actions.ListLinearUsers
+  defdelegate list_assignable_users(opts \\ []), to: Actions.ListAssignableUsers
 
   @decorate can?(resource: :users, action: :manage)
   defdelegate update_user(scope, user, attrs), to: Actions.UpdateUser

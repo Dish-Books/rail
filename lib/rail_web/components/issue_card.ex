@@ -72,7 +72,7 @@ defmodule RailWeb.Components.IssueCard do
           target="_blank"
           rel="noopener noreferrer"
           data-qa="issue-external-link"
-          title="Open issue in Linear"
+          title={"Open issue in #{Issue.tracker_label(@issue.tracker)}"}
           class="p-1 rounded text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
         >
           <.icon name="pi-arrow-square-out" class="h-4 w-4" />

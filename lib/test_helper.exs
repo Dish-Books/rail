@@ -48,6 +48,8 @@ Mimic.copy(Rail.Roles)
 Mimic.copy(Rail.Tools.Browser)
 Mimic.copy(Rail.Tools.BrowserSession)
 Mimic.copy(Rail.Tools.FollowerSupervisor)
+Mimic.copy(Rail.Issues.Tracker.Linear)
+Mimic.copy(Rail.Issues.Tracker.Github)
 
 # Ensure that all Req calls are mocked by default
 Req.default_options(adapter: fn req -> raise "Unmocked call to #{req.url}" end)
@@ -80,7 +82,7 @@ project =
       github_repo: "example/test-seed",
       github_installation_id: 1,
       default_branch: "main",
-      linear_team_key: "TST",
+      key: "TST",
       linear_team_id: "lin_team_id",
       linear_state_ids: %{
         "triage" => "st_triage",
@@ -92,6 +94,22 @@ project =
       },
       linear_workspace_id: "lw_test_seed",
       clone_path: "/tmp/repos/test-seed"
+    },
+    upsert
+  )
+
+# The same, tracked in GitHub Issues instead of Linear.
+github_project =
+  Rail.Repo.insert!(
+    %Project{
+      id: "prj_test_seed_github",
+      name: "Test GitHub Project",
+      github_repo: "example/test-gh",
+      github_installation_id: 1,
+      default_branch: "main",
+      tracker: :github,
+      key: "tgh",
+      clone_path: "/tmp/repos/test-gh"
     },
     upsert
   )
@@ -108,11 +126,12 @@ Rail.Repo.insert!(
   upsert
 )
 
-Enum.each(Role.canonical_stages(), fn stage ->
+for {seeded, prefix} <- [{project, "rol_test_seed"}, {github_project, "rol_test_seed_gh"}],
+    stage <- Role.canonical_stages() do
   Rail.Repo.insert!(
     %Role{
-      id: "rol_test_seed_#{stage}",
-      project_id: project.id,
+      id: "#{prefix}_#{stage}",
+      project_id: seeded.id,
       cli: :claude,
       stage: stage,
       name: "#{stage} role",
@@ -121,8 +140,9 @@ Enum.each(Role.canonical_stages(), fn stage ->
     },
     upsert
   )
-end)
+end
 
 :persistent_term.put({RailTest, :project}, %{project | linear_workspace: workspace})
+:persistent_term.put({RailTest, :github_project}, github_project)
 
 Ecto.Adapters.SQL.Sandbox.mode(Rail.Repo, :manual)

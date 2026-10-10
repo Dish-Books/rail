@@ -403,7 +403,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
           preload: [observations: ^from(o in Observation, order_by: [asc: o.inserted_at], preload: [task: :issue])]
       )
 
-    # Read again as it posts, so a channel picked while the pass ran gets its digest. It names Linear
+    # Read again as it posts, so a channel picked while the pass ran gets its digest. It names tracker
     # issues, so never in a channel triage has marked as shared outside the team.
     with true <- activated != [] or proposals != [] or provisional != [],
          {:ok, %Project{learnings_slack_workspace: %SlackWorkspace{} = workspace, learnings_channel_external_id: channel}}

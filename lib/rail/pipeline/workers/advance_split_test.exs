@@ -4,7 +4,7 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Issues.Workers.AdvanceLinearState
+  alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -53,7 +53,7 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
       end
 
     merge = fn %Task{issue: issue} ->
-      issue |> Issue.linear_changeset(%{state: :done, completed_at: DateTime.utc_now(:second)}) |> Repo.update!()
+      issue |> Issue.tracker_changeset(%{state: :done, completed_at: DateTime.utc_now(:second)}) |> Repo.update!()
     end
 
     %{parent: parent, children: children, merge: merge}
@@ -119,7 +119,7 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
     merge.(last)
     assert :ok = perform_job(AdvanceSplit, %{parent_task_id: parent.id})
     assert %Task{stage: :merged} = Repo.reload!(parent)
-    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: parent.issue_id})
+    assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: parent.issue_id})
   end
 
   test "a canceled child counts as settled, so the parent moves to Merged once the rest have merged", %{
@@ -127,7 +127,7 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
     children: [first | rest],
     merge: merge
   } do
-    first.issue |> Issue.linear_changeset(%{state: :canceled}) |> Repo.update!()
+    first.issue |> Issue.tracker_changeset(%{state: :canceled}) |> Repo.update!()
     Enum.each(rest, merge)
 
     assert :ok = perform_job(AdvanceSplit, %{parent_task_id: parent.id})
@@ -140,7 +140,7 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
     children: [first, second, third, fourth],
     merge: merge
   } do
-    cancel = &(&1.issue |> Issue.linear_changeset(%{state: :canceled}) |> Repo.update!())
+    cancel = &(&1.issue |> Issue.tracker_changeset(%{state: :canceled}) |> Repo.update!())
     cancel.(first)
     merge.(second)
     merge.(third)

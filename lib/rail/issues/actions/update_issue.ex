@@ -1,11 +1,11 @@
 defmodule Rail.Issues.Actions.UpdateIssue do
   @moduledoc """
-  Writes an issue locally. Linear hears about it afterwards.
+  Writes an issue locally. Its tracker hears about it afterwards.
 
-  Nothing here talks to Linear: `Issue.changeset/2` enqueues
+  Nothing here talks to the tracker: `Issue.changeset/2` enqueues
   `Rail.Issues.Workers.SyncIssue` for whatever this changed, so the push happens
   in the same transaction's wake and carries only the fields that actually moved.
-  A field this update did not touch is never sent, so an edit made in Linear
+  A field this update did not touch is never sent, so an edit made in the tracker
   meanwhile survives.
   """
 

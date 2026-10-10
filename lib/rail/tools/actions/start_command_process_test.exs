@@ -25,7 +25,7 @@ defmodule Rail.Tools.Actions.StartCommandProcessTest do
         name: "Command Project",
         github_repo: "org/command-#{System.unique_integer([:positive])}",
         github_installation_id: System.unique_integer([:positive]),
-        linear_team_key: "CMD",
+        key: "CMD",
         default_branch: "main",
         clone_path: Path.join(tmp_dir, "clone")
       })

@@ -38,7 +38,7 @@ defmodule RailWeb.IssueLive do
 
     socket =
       if issue = socket.assigns.issue,
-        do: assign(socket, :assignees, Users.list_linear_users(project_id: issue.project_id)),
+        do: assign(socket, :assignees, Users.list_assignable_users(project_id: issue.project_id, tracker: issue.tracker)),
         else: socket
 
     {:noreply, socket}
@@ -78,7 +78,7 @@ defmodule RailWeb.IssueLive do
     {:noreply, handle_issue_event(event, params, socket, &load_issue(&1, &1.assigns.issue.id))}
   end
 
-  # A sync may have changed what Linear says about this issue.
+  # A sync may have changed what the tracker says about this issue.
   def handle_info({:issues_synced, project_id}, %{assigns: %{issue: %{project_id: project_id}}} = socket) do
     {:noreply, load_issue(socket, socket.assigns.issue.id)}
   end
@@ -91,7 +91,7 @@ defmodule RailWeb.IssueLive do
 
   def handle_info({:issue_comments_changed, _other_issue_id}, socket), do: {:noreply, socket}
 
-  # Linear may have closed the issue, which takes away the offer to start it.
+  # The tracker may have closed the issue, which takes away the offer to start it.
   def handle_info({:issue_changed, issue_id}, %{assigns: %{issue: %{id: issue_id}}} = socket) do
     {:noreply, load_issue(socket, issue_id)}
   end

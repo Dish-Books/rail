@@ -8,7 +8,7 @@ defmodule RailWeb.IssueLiveTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Issues.Workers.AdvanceLinearState
+  alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Issues.Workers.LinearSync
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline
@@ -38,7 +38,7 @@ defmodule RailWeb.IssueLiveTest do
   test "shows the issue's title, description and properties", %{conn: conn, user: user, project: project} do
     issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         owner_user_id: user.id,
         external_id: "lin_page_1",
@@ -64,8 +64,23 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-owner", "Issue Live")
     assert has_element?(view, "#issue-estimate", "2 Points")
     assert has_element?(view, "#issue-project", "Test Project")
-    assert has_element?(view, "#issue-linear-link[href='https://linear.app/issue/IPG-7']")
+    assert has_element?(view, "#issue-tracker-link[href='https://linear.app/issue/IPG-7']")
     assert has_element?(view, "#issue-branch[phx-hook='CopyText'][data-copy-text='ipg-7-ap-aging']")
+  end
+
+  test "a GitHub issue opens from its key#number identifier, and anyone can own it", %{
+    conn: conn,
+    user: user,
+    github_project: project
+  } do
+    {:ok, _user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
+    issue = github_issue(project, %{number: 42, identifier: "tgh#42", title: "Hash in the name"})
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    assert has_element?(view, "#issue-identifier", "tgh#42")
+    assert has_element?(view, "#issue-title", "Hash in the name")
+    assert has_element?(view, "#issue-assign-#{user.id}")
   end
 
   test "the assignee can be changed to a Linear-linked user, or cleared", %{conn: conn, user: user, project: project} do
@@ -92,7 +107,7 @@ defmodule RailWeb.IssueLiveTest do
 
     issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_page_3",
         identifier: "IPG-9",
@@ -120,7 +135,7 @@ defmodule RailWeb.IssueLiveTest do
     assert %Issue{owner_user_id: ^teammate_id} = Repo.get!(Issue, issue.id)
     assert_enqueued(worker: SyncIssue, args: %{issue_id: issue.id, fields: ["owner_user_id"]})
     # It had no owner, so its Linear status was held back and now catches up with its task.
-    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: issue.id})
+    assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: issue.id})
 
     view |> element("#issue-assign-none") |> render_click()
 
@@ -134,7 +149,7 @@ defmodule RailWeb.IssueLiveTest do
   } do
     issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_page_retry",
         identifier: "IPG-12",
@@ -174,7 +189,7 @@ defmodule RailWeb.IssueLiveTest do
   test "an issue with no task can be started from its page", %{conn: conn, project: project} do
     issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_page_2",
         identifier: "IPG-8",
@@ -206,7 +221,7 @@ defmodule RailWeb.IssueLiveTest do
   test "an issue offers one Start at Plan button, where every task begins", %{conn: conn, project: project} do
     issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_page_17",
         identifier: "IPG-17",
@@ -226,7 +241,7 @@ defmodule RailWeb.IssueLiveTest do
   test "a Duplicate issue reads as Duplicate and offers no start", %{conn: conn, project: project} do
     issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_page_dup",
         identifier: "IPG-20",
@@ -250,7 +265,7 @@ defmodule RailWeb.IssueLiveTest do
 
     for {external_id, identifier} <- [{"lin_page_open", "IPG-21"}, {"lin_page_other", "IPG-22"}] do
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: external_id,
         identifier: identifier,
@@ -291,7 +306,7 @@ defmodule RailWeb.IssueLiveTest do
   test "an issue that cannot be started says why and keeps no task", %{conn: conn, project: project} do
     issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_page_6",
         identifier: "IPG-11",
@@ -319,7 +334,7 @@ defmodule RailWeb.IssueLiveTest do
   } do
     issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_page_4",
         identifier: "IPG-10",
@@ -365,7 +380,7 @@ defmodule RailWeb.IssueLiveTest do
   test "posting a comment and a reply sends them to Linear and shows them", %{conn: conn, project: project} do
     issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_page_5",
         identifier: "ICP-1",
@@ -434,7 +449,7 @@ defmodule RailWeb.IssueLiveTest do
     [issue, dispatch_issue, other_issue] =
       for n <- [12, 13, 16] do
         %Issue{}
-        |> Issue.linear_changeset(%{
+        |> Issue.tracker_changeset(%{
           project_id: project.id,
           external_id: "lin_page_#{n}",
           identifier: "IPG-#{n}",
@@ -488,7 +503,7 @@ defmodule RailWeb.IssueLiveTest do
 
     issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_page_14",
         identifier: "IPG-14",
@@ -501,7 +516,7 @@ defmodule RailWeb.IssueLiveTest do
     |> Comment.changeset(%{issue_id: issue.id, author_user_id: user.id, external_id: "lin_own", body: "Mine"})
     |> Repo.insert!()
 
-    expect(Issues, :update_issue, fn issue, attrs -> {:error, Issue.linear_changeset(issue, attrs)} end)
+    expect(Issues, :update_issue, fn issue, attrs -> {:error, Issue.tracker_changeset(issue, attrs)} end)
 
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
     allow(Issues, self(), view.pid)
@@ -523,7 +538,7 @@ defmodule RailWeb.IssueLiveTest do
   test "reloads when its own project syncs or its own comments change", %{conn: conn, project: project} do
     issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_page_15",
         identifier: "IPG-15",
@@ -554,7 +569,7 @@ defmodule RailWeb.IssueLiveTest do
     [deleted, pruned] =
       for {external_id, identifier} <- [{"lin_page_deleted", "IPG-31"}, {"lin_page_pruned", "IPG-32"}] do
         %Issue{}
-        |> Issue.linear_changeset(%{
+        |> Issue.tracker_changeset(%{
           project_id: project.id,
           external_id: external_id,
           identifier: identifier,
@@ -607,14 +622,14 @@ defmodule RailWeb.IssueLiveTest do
         name: "Hidden Project",
         github_repo: "example/hidden-issue",
         github_installation_id: 557,
-        linear_team_key: "HID",
+        key: "HID",
         default_branch: "main",
         clone_path: "/tmp/hidden-issue"
       })
 
     issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: other_project.id,
         external_id: "lin_hidden_1",
         identifier: "HID-1",

@@ -1,7 +1,7 @@
 defmodule Rail.Learnings.Actions.HandleIssueFinished do
   @moduledoc """
   Queues what Learnings does when an issue finishes, and nothing more, so the
-  Linear webhook answers without waiting on it.
+  tracker's webhook or poll goes on without waiting on it.
   """
 
   alias Rail.Issues.Schemas.Issue

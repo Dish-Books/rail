@@ -14,7 +14,7 @@ defmodule Rail.Roles.Actions.ListRolesTest do
         name: "List Roles Project",
         github_repo: "org/list-roles",
         github_installation_id: 4201,
-        linear_team_key: "LR1",
+        key: "LR1",
         default_branch: "main",
         clone_path: "/tmp/repos/list-roles"
       })
@@ -77,7 +77,7 @@ defmodule Rail.Roles.Actions.ListRolesTest do
         name: "Other List Roles Project",
         github_repo: "org/list-roles-other",
         github_installation_id: 4202,
-        linear_team_key: "LR2",
+        key: "LR2",
         default_branch: "main",
         clone_path: "/tmp/repos/list-roles-other"
       })

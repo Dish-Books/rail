@@ -12,7 +12,7 @@ defmodule Rail.Projects.Schemas.ProjectTest do
              github_repo: ["can't be blank"],
              github_installation_id: ["can't be blank"],
              default_branch: ["can't be blank"],
-             linear_team_key: ["can't be blank"],
+             key: ["can't be blank"],
              clone_path: ["can't be blank"]
            } = errors_on(changeset)
   end
@@ -34,7 +34,7 @@ defmodule Rail.Projects.Schemas.ProjectTest do
       github_repo: "example/rail-app",
       github_installation_id: 12_345,
       default_branch: "main",
-      linear_team_key: "RAIL",
+      key: "RAIL",
       clone_path: "/tmp/rail"
     }
 
@@ -42,6 +42,41 @@ defmodule Rail.Projects.Schemas.ProjectTest do
     assert changeset.valid?
     assert get_field(changeset, :default_branch) == "main"
     assert get_field(changeset, :active) == true
+  end
+
+  test "a GitHub project needs no Linear team, and is keyed by its repo's name unless given one" do
+    attrs = %{
+      name: "Foo",
+      github_repo: "example/foo",
+      github_installation_id: 1,
+      default_branch: "main",
+      clone_path: "/tmp/foo",
+      tracker: :github
+    }
+
+    assert %Ecto.Changeset{valid?: true} = changeset = Project.changeset(%Project{}, attrs)
+    assert get_field(changeset, :key) == "foo"
+    assert get_field(Project.changeset(%Project{}, Map.put(attrs, :key, "pst")), :key) == "pst"
+  end
+
+  test "a key is short and made of letters, digits, - and _" do
+    changeset = Project.changeset(%Project{tracker: :github}, %{key: "foo#1"})
+    assert %{key: ["use letters, digits, - and _"]} = errors_on(changeset)
+
+    changeset = Project.changeset(%Project{tracker: :github}, %{key: String.duplicate("k", 21)})
+    assert %{key: ["should be at most 20 character(s)"]} = errors_on(changeset)
+  end
+
+  test "the database refuses a project with no key" do
+    assert_raise Postgrex.Error, ~r/null value in column "key"/, fn ->
+      Repo.insert!(%Project{
+        name: "No Team",
+        github_repo: "example/no-team-#{System.unique_integer([:positive])}",
+        github_installation_id: 1,
+        default_branch: "main",
+        clone_path: "/tmp/no-team"
+      })
+    end
   end
 
   test "changeset enforces uniqueness on github_repo" do
@@ -52,7 +87,7 @@ defmodule Rail.Projects.Schemas.ProjectTest do
       github_repo: repo,
       github_installation_id: 99_001,
       default_branch: "main",
-      linear_team_key: "P1",
+      key: "P1",
       clone_path: "/tmp/p1"
     }
 
@@ -109,7 +144,7 @@ defmodule Rail.Projects.Schemas.ProjectTest do
         github_repo: "example/team-lookup",
         github_installation_id: 99_010,
         default_branch: "main",
-        linear_team_key: "DIS",
+        key: "DIS",
         clone_path: "/tmp/team-lookup",
         linear_workspace_id: workspace_id
       })
@@ -148,13 +183,13 @@ defmodule Rail.Projects.Schemas.ProjectTest do
                github_repo: "example/unknown-team",
                github_installation_id: 99_011,
                default_branch: "main",
-               linear_team_key: "NOPE",
+               key: "NOPE",
                clone_path: "/tmp/unknown-team",
                linear_workspace_id: workspace_id
              })
              |> Repo.insert()
 
-    assert %{linear_team_key: ["no Linear team has this key"]} = errors_on(changeset)
+    assert %{key: ["no Linear team has this key"]} = errors_on(changeset)
     refute Repo.get_by(Project, github_repo: "example/unknown-team")
   end
 
@@ -172,13 +207,13 @@ defmodule Rail.Projects.Schemas.ProjectTest do
                github_repo: "example/unchecked-team",
                github_installation_id: 99_013,
                default_branch: "main",
-               linear_team_key: "ERR",
+               key: "ERR",
                clone_path: "/tmp/unchecked-team",
                linear_workspace_id: workspace_id
              })
              |> Repo.insert()
 
-    assert %{linear_team_key: ["could not be checked with Linear"]} = errors_on(changeset)
+    assert %{key: ["could not be checked with Linear"]} = errors_on(changeset)
     refute Repo.get_by(Project, github_repo: "example/unchecked-team")
   end
 
@@ -191,7 +226,7 @@ defmodule Rail.Projects.Schemas.ProjectTest do
                github_repo: "example/no-workspace",
                github_installation_id: 99_012,
                default_branch: "main",
-               linear_team_key: "DIS",
+               key: "DIS",
                clone_path: "/tmp/no-workspace"
              })
              |> Repo.insert()

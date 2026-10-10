@@ -14,7 +14,7 @@ defmodule Rail.Projects.Actions.ListSlackChannelsTest do
         name: "Other",
         github_repo: "example/other-#{unique}",
         github_installation_id: 2,
-        linear_team_key: "OTH",
+        key: "OTH",
         default_branch: "main",
         clone_path: "/tmp/other"
       })

@@ -1,6 +1,7 @@
 defmodule Rail.Issues.Actions.CommentTest do
   use Rail.DataCase, async: true
 
+  alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
@@ -11,7 +12,7 @@ defmodule Rail.Issues.Actions.CommentTest do
   setup %{project: project} do
     issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_comm_1",
         identifier: "CMT-1",
@@ -135,6 +136,76 @@ defmodule Rail.Issues.Actions.CommentTest do
     assert {:error, {:linear_mutation_failed, "commentCreate"}} =
              Issues.comment(Scope.for_system(), issue, %{body: "Failing comment"})
 
+    Req.Test.expect(Rail.Linear, fn conn -> conn |> Plug.Conn.put_status(500) |> Req.Test.json(%{}) end)
+
+    assert {:error, {:linear_api_error, 500, _body}} =
+             Issues.comment(Scope.for_system(), issue, %{body: "Unreachable comment"})
+
     assert [] = Repo.all(Comment)
+  end
+
+  describe "a GitHub issue" do
+    test "comments as the App and keeps the comment, its author matched by GitHub id", %{github_project: project} do
+      {:ok, %{id: author_id}} =
+        Users.register_oauth_user(%{github_id: "9001", login: "octocat", email: "octo@example.com"})
+
+      %Issue{id: issue_id} = issue = github_issue(project, %{number: 11})
+      posted = github_comment_json(%{"body" => "On it"})
+
+      Req.Test.expect(Client, 2, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+        case {conn.method, conn.request_path} do
+          {"POST", "/app/installations/1/access_tokens"} ->
+            Req.Test.json(conn, %{"token" => "ghs_token"})
+
+          {"POST", "/repos/example/test-gh/issues/11/comments"} ->
+            assert %{"body" => "On it"} == Jason.decode!(body)
+            conn |> Plug.Conn.put_status(201) |> Req.Test.json(posted)
+        end
+      end)
+
+      external_id = posted["node_id"]
+
+      assert {:ok,
+              %Comment{issue_id: ^issue_id, external_id: ^external_id, author_user_id: ^author_id, author_name: "octocat"}} =
+               Issues.comment(system_scope(), issue, %{body: "On it"})
+    end
+
+    test "a reply goes up flat, quoting the comment it answers", %{github_project: project} do
+      issue = github_issue(project, %{number: 12})
+
+      parent =
+        %Comment{}
+        |> Comment.changeset(%{issue_id: issue.id, external_id: "IC_parent_#{issue.number}", body: "First line\nSecond"})
+        |> Repo.insert!()
+
+      Req.Test.expect(Client, 2, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+        case conn.request_path do
+          "/app/installations/1/access_tokens" ->
+            Req.Test.json(conn, %{"token" => "ghs_token"})
+
+          "/repos/example/test-gh/issues/12/comments" ->
+            assert %{"body" => "> First line\n> Second\n\nAgreed"} == Jason.decode!(body)
+            conn |> Plug.Conn.put_status(201) |> Req.Test.json(github_comment_json(%{"user" => nil}))
+        end
+      end)
+
+      assert {:ok, %Comment{parent_id: nil, author_user_id: nil}} =
+               Issues.comment(system_scope(), issue, %{body: "Agreed", parent_id: parent.id})
+
+      assert {:error, :parent_not_found} = Issues.comment(system_scope(), issue, %{body: "?", parent_id: "com_missing"})
+
+      Req.Test.expect(Client, 2, fn conn ->
+        case conn.request_path do
+          "/app/installations/1/access_tokens" -> Req.Test.json(conn, %{"token" => "ghs_token"})
+          "/repos/example/test-gh/issues/12/comments" -> Req.Test.transport_error(conn, :econnrefused)
+        end
+      end)
+
+      assert {:error, %Req.TransportError{reason: :econnrefused}} = Issues.comment(system_scope(), issue, %{body: "Down"})
+    end
   end
 end

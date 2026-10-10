@@ -162,7 +162,7 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
         completed_at: DateTime.utc_now()
       })
 
-    task.issue |> Issue.linear_changeset(%{completed_at: DateTime.utc_now()}) |> Repo.update!()
+    task.issue |> Issue.tracker_changeset(%{completed_at: DateTime.utc_now()}) |> Repo.update!()
 
     assert Pipeline.count_attention() == 0
   end
@@ -234,10 +234,10 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
     assert Pipeline.count_attention(project_id: [project.id]) == 2
 
     # Canceling the first takes it off its owner's list, and blocks the third, which builds on it.
-    blocked.issue |> Issue.linear_changeset(%{state: :canceled}) |> Repo.update!()
+    blocked.issue |> Issue.tracker_changeset(%{state: :canceled}) |> Repo.update!()
     assert Pipeline.count_attention(project_id: [project.id]) == 2
 
-    waiting.issue |> Issue.linear_changeset(%{state: :canceled}) |> Repo.update!()
+    waiting.issue |> Issue.tracker_changeset(%{state: :canceled}) |> Repo.update!()
     assert Pipeline.count_attention(project_id: [project.id]) == 1
   end
 end

@@ -107,7 +107,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
         name: "Second Project",
         github_repo: "org/second-project",
         github_installation_id: 47_030,
-        linear_team_key: "TWO",
+        key: "TWO",
         default_branch: "main",
         clone_path: "/tmp/repos/second-project"
       })

@@ -731,7 +731,7 @@ defmodule Rail.Tools.FollowerTest do
         name: "Follower Project 12502",
         github_repo: "org/follower-12502",
         github_installation_id: 12_502,
-        linear_team_key: "P12502",
+        key: "P12502",
         default_branch: "main",
         clone_path: "/tmp/repos/follower-12502",
         linear_state_ids: %{

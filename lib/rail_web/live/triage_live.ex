@@ -112,7 +112,7 @@ defmodule RailWeb.TriageLive do
             </span>
             <span class="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
               <.icon name="pi-lock-simple" class="size-3" />
-              Nothing reaches Slack or Linear until you accept it.
+              Nothing reaches Slack or the issue tracker until you accept it.
             </span>
             <.button
               :if={@show_dismiss}

@@ -37,6 +37,7 @@ defmodule RailWeb.Router do
     pipe_through :api
 
     post "/linear", LinearWebhookController, :handle
+    post "/github", GithubWebhookController, :handle
   end
 
   scope "/mcp", RailWeb do

@@ -15,11 +15,12 @@ defmodule Rail.Tools.BrowserTest do
   # first command straight away. A connection that read its own mailbox while
   # upgrading swallowed that call and the caller waited for a reply to a command
   # that was never sent.
+  # The wait covers opening the websocket too, which a loaded suite can make slow.
   test "answers a command sent before the upgrade has finished", %{url: url} do
     {:ok, connection} = Browser.start_link(url: url)
 
     assert {:ok, %{"echo" => %{"url" => "about:blank"}}} =
-             Browser.call(connection, "Target.createTarget", %{url: "about:blank"}, 5_000)
+             Browser.call(connection, "Target.createTarget", %{url: "about:blank"}, 15_000)
   end
 
   # Chrome refuses a frame carrying any key beyond these four, so what goes on the

@@ -170,7 +170,7 @@ defmodule Rail.Linear.Client do
     }
     """
 
-    variables = %{"teamKey" => project.linear_team_key, "first" => @page_size, "after" => opts[:after]}
+    variables = %{"teamKey" => project.key, "first" => @page_size, "after" => opts[:after]}
 
     with {:ok, token} <- token(project, opts) do
       execute_query(token, query, variables, opts)
@@ -199,7 +199,7 @@ defmodule Rail.Linear.Client do
     """
 
     with {:ok, token} <- token(project, opts) do
-      execute_query(token, query, %{"teamKey" => project.linear_team_key}, opts)
+      execute_query(token, query, %{"teamKey" => project.key}, opts)
     end
   end
 

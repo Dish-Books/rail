@@ -2,6 +2,7 @@ defmodule Rail.Issues.Actions.ImportIssueTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.SyncIssue
@@ -87,5 +88,61 @@ defmodule Rail.Issues.Actions.ImportIssueTest do
     Req.Test.expect(Rail.Linear, &(&1 |> Plug.Conn.put_status(500) |> Req.Test.json(%{})))
 
     assert {:error, {:linear_api_error, 500, _body}} = Issues.import_issue(project, "TST-403")
+  end
+
+  describe "a GitHub project" do
+    test "an issue Rail already has comes back by key#number, #number or number", %{github_project: project} do
+      %Issue{id: issue_id} = github_issue(project, %{number: 64})
+
+      for identifier <- ["tgh#64", "#64", "64"] do
+        assert {:ok, %Issue{id: ^issue_id}} = Issues.import_issue(project, identifier)
+      end
+
+      assert {:error, :not_found} = Issues.import_issue(project, "tgh#sixty-four")
+    end
+
+    test "an issue Rail lacks is fetched and stored as GitHub has it, with nothing pushed back", %{
+      github_project: %{id: project_id} = project
+    } do
+      Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+
+      Req.Test.expect(Client, 2, fn conn ->
+        case conn.request_path do
+          "/app/installations/1/access_tokens" ->
+            Req.Test.json(conn, %{"token" => "ghs_token"})
+
+          "/repos/example/test-gh/issues/65" ->
+            Req.Test.json(conn, github_issue_json(%{"number" => 65, "title" => "Named in Slack"}))
+        end
+      end)
+
+      assert {:ok, %Issue{id: issue_id, project_id: ^project_id, identifier: "tgh#65", title: "Named in Slack"}} =
+               Issues.import_issue(project, "tgh#65")
+
+      assert_received {:issue_changed, ^issue_id}
+      refute_enqueued(worker: SyncIssue)
+    end
+
+    test "a pull request, or a number GitHub does not know, is not an issue", %{github_project: project} do
+      Req.Test.expect(Client, 6, fn conn ->
+        case conn.request_path do
+          "/app/installations/1/access_tokens" ->
+            Req.Test.json(conn, %{"token" => "ghs_token"})
+
+          "/repos/example/test-gh/issues/66" ->
+            Req.Test.json(conn, github_issue_json(%{"number" => 66, "pull_request" => %{}}))
+
+          "/repos/example/test-gh/issues/67" ->
+            conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "Not Found"})
+
+          "/repos/example/test-gh/issues/68" ->
+            conn |> Plug.Conn.put_status(410) |> Req.Test.json(%{})
+        end
+      end)
+
+      assert {:error, :not_found} = Issues.import_issue(project, "tgh#66")
+      assert {:error, :not_found} = Issues.import_issue(project, "tgh#67")
+      assert {:error, :github_issues_disabled} = Issues.import_issue(project, "tgh#68")
+    end
   end
 end

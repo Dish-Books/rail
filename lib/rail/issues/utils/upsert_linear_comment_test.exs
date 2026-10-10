@@ -17,14 +17,14 @@ defmodule Rail.Issues.Utils.UpsertLinearCommentTest do
         github_repo: "org/upsert-comment",
         github_installation_id: 13_101,
         default_branch: "main",
-        linear_team_key: "UPC",
+        key: "UPC",
         clone_path: "/tmp/repos/upsert-comment"
       })
       |> Repo.insert!()
 
     issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_upc_1",
         identifier: "UPC-1",

@@ -19,7 +19,7 @@ defmodule Rail.Tools.Workers.ReconcileOsProcessesTest do
         name: "Reconcile Project",
         github_repo: "org/reconcile-#{System.unique_integer([:positive])}",
         github_installation_id: System.unique_integer([:positive]),
-        linear_team_key: "REC",
+        key: "REC",
         default_branch: "main",
         clone_path: Path.join(tmp_dir, "clone")
       })

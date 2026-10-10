@@ -136,15 +136,22 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
     end
   end
 
-  # One write carries the ticket and the design. Linear hears about it from the sync that write enqueues.
+  # One write carries the ticket and the design. The tracker hears about it from the sync that write enqueues.
   defp publish(%Task{issue: %Issue{} = issue}, ticket, nil) do
     update_issue(issue, ticket_attrs(ticket, ticket.description))
   end
 
+  # A tracker that cannot hold the screenshot, such as GitHub Issues, still gets the design's text.
   defp publish(%Task{issue: %Issue{} = issue} = task, ticket, {option, screenshot}) do
-    with {:ok, asset_url} <-
-           Issues.upload_asset(task.project, "#{issue.identifier}-#{option.key}.png", "image/png", screenshot) do
-      section = String.trim("## Design: #{option.title}\n\n#{option.summary}") <> "\n\n![#{option.title}](#{asset_url})"
+    uploaded =
+      case Issues.upload_asset(task.project, "#{issue.identifier}-#{option.key}.png", "image/png", screenshot) do
+        {:error, :unsupported} -> {:ok, nil}
+        result -> result
+      end
+
+    with {:ok, asset_url} <- uploaded do
+      image = if asset_url, do: "\n\n![#{option.title}](#{asset_url})", else: ""
+      section = String.trim("## Design: #{option.title}\n\n#{option.summary}") <> image
       description = String.trim(ticket.description || "")
       description = if description == "", do: section, else: description <> "\n\n" <> section
 

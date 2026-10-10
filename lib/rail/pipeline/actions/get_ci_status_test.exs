@@ -15,7 +15,7 @@ defmodule Rail.Pipeline.Actions.GetCiStatusTest do
         name: "CI Status Project",
         github_repo: "org/ci-status",
         github_installation_id: 47_051,
-        linear_team_key: "CIS",
+        key: "CIS",
         default_branch: "main",
         clone_path: "/tmp/repos/ci-status",
         ci_command: "mise run ci"

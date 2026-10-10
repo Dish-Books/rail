@@ -181,7 +181,7 @@ defmodule RailWeb.OverviewLive do
     blocked = blocked_children(in_progress, children)
     blocked_on_user = Enum.count(blocked, &(&1.status.task.issue.owner_user_id == user_id))
 
-    # Shipped means Linear completed the issue. Sixty days covers this month's
+    # Shipped means the tracker completed the issue. Sixty days covers this month's
     # count and the month it is compared with.
     %{issues: completed} =
       Issues.list_issues(

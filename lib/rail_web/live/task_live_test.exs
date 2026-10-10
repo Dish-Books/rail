@@ -1000,7 +1000,7 @@ defmodule RailWeb.TaskLiveTest do
              "#cleanup-task[data-confirm='TLV-1 is not marked done in Linear. Clean up this task anyway? Its worktree and scratch files will be deleted.']"
            )
 
-    issue |> Issue.linear_changeset(%{state: :done}) |> Repo.update!()
+    issue |> Issue.tracker_changeset(%{state: :done}) |> Repo.update!()
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
     assert has_element?(
@@ -1169,7 +1169,7 @@ defmodule RailWeb.TaskLiveTest do
 
     other_issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_task_live_other",
         identifier: "TLV-2",
@@ -1210,7 +1210,7 @@ defmodule RailWeb.TaskLiveTest do
     test "the issue comes first and the stage's role is the one open", %{conn: conn, task: task, role: role} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      assert has_element?(view, "#task-tab-issue", "Linear Issue")
+      assert has_element?(view, "#task-tab-issue", "Issue")
       assert has_element?(view, "#task-tab-#{role.id}[aria-selected='true']", "review the plan")
       assert has_element?(view, "[data-qa='plan-stage']")
     end
@@ -1236,7 +1236,7 @@ defmodule RailWeb.TaskLiveTest do
 
       # Linear serves its own images only to a token, so they come back through Rail.
       assert render(view) =~ ~s(src="/issues/#{issue.id}/assets/ws/shot.png")
-      assert has_element?(view, "#issue-linear-link[href='https://linear.app/tlv/issue/TLV-1']")
+      assert has_element?(view, "#issue-tracker-link[href='https://linear.app/tlv/issue/TLV-1']")
 
       # The issue is read on its own, and the task it is already on is not a link.
       refute has_element?(view, "[data-qa='plan-stage']")
@@ -1422,7 +1422,7 @@ defmodule RailWeb.TaskLiveTest do
     test "a task shows the Linear Issue and Plan tabs only", %{conn: conn, task: task, role: role} do
       assert {:ok, view, html} = live(conn, ~p"/tasks/#{task.id}")
 
-      assert has_element?(view, "#task-tab-issue", "Linear Issue")
+      assert has_element?(view, "#task-tab-issue", "Issue")
       assert has_element?(view, "#task-tab-#{role.id}[aria-selected='true']", "plan role")
       assert html |> Floki.parse_document!() |> Floki.find("[role='tab'][id^='task-tab-']") |> length() == 2
     end
@@ -5560,7 +5560,7 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "#child-switcher")
 
       # Only the split's owner is told the children need them.
-      parent.issue |> Issue.linear_changeset(%{owner_user_id: scope.user.id}) |> Repo.update!()
+      parent.issue |> Issue.tracker_changeset(%{owner_user_id: scope.user.id}) |> Repo.update!()
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
       assert has_element?(view, "[data-qa='task_status_chip']", "2 children need you")
     end
@@ -5671,7 +5671,7 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#child-switcher-all", "All children of TLV-10")
       assert has_element?(view, "#child-switcher-waiting[class*='slate']", "2 other children need attention")
 
-      parent.issue |> Issue.linear_changeset(%{owner_user_id: scope.user.id}) |> Repo.update!()
+      parent.issue |> Issue.tracker_changeset(%{owner_user_id: scope.user.id}) |> Repo.update!()
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-12")
       assert has_element?(view, "#child-switcher-waiting[class*='amber']", "2 other children need you")
 
@@ -5716,7 +5716,7 @@ defmodule RailWeb.TaskLiveTest do
       send(view.pid, {:pipeline_changed, first.id})
       assert has_element?(view, "#split-row-TLV-11[data-state='running']")
 
-      first.issue |> Issue.linear_changeset(%{state: :done, completed_at: DateTime.utc_now(:second)}) |> Repo.update!()
+      first.issue |> Issue.tracker_changeset(%{state: :done, completed_at: DateTime.utc_now(:second)}) |> Repo.update!()
       send(view.pid, {:issue_changed, first.issue_id})
       assert has_element?(view, "#split-row-TLV-11[data-state='merged']", "Merged")
       assert has_element?(view, "#task-tab-children", "1 of 3 merged")
@@ -5734,7 +5734,7 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='task_status_chip']", "2 children need attention")
 
       for child <- Pipeline.list_tasks(parent_task_id: parent.id, preload: [:issue]) do
-        child.issue |> Issue.linear_changeset(%{completed_at: DateTime.utc_now(:second)}) |> Repo.update!()
+        child.issue |> Issue.tracker_changeset(%{completed_at: DateTime.utc_now(:second)}) |> Repo.update!()
       end
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
@@ -5826,13 +5826,13 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-11")
       refute has_element?(view, "#cleanup-task")
 
-      first.issue |> Issue.linear_changeset(%{state: :done}) |> Repo.update!()
+      first.issue |> Issue.tracker_changeset(%{state: :done}) |> Repo.update!()
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
 
       assert view |> element("#cleanup-task") |> render() =~
                "2 of 3 children are not marked done in Linear: TLV-12, TLV-13. Clean up this task and all of its children anyway?"
 
-      for child <- [second, third], do: child.issue |> Issue.linear_changeset(%{state: :done}) |> Repo.update!()
+      for child <- [second, third], do: child.issue |> Issue.tracker_changeset(%{state: :done}) |> Repo.update!()
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
       assert view |> element("#cleanup-task") |> render() =~ "Clean up this task and its 3 children?"
@@ -5843,7 +5843,7 @@ defmodule RailWeb.TaskLiveTest do
       parent: parent,
       first: first
     } do
-      first.issue |> Issue.linear_changeset(%{state: :canceled}) |> Repo.update!()
+      first.issue |> Issue.tracker_changeset(%{state: :canceled}) |> Repo.update!()
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
       assert has_element?(view, "#split-row-TLV-12[data-state='blocked_by_canceled']", "TLV-11 was canceled")
