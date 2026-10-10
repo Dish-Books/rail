@@ -105,7 +105,7 @@ defmodule RailWeb.Components.SplitBoardTest do
     board: board
   } do
     for {row, line, action} <- [
-          {"SPL-2", "Findings to rule", "Review the findings"},
+          {"SPL-2", "Findings to rule", "Review"},
           {"SPL-3", "engineer role asked a question", "Answer"}
         ] do
       assert ^line = Floki.text(Floki.find(board, "#split-row-#{row} td:last-child [data-qa=split-row-line]"))
