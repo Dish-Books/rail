@@ -26,6 +26,7 @@ defmodule Rail.Git do
   defdelegate list_changed_paths(worktree_path), to: Actions.ListChangedPaths
   defdelegate load_branch_history(task, rounds \\ []), to: Actions.LoadBranchHistory
   defdelegate branch_unpushed?(worktree_path), to: Actions.BranchUnpushed
+  defdelegate up_to_date_with?(worktree_path, base_branch), to: Actions.UpToDateWith
   defdelegate branch_changed?(task), to: Actions.BranchChanged
   defdelegate push_branch(scope, task), to: Actions.PushBranch
   defdelegate set_commit_identity(task), to: Actions.SetCommitIdentity

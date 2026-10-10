@@ -48,12 +48,13 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
         started_at: DateTime.utc_now()
       })
 
-    # Says which task's turn was readied, so a test can tell a turn that commits from one that does not.
+    # Says which task's turn was readied, so a test can tell a turn that commits from one that does not, and
+    # finds its branch behind, which the turn's prompt opens with.
     test_pid = self()
 
     stub(Rail.Pipeline.Utils.PrepareTurn, :prepare_turn, fn %Run{task_id: task_id} ->
       send(test_pid, {:prepared, task_id})
-      :ok
+      "The branch is behind origin/main.\n\n"
     end)
 
     %{project: project, task: task, run: run, run_id: run_id}
@@ -62,6 +63,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
   test "sends the queued message and takes it off the run", %{run: run, run_id: run_id} do
     expect(Tools, :start_os_process, fn spawned, argv ->
       assert Enum.any?(argv, &(&1 =~ "Please also add a test"))
+      refute Enum.any?(argv, &(&1 =~ "behind origin/main"))
       {:ok, %OsProcess{run: spawned}}
     end)
 
@@ -189,6 +191,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
 
     expect(Tools, :start_os_process, fn spawned, argv ->
       assert_received {:prepared, ^task_id}
+      assert "The branch is behind origin/main.\n\nRename the button" in argv
       refute "--agents" in argv
       {:ok, %OsProcess{run: spawned}}
     end)

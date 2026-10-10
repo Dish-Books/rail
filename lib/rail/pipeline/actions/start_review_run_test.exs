@@ -125,10 +125,11 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
 
     expect(Rail.Pipeline.Utils.PrepareTurn, :prepare_turn, fn %Run{task: %Task{worktree_path: ^worktree_path}} ->
       send(test_pid, :prepared)
-      :ok
+      "The branch is behind origin/main.\n\n"
     end)
 
-    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+    expect(Tools, :start_os_process, fn %Run{} = spawned,
+                                        ["-p", "The branch is behind origin/main.\n\n" <> _brief = prompt | _rest] ->
       assert_received :prepared
       assert prompt =~ "the engineer makes and commits every change"
       assert prompt =~ "ending each commit message with the line `Ticket: SRV-1`"

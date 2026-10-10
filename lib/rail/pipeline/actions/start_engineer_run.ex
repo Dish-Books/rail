@@ -34,15 +34,16 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
     task = Repo.preload(task, [:project, issue: [comments: :replies]])
     # The brief promises a workspace that survives between turns.
     File.mkdir_p!(task.scratch_path)
-    :ok = prepare_turn(%{run | task: task})
+    behind = prepare_turn(%{run | task: task})
 
     prompt =
-      Pipeline.build_prompt(
-        task: task,
-        context_snippet: brief(task, run),
-        pending_answer: run.pending_answer,
-        conversation_id: run.conversation_id
-      )
+      behind <>
+        Pipeline.build_prompt(
+          task: task,
+          context_snippet: brief(task, run),
+          pending_answer: run.pending_answer,
+          conversation_id: run.conversation_id
+        )
 
     args =
       Tools.build_args(

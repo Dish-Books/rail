@@ -79,15 +79,19 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     commits_dir = Path.join(task.scratch_path, "commits")
     test_pid = self()
 
-    # Each turn starts on a fresh default branch, committing as the ticket's owner.
+    # Each turn starts on a fresh default branch, committing as the ticket's owner, and opens on whether the
+    # branch is behind it.
     expect(Rail.Pipeline.Utils.PrepareTurn, :prepare_turn, fn %Run{task: %Task{worktree_path: ^worktree_path}} ->
       send(test_pid, :prepared)
-      :ok
+      "The branch is behind origin/main.\n\n"
     end)
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
       assert_received :prepared
-      assert ["-p", prompt | _rest] = argv
+
+      assert ["-p", "The branch is behind origin/main.\n\nBuild the approved plan below." <> _brief = prompt | _rest] =
+               argv
+
       assert prompt =~ "Build the approved plan below."
       assert prompt =~ "Extend the invoices module."
       assert prompt =~ ~s(```mermaid\nflowchart LR\n  A["InvoicesLive"] --> B["Invoices"]\n```)

@@ -118,7 +118,7 @@ defmodule Rail.DataCase do
   def stub_prepare_turn(%{real_prepare_turn: true}), do: :ok
 
   def stub_prepare_turn(_context) do
-    Mimic.stub(Rail.Pipeline.Utils.PrepareTurn, :prepare_turn, fn _run -> :ok end)
+    Mimic.stub(Rail.Pipeline.Utils.PrepareTurn, :prepare_turn, fn _run -> "" end)
 
     :ok
   end

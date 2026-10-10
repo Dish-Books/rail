@@ -40,15 +40,16 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     task = Repo.preload(task, [:project, issue: [comments: :replies]], force: true)
     File.mkdir_p!(Path.join([task.scratch_path, "qa", "evidence"]))
     File.mkdir_p!(Path.join(task.scratch_path, "demo"))
-    :ok = prepare_turn(%{run | task: task})
+    behind = prepare_turn(%{run | task: task})
 
     prompt =
-      Pipeline.build_prompt(
-        task: task,
-        context_snippet: brief(task, run),
-        pending_answer: run.pending_answer,
-        conversation_id: run.conversation_id
-      )
+      behind <>
+        Pipeline.build_prompt(
+          task: task,
+          context_snippet: brief(task, run),
+          pending_answer: run.pending_answer,
+          conversation_id: run.conversation_id
+        )
 
     args =
       Tools.build_args(

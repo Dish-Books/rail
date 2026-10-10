@@ -43,8 +43,30 @@ defmodule Rail.Pipeline.Utils.PrepareTurnTest do
     expect(Git, :fetch_default_branch, fn %Project{default_branch: "main"}, ^worktree_path -> :ok end)
     expect(Git, :set_commit_identity, fn %Task{id: ^task_id} -> :ok end)
 
-    assert :ok = prepare_turn(run)
+    assert "" = prepare_turn(run)
     assert [] = Pipeline.list_run_events(run)
+  end
+
+  # A resumed turn is sent only its message, so the one that finds the branch behind opens by saying so.
+  test "opens a turn whose branch is behind the default branch by saying so", %{
+    run: run,
+    task: %Task{worktree_path: worktree_path}
+  } do
+    git!(worktree_path, ["commit", "--allow-empty", "-m", "landed on main"])
+    git!(worktree_path, ["update-ref", "refs/remotes/origin/main", "HEAD"])
+    git!(worktree_path, ["reset", "--quiet", "--hard", "HEAD~1"])
+    expect(Git, :fetch_default_branch, fn _project, _path -> :ok end)
+    expect(Git, :set_commit_identity, fn _task -> :ok end)
+
+    assert prepare_turn(run) ==
+             "Rail fetched origin/main as this turn started, and the branch is behind it: bring the branch up " <>
+               "to date with it, by merge or rebase, before anything else.\n\n"
+
+    git!(worktree_path, ["merge", "--quiet", "--no-edit", "origin/main"])
+    expect(Git, :fetch_default_branch, fn _project, _path -> :ok end)
+    expect(Git, :set_commit_identity, fn _task -> :ok end)
+
+    assert "" = prepare_turn(run)
   end
 
   # The agent can still work on the copy it fetched last, so a failure is said rather than stopping the turn.
@@ -52,7 +74,7 @@ defmodule Rail.Pipeline.Utils.PrepareTurnTest do
     expect(Git, :fetch_default_branch, fn _project, _path -> {:error, "fatal: unable to access\n  origin"} end)
     expect(Git, :set_commit_identity, fn _task -> {:error, "error: could not lock config file"} end)
 
-    assert :ok = prepare_turn(run)
+    assert "" = prepare_turn(run)
 
     assert [
              %{
@@ -70,7 +92,7 @@ defmodule Rail.Pipeline.Utils.PrepareTurnTest do
     expect(Git, :fetch_default_branch, fn _project, _path -> {:error, {:github_api_error, 404, %{}}} end)
     expect(Git, :set_commit_identity, fn _task -> :ok end)
 
-    assert :ok = prepare_turn(run)
+    assert "" = prepare_turn(run)
     assert [%{line: "[rail] Could not fetch origin/main " <> said}] = Pipeline.list_run_events(run)
     assert said =~ "{:github_api_error, 404, %{}}"
   end
@@ -79,6 +101,6 @@ defmodule Rail.Pipeline.Utils.PrepareTurnTest do
     reject(&Git.fetch_default_branch/2)
     reject(&Git.set_commit_identity/1)
 
-    assert :ok = prepare_turn(%{run | task: %{task | worktree_path: "/nonexistent/ptn"}})
+    assert "" = prepare_turn(%{run | task: %{task | worktree_path: "/nonexistent/ptn"}})
   end
 end

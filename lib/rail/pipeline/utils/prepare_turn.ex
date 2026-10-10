@@ -14,7 +14,8 @@ defmodule Rail.Pipeline.Utils.PrepareTurn do
   alias Rail.Repo
 
   @doc """
-  Fetches the default branch and sets the commit identity for `run`'s next turn. Returns `:ok`.
+  Fetches the default branch and sets the commit identity for `run`'s next turn. Returns what the turn's
+  prompt opens with: a line saying the branch is behind the default branch, or `""` when it is not.
   """
   def prepare_turn(%Run{task: %Task{} = task} = run) do
     %Project{default_branch: base} = project = Repo.get!(Project, task.project_id)
@@ -30,9 +31,21 @@ defmodule Rail.Pipeline.Utils.PrepareTurn do
       with {:error, reason} <- Git.set_commit_identity(task) do
         say(run, "Could not set who this turn commits as, so its commits may not be signed: #{reason}")
       end
-    end
 
-    :ok
+      behind(task, base)
+    else
+      ""
+    end
+  end
+
+  # The brief says to check every turn, but a resumed turn is sent only its message, so the turn that
+  # finds the branch behind is told so at the top.
+  defp behind(%Task{worktree_path: worktree_path}, base) do
+    if Git.up_to_date_with?(worktree_path, base),
+      do: "",
+      else:
+        "Rail fetched origin/#{base} as this turn started, and the branch is behind it: bring the branch up " <>
+          "to date with it, by merge or rebase, before anything else.\n\n"
   end
 
   # One line, since a log line that wraps reads its tail as the agent's words.

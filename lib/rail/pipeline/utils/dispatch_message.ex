@@ -120,11 +120,11 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
 
     {:ok, task} = task |> Task.changeset(%{worktree_path: worktree_path}) |> Repo.update()
     # The agents that commit to the branch start every turn on a fresh default branch, as themselves.
-    if role.stage in [:engineer, :review_lead], do: :ok = prepare_turn(%{run | task: task})
+    behind = if role.stage in [:engineer, :review_lead], do: prepare_turn(%{run | task: task}), else: ""
 
     argv =
       Tools.build_args(
-        prompt: message,
+        prompt: behind <> message,
         model: role.model,
         reasoning_effort: role.reasoning_effort || "high",
         read_only: false,
