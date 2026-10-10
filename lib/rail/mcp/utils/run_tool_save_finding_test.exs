@@ -6,6 +6,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveFindingTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.FindingNote
 
   setup %{project: project} do
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -84,6 +85,46 @@ defmodule Rail.Mcp.Utils.RunToolSaveFindingTest do
 
     assert {:ok, "Noted unhandled-nil as not_fixed and carried it into round 1. What it said when raised stands."} =
              run_tool_save_finding(task, %{"key" => "unhandled-nil", "status" => "not_fixed", "note" => "Still nil."}, [])
+  end
+
+  test "a fix report on a Fix finding is saved fixed with its covered and left places, test and files", %{
+    task: task,
+    finding: finding
+  } do
+    places = [%{"file" => "lib/a.ex", "line" => 3}, %{"file" => "lib/b.ex", "line" => 9}]
+    {:ok, _saved} = run_tool_save_finding(task, %{finding | "places" => places}, [])
+    [raised] = Pipeline.list_findings(task)
+    {:ok, _ruled} = Pipeline.decide_finding(system_scope(), raised, :fix)
+
+    report = %{
+      "key" => "unhandled-nil",
+      "status" => "fixed",
+      "covered" => [1],
+      "left" => [%{"place" => 2, "reason" => "Generated from a.ex."}],
+      "test" => %{"file" => "test/a_test.exs", "name" => "handles nil"},
+      "files" => ["lib/a.ex"],
+      "note" => "Guarded now."
+    }
+
+    assert {:ok, "Noted unhandled-nil as fixed. What it said when raised stands."} =
+             run_tool_save_finding(task, report, [])
+
+    assert [
+             %Finding{
+               status: :fixed,
+               notes: [
+                 %FindingNote{kind: :raised},
+                 %FindingNote{kind: :ruling},
+                 %FindingNote{
+                   kind: :fix,
+                   covered: ["lib/a.ex:3"],
+                   left: ["lib/b.ex:9: Generated from a.ex."],
+                   test: "test/a_test.exs: handles nil",
+                   files: ["lib/a.ex"]
+                 }
+               ]
+             }
+           ] = Pipeline.list_findings(task)
   end
 
   test "a refusal is passed back as the changeset that names the field", %{task: task, finding: finding} do
