@@ -29,7 +29,8 @@ defmodule Rail.Pipeline.Actions.ReadSplit do
               ticket: Map.fetch!(child, "ticket"),
               estimate: Map.fetch!(child, "estimate"),
               plan: Map.fetch!(child, "plan"),
-              builds_on: Map.fetch!(child, "builds_on")
+              builds_on: Map.fetch!(child, "builds_on"),
+              builds_screen: Map.fetch!(child, "builds_screen")
             }
           end)
 

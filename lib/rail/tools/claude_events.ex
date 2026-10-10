@@ -139,19 +139,19 @@ defmodule Rail.Tools.ClaudeEvents do
     num_turns = to_int(event["num_turns"])
     subtype = event["subtype"]
 
+    # The CLI can end a turn on a prompt the model refused as too long and still call it a success.
+    prompt_too_long? = event["terminal_reason"] == "prompt_too_long"
+
     is_error =
-      event["is_error"] == true or (is_binary(subtype) and subtype != "success")
+      prompt_too_long? or event["is_error"] == true or (is_binary(subtype) and subtype != "success")
+
+    detail = if final_text == "", do: "", else: ": #{ToolSummarizer.truncate(final_text, 300)}"
 
     result_error =
-      if is_error do
-        "claude reported #{subtype}" <>
-          if final_text == "" do
-            ""
-          else
-            ": #{ToolSummarizer.truncate(final_text, 300)}"
-          end
-      else
-        state.result_error
+      cond do
+        prompt_too_long? -> "the prompt was too long for the model" <> detail
+        is_error -> "claude reported #{subtype}" <> detail
+        true -> state.result_error
       end
 
     result_log = Enum.join(["[result] #{subtype}" | List.wrap(Run.usage(usage))], " · ")

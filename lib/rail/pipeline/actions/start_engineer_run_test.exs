@@ -166,6 +166,84 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_engineer_run(run)
   end
 
+  test "leaves a design's large inline images out of the brief and the page on disk as it was", %{
+    task: task,
+    run: run
+  } do
+    design_dir = Path.join(task.scratch_path, "design")
+    File.mkdir_p!(design_dir)
+    File.write!(Path.join(design_dir, "manifest.json"), ~s({"options": [{"key": "cards", "title": "Cards"}]}))
+    File.write!(Path.join(design_dir, "picked"), "cards")
+
+    image = "data:image/png;base64," <> String.duplicate("iVBORw0K", 225_000)
+    page = ~s|<style>.hero { background:url('#{image}') }</style><h1>Invoices</h1>|
+    File.write!(Path.join(design_dir, "cards.html"), page)
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
+      assert ["-p", prompt | _rest] = argv
+
+      assert prompt =~
+               ~s|.hero { background:url('[image/png, 1.8 MB, left out of this brief]') }</style><h1>Invoices</h1>|
+
+      refute prompt =~ "iVBORw0K"
+      assert prompt =~ "on disk at #{design_dir}/cards.html, with its screenshot at #{design_dir}/cards.png"
+      assert prompt =~ "the file on disk still has them"
+
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_engineer_run(run)
+    assert File.read!(Path.join(design_dir, "cards.html")) == page
+  end
+
+  test "keeps a design's inline images of 1 KB or less as they are", %{task: task, run: run} do
+    design_dir = Path.join(task.scratch_path, "design")
+    File.mkdir_p!(design_dir)
+    File.write!(Path.join(design_dir, "manifest.json"), ~s({"options": [{"key": "cards", "title": "Cards"}]}))
+    File.write!(Path.join(design_dir, "picked"), "cards")
+
+    icon = "data:image/svg+xml,%3Csvg%20viewBox='0%200%2016%2016'%3E%3Cpath%20d='M2%208h12'/%3E%3C/svg%3E"
+    edge = "data:image/gif;base64," <> String.duplicate("R", 1_024 - byte_size("data:image/gif;base64,"))
+    note = "data:," <> String.duplicate("a", 2_000)
+
+    File.write!(
+      Path.join(design_dir, "cards.html"),
+      ~s(<img src="#{icon}"><img src="#{edge}"><a href="#{note}">Notes</a>)
+    )
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
+      assert ["-p", prompt | _rest] = argv
+      assert prompt =~ ~s(<img src="#{icon}"><img src="#{edge}">)
+      assert prompt =~ ~s(<a href="[text/plain, 2 KB, left out of this brief]">Notes</a>)
+
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_engineer_run(run)
+  end
+
+  test "names a design still too large once its images are out by its paths alone", %{task: task, run: run} do
+    design_dir = Path.join(task.scratch_path, "design")
+    File.mkdir_p!(design_dir)
+    File.write!(Path.join(design_dir, "manifest.json"), ~s({"options": [{"key": "cards", "title": "Cards"}]}))
+    File.write!(Path.join(design_dir, "picked"), "cards")
+    File.write!(Path.join(design_dir, "cards.html"), "<p>" <> String.duplicate("Invoice row ", 25_001) <> "</p>")
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
+      assert ["-p", prompt | _rest] = argv
+      assert prompt =~ ~s(The human approved the design "Cards".)
+      assert prompt =~ "Its page is at #{design_dir}/cards.html and its screenshot at #{design_dir}/cards.png."
+      assert prompt =~ "The page was too large to include in this brief"
+      assert prompt =~ "Build that screen."
+      refute prompt =~ "<design"
+      refute prompt =~ "Invoice row"
+
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_engineer_run(run)
+  end
+
   test "a plan and a picked option revised after approval are what the next Engineer brief carries", %{
     task: task,
     run: run

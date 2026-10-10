@@ -199,7 +199,14 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
       for {{identifier, builds_on}, number} <- Enum.with_index([{"ATT-S1", []}, {"ATT-S2", []}, {"ATT-S3", [1]}], 1) do
         attrs = %{title: "Child #{identifier}", parent: parent_issue}
         {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
-        part = %{number: number, builds_on: builds_on, plan: "## Implementation plan\n\nPart #{number}."}
+
+        part = %{
+          number: number,
+          builds_on: builds_on,
+          builds_screen: false,
+          plan: "## Implementation plan\n\nPart #{number}."
+        }
+
         {:ok, child} = Pipeline.create_child_task(parent, issue, part)
         Repo.preload(child, [:issue, :project])
       end

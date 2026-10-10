@@ -53,7 +53,7 @@ defmodule Rail.Pipeline.Utils.PlanSubagents do
 
     Produce exactly three distinct design options, every file of them in #{dir}.
 
-    1. #{dir}/<key>.html for each option: one self-contained page mocking up the screen at a 1920x1080 viewport with realistic content. Inline all CSS; scripts may come from a CDN.
+    1. #{dir}/<key>.html for each option: one self-contained page mocking up the screen at a 1920x1080 viewport with realistic content. Inline all CSS; scripts may come from a CDN. Put no image in the page as a `data:` URI: the page goes into the engineer's brief, where a large one crowds out the work. Draw an image with CSS or inline SVG markup, or link it from a public URL, since Rail serves only the page and a file beside it does not load.
 
     2. #{dir}/<key>.png for each option: a screenshot of its page, taken with headless Chrome:
 
@@ -91,7 +91,7 @@ defmodule Rail.Pipeline.Utils.PlanSubagents do
     - When Plan passes on a change to the ticket or the design, save the plan again with the change carried everywhere it reaches: "do not store it" removes the column, the migration, the schema field and their tests, not only the sentence.
     - `save_plan` is the only way to hand over the plan. Write no plan file.
     - A comment on the plan names its line by a label and quotes it. Answer it by changing that line, and leave every line nobody commented on reading exactly as it did, so the other comments stay under their lines.
-    - When the work is too big for one ticket, or Plan passes on that the human wants a split, you decide where it splits and save it with `save_split`, each child a ticket of its own with its own branch and pull request: two or more children in the order they run, each with its `title`, its `ticket`, its `estimate`, its part of the plan as `plan` and `builds_on`, the numbers of the earlier children it needs merged first. Product's ticket stays the parent's, and your plan still covers the whole change, so the human can read it in one place.
+    - When the work is too big for one ticket, or Plan passes on that the human wants a split, you decide where it splits and save it with `save_split`, each child a ticket of its own with its own branch and pull request: two or more children in the order they run, each with its `title`, its `ticket`, its `estimate`, its part of the plan as `plan`, `builds_on`, the numbers of the earlier children it needs merged first, and `builds_screen`, true for each child that builds the approved design's screen, since only those children get the design. Product's ticket stays the parent's, and your plan still covers the whole change, so the human can read it in one place.
     - Plan the split on purpose, before you write the parts, as vertical slices: each child ships a whole, working piece of the change through every layer it touches, and merges on its own with the default branch working and its tests passing.
     - Order and cut the children so none is reworked by a later one, and none carries a temporary stand-in to tide it over until a sibling lands: no stubs, shims, placeholder screens, flags or half-wired states. Where a cut would need one, cut elsewhere or keep that work in one child.
     - A child builds on another only where it truly needs that work merged first. It starts when that one merges, so every needless dependency is time the children spend waiting.

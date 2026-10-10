@@ -29,7 +29,7 @@ defmodule Rail.Pipeline.Actions.SaveSplit do
 
       _children ->
         with {:ok, %Split{children: children}} <- %Split{} |> Split.changeset(attrs) |> apply_action(:insert) do
-          children = Enum.map(children, &Map.take(&1, [:title, :ticket, :estimate, :plan, :builds_on]))
+          children = Enum.map(children, &Map.take(&1, [:title, :ticket, :estimate, :plan, :builds_on, :builds_screen]))
           write_scratch_file(path, Jason.encode!(%{children: children}, pretty: true))
           Pipeline.broadcast_output_saved(task)
 
