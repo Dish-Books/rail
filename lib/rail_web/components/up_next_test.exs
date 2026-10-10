@@ -347,7 +347,8 @@ defmodule RailWeb.Components.UpNextTest do
 
     {:ok, _finished} = Pipeline.start_fix_round(system_scope(), run)
 
-    assert {"Ready to merge", "Ready to merge", _merge, []} = read.(%{stopped | stage_outcome: :done})
+    assert {"Ready to merge", "Ready to merge", _merge, []} =
+             read.(%{Repo.reload!(run) | role: lead, task: task, questions: []})
   end
 
   test "a Plan run with options and no pick asks for the pick, as a card and as a row", %{

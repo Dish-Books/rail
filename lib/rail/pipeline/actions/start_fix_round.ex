@@ -123,11 +123,15 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
 
   defp claim(%Scope{}, %Task{}), do: %{finding: [], diff: [], screen: []}
 
-  # Finishing the review is when its run completes, which every page showing the task hears.
+  # Finishing the review is when its run completes, which every page showing the task hears. A chat turn that
+  # stopped or failed left the lead in progress with its error, which the finished review settles.
   defp finish(%Run{} = run) do
     send_back(run.task, :review_lead, "Finish review: nothing was ruled Fix.")
     _task = finish_review(run.task)
-    {:ok, finished} = run |> Run.changeset(%{completed_at: DateTime.utc_now()}) |> Repo.update()
+
+    {:ok, finished} =
+      run |> Run.changeset(%{completed_at: DateTime.utc_now(), stage_outcome: :done, error: nil}) |> Repo.update()
+
     broadcast_pipeline_changed(run.task)
     {:ok, finished}
   end
@@ -145,7 +149,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
         case Pipeline.start_review_run(%{reopened | task: run.task, role: role}) do
           {:ok, os_process} -> sent(run.task, sent, os_process.run)
           {:error, {:spawn_failed, _reason, %Run{} = failed}} -> spawn_failed(run.task, sent, failed)
-          {:error, :dispatch_disabled} -> unstarted(reopened, sent, :dispatch_disabled)
+          {:error, :dispatch_disabled} -> unstarted(reopened, run, sent, :dispatch_disabled)
         end
 
       {0, []} ->
@@ -190,9 +194,19 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
     sent(task, %{sent | finding: []}, failed)
   end
 
-  # Marked running before the spawn so a second click is refused; it and the comments go back when nothing spawned.
-  defp unstarted(%Run{} = run, sent, reason) do
-    {:ok, _settled} = run |> Run.changeset(%{status: :finished}) |> Repo.update()
+  # Marked running before the spawn so a second click is refused; it goes back to how it read before, and the
+  # comments to unsent, when nothing spawned.
+  defp unstarted(%Run{} = reopened, %Run{} = before, sent, reason) do
+    {:ok, _settled} =
+      reopened
+      |> Run.changeset(%{
+        status: :finished,
+        stage_outcome: before.stage_outcome,
+        completed_at: before.completed_at,
+        error: before.error
+      })
+      |> Repo.update()
+
     unsend(sent)
     {:error, reason}
   end

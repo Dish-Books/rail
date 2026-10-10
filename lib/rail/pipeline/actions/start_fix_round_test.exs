@@ -156,6 +156,24 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
     assert {:error, :nothing_to_start} = Pipeline.start_fix_round(system_scope(), run)
   end
 
+  # A chat turn that stopped or failed leaves the lead in progress with its error, which a finished review clears.
+  test "Finish review after a stopped or failed chat turn saves the run done, with no error", %{
+    task: task,
+    run: run,
+    crash: crash,
+    nit: nit
+  } do
+    {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
+    {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
+    {:ok, _no_pr} = Pipeline.update_task(task, %{pr_number: nil})
+    {:ok, stopped} = Pipeline.update_run(run, %{stage_outcome: :in_progress, error: "The turn failed."})
+
+    assert {:ok, %Run{stage_outcome: :done, error: nil, completed_at: %DateTime{}}} =
+             Pipeline.start_fix_round(system_scope(), stopped)
+
+    assert %Run{status: :finished, stage_outcome: :done, error: nil} = Repo.reload!(run)
+  end
+
   # A fix's commit not yet through CI is still waiting on it, however the findings were ruled.
   test "on a project with CI, nothing ruled Fix finishes only once CI passed on HEAD", %{
     project: project,
@@ -568,7 +586,15 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
 
       expect(Tools, :start_os_process, fn %Run{}, _argv -> {:error, :dispatch_disabled} end)
 
+      {:ok, %Run{completed_at: completed_at} = run} =
+        Pipeline.update_run(run, %{stage_outcome: :in_progress, error: "The turn stopped."})
+
       assert {:error, :dispatch_disabled} = Pipeline.start_fix_round(ada, run)
+
+      # The run reads as it did before the Send, not as a fix round that never started.
+      assert %Run{status: :finished, stage_outcome: :in_progress, error: "The turn stopped.", completed_at: ^completed_at} =
+               Repo.reload!(run)
+
       assert [%DiffComment{status: :unsent}] = Pipeline.list_diff_comments(ada, task)
       assert [%ScreenComment{status: :unsent}] = Pipeline.list_screen_comments(ada, task)
       assert [%FindingComment{status: :unsent}] = Pipeline.list_finding_comments(ada, task)

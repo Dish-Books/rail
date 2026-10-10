@@ -4864,8 +4864,7 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "[data-qa='task_status_chip'] .pi-list-checks")
       assert has_element?(view, "#task-tab-#{role.id} [data-qa='task-tab-dot'][data-tone='stopped']")
 
-      {:ok, done} = Pipeline.update_run(stopped, %{stage_outcome: :done})
-      {:ok, _finished} = Pipeline.start_fix_round(system_scope(), done)
+      {:ok, _finished} = Pipeline.start_fix_round(system_scope(), stopped)
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert has_element?(view, "[data-qa='task_status_chip']", "Ready to merge")
       assert has_element?(view, "[data-qa='task_status_chip'] .pi-check-circle")

@@ -220,6 +220,28 @@ defmodule RailWeb.Live.ReviewStageTest do
     assert has_element?(view, "#task-status-chip", "Ready to merge")
   end
 
+  # A chat turn that stopped or failed leaves the lead in progress, which Finish review settles.
+  test "Finish review after a failed chat turn reads finished on the header", %{
+    conn: conn,
+    task: task,
+    run: run,
+    code: code
+  } do
+    {:ok, finding} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
+    {:ok, _pass} = Pipeline.save_review(task)
+    {:ok, _ruled} = Pipeline.decide_finding(system_scope(), finding, :skip)
+    {:ok, _failed} = Pipeline.update_run(run, %{stage_outcome: :in_progress, error: "The turn failed."})
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    assert has_element?(view, "#task-status-chip", "Review failed")
+
+    view |> element("#finish-review") |> render_click()
+    _settled = render(view)
+
+    assert has_element?(view, "#task-status-chip", "Ready to merge")
+    refute has_element?(view, "#task-status-chip", "Review failed")
+  end
+
   test "a finding reads whole: Problem, Where, Fix, Why, its evidence, the rule with every place, its commits and history",
        %{conn: conn, user: user, task: task, head: head, code: code, screen: screen} do
     {:ok, finding} = Pipeline.save_finding(task, Map.merge(code, %{key: "view-only-send", note: "From the diff."}))
