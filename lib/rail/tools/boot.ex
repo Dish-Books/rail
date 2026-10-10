@@ -10,7 +10,7 @@ defmodule Rail.Tools.Boot do
 
   Browser sessions are reconciled on the same pass: the shared Chrome outlives
   Rail, so a tab whose task has moved on is closed here, and one a running pass
-  is still using is reconnected to.
+  is still using is reconnected to. So are the connections to extra hosts.
   """
   use Task, restart: :transient
 
@@ -18,6 +18,7 @@ defmodule Rail.Tools.Boot do
   import Rail.Tools.Utils.AdmitSandboxes
   import Rail.Tools.Utils.DecodeUtf8Lenient
   import Rail.Tools.Utils.DrainErrFile
+  import Rail.Tools.Utils.EnsureHostConnections
   import Rail.Tools.Utils.NewEventState
   import Rail.Tools.Utils.ParseLine
   import Rail.Tools.Utils.ReadExitFile
@@ -60,6 +61,7 @@ defmodule Rail.Tools.Boot do
     if Keyword.get(opts, :boot, false), do: requeue_toolchain_installs()
     adopted = adopt_live_os_processes(opts)
     _browsers = Tools.reconcile_browser_sessions(opts)
+    _connections = ensure_host_connections()
     _admitted = admit_sandboxes()
     remove_settled_containers()
 

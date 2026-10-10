@@ -14,7 +14,7 @@ defmodule RailWeb.Components.SettingsNav do
       id="settings-nav"
       data-qa="settings-nav"
     >
-      <nav class="-mb-px flex space-x-8" aria-label="Tabs" id="settings-tabs">
+      <nav class="-mb-px flex space-x-6 overflow-x-auto" aria-label="Tabs" id="settings-tabs">
         <.link
           navigate={~p"/settings/connected-accounts"}
           class={[
@@ -132,6 +132,21 @@ defmodule RailWeb.Components.SettingsNav do
           data-qa="settings-tab"
         >
           Roles
+        </.link>
+
+        <.link
+          :if={Scope.admin?(@current_scope)}
+          navigate={~p"/settings/hosts"}
+          class={[
+            @active_tab == :hosts && "border-indigo-500 text-indigo-600 font-semibold",
+            @active_tab != :hosts &&
+              "border-transparent text-slate-500 dark:text-slate-400 hover:border-slate-500 dark:hover:border-slate-400 hover:text-slate-900 dark:hover:text-slate-100",
+            "whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium"
+          ]}
+          id="tab-hosts"
+          data-qa="settings-tab"
+        >
+          Hosts
         </.link>
       </nav>
     </div>

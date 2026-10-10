@@ -89,6 +89,7 @@ defmodule Rail.MixProject do
       {:tailwind, "~> 0.3", runtime: Mix.env() == :dev},
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},
+      {:thousand_island, "~> 1.5"},
       {:tz, "~> 0.28"},
       {:ueberauth, "~> 0.10"},
       {:ueberauth_github, "~> 0.8"},

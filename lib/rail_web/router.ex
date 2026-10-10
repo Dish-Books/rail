@@ -128,6 +128,7 @@ defmodule RailWeb.Router do
       live "/settings/roles", Settings.RolesLive
       live "/settings/backends", Settings.BackendsLive
       live "/settings/mcp-servers", Settings.McpServersLive
+      live "/settings/hosts", Settings.HostsLive
     end
   end
 

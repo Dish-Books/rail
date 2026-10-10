@@ -11,9 +11,9 @@ defmodule Rail.Tools do
   alias Rail.Tools.Actions
 
   @doc """
-  Starts the processes this context owns: the registries followers and browser
-  sessions name themselves in, the supervisors they run under, and the boot-time
-  adoption pass.
+  Starts the processes this context owns: the registries followers, browser
+  sessions and host connections name themselves in, the supervisors they run
+  under, and the boot-time adoption pass.
   """
   def start_link(opts \\ []) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
@@ -28,6 +28,8 @@ defmodule Rail.Tools do
       {Registry, keys: :unique, name: Rail.Tools.BrowserRegistry},
       {Registry, keys: :unique, name: Rail.Tools.RecorderRegistry},
       {DynamicSupervisor, name: Rail.Tools.BrowserSupervisor, strategy: :one_for_one},
+      {Registry, keys: :unique, name: Rail.Tools.HostRegistry},
+      {DynamicSupervisor, name: Rail.Tools.HostSupervisor, strategy: :one_for_one},
       Rail.Tools.Boot
     ]
 
@@ -71,6 +73,25 @@ defmodule Rail.Tools do
   defdelegate get_sandbox_capacity(), to: Actions.GetSandboxCapacity
   defdelegate get_queue_position(run), to: Actions.GetQueuePosition
   defdelegate list_sandbox_usage(), to: Actions.ListSandboxUsage
+  defdelegate list_sandbox_hosts(), to: Actions.ListSandboxHosts
+  defdelegate list_sandbox_host_statuses(), to: Actions.ListSandboxHostStatuses
+  defdelegate sync_sandbox_image(host), to: Actions.SyncSandboxImage
+
+  @decorate can?(resource: :sandbox_hosts, action: :manage)
+  defdelegate create_sandbox_host(scope, attrs), to: Actions.CreateSandboxHost
+
+  @decorate can?(resource: :sandbox_hosts, action: :manage)
+  defdelegate update_sandbox_host(scope, host, attrs), to: Actions.UpdateSandboxHost
+
+  @decorate can?(resource: :sandbox_hosts, action: :manage)
+  defdelegate remove_sandbox_host(scope, host), to: Actions.RemoveSandboxHost
+
+  @decorate can?(resource: :sandbox_hosts, action: :manage)
+  defdelegate trust_sandbox_host_key(scope, host, fingerprint), to: Actions.TrustSandboxHostKey
+
+  @decorate can?(resource: :sandbox_hosts, action: :manage)
+  defdelegate retry_sandbox_image_copy(scope, host), to: Actions.RetrySandboxImageCopy
+
   defdelegate ensure_toolchain(project), to: Actions.EnsureToolchain
   defdelegate install_toolchain(install_id), to: Actions.InstallToolchain
   defdelegate list_toolchain_installs(), to: Actions.ListToolchainInstalls
