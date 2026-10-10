@@ -867,6 +867,9 @@ defmodule RailWeb.Live.ReviewStageTest do
       File.write!(Path.join(folder, "2.jpg"), "retaken")
       {:ok, _retaken} = Pipeline.save_screen(task, %{key: "toolbar", label: "Toolbar", file: "screens/toolbar/2.jpg"})
       send(view.pid, {:output_saved, task.id})
+      # The page redraws the stage through send_update, which queues behind a render already asked for.
+      _settled = render(view)
+      _settled = render(view)
 
       assert has_element?(view, "[data-qa=screen_earlier] img[src$='/screens/toolbar/0']")
       assert has_element?(view, "[data-qa=screen_latest] img[src$='/screens/toolbar/1']")
