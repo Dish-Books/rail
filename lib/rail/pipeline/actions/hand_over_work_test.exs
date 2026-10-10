@@ -5,6 +5,7 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.FindingNote
   alias Rail.Pipeline.Schemas.Run
@@ -581,6 +582,127 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
                lead_run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
 
       assert String.starts_with?(head, short)
+    end
+
+    # The turn that handed its commits to CI ended running, so it was never latched; CI's pass ends its round.
+    test "CI passing on a branch the last round read ends the round, which waits on the findings to rule", %{
+      task: task,
+      lead_run: %Run{id: lead_run_id} = lead_run,
+      repo: repo
+    } do
+      {:ok, _finding} =
+        Pipeline.save_finding(task, %{
+          key: "unhandled-nil",
+          kind: :code,
+          raised_by: :code_reviewer,
+          title: "Nil is not handled",
+          problem: "It crashes.",
+          file: "feature.ex",
+          line: 1,
+          fix: "Guard it.",
+          why: "It crashes.",
+          rule: "Every caller handles nil.",
+          severity: :major,
+          recommendation: :fix,
+          places: [%{file: "feature.ex", line: 1}],
+          evidence: [%{name: "range", kind: :code, file: "feature.ex", line: 1}]
+        })
+
+      git!(repo, ["commit", "--allow-empty", "-m", "Guard the nil"])
+      {:ok, %{round: 2}} = Pipeline.save_review(task)
+      {:ok, _open} = Pipeline.update_run(lead_run, %{stage_outcome: :in_progress, status: :running})
+      reject(Tools, :start_os_process, 2)
+
+      ci =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: lead_run_id,
+          task_id: task.id,
+          kind: :ci,
+          stream_path: "/tmp/cmw-lead-ci.log",
+          status: :running,
+          started_at: DateTime.utc_now()
+        })
+        |> Repo.insert!()
+
+      assert {:ok, %Run{stage_outcome: :done, status: :finished, error: nil}} =
+               Pipeline.run_finished(ci, %{exit_code: 0})
+
+      refute Git.branch_unpushed?(repo)
+      assert :done = lead_run |> Repo.reload!() |> Repo.preload(:questions) |> Run.state()
+      assert [%{finished_at: nil}, %{finished_at: nil}] = task |> Repo.preload(:issue) |> Pipeline.read_review()
+      assert [] = Pipeline.list_run_events(lead_run)
+    end
+
+    test "CI passing on a branch the last round read, with nothing left to rule or fix, finishes the review", %{
+      task: task,
+      lead_run: %Run{id: lead_run_id} = lead_run,
+      repo: repo
+    } do
+      {:ok, task} = Pipeline.update_task(task, %{pr_is_draft: true})
+      git!(repo, ["commit", "--allow-empty", "-m", "Guard the nil"])
+      {:ok, %{round: 2}} = Pipeline.save_review(task)
+      {:ok, _open} = Pipeline.update_run(lead_run, %{stage_outcome: :in_progress, status: :running})
+
+      Req.Test.stub(Client, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"POST", "/app/installations/" <> _id} ->
+            Req.Test.json(conn, %{"token" => "ghs_token"})
+
+          {"GET", "/repos/" <> _pull} ->
+            Req.Test.json(conn, %{"number" => 7, "node_id" => "PR_7"})
+
+          {"POST", "/graphql"} ->
+            Req.Test.json(conn, %{
+              "data" => %{"markPullRequestReadyForReview" => %{"pullRequest" => %{"isDraft" => false}}}
+            })
+        end
+      end)
+
+      ci =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: lead_run_id,
+          task_id: task.id,
+          kind: :ci,
+          stream_path: "/tmp/cmw-lead-ci.log",
+          status: :running,
+          started_at: DateTime.utc_now()
+        })
+        |> Repo.insert!()
+
+      assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(ci, %{exit_code: 0})
+      assert %Task{stage: :review, pr_is_draft: false} = Repo.reload!(task)
+      assert [_first, %{finished_at: %DateTime{}}] = task |> Repo.preload(:issue) |> Pipeline.read_review()
+    end
+
+    test "CI passing while the lead's question is unanswered leaves the round open on the answer", %{
+      task: task,
+      lead_run: %Run{id: lead_run_id} = lead_run,
+      repo: repo
+    } do
+      git!(repo, ["commit", "--allow-empty", "-m", "Guard the nil"])
+      {:ok, %{round: 2}} = Pipeline.save_review(task)
+      {:ok, lead_run} = Pipeline.update_run(lead_run, %{stage_outcome: :in_progress})
+
+      {:ok, _question} =
+        Pipeline.register_question(Repo.preload(lead_run, task: :issue), %DetectedQuestion{prompt: "Keep the guard?"})
+
+      ci =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: lead_run_id,
+          task_id: task.id,
+          kind: :ci,
+          stream_path: "/tmp/cmw-lead-ci.log",
+          status: :running,
+          started_at: DateTime.utc_now()
+        })
+        |> Repo.insert!()
+
+      assert {:ok, %Run{stage_outcome: :in_progress, error: nil}} = Pipeline.run_finished(ci, %{exit_code: 0})
+      refute Git.branch_unpushed?(repo)
+      assert :blocked = lead_run |> Repo.reload!() |> Repo.preload(:questions) |> Run.state()
     end
 
     test "with dispatch off, the lead's commit is pushed and says the round was not started", %{

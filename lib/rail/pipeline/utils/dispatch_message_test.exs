@@ -269,4 +269,50 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     assert {:error, :worktree_setup_failed} = dispatch_message(run, async: false)
     assert %Run{pending_chat: "Please also add a test", status: :failed} = Repo.reload!(run)
   end
+
+  describe "a message to a Review lead whose round waits on a person" do
+    setup %{project: project, task: task} do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+      {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
+
+      {:ok, %Run{id: lead_id} = lead} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: role.id,
+          status: :finished,
+          stage_outcome: :done,
+          conversation_id: "sess_dispatch_latched_lead",
+          pending_chat: "Are you sure about the nil?",
+          started_at: DateTime.utc_now()
+        })
+
+      %{lead: lead, lead_id: lead_id}
+    end
+
+    test "puts the run back in progress, so the turn it starts is read on its own", %{lead: lead, lead_id: lead_id} do
+      expect(Tools, :start_os_process, fn %Run{id: ^lead_id, stage_outcome: :in_progress} = spawned, _argv ->
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %OsProcess{}} = dispatch_message(lead, async: false)
+      assert %Run{stage_outcome: :in_progress, status: :running} = Repo.reload!(lead)
+    end
+
+    test "whose worktree setup cannot start reads failed, not done", %{project: project, lead: lead} do
+      {:ok, _project} = Projects.update_project(system_scope(), project, %{worktree_setup_script: "bin/setup"})
+
+      expect(Tools, :start_command_process, fn _run, :setup, _command, _opts -> {:error, :enoent} end)
+
+      assert {:error, :worktree_setup_failed} = dispatch_message(lead, async: false)
+      assert :failed = lead |> Repo.reload!() |> Repo.preload(:questions) |> Run.state()
+    end
+  end
+
+  test "a message to a done Plan run leaves it done", %{run: run} do
+    {:ok, done} = Pipeline.update_run(run, %{stage_outcome: :done})
+    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    assert {:ok, %OsProcess{}} = dispatch_message(done, async: false)
+    assert %Run{stage_outcome: :done} = Repo.reload!(done)
+  end
 end

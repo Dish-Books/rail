@@ -20,6 +20,7 @@ defmodule RailWeb.TaskLive do
 
   import RailWeb.Utils.ChildStatus
   import RailWeb.Utils.HandleIssueEvent
+  import RailWeb.Utils.StageLabel, only: [review_waiting?: 2]
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
@@ -956,7 +957,7 @@ defmodule RailWeb.TaskLive do
           stage: role.stage,
           label: role.name,
           sublabel: role_status_label(role, run, task),
-          tone: tab_tone(run),
+          tone: tab_tone(run, role, task),
           badge: Map.get(counts, run && run.id, 0) + to_rule(role, run, task),
           selected?: selected != nil and selected.id == role.id
         }
@@ -1112,9 +1113,15 @@ defmodule RailWeb.TaskLive do
 
   defp task_path(%{assigns: %{url_id: url_id}}, tab), do: ~p"/tasks/#{url_id}?tab=#{tab}"
 
-  # A run waiting for usage reads apart from one waiting for a sandbox.
-  defp tab_tone(%Run{status: :waiting_for_usage}), do: :waiting_for_usage
-  defp tab_tone(run), do: Run.state(run)
+  # A run waiting for usage reads apart from one waiting for a sandbox, and a Review round waiting on a person
+  # is amber like a question.
+  defp tab_tone(%Run{status: :waiting_for_usage}, _role, _task), do: :waiting_for_usage
+
+  defp tab_tone(%Run{} = run, %Role{stage: :review_lead}, %Task{} = task) do
+    if review_waiting?(task, run), do: :blocked, else: Run.state(run)
+  end
+
+  defp tab_tone(run, %Role{}, %Task{}), do: Run.state(run)
 
   # A run can ask several things at once, so its whole unsent round shows as tabs, in
   # the order they were asked. A run resumed without an answer still shows them.

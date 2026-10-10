@@ -11,6 +11,7 @@ defmodule RailWeb.Utils.StageLabel do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Roles.Schemas.Role
 
   @doc """
   Labels `task` with what `run` is doing.
@@ -66,10 +67,8 @@ defmodule RailWeb.Utils.StageLabel do
   @doc """
   What the human is being asked to read, for a stage that has finished.
 
-  Public because the overview asks the same question from the other side - a
-  card that says "Review ticket" while the task page says "Review the findings"
-  is two answers to one question, and the reader has to open the task to find
-  out which is right.
+  Public because `role_status_label.ex` and `child_status.ex` read it, so the task page, the tab and the split
+  board name the errand alike.
   """
   def approval_label(%Task{stage: :plan} = task) do
     if waiting_on_pick?(task), do: "Pick a design", else: "Review the plan"
@@ -78,7 +77,7 @@ defmodule RailWeb.Utils.StageLabel do
   def approval_label(%Task{stage: :engineer}), do: "Review the diff"
 
   def approval_label(%Task{stage: :review} = task) do
-    if review_finished?(task), do: "Ready to merge", else: "Review the findings"
+    if review_finished?(task), do: "Ready to merge", else: "Review"
   end
 
   def approval_label(%Task{}), do: "Waiting on you"
@@ -88,6 +87,14 @@ defmodule RailWeb.Utils.StageLabel do
   """
   def ready_to_merge?(%Task{stage: :review} = task, run), do: Run.state(run) == :done and review_finished?(task)
   def ready_to_merge?(_task, _run), do: false
+
+  @doc """
+  True when `run` is the Review lead's at a task at Review, done and not ready to merge: a round waiting on a person.
+  """
+  def review_waiting?(%Task{stage: :review} = task, %Run{role: %Role{stage: :review_lead}} = run),
+    do: Run.state(run) == :done and not ready_to_merge?(task, run)
+
+  def review_waiting?(_task, _run), do: false
 
   @doc "True when `task` has design options saved and none of them picked yet."
   def waiting_on_pick?(%Task{} = task) do

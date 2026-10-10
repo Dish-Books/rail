@@ -34,6 +34,7 @@ defmodule RailWeb.Components.UpNext do
       |> assign(:featured, List.first(assigns.runs))
       |> assign(:rest, Enum.drop(assigns.runs, 1))
       |> assign(:picking, picking)
+      |> assign(:featured_icon, featured_icon(List.first(assigns.runs)))
 
     ~H"""
     <div id="up-next" data-qa="up-next" class="space-y-3">
@@ -50,19 +51,21 @@ defmodule RailWeb.Components.UpNext do
         {destination(@featured)}
         id={"up-next-featured-#{@featured.id}"}
         data-qa="up-next-featured"
-        class="group block rounded-xl border border-amber-300 dark:border-amber-800/70 bg-amber-50 dark:bg-amber-950/30 px-5 py-4 transition-colors hover:bg-amber-100/70 dark:hover:bg-amber-950/50"
+        class="@container group block rounded-xl border border-amber-300 dark:border-amber-800/70 bg-amber-50 dark:bg-amber-950/30 px-5 py-4 transition-colors hover:bg-amber-100/70 dark:hover:bg-amber-950/50"
       >
-        <div class="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <div class="flex flex-col gap-4 @lg:flex-row @lg:items-center">
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
               <span
                 data-qa="up-next-chip"
                 class={[
-                  "px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider",
+                  "inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider",
                   tone(@featured).chip
                 ]}
               >
-                {chip(@featured)}
+                <.icon :if={@featured_icon} name={@featured_icon} class="size-3 -ml-0.5 mr-1" />{chip(
+                  @featured
+                )}
               </span>
               <span class="font-mono text-xs text-slate-600 dark:text-slate-400 truncate">
                 {@featured.task.issue.identifier} · {@featured.role.name}
@@ -81,11 +84,17 @@ defmodule RailWeb.Components.UpNext do
             </p>
           </div>
 
-          <span class={[
-            "self-start sm:self-center shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition-colors",
-            tone(@featured).action
-          ]}>
-            {action(@featured)}
+          <span
+            data-qa="up-next-action"
+            class={[
+              "self-start @lg:self-center shrink-0 inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold transition-colors",
+              tone(@featured).action
+            ]}
+          >
+            <.icon :if={@featured_icon} name={@featured_icon} class="size-[15px] mr-1.5" />{verb(
+              @featured,
+              @picking
+            )}
           </span>
         </div>
       </.link>
@@ -152,6 +161,13 @@ defmodule RailWeb.Components.UpNext do
       else: [navigate: ~p"/tasks/#{run.task_id}"]
   end
 
+  # A Review round waiting on a person carries the Review screen's Findings icon; every other card is words alone.
+  defp featured_icon(%Run{task: %Task{} = task} = run) do
+    if review_waiting?(task, run), do: run_state_style(run, task).icon
+  end
+
+  defp featured_icon(nil), do: nil
+
   # A finished Review with a pull request to merge has nothing left to wait on but the merge.
   defp ready_to_merge?(%Run{role: %Role{stage: :review_lead}, task: %Task{pr_url: pr_url} = task} = run)
        when is_binary(pr_url) do
@@ -169,16 +185,6 @@ defmodule RailWeb.Components.UpNext do
       :done -> if ready_to_merge?(run), do: "Ready to merge", else: "Ready for review"
       :blocked -> "Needs an answer"
       _stalled -> "Needs a fix"
-    end
-  end
-
-  # The same sentence the task page puts at the top of the stage, so a card and
-  # the page it opens do not name the errand differently.
-  defp action(%Run{task: %Task{} = task} = run) do
-    case Run.state(run) do
-      :done -> if ready_to_merge?(run), do: "Ready to merge", else: approval_label(task)
-      :blocked -> "Answer questions"
-      _stalled -> "Pick it up"
     end
   end
 

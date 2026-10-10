@@ -31,7 +31,7 @@ defmodule RailWeb.Utils.RoleStatusLabelTest do
     plan_task = %Task{stage: :plan, scratch_path: scratch}
 
     assert role_status_label(%Role{stage: :plan}, done, plan_task) == "review the plan"
-    assert role_status_label(%Role{stage: :review_lead}, done, %Task{stage: :review}) == "review the findings"
+    assert role_status_label(%Role{stage: :review_lead}, done, %Task{stage: :review}) == "review"
     assert role_status_label(%Role{stage: :engineer}, done, %Task{stage: :engineer}) == "needs review"
 
     options = for key <- ["a", "b", "c"], do: %{"key" => key, "title" => String.upcase(key)}

@@ -171,6 +171,39 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-task-link", "Review running")
   end
 
+  test "the task link of a Review round waiting on a person reads Review", %{conn: conn, project: project} do
+    issue =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_review_waiting",
+        identifier: "IPG-13",
+        title: "Findings to rule",
+        state: :todo
+      })
+      |> Repo.insert!()
+      |> Repo.preload(:project)
+
+    {:ok, task} = Pipeline.create_task(issue, :review)
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
+
+    {:ok, _waiting} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: lead.id,
+        status: :finished,
+        stage_outcome: :done,
+        started_at: DateTime.utc_now()
+      })
+
+    {:ok, _pass} = Pipeline.save_review(Repo.preload(task, :issue))
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    assert has_element?(view, "#issue-task-link", ~r/^\s*Review\s*$/)
+  end
+
   test "an issue with no task can be started from its page", %{conn: conn, project: project} do
     issue =
       %Issue{}

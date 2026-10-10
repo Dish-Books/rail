@@ -1060,7 +1060,7 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert has_element?(view, "#up-next-featured-#{review_run.id}[href='/tasks/#{review.id}']", "Ticket to review")
       assert has_element?(view, "#up-next-featured-#{review_run.id} [data-qa='up-next-chip']", "Ready for review")
-      assert has_element?(view, "#up-next-featured-#{review_run.id}", "Review the plan")
+      assert has_element?(view, "#up-next-featured-#{review_run.id} [data-qa='up-next-action']", "Review")
 
       assert has_element?(view, "#up-next-row-#{one_question.id}[href='/tasks/#{one_task.id}']", "asked a question")
       assert has_element?(view, "#up-next-row-#{two_questions.id}[href='/tasks/#{two_task.id}']", "asked 2 questions")
@@ -1124,7 +1124,7 @@ defmodule RailWeb.OverviewLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/")
 
       assert has_element?(view, "#up-next-featured-#{plan_run.id}", "#{task.issue.identifier} · plan role")
-      assert has_element?(view, "#up-next-featured-#{plan_run.id}", "Pick a design")
+      assert has_element?(view, "#up-next-featured-#{plan_run.id} [data-qa='up-next-action']", "Pick")
 
       assert has_element?(
                view,
@@ -1165,7 +1165,7 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert has_element?(view, "#up-next-featured-#{run.id} [data-qa='up-next-chip']", "Needs an answer")
       assert has_element?(view, "#up-next-featured-#{run.id} [data-qa='up-next-summary']", "ready to send")
-      assert has_element?(view, "#up-next-featured-#{run.id}", "Answer questions")
+      assert has_element?(view, "#up-next-featured-#{run.id} [data-qa='up-next-action']", ~r/^\s*Answer\s*$/)
     end
 
     test "a run waiting on a pending question leads with that question", %{
@@ -1392,13 +1392,100 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/")
       assert has_element?(view, "#up-next-featured-#{run_id} [data-qa='up-next-chip']", "Ready for review")
-      assert has_element?(view, "#in-progress-task-#{task.id}", "Review the findings")
+      assert has_element?(view, "#in-progress-task-#{task.id} span.font-semibold", ~r/^Review$/)
 
       {:ok, %Run{id: ^run_id}} = Pipeline.start_fix_round(run)
 
       assert {:ok, view, _html} = live(conn, ~p"/")
       assert has_element?(view, "#up-next-featured-#{run_id} [data-qa='up-next-chip']", "Ready to merge")
       assert has_element?(view, "#in-progress-task-#{task.id}", "Ready to merge")
+    end
+
+    test "a Review round whose commits pass CI shows on Up next as ready for review without a reload", %{
+      conn: conn,
+      roles: roles,
+      rival: rival,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+      task = task_for.("Guard the nil", %{stage: :review, pr_number: 4})
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+      {:ok, _finding} =
+        Pipeline.save_finding(task, %{
+          key: "unhandled-nil",
+          kind: :code,
+          raised_by: :code_reviewer,
+          title: "Nil is not handled",
+          problem: "It crashes.",
+          file: "lib/a.ex",
+          line: 3,
+          fix: "Guard it.",
+          why: "It crashes.",
+          rule: "Every caller handles nil.",
+          severity: :major,
+          recommendation: :fix,
+          places: [%{file: "lib/a.ex", line: 3}],
+          evidence: [%{name: "range", kind: :code, file: "lib/a.ex", line: 3}]
+        })
+
+      {:ok, _pass} = Pipeline.save_review(task)
+
+      {:ok, %Run{id: run_id} = run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:review_lead].id,
+          status: :running,
+          conversation_id: "sess_overview_ci_lead",
+          started_at: DateTime.shift(now, hour: -1)
+        })
+
+      # Someone else's, so it waits on them and leaves this person's Up next to the round.
+      engineer = task_for.("Retry backs off", %{stage: :engineer, owner_user_id: rival.id})
+
+      {:ok, _done} =
+        Pipeline.create_run(%{
+          task_id: engineer.id,
+          role_id: roles[:engineer].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.shift(now, hour: -4),
+          completed_at: DateTime.shift(now, hour: -3)
+        })
+
+      ci =
+        Repo.insert!(%OsProcess{
+          run_id: run.id,
+          task_id: task.id,
+          kind: :ci,
+          stream_path: "/dev/null",
+          status: :running,
+          started_at: DateTime.shift(now, minute: -5)
+        })
+
+      stub(Rail.Git, :push_branch, fn _scope, _task -> :ok end)
+      stub(Rail.Git, :branch_unpushed?, fn _path -> false end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+      refute has_element?(view, "#up-next-featured-#{run_id}")
+
+      {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(ci, %{exit_code: 0})
+
+      assert has_element?(view, "#up-next-featured-#{run_id} [data-qa='up-next-chip'] .pi-list-checks")
+      assert has_element?(view, "#up-next-featured-#{run_id} [data-qa='up-next-chip']", "Ready for review")
+      assert has_element?(view, "#up-next-featured-#{run_id} [data-qa='up-next-action'] .pi-list-checks")
+      assert has_element?(view, "#up-next-featured-#{run_id} [data-qa='up-next-action']", ~r/^\s*Review\s*$/)
+
+      assert has_element?(view, "#in-progress-task-#{task.id} .pi-list-checks")
+      assert has_element?(view, "#in-progress-task-#{task.id} span.font-semibold", ~r/^Review$/)
+      refute has_element?(view, "#in-progress-task-#{task.id}", "Stopped")
+      assert has_element?(view, "#activity-ended-#{run_id}", "says #{task.issue.identifier} is ready for review")
+      refute has_element?(view, "#activity-ended-#{run_id}", "stopped on")
+
+      assert {:ok, everyone, _html} = live(conn, ~p"/?everyone=true")
+      assert has_element?(everyone, "#in-progress-task-#{engineer.id} .pi-chat-text")
+      assert has_element?(everyone, "#in-progress-task-#{engineer.id}", "Review the diff")
+      refute has_element?(everyone, "#in-progress-task-#{engineer.id} .pi-list-checks")
     end
 
     test "the sidebar lists every task in progress and where it stands", %{
