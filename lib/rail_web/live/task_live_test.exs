@@ -5012,6 +5012,87 @@ defmodule RailWeb.TaskLiveTest do
       assert_receive :resumed, 2_000
     end
 
+    test "the tray opening a finding or a screen puts its item in the URL, as the stage opens it", %{
+      conn: conn,
+      task: task,
+      role: role,
+      code: code
+    } do
+      {:ok, _saved} = Pipeline.save_finding(task, code)
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}&item=demo")
+      assert has_element?(view, "#review-pane[data-item=demo]")
+
+      send(view.pid, {:open_review_finding, "unhandled-nil"})
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{role.id}")
+      assert has_element?(view, "#review-pane[data-item=findings]")
+      assert has_element?(view, "#finding-unhandled-nil[aria-current=true]")
+
+      send(view.pid, {:open_review_screen, "toolbar"})
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{role.id}&item=screens")
+      assert has_element?(view, "#review-pane[data-item=screens]")
+    end
+
+    test "two pages on one task each keep their own item, and a link naming Demo opens Demo", %{
+      conn: conn,
+      task: task,
+      role: role
+    } do
+      assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      one |> element("#review-item-demo") |> render_click()
+      to = assert_patch(one, ~p"/tasks/#{task.id}?tab=#{role.id}&item=demo")
+
+      _settled = render(two)
+      refute_patched(two)
+      assert has_element?(two, "#review-pane[data-item=findings]")
+
+      assert {:ok, pasted, _html} = live(conn, to)
+      assert has_element?(pasted, "#review-pane[data-item=demo]")
+    end
+
+    test "the Review tab clicked again keeps its item, and a stage left and come back to opens Findings", %{
+      conn: conn,
+      task: task,
+      role: role,
+      engineer_role: engineer_role
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}&item=demo")
+
+      view |> element("#task-tab-#{role.id}") |> render_click()
+      _settled = render(view)
+      refute_patched(view)
+      assert has_element?(view, "#review-pane[data-item=demo]")
+
+      view |> element("#task-tab-#{engineer_role.id}") |> render_click()
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{engineer_role.id}")
+
+      # An item the stage named before the page left Review moves nothing.
+      send(view.pid, {:review_item, :demo})
+      _settled = render(view)
+      refute_patched(view)
+
+      view |> element("#task-tab-#{role.id}") |> render_click()
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{role.id}")
+      assert has_element?(view, "#review-pane[data-item=findings]")
+    end
+
+    test "a task moving on to Finalize with Demo open takes the page there, with no item in the URL", %{
+      conn: conn,
+      task: task,
+      role: role
+    } do
+      {:ok, _pass} = Pipeline.save_review(task)
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}&item=demo")
+
+      {:ok, _finalizing} = Pipeline.update_task(task, %{stage: :finalize, pr_number: 151})
+      send(view.pid, {:pipeline_changed, task.id})
+
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=finalize")
+      assert has_element?(view, "#task-tab-finalize[aria-selected='true']")
+      refute has_element?(view, "#review-pane")
+    end
+
     test "ruling the last finding to rule takes the count off the Review tab", %{
       conn: conn,
       task: task,
@@ -6092,6 +6173,43 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, to)
       assert has_element?(view, "#diff-scroller[data-scroll-to='shipped.ex']")
+    end
+
+    test "a child's Review item is in its parent's URL, its own path keeps it, and a sibling opens on Findings", %{
+      conn: conn,
+      project: project,
+      parent: parent,
+      first: first,
+      third: third
+    } do
+      {:ok, %{id: lead_id}} = Roles.get_role(project_id: project.id, stage: :review_lead)
+
+      for child <- [first, third] do
+        {:ok, _reviewing} = Pipeline.update_task(child, %{stage: :review, worktree_path: create_temp_git_repo()})
+
+        {:ok, _lead} =
+          Pipeline.create_run(%{
+            task_id: child.id,
+            role_id: lead_id,
+            status: :finished,
+            stage_outcome: :done,
+            started_at: DateTime.utc_now()
+          })
+      end
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-11&tab=#{lead_id}")
+      view |> element("#review-item-demo") |> render_click()
+      to = assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-11&tab=#{lead_id}&item=demo")
+
+      assert {:error, {:live_redirect, %{to: ^to}}} = live(conn, ~p"/tasks/#{first.id}?tab=#{lead_id}&item=demo")
+      assert {:ok, view, _html} = live(conn, to)
+      assert has_element?(view, "[data-qa='task_detail_title']", "Child TLV-11")
+      assert has_element?(view, "#review-pane[data-item=demo]")
+
+      view |> element("#child-switcher-TLV-13") |> render_click()
+      assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-13")
+      assert has_element?(view, "[data-qa='task_detail_title']", "Child TLV-13")
+      assert has_element?(view, "#review-pane[data-item=findings]")
     end
 
     test "a waiting child shows only Issue, Plan and Children, its approved part and no conversation or branch", %{
