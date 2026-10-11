@@ -150,7 +150,7 @@ defmodule RailTest.TriageHelpers do
         github_repo: "example/triage-#{unique}",
         github_installation_id: 1,
         default_branch: "main",
-        key: "TRI",
+        key: "TRI#{unique}",
         linear_workspace_id: "lw_test_seed",
         clone_path: clone
       })

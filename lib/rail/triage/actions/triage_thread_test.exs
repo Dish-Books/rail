@@ -176,7 +176,11 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     {:ok, %{id: issue_id}} = Issues.create_issue(system_scope(), project, %{title: "Wait times"})
 
     expect(Tools, :run_agent, fn _role, argv, _opts ->
-      assert Enum.any?(argv, &(&1 =~ "search Linear for one that already covers the item" and &1 =~ "on the TRI team"))
+      assert Enum.any?(
+               argv,
+               &(&1 =~ "search Linear for one that already covers the item" and &1 =~ "on the #{project.key} team")
+             )
+
       refute thread |> Thread.scratch_path() |> Path.join("issues.md") |> File.exists?()
       File.write!(result_path, Jason.encode!(%{"items" => [Map.put(request, "existing_issue", "TRI-23")]}))
       {:ok, ""}

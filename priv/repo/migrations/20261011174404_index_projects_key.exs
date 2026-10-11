@@ -5,8 +5,8 @@ defmodule Rail.Repo.Migrations.IndexProjectsKey do
   @disable_ddl_transaction true
   @disable_migration_lock true
 
-  # A GitHub project's key prefixes its issues' identifiers, so no two may share one.
+  # A key names a project's issues and branches, so no two projects share one, whatever their tracker.
   def change do
-    create unique_index(:projects, [:key], where: "tracker = 'github'", concurrently: true)
+    create unique_index(:projects, [:key], concurrently: true)
   end
 end
