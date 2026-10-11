@@ -188,6 +188,26 @@ defmodule Rail.GitHub.Client do
     end
   end
 
+  @doc """
+  Submits an approving review on a pull request in `repo` as the token's holder, and returns the review. With no
+  commit id, GitHub approves the current head. A refusal carries GitHub's status and body.
+  """
+  def approve_pull_request(token, repo, number, opts \\ []) do
+    opts
+    |> build_req()
+    |> Req.post(
+      url: "/repos/#{repo}/pulls/#{number}/reviews",
+      auth: {:bearer, token},
+      headers: headers(),
+      json: %{event: "APPROVE"}
+    )
+    |> case do
+      {:ok, %{status: 200, body: %{"id" => _id} = review}} -> {:ok, review}
+      {:ok, %{status: status, body: body}} -> {:error, {:github_api_error, status, body}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @doc "Reads one pull request in `repo` by its number."
   def get_pull_request(token, repo, number, opts \\ []) do
     opts

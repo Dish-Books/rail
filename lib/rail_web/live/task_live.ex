@@ -617,6 +617,15 @@ defmodule RailWeb.TaskLive do
     {:noreply, socket}
   end
 
+  # A tech lead approved the task's pull request, in this tab or another; only an open Finalize pane shows approvals.
+  def handle_info({:approvals_changed, task_id}, socket) do
+    with %{pane: :finalize, task_id: ^task_id} <- socket.assigns do
+      send_update(FinalizeStage, id: "stage-finalize", reload_approvals: true)
+    end
+
+    {:noreply, socket}
+  end
+
   # A stage sends this once the human picks or approves something on it.
   def handle_info(:task_changed, socket) do
     {:noreply, refresh_task(socket)}

@@ -195,7 +195,7 @@ defmodule RailWeb.Settings.UsersLiveTest do
     refute has_element?(view, "#user-tech-lead-badge-#{regular_user.login}")
     view |> element("#user-row-#{regular_user.id}") |> render_click()
 
-    assert has_element?(view, "#user-access-form", "Merges tasks from Finalize.")
+    assert has_element?(view, "#user-access-form", "Approves and merges tasks from Finalize.")
     refute has_element?(view, "#user-sheet-tech-lead[checked]")
 
     view |> form("#user-access-form", %{"user" => %{"tech_lead" => "true"}}) |> render_change()
