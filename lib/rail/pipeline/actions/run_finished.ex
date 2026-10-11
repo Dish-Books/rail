@@ -41,6 +41,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
+  alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
   @doc """
@@ -115,9 +116,18 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp usage(%{"usage" => usage}) when is_map(usage), do: struct(Run.Usage, usage)
   defp usage(_other), do: nil
 
+  # A turn that is over drives no browser, and the next one signs in again, so whatever its
+  # subagents left open is closed rather than kept in the shared Chrome while a human rules.
+  defp end_turn(%Run{role: %Role{stage: :review_lead}, task: %Task{} = task} = run, %OsProcess{kind: :agent}) do
+    :ok = Tools.stop_browser_session(task)
+    say_uncommitted(run)
+  end
+
+  defp end_turn(%Run{role: %Role{stage: :engineer}} = run, %OsProcess{kind: :agent}), do: say_uncommitted(run)
+  defp end_turn(%Run{} = run, %OsProcess{}), do: run
+
   # Rail sends on only what the agents that commit to the branch committed, so work left uncommitted is said.
-  defp end_turn(%Run{role: %Role{stage: stage}, task: %Task{} = task} = run, %OsProcess{kind: :agent})
-       when stage in [:engineer, :review_lead] do
+  defp say_uncommitted(%Run{task: %Task{} = task} = run) do
     if Task.worktree_present?(task) and Git.worktree_dirty?(task.worktree_path) do
       Pipeline.append_run_events(run.id, nil, [
         "[rail] This turn left uncommitted changes in the worktree. Rail sends on only what is committed, so they wait for the next turn to commit them."
@@ -126,8 +136,6 @@ defmodule Rail.Pipeline.Actions.RunFinished do
 
     run
   end
-
-  defp end_turn(%Run{} = run, %OsProcess{}), do: run
 
   # A setup script asks no questions and concludes nothing about its stage.
   defp finish(%Run{} = run, %OsProcess{kind: :setup}, opts), do: setup_run_finished(run, opts)

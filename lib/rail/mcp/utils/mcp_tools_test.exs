@@ -21,6 +21,7 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
     assert names[:review_lead] == [
              "browser_connect",
              "browser_problems",
+             "browser_close",
              "qa_plan",
              "qa_check",
              "qa_shot",

@@ -40,6 +40,12 @@ defmodule Rail do
   @doc "The shared memory the browser's container gets, in GB; Chrome renders every tab through it."
   def browser_shm_size_gb, do: browser(:shm_size_gb, 2)
 
+  @doc "The browsers one task may hold open at once; an agent asking for one beyond it waits for another to close."
+  def browser_max_per_task, do: browser(:max_per_task, 6)
+
+  @doc "How long an agent waits for one of its task's browsers to close before it is refused one, in milliseconds."
+  def browser_slot_wait_ms, do: browser(:slot_wait_ms, to_timeout(minute: 10))
+
   @doc "Whether Rail adopts in-flight processes as it boots."
   def adopt_on_boot?, do: Application.get_env(:rail, :adopt_on_boot, true)
 

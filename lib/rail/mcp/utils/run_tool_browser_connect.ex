@@ -12,6 +12,14 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnect do
   an account seed: the seed runs once in the agent's own sandbox, and the last link
   it prints is opened in the tab, so no two browsers share an account or its data.
 
+  A task holds only so many browsers open at once (`Rail.browser_max_per_task/0`),
+  since every tab is memory in the one Chrome all tasks share. A name asked for
+  beyond that waits here for another of the task's browsers to close, which each
+  does when its agent calls `browser_close` or the subagent that opened it finishes.
+
+  A name whose browser went with a Chrome that restarted gets a new one, and is
+  told so: its tab, its account and whatever it had not saved are gone.
+
   The driver is copied into the task's scratch directory on every call, because
   that is a path both Rail and the agent's sandbox can see, and a release's
   `priv` is not.
@@ -23,6 +31,8 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnect do
   alias Rail.Projects.Schemas.Project
   alias Rail.Tools
   alias Rail.Tools.BrowserSession
+
+  @slot_poll_ms 1_000
 
   @doc """
   Opens or finds the browser `arguments["browser"]` names on `task`, signs a new
@@ -76,11 +86,56 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnect do
   # Two connects for one new name at once would each start a session and run the
   # seed; one at a time, the second finds the first's tab already signed in.
   defp opened(%Task{} = task, name, account, opts) do
+    deadline = System.monotonic_time(:millisecond) + Rail.browser_slot_wait_ms()
+
     :global.trans({{:browser_connect, task.id, name}, self()}, fn ->
-      with {:ok, session} <- Tools.start_browser_session(task, name, opts),
+      with {:ok, session, lost} <- found(task, name, opts, deadline),
            {:ok, signed_in} <- sign_in(task, session, account, opts),
-           do: {:ok, session, signed_in}
+           do: {:ok, session, lost <> signed_in}
     end)
+  end
+
+  # A browser the name already has is handed back whatever else is open; only a new one takes a place.
+  defp found(%Task{} = task, name, opts, deadline) do
+    case Tools.start_browser_session(task, name, [{:existing, true} | opts]) do
+      {:ok, session} -> {:ok, session, ""}
+      {:error, :no_browser} -> queued(task, name, opts, "", deadline)
+      {:error, :browser_restarted} -> queued(task, name, opts, lost(name), deadline)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # Counted and opened one caller at a time, so two explorers asking at once cannot both take the last place.
+  defp queued(%Task{} = task, name, opts, lost, deadline) do
+    max = Rail.browser_max_per_task()
+
+    place =
+      :global.trans({{:browser_place, task.id}, self()}, fn ->
+        if length(Tools.list_browser_sessions(task)) < max, do: Tools.start_browser_session(task, name, opts), else: :full
+      end)
+
+    case place do
+      {:ok, session} ->
+        {:ok, session, lost}
+
+      :full ->
+        if System.monotonic_time(:millisecond) < deadline do
+          Process.sleep(@slot_poll_ms)
+          queued(task, name, opts, lost, deadline)
+        else
+          {:refused,
+           "This task already has #{max} browsers open, the most it may hold at once, and none closed while this call " <>
+             "waited. A browser closes when its agent calls browser_close or returns. Nothing was opened: tell the lead."}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp lost(name) do
+    "Chrome restarted since `#{name}` was opened, so this is a new tab: the old one, its sign-in and anything " <>
+      "unsaved in it are gone. Start your steps again.\n"
   end
 
   # Only a tab nobody has signed in yet is signed in, so a reconnect, or a tab found

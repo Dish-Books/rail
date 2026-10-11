@@ -1,6 +1,7 @@
 defmodule Rail.Tools.Actions.StopBrowserSession do
   @moduledoc """
-  Closes every tab a task was being driven in, and the contexts they lived in.
+  Closes every tab a task was being driven in, or the one an agent named, and
+  the contexts they lived in.
 
   The shared Chrome stays up for everybody else; what goes is each of this task's
   contexts, whatever its name, and everything signed into it. A tab still open that nothing
@@ -23,25 +24,31 @@ defmodule Rail.Tools.Actions.StopBrowserSession do
   alias Rail.Tools.Schemas.BrowserSession
 
   @doc """
-  Stops each of `task`'s browser sessions, closing its tab and context.
+  Stops each of `task`'s browser sessions, or only the one named `name`, closing
+  its tab and context.
   """
-  def stop_browser_session(%Task{id: task_id} = task) do
-    live = Repo.all(from s in BrowserSession, where: s.task_id == ^task_id and s.status != :finished)
-
-    for %BrowserSession{} = session <- live do
+  def stop_browser_session(%Task{} = task, name \\ nil) do
+    for %BrowserSession{} = session <- Repo.all(live(task, name)) do
       case Tools.get_browser_session(task, session.name) do
         pid when is_pid(pid) -> :ok = GenServer.stop(pid, :normal, 10_000)
         nil -> close(session)
       end
     end
 
+    now = DateTime.utc_now()
+
     {_settled, _returning} =
-      BrowserSession
-      |> where([s], s.task_id == ^task_id and s.status != :finished)
-      |> Repo.update_all(set: [status: :finished, finished_at: DateTime.utc_now(), updated_at: DateTime.utc_now()])
+      Repo.update_all(live(task, name),
+        set: [status: :finished, ended_reason: :closed, finished_at: now, updated_at: now]
+      )
 
     :ok
   end
+
+  defp live(%Task{id: task_id}, nil),
+    do: from(s in BrowserSession, where: s.task_id == ^task_id and s.status != :finished)
+
+  defp live(%Task{} = task, "" <> name), do: where(live(task, nil), [s], s.name == ^name)
 
   defp close(%BrowserSession{browser_context_id: context}) when is_binary(context) do
     with {:ok, %{url: url}} <- ensure_browser_host(start: false),

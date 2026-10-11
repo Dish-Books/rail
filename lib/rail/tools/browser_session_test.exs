@@ -307,6 +307,28 @@ defmodule Rail.Tools.BrowserSessionTest do
     assert fresh != target
   end
 
+  # A caller acting on the browser it already had is not handed a blank one in its
+  # place: it is told the tab went, now and for as long as nothing is opened under the name.
+  test "a caller that only wants the tab it had is told Chrome lost it", %{task: task} do
+    {:ok, session} = Tools.start_browser_session(task, "explorer-1")
+    %Session{id: id, browser_context_id: context} = Repo.get_by!(Session, task_id: task.id)
+    :ok = GenServer.stop(session, :shutdown, 10_000)
+
+    {:ok, %{url: url}} = ensure_browser_host(start: false)
+    {:ok, connection} = Browser.start_link(url: url)
+    {:ok, _closed} = Browser.call(connection, "Target.disposeBrowserContext", %{browserContextId: context})
+    GenServer.stop(connection)
+
+    assert {:error, :browser_restarted} = Tools.start_browser_session(task, "explorer-1", existing: true)
+    assert %Session{status: :finished, ended_reason: :browser_gone} = Repo.get!(Session, id)
+    assert {:error, :browser_restarted} = Tools.start_browser_session(task, "explorer-1", existing: true)
+
+    assert {:ok, _fresh} = Tools.start_browser_session(task, "explorer-1")
+    :ok = Tools.stop_browser_session(task)
+
+    assert {:error, :no_browser} = Tools.start_browser_session(task, "explorer-1", existing: true)
+  end
+
   # A row left `starting` never got as far as a tab, so there is nothing to
   # attach to - and it is still the one live row the task is allowed.
   test "a row that never got a tab is settled and a tab opened", %{task: task} do
@@ -372,6 +394,24 @@ defmodule Rail.Tools.BrowserSessionTest do
              Repo.all(from s in Session, where: s.task_id == ^task.id)
 
     assert Tools.get_browser_session(task, "qa") == nil
+  end
+
+  # An explorer that has reported is done with its browser while the others are still in theirs.
+  test "stopping one name closes that browser and leaves the task's others open", %{task: task} do
+    {:ok, _first} = Tools.start_browser_session(task, "explorer-1")
+    {:ok, second} = Tools.start_browser_session(task, "explorer-2")
+    on_exit(fn -> if Process.alive?(second), do: GenServer.stop(second, :normal, 10_000) end)
+
+    assert :ok = Tools.stop_browser_session(task, "explorer-1")
+
+    assert Tools.get_browser_session(task, "explorer-1") == nil
+    assert Tools.get_browser_session(task, "explorer-2") == second
+
+    assert [
+             %Session{name: "explorer-1", status: :finished, ended_reason: :closed},
+             %Session{name: "explorer-2", status: :running}
+           ] =
+             Repo.all(from s in Session, where: s.task_id == ^task.id, order_by: s.name)
   end
 
   # Rail restarted since the tab was opened, so nothing holds it - and it is

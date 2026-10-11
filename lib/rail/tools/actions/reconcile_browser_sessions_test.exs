@@ -26,7 +26,19 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
     {:ok, task} = Pipeline.create_task(issue, :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
-    %{task: task, project: project}
+    # No test here has a Chrome to ask, and one a browser test left up would answer for it.
+    stub(Tools, :list_browser_contexts, fn -> :unknown end)
+
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
+
+    running = fn ->
+      {:ok, run} =
+        Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
+
+      run
+    end
+
+    %{task: task, project: project, running: running}
   end
 
   # The shared Chrome outlives everything, so a tab the task no longer needs is
@@ -76,7 +88,7 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
   # Rail restarted in the middle of a round. The tab is still open in the shared
   # Chrome, and the panel and the problems it collects are what reconnecting gets
   # back without waiting for the agent to call.
-  test "reconnects to the tab of a Review lead run that is running", %{task: task, project: project} do
+  test "reconnects to the tab of a Review lead run that is running", %{task: task, running: running} do
     {:ok, _held} =
       %BrowserSession{}
       |> BrowserSession.changeset(%{
@@ -88,42 +100,91 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
       })
       |> Repo.insert()
 
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
+    _run = running.()
 
-    {:ok, _run} =
-      Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
-
-    expect(Tools, :start_browser_session, fn %{id: id}, "qa", [] when id == task.id -> {:ok, self()} end)
+    # Only the tab the row names: a blank one opened in its place would be handed to an agent mid-check.
+    expect(Tools, :start_browser_session, fn %{id: id}, "qa", [existing: true] when id == task.id -> {:ok, self()} end)
 
     assert Tools.reconcile_browser_sessions() == []
   end
 
-  # Between rounds the task waits on a human at Review, and the next round
-  # attaches when it runs; until then there is nothing to watch.
-  test "keeps the tab of a task at Review between rounds for the next one", %{task: task} do
-    {:ok, _waiting} =
+  # Between rounds the task waits on a human at Review, for minutes or for days, and
+  # every tab kept for it is memory the running passes' tabs share. The next round signs in again.
+  test "closes the tabs of a task at Review whose run is waiting on a human", %{task: task} do
+    {:ok, %BrowserSession{id: waiting}} =
       %BrowserSession{}
-      |> BrowserSession.changeset(%{
-        task_id: task.id,
-        name: "qa",
-        status: :running,
-        browser_context_id: "ctx",
-        target_id: "tgt"
-      })
+      |> BrowserSession.changeset(%{task_id: task.id, name: "explorer-1", status: :running})
       |> Repo.insert()
 
     reject(Tools, :start_browser_session, 3)
+
+    assert [%BrowserSession{id: ^waiting, status: :finished, ended_reason: :closed}] = Tools.reconcile_browser_sessions()
+  end
+
+  # A task cleaned up keeps the stage it stopped at, so its stage says nothing about whether it wants a browser.
+  test "closes the tabs of a task that was cleaned up while still at Review", %{task: task, running: running} do
+    {:ok, %BrowserSession{id: left}} =
+      %BrowserSession{}
+      |> BrowserSession.changeset(%{task_id: task.id, name: "demo", status: :running})
+      |> Repo.insert()
+
+    _run = running.()
+    task |> Ecto.Changeset.change(cleaned_up_at: DateTime.utc_now()) |> Repo.update!()
+
+    assert [%BrowserSession{id: ^left, status: :finished}] = Tools.reconcile_browser_sessions()
+  end
+
+  # Chrome restarted under a running pass: every context it had is gone, and the row
+  # says so, which is what tells the agent when it asks for its browser again.
+  test "settles a session whose context Chrome no longer has as lost", %{task: task, running: running} do
+    {:ok, %BrowserSession{id: lost}} =
+      %BrowserSession{}
+      |> BrowserSession.changeset(%{task_id: task.id, name: "explorer-1", status: :running, browser_context_id: "gone"})
+      |> Repo.insert()
+
+    {:ok, _kept} =
+      %BrowserSession{}
+      |> BrowserSession.changeset(%{
+        task_id: task.id,
+        name: "explorer-2",
+        status: :running,
+        browser_context_id: "here",
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert()
+
+    _run = running.()
+    stub(Tools, :list_browser_contexts, fn -> {:ok, MapSet.new(["here"])} end)
+    expect(Tools, :start_browser_session, fn _task, "explorer-2", [existing: true] -> {:ok, self()} end)
     reject(Tools, :stop_browser_session, 1)
 
-    assert Tools.reconcile_browser_sessions() == []
+    assert [%BrowserSession{id: ^lost, status: :finished, ended_reason: :browser_gone, finished_at: %DateTime{}}] =
+             Tools.reconcile_browser_sessions()
+  end
+
+  # The session watching a tab that went with Chrome has nothing left to watch.
+  test "a lost session's process is shut down with its row", %{task: task, running: running} do
+    {:ok, _lost} =
+      %BrowserSession{}
+      |> BrowserSession.changeset(%{task_id: task.id, name: "qa", status: :running, browser_context_id: "gone"})
+      |> Repo.insert()
+
+    _run = running.()
+    {:ok, holder} = Agent.start(fn -> Registry.register(BrowserRegistry, {task.id, "qa"}, nil) end)
+    stub(Tools, :list_browser_contexts, fn -> {:ok, MapSet.new()} end)
+
+    assert [%BrowserSession{ended_reason: :browser_gone}] = Tools.reconcile_browser_sessions()
+    refute Process.alive?(holder)
   end
 
   # A session with a process is that process's while its task still wants it.
-  test "leaves a session something is still driving", %{task: task} do
+  test "leaves a session something is still driving", %{task: task, running: running} do
     {:ok, _held} =
       %BrowserSession{}
       |> BrowserSession.changeset(%{task_id: task.id, name: "qa", status: :running})
       |> Repo.insert()
+
+    _run = running.()
 
     holder =
       spawn(fn ->

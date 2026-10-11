@@ -69,8 +69,9 @@ config :rail, RailWeb.Endpoint,
 
 # The one headless Chrome every QA and demo pass drives, a tab per task. It runs where sandboxes
 # do and outlives Rail; what it reserves is kept back from the sandbox line. `root` is where its
-# profile lives, and nil means the system temp directory.
-config :rail, :browser, root: nil, cpus: 2, memory_gb: 4, shm_size_gb: 2
+# profile lives, and nil means the system temp directory. `max_per_task` is how many tabs one task's
+# agents hold open at once.
+config :rail, :browser, root: nil, cpus: 2, memory_gb: 4, shm_size_gb: 2, max_per_task: 6
 config :rail, :fetch_parsers, true
 
 # Where agents, setup and CI run, and what is kept back for Rail, Postgres and project services.

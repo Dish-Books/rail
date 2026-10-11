@@ -505,6 +505,41 @@ defmodule Rail.Tools.ClaudeEventsTest do
            ]
   end
 
+  # Whoever follows the stream closes the browser a subagent drove once it has answered. One sent
+  # to the background answers as it starts, while it is still in its browser.
+  test "a subagent that answered is kept to be taken, unless it was sent to the background" do
+    call = fn id, input ->
+      %{
+        "type" => "assistant",
+        "message" => %{"content" => [%{"type" => "tool_use", "id" => id, "name" => "Agent", "input" => input}]}
+      }
+    end
+
+    answer = fn id ->
+      %{
+        "type" => "user",
+        "message" => %{"content" => [%{"type" => "tool_result", "tool_use_id" => id, "content" => "ok"}]}
+      }
+    end
+
+    state =
+      Enum.reduce(
+        [
+          call.("toolu_a", %{"subagent_type" => "explorer", "description" => "explorer-1: Checks 1 and 2"}),
+          call.("toolu_b", %{"subagent_type" => "demo-recorder", "description" => "Record", "run_in_background" => true}),
+          call.("toolu_c", %{"subagent_type" => "code-reviewer", "description" => "Read the diff"})
+        ],
+        ClaudeEvents.new(),
+        &ClaudeEvents.handle_event(&2, &1)
+      )
+
+    assert state.ended_subagents == []
+
+    state = Enum.reduce(["toolu_b", "toolu_a", "toolu_c"], state, &ClaudeEvents.handle_event(&2, answer.(&1)))
+
+    assert state.ended_subagents == [{"code-reviewer", "Read the diff"}, {"explorer", "explorer-1: Checks 1 and 2"}]
+  end
+
   test "a subagent call with no type, or a blank one, reads as the general one" do
     for input <- ["?", %{"subagent_type" => "  ", "description" => " \n "}] do
       event = %{

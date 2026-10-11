@@ -10,13 +10,15 @@ defmodule Rail.Tools.Schemas.BrowserSession do
   Each agent names its browser, and a task has one live session per name, so a
   second `start` finds the first rather than leaving a browser behind. `account`
   is who the project's seed signed it in as, and `signed_in_at` when it was signed
-  in or left bare on purpose. The finished rows stay as the record.
+  in or left bare on purpose. The finished rows stay as the record, each with how
+  it ended: `:closed` by Rail, or `:browser_gone` when Chrome lost it.
   """
   use Rail.Schema
 
   alias Rail.Pipeline.Schemas.Task
 
   @statuses [:starting, :running, :finished]
+  @ended_reasons [:closed, :browser_gone]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "bws"}
   schema "browser_sessions" do
@@ -30,6 +32,7 @@ defmodule Rail.Tools.Schemas.BrowserSession do
     field :status, Ecto.Enum, values: @statuses, default: :starting
     field :started_at, :utc_datetime_usec
     field :finished_at, :utc_datetime_usec
+    field :ended_reason, Ecto.Enum, values: @ended_reasons
 
     belongs_to :task, Task
 
@@ -47,7 +50,8 @@ defmodule Rail.Tools.Schemas.BrowserSession do
     :cdp_session_id,
     :status,
     :started_at,
-    :finished_at
+    :finished_at,
+    :ended_reason
   ]
 
   @required_fields [:task_id, :name, :status]
