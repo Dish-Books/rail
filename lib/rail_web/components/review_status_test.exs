@@ -65,14 +65,32 @@ defmodule RailWeb.Components.ReviewStatusTest do
              |> String.trim()
   end
 
-  # Each row is whitespace-pre, so anything around the line in the template would show as blank lines.
-  test "the end of the CI log holds each line as it is, with nothing around it" do
+  test "CI on the fix commit shows its headline and one line, with no log" do
     doc =
       (&ReviewStatus.review_status/1)
-      |> render_component(phase: :ci, round: 1, counts: @counts, tail: ["  4 tests, 1 failure", "exit 1"])
+      |> render_component(phase: :ci, round: 1, sha: "7c3e91a", counts: @counts)
       |> Floki.parse_fragment!()
 
-    assert ["  4 tests, 1 failure", "exit 1"] =
-             doc |> Floki.find("[data-qa=review_status_log] .whitespace-pre") |> Enum.map(&Floki.text/1)
+    assert "CI running on 7c3e91a · Fix round 1" =
+             doc |> Floki.find("[data-qa=review_status_headline]") |> Floki.text()
+
+    assert "The next round starts on its own when CI passes." =
+             doc |> Floki.find("[data-qa=review_status_body]") |> Floki.text() |> String.trim()
+
+    assert [] = Floki.find(doc, "[data-qa=review_status_log]")
+  end
+
+  test "CI failed three times sends the reader to the CI output in the conversation, with no log" do
+    doc =
+      (&ReviewStatus.review_status/1)
+      |> render_component(phase: :ci_failed, round: 2, counts: @counts)
+      |> Floki.parse_fragment!()
+
+    assert "CI failed 3 times on fix round 2" = doc |> Floki.find("[data-qa=review_status_headline]") |> Floki.text()
+
+    assert "The Review lead stopped. Read the CI output in the conversation, then message the lead. It can run CI again with nothing changed." =
+             doc |> Floki.find("[data-qa=review_status_body]") |> Floki.text() |> String.trim()
+
+    assert [] = Floki.find(doc, "[data-qa=review_status_log]")
   end
 end

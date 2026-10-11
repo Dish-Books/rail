@@ -496,7 +496,7 @@ defmodule RailWeb.Live.ReviewStageTest do
     refute has_element?(view, "[data-qa=review_finding_state]", "Needs your call")
   end
 
-  test "CI on the fix commit shows the end of its log, and CI failed three times says so", %{
+  test "CI on the fix commit and CI failed three times show their headline and line, with no log", %{
     conn: conn,
     project: project,
     task: task,
@@ -508,6 +508,7 @@ defmodule RailWeb.Live.ReviewStageTest do
     {:ok, run} = Pipeline.update_run(run, %{status: :running})
     log = Path.join(System.tmp_dir!(), "rst_ci_#{run.id}.log")
     File.write!(log, "==> rail\nCompiling 14 files (.ex)\nRunning ExUnit\n\n")
+    on_exit(fn -> File.rm(log) end)
 
     {:ok, ci} =
       %OsProcess{}
@@ -527,7 +528,7 @@ defmodule RailWeb.Live.ReviewStageTest do
     short = String.slice(head, 0, 7)
 
     assert has_element?(view, "#review-status[data-phase=ci]", "CI running on #{short} · Fix round 1")
-    assert has_element?(view, "[data-qa=review_status_log]", "Running ExUnit")
+    refute has_element?(view, "[data-qa=review_status_log]")
     assert has_element?(view, "#review-item-findings[title='Findings: CI running on #{short}']")
     refute has_element?(view, "#finish-review")
 
@@ -536,6 +537,8 @@ defmodule RailWeb.Live.ReviewStageTest do
     send(view.pid, {:pipeline_changed, task.id})
 
     assert has_element?(view, "#review-status[data-phase=ci_failed]", "CI failed 3 times on fix round 1")
+    assert has_element?(view, "[data-qa=review_status_body]", "Read the CI output in the conversation")
+    refute has_element?(view, "[data-qa=review_status_log]")
     assert has_element?(view, "#review-item-findings [data-qa=review_item_failed]")
   end
 

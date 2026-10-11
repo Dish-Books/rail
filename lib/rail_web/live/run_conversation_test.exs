@@ -495,6 +495,45 @@ defmodule RailWeb.Live.RunConversationTest do
     assert html =~ "mise run ci"
   end
 
+  test "an open CI block and an open Worktree setup block each render their output in a box that scrolls to its end",
+       %{task: task, roles: roles, roles_map: roles_map} do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:review_lead].id,
+        status: :running,
+        started_at: ~U[2026-09-09 10:00:00.000000Z]
+      })
+
+    for {kind, command, line} <- [{:setup, "./bin/setup", "Cannot copy rail_dev"}, {:ci, "mise run ci", "1 failure"}] do
+      process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: task.id,
+          kind: kind,
+          command: command,
+          exit_code: 1,
+          stream_path: "/tmp/#{run.id}-#{kind}.log",
+          status: :finished,
+          started_at: ~U[2026-09-09 10:00:00.000000Z]
+        })
+        |> Repo.insert!()
+
+      Pipeline.append_run_events(run.id, process.id, [line])
+    end
+
+    outputs =
+      RunConversation
+      |> render_component(id: "conv", task: task, runs: [run], roles_map: roles_map)
+      |> Floki.parse_fragment!()
+      |> Floki.find("pre[data-qa=command-output][phx-hook=CommandOutput]")
+
+    assert [setup_id, ci_id] = Enum.map(outputs, &(&1 |> Floki.attribute("id") |> List.first()))
+    assert setup_id != ci_id
+    assert ["Cannot copy rail_dev", "1 failure"] = Enum.map(outputs, &Floki.text/1)
+  end
+
   test "a setup script that passed keeps its output folded away until asked", %{
     task: task,
     roles: roles,

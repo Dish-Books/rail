@@ -95,7 +95,6 @@ defmodule RailWeb.Live.ReviewStage do
                 sha={@sha}
                 counts={@counts}
                 agents={@agents}
-                tail={@tail}
                 pr_number={@task.pr_number}
               />
 
@@ -436,7 +435,6 @@ defmodule RailWeb.Live.ReviewStage do
     |> assign(:round, round(phase, passes))
     |> assign(:sha, ci_sha(ci))
     |> assign(:counts, counts)
-    |> assign(:tail, if(ci, do: ci.tail, else: []))
     |> assign(
       :agents,
       if(socket.assigns.item == :findings and phase in [:round, :fixing], do: agents(run), else: [])

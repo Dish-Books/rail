@@ -2965,6 +2965,32 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "#ci-status", "of 3")
     end
 
+    test "a passed Worktree setup block opened from its header renders its output in the box that scrolls to its end",
+         %{conn: conn, task: task, engineer_run: run} do
+      setup =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: task.id,
+          kind: :setup,
+          command: "./bin/setup",
+          exit_code: 0,
+          stream_path: "/tmp/#{run.id}-setup.log",
+          status: :finished,
+          started_at: DateTime.utc_now()
+        })
+        |> Repo.insert!()
+
+      Pipeline.append_run_events(run.id, setup.id, ["deps fetched", "all set"])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{run.role_id}")
+      refute has_element?(view, "[data-qa=command-output]")
+
+      view |> element("[data-qa=command-block] button", "./bin/setup") |> render_click()
+
+      assert has_element?(view, "pre[data-qa=command-output][phx-hook=CommandOutput]", "all set")
+    end
+
     test "the header links the task's pull request", %{conn: conn, task: task} do
       {:ok, task} =
         Pipeline.update_task(task, %{pr_number: 12, pr_url: "https://github.com/org/app/pull/12", pr_is_draft: true})
