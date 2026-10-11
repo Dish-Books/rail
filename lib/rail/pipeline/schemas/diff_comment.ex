@@ -84,11 +84,46 @@ defmodule Rail.Pipeline.Schemas.DiffComment do
     end
   end
 
+  @doc """
+  `comments` in the order they are listed and sent: by file in byte order, as the diff lists its files, then as
+  written, the id breaking a tie. The database's collation would sort the files differently.
+  """
+  def calculate_order(comments) when is_list(comments),
+    do: Enum.sort_by(comments, &{&1.path, DateTime.to_unix(&1.inserted_at, :microsecond), &1.id})
+
+  @doc """
+  Writes `comment` as the block the engineer or the Review lead is sent: its file and line, the commit when it was
+  written in one, the code it quotes and its text.
+  """
+  def calculate_block(%__MODULE__{} = comment) do
+    Enum.join(
+      [
+        "<diff_comment>",
+        "#{comment.path}, #{line_label(comment)}#{in_commit(comment)}",
+        quote_code(comment),
+        comment.body,
+        "</diff_comment>"
+      ],
+      "\n"
+    )
+  end
+
   defp validate_commit(changeset) do
     if get_field(changeset, :filter) == :commit,
       do: changeset |> validate_required([:commit]) |> validate_format(:commit, @sha),
       else: put_change(changeset, :commit, nil)
   end
+
+  # A commit's line numbers are that commit's, so the reader is told which.
+  defp in_commit(%__MODULE__{commit: commit}) when is_binary(commit), do: " in commit #{String.slice(commit, 0, 7)}"
+  defp in_commit(%__MODULE__{}), do: ""
+
+  # A comment saved before blocks were kept has only its line to quote.
+  defp quote_code(%__MODULE__{context_text: context}) when is_binary(context) and context != "", do: context
+  defp quote_code(%__MODULE__{} = comment), do: "#{glyph(comment.line_kind)} #{String.trim_trailing(comment.line_text)}"
+
+  defp line_label(%__MODULE__{line_kind: :deleted, line: line}), do: "removed line #{line}"
+  defp line_label(%__MODULE__{line: line}), do: "line #{line}"
 
   defp glyph(:added), do: "+"
   defp glyph(:deleted), do: "-"

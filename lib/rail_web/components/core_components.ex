@@ -53,6 +53,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate plan_sheet(assigns), to: Components.PlanSheet
   defdelegate priority_icon(assigns), to: Components.IssueIcons
   defdelegate project_badge(assigns), to: Components.ProjectBadge
+  defdelegate review_comment_tray(assigns), to: Components.ReviewCommentTray
   defdelegate review_items(assigns), to: Components.ReviewItems
   defdelegate review_queue(assigns), to: Components.ReviewQueue
   defdelegate review_status(assigns), to: Components.ReviewStatus
@@ -60,7 +61,9 @@ defmodule RailWeb.CoreComponents do
   defdelegate sandbox_meters(assigns), to: Components.SandboxMeters
   defdelegate sandbox_stats(assigns), to: Components.SandboxStats
   defdelegate sandbox_usage_meter(assigns), to: Components.SandboxUsageMeter
-  defdelegate screen_compare(assigns), to: Components.ScreenCompare
+  defdelegate screen_comment(assigns), to: Components.ScreenComment
+  defdelegate screen_grid(assigns), to: Components.ScreenGrid
+  defdelegate screen_view(assigns), to: Components.ScreenView
   defdelegate segmented_control(assigns), to: Components.SegmentedControl
   defdelegate settings_nav(assigns), to: Components.SettingsNav
   defdelegate side_sheet(assigns), to: Components.SideSheet

@@ -4892,16 +4892,17 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#task-tab-#{role.id}[aria-selected='true']")
       assert has_element?(view, "#review-finding-list", "Nil is not handled")
       refute has_element?(view, "#decide-fix-unhandled-nil")
-      refute has_element?(view, "#start-fix-round")
+      refute has_element?(view, "#review-send-tray")
+      refute has_element?(view, "#finish-review")
 
       # A comment resumes the lead at Finalize and after the merge, and its turn is no round to fix.
       {:ok, _resumed} = Pipeline.update_run(run, %{status: :running})
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
-      refute has_element?(view, "#start-fix-round")
+      refute has_element?(view, "#finish-review")
 
       {:ok, _merged} = Pipeline.update_task(finalizing, %{stage: :merged, merged_at: DateTime.utc_now()})
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
-      refute has_element?(view, "#start-fix-round")
+      refute has_element?(view, "#finish-review")
     end
 
     test "clicking Finish review lands the page on the Finalize tab, with the Review conversation beside it", %{
@@ -4913,7 +4914,7 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, _pass} = Pipeline.save_review(task)
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      view |> element("#start-fix-round", "Finish review") |> render_click()
+      view |> element("#finish-review") |> render_click()
 
       assert has_element?(view, "#task-tab-finalize[aria-selected='true']", "ready to finalize")
       assert has_element?(view, "#task-tab-#{role.id}[aria-selected='false']", "done")
@@ -5037,8 +5038,7 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "[data-qa='task_status_chip'] .pi-list-checks")
       assert has_element?(view, "#task-tab-#{role.id} [data-qa='task-tab-dot'][data-tone='stopped']")
 
-      {:ok, done} = Pipeline.update_run(stopped, %{stage_outcome: :done})
-      {:ok, _finished} = Pipeline.start_fix_round(done)
+      {:ok, _finished} = Pipeline.start_fix_round(system_scope(), stopped)
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert has_element?(view, "[data-qa='task_status_chip']", "Ready to finalize")
       assert has_element?(view, "[data-qa='task_status_chip'] .pi-flag")
@@ -5258,13 +5258,72 @@ defmodule RailWeb.TaskLiveTest do
       end
     end
 
+    test "a screen comment saved in another tab shows in this tab's tray and screen view without a reload", %{
+      conn: conn,
+      task: task,
+      scope: scope
+    } do
+      {:ok, _pass} = Pipeline.save_review(task)
+      File.mkdir_p!(Path.join([task.scratch_path, "qa", "screens", "toolbar"]))
+      File.write!(Path.join([task.scratch_path, "qa", "screens", "toolbar", "1.jpg"]), "jpeg")
+      {:ok, _shot} = Pipeline.save_screen(task, %{key: "toolbar", label: "Toolbar", file: "screens/toolbar/1.jpg"})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#review-item-screens") |> render_click()
+      view |> element("#screen-toolbar") |> render_click()
+
+      {:ok, _comment} =
+        Pipeline.create_screen_comment(scope, task, %{"key" => "toolbar", "body" => "From the other tab."})
+
+      _settled = render(view)
+
+      assert has_element?(view, "#review-send-tray [data-kind=screen]", "From the other tab.")
+      assert has_element?(view, "#screen-view [data-qa=screen_comment]", "From the other tab.")
+    end
+
+    test "Finish review in one tab leaves another reader's comments in their tray", %{
+      conn: conn,
+      task: task,
+      project: project,
+      role: role
+    } do
+      {:ok, _pass} = Pipeline.save_review(task)
+
+      {:ok, other} =
+        Users.register_oauth_user(%{github_id: "gh_task_other", login: "task_other", email: "task_other@example.com"})
+
+      {:ok, other} = Users.update_user(system_scope(), other, %{project_ids: [project.id]})
+
+      {:ok, _theirs} =
+        Pipeline.create_diff_comment(user_scope(user: other), task, %{
+          path: "lib/a.ex",
+          line_kind: :added,
+          line: 1,
+          line_text: "x",
+          filter: :branch,
+          body: "Theirs."
+        })
+
+      assert {:ok, other_view, _html} = live(log_in_user(build_conn(), other), ~p"/tasks/#{task.id}")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#finish-review") |> render_click()
+      _settled = render(other_view)
+      _settled = render(other_view)
+
+      # Both pages followed the task on to Finalize; the Review tab behind it keeps the other reader's tray.
+      other_view |> element("#task-tab-#{role.id}") |> render_click()
+      assert has_element?(other_view, "#review-send-tray [data-kind=diff]", "Theirs.")
+      assert has_element?(other_view, "#review-send-tray-hint", "The review is finished. Send reopens it")
+    end
+
     test "a finished round that found nothing says so", %{conn: conn, task: task} do
       {:ok, _pass} = Pipeline.save_review(task)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(view, "#review-no-findings", "No findings.")
-      assert has_element?(view, "#start-fix-round", "Finish review")
+      assert has_element?(view, "#finish-review:not([disabled])")
     end
 
     # A run that stopped without closing its round and one that found nothing look the
@@ -5279,7 +5338,8 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(view, "#review-no-findings", "No findings.")
-      refute has_element?(view, "#start-fix-round")
+      assert has_element?(view, "#finish-review[disabled]")
+      assert has_element?(view, "#review-send-tray-hint", "Send waits for the first round to finish.")
     end
 
     # A finding is inserted rather than saved, so no broadcast reaches the page and only the turn finishing can.
@@ -5330,18 +5390,18 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     # Clicked in the moment before a save's broadcast lands, the refusal is said.
-    test "a finding raised underneath the page holds Start fix round", %{conn: conn, task: task, code: code} do
+    test "a finding raised underneath the page holds the tray's Send", %{conn: conn, task: task, code: code} do
       {:ok, finding} = Pipeline.save_finding(task, code)
       {:ok, _pass} = Pipeline.save_review(task)
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), finding, :fix)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      refute has_element?(view, "#start-fix-round[disabled]")
+      refute has_element?(view, "#send-review-tray[disabled]")
 
       Repo.insert!(Finding.raise_changeset(%Finding{task_id: task.id, round: 1}, %{code | key: "raised-late"}))
-      view |> element("#start-fix-round") |> render_click()
+      view |> element("#send-review-tray") |> render_click()
 
-      assert has_element?(view, "#review-error", "Some findings have no ruling yet.")
+      assert has_element?(view, "#review-send-tray-hint", "Some findings have no ruling yet.")
     end
 
     test "ruling on a finding keeps the list in place and reads the next one needing a call", %{
@@ -5403,7 +5463,9 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "#finding-a-nit[aria-current='true']")
       refute has_element?(view, "[data-qa='review_finding_state']", "Needs your call")
-      assert has_element?(view, "#start-fix-round:not([disabled])", "Start fix round 1")
+      # The stage hands the tray its gate through the page, which queues behind a render already asked for.
+      _settled = render(view)
+      assert has_element?(view, "#send-review-tray:not([disabled])", "Send 1")
     end
 
     test "changing a ruling leaves the reader where they are", %{conn: conn, task: task, code: code} do
@@ -5494,7 +5556,7 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#finding-suppressor", "Don't flag a missing nil clause")
       assert has_element?(view, "#decide-fix-unhandled-nil")
       refute has_element?(view, "#decide-skip-unhandled-nil")
-      assert has_element?(view, "#start-fix-round", "Finish review")
+      assert has_element?(view, "#finish-review")
     end
 
     # A frame goes to the client rather than through the render, because it
@@ -5759,6 +5821,30 @@ defmodule RailWeb.TaskLiveTest do
 
       assert_push_event(view, "browser:frame", %{data: "demo held"}, 1_000)
       refute_push_event(view, "browser:frame", %{data: "explorer's late"}, 400)
+    end
+
+    # The shared Chrome keeps a tab only while a run uses it, so one can close under a page offering it to click.
+    test "a browser closed while the page shows it leaves the picker, with no Click and type over a dead tab", %{
+      conn: conn,
+      task: task
+    } do
+      Repo.insert!(%BrowserSession{
+        task_id: task.id,
+        name: "explorer-1",
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+      stub(Tools, :start_browser_session, fn _task, "explorer-1", [existing: true] -> {:error, :no_browser} end)
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#review-item-browser") |> render_click()
+      assert has_element?(view, "#review-browser-mode", "Click and type")
+
+      :ok = Tools.stop_browser_session(task, "explorer-1")
+      _settled = render(view)
+
+      refute has_element?(view, "#review-browser-mode")
+      refute has_element?(view, "#review-browser-explorer-1")
     end
 
     # A frame for a task nobody is reading is nothing to send anywhere.

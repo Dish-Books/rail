@@ -4,7 +4,8 @@ defmodule RailWeb.Live.DiffToolbar do
   without patching every line of the pane. The commit picker leads it, and a picked
   commit says which first parent it is shown against. It folds at `@5xl` and again at
   `@3xl` of its own width, which is what a 1440 and a 1280 window leave it. A merge's
-  view takes no comments, so it offers no Send.
+  view takes no comments, and a view whose comments go out with Review's tray has no
+  Send of its own.
   """
   use RailWeb, :live_component
 
@@ -101,7 +102,7 @@ defmodule RailWeb.Live.DiffToolbar do
       </form>
 
       <span
-        :if={@unsent > 0 and @commentable?}
+        :if={@unsent > 0 and @commentable? and @sends?}
         data-qa="diff_comments_hint"
         class="hidden @5xl:inline-flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap"
       >
@@ -115,7 +116,7 @@ defmodule RailWeb.Live.DiffToolbar do
 
       <%!-- The pane is marked loading from the click until the reply that redraws every comment as Sent. --%>
       <button
-        :if={@unsent > 0 and @commentable?}
+        :if={@unsent > 0 and @commentable? and @sends?}
         type="button"
         id="send-diff-comments"
         data-qa="send_diff_comments"

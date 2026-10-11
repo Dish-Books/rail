@@ -5,19 +5,22 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessions do
 
   The shared Chrome outlives Rail, so a tab outlives whatever opened it. That is
   the point - a deploy in the middle of a pass leaves the pass's page where it
-  was - and it is also the leak: a task that moved on from Review leaves a
-  tab signed into its app, open until the machine restarts, unless something
-  closes it. This is what closes it: a task past Finalize with no run in flight has
-  every named context closed and its rows settled, whatever holds them.
+  was - and it is also the leak: every tab left open is memory one Chrome shares
+  between every task, until it is killed for it and takes every pass's tabs with
+  it. So a tab is kept only for a run that is still running. A task that left
+  Review, Finalize or the merge behind it, one that was cleaned up whatever stage it stopped at, and one
+  waiting on a human between rounds or comments each have every named context closed and their rows
+  settled, whatever holds them; the next round signs in again.
 
-  A task at Review or Finalize keeps its tabs, between rounds as well, and so does any task while a run is in
-  flight, so a comment that resumes the lead after the merge keeps its browser until the turn ends. Each one a running run is driving is
-  reconnected by its name, so the panel is watching again and the tab's problems are
-  collected again without waiting for the agent's next call to Rail; one waiting
-  on a human is left for its next pass to attach to.
+  A row whose context Chrome no longer has - Chrome restarted since - is settled
+  as lost, so the agent that asks for it again is told so.
 
-  Safe to run every minute: a tab that is already held by a session is left to
-  it.
+  What is left is a running pass's own. Each tab nothing is connected to is
+  reconnected by its name, so the panel is watching again and the tab's problems
+  are collected again without waiting for the agent's next call to Rail.
+
+  `Rail.Tools.Boot` runs this as Rail boots and every minute after, which is safe:
+  a tab that is already held by a session is left to it.
   """
 
   import Ecto.Query
@@ -26,50 +29,68 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessions do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Tools
-  alias Rail.Tools.BrowserRegistry
   alias Rail.Tools.Schemas.BrowserSession
 
-  @driven_stages [:review, :finalize]
+  # A comment resumes the lead at Finalize and after the merge as it does at Review.
+  @driven_stages [:review, :finalize, :merged]
 
   @doc """
-  Closes every live session whose task is past Finalize with nothing in flight, reconnects every
-  one a running pass is using, and returns the sessions it closed.
-
+  Closes every live session no running run needs, settles every one Chrome has
+  lost, reconnects the rest, and returns the sessions it closed or settled.
   """
   def reconcile_browser_sessions(_opts \\ []) do
+    contexts = Tools.list_browser_contexts()
+
     BrowserSession
     |> where([s], s.status in [:starting, :running])
     |> order_by([s], asc: s.started_at)
     |> preload(:task)
     |> Repo.all()
-    |> Enum.flat_map(&reconcile/1)
+    |> Enum.flat_map(&reconcile(&1, contexts))
   end
 
-  defp reconcile(%BrowserSession{task: %Task{} = task} = session) do
+  defp reconcile(%BrowserSession{task: %Task{} = task} = session, contexts) do
     cond do
-      task.stage not in @driven_stages and not in_flight?(task) ->
+      not wanted?(task) ->
         :ok = Tools.stop_browser_session(task)
         [Repo.get!(BrowserSession, session.id)]
 
-      driven?(session) or not running?(task) ->
+      lost?(session, contexts) ->
+        [lose(session, Tools.get_browser_session(task, session.name))]
+
+      is_pid(Tools.get_browser_session(task, session.name)) ->
         []
 
       true ->
-        _reconnected = Tools.start_browser_session(task, session.name, [])
+        # Only the tab the row names: one that went since is said to the agent
+        # when it next asks, not replaced with a blank one behind its back.
+        _reconnected = Tools.start_browser_session(task, session.name, existing: true)
         []
     end
   end
 
-  defp driven?(%BrowserSession{task_id: task_id, name: name}), do: Registry.lookup(BrowserRegistry, {task_id, name}) != []
-
-  defp in_flight?(%Task{id: task_id}) do
-    Repo.exists?(
-      from r in Run,
-        where: r.task_id == ^task_id and r.status in [:starting, :running, :waiting_for_resources, :waiting_for_usage]
-    )
+  defp wanted?(%Task{stage: stage, cleaned_up_at: cleaned_up_at, id: task_id}) do
+    stage in @driven_stages and is_nil(cleaned_up_at) and
+      Repo.exists?(from r in Run, where: r.task_id == ^task_id and r.status in [:starting, :running])
   end
 
-  defp running?(%Task{id: task_id}) do
-    Repo.exists?(from r in Run, where: r.task_id == ^task_id and r.status in [:starting, :running])
+  # A row still starting has no context yet, and a Chrome that did not answer has lost nothing.
+  defp lost?(%BrowserSession{browser_context_id: "" <> context}, {:ok, contexts}),
+    do: not MapSet.member?(contexts, context)
+
+  defp lost?(%BrowserSession{}, _contexts), do: false
+
+  # The session watching a context that is gone has nothing to close: it is
+  # shut down rather than stopped, the row says what happened to the tab, and a page showing it is told.
+  defp lose(%BrowserSession{task_id: task_id, name: name} = session, pid) do
+    if is_pid(pid), do: :ok = GenServer.stop(pid, :shutdown, 10_000)
+
+    lost =
+      session
+      |> BrowserSession.changeset(%{status: :finished, ended_reason: :browser_gone, finished_at: DateTime.utc_now()})
+      |> Repo.update!()
+
+    Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task_id}:#{name}", {:browser_closed, task_id, name})
+    lost
   end
 end

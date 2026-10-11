@@ -15,6 +15,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
+  alias Rail.Tools.Schemas.BrowserSession
   alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
@@ -239,6 +240,25 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert %Task{stage: :review} = Repo.reload!(task)
     assert [%{key: "unhandled-nil", decision: nil}] = Pipeline.list_findings(task)
+  end
+
+  # A human may take days to rule, and every tab kept for them is memory the shared Chrome's
+  # other tabs need. The next round signs in again.
+  test "a Review lead turn that ends closes every browser its subagents left open", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+
+    for name <- ["explorer-1", "demo"] do
+      %BrowserSession{}
+      |> BrowserSession.changeset(%{task_id: task.id, name: name, status: :running})
+      |> Repo.insert!()
+    end
+
+    {_run, os_process} = exited.(:review_lead, %{})
+
+    assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 1, error: "stopped"})
+
+    assert [%BrowserSession{status: :finished, ended_reason: :closed}, %BrowserSession{status: :finished}] =
+             Repo.all(from s in BrowserSession, where: s.task_id == ^task.id)
   end
 
   test "a Review lead turn that did not save its review says so and stays open", %{task: task, exited: exited} do

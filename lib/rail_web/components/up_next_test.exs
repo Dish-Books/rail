@@ -242,7 +242,7 @@ defmodule RailWeb.Components.UpNextTest do
     assert html =~ ~r/data-qa="up-next-action".*>\s*Review\s*</s
     refute html =~ "Ready to merge"
 
-    {:ok, %Run{id: ^run_id}} = Pipeline.start_fix_round(run)
+    {:ok, %Run{id: ^run_id}} = Pipeline.start_fix_round(system_scope(), run)
     html = render_component(&UpNext.up_next/1, runs: [shown])
 
     assert html =~ ~s(href="/tasks/#{task_id}?tab=#{lead.id}")
@@ -373,9 +373,10 @@ defmodule RailWeb.Components.UpNextTest do
 
     assert {"Ready for review", "Review", "Waiting on you to read the diff.", []} = read.(waiting.(:engineer))
 
-    {:ok, _finished} = Pipeline.start_fix_round(run)
+    {:ok, _finished} = Pipeline.start_fix_round(system_scope(), run)
 
-    assert {"Ready to merge", "Ready to merge", _merge, []} = read.(%{stopped | stage_outcome: :done})
+    assert {"Ready to merge", "Ready to merge", _merge, []} =
+             read.(%{Repo.reload!(run) | role: lead, task: task, questions: []})
   end
 
   test "a Plan run with options and no pick asks for the pick, as a card and as a row", %{

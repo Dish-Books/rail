@@ -8,10 +8,15 @@ defmodule Rail.Tools.Follower do
   in the same transaction, and a Follower starting on a stream already partly
   written replays the lines before that point into its event state without logging
   them again.
+
+  It is also what sees a Review subagent finish, and closes the browser that
+  subagent drove: a tab left open for a round that is over is memory every other
+  task's tabs share.
   """
   use GenServer, restart: :transient
 
   import Ecto.Query
+  import Rail.Pipeline.Utils.SubagentBrowser
   import Rail.Tools.Utils.AdmitSandboxes
   import Rail.Tools.Utils.DecodeUtf8Lenient
   import Rail.Tools.Utils.DrainErrFile
@@ -29,6 +34,8 @@ defmodule Rail.Tools.Follower do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
+  alias Rail.Tools
+  alias Rail.Tools.ClaudeEvents
   alias Rail.Tools.Clients.Docker
   alias Rail.Tools.FollowerRegistry
   alias Rail.Tools.Schemas.Backend
@@ -49,6 +56,7 @@ defmodule Rail.Tools.Follower do
   defstruct [
     :os_process_id,
     :run_id,
+    :task_id,
     :stream_path,
     :err_path,
     :os_pid,
@@ -124,6 +132,7 @@ defmodule Rail.Tools.Follower do
     state = %__MODULE__{
       os_process_id: os_process.id,
       run_id: run.id,
+      task_id: run.task_id,
       stream_path: stream_path,
       err_path: "#{stream_path}.err",
       os_pid: os_process.os_pid,
@@ -184,7 +193,7 @@ defmodule Rail.Tools.Follower do
         pending_events: pending_events
     }
 
-    {alive?, updated_state} = check_alive(updated_state)
+    {alive?, updated_state} = updated_state |> close_ended_browsers() |> check_alive()
 
     cond do
       alive? and past_deadline?(updated_state) ->
@@ -224,6 +233,20 @@ defmodule Rail.Tools.Follower do
   end
 
   defp past_deadline?(%__MODULE__{}), do: false
+
+  # A subagent that answered is done with its browser, and the next one under
+  # that name signs in again. A name nothing is open under closes nothing.
+  defp close_ended_browsers(%__MODULE__{event_state: %ClaudeEvents{ended_subagents: [_ended | _rest] = ended}} = state) do
+    with [_name | _rest] = browsers <-
+           for({type, description} <- ended, name = subagent_browser(type, description), do: name),
+         {:ok, task} <- Pipeline.get_task(state.task_id) do
+      for name <- browsers, do: :ok = Tools.stop_browser_session(task, name)
+    end
+
+    %{state | event_state: %{state.event_state | ended_subagents: []}}
+  end
+
+  defp close_ended_browsers(%__MODULE__{} = state), do: state
 
   defp process_incoming_lines(lines, state) do
     Enum.reduce(lines, {state.event_state, state.pending_events}, fn line, {ev_state, pending} ->
@@ -275,9 +298,13 @@ defmodule Rail.Tools.Follower do
         file_offset: offset,
         logged_offset: offset,
         saved_offset: offset,
-        event_state: event_state
+        event_state: forget_ended(event_state)
     }
   end
+
+  # What ended before this Follower began was closed by the last one, and its name may be another's by now.
+  defp forget_ended(%ClaudeEvents{} = event_state), do: %{event_state | ended_subagents: []}
+  defp forget_ended(event_state), do: event_state
 
   defp read_logged_lines(_stream_path, 0), do: []
 

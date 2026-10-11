@@ -11,7 +11,9 @@ defmodule Rail.Tools.Actions.StartBrowserSession do
   session crashed - gets that tab back: its row still names the context and the
   target, and the new session attaches to them. A pass that was signed in and
   half way through a form is still signed in and half way through it. Only a tab
-  that is not there any more is replaced.
+  that is not there any more is replaced, and only for a caller that asked to
+  open one: its row is settled as lost to Chrome, and a caller acting on the
+  browser it already had is told it went rather than handed a blank tab.
 
   The row is written here rather than by the session itself. A process cannot
   record its own unexpected death, and the row is what says which context is
@@ -32,8 +34,9 @@ defmodule Rail.Tools.Actions.StartBrowserSession do
 
   `opts` are passed to the session: `:subscribe` for a process that should
   receive the browser's own events, and `:ready_timeout_ms` for how long a Chrome
-  that had to be started gets to answer. `existing: true` opens nothing for a name
-  the task has no live tab under, and returns `{:error, :no_browser}`.
+  that had to be started gets to answer. `existing: true` opens nothing: a name
+  the task has no live session under is `{:error, :no_browser}`, and one whose
+  tab Chrome lost is `{:error, :browser_restarted}`.
   """
   def start_browser_session(%Task{} = task, name, opts \\ []) when is_binary(name) do
     case Tools.get_browser_session(task, name) do
@@ -61,7 +64,7 @@ defmodule Rail.Tools.Actions.StartBrowserSession do
 
       {:error, {:browser_unavailable, :tab_gone}} ->
         settle(session, :tab_gone)
-        relaunch(task, name, opts)
+        if Keyword.get(opts, :existing, false), do: {:error, :browser_restarted}, else: launch(task, name, opts)
 
       {:error, reason} ->
         {:error, reason}
@@ -69,21 +72,32 @@ defmodule Rail.Tools.Actions.StartBrowserSession do
   end
 
   # A row that never got as far as a tab stands for nothing, and only one live row
-  # is allowed per name.
+  # is allowed per name; it is then as if there were none, so `existing: true` still opens nothing.
   defp resume(%Task{} = task, name, %Session{} = session, opts) do
     settle(session, :no_tab)
-    relaunch(task, name, opts)
+    resume(task, name, nil, opts)
   end
 
   # A tool acting on a browser the agent named opens nothing when there is none,
   # so a slip in the name is said rather than answered from a blank tab.
   defp resume(%Task{} = task, name, nil, opts) do
-    if Keyword.get(opts, :existing, false), do: {:error, :no_browser}, else: launch(task, name, opts)
+    cond do
+      not Keyword.get(opts, :existing, false) -> launch(task, name, opts)
+      lost?(task, name) -> {:error, :browser_restarted}
+      true -> {:error, :no_browser}
+    end
   end
 
-  # A teammate's input attaches to a tab the browser still has, and never puts a blank one in its place.
-  defp relaunch(%Task{} = task, name, opts) do
-    if Keyword.get(opts, :existing, false), do: {:error, :no_browser}, else: launch(task, name, opts)
+  # The name's last browser went with a Chrome that restarted, and nothing has been opened under it since.
+  defp lost?(%Task{id: task_id}, name) do
+    last =
+      from s in Session,
+        where: s.task_id == ^task_id and s.name == ^name,
+        order_by: [desc: s.finished_at, desc: s.id],
+        limit: 1,
+        select: s.ended_reason
+
+    Repo.one(last) == :browser_gone
   end
 
   # Two callers that both found nothing both insert, and the live-name index lets one
@@ -135,9 +149,11 @@ defmodule Rail.Tools.Actions.StartBrowserSession do
   # this row stands for nothing that is open, and a live row nobody settles is
   # what stops the task ever getting a browser again.
   defp settle(%Session{} = session, outcome) do
+    ended_reason = if outcome == :tab_gone, do: :browser_gone
+
     {:ok, _finished} =
       session
-      |> Session.changeset(%{status: :finished, finished_at: DateTime.utc_now()})
+      |> Session.changeset(%{status: :finished, ended_reason: ended_reason, finished_at: DateTime.utc_now()})
       |> Repo.update()
 
     outcome

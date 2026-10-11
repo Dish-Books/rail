@@ -7,6 +7,10 @@ defmodule Rail.Tools.ClaudeEvents do
 
   A subagent call is `[subagent <call>] <type> · <description>` and its result `[subagent end <call>]`;
   each line from inside it is the line it would be anywhere else, behind `[within <call>]`.
+
+  `ended_subagents` holds the `{type, description}` of each subagent whose call has answered, newest first,
+  for whoever follows the stream to take and clear. One sent to the background answers as it starts, not as
+  it finishes, so it is never among them.
   """
 
   alias Rail.Pipeline.Schemas.Run
@@ -27,6 +31,7 @@ defmodule Rail.Tools.ClaudeEvents do
     streamed_usage: %Run.Usage{},
     tool_names: %{},
     subagent_calls: %{},
+    ended_subagents: [],
     num_turns: 0,
     thinking_tokens: 0,
     saw_result: false,
@@ -211,7 +216,8 @@ defmodule Rail.Tools.ClaudeEvents do
     type = one_line(input["subagent_type"]) || "general-purpose"
     description = one_line(input["description"]) || ""
 
-    state = %{state | subagent_calls: Map.put(state.subagent_calls, id, type)}
+    call = %{type: type, description: description, background?: input["run_in_background"] == true}
+    state = %{state | subagent_calls: Map.put(state.subagent_calls, id, call)}
     append_log(state, String.trim_trailing("[subagent #{id}] #{type} · #{description}"))
   end
 
@@ -238,6 +244,15 @@ defmodule Rail.Tools.ClaudeEvents do
   defp process_user_block(%{"type" => "tool_result", "tool_use_id" => id} = block, state, nil)
        when is_binary(id) and is_map_key(state.subagent_calls, id) do
     end_line = "[subagent end #{id}]"
+
+    state =
+      case state.subagent_calls[id] do
+        %{background?: false} = call ->
+          %{state | ended_subagents: [{call.type, call.description} | state.ended_subagents]}
+
+        %{background?: true} ->
+          state
+      end
 
     if block["is_error"] == true,
       do: append_log(state, "#{end_line} #{ToolSummarizer.truncate(error_text(block["content"]), 300)}"),

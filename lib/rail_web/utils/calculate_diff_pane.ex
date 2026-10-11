@@ -48,6 +48,7 @@ defmodule RailWeb.Utils.CalculateDiffPane do
         unsent: Enum.count(assigns.comments, &(&1.status == :unsent)),
         running?: assigns.running?,
         agent: assigns.agent,
+        sends?: assigns.sends?,
         commentable?: assigns.commentable?
       },
       tree: if(files != [], do: tree(visible, shared, comments, assigns)),

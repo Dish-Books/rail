@@ -12,7 +12,8 @@ defmodule Rail.Tools.BrowserSession do
   the tab, so a deploy in the middle of a pass comes back to the same page,
   signed in: the row keeps the context and target, and the next session under the
   same name attaches to them rather than opening another. Only a stop that means
-  it - `Rail.Tools.stop_browser_session/1`, the task moving on - closes the context.
+  it - `Rail.Tools.stop_browser_session/2`, when the subagent driving it returns
+  or its run's turn ends - closes the context.
 
   It also broadcasts what the tab is looking at, frame by frame, on
   `"browser:<task id>:<name>"`. Headless is the right default for a pass nobody is
@@ -226,8 +227,8 @@ defmodule Rail.Tools.BrowserSession do
     {:noreply, %{show(state, data) | frame_seq: seq}}
   end
 
-  # A tab is left open between passes, and a page that keeps repainting would
-  # have Chrome encode frames for nobody until the task moves on. So with nobody
+  # A tab stays open for as long as its subagent works, and a page that keeps
+  # repainting would have Chrome encode frames for nobody all that time. So with nobody
   # listening the ack waits, and Chrome stops. Once somebody is, the page is
   # photographed when it settles, as after any frame, so they start on the page
   # as it is rather than as it was when the frames stopped.

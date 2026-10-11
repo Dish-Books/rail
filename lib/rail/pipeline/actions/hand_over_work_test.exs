@@ -746,7 +746,7 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
       lead_run: %Run{id: lead_run_id} = lead_run,
       repo: repo
     } do
-      {:ok, _finished} = Pipeline.start_fix_round(lead_run)
+      {:ok, _finished} = Pipeline.start_fix_round(system_scope(), lead_run)
       {:ok, _project} = Projects.update_project(scope, project, %{ci_command: "mise run ci"})
       git!(repo, ["commit", "--allow-empty", "-m", "Say No comments yet"])
       stub(Git, :credential_env, fn _project -> {:ok, %{}} end)
@@ -801,7 +801,7 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
       lead_run: %Run{id: lead_run_id} = lead_run,
       repo: repo
     } do
-      {:ok, _finished} = Pipeline.start_fix_round(lead_run)
+      {:ok, _finished} = Pipeline.start_fix_round(system_scope(), lead_run)
       {:ok, _marked} = task |> Repo.reload!() |> Pipeline.update_task(%{marked_ready_at: DateTime.utc_now()})
       {:ok, _resumed} = Pipeline.update_run(lead_run, %{status: :running})
       git!(repo, ["commit", "--allow-empty", "-m", "Say No comments yet"])

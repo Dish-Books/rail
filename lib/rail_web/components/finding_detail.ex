@@ -3,11 +3,13 @@ defmodule RailWeb.Components.FindingDetail do
   One finding, read whole: what is wrong, where, the fix that points the way and why, the evidence, the
   rule with every place it applies, the commits it was raised and fixed in, and its dated history, a note
   per pass, ruling and fix, each in its round. Fix and Don't fix sit in its header. Each commit on the
-  branch, and Open in Diff, opens that commit in the Diff item at the finding's file.
+  branch, and Open in Diff, opens that commit in the Diff item at the finding's file. Each piece of it
+  takes the reader's comments, under it, as a line of the plan does.
   """
   use RailWeb, :html
 
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.FindingComment
   alias Rail.Pipeline.Schemas.FindingNote
   alias Rail.Pipeline.Schemas.FindingPlace
 
@@ -28,12 +30,21 @@ defmodule RailWeb.Components.FindingDetail do
   attr :viewer_id, :string, default: nil
   attr :suppressor, :any, default: nil
   attr :neighbours, :map, required: true
+
+  attr :comments, :map,
+    default: %{},
+    doc: "the reader's unsent comments on this finding with their tray numbers, by `{piece, index}`"
+
+  attr :draft, :map, default: nil, doc: "`%{piece:, index:, body:}`, the piece the comment box is open under"
+  attr :offered, :boolean, default: false, doc: "the reader can comment now"
   attr :target, :any, required: true
 
   def finding_detail(assigns) do
     # A piece keeps its place in the whole evidence list, code ranges included, which the tabs leave out.
     picked = Enum.find(assigns.filed, &(&1.index == assigns.filed_index)) || List.first(assigns.filed)
-    assigns = assign(assigns, :picked, picked)
+
+    commenting = Map.take(assigns, [:finding, :comments, :draft, :offered, :target])
+    assigns = assigns |> assign(:picked, picked) |> assign(:commenting, commenting)
 
     ~H"""
     <div
@@ -73,9 +84,12 @@ defmodule RailWeb.Components.FindingDetail do
               {state_text(@finding, @running)}
             </span>
           </div>
-          <h2 class="mt-2 text-lg font-bold text-slate-900 dark:text-slate-100 wrap-anywhere">
-            {@finding.title}
-          </h2>
+          <div data-qa="finding_title" class="group/line relative mt-2">
+            <.add commenting={@commenting} piece={:title} class="-left-6 top-1" />
+            <h2 class="text-lg font-bold text-slate-900 dark:text-slate-100 wrap-anywhere">
+              {@finding.title}
+            </h2>
+          </div>
         </div>
 
         <div :if={@decidable and @finding.status != :fixed} class="shrink-0 flex gap-2">
@@ -103,6 +117,8 @@ defmodule RailWeb.Components.FindingDetail do
 
       <div class="flex-1 min-h-0 overflow-y-auto px-6 py-5">
         <div class="max-w-4xl space-y-5">
+          <%!-- The header does not scroll, so the title's comments open here, where any number of them fit. --%>
+          <.under commenting={@commenting} piece={:title} caption="Title" qa="finding_title_comments" />
           <div
             :if={Finding.suppressed?(@finding) and @suppressor != nil}
             id="finding-suppressor"
@@ -125,12 +141,24 @@ defmodule RailWeb.Components.FindingDetail do
           </div>
 
           <dl class="space-y-3">
-            <.field :if={@finding.problem} label="Problem" qa="finding_problem">
+            <.field
+              :if={@finding.problem}
+              label="Problem"
+              qa="finding_problem"
+              commenting={@commenting}
+              piece={:problem}
+            >
               <p class="text-[13.5px] leading-relaxed text-slate-800 dark:text-slate-100 wrap-anywhere">
                 {@finding.problem}
               </p>
             </.field>
-            <.field :if={Finding.where(@finding)} label="Where" qa="finding_where">
+            <.field
+              :if={Finding.where(@finding)}
+              label="Where"
+              qa="finding_where"
+              commenting={@commenting}
+              piece={:where}
+            >
               <span class={[
                 "text-slate-700 dark:text-slate-200",
                 @finding.kind == :code && "font-mono text-[12px] break-all",
@@ -145,7 +173,13 @@ defmodule RailWeb.Components.FindingDetail do
                 <li :for={step <- @finding.steps} class="wrap-anywhere">{step}</li>
               </ol>
             </.field>
-            <.field :if={@finding.fix} label="Fix" qa="finding_fix">
+            <.field
+              :if={@finding.fix}
+              label="Fix"
+              qa="finding_fix"
+              commenting={@commenting}
+              piece={:fix}
+            >
               <p class="text-[13.5px] leading-relaxed text-slate-800 dark:text-slate-100 wrap-anywhere">
                 {@finding.fix}
               </p>
@@ -154,6 +188,8 @@ defmodule RailWeb.Components.FindingDetail do
               :if={@finding.why}
               label={if @finding.recommendation == :skip, do: "Why skip", else: "Why fix"}
               qa="finding_why"
+              commenting={@commenting}
+              piece={:why}
             >
               <p class="text-[13.5px] leading-relaxed text-slate-800 dark:text-slate-100 wrap-anywhere">
                 {@finding.why}
@@ -284,12 +320,13 @@ defmodule RailWeb.Components.FindingDetail do
             <p class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Rule
             </p>
-            <p
-              :if={@finding.rule}
-              class="mt-1 text-[13.5px] font-medium text-slate-900 dark:text-slate-100 wrap-anywhere"
-            >
-              {@finding.rule}
-            </p>
+            <div :if={@finding.rule} data-qa="finding_rule_text" class="group/line relative mt-1">
+              <.add commenting={@commenting} piece={:rule} class="-left-[41px] top-0" />
+              <p class="text-[13.5px] font-medium text-slate-900 dark:text-slate-100 wrap-anywhere">
+                {@finding.rule}
+              </p>
+              <.under commenting={@commenting} piece={:rule} class="mt-1.5" />
+            </div>
             <p
               :if={@finding.places != []}
               class="mt-3 text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400"
@@ -298,12 +335,13 @@ defmodule RailWeb.Components.FindingDetail do
             </p>
             <ul class="mt-1.5 space-y-1">
               <li
-                :for={place <- @finding.places}
+                :for={{place, n} <- Enum.with_index(@finding.places)}
                 data-qa="finding_place"
-                class="flex items-baseline gap-2 min-w-0"
+                class="group/line relative flex flex-wrap items-baseline gap-x-2 min-w-0"
               >
+                <.add commenting={@commenting} piece={:place} index={n} class="-left-[41px] -top-0.5" />
                 <.icon name="pi-map-pin" class="size-3 text-slate-400 translate-y-0.5" />
-                <span class="min-w-0">
+                <span class="min-w-0 flex-1">
                   <span class={[
                     "text-[11.5px] text-slate-700 dark:text-slate-200 wrap-anywhere",
                     place.file && "font-mono"
@@ -323,6 +361,12 @@ defmodule RailWeb.Components.FindingDetail do
                     Left as it is: {place.left_reason}
                   </span>
                 </span>
+                <.under
+                  commenting={@commenting}
+                  piece={:place}
+                  index={n}
+                  class="basis-full mt-1 mb-1.5"
+                />
               </li>
             </ul>
           </div>
@@ -355,8 +399,9 @@ defmodule RailWeb.Components.FindingDetail do
               <li
                 :for={{note, n} <- Enum.with_index(@finding.notes)}
                 data-qa="finding_note"
-                class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
+                class="group/line relative flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
               >
+                <.add commenting={@commenting} piece={:note} index={n} class="-left-6 -top-0.5" />
                 <span class="shrink-0 rounded px-1.5 py-px text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 ring-1 ring-inset ring-slate-200 dark:ring-slate-700">
                   {if note.kind == :fix, do: "Fix round #{note.round}", else: "Round #{note.round}"}
                 </span>
@@ -366,6 +411,12 @@ defmodule RailWeb.Components.FindingDetail do
                   class="font-mono text-[11px] text-slate-500 dark:text-slate-400"
                 />
                 <.note note={note} finding={@finding} names={@names} viewer_id={@viewer_id} />
+                <.under
+                  commenting={@commenting}
+                  piece={:note}
+                  index={n}
+                  class="basis-full mt-1 mb-1.5"
+                />
               </li>
             </ol>
           </div>
@@ -393,15 +444,94 @@ defmodule RailWeb.Components.FindingDetail do
 
   attr :label, :string, required: true
   attr :qa, :string, required: true
+  attr :commenting, :map, required: true
+  attr :piece, :atom, required: true
   slot :inner_block, required: true
 
   defp field(assigns) do
     ~H"""
-    <div data-qa={@qa} class="flex flex-col @xl:flex-row gap-1 @xl:gap-4">
+    <div data-qa={@qa} class="group/line relative flex flex-col @xl:flex-row gap-1 @xl:gap-4">
+      <.add commenting={@commenting} piece={@piece} class="-left-6 top-0" />
       <dt class="w-[84px] shrink-0 pt-0.5 text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
         {@label}
       </dt>
-      <dd class="min-w-0 flex-1">{render_slot(@inner_block)}</dd>
+      <dd class="min-w-0 flex-1">
+        {render_slot(@inner_block)}
+        <.under commenting={@commenting} piece={@piece} class="mt-1.5" />
+      </dd>
+    </div>
+    """
+  end
+
+  attr :commenting, :map, required: true
+  attr :piece, :atom, required: true
+  attr :index, :integer, default: nil
+  attr :class, :string, required: true
+
+  # A direct child of its piece's `group/line`, which app.css shows it on, by hover or by focus within.
+  defp add(assigns) do
+    assigns = assign(assigns, :label, piece_label(assigns))
+
+    ~H"""
+    <button
+      :if={@commenting.offered and @label != nil}
+      type="button"
+      data-qa="finding_comment_add"
+      aria-label={"Comment on #{@label}"}
+      phx-click="open_finding_comment"
+      phx-value-piece={@piece}
+      phx-value-index={@index}
+      phx-target={@commenting.target}
+      class={["line-comment-add", @class]}
+    >
+      +
+    </button>
+    """
+  end
+
+  attr :commenting, :map, required: true
+  attr :piece, :atom, required: true
+  attr :index, :integer, default: nil
+  attr :caption, :string, default: nil, doc: "names the piece, for comments drawn away from it"
+  attr :qa, :string, default: "finding_piece_comments"
+  attr :class, :string, default: nil
+
+  defp under(assigns) do
+    %{commenting: %{comments: comments, draft: draft}, piece: piece, index: index} = assigns
+
+    assigns =
+      assigns
+      |> assign(:placed, Map.get(comments, {piece, index}, []))
+      |> assign(:open, match?(%{piece: ^piece, index: ^index}, draft))
+      |> assign(:label, piece_label(assigns))
+
+    ~H"""
+    <div :if={@placed != [] or @open} data-qa={@qa} class={["space-y-1.5", @class]}>
+      <p
+        :if={@caption}
+        class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400"
+      >
+        {@caption}
+      </p>
+      <.document_comment
+        :for={{comment, number} <- @placed}
+        comment={comment}
+        number={number}
+        remove="remove_finding_comment"
+        target={@commenting.target}
+      />
+      <.comment_box
+        :if={@open}
+        id="finding-comment-form"
+        body_id="finding-comment-body"
+        qa="finding_comment"
+        label={@label}
+        body={@commenting.draft.body}
+        submit="save_finding_comment"
+        change="change_finding_comment"
+        cancel="cancel_finding_comment"
+        target={@commenting.target}
+      />
     </div>
     """
   end
@@ -509,6 +639,13 @@ defmodule RailWeb.Components.FindingDetail do
       Still open{on(@note.commit)}{words(@note.text)}
     </span>
     """
+  end
+
+  defp piece_label(%{commenting: %{finding: finding}, piece: piece, index: index}) do
+    case FindingComment.calculate_piece(finding, piece, index) do
+      %{label: label} -> label
+      nil -> nil
+    end
   end
 
   defp ruler(%FindingNote{by_id: id}, _names, id) when is_binary(id), do: "You"

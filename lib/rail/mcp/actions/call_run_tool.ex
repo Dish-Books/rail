@@ -27,6 +27,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   """
 
   import Rail.Mcp.Utils.McpTools
+  import Rail.Mcp.Utils.RunToolBrowserClose
   import Rail.Mcp.Utils.RunToolBrowserConnect
   import Rail.Mcp.Utils.RunToolBrowserProblems
   import Rail.Mcp.Utils.RunToolDemoSay
@@ -215,6 +216,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   # its checklist and then stops has still told the human what it meant to do.
   defp run("browser_connect", task, arguments, opts), do: run_tool_browser_connect(task, arguments, opts)
   defp run("browser_problems", task, arguments, opts), do: run_tool_browser_problems(task, arguments, opts)
+  defp run("browser_close", task, arguments, opts), do: run_tool_browser_close(task, arguments, opts)
   defp run("qa_plan", task, arguments, opts), do: run_tool_qa_plan(task, arguments, opts)
   defp run("qa_check", task, arguments, opts), do: run_tool_qa_check(task, arguments, opts)
   defp run("qa_shot", task, arguments, opts), do: run_tool_qa_shot(task, arguments, opts)

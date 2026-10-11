@@ -14,7 +14,7 @@ defmodule Rail.Pipeline.Actions.ListScreensTest do
   end
 
   # Each shot is a picture and the record beside it, as save_screen writes them.
-  test "groups the shots by state, the first taken first, each state's oldest to latest, with what cites them", %{
+  test "lists each state once by its newest shot, by label then key, with what cites that picture", %{
     task: task,
     qa: qa
   } do
@@ -22,7 +22,7 @@ defmodule Rail.Pipeline.Actions.ListScreensTest do
           {"toolbar", "3", "Toolbar", "2026-10-08T09:00:00Z"},
           {"file-list", "1", "File list", "2026-10-07T16:00:00Z"},
           {"file-list", "2", "File list just after Send", "2026-10-08T09:01:00Z"},
-          {"activity", "4", "Activity", "2026-10-07T16:00:00Z"}
+          {"activity", "4", "Toolbar", "2026-10-07T16:00:00Z"}
         ] do
       File.mkdir_p!(Path.join([qa, "screens", key]))
       File.write!(Path.join([qa, "screens", key, "#{stamp}.jpg"]), "jpeg")
@@ -52,18 +52,51 @@ defmodule Rail.Pipeline.Actions.ListScreensTest do
       })
 
     assert [
-             %{key: "activity", label: "Activity", shots: [%{index: 0}], findings: []},
              %{
                key: "file-list",
                label: "File list just after Send",
-               shots: [
-                 %{index: 0, file: "screens/file-list/1.jpg", commit: "c1", label: "File list"},
-                 %{index: 1, file: "screens/file-list/2.jpg", commit: "c2", browser: "explorer-1"}
-               ],
+               file: "screens/file-list/2.jpg",
+               commit: "c2",
+               browser: "explorer-1",
                findings: [%{key: "count-stale", title: "The file list still counts unsent comments"}]
              },
-             %{key: "toolbar", shots: [%{commit: "c3", taken_at: ~U[2026-10-08 09:00:00Z]}], findings: []}
+             %{key: "activity", label: "Toolbar", file: "screens/activity/4.jpg", findings: []},
+             %{key: "toolbar", commit: "c3", taken_at: ~U[2026-10-08 09:00:00Z], findings: []}
            ] = Pipeline.list_screens(task)
+  end
+
+  # A finding that cited only a replaced picture drops off until it cites the new one.
+  test "a finding citing a state's earlier picture is not listed with it", %{task: task, qa: qa} do
+    File.mkdir_p!(Path.join([qa, "screens", "toolbar"]))
+
+    for {stamp, at} <- [{"1", "2026-10-07T16:00:00Z"}, {"2", "2026-10-08T09:00:00Z"}] do
+      File.write!(Path.join([qa, "screens", "toolbar", "#{stamp}.jpg"]), "jpeg")
+
+      File.write!(
+        Path.join([qa, "screens", "toolbar", "#{stamp}.json"]),
+        Jason.encode!(%{label: "Toolbar", taken_at: at})
+      )
+    end
+
+    {:ok, _cited} =
+      Pipeline.save_finding(task, %{
+        key: "toolbar-wraps",
+        kind: :screen,
+        raised_by: :explorer,
+        title: "The toolbar wraps",
+        problem: "It wraps at 1280px.",
+        screen: "Engineer tab",
+        steps: ["Open"],
+        fix: "Fold it.",
+        why: "It misleads.",
+        rule: "Toolbars fit.",
+        severity: :minor,
+        recommendation: :fix,
+        places: [%{screen: "Engineer tab"}],
+        evidence: [%{name: "The bar", kind: :screenshot, path: "screens/toolbar/1.jpg"}]
+      })
+
+    assert [%{key: "toolbar", file: "screens/toolbar/2.jpg", findings: []}] = Pipeline.list_screens(task)
   end
 
   test "a task with no screens has none", %{task: task} do
@@ -101,7 +134,7 @@ defmodule Rail.Pipeline.Actions.ListScreensTest do
       Jason.encode!(%{label: "Toolbar", taken_at: "2026-10-08T10:00:00Z", commit: 7})
     )
 
-    assert [%{key: "toolbar", shots: [%{file: "screens/toolbar/7.jpg", commit: nil, browser: nil}]}] =
+    assert [%{key: "toolbar", file: "screens/toolbar/7.jpg", commit: nil, browser: nil}] =
              Pipeline.list_screens(task)
   end
 end

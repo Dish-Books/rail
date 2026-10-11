@@ -273,6 +273,7 @@ defmodule RailWeb.TaskLive do
               round_questions={@round_questions}
               suggestions={@suggestions}
               conversation_run={@conversation_run}
+              review_pane
             />
           </:sidebar>
         </.live_component>
@@ -490,6 +491,30 @@ defmodule RailWeb.TaskLive do
       send_update(DiffView, id: "diff-view", reload_comments: true)
     end
 
+    {:noreply, reload_review_comments(socket, task_id)}
+  end
+
+  # The reader's unsent screen comments moved: the Review stage marks its screens with them and the tray lists them.
+  def handle_info({:screen_comments_changed, task_id}, socket) do
+    {:noreply, reload_review_comments(socket, task_id)}
+  end
+
+  # The reader's unsent finding comments moved: the Review stage draws them under their pieces and the tray lists them.
+  def handle_info({:finding_comments_changed, task_id}, socket) do
+    {:noreply, reload_review_comments(socket, task_id)}
+  end
+
+  # What Review's Send would send of the findings, and whether it can, for the conversation's tray.
+  def handle_info({:review_tray, tray}, socket) do
+    send_update(RunConversation, id: "run-conversation", review_tray: tray)
+    {:noreply, socket}
+  end
+
+  # The tray, which only the Review tab draws, opens a finding or a screen state in the Review stage beside it.
+  def handle_info({event, key}, %{assigns: %{selected_role: %Role{} = role}} = socket)
+      when event in [:open_review_finding, :open_review_screen] do
+    opened = if event == :open_review_finding, do: [open_finding: key], else: [open_screen: key]
+    send_update(ReviewStage, [id: stage_component_id(role)] ++ opened)
     {:noreply, socket}
   end
 
@@ -514,6 +539,12 @@ defmodule RailWeb.TaskLive do
   def handle_info({:watch_browser, name}, socket) do
     socket = assign(socket, :review_browser, name)
     {:noreply, watch_browser(socket, socket.assigns.task, socket.assigns.pane)}
+  end
+
+  # The browser the page shows closed, so the Review stage reads its browsers again and stops offering it.
+  def handle_info({:browser_closed, task_id, name}, socket) do
+    if socket.assigns.watched_browser == "browser:#{task_id}:#{name}", do: reload_stage(socket)
+    {:noreply, socket}
   end
 
   # A session a restart took held no frame when the item opened, so it is asked again once attached.
@@ -669,6 +700,8 @@ defmodule RailWeb.TaskLive do
   # and the engineer's once the task has left Engineer.
   attr :closed, :boolean, default: false
   attr :closed_reason, :string, default: "The plan is approved, so this conversation is closed."
+  # Only the Review tab draws its tray: the Finalize tab shares the lead's conversation, and the tray it last had.
+  attr :review_pane, :boolean, default: false
 
   # Questions sit above the conversation they came out of. Answering only records:
   # the round reaches the agent when the human says it is done.
@@ -695,8 +728,18 @@ defmodule RailWeb.TaskLive do
       current_scope={@current_scope}
       closed={@closed}
       closed_reason={@closed_reason}
+      review_pane={@review_pane}
     />
     """
+  end
+
+  defp reload_review_comments(socket, task_id) do
+    with %{pane: :review, task_id: ^task_id, task: task, selected_role: %Role{} = role} <- socket.assigns do
+      send_update(ReviewStage, id: stage_component_id(role), task: task)
+      send_update(RunConversation, id: "run-conversation", reload_review_comments: true)
+    end
+
+    socket
   end
 
   # Whatever the open stage shows is read off disk or the rows again.
@@ -1306,8 +1349,8 @@ defmodule RailWeb.TaskLive do
   end
 
   # Sent and resolved comments are everyone's, so the task has a topic; unsent ones
-  # are the reader's alone, so every tab of theirs also hears their own topic. Plan
-  # comments are only ever unsent on the page, so they have only the reader's topic.
+  # are the reader's alone, so every tab of theirs also hears their own topic. Plan,
+  # screen and finding comments are only ever unsent on the page, so they have only the reader's topic.
   defp watch_diff_comments(socket, %Task{id: task_id}) do
     watched = socket.assigns.watched_comments_task_id
     user_id = socket.assigns.current_scope.user.id
@@ -1316,9 +1359,13 @@ defmodule RailWeb.TaskLive do
       if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "diff_comments:#{watched}")
       if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "diff_comments:#{watched}:#{user_id}")
       if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "plan_comments:#{watched}:#{user_id}")
+      if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "screen_comments:#{watched}:#{user_id}")
+      if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "finding_comments:#{watched}:#{user_id}")
       Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task_id}")
       Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task_id}:#{user_id}")
       Phoenix.PubSub.subscribe(Rail.PubSub, "plan_comments:#{task_id}:#{user_id}")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "screen_comments:#{task_id}:#{user_id}")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "finding_comments:#{task_id}:#{user_id}")
     end
 
     assign(socket, :watched_comments_task_id, if(connected?(socket), do: task_id, else: watched))

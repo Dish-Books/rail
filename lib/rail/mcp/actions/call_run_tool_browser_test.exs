@@ -299,6 +299,17 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     refute Tools.get_browser_recording(task)
   end
 
+  # Chrome restarted under a running pass. A blank tab would read as the app having signed the
+  # explorer out, so the tool says what happened and what to do about it.
+  test "a browser tool says when Chrome restarted under the browser it names", %{context: context} do
+    stub(Tools, :start_browser_session, fn _task, _name, [{:existing, true} | _opts] -> {:error, :browser_restarted} end)
+
+    assert {:error, {:refused, said}} = Mcp.call_run_tool(context, "browser_problems", %{"browser" => "explorer-1"})
+
+    assert said =~ "Chrome restarted and the browser `explorer-1` went with it"
+    assert said =~ "Call browser_connect with that name"
+  end
+
   test "a take of a browser the agent named and connected films it", %{context: context, task: task} do
     expect(Tools, :start_browser_session, fn _task, "signup", [{:existing, true} | _opts] -> {:ok, self()} end)
 
@@ -324,6 +335,18 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
 
     assert {:ok, %{"content" => [%{"text" => "Nothing since the last check."}]}} =
              Mcp.call_run_tool(context, "browser_problems", %{"browser" => "explorer-1"})
+  end
+
+  # An explorer done with its browser gives its place to the next one waiting, and the log says so.
+  test "an agent closes the browser it is done with", %{context: context, task: task} do
+    expect(Tools, :list_browser_sessions, fn %{id: id} when id == task.id ->
+      [%Tools.Schemas.BrowserSession{name: "explorer-1"}]
+    end)
+
+    expect(Tools, :stop_browser_session, fn %{id: id}, "explorer-1" when id == task.id -> :ok end)
+
+    assert {:ok, %{"content" => [%{"text" => "Closed `explorer-1`." <> _rest}]}} =
+             Mcp.call_run_tool(context, "browser_close", %{"browser" => "explorer-1"})
   end
 
   # A request that failed says which one, because "something 404'd" is not a

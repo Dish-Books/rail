@@ -26,8 +26,9 @@ defmodule Rail.Mcp.Utils.McpTools do
   tool opens the tab if it is not open, a screenshot is described rather than
   located, and a file a finding cites is copied into the finding's own folder -
   so nothing arriving from a model becomes a served path, and there is no way to
-  leave a tab behind by forgetting the last instruction: reconcile closes it when
-  the task moves on.
+  leave a tab behind by forgetting the last instruction: `browser_close` frees a
+  browser's place early, and Rail closes it anyway when the subagent that opened
+  it returns, and whatever is left when the turn ends.
 
   `@qa_tools` are about a pass rather than a page. `qa_plan` writes the checklist
   before anything is opened, `qa_check` marks a row off as it is reached,
@@ -72,9 +73,11 @@ defmodule Rail.Mcp.Utils.McpTools do
           "same tab, so the panel and a demo recording show what you do. Each `browser` name is a " <>
           "context and tab of its own; the first call for a name signs it in as a fresh account the " <>
           "project's seed makes for it, when the project has one, and says who. Call it again with the " <>
-          "same name if the address stops answering, in a later turn, or after Rail restarts: you get " <>
-          "the same tab back, where you left it and signed in as the same account. Only a tab Chrome " <>
-          "lost is opened again, and then signed in as a new account.",
+          "same name if the address stops answering or after Rail restarts: you get the same tab back, " <>
+          "where you left it and signed in as the same account. A tab Chrome lost is opened again, " <>
+          "signed in as a new account, and the answer says so. A task holds only so many browsers at " <>
+          "once, and a call for one more waits for another to close: call browser_close when you are " <>
+          "done with yours. Rail closes any left open when the subagent that opened it returns.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{
@@ -102,6 +105,15 @@ defmodule Rail.Mcp.Utils.McpTools do
         "Everything the browser complained about since this was last asked: uncaught exceptions, " <>
           "console errors, failed requests, a crashed page. Draining, so what comes back belongs " <>
           "to whatever just ran. Ask often.",
+      "inputSchema" => %{"type" => "object", "properties" => %{"browser" => @browser}}
+    },
+    %{
+      "name" => "browser_close",
+      "description" =>
+        "Close your browser once you are done with it: its tab, its context and its sign-in go, and " <>
+          "its place is free for another of the task's browsers. Call it last, after everything you " <>
+          "need from the page is saved. browser_connect with the same name opens a new one, signed " <>
+          "in as a new account.",
       "inputSchema" => %{"type" => "object", "properties" => %{"browser" => @browser}}
     }
   ]
@@ -187,9 +199,9 @@ defmodule Rail.Mcp.Utils.McpTools do
     %{
       "name" => "save_screen",
       "description" =>
-        "Photograph one screen state the lead named and save it as that state's image for HEAD's commit, which " <>
-          "the human compares round by round. Take it of the state as the change leaves it, under the same `key` " <>
-          "every round. Refused while the worktree has uncommitted changes. Returns the path, which a finding " <>
+        "Photograph one screen state the lead named and save it as that state's image for HEAD's commit. It " <>
+          "replaces the state's earlier picture each round. Take it of the state as the change leaves it, under the " <>
+          "same `key` every round. Refused while the worktree has uncommitted changes. Returns the path, which a finding " <>
           "can cite as evidence.",
       "inputSchema" => %{
         "type" => "object",

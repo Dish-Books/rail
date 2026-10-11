@@ -13,13 +13,15 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.FindingComment
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
 
   @doc """
-  Records `records`, diff and plan comments, Fix findings and answered questions
+  Records `records`, diff, plan, screen and finding comments, Fix findings and answered questions
   of `task`. Returns `{:ok, learnings}`, the provisional rules it added.
   """
   def record_corrections(%Task{id: task_id, project_id: project_id}, records) when is_list(records) do
@@ -68,6 +70,26 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
       actor_id: comment.user_id,
       text: comment.body,
       excerpt: block(comment)
+    }
+  end
+
+  defp observation(%ScreenComment{} = comment, _suggested) do
+    %{
+      source_kind: :screen_comment,
+      source_id: comment.id,
+      actor_id: comment.user_id,
+      text: comment.body,
+      excerpt: screen_line(comment)
+    }
+  end
+
+  defp observation(%FindingComment{} = comment, _suggested) do
+    %{
+      source_kind: :finding_comment,
+      source_id: comment.id,
+      actor_id: comment.user_id,
+      text: comment.body,
+      excerpt: comment.quote
     }
   end
 
@@ -133,6 +155,28 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
     }
   end
 
+  # A screen comment is on what QA drives and the engineer builds, as a Fix on a screen finding is.
+  defp rule(%ScreenComment{} = comment, _observation) do
+    %{
+      kind: :convention,
+      roles: [:engineer, :qa],
+      rule: clip(comment.body),
+      why: "From a screen comment on #{screen_line(comment)}"
+    }
+  end
+
+  # A comment on a finding corrects the role that raised it.
+  defp rule(%FindingComment{finding: %Finding{} = finding} = comment, _observation) do
+    quoted = comment.quote |> clip() |> String.split("\n") |> Enum.map_join("\n", &"> #{&1}")
+
+    %{
+      kind: :convention,
+      roles: [raiser_role(finding)],
+      rule: clip(comment.body),
+      why: "From a finding comment on \"#{finding.title}\", its #{comment.label}:\n\n#{quoted}"
+    }
+  end
+
   defp rule(%PlanComment{target: :design} = comment, _observation) do
     %{
       kind: :design,
@@ -182,10 +226,19 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
     "From #{document} comment on #{comment.element_label}:\n\n#{quoted}"
   end
 
+  defp raiser_role(%Finding{raised_by: :code_reviewer}), do: :review
+  defp raiser_role(%Finding{raised_by: :explorer}), do: :qa
+  defp raiser_role(%Finding{raised_by: :review_lead}), do: :review_lead
+
   defp why(parts), do: parts |> Enum.reject(&is_nil/1) |> Enum.join("\n\n")
 
   defp block(%DiffComment{context_text: context}) when is_binary(context) and context != "", do: context
   defp block(%DiffComment{line_text: line}), do: line
+
+  defp screen_line(%ScreenComment{commit: commit} = comment) when is_binary(commit),
+    do: "#{comment.label} (#{comment.key}), shot on #{String.slice(commit, 0, 7)}"
+
+  defp screen_line(%ScreenComment{} = comment), do: "#{comment.label} (#{comment.key})"
 
   defp element_line(%PlanComment{element_text: "", element_tag: tag} = comment), do: "`#{comment.selector}` <#{tag}>"
   defp element_line(%PlanComment{} = comment), do: ~s(`#{comment.selector}` "#{comment.element_text}")

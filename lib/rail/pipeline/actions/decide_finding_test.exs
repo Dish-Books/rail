@@ -113,7 +113,7 @@ defmodule Rail.Pipeline.Actions.DecideFindingTest do
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :finished, started_at: DateTime.utc_now()})
 
     {:ok, _skipped} = Pipeline.decide_finding(system_scope(), finding, :skip)
-    {:ok, %Run{status: :finished}} = Pipeline.start_fix_round(run)
+    {:ok, %Run{status: :finished}} = Pipeline.start_fix_round(system_scope(), run)
 
     assert {:error, {:invalid_stage, :finalize}} = Pipeline.decide_finding(system_scope(), finding, :fix)
 
