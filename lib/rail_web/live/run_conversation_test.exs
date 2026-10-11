@@ -6,7 +6,9 @@ defmodule RailWeb.Live.RunConversationTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Tools
@@ -278,6 +280,116 @@ defmodule RailWeb.Live.RunConversationTest do
     assert Floki.text(bubble) =~ ~r/Rail, automatically\s*· answered from past answers/
     assert Floki.text(bubble) =~ "Answered by Rail from Dana's answer on RAIL-65, Oct 3: Postgres."
     refute html =~ ~s(data-qa="human-bubble")
+  end
+
+  describe "questions" do
+    setup %{task: task, roles: roles} do
+      {:ok, run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:engineer].id,
+          status: :blocked_on_input,
+          conversation_id: "conv_questions",
+          started_at: ~U[2026-09-09 10:00:00.000000Z]
+        })
+
+      run = Repo.preload(run, task: :issue)
+      {:ok, first} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?", options: ["Postgres"]})
+      {:ok, second} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which region?"})
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      {:ok, reader} =
+        Users.register_oauth_user(%{github_id: "gh_cnv_qst", login: "nell", name: "Nell", email: "n@example.com"})
+
+      %{run: run, round: [first, second], scope: user_scope(user: reader)}
+    end
+
+    test "an open round takes the composer's place, even in a closed conversation, and without one the composer is back",
+         %{task: task, roles_map: roles_map, run: run, round: round, scope: scope} do
+      conversation = [
+        round_questions: round,
+        id: "conv",
+        task: task,
+        runs: [run],
+        roles_map: roles_map,
+        current_scope: scope
+      ]
+
+      open = render_component(RunConversation, conversation)
+      assert open =~ ~s(data-qa="question-card")
+      assert open =~ "Which database?"
+      refute open =~ ~s(id="composer-root")
+
+      closed = render_component(RunConversation, [closed: true] ++ conversation)
+      assert closed =~ ~s(data-qa="question-card")
+      refute closed =~ ~s(id="conversation-closed")
+
+      none = render_component(RunConversation, Keyword.put(conversation, :round_questions, []))
+      assert none =~ ~s(id="composer-root")
+      refute none =~ ~s(data-qa="question-card")
+    end
+
+    test "a sent round reads as the sender's answers card, Rail's whole round as Rail's, and a typed message as a bubble",
+         %{task: task, roles_map: roles_map, run: run, round: [first, second], scope: scope} do
+      {:ok, _answered} = Pipeline.answer_question(scope, first, "Postgres")
+      {:ok, _dismissed} = Pipeline.dismiss_question(second)
+      {:ok, _sent, _run} = Pipeline.send_answers(scope, Repo.reload!(run))
+
+      Pipeline.append_run_events(run.id, nil, [
+        "[rail] ok",
+        "[human:#{scope.user.id}] You asked: why group by file? Because the tray reads that way."
+      ])
+
+      blocked = run |> Repo.reload!() |> Repo.preload(task: :issue)
+      {:ok, third} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Behind a flag?"})
+
+      {:ok, _by_rail} =
+        third |> Question.changeset(%{answer: "Yes.", status: :answered, answered_by_rail: true}) |> Repo.update()
+
+      {:ok, _sent, _run} = Pipeline.send_answers(system_scope(), Repo.reload!(run))
+
+      html =
+        render_component(RunConversation,
+          id: "conv",
+          task: task,
+          runs: [Repo.reload!(run)],
+          roles_map: roles_map,
+          current_scope: scope,
+          questions: Pipeline.list_questions(task, order_by: [asc: :inserted_at, asc: :id])
+        )
+
+      doc = Floki.parse_fragment!(html)
+
+      assert [person] = Floki.find(doc, "[data-qa='answers-card'][data-from='person']")
+      assert person |> Floki.find("[data-qa='human-bubble-sender']") |> Floki.text() == "You"
+
+      assert ["Which database?", "Which region?"] =
+               person |> Floki.find("[data-qa='answers-card-item'] p[title]") |> Floki.attribute("title")
+
+      assert [_dismissed] = Floki.find(person, "[data-qa='answers-card-dismissed']")
+
+      assert [rail] = Floki.find(doc, "[data-qa='answers-card'][data-from='rail']")
+      assert Floki.text(rail) =~ "Behind a flag?"
+      assert rail |> Floki.find("[data-qa='answers-card-citation']") |> Floki.text() =~ "a past answer"
+
+      assert [bubble] = Floki.find(doc, "[data-qa='human-bubble']")
+      assert Floki.text(bubble) =~ "You asked: why group by file?"
+      refute html =~ ~s(data-qa="reminder-bubble")
+    end
+
+    test "a log from before the tool shows none of its marker lines", %{task: task, roles_map: roles_map, run: run} do
+      Pipeline.append_run_events(run.id, nil, [
+        "Two things the code does not settle.",
+        "[QUESTION: Which database?] [OPTIONS: Postgres | SQLite]",
+        "- [QUESTION: Which region?]"
+      ])
+
+      html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+      assert html =~ "Two things the code does not settle."
+      refute html =~ "[QUESTION:"
+      refute html =~ "[OPTIONS:"
+    end
   end
 
   test "reads the agent's stream as a conversation, not as JSON", %{task: task, roles: roles, roles_map: roles_map} do

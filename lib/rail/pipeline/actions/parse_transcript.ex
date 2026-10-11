@@ -10,6 +10,8 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
   @subagent_call ~r/^\[subagent ([^\]\s]+)\] ([^·]*?)\s*·\s?(.*)$/
   @subagent_end ~r/^\[subagent end ([^\]\s]+)\]\s?(.*)$/
   @within ~r/^\[within ([^\]\s]+)\] (.*)$/
+  # A question an agent wrote as a marker line is on the card, so the log leaves the line out wherever it opens one.
+  @question_marker ~r/^[\s"'“‘>*•-]*(?:\d+[.)][\s"'“‘]*)?\[(?:QUESTION|OPTIONS):/u
   @system_prefix ~r/^\[(run|init|tool|tool error|result|rail|handoff|denied|recovered|error|rate limit|stderr|human)(\s|\]|:)/
 
   @doc """
@@ -169,6 +171,9 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
         |> flush_role()
         |> append_turn(%Turn{author: :event, content: line})
 
+      Regex.match?(@question_marker, line) ->
+        state
+
       true ->
         state
         |> flush_human()
@@ -233,8 +238,12 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
   defp flush_role(%{role_lines: []} = state), do: state
 
   defp flush_role(%{role_lines: lines} = state) do
-    turn = %Turn{author: :role, content: joined(lines)}
-    %{state | role_lines: [], turns: [turn | state.turns]}
+    if Enum.all?(lines, &(String.trim(&1) == "")) do
+      %{state | role_lines: []}
+    else
+      turn = %Turn{author: :role, content: joined(lines)}
+      %{state | role_lines: [], turns: [turn | state.turns]}
+    end
   end
 
   # Lines are accumulated head-first as each block is read.

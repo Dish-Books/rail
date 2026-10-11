@@ -10,7 +10,6 @@ defmodule Rail.Pipeline.DetectedQuestion do
   @enforce_keys [:prompt]
   defstruct [
     :prompt,
-    :context_summary,
     options: []
   ]
 end

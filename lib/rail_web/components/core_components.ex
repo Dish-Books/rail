@@ -11,6 +11,7 @@ defmodule RailWeb.CoreComponents do
 
   defdelegate activity_feed(assigns), to: Components.ActivityFeed
   defdelegate answer_field(assigns), to: Components.AnswerField
+  defdelegate answers_card(assigns), to: Components.AnswersCard
   defdelegate assignee(assigns), to: Components.IssueIcons
   defdelegate browser_picker(assigns), to: Components.BrowserPicker
   defdelegate button(assigns), to: Components.Button

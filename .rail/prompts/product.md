@@ -15,7 +15,7 @@ The words the team uses, and the ticket should too:
 - **Task**: an issue moving through the stages plan, engineer and review. It has a worktree, a branch, a scratch folder and, later, a pull request.
 - **Role**: a stage's agent settings: backend, model, and the prompt in `.rail/prompts/<stage>.md`, read from the default branch at the start of every run. Changing a prompt needs no seed or migration.
 - **Run**: one agent conversation for a role on a task. A human chats with it, answers its questions, approves its output or sends it back.
-- **Question**: a `[QUESTION: ...]` an agent asks. Rail collects a run's questions and the human answers them as one round.
+- **Question**: what an agent asks the human with the `ask_questions` tool, a round in one call. The human answers the round when the agent's turn ends.
 - **Finding**: a defect Review raises, in the code or on a screen. A human rules each one Fix or Don't fix, and the fixes are made inside Review, a round at a time.
 - **Evidence**: a screenshot or file attached to a QA check. A screenshot is a still; a recording or demo is video.
 - **Triage**: Slack threads read by an agent that proposes replies and issues for a teammate to accept.

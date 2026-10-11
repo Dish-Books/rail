@@ -2,7 +2,8 @@ defmodule Rail.Pipeline.Actions.AnswerQuestion do
   @moduledoc """
   Records the human's answer to one question the agent asked, replacing any earlier one.
 
-  An answer can be changed, or given to a dismissed question, until `send_answers/1` sends the round.
+  An answer can be changed, or given to a dismissed question, until `send_answers/1` sends the round. Saving the
+  answer a question already holds changes nothing, so Rail's answer stays Rail's until a person says otherwise.
   """
 
   alias Rail.Pipeline.Schemas.Question
@@ -14,9 +15,10 @@ defmodule Rail.Pipeline.Actions.AnswerQuestion do
   """
   def answer_question(%Scope{} = scope, %Question{delivered_at: nil, status: status} = question, answer)
       when status in [:pending, :answered, :dismissed] and is_binary(answer) do
-    case String.trim(answer) do
-      "" -> {:error, :empty_answer}
-      trimmed -> record(scope, question, trimmed)
+    case {String.trim(answer), question} do
+      {"", _question} -> {:error, :empty_answer}
+      {same, %Question{status: :answered, answer: same}} -> {:ok, question}
+      {trimmed, _question} -> record(scope, question, trimmed)
     end
   end
 

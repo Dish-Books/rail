@@ -40,7 +40,6 @@ defmodule RailWeb.TaskLive do
   alias RailWeb.Live.EngineerStage
   alias RailWeb.Live.FinalizeStage
   alias RailWeb.Live.PlanStage
-  alias RailWeb.Live.QuestionCard
   alias RailWeb.Live.ReviewStage
   alias RailWeb.Live.RunConversation
 
@@ -94,6 +93,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:awaited_frame, nil)
       |> assign(:roles_map, %{})
       |> assign(:round_questions, [])
+      |> assign(:conversation_questions, [])
       |> assign(:suggestions, %{})
       |> assign(:cleaning_up, false)
       |> assign(:focus_file, nil)
@@ -203,6 +203,7 @@ defmodule RailWeb.TaskLive do
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
+              questions={@conversation_questions}
               round_questions={@round_questions}
               suggestions={@suggestions}
               conversation_run={@conversation_run}
@@ -241,6 +242,7 @@ defmodule RailWeb.TaskLive do
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
+              questions={@conversation_questions}
               round_questions={@round_questions}
               suggestions={@suggestions}
               conversation_run={@conversation_run}
@@ -280,6 +282,7 @@ defmodule RailWeb.TaskLive do
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
+              questions={@conversation_questions}
               round_questions={@round_questions}
               suggestions={@suggestions}
               conversation_run={@conversation_run}
@@ -316,6 +319,7 @@ defmodule RailWeb.TaskLive do
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
+              questions={@conversation_questions}
               round_questions={@round_questions}
               suggestions={@suggestions}
               conversation_run={@conversation_run}
@@ -409,6 +413,7 @@ defmodule RailWeb.TaskLive do
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
+              questions={@conversation_questions}
               round_questions={@round_questions}
               suggestions={@suggestions}
               conversation_run={@conversation_run}
@@ -704,6 +709,7 @@ defmodule RailWeb.TaskLive do
 
   attr :task, :any, required: true
   attr :roles_map, :map, required: true
+  attr :questions, :list, required: true, doc: "every question the conversation's run asked"
   attr :round_questions, :list, required: true
   attr :suggestions, :map, required: true
   attr :conversation_run, :any, required: true
@@ -715,21 +721,10 @@ defmodule RailWeb.TaskLive do
   # Only the Review tab draws its tray: the Finalize tab shares the lead's conversation, and the tray it last had.
   attr :review_pane, :boolean, default: false
 
-  # Questions sit above the conversation they came out of. Answering only records:
+  # An open round takes the composer's place in the conversation it came out of. Answering only records:
   # the round reaches the agent when the human says it is done.
   defp conversation_sidebar(assigns) do
     ~H"""
-    <.live_component
-      :if={@round_questions != []}
-      module={QuestionCard}
-      id={"question-card-#{@conversation_run.id}"}
-      questions={@round_questions}
-      suggestions={@suggestions}
-      run={@conversation_run}
-      role_name={@roles_map[@conversation_run.role_id].name}
-      current_scope={@current_scope}
-    />
-
     <.live_component
       module={RunConversation}
       id="run-conversation"
@@ -741,6 +736,9 @@ defmodule RailWeb.TaskLive do
       closed={@closed}
       closed_reason={@closed_reason}
       review_pane={@review_pane}
+      questions={@questions}
+      round_questions={@round_questions}
+      suggestions={@suggestions}
     />
     """
   end
@@ -906,6 +904,7 @@ defmodule RailWeb.TaskLive do
     |> assign(:subscribed_run_ids, sync_run_subscriptions(socket, task.runs))
     |> assign_watched_browser(task)
     |> assign(:round_questions, round_questions)
+    |> assign(:conversation_questions, run_questions(asked, selected_run))
     |> assign(:suggestions, suggestions(round_questions))
     |> load_issue(task)
   end
@@ -1324,6 +1323,9 @@ defmodule RailWeb.TaskLive do
   end
 
   defp round_questions(_asked, nil), do: []
+
+  defp run_questions(asked, %Run{id: run_id}), do: Enum.filter(asked, &(&1.run_id == run_id))
+  defp run_questions(_asked, nil), do: []
 
   # `run:<id>` carries the run's log lines and the finish of its OS process. A
   # LiveComponent cannot subscribe, so the page holds this and forwards. Every run

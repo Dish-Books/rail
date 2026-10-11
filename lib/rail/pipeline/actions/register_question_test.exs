@@ -5,7 +5,6 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
   import Rail.Pipeline.Utils.QuestionQueue
 
   alias Rail.Issues
-  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Question
@@ -47,12 +46,10 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
   test "registers a detected question struct and blocks task and run", %{task: task, roles: roles} do
     role = roles[:engineer]
 
-    {:ok, %Task{id: task_id} = task} =
+    {:ok, %Task{id: task_id}} =
       Pipeline.update_task(task, %{
         stage: :engineer
       })
-
-    task_title = Repo.get!(Issue, task.issue_id).title
 
     {:ok, run} =
       Pipeline.create_run(%{
@@ -64,11 +61,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     run = Repo.preload(run, task: :issue)
 
-    detector = %DetectedQuestion{
-      prompt: "Use Postgres or SQLite?",
-      options: ["Postgres", "SQLite"],
-      context_summary: "Asked during: #{task_title}"
-    }
+    detector = %DetectedQuestion{prompt: "Use Postgres or SQLite?", options: ["Postgres", "SQLite"]}
 
     assert {:ok,
             %Question{
@@ -123,11 +116,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     %Run{id: expected_run_id} = run = Repo.preload(run, task: :issue)
 
-    question = %DetectedQuestion{
-      prompt: "Which cache eviction policy?",
-      options: ["Yes", "No"],
-      context_summary: "Context details"
-    }
+    question = %DetectedQuestion{prompt: "Which cache eviction policy?", options: ["Yes", "No"]}
 
     assert {:ok, %Question{prompt: "Which cache eviction policy?", options: ["Yes", "No"], run_id: ^expected_run_id}} =
              Pipeline.register_question(run, question)

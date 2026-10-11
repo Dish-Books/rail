@@ -14,6 +14,7 @@ defmodule RailWeb.Live.RunConversation do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.PlanComment
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Turn
@@ -21,6 +22,7 @@ defmodule RailWeb.Live.RunConversation do
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
+  alias RailWeb.Live.QuestionCard
 
   @doc """
   Takes the task and its runs; everything else the conversation decides itself.
@@ -28,6 +30,9 @@ defmodule RailWeb.Live.RunConversation do
   `stage_run` is the run the page's tab picked out, and it is what is read here;
   a tab whose role has not run passes `nil`. Rendered without the key at all, the
   most recent run is read.
+
+  `questions` are every question the run asked, which a sent round's message reads back from, and
+  `round_questions` its unsent round with the past answers matched to it in `suggestions`.
 
   `appended_events` may arrive on their own from the page's `run:<id>`
   subscriptions, tagged with the run they belong to, in which case only the log
@@ -80,6 +85,7 @@ defmodule RailWeb.Live.RunConversation do
       |> assign(assigns)
       |> assign(:runs, runs)
       |> assign(:selected_run, selected_run)
+      |> assign(:round_questions, round_of(Map.get(assigns, :round_questions, []), selected_run))
       |> assign_line(selected_run)
       |> assign_run_events(load_run_events(selected_run))
       |> assign_plan_comments()
@@ -194,6 +200,7 @@ defmodule RailWeb.Live.RunConversation do
                 runs={@runs}
                 roles_map={@roles_map}
                 usage_wait={@usage_wait}
+                questions={@questions}
                 target={@myself}
               />
             <% end %>
@@ -235,7 +242,7 @@ defmodule RailWeb.Live.RunConversation do
           </div>
 
           <p
-            :if={@closed and not @show_raw_log}
+            :if={@closed and not @show_raw_log and @round_questions == []}
             id="conversation-closed"
             data-qa="conversation_closed"
             class="shrink-0 px-5 py-4 border-t border-slate-200 dark:border-slate-700 text-[13px] text-slate-500 dark:text-slate-400"
@@ -266,8 +273,20 @@ defmodule RailWeb.Live.RunConversation do
             target={@myself}
           />
 
+          <!-- An open round takes the composer's place until it is sent or dismissed, and hides with it, keeping what was typed. -->
+          <.live_component
+            :if={@round_questions != []}
+            module={QuestionCard}
+            id={"question-card-#{@selected_run.id}"}
+            questions={@round_questions}
+            suggestions={@suggestions}
+            run={@selected_run}
+            current_scope={@current_scope}
+            hidden={@show_raw_log}
+          />
+
           <.composer
-            :if={not @show_raw_log and not @closed}
+            :if={not @show_raw_log and not @closed and @round_questions == []}
             task={@task}
             run={@selected_run}
             role={selected_role(@selected_run, @roles_map)}
@@ -296,6 +315,7 @@ defmodule RailWeb.Live.RunConversation do
   attr :runs, :list, default: []
   attr :roles_map, :map, default: %{}
   attr :usage_wait, :map, default: nil
+  attr :questions, :list, default: [], doc: "every question the run asked, which a sent round reads back from"
   attr :target, :any, required: true
 
   def chat_pane(assigns) do
@@ -339,6 +359,7 @@ defmodule RailWeb.Live.RunConversation do
               worktree_path={@task.worktree_path}
               identifier={@identifier}
               usage_wait={@usage_wait}
+              questions={@questions}
               target={@target}
             />
           <% end %>
@@ -360,6 +381,7 @@ defmodule RailWeb.Live.RunConversation do
   attr :worktree_path, :string, required: true
   attr :identifier, :string, default: nil, doc: "the issue's identifier, which a round's ticket section shows"
   attr :usage_wait, :map, default: nil
+  attr :questions, :list, default: []
   attr :target, :any, required: true
 
   def message_item(assigns) do
@@ -376,6 +398,7 @@ defmodule RailWeb.Live.RunConversation do
       |> assign(:account, if(not usage_waiting?, do: turn_account(msg.process)))
       |> assign(:show_usage_card, usage_waiting? and match?(%{os_process: %{id: ^process_id}}, assigns.usage_wait))
       |> assign(:round, msg.author == :human && PlanComment.parse_message(msg.content || ""))
+      |> assign(:answers, answers(msg, assigns.questions))
 
     ~H"""
     <%= case @author do %>
@@ -432,9 +455,17 @@ defmodule RailWeb.Live.RunConversation do
           round={@round}
           identifier={@identifier}
         />
+        <%!-- A sent round of answers reads back into each question beside its answer. --%>
+        <.answers_card
+          :if={@answers}
+          id={"msg-#{@idx}"}
+          sender={@sender}
+          from={:person}
+          items={@answers}
+        />
         <!-- 4.8 _HumanBubble (right-aligned, plain selectable text, NOT markdown) -->
         <div
-          :if={!@round}
+          :if={!@round and !@answers}
           id={"msg-#{@idx}"}
           data-qa="human-bubble"
           class="w-fit max-w-[85%] ml-auto mt-3.5 px-3 py-2 rounded-xl rounded-br-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 space-y-1"
@@ -450,9 +481,11 @@ defmodule RailWeb.Live.RunConversation do
           >{String.trim(@text)}</div>
         </div>
       <% :reminder -> %>
+        <.answers_card :if={@answers} id={"msg-#{@idx}"} sender="Rail" from={:rail} items={@answers} />
         <!-- What Rail sent the agent on its own: the human bubble's shape, because
         it is a message to the agent, but saying it was Rail and which reminder. -->
         <div
+          :if={!@answers}
           id={"msg-#{@idx}"}
           data-qa="reminder-bubble"
           class="w-fit max-w-[85%] ml-auto mt-3.5 px-3 py-2 rounded-xl rounded-br-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 space-y-1"
@@ -1393,8 +1426,22 @@ defmodule RailWeb.Live.RunConversation do
     |> assign_new(:review_screen_comments, fn -> [] end)
     |> assign_new(:tray_error, fn -> nil end)
     |> assign_new(:closed, fn -> false end)
+    |> assign_new(:questions, fn -> [] end)
+    |> assign_new(:suggestions, fn -> %{} end)
     |> assign_new(:closed_reason, fn -> "The plan is approved, so this conversation is closed." end)
   end
+
+  # The round is the conversation's own run's, so a page drawn for another run never shows its card here.
+  defp round_of(round, %Run{id: run_id}), do: Enum.filter(round, &(&1.run_id == run_id))
+  defp round_of(_round, nil), do: []
+
+  # A person's turn, or Rail's past-answers reminder, may be a round going back; a human turn holding a plan round is not.
+  defp answers(%Turn{author: :human, content: content}, questions), do: Question.parse_answers_message(content, questions)
+
+  defp answers(%Turn{author: :reminder, label: "answered from past answers", content: content}, questions),
+    do: Question.parse_answers_message(content, questions)
+
+  defp answers(_msg, _questions), do: nil
 
   defp identifier(%{issue: %Issue{identifier: identifier}}), do: identifier
   defp identifier(_no_issue), do: nil

@@ -181,4 +181,24 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
     assert {:ok, %Question{answer: "MySQL", answered_by_id: ^user_id, answered_by_rail: false}} =
              Pipeline.answer_question(Rail.Scope.for_user(user), by_rail, "MySQL")
   end
+
+  test "saving the answer a question already holds leaves it as it is, and Rail's answer Rail's", %{run: run} do
+    {:ok, user} =
+      Rail.Users.register_oauth_user(%{
+        github_id: "ans-same",
+        login: "dana-same",
+        name: "Dana",
+        email: "dana-same@ans.example"
+      })
+
+    {:ok, question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
+
+    {:ok, %Question{updated_at: updated_at} = by_rail} =
+      question |> Question.changeset(%{answer: "Postgres", status: :answered, answered_by_rail: true}) |> Repo.update()
+
+    assert {:ok, %Question{answer: "Postgres", answered_by_rail: true, answered_by_id: nil}} =
+             Pipeline.answer_question(Rail.Scope.for_user(user), by_rail, " Postgres ")
+
+    assert %Question{answered_by_rail: true, answered_by_id: nil, updated_at: ^updated_at} = Repo.reload!(question)
+  end
 end
