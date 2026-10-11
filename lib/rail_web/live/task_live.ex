@@ -123,7 +123,8 @@ defmodule RailWeb.TaskLive do
     child = if params["tab"] != @children_tab, do: params["child"]
     url = %{url_id: task_id, child: child, selected_tab: params["tab"], focus_file: params["file"]}
 
-    # A patch that moves only the Review item follows the stage, which has opened it already, so nothing is read again.
+    # The stage naming its item, or sync_tab_url catching the URL up, reads nothing again. A stale item is safe: the
+    # stage reads it only on mount or a new task, and the page clears it when it leaves a tab the URL named.
     socket =
       if socket.assigns.task != nil and Map.take(socket.assigns, Map.keys(url)) == url do
         assign(socket, :url_tab, params["tab"])
@@ -1060,8 +1061,12 @@ defmodule RailWeb.TaskLive do
     socket
   end
 
+  # The item went with the tab the URL named, which the page has left, so a Review pane this render opens
+  # shows Findings, as the new URL says.
   defp sync_tab_url(%{assigns: %{selected_tab: tab}} = socket) do
-    push_patch(socket, to: task_path(socket, tab, nil))
+    socket
+    |> assign(:review_item, nil)
+    |> push_patch(to: task_path(socket, tab, nil))
   end
 
   defp pane(nil), do: :issue

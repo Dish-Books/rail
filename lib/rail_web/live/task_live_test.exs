@@ -3034,6 +3034,59 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "#push-work")
     end
 
+    test "a Review item the page fell back from stays closed when the task reaches Review", %{
+      conn: conn,
+      project: project,
+      task: task,
+      role: role
+    } do
+      {:ok, %{id: lead_id}} = Roles.get_role(project_id: project.id, stage: :review_lead)
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
+
+      render_patch(view, ~p"/tasks/#{task.id}?tab=#{lead_id}&item=demo")
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{role.id}")
+
+      {:ok, _review_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: lead_id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.utc_now()
+        })
+
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
+      send(view.pid, {:pipeline_changed, task.id})
+
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{lead_id}")
+      assert has_element?(view, "#review-pane[data-item=findings]")
+    end
+
+    test "a Review item the URL names on another tab stays closed when the page follows the task into Review", %{
+      conn: conn,
+      project: project,
+      task: task,
+      role: role
+    } do
+      {:ok, %{id: lead_id}} = Roles.get_role(project_id: project.id, stage: :review_lead)
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}&item=demo")
+
+      {:ok, _review_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: lead_id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.utc_now()
+        })
+
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
+      send(view.pid, {:pipeline_changed, task.id})
+
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{lead_id}")
+      assert has_element?(view, "#review-pane[data-item=findings]")
+    end
+
     test "says so when the engineer has changed nothing", %{conn: conn, task: task, repo: repo} do
       git!(repo, ["checkout", "main"])
       {:ok, _reset} = Pipeline.update_task(task, %{worktree_path: repo})
