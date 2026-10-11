@@ -57,10 +57,7 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
 
     stub(BrowserSession, :drain_problems, fn _session -> [] end)
 
-    stub(BrowserSession, :call, fn
-      _session, "Page.navigate", _params -> {:ok, %{"frameId" => "main"}}
-      _session, "Page.captureScreenshot", _params -> {:ok, %{"data" => Base.encode64("jpeg bytes")}}
-    end)
+    stub_screenshot(page_png(:empty_list))
 
     {:ok, run} =
       Pipeline.create_run(%{

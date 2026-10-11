@@ -5,16 +5,13 @@ defmodule Rail.Mcp.Utils.RunToolQaShotTest do
 
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Tools
-  alias Rail.Tools.BrowserSession
 
   setup do
     unique = System.unique_integer([:positive])
     scratch = Path.join([System.tmp_dir!(), "rail_qa_shot_test", to_string(unique)])
     on_exit(fn -> File.rm_rf(scratch) end)
 
-    stub(BrowserSession, :call, fn _session, "Page.captureScreenshot", _params ->
-      {:ok, %{"data" => Base.encode64("jpeg bytes")}}
-    end)
+    stub_screenshot(page_png(:empty_list))
 
     %{task: %Task{id: "tsk_shot_#{unique}", scratch_path: scratch}}
   end
@@ -57,9 +54,45 @@ defmodule Rail.Mcp.Utils.RunToolQaShotTest do
 
   test "a page the browser cannot photograph is an error, not a picture", %{task: task} do
     stub(Tools, :start_browser_session, fn _task, _name, _opts -> {:ok, self()} end)
-    stub(BrowserSession, :call, fn _session, _method, _params -> {:ok, %{"data" => "not base64 at all!"}} end)
+    stub_screenshot("not a picture")
 
     assert {:error, :unreadable_screenshot} =
              run_tool_qa_shot(task, %{"name" => "Blank", "browser" => "explorer-1"}, stage: :review_lead)
+  end
+
+  # The explorer hears at once, so it retakes before the lead ever sees a blank picture.
+  test "a picture all one color is refused and nothing is saved", %{task: task} do
+    stub(Tools, :start_browser_session, fn _task, _name, _opts -> {:ok, self()} end)
+    stub_screenshot(page_png(:flat))
+
+    assert {:refused, "Refused, nothing saved. The picture came back all one color" <> said} =
+             run_tool_qa_shot(task, %{"name" => "The saved bill", "browser" => "explorer-1"}, stage: :review_lead)
+
+    assert said =~ "report that with its URL and the steps that reach it, as text"
+    refute File.exists?(Path.join([task.scratch_path, "qa", "shots"]))
+  end
+
+  test "a width is the width the page is laid out at for the picture", %{task: task} do
+    stub(Tools, :start_browser_session, fn _task, _name, _opts -> {:ok, self()} end)
+
+    expect(Tools, :capture_browser_evidence, fn _session, ^task, "Bill list at 768", [width: 768] ->
+      {:ok, "shots/bill-list-at-768-1.jpg"}
+    end)
+
+    assert {:ok, "Saved as shots/bill-list-at-768-1.jpg. Read it now" <> _rest} =
+             run_tool_qa_shot(task, %{"name" => "Bill list at 768", "browser" => "explorer-1", "width" => 768},
+               stage: :review_lead
+             )
+  end
+
+  test "a width outside 320 to 1920, or not a whole number, is refused before any browser", %{task: task} do
+    reject(Tools, :start_browser_session, 3)
+
+    for width <- [319, 1921, 1024.0, "1024"] do
+      assert {:refused, "`width` is the width to lay the page out at" <> _rest} =
+               run_tool_qa_shot(task, %{"name" => "Narrow", "browser" => "explorer-1", "width" => width},
+                 stage: :review_lead
+               )
+    end
   end
 end
