@@ -66,7 +66,8 @@ defmodule Rail.Mcp.Utils.McpTools do
     "maximum" => 1920,
     "description" =>
       "The viewport width to take the picture at, from 320 to 1920. A script's resize is gone once the script " <>
-        "closes, so a narrow picture is taken by passing its width here. Left out, it is the tab's own 1920."
+        "closes, so a narrow picture is taken by passing its width here. Left out, it is the tab's own 1920. " <>
+        "Afterwards the tab is back at its own width, so a script holding a resize has to set it again."
   }
 
   @browser_tools [

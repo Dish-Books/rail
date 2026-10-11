@@ -14,6 +14,9 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreen do
 
   @key ~r/\A[a-z0-9][a-z0-9-]{0,59}\z/
 
+  # Rail clears its width after the picture, which also ends a width an explorer's script set.
+  @unsized " The tab is back at its own width now, so a script holding a resize has to set it again."
+
   @doc """
   Captures the browser `arguments["browser"]` names on `task` as the screen state `arguments["key"]`,
   labeled `arguments["label"]` and laid out `arguments["width"]` wide when given, and says which commit it
@@ -33,7 +36,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreen do
       label == "" or String.length(label) > 120 ->
         {:refused, "Refused, nothing saved. `label` says what the state shows, in 120 characters or less."}
 
-      width != nil and width not in 320..1920 ->
+      not width?(width) ->
         {:refused,
          "Refused, nothing saved. `width` is the width to lay the page out at, a whole number from 320 to 1920."}
 
@@ -57,13 +60,13 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreen do
          {:ok, %{commit: commit}} <- Pipeline.save_screen(task, %{key: key, label: label, file: file, browser: browser}) do
       {:ok,
        "Saved as #{file}, the image of #{key} on #{String.slice(commit || "no commit", 0, 7)}. Give that path " <>
-         "to the lead to cite in a finding that turns on this screen."}
+         "to the lead to cite in a finding that turns on this screen." <> if(width, do: @unsized, else: "")}
     else
       {:error, :flat_screenshot} ->
         {:refused,
-         "Refused, nothing saved, and #{key} keeps its last picture. This one came back all one color, so the page " <>
-           "had not painted or the tab is still blank. Wait for the state to show, then save it again. If the page " <>
-           "really renders blank, report that with its URL and the steps that reach it, as text."}
+         "Refused, nothing saved. The picture came back all one color, so the page had not painted or the tab " <>
+           "is still blank. Wait for the state to show, then save it again. If the page really renders blank, " <>
+           "report that with its URL and the steps that reach it, as text."}
 
       {:refused, said} ->
         {:refused, said}
@@ -72,4 +75,8 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreen do
         {:error, reason}
     end
   end
+
+  defp width?(width) when is_integer(width) and width in 320..1920, do: true
+  defp width?(nil), do: true
+  defp width?(_width), do: false
 end

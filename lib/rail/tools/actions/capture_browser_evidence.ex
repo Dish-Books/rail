@@ -36,9 +36,12 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidence do
     # Two captures on one tab would each clear the other's width mid-picture.
     :global.trans({{:capture_browser_evidence, session}, self()}, fn ->
       with {:ok, _sized} <- size(session, width) do
-        captured = capture(session, scratch_path, name, opts[:key])
-        _cleared = unsize(session, width)
-        captured
+        # Cleared on an exit or a raise too, or the tab stays this wide for every later shot.
+        try do
+          capture(session, scratch_path, name, opts[:key])
+        after
+          unsize(session, width)
+        end
       end
     end)
   end
@@ -58,7 +61,8 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidence do
   defp unsize(_session, nil), do: {:ok, nil}
   defp unsize(session, _width), do: BrowserSession.call(session, "Emulation.clearDeviceMetricsOverride", %{})
 
-  # Clipped to the viewport as laid out, so a page laid out narrower than the window fills the frame.
+  # The layout at 1:1, cropped to the size the device shows: Chrome's zoom-out for a page wider than the
+  # phone depends on the tab's history, so a picture taken at its scale would too.
   defp capture(session, scratch_path, name, key) do
     with {:ok, _settled} <-
            BrowserSession.call(session, "Runtime.evaluate", %{
@@ -66,12 +70,12 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidence do
              awaitPromise: true,
              returnByValue: true
            }),
-         {:ok, %{"cssLayoutViewport" => viewport}} <- BrowserSession.call(session, "Page.getLayoutMetrics", %{}),
+         {:ok, %{"cssVisualViewport" => viewport}} <- BrowserSession.call(session, "Page.getLayoutMetrics", %{}),
          clip = %{
            x: viewport["pageX"],
            y: viewport["pageY"],
-           width: viewport["clientWidth"],
-           height: viewport["clientHeight"],
+           width: round(viewport["clientWidth"] * viewport["scale"]),
+           height: round(viewport["clientHeight"] * viewport["scale"]),
            scale: 1
          },
          {:ok, %{"data" => png}} <- BrowserSession.call(session, "Page.captureScreenshot", %{format: "png", clip: clip}),

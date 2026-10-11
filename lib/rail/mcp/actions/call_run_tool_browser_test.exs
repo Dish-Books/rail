@@ -57,7 +57,15 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
 
     stub(BrowserSession, :drain_problems, fn _session -> [] end)
 
-    stub_screenshot(page_png(:empty_list))
+    # Rail's Learnings with nothing to review, as headless Chrome photographs it: sparse but not blank.
+    empty_list = File.read!("test/support/fixtures/empty_list_page.png")
+    viewport = %{"pageX" => 0, "pageY" => 0, "clientWidth" => 1920, "clientHeight" => 1080, "scale" => 1}
+
+    stub(BrowserSession, :call, fn
+      _session, "Page.getLayoutMetrics", _params -> {:ok, %{"cssVisualViewport" => viewport}}
+      _session, "Page.captureScreenshot", %{format: "png"} -> {:ok, %{"data" => Base.encode64(empty_list)}}
+      _session, _method, _params -> {:ok, %{"data" => Base.encode64("jpeg bytes")}}
+    end)
 
     {:ok, run} =
       Pipeline.create_run(%{

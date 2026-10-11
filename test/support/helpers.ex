@@ -36,36 +36,6 @@ defmodule RailTest.Helpers do
   end
 
   @doc """
-  A page as headless Chrome photographs it: `:flat`, a blank tab all one white, or `:empty_list`, Rail's
-  Learnings with nothing to review, which is sparse but not blank.
-  """
-  def page_png(:flat), do: File.read!("test/support/fixtures/flat_page.png")
-  def page_png(:empty_list), do: File.read!("test/support/fixtures/empty_list_page.png")
-
-  @doc """
-  Stubs the tab a capture photographs as a settled 1920 by 1080 page that is `png` when Rail checks it,
-  and `"jpeg bytes"` when Rail saves it.
-  """
-  def stub_screenshot(png) do
-    Mimic.stub(Rail.Tools.BrowserSession, :call, fn
-      _session, "Runtime.evaluate", _params ->
-        {:ok, %{"result" => %{"type" => "undefined"}}}
-
-      _session, "Page.getLayoutMetrics", _params ->
-        {:ok, %{"cssLayoutViewport" => %{"pageX" => 0, "pageY" => 0, "clientWidth" => 1920, "clientHeight" => 1080}}}
-
-      _session, "Page.captureScreenshot", %{format: "png"} ->
-        {:ok, %{"data" => Base.encode64(png)}}
-
-      _session, "Page.captureScreenshot", %{format: "jpeg"} ->
-        {:ok, %{"data" => Base.encode64("jpeg bytes")}}
-
-      _session, "Emulation." <> _override, _params ->
-        {:ok, %{}}
-    end)
-  end
-
-  @doc """
   An implementation plan in the section format the Architect prompt asks for, with
   both diagrams and a Program design.
   """
