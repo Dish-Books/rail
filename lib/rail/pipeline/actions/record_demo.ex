@@ -12,7 +12,7 @@ defmodule Rail.Pipeline.Actions.RecordDemo do
   alias Rail.Scope
 
   @ask """
-  Record the demo again: the branch has moved on since it was recorded. Have the demo recorder record the same shot list on HEAD, in the browser named `demo`, and save it with `save_demo`. Nothing else in the review changes.
+  Record the demo again: a person asked for a new take, as the branch has moved on since it was recorded. Have the demo recorder record the same shot list on HEAD, in the browser named `demo`, and save it with `save_demo`. Later rounds keep the take it saves. Nothing else in the review changes.
   """
 
   @doc """
