@@ -528,7 +528,8 @@ defmodule RailWeb.Live.ReviewStage do
     |> Enum.map_join(" · ", fn {count, word} -> "#{count} #{word}" end)
   end
 
-  # Disabled until every finding is ruled; gone while a fix round runs and once nothing is left.
+  # Disabled until every finding is ruled; gone while a fix round runs and once nothing is left. Asked for only
+  # at Review, where the run is approvable whenever it is not running, so a phase past running has it true.
   defp button(:round, _counts, passes, _approvable) do
     round = length(passes) + 1
     %{label: "Start fix round #{round}", icon: "pi-wrench", disabled: true, title: "Round #{round} is still running"}
@@ -536,7 +537,6 @@ defmodule RailWeb.Live.ReviewStage do
 
   defp button(phase, _counts, _passes, _approvable) when phase in [:fixing, :ci, :finished], do: nil
   defp button(_phase, _counts, [], _approvable), do: nil
-  defp button(_phase, _counts, _passes, false), do: nil
 
   defp button(_phase, %{undecided: undecided}, passes, true) when undecided > 0 do
     %{
