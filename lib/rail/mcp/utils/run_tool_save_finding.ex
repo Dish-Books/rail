@@ -50,10 +50,18 @@ defmodule Rail.Mcp.Utils.RunToolSaveFinding do
 
         {:ok, "Noted #{key} as #{status}#{carried}. What it said when raised stands."}
 
+      {:error, {:review_finished, stage}} ->
+        {:refused,
+         "Nothing saved: the review is finished and #{where(stage)}, so there is no round to raise a finding in. " <>
+           "Say what you found in the conversation instead."}
+
       {:error, changeset} ->
         {:error, changeset}
     end
   end
+
+  defp where(:finalize), do: "the task is at Finalize"
+  defp where(:merged), do: "the task has merged"
 
   defp pieces([_one]), do: "1 piece"
   defp pieces(evidence), do: "#{length(evidence)} pieces"

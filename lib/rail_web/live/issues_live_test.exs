@@ -653,7 +653,7 @@ defmodule RailWeb.IssuesLiveTest do
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
     assert has_element?(view, "#task-link-#{waiting_issue.id}", "Waiting on ISW-2")
-    assert has_element?(view, "#task-link-#{first_issue.id}", "Queued for Engineer")
+    assert has_element?(view, "#task-link-#{first_issue.id}", "Queued for Implement")
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues/ISW-3")
     assert has_element?(view, "#issue-task-link", "Waiting on ISW-2")
@@ -751,7 +751,7 @@ defmodule RailWeb.IssuesLiveTest do
   end
 
   # The row's task is loaded without its issue, and the review file it reads is named for the issue.
-  test "a task whose review is finished reads Ready to merge, as its own page does", %{conn: conn, project: project} do
+  test "a task whose review is finished reads Ready to finalize, as its own page does", %{conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_issues_live_ready",
@@ -791,7 +791,7 @@ defmodule RailWeb.IssuesLiveTest do
 
     assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/issues")
 
-    assert has_element?(view, "#task-link-#{issue.id}", "Ready to merge")
+    assert has_element?(view, "#task-link-#{issue.id}", "Ready to finalize")
   end
 
   test "sync_issues button triggers sync on current project or all projects", %{

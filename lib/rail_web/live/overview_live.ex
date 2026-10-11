@@ -87,6 +87,8 @@ defmodule RailWeb.OverviewLive do
             <.up_next runs={@waiting} blocked={@blocked} />
           </section>
 
+          <.review_queue tasks={@review_queue} now={@now} />
+
           <section id="since-yesterday-section">
             <h2 class="mb-3 text-xs font-medium uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
               Since yesterday
@@ -193,9 +195,15 @@ defmodule RailWeb.OverviewLive do
 
     sandboxes = load_sandboxes()
 
+    # Every ready task in the switcher's projects, whoever owns it, so My work and Everyone show one queue.
+    review_queue =
+      Pipeline.list_tasks(project_id: project_id, ready: true, preload: [:project, :issue, :marked_ready_by])
+
     socket
+    |> assign(:now, now)
     |> assign(:waiting, waiting)
     |> assign(:blocked, blocked)
+    |> assign(:review_queue, review_queue)
     |> assign(:sandboxes, sandboxes)
     |> assign(:stats, stats(in_progress, completed, {waiting_on_user, blocked_on_user}, sandboxes.waiting, now))
     |> assign(:activity, activity(runs, completed, splits(tasks, children), DateTime.shift(now, day: -1)))
@@ -397,8 +405,9 @@ defmodule RailWeb.OverviewLive do
       state: state,
       label: stage_label(task, run),
       style: run_state_style(run, task),
-      # Amber means waiting on the viewer, the same work the Waiting on you stat counts.
-      is_waiting: state in [:done, :blocked] and task.issue.owner_user_id == user_id,
+      # Amber is the viewer's share of what the Waiting on you stat counts, less a failed or stopped run,
+      # which reads as broken instead.
+      is_waiting: state in [:done, :blocked] and Run.needs_attention?(run) and task.issue.owner_user_id == user_id,
       changed_at: changed_at,
       age: format_age(DateTime.diff(now, changed_at))
     }

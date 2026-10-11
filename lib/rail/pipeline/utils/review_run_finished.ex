@@ -11,7 +11,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
   A turn that leaves commits the remote has not had hands them over: through CI and pushed, and to the next
   round when the branch moved past what the last round read. Fixes are held back while a Fix finding is not
   saved fixed with its report, and a branch Rail will not push goes back to the lead to merge. What else a turn can get wrong is ending without `save_review` when a round
-  was due, which is any time the branch has moved since the last pass read it. Both are recorded on the run,
+  was due, which at Review is any time the branch has moved since the last pass read it. Both are recorded on the run,
   so the stage stays open for the message that settles them.
   """
 
@@ -101,6 +101,9 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
 
   # A pass with no commit, or a worktree git cannot read, is taken at its word.
   defp saved?([], %Task{}), do: false
+
+  # Past Review nobody rules a round, so a branch moved at Finalize or after the merge owes none.
+  defp saved?(_passes, %Task{stage: stage}) when stage in [:finalize, :merged], do: true
 
   defp saved?(passes, %Task{} = task) do
     read = List.last(passes).head

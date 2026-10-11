@@ -8,8 +8,8 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessions do
   was - and it is also the leak: every tab left open is memory one Chrome shares
   between every task, until it is killed for it and takes every pass's tabs with
   it. So a tab is kept only for a run that is still running. A task that left
-  Review, one that was cleaned up whatever stage it stopped at, and one waiting
-  on a human between rounds each have every named context closed and their rows
+  Review, Finalize or the merge behind it, one that was cleaned up whatever stage it stopped at, and one
+  waiting on a human between rounds or comments each have every named context closed and their rows
   settled, whatever holds them; the next round signs in again.
 
   A row whose context Chrome no longer has - Chrome restarted since - is settled
@@ -31,7 +31,8 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessions do
   alias Rail.Tools
   alias Rail.Tools.Schemas.BrowserSession
 
-  @driven_stages [:review]
+  # A comment resumes the lead at Finalize and after the merge as it does at Review.
+  @driven_stages [:review, :finalize, :merged]
 
   @doc """
   Closes every live session no running run needs, settles every one Chrome has
@@ -80,12 +81,16 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessions do
   defp lost?(%BrowserSession{}, _contexts), do: false
 
   # The session watching a context that is gone has nothing to close: it is
-  # shut down rather than stopped, and the row says what happened to the tab.
-  defp lose(%BrowserSession{} = session, pid) do
+  # shut down rather than stopped, the row says what happened to the tab, and a page showing it is told.
+  defp lose(%BrowserSession{task_id: task_id, name: name} = session, pid) do
     if is_pid(pid), do: :ok = GenServer.stop(pid, :shutdown, 10_000)
 
-    session
-    |> BrowserSession.changeset(%{status: :finished, ended_reason: :browser_gone, finished_at: DateTime.utc_now()})
-    |> Repo.update!()
+    lost =
+      session
+      |> BrowserSession.changeset(%{status: :finished, ended_reason: :browser_gone, finished_at: DateTime.utc_now()})
+      |> Repo.update!()
+
+    Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task_id}:#{name}", {:browser_closed, task_id, name})
+    lost
   end
 end

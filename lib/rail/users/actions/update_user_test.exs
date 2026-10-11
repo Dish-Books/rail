@@ -53,6 +53,19 @@ defmodule Rail.Users.Actions.UpdateUserTest do
     end
   end
 
+  describe "tech lead setting" do
+    test "an admin turns it on and off", %{admin_scope: scope, user: user, user_id: user_id} do
+      assert {:ok, %User{id: ^user_id, tech_lead: true} = lead} = Users.update_user(scope, user, %{tech_lead: true})
+      assert {:ok, %User{id: ^user_id, tech_lead: false}} = Users.update_user(scope, lead, %{tech_lead: false})
+    end
+
+    test "a non-admin is refused, a tech lead included", %{user: user, admin: admin} do
+      lead = %{user | tech_lead: true}
+      assert {:error, :not_authorized} = Users.update_user(Scope.for_user(lead), user, %{tech_lead: true})
+      assert {:error, :not_authorized} = Users.update_user(Scope.for_user(lead), admin, %{tech_lead: true})
+    end
+  end
+
   describe "admin flag" do
     test "an admin can grant admin status", %{admin_scope: scope, user: user, user_id: user_id} do
       assert {:ok, %User{id: ^user_id, admin: true}} = Users.update_user(scope, user, %{admin: true})

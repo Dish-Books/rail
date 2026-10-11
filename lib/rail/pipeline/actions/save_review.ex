@@ -14,8 +14,11 @@ defmodule Rail.Pipeline.Actions.SaveReview do
   alias Rail.Roles.Schemas.Role
 
   @doc """
-  Closes the pass running on `task`. Returns `{:ok, pass}`.
+  Closes the pass running on `task`. Returns `{:ok, pass}`, or `{:error, {:review_finished, stage}}` once the
+  task is at Finalize or merged, where a comment can resume the lead but nobody can rule a round.
   """
+  def save_review(%Task{stage: stage}) when stage in [:finalize, :merged], do: {:error, {:review_finished, stage}}
+
   def save_review(%Task{} = task) do
     task = Repo.preload(task, :issue)
     passes = Pipeline.read_review(task)

@@ -129,6 +129,26 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
     assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: parent.issue_id})
   end
 
+  # Finalize records the merge on the task before Linear's webhook completes the issue.
+  test "a child merged through Finalize counts as merged before Linear completes its issue", %{
+    parent: parent,
+    children: [first, second, third, fourth]
+  } do
+    merge = &({:ok, _merged} = Pipeline.update_task(&1, %{merged_at: DateTime.utc_now()}))
+    merge.(first)
+    merge.(second)
+
+    assert :ok = perform_job(AdvanceSplit, %{parent_task_id: parent.id})
+    assert [%Run{}] = Repo.preload(third, :runs, force: true).runs
+    assert [%Run{}] = Repo.preload(fourth, :runs, force: true).runs
+    assert %Task{stage: :split} = Repo.reload!(parent)
+
+    merge.(Repo.reload!(third))
+    merge.(Repo.reload!(fourth))
+    assert :ok = perform_job(AdvanceSplit, %{parent_task_id: parent.id})
+    assert %Task{stage: :merged} = Repo.reload!(parent)
+  end
+
   test "a canceled child counts as settled, so the parent moves to Merged once the rest have merged", %{
     parent: parent,
     children: [first | rest],

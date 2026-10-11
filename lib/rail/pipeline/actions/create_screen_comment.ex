@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.CreateScreenComment do
   @moduledoc """
   Saves a comment on one screen state Review shot, unsent, for the person writing it, against the state's shot as it
-  is now. It can be written while the task is at Review, after the review is finished too, until it is cleaned up.
+  is now. It can be written from Review on, at Finalize and after the merge too, until the task is cleaned up.
   """
 
   import Rail.Pipeline.Utils.BroadcastScreenComments
@@ -15,14 +15,15 @@ defmodule Rail.Pipeline.Actions.CreateScreenComment do
   @doc """
   Saves `attrs`, the state's `key` and the comment's `body`, as the scope user's comment on `task`.
 
-  Returns `{:ok, comment}`, `{:error, changeset}`, or `{:error, reason}` when the task is cleaned up, is not at Review,
-  or has no shot of that state.
+  Returns `{:ok, comment}`, `{:error, changeset}`, or `{:error, reason}` when the task is cleaned up, has not reached
+  Review, or has no shot of that state.
   """
   def create_screen_comment(%Scope{user: %{id: user_id}}, %Task{id: task_id}, attrs) do
     changeset = ScreenComment.changeset(%ScreenComment{task_id: task_id, user_id: user_id}, attrs)
 
     # Read again, so a page drawn before the task moved on cannot write after it.
-    with %Task{cleaned_up_at: nil, stage: :review} = task <- Repo.get!(Task, task_id),
+    with %Task{cleaned_up_at: nil, stage: stage} = task when stage in [:review, :finalize, :merged] <-
+           Repo.get!(Task, task_id),
          key = Ecto.Changeset.get_field(changeset, :key),
          %{label: label, commit: commit} <- Enum.find(Pipeline.list_screens(task), &(&1.key == key)),
          {:ok, comment} <- changeset |> Ecto.Changeset.change(label: label, commit: commit) |> Repo.insert() do

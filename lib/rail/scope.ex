@@ -35,6 +35,11 @@ defmodule Rail.Scope do
   def admin?(%__MODULE__{user: %{admin: true}}), do: true
   def admin?(_scope), do: false
 
+  @doc "Returns true if the scope may merge tasks from Finalize: the system, and users with the tech lead setting."
+  def tech_lead?(%__MODULE__{system: true}), do: true
+  def tech_lead?(%__MODULE__{user: %{tech_lead: true}}), do: true
+  def tech_lead?(_scope), do: false
+
   @doc """
   The projects the scope may see: nil means every project, and only admins and the system get it.
   Anyone else gets their granted ids, where an empty list means no projects at all.

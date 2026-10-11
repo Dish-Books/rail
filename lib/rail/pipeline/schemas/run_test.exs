@@ -282,6 +282,19 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     assert Run.needs_attention?(done)
   end
 
+  # Marking ready hands the task to the review queue, so its owner is no longer the one it waits on.
+  test "a finished Review run at Finalize needs attention until the task is marked ready, and not after" do
+    done = %Run{
+      status: :finished,
+      stage_outcome: :done,
+      role: %Role{stage: :review_lead},
+      task: %Task{stage: :finalize, merged_at: nil, issue: %Issue{}}
+    }
+
+    assert Run.needs_attention?(done)
+    refute Run.needs_attention?(%{done | task: %{done.task | marked_ready_at: DateTime.utc_now()}})
+  end
+
   test "a review subagent's role at Review is not the run the task waits on" do
     done = %Run{
       status: :finished,

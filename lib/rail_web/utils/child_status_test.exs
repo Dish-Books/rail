@@ -43,7 +43,7 @@ defmodule RailWeb.Utils.ChildStatusTest do
              label: "Merged",
              line: "Merged · PR #212",
              needs_attention: false,
-             cells: [%{mark: :done}, %{mark: :done}],
+             cells: [%{mark: :done}, %{mark: :done}, %{mark: :done}],
              merged: %{chip: %{label: "Merged"}}
            } = child_status(merged, [merged])
   end
@@ -144,7 +144,7 @@ defmodule RailWeb.Utils.ChildStatusTest do
 
     assert %{
              label: "Review",
-             cells: [%{mark: :done}, %{mark: :current, chip: %{label: "Findings"}}],
+             cells: [%{mark: :done}, %{mark: :current, chip: %{label: "Findings"}}, %{mark: :pending}],
              line: "Findings to rule",
              needs_attention: true,
              badge: :dot,
@@ -171,10 +171,10 @@ defmodule RailWeb.Utils.ChildStatusTest do
     assert %{
              icon: "pi-list-checks",
              text_class: "text-amber" <> _amber,
-             cells: [%{mark: :done}, %{chip: %{label: "Findings", icon: "pi-list-checks"}}]
+             cells: [%{mark: :done}, %{chip: %{label: "Findings", icon: "pi-list-checks"}}, _finalize]
            } = child_status(at_review, [at_review])
 
-    assert %{icon: "pi-chat-text", cells: [%{chip: %{label: "Diff", icon: "pi-chat-text"}}, _review]} =
+    assert %{icon: "pi-chat-text", cells: [%{chip: %{label: "Diff", icon: "pi-chat-text"}}, _review, _finalize]} =
              child_status(diff_ready, [diff_ready])
 
     File.mkdir_p!(Path.join(scratch, "reviews"))
@@ -187,7 +187,7 @@ defmodule RailWeb.Utils.ChildStatusTest do
     assert %{
              label: "Ready to merge",
              icon: "pi-chat-text",
-             cells: [_engineer, %{chip: %{label: "Findings", icon: "pi-chat-text"}}]
+             cells: [_engineer, %{chip: %{label: "Findings", icon: "pi-chat-text"}}, _finalize]
            } = child_status(at_review, [at_review])
   end
 
@@ -209,14 +209,14 @@ defmodule RailWeb.Utils.ChildStatusTest do
              line: "Review failed: Chrome could not reach it",
              line_class: "text-red-600 dark:text-red-500",
              action: %{label: "Fix", tab: "rol_review_lead"},
-             cells: [%{mark: :done}, %{chip: %{label: "Failed"}}]
+             cells: [%{mark: :done}, %{chip: %{label: "Failed"}}, _finalize]
            } = child_status(failed, [failed])
 
     assert %{
              badge: nil,
              needs_attention: false,
              action: nil,
-             line: "Engineer running · " <> _age,
+             line: "Implement running · " <> _age,
              cells: [%{chip: %{label: "Running"}} | _rest]
            } =
              child_status(running, [running])
@@ -228,14 +228,14 @@ defmodule RailWeb.Utils.ChildStatusTest do
     one_question =
       child.(2, runs: [run.(:engineer, status: :blocked_on_input, questions: [%Question{status: :answered}])])
 
-    assert %{state: :queued, line: "Queued for Engineer", badge: nil} = child_status(queued, [queued])
+    assert %{state: :queued, line: "Queued for Implement", badge: nil} = child_status(queued, [queued])
     assert %{line: "engineer role asked a question", badge: :dot} = child_status(one_question, [one_question])
 
     for {status, stage, role, line} <- [
           {%{status: :finished, stage_outcome: :done}, :engineer, :engineer, "Diff ready for review"},
           {%{status: :finished, stage_outcome: :done}, :review, :review_lead, "Findings to rule"},
-          {%{status: :waiting_for_resources}, :engineer, :engineer, "Engineer waiting for resources"},
-          {%{status: :finished}, :engineer, :engineer, "Engineer stopped"}
+          {%{status: :waiting_for_resources}, :engineer, :engineer, "Implement waiting for resources"},
+          {%{status: :finished}, :engineer, :engineer, "Implement stopped"}
         ] do
       task = child.(3, stage: stage, runs: [run.(role, Map.to_list(status))])
       assert %{line: ^line} = child_status(task, [task])
@@ -253,15 +253,55 @@ defmodule RailWeb.Utils.ChildStatusTest do
     waiting = child.(4, builds_on: [5])
     at_engineer = child.(5, runs: [run.(:engineer, status: :running)])
     at_review = child.(6, stage: :review, runs: [run.(:review_lead, status: :finished, stage_outcome: :done)])
-    siblings = [merged, canceled, blocked, waiting, at_engineer, at_review]
+    at_finalize = child.(7, stage: :finalize, runs: [run.(:review_lead, status: :finished, stage_outcome: :done)])
+    siblings = [merged, canceled, blocked, waiting, at_engineer, at_review, at_finalize]
 
-    assert child_stages() == [:engineer, :review]
+    assert child_stages() == [:engineer, :review, :finalize]
 
-    assert [:merged, :canceled, :blocked_by_canceled, :waiting_on, :running, :done] =
+    assert [:merged, :canceled, :blocked_by_canceled, :waiting_on, :running, :done, :not_ready] =
              for(sibling <- siblings, do: child_status(sibling, siblings).state)
 
     for sibling <- siblings do
-      assert [%{stage: :engineer}, %{stage: :review}] = child_status(sibling, siblings).cells
+      assert [%{stage: :engineer}, %{stage: :review}, %{stage: :finalize}] = child_status(sibling, siblings).cells
     end
+  end
+
+  test "a child merged through Finalize reads merged before Linear completes its issue", %{child: child, now: now} do
+    merged = child.(1, stage: :merged, merged_at: now, pr_number: 151)
+    after_it = child.(2, builds_on: [1])
+
+    assert %{state: :merged, line: "Merged · PR #151"} = child_status(merged, [merged, after_it])
+    assert %{state: :queued, waiting_on: []} = child_status(after_it, [merged, after_it])
+  end
+
+  test "a child at Finalize sits in the Finalize column with its label, flagged only until marked ready", %{
+    child: child,
+    run: run,
+    now: now
+  } do
+    lead = [run.(:review_lead, status: :running)]
+    unmarked = child.(1, stage: :finalize, runs: lead)
+
+    assert %{
+             state: :not_ready,
+             label: "Ready to finalize",
+             cells: [%{mark: :done}, %{mark: :done}, %{mark: :current, chip: %{label: "Ready to finalize"}}],
+             needs_attention: true,
+             badge: :dot,
+             action: %{label: "Finalize", tab: "finalize"}
+           } = child_status(unmarked, [unmarked])
+
+    ready = %{unmarked | marked_ready_at: now}
+
+    assert %{state: :ready, line: "Ready for tech lead", needs_attention: false, badge: nil, action: nil} =
+             child_status(ready, [ready])
+
+    refused = %{ready | merge_error: "Required check failed"}
+    assert %{state: :refused, line: "Merge refused: Required check failed"} = child_status(refused, [refused])
+  end
+
+  test "a failed child at the engineer stage reads Implement failed", %{child: child, run: run} do
+    failed = child.(1, runs: [run.(:engineer, status: :finished, error: "It broke.")])
+    assert %{label: "Implement failed", line: "Implement failed: It broke."} = child_status(failed, [failed])
   end
 end

@@ -3,8 +3,8 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
   What a person's Send in the Review tray does once every finding is ruled: the Review run is reopened and resumed
   on the findings ruled Fix, a carried one included, with their rules and places, then the sender's unsent finding,
   diff and screen comments, as one message, and the task stays at Review. With nothing to send it reads Finish
-  review, which finishes the review and takes the pull request out of draft. After that, a Send of comments resumes
-  the lead on them alone.
+  review, which finishes the review and takes the pull request out of draft. After that, at Finalize and after the
+  merge until cleanup, a Send of comments resumes the lead on them alone and the task stays where it is.
 
   What was ruled and sent is learned from, since a ruling can change until now: a Fix on a suppressed finding
   overrides its rule, and every other Fix and every comment is a correction.
@@ -41,16 +41,18 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
 
   @doc """
   Sends the Review tray of the scope user on `run`, the task's Review run. Returns `{:ok, run}` as it now stands, or
-  `{:error, reason}` while a finding is undecided, the run works, there is nothing left to start, or a review with
-  nothing to fix would finish on a commit CI has not passed.
+  `{:error, reason}` while a finding is undecided, the run works, there is nothing left to start, a review with
+  nothing to fix would finish on a commit CI has not passed, or the task is cleaned up or not yet at Review.
   """
   def start_fix_round(%Scope{} = scope, %Run{} = run) do
     run = Run |> Repo.get!(run.id) |> Repo.preload([task: [:issue, :project, :runs]], force: true)
     findings = Pipeline.list_findings(run.task)
     passes = Pipeline.read_review(run.task)
-    finished? = passes != [] and List.last(passes).finished_at != nil
+    # Past Review the review is over whatever its last pass says, so only comments resume the lead there.
+    finished? = run.task.stage != :review or (passes != [] and List.last(passes).finished_at != nil)
 
-    fix = Enum.filter(findings, &Finding.outstanding?/1)
+    # Nobody rules past Review, so a finding a later turn marked not fixed is not sent as Fix there.
+    fix = if run.task.stage == :review, do: Enum.filter(findings, &Finding.outstanding?/1), else: []
 
     with :ok <- startable(run.task, findings, passes),
          claimed = claim(scope, run.task),
@@ -62,13 +64,17 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
     end
   end
 
-  defp startable(%Task{stage: stage}, _findings, _passes) when stage != :review, do: {:error, {:invalid_stage, stage}}
+  defp startable(%Task{cleaned_up_at: %DateTime{}}, _findings, _passes), do: {:error, :cleaned_up}
+
+  defp startable(%Task{stage: stage}, _findings, _passes) when stage not in [:review, :finalize, :merged],
+    do: {:error, {:invalid_stage, stage}}
 
   defp startable(%Task{} = task, findings, passes) do
     cond do
       Task.running?(task) -> {:error, :stage_running}
       passes == [] -> {:error, :nothing_to_start}
-      Enum.any?(findings, &Finding.undecided?/1) -> {:error, :findings_undecided}
+      # Nobody rules past Review, so a finding left unruled there holds nothing back.
+      task.stage == :review and Enum.any?(findings, &Finding.undecided?/1) -> {:error, :findings_undecided}
       true -> :ok
     end
   end

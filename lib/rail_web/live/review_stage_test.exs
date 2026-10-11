@@ -197,8 +197,46 @@ defmodule RailWeb.Live.ReviewStageTest do
     assert %{stage_outcome: :in_progress} = Repo.reload!(run)
   end
 
+  # Comments stay open until cleanup: past Review they resume the lead on them alone, with no ruling or Finish review.
+  test "at Finalize and after the merge a comment waits in the tray with Send, which resumes the lead, never Finish review",
+       %{conn: conn, user: user, task: task, run: %{id: run_id, role_id: role_id} = run, code: code} do
+    {:ok, _finding} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
+    {:ok, _pass} = Pipeline.save_review(task)
+    {:ok, finalizing} = Pipeline.update_task(task, %{stage: :finalize, pr_number: 31})
+    diff = %{path: "lib/a.ex", line_kind: :added, line: 3, line_text: "x = 1", filter: :branch}
+    {:ok, _comment} = Pipeline.create_diff_comment(user_scope(user: user), task, Map.put(diff, :body, "Name it."))
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role_id}")
+    assert has_element?(view, "#send-review-tray", "Send 1")
+    refute has_element?(view, "#send-review-tray[disabled]")
+    refute has_element?(view, "#finish-review")
+    refute has_element?(view, "#decide-fix-view-only-send")
+
+    expect(Tools, :start_os_process, fn %{id: ^run_id} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "on the human's 1 comment."
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    view |> element("#send-review-tray", "Send 1") |> render_click()
+    assert %{stage: :finalize} = Repo.reload!(task)
+
+    # Once the lead's turn is over, nothing is left to send, and the tray draws nothing rather than Finish review.
+    {:ok, _idle} = Pipeline.update_run(Repo.reload!(run), %{status: :finished})
+    {:ok, merged} = Pipeline.update_task(finalizing, %{stage: :merged, merged_at: DateTime.utc_now()})
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role_id}")
+    refute has_element?(view, "#review-send-tray")
+
+    {:ok, _again} = Pipeline.create_diff_comment(user_scope(user: user), task, Map.put(diff, :body, "And this."))
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role_id}")
+    assert has_element?(view, "#send-review-tray", "Send 1")
+
+    {:ok, _cleaned} = Pipeline.update_task(merged, %{cleaned_up_at: DateTime.utc_now()})
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role_id}")
+    refute has_element?(view, "#review-send-tray")
+  end
+
   test "the tray reads Finish review when every finding is ruled Don't fix, and it and the rulings are gone once finished",
-       %{conn: conn, task: task, code: code} do
+       %{conn: conn, task: task, run: run, code: code} do
     {:ok, finding} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
     {:ok, _pass} = Pipeline.save_review(task)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), finding, :skip)
@@ -212,12 +250,18 @@ defmodule RailWeb.Live.ReviewStageTest do
     # The stage hands the tray its gate through the page, which queues behind a render already asked for.
     _settled = render(view)
 
+    # The page follows the task on to Finalize, whose conversation keeps no Finish review from the tab it left, and
+    # the Review tab behind it reads finished.
+    assert has_element?(view, "#task-tab-finalize[aria-selected=true]")
+    refute has_element?(view, "#finish-review")
+    view |> element("#task-tab-#{run.role_id}") |> render_click()
+
     refute has_element?(view, "#review-send-tray")
     refute has_element?(view, "#decide-fix-view-only-send")
     refute has_element?(view, "#decide-skip-view-only-send")
     assert has_element?(view, "#review-status[data-phase=finished]", "Nothing left to rule")
     assert has_element?(view, "#review-item-findings [data-qa=review_item_done]")
-    assert has_element?(view, "#task-status-chip", "Ready to merge")
+    assert has_element?(view, "#task-status-chip", "Ready to finalize")
   end
 
   # A chat turn that stopped or failed leaves the lead in progress, which Finish review settles.
@@ -238,7 +282,7 @@ defmodule RailWeb.Live.ReviewStageTest do
     view |> element("#finish-review") |> render_click()
     _settled = render(view)
 
-    assert has_element?(view, "#task-status-chip", "Ready to merge")
+    assert has_element?(view, "#task-status-chip", "Ready to finalize")
     refute has_element?(view, "#task-status-chip", "Review failed")
   end
 
@@ -738,6 +782,7 @@ defmodule RailWeb.Live.ReviewStageTest do
     assert has_element?(view, "#review-browser-demo", "Demo recorder")
     refute has_element?(view, "#review-browser-explorer-2")
     assert has_element?(view, "[data-qa=review_browser_url]", "localhost:4012/tasks")
+
     assert has_element?(view, "[data-qa=review_browser_line]", "Driving · signed in as explorer-1@rail.test")
 
     view |> element("#review-browser-demo") |> render_click()
@@ -946,7 +991,7 @@ defmodule RailWeb.Live.ReviewStageTest do
       view |> element("#review-item-findings") |> render_click()
       view |> element("[data-qa=finding_fixed_in] [data-qa=finding_commit_link]") |> render_click()
 
-      assert has_element?(view, "#diff-commit-picker", "Engineer")
+      assert has_element?(view, "#diff-commit-picker", "Implement")
       assert has_element?(view, "[data-qa='diff_file_section'][data-path='a.ex']")
       refute has_element?(view, "[data-qa='diff_file_section'][data-path='b.ex']")
 
@@ -1047,7 +1092,8 @@ defmodule RailWeb.Live.ReviewStageTest do
       {:ok, %{round: 2}} = Pipeline.save_review(task)
       {:ok, _finished} = Pipeline.start_fix_round(system_scope(), run)
 
-      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      # The finished review moved the task on to Finalize, and its Review tab still takes comments.
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{run.role_id}")
       refute has_element?(view, "#review-send-tray")
       view |> element("#review-item-screens") |> render_click()
       view |> element("#screen-toolbar") |> render_click()
@@ -1228,7 +1274,7 @@ defmodule RailWeb.Live.ReviewStageTest do
       assert has_element?(view, "#review-error", "Something is still running on this task.")
 
       view |> element("#demo-stale button", short) |> render_click()
-      assert has_element?(view, "#review-pane[data-item=diff] #diff-commit-picker", "Engineer")
+      assert has_element?(view, "#review-pane[data-item=diff] #diff-commit-picker", "Implement")
 
       File.write!(
         Path.join(demo_dir, "RST-1.json"),

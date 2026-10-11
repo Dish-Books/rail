@@ -26,8 +26,8 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
   @text_limit 16_384
 
   @doc """
-  Saves the finding in `attrs` on `task`. Returns `{:ok, finding}` as the row now stands, or
-  `{:error, changeset}` naming what was refused.
+  Saves the finding in `attrs` on `task`. Returns `{:ok, finding}` as the row now stands, `{:error, changeset}`
+  naming what was refused, or `{:error, {:review_finished, stage}}` for a new key once the task is past Review.
   """
   def save_finding(%Task{} = task, attrs) when is_map(attrs) do
     task = Repo.preload(task, :issue)
@@ -54,6 +54,10 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
       {:ok, finding}
     end
   end
+
+  # Nobody can rule a finding raised at Finalize or after the merge.
+  defp raise_finding(%Task{stage: stage}, _attrs, _said) when stage in [:finalize, :merged],
+    do: {:error, {:review_finished, stage}}
 
   defp raise_finding(%Task{} = task, attrs, said) do
     build = fn evidence ->

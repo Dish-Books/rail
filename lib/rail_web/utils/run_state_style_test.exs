@@ -82,4 +82,24 @@ defmodule RailWeb.Utils.RunStateStyleTest do
 
     assert run_state_style(done, task) == run_state_style(done)
   end
+
+  test "each Finalize state takes its own colour and icon, whatever the run is doing" do
+    now = DateTime.utc_now()
+    run = %Run{status: :running}
+
+    assert %{icon: "pi-flag", text_class: "text-amber" <> _amber, pill_label: "Ready to finalize"} =
+             run_state_style(run, %Task{stage: :finalize})
+
+    assert %{icon: "pi-seal-check", text_class: "text-amber" <> _amber, chip_class: "bg-amber" <> _chip} =
+             run_state_style(run, %Task{stage: :finalize, marked_ready_at: now})
+
+    assert %{icon: "pi-circle-notch", text_class: "text-blue" <> _blue, pill_label: "Merging"} =
+             run_state_style(run, %Task{stage: :finalize, marked_ready_at: now, merge_started_at: now})
+
+    assert %{icon: "pi-warning-circle", text_class: "text-red" <> _red, pill_label: "Merge refused"} =
+             run_state_style(run, %Task{stage: :finalize, marked_ready_at: now, merge_error: "No"})
+
+    assert %{icon: "pi-git-merge", text_class: "text-emerald" <> _emerald, chip_class: "bg-emerald" <> _chip} =
+             run_state_style(run, %Task{stage: :merged, merged_at: now})
+  end
 end

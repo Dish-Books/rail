@@ -10,7 +10,8 @@ defmodule RailWeb.TaskLive do
   tab until it does.
 
   A split parent's page adds a Children tab, a board of its children, right after Plan. A child is shown
-  on its parent's page, named in the URL, with the same tab and a switcher to its siblings.
+  on its parent's page, named in the URL, with the same tab and a switcher to its siblings. A task Review
+  finished adds a Finalize tab after Review, beside the Review conversation, and keeps it once merged.
 
   The page owns what the components cannot: the subscriptions. A LiveComponent
   may not subscribe, so log lines arrive here and are forwarded to the
@@ -20,7 +21,7 @@ defmodule RailWeb.TaskLive do
 
   import RailWeb.Utils.ChildStatus
   import RailWeb.Utils.HandleIssueEvent
-  import RailWeb.Utils.StageLabel, only: [review_waiting?: 2]
+  import RailWeb.Utils.StageLabel, only: [finalize_label: 1, review_waiting?: 2]
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
@@ -37,6 +38,7 @@ defmodule RailWeb.TaskLive do
   alias Rail.Users
   alias RailWeb.Live.DiffView
   alias RailWeb.Live.EngineerStage
+  alias RailWeb.Live.FinalizeStage
   alias RailWeb.Live.PlanStage
   alias RailWeb.Live.QuestionCard
   alias RailWeb.Live.ReviewStage
@@ -54,6 +56,7 @@ defmodule RailWeb.TaskLive do
 
   @issue_tab "issue"
   @children_tab "children"
+  @finalize_tab "finalize"
 
   # What the Issue tab's owner menu and comments raise, handled as the issue page handles them.
   @issue_events ["assign", "filter_assignees", "draft_comment", "comment"]
@@ -88,6 +91,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:watched_outputs_task_id, nil)
       |> assign(:frame_window_open?, false)
       |> assign(:held_frame, nil)
+      |> assign(:awaited_frame, nil)
       |> assign(:roles_map, %{})
       |> assign(:round_questions, [])
       |> assign(:suggestions, %{})
@@ -246,6 +250,42 @@ defmodule RailWeb.TaskLive do
           stage_run={@stage_run}
           line={@line}
           approvable={@approvable}
+          current_scope={@current_scope}
+        >
+          <:breadcrumb :if={@show_switcher}>
+            <.child_switcher
+              statuses={@statuses}
+              current_id={@task.id}
+              parent={@parent}
+              viewer_owns={@viewer_owns}
+            />
+          </:breadcrumb>
+          <:tabs><.task_tabs tabs={@tabs} /></:tabs>
+          <:actions>
+            <.claim_button task={@task} />
+            <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
+          </:actions>
+          <:sidebar>
+            <.conversation_sidebar
+              task={@task}
+              current_scope={@current_scope}
+              roles_map={@roles_map}
+              round_questions={@round_questions}
+              suggestions={@suggestions}
+              conversation_run={@conversation_run}
+              review_pane
+            />
+          </:sidebar>
+        </.live_component>
+
+        <.live_component
+          :if={@task != nil and @pane == :finalize}
+          module={FinalizeStage}
+          id="stage-finalize"
+          task={@task}
+          run={@selected_run}
+          stage_run={@stage_run}
+          line={@line}
           current_scope={@current_scope}
         >
           <:breadcrumb :if={@show_switcher}>
@@ -428,18 +468,12 @@ defmodule RailWeb.TaskLive do
   # of full-size frames a second - more than the socket to a viewer can carry, and
   # every click waits behind the pictures queued ahead of it. So a viewer gets at
   # most one per window: the newest frame that arrives during a window goes out when
-  # it closes, and the rest are dropped, since each one only replaces the last.
-  def handle_info({:browser_frame, task_id, data}, socket) do
-    cond do
-      socket.assigns.task_id != task_id or socket.assigns.pane != :review ->
-        {:noreply, socket}
-
-      socket.assigns.frame_window_open? ->
-        {:noreply, assign(socket, :held_frame, data)}
-
-      true ->
-        {:noreply, push_frame(socket, data)}
-    end
+  # it closes, and the rest are dropped, since each one only replaces the last. A frame from a browser the
+  # page has stopped watching, still in its mailbox, is dropped too.
+  def handle_info({:browser_frame, task_id, name, data}, socket) do
+    if socket.assigns.watched_browser == "browser:#{task_id}:#{name}",
+      do: {:noreply, show_frame(socket, data)},
+      else: {:noreply, socket}
   end
 
   def handle_info(:frame_window_closed, socket) do
@@ -504,7 +538,13 @@ defmodule RailWeb.TaskLive do
   # The Review tab's Browser item is open on this browser, or on none; only the subscription moves.
   def handle_info({:watch_browser, name}, socket) do
     socket = assign(socket, :review_browser, name)
-    {:noreply, assign(socket, :watched_browser, watch_browser(socket, socket.assigns.task_id, socket.assigns.pane))}
+    {:noreply, watch_browser(socket, socket.assigns.task, socket.assigns.pane)}
+  end
+
+  # The browser the page shows closed, so the Review stage reads its browsers again and stops offering it.
+  def handle_info({:browser_closed, task_id, name}, socket) do
+    if socket.assigns.watched_browser == "browser:#{task_id}:#{name}", do: reload_stage(socket)
+    {:noreply, socket}
   end
 
   # A queued message went out, or came back, on its own time.
@@ -592,6 +632,12 @@ defmodule RailWeb.TaskLive do
     {:noreply, socket}
   end
 
+  # A live frame that arrived first is newer than the one asked for, which is then dropped.
+  def handle_async({:held_frame, topic}, {:ok, "" <> data}, %{assigns: %{awaited_frame: topic}} = socket),
+    do: {:noreply, show_frame(socket, data)}
+
+  def handle_async({:held_frame, _topic}, _none_or_stale, socket), do: {:noreply, socket}
+
   attr :task, :any, required: true
 
   # Nobody owns an issue until somebody claims it, and a child of a split is owned through its parent.
@@ -645,6 +691,8 @@ defmodule RailWeb.TaskLive do
   # and the engineer's once the task has left Engineer.
   attr :closed, :boolean, default: false
   attr :closed_reason, :string, default: "The plan is approved, so this conversation is closed."
+  # Only the Review tab draws its tray: the Finalize tab shares the lead's conversation, and the tray it last had.
+  attr :review_pane, :boolean, default: false
 
   # Questions sit above the conversation they came out of. Answering only records:
   # the round reaches the agent when the human says it is done.
@@ -671,6 +719,7 @@ defmodule RailWeb.TaskLive do
       current_scope={@current_scope}
       closed={@closed}
       closed_reason={@closed_reason}
+      review_pane={@review_pane}
     />
     """
   end
@@ -697,6 +746,9 @@ defmodule RailWeb.TaskLive do
       %{pane: :review, task: task, selected_role: role} ->
         send_update(ReviewStage, id: stage_component_id(role), task: task)
         send_update(DiffView, id: "diff-view", reload: true)
+
+      %{pane: :finalize, task: task} ->
+        send_update(FinalizeStage, id: "stage-finalize", task: task)
 
       _no_stage_on_disk ->
         :ok
@@ -753,7 +805,7 @@ defmodule RailWeb.TaskLive do
       Pipeline.list_tasks(
         parent_task_id: task.id,
         include_cleaned_up: true,
-        preload: [:project, :issue, runs: [:role, :questions]]
+        preload: [:project, :issue, :marked_ready_by, :merged_by, runs: [:role, :questions]]
       )
 
     shown = Enum.find(children, task, &(&1.issue.identifier == socket.assigns.child))
@@ -792,7 +844,8 @@ defmodule RailWeb.TaskLive do
   defp apply_task(socket, %Task{} = task) do
     roles = if task.project_id, do: Rail.Roles.list_roles(task.project_id), else: []
     started = started_roles(roles, task)
-    {role, selected_run, children?} = selected(socket, started, task)
+    {role, selected_run, page} = selected(socket, started, task)
+    children? = page == :children
 
     asked = Pipeline.list_questions(task, order_by: [asc: :inserted_at, asc: :id])
     questions = Enum.filter(asked, &(&1.status == :pending))
@@ -802,19 +855,19 @@ defmodule RailWeb.TaskLive do
     |> assign(:task, task)
     |> assign(:page_title, task.issue.title)
     |> assign(:roles_map, Map.new(roles, &{&1.id, &1}))
-    |> assign(:selected_tab, tab_id(children?, role))
+    |> assign(:selected_tab, tab_id(page, role))
     |> assign(:tab_stage, task.stage)
     |> assign(:selected_role, role)
     |> assign(:selected_run, selected_run)
     |> assign(:stage_run, stage_run(started, task))
     |> assign(:line, line(stage_run(started, task)))
     |> assign(:conversation_run, selected_run)
-    |> assign(:pane, if(children?, do: :children, else: pane(role)))
+    |> assign(:pane, page || pane(role))
     |> assign(:approvable, approvable?(role, task, selected_run))
     |> assign(
       :tabs,
       family_tabs(
-        build_tabs(task, started, role, questions),
+        build_tabs(task, started, {page, role}, questions),
         task,
         socket.assigns.parent,
         socket.assigns.statuses,
@@ -878,17 +931,26 @@ defmodule RailWeb.TaskLive do
     # Moving between a parent and its children is a new task on the page, not one that moved stage.
     tab_stage = if match?(%Task{id: id} when id == task.id, socket.assigns.task), do: socket.assigns.tab_stage
 
-    if children_tab?(socket.assigns.parent, task, tab, tab_stage, socket.assigns.url_tab) do
-      {nil, nil, true}
-    else
-      {role, run} = select_tab(started, task, tab, tab_stage)
-      {role, run, false}
+    review = finalize_review(started, task)
+
+    cond do
+      children_tab?(socket.assigns.parent, task, tab, tab_stage, socket.assigns.url_tab) ->
+        {nil, nil, :children}
+
+      review != nil and finalize_tab?(task, tab, tab_stage, socket.assigns.url_tab) ->
+        {role, run} = review
+        {role, run, :finalize}
+
+      true ->
+        {role, run} = select_tab(started, task, tab, tab_stage)
+        {role, run, nil}
     end
   end
 
-  defp tab_id(true, _role), do: @children_tab
-  defp tab_id(false, %Role{id: id}), do: id
-  defp tab_id(false, nil), do: @issue_tab
+  defp tab_id(:children, _role), do: @children_tab
+  defp tab_id(:finalize, _role), do: @finalize_tab
+  defp tab_id(nil, %Role{id: id}), do: id
+  defp tab_id(nil, nil), do: @issue_tab
 
   # A split parent opens on its board, and comes to it when approval splits it.
   defp children_tab?(%Task{id: id}, %Task{id: id} = task, tab, tab_stage, url_tab) do
@@ -896,6 +958,17 @@ defmodule RailWeb.TaskLive do
   end
 
   defp children_tab?(_parent, _task, _tab, _tab_stage, _url_tab), do: false
+
+  # Finalize reads the Review run, so a task Review finished, merged or not, has the tab while it has the run.
+  defp finalize_review(started, %Task{stage: stage, merged_at: merged_at}) do
+    if stage == :finalize or (stage == :merged and merged_at != nil),
+      do: Enum.find(started, fn {role, _run} -> role.stage == :review_lead end)
+  end
+
+  # The page follows the task to Finalize when Review finishes, and stays on it through the merge.
+  defp finalize_tab?(%Task{} = task, tab, tab_stage, url_tab) do
+    tab == @finalize_tab or (tab == nil and url_tab == nil) or (tab_stage != nil and tab_stage != task.stage)
+  end
 
   # A child never runs Plan, but its Plan tab is where its approved part is read.
   defp started_roles(roles, %Task{runs: runs} = task) do
@@ -923,9 +996,9 @@ defmodule RailWeb.TaskLive do
     end
   end
 
-  # Nothing is approved while its run is still working on it.
+  # Nothing is approved while its run is still working on it, and Review's rulings close once it moves on to Finalize.
   defp approvable?(%Role{stage: role_stage}, %Task{stage: stage}, %Run{} = run),
-    do: role_stage == Task.role_stage(stage) and not Run.running?(run)
+    do: role_stage == Task.role_stage(stage) and stage != :finalize and not Run.running?(run)
 
   defp approvable?(_role, _task, _run), do: false
 
@@ -981,7 +1054,7 @@ defmodule RailWeb.TaskLive do
     |> Enum.max_by(&(&1.started_at || &1.inserted_at), DateTime, fn -> nil end)
   end
 
-  defp build_tabs(%Task{} = task, started, selected, questions) do
+  defp build_tabs(%Task{} = task, started, {page, selected}, questions) do
     counts = Enum.frequencies_by(questions, & &1.run_id)
 
     issue_tab = %{
@@ -991,7 +1064,7 @@ defmodule RailWeb.TaskLive do
       sublabel: task.issue.identifier,
       tone: :issue,
       badge: 0,
-      selected?: selected == nil
+      selected?: page == nil and selected == nil
     }
 
     role_tabs =
@@ -999,15 +1072,49 @@ defmodule RailWeb.TaskLive do
         %{
           id: role.id,
           stage: role.stage,
-          label: role.name,
+          label: tab_label(role),
           sublabel: role_status_label(role, run, task),
           tone: tab_tone(run, role, task),
           badge: Map.get(counts, run && run.id, 0) + to_rule(role, run, task),
-          selected?: selected != nil and selected.id == role.id
+          selected?: page == nil and selected != nil and selected.id == role.id
         }
       end)
 
-    [issue_tab | role_tabs]
+    finalize_tabs(task, started, [issue_tab | role_tabs], page == :finalize)
+  end
+
+  # Right after Review's tab, read off where the task stands there, as the header reads it.
+  defp finalize_tabs(%Task{} = task, started, tabs, selected?) do
+    if finalize_review(started, task) do
+      state = Task.finalize_state(task)
+
+      finalize_tab = %{
+        id: @finalize_tab,
+        stage: :finalize,
+        label: "Finalize",
+        sublabel: state |> finalize_label() |> String.downcase(),
+        tone: finalize_tone(state),
+        badge: 0,
+        selected?: selected?
+      }
+
+      List.insert_at(tabs, (Enum.find_index(tabs, &(&1.stage == :review_lead)) || length(tabs) - 1) + 1, finalize_tab)
+    else
+      tabs
+    end
+  end
+
+  defp finalize_tone(state) when state in [:not_ready, :ready], do: :blocked
+  defp finalize_tone(:merging), do: :running
+  defp finalize_tone(:refused), do: :failed
+  defp finalize_tone(:merged), do: :done
+
+  # A role's tab names the step it leads, so the engineer's reads Implement; a role leading none keeps its name.
+  defp tab_label(%Role{stage: stage} = role) do
+    case Enum.find([:plan, :engineer, :review], &(Task.role_stage(&1) == stage)) do
+      step when step in [:plan, :engineer, :review] -> Task.stage_label(step)
+      nil -> role.name
+    end
   end
 
   # Review's tab counts the findings still to rule beside its questions, once its round has finished.
@@ -1194,8 +1301,7 @@ defmodule RailWeb.TaskLive do
     current
   end
 
-  defp assign_watched_browser(socket, %Task{id: task_id}),
-    do: assign(socket, :watched_browser, watch_browser(socket, task_id, socket.assigns.pane))
+  defp assign_watched_browser(socket, %Task{} = task), do: watch_browser(socket, task, socket.assigns.pane)
 
   # One topic per task and browser name, carrying whatever that browser is painting,
   # heard only while the panel can show it: the browser the Review tab's Browser
@@ -1203,7 +1309,7 @@ defmodule RailWeb.TaskLive do
   # a page that keeps repainting would otherwise send every viewer frames nobody
   # sees, which every click on the page waits behind. Being heard is also what keeps
   # Chrome painting them, so a tab nobody can see costs nothing.
-  defp watch_browser(socket, task_id, pane) do
+  defp watch_browser(socket, %Task{id: task_id} = task, pane) do
     watched = socket.assigns.watched_browser
     name = socket.assigns.review_browser
     wanted = if pane == :review and is_binary(name), do: "browser:#{task_id}:#{name}"
@@ -1211,9 +1317,26 @@ defmodule RailWeb.TaskLive do
     if connected?(socket) and watched != wanted do
       if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, watched)
       if wanted, do: Phoenix.PubSub.subscribe(Rail.PubSub, wanted)
+      socket = socket |> assign(:watched_browser, wanted) |> assign(:held_frame, nil)
+      if wanted, do: show_held_frame(socket, task, name), else: assign(socket, :awaited_frame, nil)
+    else
+      socket
     end
+  end
 
-    if connected?(socket), do: wanted, else: watched
+  # A browser on a still page paints nothing new for a new watcher, so the frame it holds is asked for, off
+  # the page's process since a busy session can be slow to answer.
+  defp show_held_frame(socket, %Task{} = task, name) do
+    topic = "browser:#{task.id}:#{name}"
+
+    socket
+    |> assign(:awaited_frame, topic)
+    |> start_async({:held_frame, topic}, fn -> Tools.get_browser_frame(task, name) end)
+  end
+
+  defp show_frame(socket, data) do
+    socket = assign(socket, :awaited_frame, nil)
+    if socket.assigns.frame_window_open?, do: assign(socket, :held_frame, data), else: push_frame(socket, data)
   end
 
   # Sent and resolved comments are everyone's, so the task has a topic; unsent ones

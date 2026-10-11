@@ -187,6 +187,30 @@ defmodule RailWeb.Settings.UsersLiveTest do
     refute has_element?(view, "#user-sheet-project-#{second_project.id}[checked]")
   end
 
+  test "an admin turns a user's Tech lead setting on and off, and the Role column shows the badge", %{
+    admin_conn: conn,
+    regular_user: regular_user
+  } do
+    assert {:ok, view, _html} = live(conn, ~p"/settings/users")
+    refute has_element?(view, "#user-tech-lead-badge-#{regular_user.login}")
+    view |> element("#user-row-#{regular_user.id}") |> render_click()
+
+    assert has_element?(view, "#user-access-form", "Merges tasks from Finalize.")
+    refute has_element?(view, "#user-sheet-tech-lead[checked]")
+
+    view |> form("#user-access-form", %{"user" => %{"tech_lead" => "true"}}) |> render_change()
+
+    assert %User{tech_lead: true} = Repo.get!(User, regular_user.id)
+    assert has_element?(view, "#user-sheet-tech-lead[checked]")
+    assert has_element?(view, "#user-tech-lead-badge-#{regular_user.login}", "Tech lead")
+    assert has_element?(view, "#user-role-badge-#{regular_user.id}", "User")
+
+    view |> form("#user-access-form", %{"user" => %{"tech_lead" => "false"}}) |> render_change()
+
+    assert %User{tech_lead: false} = Repo.get!(User, regular_user.id)
+    refute has_element?(view, "#user-tech-lead-badge-#{regular_user.login}")
+  end
+
   test "your own Admin box is disabled, and a crafted change to it does nothing", %{
     admin_conn: conn,
     admin_user: admin_user

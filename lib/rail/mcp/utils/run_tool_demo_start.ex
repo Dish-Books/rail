@@ -32,7 +32,7 @@ defmodule Rail.Mcp.Utils.RunToolDemoStart do
       _discarded = Tools.stop_browser_recording(task)
       {:ok, recording} = Tools.start_browser_recording(task, name)
 
-      with "" <> frame <- Tools.get_browser_frame(task, name), do: send(recording, {:browser_frame, task.id, frame})
+      with "" <> frame <- Tools.get_browser_frame(task, name), do: send(recording, {:browser_frame, task.id, name, frame})
 
       {:ok, "Recording. Everything from here is in the video, so do the walkthrough you rehearsed."}
     end

@@ -11,7 +11,8 @@ defmodule Rail.Tools.Actions.StopBrowserSession do
   started to be told so.
 
   Stopping one that was never started is fine and does nothing: the caller is
-  saying there should be no browser for this task, which is already true.
+  saying there should be no browser for this task, which is already true. Each one
+  closed is said on its frame topic, so a page showing it stops offering it.
   """
 
   import Ecto.Query
@@ -28,7 +29,9 @@ defmodule Rail.Tools.Actions.StopBrowserSession do
   its tab and context.
   """
   def stop_browser_session(%Task{} = task, name \\ nil) do
-    for %BrowserSession{} = session <- Repo.all(live(task, name)) do
+    sessions = Repo.all(live(task, name))
+
+    for %BrowserSession{} = session <- sessions do
       case Tools.get_browser_session(task, session.name) do
         pid when is_pid(pid) -> :ok = GenServer.stop(pid, :normal, 10_000)
         nil -> close(session)
@@ -41,6 +44,9 @@ defmodule Rail.Tools.Actions.StopBrowserSession do
       Repo.update_all(live(task, name),
         set: [status: :finished, ended_reason: :closed, finished_at: now, updated_at: now]
       )
+
+    for %BrowserSession{name: closed} <- sessions,
+        do: Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:#{closed}", {:browser_closed, task.id, closed})
 
     :ok
   end

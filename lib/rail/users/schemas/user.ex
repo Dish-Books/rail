@@ -12,6 +12,8 @@ defmodule Rail.Users.Schemas.User do
     field :email, :string
     field :avatar_url, :string
     field :admin, :boolean, default: false
+    # Merges tasks from Finalize, which admins alone may not.
+    field :tech_lead, :boolean, default: false
     field :project_ids, {:array, :string}, default: []
     field :github_token, EncryptedBinary, redact: true
     field :linear_user_id, :string
@@ -39,6 +41,7 @@ defmodule Rail.Users.Schemas.User do
     :email,
     :avatar_url,
     :admin,
+    :tech_lead,
     :project_ids,
     :github_token,
     :linear_user_id,

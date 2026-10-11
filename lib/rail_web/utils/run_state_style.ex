@@ -7,9 +7,10 @@ defmodule RailWeb.Utils.RunStateStyle do
   `:blocked` is.
   """
 
-  import RailWeb.Utils.StageLabel, only: [review_waiting?: 2]
+  import RailWeb.Utils.StageLabel, only: [finalize_label: 1, review_waiting?: 2]
 
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.Task
 
   @doc """
   The look of `run`'s state: its Phosphor `icon`, Tailwind `text_class` and
@@ -37,12 +38,36 @@ defmodule RailWeb.Utils.RunStateStyle do
   end
 
   @doc """
-  The look of `run`'s state on `task`, which gives a Review round waiting on a person the Findings icon.
+  The look of `run`'s state on `task`, which gives a Review round waiting on a person the Findings icon. A task
+  at Finalize, or merged, looks like where it stands there, whatever its run is doing.
   """
+  def run_state_style(_run, %Task{stage: stage} = task) when stage in [:finalize, :merged] do
+    state = if stage == :merged, do: :merged, else: Task.finalize_state(task)
+    color = finalize_color(state)
+
+    %{
+      icon: finalize_icon(state),
+      text_class: classes(color, :text),
+      chip_class: classes(color, :chip),
+      pill_label: finalize_label(state)
+    }
+  end
+
   def run_state_style(run, task) do
     style = run_state_style(run)
     if review_waiting?(task, run), do: %{style | icon: "pi-list-checks"}, else: style
   end
+
+  defp finalize_icon(:not_ready), do: "pi-flag"
+  defp finalize_icon(:ready), do: "pi-seal-check"
+  defp finalize_icon(:merging), do: "pi-circle-notch"
+  defp finalize_icon(:refused), do: "pi-warning-circle"
+  defp finalize_icon(:merged), do: "pi-git-merge"
+
+  defp finalize_color(state) when state in [:not_ready, :ready], do: :amber
+  defp finalize_color(:merging), do: :primary
+  defp finalize_color(:refused), do: :error
+  defp finalize_color(:merged), do: :emerald
 
   defp icon_for(:running), do: "pi-play-circle"
   defp icon_for(:waiting), do: "pi-hourglass-medium"
@@ -72,6 +97,7 @@ defmodule RailWeb.Utils.RunStateStyle do
   defp classes(:violet, :text), do: "text-violet-600 dark:text-violet-400"
   defp classes(:outline, :text), do: "text-slate-500 dark:text-slate-400"
   defp classes(:error, :text), do: "text-red-600 dark:text-red-500"
+  defp classes(:emerald, :text), do: "text-emerald-600 dark:text-emerald-400"
 
   defp classes(:primary, :chip),
     do: "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 border-blue-600 dark:border-blue-500"
@@ -84,6 +110,10 @@ defmodule RailWeb.Utils.RunStateStyle do
 
   defp classes(:outline, :chip),
     do: "bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 border-slate-500 dark:border-slate-400"
+
+  defp classes(:emerald, :chip),
+    do:
+      "bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-600 dark:border-emerald-500"
 
   defp classes(:error, :chip),
     do: "bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 border-red-600 dark:border-red-500"

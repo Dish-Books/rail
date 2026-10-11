@@ -34,6 +34,14 @@ defmodule Rail.ScopeTest do
     refute Scope.admin?(nil)
   end
 
+  test "tech_lead? is true for the system and a user with the setting, and false without it" do
+    assert Scope.tech_lead?(Scope.for_system())
+    assert Scope.tech_lead?(Scope.for_user(%{admin: false, tech_lead: true}))
+    refute Scope.tech_lead?(Scope.for_user(%{admin: true, tech_lead: false}))
+    refute Scope.tech_lead?(Scope.for_user(%{admin: true}))
+    refute Scope.tech_lead?(nil)
+  end
+
   test "user_scope builds default user scope" do
     assert %Scope{user: %{admin: false, linear_linked: false, id: id}, system: false} = Scope.user_scope()
     assert byte_size(id) > 0

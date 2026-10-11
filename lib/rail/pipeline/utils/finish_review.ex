@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Utils.FinishReview do
   @moduledoc """
-  Finishes a task's Review: its last pass is marked finished, which is what reads as ready to merge, and its
-  pull request leaves draft.
+  Finishes a task's Review: its last pass is marked finished, its pull request leaves draft, and a task at
+  Review moves on to Finalize, where a teammate marks it ready for a tech lead.
   """
 
   import Rail.Pipeline.Utils.MarkPullRequestReady
@@ -20,6 +20,14 @@ defmodule Rail.Pipeline.Utils.FinishReview do
     [_first | _rest] = passes = Pipeline.read_review(task)
     last = List.last(passes)
     write_review(task, List.replace_at(passes, -1, %{last | finished_at: last.finished_at || DateTime.utc_now()}))
-    mark_pull_request_ready(task)
+    task = mark_pull_request_ready(task)
+
+    # A comment resumes the lead at Finalize or after the merge too, and its turn must leave the stage alone.
+    if task.stage == :review do
+      {:ok, finalizing} = Pipeline.enter_stage(task, :finalize, start: false)
+      finalizing
+    else
+      task
+    end
   end
 end

@@ -55,6 +55,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate project_badge(assigns), to: Components.ProjectBadge
   defdelegate review_comment_tray(assigns), to: Components.ReviewCommentTray
   defdelegate review_items(assigns), to: Components.ReviewItems
+  defdelegate review_queue(assigns), to: Components.ReviewQueue
   defdelegate review_status(assigns), to: Components.ReviewStatus
 
   defdelegate sandbox_meters(assigns), to: Components.SandboxMeters

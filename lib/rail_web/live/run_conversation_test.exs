@@ -1786,6 +1786,23 @@ defmodule RailWeb.Live.RunConversationTest do
       assert has_element?(view, "#send-review-tray:not([disabled])")
     end
 
+    # Cleanup in another tab takes the branch away under a page still showing Send.
+    test "a Send on a page drawn before the task was cleaned up says so and sends nothing", %{
+      task: task,
+      ada: ada,
+      ada_conn: ada_conn,
+      diff: diff
+    } do
+      {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "One more thing."))
+      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
+      {:ok, _cleaned} = Pipeline.update_task(task, %{cleaned_up_at: DateTime.utc_now()})
+      reject(Tools, :start_os_process, 2)
+
+      view |> element("#send-review-tray") |> render_click()
+
+      assert has_element?(view, "#review-send-tray-hint", "cleaned up")
+    end
+
     test "after Finish review the conversation stays open, and a comment's Send resumes the lead", %{
       task: task,
       run: run,
@@ -1802,6 +1819,8 @@ defmodule RailWeb.Live.RunConversationTest do
       refute has_element?(view, "#review-send-tray")
       assert has_element?(view, "#composer-root")
 
+      # The page followed the task on to Finalize; its Review tab is where comments are sent from.
+      view |> element("#task-tab-#{run.role_id}") |> render_click()
       {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "One more thing."))
       _settled = render(view)
 
@@ -1813,6 +1832,7 @@ defmodule RailWeb.Live.RunConversationTest do
       view |> element("#send-review-tray", "Send 1") |> render_click()
 
       assert %{status: :running} = Repo.reload!(run)
+      assert %{stage: :finalize} = Repo.reload!(task)
     end
   end
 end

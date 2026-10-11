@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Actions.CreateFindingCommentTest do
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.FindingComment
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles
   alias Rail.Users
 
@@ -68,7 +69,7 @@ defmodule Rail.Pipeline.Actions.CreateFindingCommentTest do
              })
   end
 
-  test "takes a comment on a finding however it is ruled, and after the review is finished", %{
+  test "takes a comment on a finding however it is ruled, and after the review is finished, merged too", %{
     project: project,
     task: task,
     finding: finding,
@@ -93,10 +94,14 @@ defmodule Rail.Pipeline.Actions.CreateFindingCommentTest do
     {:ok, _finished} = Pipeline.start_fix_round(system_scope(), run)
 
     assert [%{finished_at: %DateTime{}}] = Pipeline.read_review(task)
+    assert %Task{stage: :finalize} = finalizing = Repo.reload!(task)
+    assert {:ok, %FindingComment{}} = Pipeline.create_finding_comment(ada, task, attrs)
+
+    {:ok, _merged} = Pipeline.update_task(finalizing, %{stage: :merged})
     assert {:ok, %FindingComment{}} = Pipeline.create_finding_comment(ada, task, attrs)
   end
 
-  test "refuses a piece the finding lacks, another task's finding, a task not at Review, and a cleaned-up task", %{
+  test "refuses a piece the finding lacks, another task's finding, a task back before Review, and a cleaned-up task", %{
     task: task,
     finding: finding,
     elsewhere: elsewhere,
@@ -114,10 +119,10 @@ defmodule Rail.Pipeline.Actions.CreateFindingCommentTest do
 
     assert {:error, %Ecto.Changeset{}} = Pipeline.create_finding_comment(ada, task, %{attrs | "body" => " "})
 
-    {:ok, merged} = Pipeline.update_task(task, %{stage: :merged})
-    assert {:error, {:invalid_stage, :merged}} = Pipeline.create_finding_comment(ada, task, attrs)
+    {:ok, engineering} = Pipeline.update_task(task, %{stage: :engineer})
+    assert {:error, {:invalid_stage, :engineer}} = Pipeline.create_finding_comment(ada, task, attrs)
 
-    {:ok, _cleaned} = Pipeline.update_task(merged, %{stage: :review, cleaned_up_at: DateTime.utc_now()})
+    {:ok, _cleaned} = Pipeline.update_task(engineering, %{stage: :finalize, cleaned_up_at: DateTime.utc_now()})
     assert {:error, :cleaned_up} = Pipeline.create_finding_comment(ada, task, attrs)
     assert Repo.all(FindingComment) == []
   end

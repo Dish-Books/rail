@@ -1,8 +1,8 @@
 defmodule Rail.Pipeline.Actions.HandOverWork do
   @moduledoc """
   Sends on what the agent of the stage a task is at committed, through CI where the project has it and then
-  pushed: the engineer's to Review, the Review lead's fixes or merge to its next round. A Fix finding the
-  lead saved fixed is noted as fixed in the commit handed over.
+  pushed: the engineer's to Review, the Review lead's fixes or merge to its next round, and past Review only
+  pushed. A Fix finding the lead saved fixed is noted as fixed in the commit handed over.
   """
 
   import Rail.Pipeline.Utils.CiPassed
@@ -43,17 +43,23 @@ defmodule Rail.Pipeline.Actions.HandOverWork do
     end
   end
 
-  # The branch is the current stage's: once Engineer hands it on, Review's lead commits it.
+  # The branch is the current stage's: once Engineer hands it on, Review's lead commits it, after the merge too.
   defp handable(%Task{stage: stage} = task, %Run{role: %Role{stage: role_stage}}) do
     cond do
-      Task.role_stage(stage) != role_stage -> {:error, {:invalid_stage, stage}}
-      not Git.branch_unpushed?(task.worktree_path) -> {:error, :nothing_to_send}
-      true -> :ok
+      Task.role_stage(stage) != role_stage and {stage, role_stage} != {:merged, :review_lead} ->
+        {:error, {:invalid_stage, stage}}
+
+      not Git.branch_unpushed?(task.worktree_path) ->
+        {:error, :nothing_to_send}
+
+      true ->
+        :ok
     end
   end
 
-  # A round is a read of a new HEAD, so a branch the last round already read is only pushed.
-  defp review?(%Task{} = task, %Run{role: %Role{stage: :review_lead}}) do
+  # A round is a read of a new HEAD, so a branch the last round already read is only pushed. Past Review
+  # nobody can rule a round, so Finalize and the merged branch are only pushed too.
+  defp review?(%Task{stage: :review} = task, %Run{role: %Role{stage: :review_lead}}) do
     head = Git.branch_fingerprint(task.worktree_path)[:head_sha]
     note_fixes(task, head)
 
@@ -63,6 +69,7 @@ defmodule Rail.Pipeline.Actions.HandOverWork do
     end
   end
 
+  defp review?(%Task{}, %Run{role: %Role{stage: :review_lead}}), do: false
   defp review?(%Task{}, %Run{}), do: true
 
   defp note_fixes(%Task{} = task, head) do

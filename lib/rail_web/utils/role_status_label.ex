@@ -40,6 +40,8 @@ defmodule RailWeb.Utils.RoleStatusLabel do
   # The tab and the header answer the same question, the tab in lower case.
   defp waiting_label(%Task{stage: :plan} = task), do: task |> approval_label() |> String.downcase()
   defp waiting_label(%Task{stage: :review} = task), do: task |> approval_label() |> String.downcase()
+  # Finalize has a tab of its own, so the review behind it is simply done.
+  defp waiting_label(%Task{stage: :finalize}), do: "done"
 
   defp waiting_label(%Task{}), do: "needs review"
 end

@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.SendDiffComments do
   @moduledoc """
   Sends the comments a person left on the diff and has not sent yet to the
-  engineer, as one message, and marks them sent. At Review they go out with the
+  engineer, as one message, and marks them sent. From Review on they go out with the
   tray's Send instead, so a stale page cannot send them to the lead on their own.
 
   Each quotes the code around its line as written, since line numbers move as the
@@ -23,11 +23,11 @@ defmodule Rail.Pipeline.Actions.SendDiffComments do
   Sends the scope user's unsent comments on `run`'s task to `run`.
 
   Returns what `Rail.Pipeline.send_message/2` does, `{:error, :nothing_to_send}`
-  when none are unsent, or `{:error, {:invalid_stage, :review}}` at Review.
+  when none are unsent, or `{:error, {:invalid_stage, stage}}` at Review, Finalize or merged.
   """
   def send_diff_comments(%Scope{} = scope, %Run{task_id: task_id} = run) do
     case Repo.get!(Task, task_id) do
-      %Task{stage: :review} -> {:error, {:invalid_stage, :review}}
+      %Task{stage: stage} when stage in [:review, :finalize, :merged] -> {:error, {:invalid_stage, stage}}
       %Task{} = task -> send_comments(scope, run, task)
     end
   end

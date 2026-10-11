@@ -108,8 +108,8 @@ defmodule Rail.Git.Actions.LoadBranchHistory do
   defp label(sha, _parents, _main?, _branch, read),
     do: read |> Enum.find_index(&MapSet.member?(&1, sha)) |> round_label(length(read))
 
-  defp round_label(0, _rounds), do: "Engineer"
-  defp round_label(nil, 0), do: "Engineer"
+  defp round_label(0, _rounds), do: "Implement"
+  defp round_label(nil, 0), do: "Implement"
   defp round_label(nil, rounds), do: "Fix round #{rounds}"
   defp round_label(round, _rounds), do: "Fix round #{round}"
 

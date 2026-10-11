@@ -204,7 +204,8 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
   end
 
   # At Review the tray's Send carries them, so a stale Engineer page cannot send them to the lead alone.
-  test "a task at Review is refused and its comments stay unsent", %{task: task, run: run, ada: ada} do
+  # From Review on, the tray sends them to the Review lead, and nothing goes back to the engineer.
+  test "a task at Review, Finalize or merged is refused and its comments stay unsent", %{task: task, run: run, ada: ada} do
     {:ok, _only} =
       Pipeline.create_diff_comment(ada, task, %{
         path: "lib/a.ex",
@@ -215,10 +216,13 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
         body: "Name it."
       })
 
-    {:ok, _review} = Pipeline.update_task(task, %{stage: :review})
     reject(Tools, :start_os_process, 2)
 
-    assert {:error, {:invalid_stage, :review}} = Pipeline.send_diff_comments(ada, run)
+    for stage <- [:review, :finalize, :merged] do
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: stage})
+      assert {:error, {:invalid_stage, ^stage}} = Pipeline.send_diff_comments(ada, run)
+    end
+
     assert [%DiffComment{status: :unsent}] = Pipeline.list_diff_comments(ada, task)
     assert Pipeline.list_run_events(run) == []
   end

@@ -11,6 +11,8 @@ defmodule RailWeb.Components.TaskLayout do
 
   import RailWeb.Utils.StageLabel, only: [ready_to_merge?: 2, review_waiting?: 2]
 
+  alias Rail.Pipeline.Schemas.Task
+
   attr :task, :any, required: true
   attr :run, :any, default: nil
   # The status reads the task's stage, whichever tab is open; nil when that stage has no run yet.
@@ -83,10 +85,14 @@ defmodule RailWeb.Components.TaskLayout do
             <.icon
               :if={
                 @line != nil or ready_to_merge?(@task, @stage_run) or
-                  review_waiting?(@task, @stage_run)
+                  review_waiting?(@task, @stage_run) or @task.stage in [:finalize, :merged]
               }
               name={chip_style(@task, @stage_run).icon}
-              class="h-4 w-4"
+              class={[
+                "h-4 w-4",
+                (@task.stage == :finalize and Task.finalize_state(@task) == :merging) &&
+                  "motion-safe:animate-spin"
+              ]}
             />
             {stage_label(@task, @stage_run)}
             <span :if={@starts_at} id="task-usage-starts" data-qa="task_usage_starts">
