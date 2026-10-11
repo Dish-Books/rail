@@ -40,6 +40,7 @@ defmodule RailWeb.Live.DiffToolbarTest do
         unsent: 0,
         running?: false,
         agent: "Engineer",
+        sends?: true,
         commentable?: true
       }
     }
@@ -72,6 +73,15 @@ defmodule RailWeb.Live.DiffToolbarTest do
 
     assert [] = Floki.find(html, "#send-diff-comments")
     assert html |> Floki.find("[data-qa='diff_no_comments']") |> Floki.text() =~ "No comments on a merge"
+  end
+
+  # Review's tray sends its comments, so its diff has no Send of its own.
+  test "a view that does not send offers no Send and no hint", %{toolbar: toolbar} do
+    html = DiffToolbar |> render_component(%{toolbar | unsent: 2, sends?: false}) |> Floki.parse_fragment!()
+
+    assert [] = Floki.find(html, "#send-diff-comments")
+    assert [] = Floki.find(html, "[data-qa='diff_comments_hint']")
+    assert [] = Floki.find(html, "[data-qa='diff_no_comments']")
   end
 
   test "counts what the diff added and took away, and how much of it is read", %{toolbar: toolbar} do

@@ -33,4 +33,24 @@ defmodule RailWeb.Components.CommentBoxTest do
     assert form |> Floki.find("[data-qa='plan_comment_cancel']") |> Floki.attribute("phx-click") == ["cancel_it"]
     assert form |> Floki.find("[data-qa='plan_comment_save']") |> Floki.text() =~ "Save comment"
   end
+
+  # A box in a narrow column, as the screen view's, gives its hint a line of its own rather than cut it.
+  test "a narrow box puts its hint on a line of its own" do
+    attrs = [
+      id: "box",
+      body_id: "box-body",
+      qa: "screen_comment",
+      label: "Toolbar",
+      submit: "save_it",
+      change: "change_it",
+      cancel: "cancel_it",
+      target: nil
+    ]
+
+    narrow = (&CommentBox.comment_box/1) |> render_component([{:narrow, true} | attrs]) |> Floki.parse_fragment!()
+    wide = (&CommentBox.comment_box/1) |> render_component(attrs) |> Floki.parse_fragment!()
+
+    assert [_hint] = Floki.find(narrow, ".flex-wrap > span.basis-full")
+    assert [] = Floki.find(wide, ".basis-full")
+  end
 end

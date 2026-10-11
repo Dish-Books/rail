@@ -1,14 +1,18 @@
 defmodule RailWeb.Live.RunConversationTest do
-  use Rail.DataCase, async: true
+  use RailWeb.ConnCase, async: true
 
+  import Ecto.Query
   import Phoenix.LiveViewTest
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Repo
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
+  alias Rail.Users
   alias RailWeb.Live.RunConversation
 
   setup %{project: project} do
@@ -172,7 +176,7 @@ defmodule RailWeb.Live.RunConversationTest do
     id = System.unique_integer([:positive])
 
     {:ok, %{id: dana_id}} =
-      Rail.Users.register_oauth_user(%{
+      Users.register_oauth_user(%{
         github_id: "gh_cnv_dana_#{id}",
         login: "dana-#{id}",
         name: "Dana Reyes",
@@ -180,7 +184,7 @@ defmodule RailWeb.Live.RunConversationTest do
       })
 
     {:ok, %{id: reader_id} = reader} =
-      Rail.Users.register_oauth_user(%{
+      Users.register_oauth_user(%{
         github_id: "gh_cnv_reader_#{id}",
         login: "reader-#{id}",
         email: "r-#{id}@example.com"
@@ -1372,7 +1376,7 @@ defmodule RailWeb.Live.RunConversationTest do
         })
 
       {:ok, reader} =
-        Rail.Users.register_oauth_user(%{github_id: "gh_cnv_pcm", login: "maya", name: "Maya", email: "m@example.com"})
+        Users.register_oauth_user(%{github_id: "gh_cnv_pcm", login: "maya", name: "Maya", email: "m@example.com"})
 
       scope = user_scope(user: reader)
 
@@ -1492,6 +1496,284 @@ defmodule RailWeb.Live.RunConversationTest do
       refute html =~ "send-plan-comments"
       assert html =~ ~s(id="unavailable-banner")
       assert html =~ "has not started a conversation"
+    end
+  end
+
+  describe "the Review tray" do
+    setup %{conn: conn, project: project, task: task, roles: roles} do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+      {:ok, run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:review_lead].id,
+          status: :finished,
+          stage_outcome: :done,
+          conversation_id: "sess_review_tray",
+          started_at: DateTime.utc_now()
+        })
+
+      [ada, grace] =
+        for name <- ["ada", "grace"] do
+          {:ok, user} =
+            Users.register_oauth_user(%{github_id: "gh_rct_#{name}", login: name, email: "#{name}@rct.example"})
+
+          {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
+          user
+        end
+
+      code = %{
+        kind: :code,
+        raised_by: :code_reviewer,
+        problem: "It crashes.",
+        file: "lib/a.ex",
+        line: 3,
+        fix: "Guard it.",
+        why: "It crashes.",
+        rule: "Every caller handles nil.",
+        severity: :major,
+        recommendation: :fix,
+        places: [%{file: "lib/a.ex", line: 3}],
+        evidence: [%{name: "range", kind: :code, file: "lib/a.ex", line: 3}]
+      }
+
+      {:ok, crash} = Pipeline.save_finding(task, Map.merge(code, %{key: "nil-crash", title: "Nil crashes the page"}))
+      {:ok, nit} = Pipeline.save_finding(task, Map.merge(code, %{key: "a-nit", title: "A nit"}))
+      {:ok, _pass} = Pipeline.save_review(task)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
+      File.mkdir_p!(Path.join([task.scratch_path, "qa", "screens", "toolbar"]))
+      File.write!(Path.join([task.scratch_path, "qa", "screens", "toolbar", "1.jpg"]), "jpeg")
+      {:ok, _shot} = Pipeline.save_screen(task, %{key: "toolbar", label: "Toolbar", file: "screens/toolbar/1.jpg"})
+      diff = %{path: "lib/a.ex", line_kind: :added, line: 3, line_text: "x = 1", filter: :branch}
+
+      %{
+        task: task,
+        run: run,
+        ada: user_scope(user: ada),
+        grace: user_scope(user: grace),
+        ada_conn: log_in_user(conn, ada),
+        grace_conn: log_in_user(build_conn(), grace),
+        diff: diff
+      }
+    end
+
+    test "two readers see the same Fix findings and only their own comments, and one's Send leaves the other's", %{
+      task: task,
+      ada: ada,
+      grace: grace,
+      ada_conn: ada_conn,
+      grace_conn: grace_conn,
+      diff: diff
+    } do
+      {:ok, _mine} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "Ada's."))
+      {:ok, _theirs} = Pipeline.create_screen_comment(grace, task, %{"key" => "toolbar", "body" => "Grace's."})
+
+      {:ok, ada_view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
+      {:ok, grace_view, _html} = live(grace_conn, ~p"/tasks/#{task.id}")
+
+      for view <- [ada_view, grace_view] do
+        assert has_element?(view, "#review-tray-finding-nil-crash", "Nil crashes the page")
+        refute has_element?(view, "#review-tray-finding-a-nit")
+      end
+
+      assert has_element?(ada_view, "#review-send-tray [data-kind=diff]", "Ada's.")
+      refute has_element?(ada_view, "#review-send-tray", "Grace's.")
+      assert has_element?(grace_view, "#review-send-tray [data-kind=screen]", "Grace's.")
+      refute has_element?(grace_view, "#review-send-tray", "Ada's.")
+
+      expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
+        assert prompt =~ "Ada's."
+        refute prompt =~ "Grace's."
+        {:ok, %OsProcess{run: %{spawned | status: :running}}}
+      end)
+
+      ada_view |> element("#send-review-tray", "Send 2") |> render_click()
+      _settled = render(ada_view)
+
+      # The tray empties: the Fix finding and the comments went out, and nothing waits to be sent mid-round.
+      refute has_element?(ada_view, "#review-send-tray [data-qa=review_tray_comment]")
+      refute has_element?(ada_view, "#review-tray-finding-nil-crash")
+      assert has_element?(ada_view, "#review-send-tray", "Nothing to send")
+      refute has_element?(ada_view, "#send-review-tray")
+      refute has_element?(ada_view, "#finish-review")
+      assert has_element?(ada_view, "#review-send-tray-hint", "The Review lead is working. Send waits until it stops.")
+      assert [%{status: :unsent}] = Pipeline.list_screen_comments(grace, task)
+    end
+
+    test "a ruling changed in one tab updates the other reader's tray", %{
+      task: task,
+      ada_conn: ada_conn,
+      grace_conn: grace_conn
+    } do
+      {:ok, grace_view, _html} = live(grace_conn, ~p"/tasks/#{task.id}")
+      {:ok, ada_view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
+
+      ada_view |> element("#finding-a-nit") |> render_click()
+      ada_view |> element("#decide-fix-a-nit") |> render_click()
+      _settled = render(grace_view)
+      _settled = render(grace_view)
+
+      assert has_element?(grace_view, "#review-tray-finding-a-nit")
+    end
+
+    test "Open shows the finding in Findings, and a Screen row opens its state in the screen view", %{
+      task: task,
+      ada: ada,
+      ada_conn: ada_conn
+    } do
+      {:ok, _mine} = Pipeline.create_screen_comment(ada, task, %{"key" => "toolbar", "body" => "Fold it."})
+      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
+      view |> element("#review-item-screens") |> render_click()
+
+      view |> element("#review-tray-finding-nil-crash") |> render_click()
+      _settled = render(view)
+
+      assert has_element?(view, "#review-pane[data-item=findings]")
+      assert has_element?(view, "#finding-nil-crash[aria-current=true]")
+
+      view |> element("[data-qa=review_tray_screen]", "Toolbar") |> render_click()
+      _settled = render(view)
+
+      assert has_element?(view, "#screen-view-name", "Toolbar")
+      assert has_element?(view, "#screen-view [data-qa=screen_comment]", "Fold it.")
+    end
+
+    test "Remove takes a comment out, and one saved in another tab appears without a reload", %{
+      task: task,
+      ada: ada,
+      ada_conn: ada_conn,
+      diff: diff
+    } do
+      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
+      refute has_element?(view, "[data-qa=review_tray_comment]")
+
+      {:ok, comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "From another tab."))
+      _settled = render(view)
+
+      assert has_element?(view, "#review-tray-diff-#{comment.id}", "From another tab.")
+
+      {:ok, screen} = Pipeline.create_screen_comment(ada, task, %{"key" => "toolbar", "body" => "Fold it."})
+      _settled = render(view)
+
+      view |> element("#remove-review-tray-diff-#{comment.id}") |> render_click()
+      view |> element("#remove-review-tray-screen-#{screen.id}") |> render_click()
+
+      refute has_element?(view, "[data-qa=review_tray_comment]")
+      assert Pipeline.list_diff_comments(ada, task, unsent: true) == []
+
+      view
+      |> with_target("#conversation-tab-root")
+      |> render_click("remove_review_tray_comment", %{"kind" => "diff", "id" => "x"})
+
+      refute has_element?(view, "[data-qa=review_tray_comment]")
+    end
+
+    test "a finding comment saved in another tab appears without a reload, opens its finding, and Remove takes it out",
+         %{task: task, ada: ada, grace: grace, ada_conn: ada_conn} do
+      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
+      view |> element("#review-item-screens") |> render_click()
+      nit = Repo.get_by!(Finding, task_id: task.id, key: "a-nit")
+
+      {:ok, %{id: comment_id}} =
+        Pipeline.create_finding_comment(ada, task, %{"finding_id" => nit.id, "piece" => "rule", "body" => "Too wide."})
+
+      {:ok, _theirs} =
+        Pipeline.create_finding_comment(grace, task, %{"finding_id" => nit.id, "piece" => "fix", "body" => "Grace's."})
+
+      _settled = render(view)
+
+      assert has_element?(view, "#review-tray-finding-#{comment_id}", "A nit")
+      assert has_element?(view, "#review-tray-finding-#{comment_id}", "Rule")
+      refute has_element?(view, "#review-send-tray", "Grace's.")
+
+      view |> element("#review-tray-finding-#{comment_id} [data-qa=review_tray_finding_comment]") |> render_click()
+      _settled = render(view)
+
+      assert has_element?(view, "#review-pane[data-item=findings]")
+      assert has_element?(view, "#finding-a-nit[aria-current=true]")
+      assert has_element?(view, "[data-qa=finding_rule_text] [data-qa=document_comment]", "Too wide.")
+
+      view |> element("#remove-review-tray-finding-#{comment_id}") |> render_click()
+      _settled = render(view)
+
+      refute has_element?(view, "#review-tray-finding-#{comment_id}")
+      refute has_element?(view, "[data-qa=finding_rule_text] [data-qa=document_comment]")
+      assert Pipeline.list_finding_comments(ada, task) == []
+    end
+
+    test "the tray folds, and a Send refused says why in its hint", %{task: task, ada_conn: ada_conn} do
+      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#review-send-tray-fold") |> render_click()
+      refute has_element?(view, "#review-tray-finding-nil-crash")
+      view |> element("#review-send-tray-fold") |> render_click()
+      assert has_element?(view, "#review-tray-finding-nil-crash")
+
+      expect(Tools, :start_os_process, fn _spawned, _argv -> {:error, :dispatch_disabled} end)
+      view |> element("#send-review-tray") |> render_click()
+
+      assert has_element?(view, "#review-send-tray-hint", "Dispatch is off, so the Review lead was not resumed.")
+    end
+
+    # A tab that lost a Send to another one was told the lead works, and still says so after the lead stopped.
+    test "a refused Send's reason goes once the stage hands on a new gate", %{
+      task: task,
+      run: run,
+      ada_conn: ada_conn
+    } do
+      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
+      expect(Pipeline, :start_fix_round, fn _scope, _run -> {:error, :stage_running} end)
+      view |> element("#send-review-tray") |> render_click()
+      assert has_element?(view, "#review-send-tray-hint", "The Review lead is working. Send waits until it stops.")
+
+      # The stage hands the page its gate in a message of its own, which queues behind the first render.
+      for status <- [:running, :finished] do
+        {:ok, _run} = run |> Repo.reload!() |> Pipeline.update_run(%{status: status})
+        send(view.pid, {:pipeline_changed, task.id})
+        _reloaded = render(view)
+        _settled = render(view)
+      end
+
+      refute has_element?(view, "#review-send-tray-hint", "The Review lead is working.")
+
+      assert has_element?(
+               view,
+               "#review-send-tray-hint",
+               "The Review lead is idle and starts a fix round on these at once."
+             )
+
+      assert has_element?(view, "#send-review-tray:not([disabled])")
+    end
+
+    test "after Finish review the conversation stays open, and a comment's Send resumes the lead", %{
+      task: task,
+      run: run,
+      ada: ada,
+      ada_conn: ada_conn,
+      diff: diff
+    } do
+      Repo.update_all(from(f in Finding, where: f.task_id == ^task.id), set: [decision: :skip])
+      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#finish-review") |> render_click()
+      _settled = render(view)
+
+      refute has_element?(view, "#review-send-tray")
+      assert has_element?(view, "#composer-root")
+
+      {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "One more thing."))
+      _settled = render(view)
+
+      expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
+        assert prompt =~ "One more thing."
+        {:ok, %OsProcess{run: %{spawned | status: :running}}}
+      end)
+
+      view |> element("#send-review-tray", "Send 1") |> render_click()
+
+      assert %{status: :running} = Repo.reload!(run)
     end
   end
 end

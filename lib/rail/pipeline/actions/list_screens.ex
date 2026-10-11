@@ -1,8 +1,8 @@
 defmodule Rail.Pipeline.Actions.ListScreens do
   @moduledoc """
-  Reads the screen states the explorers shot, each with every shot taken of it, out of the QA folder.
-  A record that is not the shape Rail writes, or whose picture is not a plain file, is passed over, since
-  anything under scratch can have been written by an agent.
+  Reads the screen states the explorers shot, each by its latest shot, out of the QA folder. A record that is not
+  the shape Rail writes, or whose picture is not a plain file, is passed over, since anything under scratch can
+  have been written by an agent.
   """
 
   alias Rail.Pipeline
@@ -12,9 +12,9 @@ defmodule Rail.Pipeline.Actions.ListScreens do
   @key ~r/\A[a-z0-9][a-z0-9-]{0,59}\z/
 
   @doc """
-  Returns `task`'s screen states, the first shot first with the key breaking a tie, as `%{key:, label:,
-  shots:, findings:}`. `shots` run oldest to latest as `%{index:, file:, label:, commit:, browser:,
-  taken_at:}`, `file` relative to the QA folder, and `findings` are `%{key:, title:}` whose evidence cites one.
+  Returns `task`'s screen states by label, the key breaking a tie, so a round's retakes never reorder them, as
+  `%{key:, label:, file:, commit:, browser:, taken_at:, findings:}` for each state's newest shot. `file` is relative
+  to the QA folder, and `findings` are `%{key:, title:}` whose evidence cites that picture.
   """
   def list_screens(%Task{scratch_path: scratch_path} = task) do
     qa = Path.join(scratch_path, "qa")
@@ -31,28 +31,28 @@ defmodule Rail.Pipeline.Actions.ListScreens do
     end
   end
 
+  # A retake leaves an earlier record only when it failed partway, and the newest one is still the state.
   defp states(shots, findings) do
     shots
     |> Enum.group_by(& &1.key)
-    |> Enum.map(fn {key, mine} ->
-      mine = mine |> Enum.sort_by(& &1.taken_at, DateTime) |> Enum.with_index(&Map.put(&1, :index, &2))
-      files = Enum.map(mine, &Path.basename(&1.file))
+    |> Enum.map(fn {_key, mine} ->
+      latest = Enum.max_by(mine, &{DateTime.to_unix(&1.taken_at, :microsecond), &1.file})
+      file = Path.basename(latest.file)
 
-      %{
-        key: key,
-        label: List.last(mine).label,
-        shots: mine,
-        findings: for(finding <- findings, cites?(finding, files), do: %{key: finding.key, title: finding.title})
-      }
+      Map.put(
+        latest,
+        :findings,
+        for(finding <- findings, cites?(finding, file), do: %{key: finding.key, title: finding.title})
+      )
     end)
-    |> Enum.sort_by(&{DateTime.to_unix(hd(&1.shots).taken_at, :microsecond), &1.key})
+    |> Enum.sort_by(&{&1.label, &1.key})
   end
 
   # Saving a finding copies a cited picture into its own folder under a prefix, keeping its name.
-  defp cites?(%Finding{evidence: evidence}, files) do
+  defp cites?(%Finding{evidence: evidence}, file) do
     names = for %{path: path} when is_binary(path) <- evidence, do: Path.basename(path)
 
-    Enum.any?(names, fn name -> Enum.any?(files, &(name == &1 or String.ends_with?(name, "-" <> &1))) end)
+    Enum.any?(names, &(&1 == file or String.ends_with?(&1, "-" <> file)))
   end
 
   defp read(qa, record) do

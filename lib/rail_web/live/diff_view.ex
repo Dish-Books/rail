@@ -2,7 +2,8 @@ defmodule RailWeb.Live.DiffView do
   @moduledoc """
   The diff pane and everything it holds, on the Engineer tab and in the Review tab's Diff item alike: the
   whole branch, the uncommitted work or one commit against its first parent, picked in the toolbar, with
-  the reader's comments, sent to `run`. A merge's view takes no comments.
+  the reader's comments, sent to `run` unless `sends` is false, as in Review, whose tray sends them. A merge's
+  view takes no comments.
 
   The diff is read off the worktree on mount, when the page asks with `reload`, and when HEAD or the
   worktree's status has moved since; a file whose digest has not moved keeps its highlighting. Marking a
@@ -306,6 +307,9 @@ defmodule RailWeb.Live.DiffView do
     end
   end
 
+  # A view with no Send of its own, drawn before the task reached Review, sends nothing.
+  def handle_event("send_diff_comments", _params, %{assigns: %{sends: false}} = socket), do: {:noreply, socket}
+
   # The reply redraws every comment as Sent, and the page's refresh after it reads
   # the diff only if the worktree moved, so nothing draws them unsent in between.
   # Nothing left to send is a second click or another tab.
@@ -487,6 +491,7 @@ defmodule RailWeb.Live.DiffView do
       draft: assigns.draft,
       running?: Run.running?(assigns.run),
       agent: assigns.agent,
+      sends?: assigns.sends,
       commentable?: commentable?(assigns)
     }
   end

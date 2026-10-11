@@ -122,6 +122,7 @@ defmodule RailWeb.Live.EngineerStage do
             task={@task}
             run={if @at_engineer or is_nil(@stage_run), do: @run, else: @stage_run}
             agent={if @at_engineer or is_nil(@stage_run), do: "Engineer", else: "Review lead"}
+            sends={@at_engineer}
             current_scope={@current_scope}
             focus_file={@focus_file}
           />

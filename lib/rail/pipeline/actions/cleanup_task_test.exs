@@ -3,9 +3,13 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.DiffComment
+  alias Rail.Pipeline.Schemas.FindingComment
+  alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Roles
+  alias Rail.Users
 
   setup %{project: project} do
     {:ok, engineer_role} = Roles.get_role(project_id: project.id, stage: :engineer)
@@ -96,6 +100,63 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         assert %Task{cleaned_up_at: %DateTime{}} = Repo.reload!(child)
         refute File.exists?(child.scratch_path)
       end
+    end
+
+    # Nothing can send them once the worktree is gone, and what was sent stays as history.
+    test "deletes its own and its children's unsent diff, screen and finding comments, and keeps the sent ones", %{
+      parent: parent,
+      children: [first, _second]
+    } do
+      {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_clt_ada", login: "ada", email: "ada@example.com"})
+      ada = user_scope(user: ada)
+      {:ok, %{id: first_id} = first} = Pipeline.update_task(first, %{stage: :review})
+      File.mkdir_p!(Path.join([first.scratch_path, "qa", "screens", "toolbar"]))
+      File.write!(Path.join([first.scratch_path, "qa", "screens", "toolbar", "1.jpg"]), "jpeg")
+      {:ok, _shot} = Pipeline.save_screen(first, %{key: "toolbar", label: "Toolbar", file: "screens/toolbar/1.jpg"})
+      diff = %{path: "lib/a.ex", line_kind: :added, line: 1, line_text: "x", filter: :branch, body: "Name it."}
+
+      {:ok, _unsent} = Pipeline.create_diff_comment(ada, parent, diff)
+      {:ok, _unsent} = Pipeline.create_diff_comment(ada, first, diff)
+      {:ok, %{id: sent_diff_id}} = Pipeline.create_diff_comment(ada, first, diff)
+      {:ok, _unsent} = Pipeline.create_screen_comment(ada, first, %{"key" => "toolbar", "body" => "Fold it."})
+      {:ok, %{id: sent_screen_id}} = Pipeline.create_screen_comment(ada, first, %{"key" => "toolbar", "body" => "Sent."})
+      Repo.update_all(from(c in DiffComment, where: c.id == ^sent_diff_id), set: [status: :sent])
+      Repo.update_all(from(c in ScreenComment, where: c.id == ^sent_screen_id), set: [status: :sent])
+      Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{first.id}")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "screen_comments:#{first.id}:#{ada.user.id}")
+
+      {:ok, finding} =
+        Pipeline.save_finding(first, %{
+          key: "nil-crash",
+          kind: :code,
+          raised_by: :code_reviewer,
+          title: "Nil crashes the page",
+          problem: "It crashes.",
+          file: "lib/a.ex",
+          line: 3,
+          fix: "Guard it.",
+          why: "It crashes.",
+          rule: "Every caller handles nil.",
+          severity: :major,
+          recommendation: :fix,
+          places: [%{file: "lib/a.ex", line: 3}],
+          evidence: [%{name: "range", kind: :code, file: "lib/a.ex", line: 3}]
+        })
+
+      on_finding = %{"finding_id" => finding.id, "piece" => "fix"}
+      {:ok, _unsent} = Pipeline.create_finding_comment(ada, first, Map.put(on_finding, "body", "Higher."))
+      {:ok, %{id: sent_finding_id}} = Pipeline.create_finding_comment(ada, first, Map.put(on_finding, "body", "Sent."))
+      Repo.update_all(from(c in FindingComment, where: c.id == ^sent_finding_id), set: [status: :sent])
+      Phoenix.PubSub.subscribe(Rail.PubSub, "finding_comments:#{first.id}:#{ada.user.id}")
+
+      assert {:ok, %Task{}} = Pipeline.cleanup_task(parent)
+
+      assert [%DiffComment{id: ^sent_diff_id}] = Repo.all(DiffComment)
+      assert [%ScreenComment{id: ^sent_screen_id}] = Repo.all(ScreenComment)
+      assert [%FindingComment{id: ^sent_finding_id}] = Repo.all(FindingComment)
+      assert_received {:diff_comments_changed, ^first_id}
+      assert_received {:screen_comments_changed, ^first_id}
+      assert_received {:finding_comments_changed, ^first_id}
     end
 
     test "is refused, and cleans nothing, while a child is still working", %{

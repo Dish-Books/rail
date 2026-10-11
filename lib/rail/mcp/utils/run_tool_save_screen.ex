@@ -1,8 +1,8 @@
 defmodule Rail.Mcp.Utils.RunToolSaveScreen do
   @moduledoc """
-  Photographs one screen state the lead named and saves it as that state's image for HEAD's commit, so the
-  Screens item can set each round's picture beside the last. A worktree with uncommitted changes is
-  refused, since its picture would belong to no commit.
+  Photographs one screen state the lead named and saves it as that state's image for HEAD's commit, which
+  replaces the state's earlier picture. A worktree with uncommitted changes is refused, since its picture
+  would belong to no commit.
   """
 
   import Rail.Mcp.Utils.NamedBrowser

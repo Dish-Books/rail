@@ -2,7 +2,7 @@ defmodule RailWeb.Components.FindingList do
   @moduledoc """
   Review's findings down the side, grouped by the round that raised them, newest first, with a Fix finding
   a later round found still failing under Carried into round N. Each row is its title, where it stands and
-  where it is. The footer's tally is the Findings item's state, beside Start fix round or Finish review.
+  where it is. The footer's tally is the Findings item's state; what Send sends is in the conversation's tray.
   """
   use RailWeb, :html
 
@@ -13,7 +13,6 @@ defmodule RailWeb.Components.FindingList do
   attr :selected_key, :string, default: nil
   attr :running, :boolean, required: true
   attr :tally, :string, required: true
-  attr :button, :map, default: nil, doc: "`%{label:, icon:, disabled:, title:}`, or nil for none"
   attr :target, :any, required: true
 
   def finding_list(assigns) do
@@ -100,20 +99,6 @@ defmodule RailWeb.Components.FindingList do
         >
           {@tally}
         </p>
-        <button
-          :if={@button}
-          type="button"
-          id="start-fix-round"
-          data-qa="start_fix_round"
-          phx-click="start_fix_round"
-          phx-target={@target}
-          phx-disable-with={@button.label}
-          disabled={@button.disabled}
-          title={@button.title}
-          class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-        >
-          <.icon name={@button.icon} class="size-3.5" />{@button.label}
-        </button>
       </div>
     </div>
     """

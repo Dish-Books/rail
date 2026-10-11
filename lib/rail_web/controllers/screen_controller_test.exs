@@ -27,8 +27,8 @@ defmodule RailWeb.ScreenControllerTest do
     %{conn: log_in_user(conn, user), task: task, user: user}
   end
 
-  test "serves a listed shot as a picture, never sniffed or cached", %{conn: conn, task: task} do
-    conn = get(conn, ~p"/tasks/#{task.id}/screens/toolbar/0")
+  test "serves a state's picture by its key, never sniffed or cached", %{conn: conn, task: task} do
+    conn = get(conn, ~p"/tasks/#{task.id}/screens/toolbar")
 
     assert response(conn, 200) == "jpeg bytes"
     assert ["image/jpeg"] = get_resp_header(conn, "content-type")
@@ -38,13 +38,9 @@ defmodule RailWeb.ScreenControllerTest do
 
   # The file is the listing's, never the URL's, so the worst an invented name gets is a 404.
   test "serves nothing the listing does not name", %{conn: conn, task: task} do
-    File.write!(Path.join([task.scratch_path, "qa", "screens", "toolbar", "2.jpg"]), "unlisted")
-
-    assert conn |> get(~p"/tasks/#{task.id}/screens/toolbar/1") |> response(404)
-    assert conn |> get(~p"/tasks/#{task.id}/screens/toolbar/first") |> response(404)
-    assert conn |> get(~p"/tasks/#{task.id}/screens/other/0") |> response(404)
-    assert conn |> get(~p"/tasks/#{task.id}/screens/..%2F..%2Fetc/0") |> response(404)
-    assert conn |> get(~p"/tasks/tsk_missing/screens/toolbar/0") |> response(404)
+    assert conn |> get(~p"/tasks/#{task.id}/screens/other") |> response(404)
+    assert conn |> get(~p"/tasks/#{task.id}/screens/..%2F..%2Fetc") |> response(404)
+    assert conn |> get(~p"/tasks/tsk_missing/screens/toolbar") |> response(404)
   end
 
   test "serves nothing from a project the reader cannot open", %{conn: conn, task: task} do
@@ -60,6 +56,6 @@ defmodule RailWeb.ScreenControllerTest do
 
     {:ok, _moved} = task |> Ecto.Changeset.change(project_id: other.id) |> Repo.update()
 
-    assert conn |> get(~p"/tasks/#{task.id}/screens/toolbar/0") |> response(404)
+    assert conn |> get(~p"/tasks/#{task.id}/screens/toolbar") |> response(404)
   end
 end

@@ -5,7 +5,8 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
   The findings are already rows, saved one at a time, and the task stays at Review whatever they say: the
   lead recommends and a person rules, and the fixes they rule happen inside Review. A round that leaves
   nothing to rule and nothing to fix is the exception, and finishes the review by itself, taking the pull
-  request out of draft. A message the human queued for the lead holds it: they have more to say.
+  request out of draft. A message the human queued for the lead holds it, as anyone's unsent finding, diff or
+  screen comment does: they have more to say, and Send or Finish review is theirs.
 
   A turn that leaves commits the remote has not had hands them over: through CI and pushed, and to the next
   round when the branch moved past what the last round read. Fixes are held back while a Fix finding is not
@@ -14,13 +15,17 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
   so the stage stays open for the message that settles them.
   """
 
+  import Ecto.Query
   import Rail.Pipeline.Utils.FinishReview
   import Rail.Pipeline.Utils.SendBackRefusedPush
 
   alias Rail.Git
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.FindingComment
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Scope
@@ -83,8 +88,15 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
       not saved?(passes, task) -> fail(run, "The Review lead did not save its review.")
       run.pending_chat != nil or List.last(passes).finished_at != nil -> run
       Enum.any?(findings, &(Finding.undecided?(&1) or Finding.outstanding?(&1))) -> run
+      unsent_comments?(task) -> run
       true -> %{run | task: finish_review(task)}
     end
+  end
+
+  defp unsent_comments?(%Task{id: task_id}) do
+    Repo.exists?(from c in FindingComment, where: c.task_id == ^task_id and c.status == :unsent) or
+      Repo.exists?(from c in DiffComment, where: c.task_id == ^task_id and c.status == :unsent) or
+      Repo.exists?(from c in ScreenComment, where: c.task_id == ^task_id and c.status == :unsent)
   end
 
   # A pass with no commit, or a worktree git cannot read, is taken at its word.

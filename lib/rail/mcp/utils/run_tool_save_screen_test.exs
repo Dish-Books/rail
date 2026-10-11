@@ -42,11 +42,26 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
 
     assert said =~ ".jpg, the image of file-list on #{short}."
 
-    assert [%{key: "file-list", label: "File list just after Send", shots: [%{commit: ^head, browser: "explorer-1"}]}] =
+    assert [%{key: "file-list", label: "File list just after Send", commit: ^head, browser: "explorer-1"}] =
              Pipeline.list_screens(task)
   end
 
-  # A picture of uncommitted work belongs to no commit, so it could never be set beside one.
+  test "a second save of a state replaces the first", %{task: task, context: context} do
+    stub(Tools, :start_browser_session, fn _task, "explorer-1", _opts -> {:ok, self()} end)
+    arguments = %{"key" => "file-list", "label" => "File list", "browser" => "explorer-1"}
+
+    assert {:ok, _first} = Mcp.call_run_tool(context, "save_screen", arguments)
+
+    assert {:ok, %{"content" => [%{"text" => "Saved as " <> said}]}} =
+             Mcp.call_run_tool(context, "save_screen", %{arguments | "label" => "File list again"})
+
+    [file, _rest] = String.split(said, ", the image", parts: 2)
+
+    assert [%{key: "file-list", label: "File list again", file: ^file}] = Pipeline.list_screens(task)
+    assert [_picture, _record] = File.ls!(Path.join([task.scratch_path, "qa", "screens", "file-list"]))
+  end
+
+  # A picture of uncommitted work belongs to no commit, so it could never say which one it shows.
   test "a worktree with uncommitted changes is refused before any browser", %{context: context, worktree: worktree} do
     File.write!(Path.join(worktree, "wip.ex"), "uncommitted\n")
     reject(Tools, :start_browser_session, 3)

@@ -5,6 +5,7 @@ defmodule RailWeb.Components.FindingListTest do
 
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.FindingNote
+  alias RailWeb.Components.FindingList
 
   test "each finding's state reads in the list, and its dot quiets once it is settled" do
     findings = [
@@ -33,7 +34,7 @@ defmodule RailWeb.Components.FindingListTest do
     ]
 
     doc =
-      (&RailWeb.Components.FindingList.finding_list/1)
+      (&FindingList.finding_list/1)
       |> render_component(findings: findings, running: false, tally: "3 findings", target: nil)
       |> Floki.parse_fragment!()
 
@@ -44,5 +45,16 @@ defmodule RailWeb.Components.FindingListTest do
              doc
              |> Floki.find("[data-qa=review_finding] > span:first-child")
              |> Enum.map(&(&1 |> Floki.attribute("class") |> hd() |> String.split() |> Enum.drop(4)))
+  end
+
+  # Send lives in the conversation's tray, so the footer only counts.
+  test "the footer reads the tally and holds no button" do
+    doc =
+      (&FindingList.finding_list/1)
+      |> render_component(findings: [], running: false, tally: "1 to fix · 2 not fixing", target: nil)
+      |> Floki.parse_fragment!()
+
+    assert doc |> Floki.find("#review-finding-footer") |> Floki.text() =~ "1 to fix · 2 not fixing"
+    assert [] = Floki.find(doc, "#review-finding-footer button")
   end
 end

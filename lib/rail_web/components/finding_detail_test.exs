@@ -30,6 +30,106 @@ defmodule RailWeb.Components.FindingDetailTest do
   }
   @attrs [position: 1, count: 1, decidable: true, running: false, neighbours: %{}, target: nil]
 
+  describe "comments on its pieces" do
+    setup do
+      finding = %{
+        @finding
+        | rule: "A round is sent once.",
+          places: [%FindingPlace{file: "lib/a.ex", line: 3, label: "handle/1"}, %FindingPlace{file: "lib/b.ex", line: 9}],
+          notes: [%FindingNote{round: 1, kind: :raised, at: @at, commit: "abcdef1234"}]
+      }
+
+      %{finding: finding}
+    end
+
+    test "each whole piece offers a + named for it, and none when the reader cannot comment", %{finding: finding} do
+      doc =
+        (&FindingDetail.finding_detail/1)
+        |> render_component([finding: finding, offered: true] ++ @attrs)
+        |> Floki.parse_fragment!()
+
+      assert [
+               "Comment on Title",
+               "Comment on Problem",
+               "Comment on Where",
+               "Comment on Fix",
+               "Comment on Why fix",
+               "Comment on Rule",
+               "Comment on Place 1, handle/1",
+               "Comment on Place 2",
+               "Comment on Round 1, raised"
+             ] = doc |> Floki.find("[data-qa=finding_comment_add]") |> Floki.attribute("aria-label")
+
+      assert ["note"] =
+               doc
+               |> Floki.find("[data-qa=finding_note] [data-qa=finding_comment_add]")
+               |> Floki.attribute("phx-value-piece")
+
+      assert [_first, "1"] =
+               doc
+               |> Floki.find("[data-qa=finding_place] [data-qa=finding_comment_add]")
+               |> Enum.map(&(&1 |> Floki.attribute("phx-value-index") |> List.first()))
+
+      # app.css shows a + whose parent is hovered or holds the focus, so each is a direct child of its piece.
+      assert doc
+             |> Floki.find("[data-qa=finding_comment_add]")
+             |> Enum.all?(&(&1 |> Floki.attribute("class") |> hd() =~ "line-comment-add"))
+
+      assert length(Floki.find(doc, "[class*='group/line'] > [data-qa=finding_comment_add]")) == 9
+
+      # A piece with no text to quote takes no comment.
+      assert [] =
+               (&FindingDetail.finding_detail/1)
+               |> render_component([finding: %{finding | problem: ""}, offered: true] ++ @attrs)
+               |> Floki.parse_fragment!()
+               |> Floki.find("[data-qa=finding_problem] [data-qa=finding_comment_add]")
+
+      assert [] =
+               (&FindingDetail.finding_detail/1)
+               |> render_component([finding: finding] ++ @attrs)
+               |> Floki.parse_fragment!()
+               |> Floki.find("[data-qa=finding_comment_add]")
+    end
+
+    test "the reader's unsent comments show under their pieces with the tray's numbers, and the box under its piece",
+         %{finding: finding} do
+      on_title = %{id: "fcm_0", body: "Say who."}
+      on_fix = %{id: "fcm_1", body: "Guard it higher up."}
+      on_place = %{id: "fcm_2", body: "And its caller."}
+
+      doc =
+        (&FindingDetail.finding_detail/1)
+        |> render_component(
+          [
+            finding: finding,
+            offered: true,
+            comments: %{{:title, nil} => [{on_title, 1}], {:fix, nil} => [{on_fix, 2}], {:place, 1} => [{on_place, 3}]},
+            draft: %{piece: :note, index: 0, body: "Half typed"}
+          ] ++ @attrs
+        )
+        |> Floki.parse_fragment!()
+
+      # The header does not scroll, so the title's comments are drawn in the body under a caption, not under it.
+      assert [] = Floki.find(doc, "[data-qa=finding_title] [data-qa=document_comment]")
+      [title] = Floki.find(doc, "[data-qa=finding_title_comments]")
+      assert Floki.text(title) =~ ~r/Title\s+1\s+You\s+Not sent\s+Remove\s+Say who./
+
+      [fix] = Floki.find(doc, "[data-qa=finding_fix] [data-qa=document_comment]")
+      assert Floki.text(fix) =~ ~r/2\s+You\s+Not sent\s+Remove\s+Guard it higher up./
+
+      assert ["remove_finding_comment"] =
+               fix |> Floki.find("[data-qa=document_comment_remove]") |> Floki.attribute("phx-click")
+
+      assert [_second_place] = Floki.find(doc, "[data-qa=finding_place]:nth-child(2) [data-qa=document_comment]")
+      assert [] = Floki.find(doc, "[data-qa=finding_place]:nth-child(1) [data-qa=document_comment]")
+
+      [box] = Floki.find(doc, "[data-qa=finding_note] #finding-comment-form")
+      assert ["Comment on Round 1, raised"] = box |> Floki.find("textarea") |> Floki.attribute("aria-label")
+      assert box |> Floki.find("textarea") |> Floki.text() == "Half typed"
+      assert [_one_box] = Floki.find(doc, "#finding-comment-form")
+    end
+  end
+
   test "a suppressed finding names the rule that suppressed it, and offers only Fix" do
     finding = %{@finding | suppressed_by_id: "lrn_quiet"}
 

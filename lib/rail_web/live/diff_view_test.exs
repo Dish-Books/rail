@@ -229,6 +229,46 @@ defmodule RailWeb.Live.DiffViewTest do
     refute reply =~ "send-diff-comments"
   end
 
+  # Review's tray sends the reader's comments, so its diff has no Send; a sent one keeps Resolve.
+  test "in Review the diff has no Send, and a sent comment stays under its line with Resolve", %{
+    conn: conn,
+    user: user,
+    task: task,
+    run: run,
+    project: project
+  } do
+    scope = user_scope(user: user)
+    comment = %{path: "rows.ex", line_kind: :added, line: 3, line_text: "line 3", filter: :branch}
+    {:ok, _sent} = Pipeline.create_diff_comment(scope, task, Map.put(comment, :body, "Sent before Review."))
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    {:ok, :sent, _run} = Pipeline.send_diff_comments(scope, run)
+    {:ok, _unsent} = Pipeline.create_diff_comment(scope, task, Map.put(comment, :body, "Waits in the tray."))
+    {:ok, _review} = Pipeline.update_task(task, %{stage: :review})
+    {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
+
+    {:ok, _lead_run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: lead.id,
+        status: :finished,
+        stage_outcome: :done,
+        conversation_id: "sess_dvw_lead",
+        started_at: DateTime.utc_now()
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    view |> element("#review-item-diff") |> render_click()
+
+    assert has_element?(view, "[data-qa=diff_comment]", "Sent before Review.")
+    assert has_element?(view, "[data-qa=diff_comment_resolve]")
+    assert has_element?(view, "[data-qa=diff_comment] [data-qa=diff_comment_unsent]")
+    refute has_element?(view, "#send-diff-comments")
+    refute has_element?(view, "[data-qa=diff_comments_hint]")
+
+    render_click(with_target(view, "#diff-view"), "send_diff_comments", %{})
+    assert has_element?(view, "[data-qa=diff_comment_unsent]")
+  end
+
   test "a send the agent cannot take says why, and the comments stay unsent", %{conn: conn, task: task} do
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 

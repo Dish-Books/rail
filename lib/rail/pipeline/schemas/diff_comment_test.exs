@@ -73,4 +73,34 @@ defmodule Rail.Pipeline.Schemas.DiffCommentTest do
              :commit
            )
   end
+
+  describe "the block it is sent as" do
+    test "names its file and line, quotes the code around it and then the text" do
+      comment = %DiffComment{
+        path: "lib/a.ex",
+        line_kind: :added,
+        line: 4,
+        line_text: "x = 1",
+        context_text: "  + y = 0\n> + x = 1",
+        body: "Name it."
+      }
+
+      assert DiffComment.calculate_block(comment) ==
+               "<diff_comment>\nlib/a.ex, line 4\n  + y = 0\n> + x = 1\nName it.\n</diff_comment>"
+    end
+
+    test "a removed line in one commit's view says so, and one with no code around it quotes its line" do
+      comment = %DiffComment{
+        path: "lib/a.ex",
+        line_kind: :deleted,
+        line: 9,
+        line_text: "old()   ",
+        commit: "9c41e07aa",
+        body: "Keep it."
+      }
+
+      assert DiffComment.calculate_block(comment) ==
+               "<diff_comment>\nlib/a.ex, removed line 9 in commit 9c41e07\n- old()\nKeep it.\n</diff_comment>"
+    end
+  end
 end

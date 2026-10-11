@@ -12,8 +12,9 @@ defmodule Rail.Pipeline do
   Review is one run led by a Review lead, with the code reviewer, QA explorers, an
   engineer and a demo recorder as its subagents. A round reads the code and drives
   the running application, the demo is recorded beside it, and the findings land in
-  one list for the human to rule on. Start fix round has the engineer fix what was
-  ruled Fix inside Review and commit it, and the next round starts once CI passes on
+  one list for the human to rule on. The Review tray's Send has the engineer fix
+  what was ruled Fix, and act on the sender's finding, diff and screen comments, inside
+  Review and commit it, and the next round starts once CI passes on
   what the turn committed. A task never goes back to Engineer, and it waits at
   Review, ready to merge, once nothing is left to rule or fix.
 
@@ -58,7 +59,7 @@ defmodule Rail.Pipeline do
   defdelegate decide_finding(scope, finding, decision), to: Actions.DecideFinding
   defdelegate save_review(task), to: Actions.SaveReview
   defdelegate read_review(task), to: Actions.ReadReview
-  defdelegate start_fix_round(run), to: Actions.StartFixRound
+  defdelegate start_fix_round(scope, run), to: Actions.StartFixRound
 
   defdelegate write_qa_checklist(task, checks), to: Actions.WriteQaChecklist
   defdelegate read_qa_checklist(task), to: Actions.ReadQaChecklist
@@ -91,10 +92,16 @@ defmodule Rail.Pipeline do
 
   defdelegate send_message(scope, run, text, opts \\ []), to: Actions.SendMessage
   defdelegate create_diff_comment(scope, task, attrs), to: Actions.CreateDiffComment
-  defdelegate list_diff_comments(scope, task), to: Actions.ListDiffComments
+  defdelegate list_diff_comments(scope, task, opts \\ []), to: Actions.ListDiffComments
   defdelegate delete_diff_comment(scope, comment), to: Actions.DeleteDiffComment
   defdelegate send_diff_comments(scope, run), to: Actions.SendDiffComments
   defdelegate set_diff_comment_resolved(scope, comment, resolved?), to: Actions.SetDiffCommentResolved
+  defdelegate create_screen_comment(scope, task, attrs), to: Actions.CreateScreenComment
+  defdelegate list_screen_comments(scope, task), to: Actions.ListScreenComments
+  defdelegate delete_screen_comment(scope, comment), to: Actions.DeleteScreenComment
+  defdelegate create_finding_comment(scope, task, attrs), to: Actions.CreateFindingComment
+  defdelegate list_finding_comments(scope, task), to: Actions.ListFindingComments
+  defdelegate delete_finding_comment(scope, comment), to: Actions.DeleteFindingComment
   defdelegate create_plan_comment(scope, run, attrs), to: Actions.CreatePlanComment
   defdelegate list_plan_comments(scope, task), to: Actions.ListPlanComments
   defdelegate delete_plan_comment(scope, comment), to: Actions.DeletePlanComment

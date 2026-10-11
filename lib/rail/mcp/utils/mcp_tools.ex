@@ -199,9 +199,9 @@ defmodule Rail.Mcp.Utils.McpTools do
     %{
       "name" => "save_screen",
       "description" =>
-        "Photograph one screen state the lead named and save it as that state's image for HEAD's commit, which " <>
-          "the human compares round by round. Take it of the state as the change leaves it, under the same `key` " <>
-          "every round. Refused while the worktree has uncommitted changes. Returns the path, which a finding " <>
+        "Photograph one screen state the lead named and save it as that state's image for HEAD's commit. It " <>
+          "replaces the state's earlier picture each round. Take it of the state as the change leaves it, under the " <>
+          "same `key` every round. Refused while the worktree has uncommitted changes. Returns the path, which a finding " <>
           "can cite as evidence.",
       "inputSchema" => %{
         "type" => "object",

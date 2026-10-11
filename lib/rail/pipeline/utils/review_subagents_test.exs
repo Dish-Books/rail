@@ -30,6 +30,7 @@ defmodule Rail.Pipeline.Utils.ReviewSubagentsTest do
     assert engineer =~ ~r/\AYou are the engineer agent.\n\n## Working inside Review/
     assert recorder =~ ~r/\AYou are the demo agent.\n\n## Working inside Review/
     assert explorer =~ "/tmp/rail/scratch/tsk_review_subagents"
+    assert explorer =~ "The picture replaces the last, so the human sees each state on the latest commit."
 
     # The engineer commits its fixes and brings the branch up to date; only Rail pushes.
     assert engineer =~ "Commit your fixes yourself"
