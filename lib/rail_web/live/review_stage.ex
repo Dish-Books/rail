@@ -469,7 +469,8 @@ defmodule RailWeb.Live.ReviewStage do
     }
 
     # The Fix findings went out with the Send, so they come back only if the round ends with them still outstanding.
-    fix = if phase in [:fixing, :ci], do: [], else: Enum.filter(findings, &Finding.outstanding?/1)
+    # A fix commit moves HEAD past the pass, and the gate then reads :round, so every working phase hides them.
+    fix = if gate.working, do: [], else: Enum.filter(findings, &Finding.outstanding?/1)
 
     # A task that has left Review, or was cleaned up at it, sends nothing from it.
     %{stage: stage, cleaned_up_at: cleaned_up_at} = socket.assigns.task

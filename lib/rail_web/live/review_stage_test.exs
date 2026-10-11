@@ -630,8 +630,15 @@ defmodule RailWeb.Live.ReviewStageTest do
       assert has_element?(view, "#review-send-tray-hint", "The Review lead is working. Send waits until it stops.")
     end
 
-    # A round that ends with the finding still not fixed puts it back in the tray.
+    # The engineer commits before the lead saves the finding fixed, so HEAD moves past the pass mid-round.
     stub(Pipeline, :get_ci_status, fn _run -> nil end)
+    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 1"])
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    refute has_element?(view, "#review-tray-finding-view-only-send")
+    assert has_element?(view, "#review-send-tray", "Nothing to send")
+
+    # A round that ends with the finding still not fixed puts it back in the tray.
     {:ok, _stopped} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished})
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
