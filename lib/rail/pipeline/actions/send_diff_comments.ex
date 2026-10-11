@@ -43,7 +43,7 @@ defmodule Rail.Pipeline.Actions.SendDiffComments do
         set: [status: :sent, updated_at: DateTime.utc_now()]
       )
 
-    comments = Enum.sort_by(comments, &{&1.path, DateTime.to_unix(&1.inserted_at, :microsecond), &1.id})
+    comments = DiffComment.calculate_order(comments)
 
     with [_first | _rest] <- comments,
          {:ok, _delivery, _run} = sent <- Pipeline.send_message(scope, run, format(comments)) do

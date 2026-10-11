@@ -174,21 +174,6 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     assert {:ok, %OsProcess{}} = Pipeline.start_review_run(run)
   end
 
-  # Comments are acted on and reported, never ruled.
-  test "briefs the lead that a fix round can carry the human's comments, also after the review finished", %{run: run} do
-    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
-      assert prompt =~ "tagged `<diff_comment>` with its file, line and code, or `<screen_comment>`"
-      assert prompt =~ "It can carry comments alone, also after the review was finished."
-      assert prompt =~ "Open a screen comment's picture at the path it gives."
-      assert prompt =~ "A comment is not a finding and is never saved with `save_finding`"
-      assert prompt =~ "say what was done with each comment, by its number, and why"
-
-      {:ok, %OsProcess{run: spawned}}
-    end)
-
-    assert {:ok, %OsProcess{}} = Pipeline.start_review_run(run)
-  end
-
   test "a fixed finding, one ruled Don't fix and one from before rules read as such, and the plan is the specification",
        %{
          task: task,

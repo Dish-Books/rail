@@ -58,9 +58,10 @@ defmodule RailWeb.Live.RunConversation do
     {:ok, assign_review_comments(socket)}
   end
 
-  # What Send sends of the findings and whether it can, which the Review stage works out and the page hands on.
+  # What Send sends of the findings and whether it can, which the Review stage works out and the page hands on. A
+  # refused Send's reason is stale once the gate is read again, which says what holds Send now.
   def update(%{review_tray: tray}, socket) do
-    socket = socket |> assign_defaults() |> assign(:review_tray, tray)
+    socket = socket |> assign_defaults() |> assign(:review_tray, tray) |> assign(:tray_error, nil)
     {:ok, socket}
   end
 

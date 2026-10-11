@@ -468,8 +468,12 @@ defmodule RailWeb.Live.ReviewStage do
       saved: passes != []
     }
 
-    # A task that has left Review sends nothing from it.
-    tray = if socket.assigns.task.stage == :review, do: %{fix: Enum.filter(findings, &Finding.outstanding?/1), gate: gate}
+    # The Fix findings went out with the Send, so they come back only if the round ends with them still outstanding.
+    fix = if phase in [:fixing, :ci], do: [], else: Enum.filter(findings, &Finding.outstanding?/1)
+
+    # A task that has left Review, or was cleaned up at it, sends nothing from it.
+    %{stage: stage, cleaned_up_at: cleaned_up_at} = socket.assigns.task
+    tray = if stage == :review and is_nil(cleaned_up_at), do: %{fix: fix, gate: gate}
     send(self(), {:review_tray, tray})
     socket
   end

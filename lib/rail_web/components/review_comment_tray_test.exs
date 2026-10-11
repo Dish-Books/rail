@@ -144,6 +144,42 @@ defmodule RailWeb.Components.ReviewCommentTrayTest do
     assert doc |> Floki.find("#review-send-tray-hint") |> Floki.text() =~ "CI failed on the fix commit"
   end
 
+  test "empty while the lead works it offers neither Send nor Finish review", %{gate: gate} do
+    doc =
+      (&ReviewCommentTray.review_comment_tray/1)
+      |> render_component(
+        fix: [],
+        finding_comments: [],
+        diff_comments: [],
+        screen_comments: [],
+        gate: %{gate | working: true},
+        target: nil
+      )
+      |> Floki.parse_fragment!()
+
+    assert doc |> Floki.find("#review-send-tray") |> Floki.text() =~ "Nothing to send"
+    assert [] = Floki.find(doc, "#finish-review, #send-review-tray")
+    assert doc |> Floki.find("#review-send-tray-hint") |> Floki.text() =~ "The Review lead is working."
+  end
+
+  # The longest hints and a refused Send's reasons run past the tray's width.
+  test "the hint wraps rather than cutting off", %{diff: diff, gate: gate} do
+    doc =
+      (&ReviewCommentTray.review_comment_tray/1)
+      |> render_component(
+        fix: [],
+        finding_comments: [],
+        diff_comments: diff,
+        screen_comments: [],
+        gate: %{gate | finished: true},
+        target: nil
+      )
+      |> Floki.parse_fragment!()
+
+    assert [_hint] = Floki.find(doc, "#review-send-tray-hint")
+    assert [] = Floki.find(doc, "#review-send-tray-hint .truncate")
+  end
+
   test "finding comments alone are the reader's comments, and the hint reads for comments", %{
     finding: finding,
     gate: gate

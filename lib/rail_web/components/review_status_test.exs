@@ -36,6 +36,20 @@ defmodule RailWeb.Components.ReviewStatusTest do
     assert [_done] = Floki.find(doc, "[data-qa=review_status_agent] .pi-check-circle")
   end
 
+  # A Send of comments alone, or a chat turn on a finished review, works with no finding ruled Fix.
+  test "a fix round with nothing ruled Fix says the lead works on what was sent, not that it fixes none" do
+    doc =
+      (&ReviewStatus.review_status/1)
+      |> render_component(phase: :fixing, round: 1, counts: %{@counts | fix: 0})
+      |> Floki.parse_fragment!()
+
+    assert "Review lead working on what was sent" =
+             doc |> Floki.find("[data-qa=review_status_headline]") |> Floki.text()
+
+    assert doc |> Floki.find("[data-qa=review_status_body]") |> Floki.text() =~
+             "Nothing is ruled Fix, so no finding is being fixed."
+  end
+
   test "CI with no commit to name says what it runs, and a finish with no pull request names none" do
     ci = render_component(&ReviewStatus.review_status/1, phase: :ci, round: 2, counts: @counts)
     finished = render_component(&ReviewStatus.review_status/1, phase: :finished, round: 2, counts: @counts)

@@ -400,6 +400,18 @@ defmodule RailWeb.Live.ReviewStageTest do
     refute has_element?(view, "[data-qa=finding_comment_add]")
   end
 
+  # The cleanup takes the passes with the scratch folder, and the task refuses comments.
+  test "a cleaned-up task at Review draws no tray", %{conn: conn, task: task, run: run} do
+    {:ok, _pass} = Pipeline.save_review(task)
+    File.rm_rf!(task.scratch_path)
+    {:ok, _cleaned} = Pipeline.update_task(task, %{cleaned_up_at: DateTime.utc_now()})
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{run.role_id}")
+
+    assert has_element?(view, "#review-stage")
+    refute has_element?(view, "#review-send-tray")
+  end
+
   test "a fix round's note says what it covered, left and tested, and Fixed in names the commit", %{
     conn: conn,
     task: task,
@@ -477,7 +489,7 @@ defmodule RailWeb.Live.ReviewStageTest do
     assert has_element?(view, "[data-qa=review_status_agent]", "QA explorer 1")
     assert has_element?(view, "[data-qa=review_status_agent]", "Checks 1 and 2")
     assert has_element?(view, "#review-item-findings [data-qa=review_item_running]")
-    assert has_element?(view, "#finish-review[disabled]")
+    refute has_element?(view, "#finish-review")
     assert has_element?(view, "#review-send-tray-hint", "The Review lead is working. Send waits until it stops.")
     assert has_element?(view, "#review-finding-footer", "1 so far · rule once round 1 finishes")
     refute has_element?(view, "#decide-fix-view-only-send")
@@ -517,7 +529,7 @@ defmodule RailWeb.Live.ReviewStageTest do
     assert has_element?(view, "#review-status[data-phase=ci]", "CI running on #{short} · Fix round 1")
     assert has_element?(view, "[data-qa=review_status_log]", "Running ExUnit")
     assert has_element?(view, "#review-item-findings[title='Findings: CI running on #{short}']")
-    assert has_element?(view, "#finish-review[disabled]")
+    refute has_element?(view, "#finish-review")
 
     {:ok, _failed} = ci |> OsProcess.changeset(%{status: :finished, exit_code: 1}) |> Repo.update()
     {:ok, _stopped} = Pipeline.update_run(run, %{status: :finished, ci_failure_streak: 3, error: "CI failed 3 times"})
@@ -605,7 +617,26 @@ defmodule RailWeb.Live.ReviewStageTest do
 
     assert has_element?(view, "#review-status[data-phase=fixing]", "Fix round 1 · Engineer fixing 1 finding")
     assert has_element?(view, "#review-finding-footer", "1 fixing")
-    assert has_element?(view, "#send-review-tray[disabled]", "Send 1")
+
+    # The Fix finding went out with the Send; the tray has nothing of it to send, and nothing to finish, mid-round.
+    for ci <- [nil, %{state: :running, os_process: %OsProcess{head_sha: nil}, failures: 0, tail: []}] do
+      stub(Pipeline, :get_ci_status, fn _run -> ci end)
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      refute has_element?(view, "#review-tray-finding-view-only-send")
+      assert has_element?(view, "#review-send-tray", "Nothing to send")
+      refute has_element?(view, "#send-review-tray")
+      refute has_element?(view, "#finish-review")
+      assert has_element?(view, "#review-send-tray-hint", "The Review lead is working. Send waits until it stops.")
+    end
+
+    # A round that ends with the finding still not fixed puts it back in the tray.
+    stub(Pipeline, :get_ci_status, fn _run -> nil end)
+    {:ok, _stopped} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished})
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    assert has_element?(view, "#review-tray-finding-view-only-send")
+    assert has_element?(view, "#send-review-tray:not([disabled])", "Send 1")
   end
 
   test "the next round's status names the commit it re-reviews", %{conn: conn, task: task, run: run} do

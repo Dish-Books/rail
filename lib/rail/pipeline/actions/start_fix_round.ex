@@ -116,7 +116,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
     # The order the tray numbers them in.
     %{
       finding: finding |> Repo.preload(:finding) |> FindingComment.calculate_order(),
-      diff: Enum.sort_by(diff, &{&1.path, DateTime.to_unix(&1.inserted_at, :microsecond), &1.id}),
+      diff: DiffComment.calculate_order(diff),
       screen: Enum.sort_by(screen, &{DateTime.to_unix(&1.inserted_at, :microsecond), &1.id})
     }
   end
@@ -142,19 +142,24 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
     note = note(sent, round, Pipeline.list_screens(run.task), run.task.scratch_path)
     {:ok, role} = Roles.get_role(id: run.role_id)
 
-    case reopen(run, note) do
-      {1, [reopened]} ->
-        send_back(run.task, :review_lead, note)
-
-        case Pipeline.start_review_run(%{reopened | task: run.task, role: role}) do
-          {:ok, os_process} -> sent(run.task, sent, os_process.run)
-          {:error, {:spawn_failed, _reason, %Run{} = failed}} -> spawn_failed(run.task, sent, failed)
-          {:error, :dispatch_disabled} -> unstarted(reopened, run, sent, :dispatch_disabled)
-        end
-
+    with {1, [reopened]} <- reopen(run, note),
+         send_back(run.task, :review_lead, note),
+         {:ok, os_process} <- Pipeline.start_review_run(%{reopened | task: run.task, role: role}) do
+      # Learned only once the note is delivered, since a ruling can still change before the next Send.
+      {overrides, corrections} = Enum.split_with(sent.fix, &is_binary(&1.suppressed_by_id))
+      {:ok, _flagged} = Learnings.record_overrides(run.task, overrides)
+      {:ok, _learned} = Learnings.record_corrections(run.task, corrections ++ sent.finding ++ sent.diff ++ sent.screen)
+      sent(run.task, sent, os_process.run)
+    else
       {0, []} ->
         unsend(sent)
         {:error, :stage_running}
+
+      {:error, {:spawn_failed, _reason, %Run{} = failed}} ->
+        spawn_failed(run.task, sent, failed)
+
+      {:error, :dispatch_disabled} ->
+        unstarted(run, sent, :dispatch_disabled)
     end
   end
 
@@ -173,12 +178,8 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
     )
   end
 
-  defp sent(%Task{} = task, %{fix: fix, finding: finding, diff: diff, screen: screen}, %Run{} = run) do
-    {overrides, corrections} = Enum.split_with(fix, &is_binary(&1.suppressed_by_id))
-    {:ok, _flagged} = Learnings.record_overrides(task, overrides)
-    {:ok, _learned} = Learnings.record_corrections(task, corrections ++ finding ++ diff ++ screen)
-
-    broadcast_authors(task, finding)
+  defp sent(%Task{} = task, %{finding: finding, diff: diff, screen: screen}, %Run{} = run) do
+    for user_id <- finding |> Enum.map(& &1.user_id) |> Enum.uniq(), do: broadcast_finding_comments(task.id, user_id)
     if diff != [], do: broadcast_diff_comments(task.id, :everyone)
     for user_id <- screen |> Enum.map(& &1.user_id) |> Enum.uniq(), do: broadcast_screen_comments(task.id, user_id)
     broadcast_pipeline_changed(task)
@@ -186,19 +187,19 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
     {:ok, run}
   end
 
-  # Nothing delivers the note a failed start leaves, so its finding comments go back unlearned. The start already
-  # settled the run.
+  # Nothing delivers the note a failed start leaves, so nothing of it is learned and its comments go back unsent.
+  # The start already settled the run.
   defp spawn_failed(%Task{} = task, sent, %Run{} = failed) do
-    unsend(%{sent | diff: [], screen: []})
-    broadcast_authors(task, sent.finding)
-    sent(task, %{sent | finding: []}, failed)
+    unsend(sent)
+    sent(task, sent, failed)
   end
 
   # Marked running before the spawn so a second click is refused; it goes back to how it read before, and the
   # comments to unsent, when nothing spawned.
-  defp unstarted(%Run{} = reopened, %Run{} = before, sent, reason) do
+  defp unstarted(%Run{} = before, sent, reason) do
     {:ok, _settled} =
-      reopened
+      Run
+      |> Repo.get!(before.id)
       |> Run.changeset(%{
         status: :finished,
         stage_outcome: before.stage_outcome,
@@ -209,10 +210,6 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
 
     unsend(sent)
     {:error, reason}
-  end
-
-  defp broadcast_authors(%Task{id: task_id}, finding) do
-    for user_id <- finding |> Enum.map(& &1.user_id) |> Enum.uniq(), do: broadcast_finding_comments(task_id, user_id)
   end
 
   defp unsend(%{finding: finding, diff: diff, screen: screen}) do

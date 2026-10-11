@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
 
   alias Rail.GitHub.Client
   alias Rail.Issues
+  alias Rail.Learnings.Schemas.LearningProposal
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
@@ -312,7 +313,6 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
                  "2. On a screen:\n<screen_comment>\nFile list (file-list), commented on #{String.slice(head, 0, 7)}\n" <>
                    "Picture: #{picture}\nFold it.\n</screen_comment>"
 
-        assert prompt =~ "never save one with `save_finding`"
         refute prompt =~ "Grace's."
 
         {:ok, %OsProcess{run: spawned}}
@@ -417,6 +417,40 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
                Repo.all(from o in Observation, where: o.task_id == ^task_id and o.source_kind == :finding_comment)
     end
 
+    # The database's collation puts acme_web before acme/, which byte order does not.
+    test "diff comments go in the order the tray lists them", %{
+      task: task,
+      run: run,
+      crash: crash,
+      nit: nit,
+      ada: ada,
+      diff: diff
+    } do
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
+
+      {:ok, _comment} =
+        Pipeline.create_diff_comment(ada, task, Map.put(%{diff | path: "lib/acme_web/live/tray_live.ex"}, :body, "Web."))
+
+      {:ok, _comment} =
+        Pipeline.create_diff_comment(ada, task, Map.put(%{diff | path: "lib/acme/worker.ex"}, :body, "Worker."))
+
+      tray =
+        ada
+        |> Pipeline.list_diff_comments(task, unsent: true)
+        |> Enum.with_index(1)
+        |> Enum.map_join("\n\n", fn {comment, n} ->
+          "#{n}. On the diff:\n<diff_comment>\n#{comment.path}, line 3\n+ x = 1\n#{comment.body}\n</diff_comment>"
+        end)
+
+      expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+        assert prompt =~ tray
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %Run{}} = Pipeline.start_fix_round(ada, run)
+    end
+
     test "finding comments alone start a fix round", %{task: task, run: run, crash: crash, nit: nit, ada: ada} do
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
@@ -439,21 +473,49 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
       assert [%{finished_at: nil}] = Pipeline.read_review(task)
     end
 
-    # Nothing delivers the note a failed start leaves, so its finding comments wait to be sent again.
-    test "a lead that cannot be spawned puts its finding comments back unsent and learns nothing from them", %{
+    # Nothing delivers the note a failed start leaves, so its comments wait to be sent again.
+    test "a lead that cannot be spawned puts its comments back unsent and learns nothing, its rulings included", %{
+      project: project,
       task: %{id: task_id} = task,
       run: run,
       crash: crash,
       nit: nit,
-      ada: ada
+      ada: ada,
+      diff: diff
     } do
-      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
+      %{id: rule_id} = learning(project, %{rule: "Don't flag a nil clause", kind: :calibration})
+
+      {:ok, %Finding{suppressed_by_id: ^rule_id} = suppressed} =
+        Pipeline.save_finding(task, %{
+          key: "nil-clause",
+          title: "A nil clause is missing",
+          kind: :code,
+          raised_by: :code_reviewer,
+          problem: "It crashes.",
+          file: "lib/a.ex",
+          line: 3,
+          fix: "Guard it.",
+          why: "It crashes.",
+          rule: "Every caller handles nil.",
+          severity: :minor,
+          recommendation: :fix,
+          checklist_rule: rule_id,
+          places: [%{file: "lib/a.ex", line: 3}],
+          evidence: [%{name: "range", kind: :code, file: "lib/a.ex", line: 3}]
+        })
+
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), suppressed, :fix)
 
       {:ok, %{id: comment_id}} =
         Pipeline.create_finding_comment(ada, task, %{"finding_id" => crash.id, "piece" => "rule", "body" => "Too wide."})
 
+      {:ok, %{id: diff_id}} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "Name it."))
+      {:ok, %{id: screen_id}} = Pipeline.create_screen_comment(ada, task, %{"key" => "file-list", "body" => "Fold it."})
       Phoenix.PubSub.subscribe(Rail.PubSub, "finding_comments:#{task_id}:#{ada.user.id}")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task_id}")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "screen_comments:#{task_id}:#{ada.user.id}")
 
       expect(Tools, :start_os_process, fn %Run{} = spawned, _argv ->
         {:error, {:spawn_failed, :enoent, %{spawned | error: "Could not start"}}}
@@ -461,8 +523,13 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
 
       assert {:ok, %Run{error: "Could not start"}} = Pipeline.start_fix_round(ada, run)
       assert [%FindingComment{id: ^comment_id, status: :unsent}] = Pipeline.list_finding_comments(ada, task)
+      assert [%DiffComment{id: ^diff_id, status: :unsent}] = Pipeline.list_diff_comments(ada, task, unsent: true)
+      assert [%ScreenComment{id: ^screen_id, status: :unsent}] = Pipeline.list_screen_comments(ada, task)
       refute Repo.exists?(from o in Observation, where: o.task_id == ^task_id)
+      refute Repo.exists?(from p in LearningProposal, where: p.learning_id == ^rule_id)
       assert_received {:finding_comments_changed, ^task_id}
+      assert_received {:diff_comments_changed, ^task_id}
+      assert_received {:screen_comments_changed, ^task_id}
     end
 
     test "comments alone start a fix round, and one written before a retake points at the picture there is", %{

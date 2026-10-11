@@ -22,21 +22,14 @@ defmodule Rail.Pipeline.Actions.ListDiffComments do
         do: dynamic([comment], comment.status == :unsent and comment.user_id == ^user_id),
         else: dynamic([comment], comment.status != :unsent or comment.user_id == ^user_id)
 
-    Repo.all(
-      from comment in DiffComment,
-        where: comment.task_id == ^task_id,
-        where: ^seen,
-        order_by: [asc: comment.path, asc: comment.inserted_at, asc: comment.id],
-        preload: [:user]
-    )
+    from(comment in DiffComment, where: comment.task_id == ^task_id, where: ^seen, preload: [:user])
+    |> Repo.all()
+    |> DiffComment.calculate_order()
   end
 
   def list_diff_comments(_no_user, %Task{id: task_id}, _opts) do
-    Repo.all(
-      from comment in DiffComment,
-        where: comment.task_id == ^task_id and comment.status != :unsent,
-        order_by: [asc: comment.path, asc: comment.inserted_at, asc: comment.id],
-        preload: [:user]
-    )
+    from(comment in DiffComment, where: comment.task_id == ^task_id and comment.status != :unsent, preload: [:user])
+    |> Repo.all()
+    |> DiffComment.calculate_order()
   end
 end

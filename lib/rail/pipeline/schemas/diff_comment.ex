@@ -85,6 +85,13 @@ defmodule Rail.Pipeline.Schemas.DiffComment do
   end
 
   @doc """
+  `comments` in the order they are listed and sent: by file in byte order, as the diff lists its files, then as
+  written, the id breaking a tie. The database's collation would sort the files differently.
+  """
+  def calculate_order(comments) when is_list(comments),
+    do: Enum.sort_by(comments, &{&1.path, DateTime.to_unix(&1.inserted_at, :microsecond), &1.id})
+
+  @doc """
   Writes `comment` as the block the engineer or the Review lead is sent: its file and line, the commit when it was
   written in one, the code it quotes and its text.
   """

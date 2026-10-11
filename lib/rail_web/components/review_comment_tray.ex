@@ -2,7 +2,8 @@ defmodule RailWeb.Components.ReviewCommentTray do
   @moduledoc """
   What the Review tray's Send will send, above the Review lead's composer in send order: the findings ruled Fix,
   which every reader sees, then the reader's own unsent finding, diff and screen comments, numbered, with the gate's
-  reason under them. Empty while the review is open it offers Finish review; empty once finished it draws nothing.
+  reason under them. Empty while the review is open and idle it offers Finish review; empty once finished it draws
+  nothing.
   """
   use RailWeb, :html
 
@@ -33,6 +34,7 @@ defmodule RailWeb.Components.ReviewCommentTray do
       |> assign(:count, count)
       |> assign(:show_tray, count > 0 or not gate.finished)
       |> assign(:empty, count == 0)
+      |> assign(:show_finish, count == 0 and not gate.working)
       |> assign(:mine, comments != [])
       |> assign(:show_rows, assigns.open and count > 0)
       |> assign(:can_send, not gate.working and gate.saved and gate.undecided == 0 and (count > 0 or not gate.ci_failed))
@@ -90,7 +92,7 @@ defmodule RailWeb.Components.ReviewCommentTray do
           <.icon name="pi-paper-plane-tilt" class="size-4" />Send {@count}
         </button>
         <button
-          :if={@empty}
+          :if={@show_finish}
           type="button"
           id="finish-review"
           data-qa="finish_review"
@@ -232,13 +234,13 @@ defmodule RailWeb.Components.ReviewCommentTray do
       </div>
 
       <div id="review-send-tray-hint" class={["px-4 pb-2.5", not @show_rows && "pt-1"]}>
-        <span class="inline-flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 min-w-0 max-w-full">
+        <span class="flex items-start gap-1.5 text-[11px] leading-4 text-slate-500 dark:text-slate-400 min-w-0">
           <span class={[
-            "size-1.5 shrink-0 rounded-full",
+            "mt-[5px] size-1.5 shrink-0 rounded-full",
             @working && "bg-green-500 motion-safe:animate-pulse",
             not @working && "bg-slate-400"
           ]} />
-          <span class="truncate">{@hint}</span>
+          <span class="min-w-0 break-words">{@hint}</span>
         </span>
       </div>
     </div>

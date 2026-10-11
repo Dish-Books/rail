@@ -87,6 +87,10 @@ defmodule RailWeb.Components.ReviewStatus do
      "Against the #{plural(assigns.counts.fix + assigns.counts.fixed, "finding")} ruled Fix and their rules."}
   end
 
+  # A Send of comments alone, or a chat turn on a finished review, has the lead at work with nothing ruled Fix.
+  defp said(%{phase: :fixing, counts: %{fix: 0}}),
+    do: {"Review lead working on what was sent", "Nothing is ruled Fix, so no finding is being fixed."}
+
   defp said(%{phase: :fixing} = assigns) do
     {"Fix round #{assigns.round} · Engineer fixing #{plural(assigns.counts.fix, "finding")}",
      "The code reviewer reads the fix diff before it is committed."}

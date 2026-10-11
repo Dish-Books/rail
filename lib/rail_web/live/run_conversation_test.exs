@@ -1592,8 +1592,12 @@ defmodule RailWeb.Live.RunConversationTest do
       ada_view |> element("#send-review-tray", "Send 2") |> render_click()
       _settled = render(ada_view)
 
+      # The tray empties: the Fix finding and the comments went out, and nothing waits to be sent mid-round.
       refute has_element?(ada_view, "#review-send-tray [data-qa=review_tray_comment]")
-      assert has_element?(ada_view, "#send-review-tray[disabled]")
+      refute has_element?(ada_view, "#review-tray-finding-nil-crash")
+      assert has_element?(ada_view, "#review-send-tray", "Nothing to send")
+      refute has_element?(ada_view, "#send-review-tray")
+      refute has_element?(ada_view, "#finish-review")
       assert has_element?(ada_view, "#review-send-tray-hint", "The Review lead is working. Send waits until it stops.")
       assert [%{status: :unsent}] = Pipeline.list_screen_comments(grace, task)
     end
@@ -1711,6 +1715,36 @@ defmodule RailWeb.Live.RunConversationTest do
       view |> element("#send-review-tray") |> render_click()
 
       assert has_element?(view, "#review-send-tray-hint", "Dispatch is off, so the Review lead was not resumed.")
+    end
+
+    # A tab that lost a Send to another one was told the lead works, and still says so after the lead stopped.
+    test "a refused Send's reason goes once the stage hands on a new gate", %{
+      task: task,
+      run: run,
+      ada_conn: ada_conn
+    } do
+      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
+      expect(Pipeline, :start_fix_round, fn _scope, _run -> {:error, :stage_running} end)
+      view |> element("#send-review-tray") |> render_click()
+      assert has_element?(view, "#review-send-tray-hint", "The Review lead is working. Send waits until it stops.")
+
+      # The stage hands the page its gate in a message of its own, which queues behind the first render.
+      for status <- [:running, :finished] do
+        {:ok, _run} = run |> Repo.reload!() |> Pipeline.update_run(%{status: status})
+        send(view.pid, {:pipeline_changed, task.id})
+        _reloaded = render(view)
+        _settled = render(view)
+      end
+
+      refute has_element?(view, "#review-send-tray-hint", "The Review lead is working.")
+
+      assert has_element?(
+               view,
+               "#review-send-tray-hint",
+               "The Review lead is idle and starts a fix round on these at once."
+             )
+
+      assert has_element?(view, "#send-review-tray:not([disabled])")
     end
 
     test "after Finish review the conversation stays open, and a comment's Send resumes the lead", %{
