@@ -27,6 +27,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate diff_row(assigns), to: Components.DiffRow
   defdelegate diff_stat(assigns), to: Components.DiffStat
   defdelegate demo_player(assigns), to: Components.DemoPlayer
+  defdelegate design_option(assigns), to: Components.DesignOption
   defdelegate dispatch_banner(assigns), to: Components.DispatchBanner
   defdelegate document_comment(assigns), to: Components.DocumentComment
   defdelegate element_preview(assigns), to: Components.ElementPreview
@@ -73,6 +74,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate task_layout(assigns), to: Components.TaskLayout
   defdelegate task_tabs(assigns), to: Components.TaskTabs
   defdelegate throughput_chart(assigns), to: Components.ThroughputChart
+  defdelegate ticket_sheet(assigns), to: Components.TicketSheet
   defdelegate top_app_bar(assigns), to: Components.Nav
   defdelegate triage_image(assigns), to: Components.TriageImage
   defdelegate triage_image_view(assigns), to: Components.TriageImageView

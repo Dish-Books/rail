@@ -6,9 +6,13 @@ defmodule RailWeb.Live.ReviewStage do
   can is handed to the page for the conversation's tray. Diff is the branch, or one commit of it, which a
   finding's commits open. Screens is each screen state's one shot, opened over the page to step through and
   comment on, Demo plays the latest recording with its walkthrough and says when the branch has moved past
-  it, and Browser watches any tab the explorers and the demo recorder have open.
+  it, and Browser watches any tab the explorers and the demo recorder have open. After a divider, Ticket, Design and
+  Plan show what Plan saved and approved, read-only.
   """
   use RailWeb, :live_component
+
+  import RailWeb.Utils.BuildTicketLines
+  import RailWeb.Utils.CalculateCriteria
 
   alias Rail.Git
   alias Rail.Learnings
@@ -17,6 +21,7 @@ defmodule RailWeb.Live.ReviewStage do
   alias Rail.Pipeline.Schemas.FindingComment
   alias Rail.Pipeline.Schemas.FindingEvidence
   alias Rail.Pipeline.Schemas.FindingPlace
+  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
@@ -56,6 +61,8 @@ defmodule RailWeb.Live.ReviewStage do
       |> assign_new(:screen_draft, fn -> nil end)
       |> assign_new(:finding_draft, fn -> nil end)
       |> assign_new(:code_cache, fn -> %{fingerprint: :unread, by_key: %{}} end)
+      |> assign_new(:child_of, fn -> nil end)
+      |> assign_new(:diagram_views, fn -> %{change: :diagram, call_flow: :diagram} end)
       |> load()
 
     {:ok, socket}
@@ -85,7 +92,7 @@ defmodule RailWeb.Live.ReviewStage do
 
         <div class="@container h-full">
           <div class="h-full flex flex-col @xl:flex-row min-h-0">
-            <.review_items items={@items} picked={@item} target={@myself} />
+            <.review_items items={@items} documents={@documents} picked={@item} target={@myself} />
 
             <div id="review-pane" data-item={@item} class="flex-1 min-w-0 min-h-0 flex flex-col">
               <.review_status
@@ -189,6 +196,72 @@ defmodule RailWeb.Live.ReviewStage do
                 beats={length(@beats)}
                 target={@myself}
               />
+
+              <div
+                :if={@item in [:ticket, :design, :plan]}
+                id="review-document"
+                class="flex-1 min-h-0 overflow-y-auto px-6 py-5 @5xl:px-8 @5xl:py-6"
+              >
+                <.ticket_sheet
+                  :if={@item == :ticket and @ticket != nil}
+                  id="review-ticket"
+                  ticket={@ticket}
+                  lines={@ticket_lines}
+                />
+                <p
+                  :if={@item == :ticket and @ticket == nil}
+                  id="review-ticket-none"
+                  class="text-sm text-slate-500 dark:text-slate-400"
+                >
+                  No ticket saved.
+                </p>
+
+                <div :if={@item == :design} id="review-design" class="max-w-[1100px]">
+                  <.design_option
+                    id="review-design-none"
+                    task={@task}
+                    option={@picked_option}
+                    picked
+                  />
+                </div>
+
+                <div :if={@item == :plan and @plan != nil} id="review-plan" class="select-text">
+                  <p
+                    id="review-plan-approved"
+                    class="mb-4 inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400"
+                  >
+                    <.icon name="pi-check-circle" class="size-4" />
+                    <span :if={@child_of}>
+                      Approved in {@child_of.parent.issue.identifier} · part {@child_of.position} of {@child_of.total}
+                    </span>
+                    <span :if={!@child_of}>
+                      Approved
+                      <.local_time id="review-plan-approved-at" at={@plan.inserted_at} /><span :if={
+                        revised?(@plan)
+                      }> · revised <.local_time id="review-plan-revised-at" at={@plan.updated_at} /></span>
+                    </span>
+                  </p>
+                  <.plan_sheet
+                    :if={@sheet}
+                    sheet={@sheet}
+                    diagram_views={@diagram_views}
+                    event="diagram_view"
+                    target={@myself}
+                  />
+                  <.markdown
+                    :if={@sheet == nil}
+                    content={@plan.content}
+                    class="max-w-3xl text-[15px] leading-relaxed"
+                  />
+                </div>
+                <p
+                  :if={@item == :plan and @plan == nil}
+                  id="review-plan-none"
+                  class="text-sm text-slate-500 dark:text-slate-400"
+                >
+                  No approved plan.
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -215,6 +288,14 @@ defmodule RailWeb.Live.ReviewStage do
   def handle_event("pick_item", %{"item" => item}, socket) do
     socket = socket |> pick(item(item)) |> load()
     {:noreply, socket}
+  end
+
+  def handle_event("diagram_view", %{"view" => view}, socket) do
+    [diagram, shown] = String.split(view, ":")
+    diagram = if diagram == "call_flow", do: :call_flow, else: :change
+    shown = if shown == "source", do: :source, else: :diagram
+
+    {:noreply, update(socket, :diagram_views, &Map.put(&1, diagram, shown))}
   end
 
   # A finding's commit opens in the Diff item at the finding's file; none is the whole branch.
@@ -466,6 +547,7 @@ defmodule RailWeb.Live.ReviewStage do
     |> assign(:browser, browser)
     |> assign(:url, browser && socket.assigns.item == :browser && Tools.get_browser_url(task, browser))
     |> assign_items()
+    |> assign_documents()
     |> assign_selected(selected, findings)
     |> assign(:commentable, task.stage in [:review, :finalize, :merged] and is_nil(task.cleaned_up_at))
     |> assign_finding_comments()
@@ -672,6 +754,62 @@ defmodule RailWeb.Live.ReviewStage do
 
     assign(socket, :items, [findings, diff, screens, demo, browser])
   end
+
+  # The rail's states read only the ticket, the design's manifest and the plan's row; the whole document is read
+  # only while its item is open.
+  defp assign_documents(%{assigns: %{task: task, item: item}} = socket) do
+    ticket = Pipeline.read_ticket(task)
+    design = Pipeline.read_design(task, pages: item == :design)
+    picked = design && Enum.find(design.options, &(&1.key == design.picked))
+
+    plan =
+      case Pipeline.get_implementation_plan(task) do
+        {:ok, %ImplementationPlan{} = plan} -> plan
+        {:error, :not_found} -> nil
+      end
+
+    documents = [
+      document(:ticket, "Ticket", "pi-file-text", ticket_state(ticket)),
+      document(:design, "Design", "pi-palette", design_state(picked)),
+      document(:plan, "Plan", "pi-compass-tool", plan_state(plan))
+    ]
+
+    socket
+    |> assign(:documents, documents)
+    |> assign(:ticket, ticket)
+    |> assign(:ticket_lines, ticket && item == :ticket && build_ticket_lines(ticket))
+    |> assign(:picked_option, picked)
+    |> assign(:plan, plan)
+    |> assign(:sheet, plan && item == :plan && build_plan_sheet(plan.content))
+  end
+
+  defp ticket_state(nil), do: "No ticket saved"
+
+  defp ticket_state(ticket) do
+    case calculate_criteria(ticket.description) do
+      0 -> "Saved"
+      1 -> "1 criterion"
+      count -> "#{count} criteria"
+    end
+  end
+
+  # Approval refuses options with no pick, so one is no screen too.
+  defp design_state(nil), do: "No screen in this change"
+  defp design_state(picked), do: "Picked: #{picked.title}"
+
+  defp plan_state(nil), do: "No approved plan"
+
+  defp plan_state(plan) do
+    if revised?(plan), do: "Revised after approval", else: "Approved"
+  end
+
+  defp document(key, label, icon, state) do
+    %{key: key, label: label, icon: icon, picked_icon: "#{icon}-fill", state: state, badge: nil, dot: nil, mark: nil}
+  end
+
+  # One row per task, which a revision replaces, so a row written again since it was made is a revised plan.
+  defp revised?(%ImplementationPlan{inserted_at: inserted_at, updated_at: updated_at}),
+    do: DateTime.after?(updated_at, inserted_at)
 
   # What the run is doing, read off the run, its CI and the passes it saved. A run working on the commit the
   # last pass read is fixing, since a Send of comments alone is a fix round too; any other working run is a round.
@@ -946,6 +1084,9 @@ defmodule RailWeb.Live.ReviewStage do
   defp item("screens"), do: :screens
   defp item("demo"), do: :demo
   defp item("browser"), do: :browser
+  defp item("ticket"), do: :ticket
+  defp item("design"), do: :design
+  defp item("plan"), do: :plan
   defp item(_findings), do: :findings
 
   defp decision("fix"), do: :fix

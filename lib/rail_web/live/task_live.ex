@@ -261,6 +261,7 @@ defmodule RailWeb.TaskLive do
           approvable={@approvable}
           current_scope={@current_scope}
           url_item={@review_item}
+          child_of={@child_of}
         >
           <:breadcrumb :if={@show_switcher}>
             <.child_switcher

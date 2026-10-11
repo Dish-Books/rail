@@ -13,9 +13,10 @@ defmodule RailWeb.Live.PlanStage do
   use RailWeb, :live_component
 
   import RailWeb.Utils.BuildDocumentBlocks
+  import RailWeb.Utils.BuildTicketLines
+  import RailWeb.Utils.CalculateCriteria
   import RailWeb.Utils.CalculateDocumentComments
 
-  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.PlanComment
@@ -442,57 +443,17 @@ defmodule RailWeb.Live.PlanStage do
       }
     />
 
-    <div :if={@ticket != nil} id="plan-ticket" data-qa="plan_ticket" class="max-w-3xl select-text">
-      <.changed_comments id="ticket-changed-comments" comments={@changed} target={@target} />
-
-      <.commentable_line
-        line={@lines.title}
-        doc={:ticket}
-        placed={@placed}
-        draft={@draft}
-        offered={@offered}
-        target={@target}
-      >
-        <h2
-          id="plan-ticket-title"
-          class="text-xl font-bold text-slate-900 dark:text-slate-100 wrap-break-word"
-        >
-          {@ticket.title}
-        </h2>
-      </.commentable_line>
-
-      <.commentable_line
-        layout={:values}
-        doc={:ticket}
-        placed={@placed}
-        draft={@draft}
-        offered={@offered}
-        target={@target}
-        class="mt-1 mb-3"
-      >
-        <:value line={@lines.priority}>
-          <.priority_icon :if={@ticket.priority} priority={@ticket.priority} />
-          <span id="plan-ticket-priority">{@lines.priority.text}</span>
-        </:value>
-        <:value line={@lines.estimate}>
-          <.icon name="pi-triangle" class="size-3.5 text-slate-500 dark:text-slate-400" />
-          <span id="plan-ticket-estimate">{@lines.estimate.text}</span>
-        </:value>
-      </.commentable_line>
-
-      <div id="plan-ticket-description">
-        <.commentable_line
-          :for={line <- @lines.description}
-          line={line}
-          layout={layout(line)}
-          doc={:ticket}
-          placed={@placed}
-          draft={@draft}
-          offered={@offered}
-          target={@target}
-        />
-      </div>
-    </div>
+    <.ticket_sheet
+      :if={@ticket != nil}
+      id="plan-ticket"
+      ticket={@ticket}
+      lines={@lines}
+      placed={@placed}
+      changed={@changed}
+      draft={@draft}
+      offered={@offered}
+      target={@target}
+    />
     """
   end
 
@@ -518,22 +479,13 @@ defmodule RailWeb.Live.PlanStage do
       |> assign(:full, match?(%{options: [_one, _two, _three]}, assigns.design))
 
     ~H"""
-    <div
+    <.design_option
       :if={@option == nil and @plan != nil and not @running}
       id="plan-design-none"
-      data-qa="plan_design_none"
-      class="flex flex-col items-center text-center max-w-md mx-auto py-14"
+      task={@task}
     >
-      <div class="flex items-center justify-center size-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 ring-1 ring-slate-200 dark:ring-slate-700">
-        <.icon name="pi-minus-circle" class="size-7" />
-      </div>
-      <h2 class="mt-5 text-base font-semibold text-slate-900 dark:text-slate-100">
-        No screen in this change
-      </h2>
-      <p class="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-        Nothing anyone sees changes, so there are no design options. Approve needs only the ticket and the plan.
-      </p>
-    </div>
+      <:note>Approve needs only the ticket and the plan.</:note>
+    </.design_option>
 
     <.pending
       :if={@option == nil and (@plan == nil or @running)}
@@ -642,96 +594,51 @@ defmodule RailWeb.Live.PlanStage do
         </div>
       </div>
 
-      <div id={"design-option-#{@option.key}"} data-qa="design_option" class="flex flex-col gap-6">
-        <div class="flex flex-col gap-2.5">
+      <.design_option
+        id="plan-design-none"
+        task={@task}
+        option={@option}
+        picked={@picked != nil}
+        comments={
+          @picked &&
+            %{commenting: @commenting, draft: @draft, markers: @markers, user_id: @user_id}
+        }
+      >
+        <:control>
           <.design_comment_control
             commenting={@commenting}
             disabled_reason={@comment_reason}
             target={@target}
           />
+        </:control>
 
-          <div
-            id={"design-frame-#{@option.key}"}
-            phx-hook="DesignFrame"
-            data-comments={to_string(@picked != nil)}
-            data-commenting={to_string(@commenting)}
-            data-selected={@draft && @draft.selector}
-            data-draft={@draft && Jason.encode!(Map.delete(@draft, :body))}
-            data-draft-body={@draft && @draft.body}
-            data-markers={Jason.encode!(@markers)}
-            data-version={@option.html_version}
-            data-task-id={@task.id}
-            data-user-id={@user_id}
-            data-conversation="#conversation-tab-root"
-            class={[
-              "relative w-full aspect-video overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white",
-              @commenting &&
-                "ring-2 ring-blue-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-900 cursor-crosshair"
-            ]}
+        <:box>
+          <.comment_box
+            :if={@draft}
+            id={"plan-comment-form-#{draft_key(@draft)}"}
+            body_id={"plan-comment-body-#{draft_key(@draft)}"}
+            qa="plan_comment"
+            label={@draft.tag}
+            body={@draft.body}
+            submit="save_plan_comment"
+            change="change_plan_comment"
+            cancel="cancel_plan_comment"
+            target={@target}
+            class="absolute z-10 shadow-2xl"
+            style={box_style(@draft)}
           >
-            <iframe
-              :if={@option.html != nil}
-              id={"design-page-#{@option.key}-#{@option.html_version}"}
-              title={@option.title}
-              sandbox="allow-scripts"
-              src={frame_src(@task, @option, @picked)}
-              class="absolute top-0 left-0 w-full h-full border-0"
-            />
-            <p
-              :if={@option.html == nil}
-              class="absolute inset-0 flex items-center justify-center text-xs text-slate-400"
-            >
-              This option has no page yet.
-            </p>
+            <:heading>
+              <div class="flex items-center gap-1.5 px-1 pb-1.5 min-w-0 text-[11px] text-slate-500 dark:text-slate-400">
+                <span class="shrink-0 font-semibold text-slate-700 dark:text-slate-200">
+                  {@draft.tag}
+                </span>
+                <span :if={@draft.text != ""} class="truncate">"{@draft.text}"</span>
+              </div>
+            </:heading>
+          </.comment_box>
+        </:box>
 
-            <.comment_box
-              :if={@draft}
-              id={"plan-comment-form-#{draft_key(@draft)}"}
-              body_id={"plan-comment-body-#{draft_key(@draft)}"}
-              qa="plan_comment"
-              label={@draft.tag}
-              body={@draft.body}
-              submit="save_plan_comment"
-              change="change_plan_comment"
-              cancel="cancel_plan_comment"
-              target={@target}
-              class="absolute z-10 shadow-2xl"
-              style={box_style(@draft)}
-            >
-              <:heading>
-                <div class="flex items-center gap-1.5 px-1 pb-1.5 min-w-0 text-[11px] text-slate-500 dark:text-slate-400">
-                  <span class="shrink-0 font-semibold text-slate-700 dark:text-slate-200">
-                    {@draft.tag}
-                  </span>
-                  <span :if={@draft.text != ""} class="truncate">"{@draft.text}"</span>
-                </div>
-              </:heading>
-            </.comment_box>
-          </div>
-        </div>
-
-        <div>
-          <p
-            :if={@picked != nil}
-            class="mb-2 inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400"
-          >
-            <.icon name="pi-check-circle" class="size-4" /> Picked
-          </p>
-          <h2
-            id="design-option-title"
-            class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 wrap-break-word"
-          >
-            {@option.title}
-          </h2>
-          <p
-            :if={@option.summary != ""}
-            class="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300 select-text"
-          >
-            {@option.summary}
-          </p>
-        </div>
-
-        <div class="flex items-center gap-3">
+        <:pick>
           <button
             :if={@picked == nil and @can_pick and (@full or @running)}
             type="button"
@@ -747,52 +654,15 @@ defmodule RailWeb.Live.PlanStage do
             Use this design
           </button>
 
-          <a
-            :if={@option.html != nil}
-            id={"open-design-#{@option.key}"}
-            href={~p"/tasks/#{@task.id}/design/#{@option.key}?v=#{@option.html_version}"}
-            target="_blank"
-            rel="noopener"
-            class="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-semibold border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800"
-          >
-            Open <.icon name="pi-arrow-up-right" class="size-4" />
-          </a>
-
           <span
             :if={@picked == nil and @can_pick and not @full and not @running}
             id="pick-in-conversation"
-            class="text-[13px] text-slate-500 dark:text-slate-400"
+            class="order-last text-[13px] text-slate-500 dark:text-slate-400"
           >
             Pick in the conversation.
           </span>
-        </div>
-
-        <.tradeoffs
-          :if={@option.good_at != []}
-          id="design-good-at"
-          label="Good at"
-          items={@option.good_at}
-          sign="+"
-          sign_class="text-emerald-600 dark:text-emerald-400"
-        />
-
-        <.tradeoffs
-          :if={@option.costs != []}
-          id="design-costs"
-          label="Costs"
-          items={@option.costs}
-          sign="−"
-          sign_class="text-rose-600 dark:text-rose-400"
-        />
-
-        <p
-          :if={@option.assumptions != ""}
-          id="design-assumptions"
-          class="rounded-lg border border-slate-200 dark:border-slate-700 border-l-2 border-l-amber-400 dark:border-l-amber-400 bg-slate-50 dark:bg-slate-800/40 px-4 py-3 text-sm leading-relaxed text-slate-600 dark:text-slate-300 select-text wrap-break-word"
-        >
-          {@option.assumptions}
-        </p>
-      </div>
+        </:pick>
+      </.design_option>
     </div>
     """
   end
@@ -959,7 +829,7 @@ defmodule RailWeb.Live.PlanStage do
               {first_paragraph(child.ticket)}
             </p>
             <p class="text-[11.5px] text-slate-500 dark:text-slate-400">
-              {count_label(criteria(child.ticket), "criterion", "criteria")}
+              {count_label(calculate_criteria(child.ticket), "criterion", "criteria")}
             </p>
             <div class="pt-2 border-t border-slate-200 dark:border-slate-800">
               <p class="font-mono text-[11.5px] text-slate-700 dark:text-slate-300 truncate">
@@ -1112,31 +982,6 @@ defmodule RailWeb.Live.PlanStage do
     """
   end
 
-  attr :id, :string, required: true
-  attr :label, :string, required: true
-  attr :items, :list, required: true
-  attr :sign, :string, required: true
-  attr :sign_class, :string, required: true
-
-  defp tradeoffs(assigns) do
-    ~H"""
-    <div id={@id}>
-      <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-        {@label}
-      </h3>
-      <ul class="mt-2 space-y-2">
-        <li
-          :for={item <- @items}
-          class="flex gap-3 text-sm leading-relaxed text-slate-700 dark:text-slate-200 select-text wrap-break-word"
-        >
-          <span class={["shrink-0 font-semibold", @sign_class]} aria-hidden="true">{@sign}</span>
-          <span class="min-w-0">{item}</span>
-        </li>
-      </ul>
-    </div>
-    """
-  end
-
   # --- What the page reads ---
 
   defp load(socket) do
@@ -1229,33 +1074,11 @@ defmodule RailWeb.Live.PlanStage do
   defp assign_ticket_lines(socket, nil), do: socket |> assign(:ticket_lines, nil) |> assign(:ticket_line_list, [])
 
   defp assign_ticket_lines(socket, ticket) do
-    lines = ticket_lines(ticket)
+    lines = build_ticket_lines(ticket)
 
     socket
     |> assign(:ticket_lines, lines)
     |> assign(:ticket_line_list, [lines.title, lines.priority, lines.estimate | lines.description])
-  end
-
-  defp ticket_lines(ticket) do
-    priority = (ticket.priority && Issue.priority_label(ticket.priority)) || "No priority"
-
-    estimate =
-      case ticket.estimate do
-        1 -> "1 Point"
-        points when is_integer(points) -> "#{points} Points"
-        nil -> "No estimate"
-      end
-
-    %{
-      title: ticket_line(:title, ticket.title, "Title"),
-      priority: ticket_line(:priority, priority, "Priority"),
-      estimate: ticket_line(:estimate, estimate, "Estimate"),
-      description: build_document_blocks(ticket.description || "")
-    }
-  end
-
-  defp ticket_line(kind, text, label) do
-    %{key: "#{kind}-#{:erlang.phash2({text, 1})}", kind: kind, text: text, occurrence: 1, label: label, depth: 0}
   end
 
   defp plan_lines(nil, _sheet), do: []
@@ -1278,11 +1101,6 @@ defmodule RailWeb.Live.PlanStage do
 
   defp stop_commenting_unless_allowed(%{assigns: %{comment_reason: nil}} = socket), do: socket
   defp stop_commenting_unless_allowed(socket), do: socket |> assign(:commenting, false) |> assign(:draft, nil)
-
-  defp frame_src(task, option, nil), do: ~p"/tasks/#{task.id}/design/#{option.key}?v=#{option.html_version}"
-
-  defp frame_src(task, option, _picked),
-    do: ~p"/tasks/#{task.id}/design/#{option.key}?v=#{option.html_version}&comments=1"
 
   defp draft(
          %{
@@ -1385,7 +1203,7 @@ defmodule RailWeb.Live.PlanStage do
   end
 
   defp ticket_item(ticket, _running) do
-    count = criteria(ticket.description)
+    count = calculate_criteria(ticket.description)
     line = if count > 0, do: "#{count} #{if count == 1, do: "criterion", else: "criteria"}"
 
     %{id: "ticket", label: "Ticket", icon: "pi-file-text", line: line, saved_at: ticket.saved_at, tone: :done}
@@ -1470,16 +1288,6 @@ defmodule RailWeb.Live.PlanStage do
 
   defp files(%{files: files}), do: "#{length(files)} #{if length(files) == 1, do: "file", else: "files"}"
   defp files(nil), do: nil
-
-  # The acceptance criteria are the list under the heading that names them.
-  defp criteria(description) do
-    description
-    |> String.split("\n")
-    |> Enum.drop_while(&(not Regex.match?(~r/^#+\s+acceptance criteria/i, &1)))
-    |> Enum.drop(1)
-    |> Enum.take_while(&(not String.starts_with?(&1, "#")))
-    |> Enum.count(&Regex.match?(~r/^\s?([-*+]|\d+\.)\s+\S/, &1))
-  end
 
   # What waits on the human opens first: a pick, then whatever Plan is working on or stopped short of.
   defp default_item(items, ticket, plan, split) do

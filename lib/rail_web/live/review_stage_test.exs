@@ -3,12 +3,16 @@ defmodule RailWeb.Live.ReviewStageTest do
 
   import Phoenix.LiveViewTest
 
+  alias Rail.Git
+  alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DemoBeat
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
+  alias Rail.Scope
   alias Rail.Tools
   alias Rail.Tools.Schemas.BrowserSession
   alias Rail.Tools.Schemas.OsProcess
@@ -92,12 +96,13 @@ defmodule RailWeb.Live.ReviewStageTest do
     %{conn: log_in_user(conn, user), user: user, task: task, run: run, head: head, code: code, screen: screen}
   end
 
-  test "the rail shows Findings, Diff, Screens, Demo and Browser, each with its state as its title", %{
-    conn: conn,
-    task: task,
-    code: code,
-    screen: screen
-  } do
+  test "the rail shows Findings, Diff, Screens, Demo and Browser, a divider, then Ticket, Design and Plan, each with its state as its title",
+       %{
+         conn: conn,
+         task: task,
+         code: code,
+         screen: screen
+       } do
     {:ok, _code} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
     {:ok, _screen} = Pipeline.save_finding(task, Map.put(screen, :key, "send-twice"))
     {:ok, _pass} = Pipeline.save_review(task)
@@ -111,12 +116,16 @@ defmodule RailWeb.Live.ReviewStageTest do
     assert has_element?(view, "#review-item-demo[title='Demo: None recorded']")
     assert has_element?(view, "#review-item-browser[title='Browser: No browsers open']")
 
-    assert ["findings", "diff", "screens", "demo", "browser"] =
+    assert ["findings", "diff", "screens", "demo", "browser", "separator", "ticket", "design", "plan"] =
              view
              |> render()
              |> Floki.parse_document!()
-             |> Floki.find("#review-items button")
-             |> Enum.flat_map(&Floki.attribute(&1, "phx-value-item"))
+             |> Floki.find("#review-items > *")
+             |> Enum.map(&hd(Floki.attribute(&1, "phx-value-item") ++ Floki.attribute(&1, "role")))
+
+    assert has_element?(view, "#review-item-ticket[title='Ticket: No ticket saved'] .pi-file-text")
+    assert has_element?(view, "#review-item-design[title='Design: No screen in this change'] .pi-palette")
+    assert has_element?(view, "#review-item-plan[title='Plan: No approved plan'] .pi-compass-tool")
 
     assert has_element?(view, "#review-item-findings .sr-only", "2 to rule")
     assert has_element?(view, "#task-tabs [aria-selected=true]", "2")
@@ -963,8 +972,8 @@ defmodule RailWeb.Live.ReviewStageTest do
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
     # The page opened on one of the two, so only the other is read.
-    expect(Rail.Git, :load_diff_hunks, fn scope, task, ranges ->
-      call_original(Rail.Git, :load_diff_hunks, [scope, task, ranges])
+    expect(Git, :load_diff_hunks, fn scope, task, ranges ->
+      call_original(Git, :load_diff_hunks, [scope, task, ranges])
     end)
 
     view |> element("#finding-second") |> render_click()
@@ -974,8 +983,8 @@ defmodule RailWeb.Live.ReviewStageTest do
 
     git!(worktree, ["commit", "--allow-empty", "-m", "moved on"])
 
-    expect(Rail.Git, :load_diff_hunks, fn scope, task, ranges ->
-      call_original(Rail.Git, :load_diff_hunks, [scope, task, ranges])
+    expect(Git, :load_diff_hunks, fn scope, task, ranges ->
+      call_original(Git, :load_diff_hunks, [scope, task, ranges])
     end)
 
     view |> element("#finding-first") |> render_click()
@@ -1563,5 +1572,293 @@ defmodule RailWeb.Live.ReviewStageTest do
 
       assert has_element?(view, "#demo-rerecord[disabled]")
     end
+  end
+
+  describe "the ticket, design and plan" do
+    setup %{project: project, task: task, user: user} do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :plan})
+      {:ok, plan_role} = Roles.get_role(project_id: project.id, stage: :plan)
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+
+      {:ok, plan_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: plan_role.id,
+          status: :finished,
+          stage_outcome: :done,
+          conversation_id: "sess_rst_plan",
+          started_at: DateTime.utc_now()
+        })
+
+      description = "Slow.\n\n## Acceptance criteria\n\n- One\n- Two\n"
+      {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Sandboxes show usage", description: description})
+      dir = Path.join(task.scratch_path, "design")
+      File.mkdir_p!(dir)
+
+      for key <- ["cards", "table", "timeline"] do
+        File.write!(Path.join(dir, "#{key}.html"), "<h1>#{key}</h1>")
+        File.write!(Path.join(dir, "#{key}.png"), "png bytes")
+
+        {:ok, _option} =
+          Pipeline.save_design_option(task, %{
+            key: key,
+            title: String.capitalize(key),
+            summary: "#{key} summary.",
+            good_at: ["Fast"],
+            costs: ["Busy at 1280px"],
+            assumptions: "Ten per page."
+          })
+      end
+
+      # Written as the pick writes it: picking through Plan resumes its run on a task of its own, which approval races.
+      File.write!(Path.join(dir, "picked"), "table")
+      {:ok, _plan} = Pipeline.save_plan(task, %{plan: sheet_plan(), design: "table"})
+
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "fileUpload" => %{
+              "success" => true,
+              "uploadFile" => %{
+                "uploadUrl" => "https://uploads.linear.app/put/rst-1",
+                "assetUrl" => "https://uploads.linear.app/assets/rst-1-table.png",
+                "headers" => []
+              }
+            }
+          }
+        })
+      end)
+
+      Req.Test.expect(Rail.Linear, fn conn -> Plug.Conn.send_resp(conn, 200, "") end)
+
+      {:ok, _approved} = Pipeline.approve_plan(Scope.for_user(user), plan_run)
+      {:ok, task} = Pipeline.update_task(Repo.reload!(task), %{stage: :review})
+
+      %{task: task}
+    end
+
+    test "each opens in place of Findings and shows what Plan saved, with nothing to comment with", %{
+      conn: conn,
+      task: task
+    } do
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#review-item-findings[aria-current=true]")
+      assert has_element?(view, "#review-item-ticket[title='Ticket: 2 criteria']")
+      assert has_element?(view, "#review-item-design[title='Design: Picked: Table']")
+      assert has_element?(view, "#review-item-plan[title='Plan: Approved']")
+
+      view |> element("#review-item-ticket") |> render_click()
+      assert has_element?(view, "#review-item-ticket[aria-current=true] .pi-file-text-fill")
+      assert has_element?(view, "#review-ticket-title", "Sandboxes show usage")
+      assert has_element?(view, "#review-ticket-description", "Two")
+      refute has_element?(view, "#review-finding-list")
+      refute has_element?(view, "#review-document [data-qa=line_comment_add]")
+
+      view |> element("#review-item-design") |> render_click()
+      assert has_element?(view, "#review-design #design-option-table", "Picked")
+      assert has_element?(view, "#design-option-title", "Table")
+      assert has_element?(view, "#open-design-table")
+      assert has_element?(view, "#design-good-at", "Fast")
+      assert has_element?(view, "#design-costs", "Busy at 1280px")
+      assert has_element?(view, "#design-frame-table[data-comments=false]")
+      refute has_element?(view, "#design-comment-control")
+      refute has_element?(view, "[data-qa=pick_design]")
+
+      assert [src] =
+               view |> render() |> Floki.parse_document!() |> Floki.attribute("#design-frame-table iframe", "src")
+
+      refute src =~ "comments=1"
+
+      view |> element("#review-item-plan") |> render_click()
+      assert has_element?(view, "#review-plan-approved", "Approved")
+      refute has_element?(view, "#review-plan-revised-at")
+      assert has_element?(view, "#review-plan #plan-sheet", "EnterStage")
+      refute has_element?(view, "#review-document [data-qa=line_comment_add]")
+
+      view |> element("button[phx-value-view='change:source']") |> render_click()
+      assert has_element?(view, "figure[id^='plan-diagram-change-'] [data-qa='plan_diagram_source']:not(.hidden)")
+      view |> element("button[phx-value-view='call_flow:source']") |> render_click()
+      assert has_element?(view, "figure[id^='plan-diagram-call_flow-'] [data-qa='plan_diagram_source']:not(.hidden)")
+      view |> element("button[phx-value-view='change:diagram']") |> render_click()
+      refute has_element?(view, "figure[id^='plan-diagram-change-'] [data-qa='plan_diagram_source']:not(.hidden)")
+    end
+
+    test "a plan saved again after approval replaces the first in the open Plan item, which reads revised", %{
+      conn: conn,
+      task: task
+    } do
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+      assert has_element?(view, "#review-plan", "EnterStage")
+
+      revised = String.replace(sheet_plan(), "the only thing that writes", "the one place that writes")
+      {:ok, _plan} = Pipeline.save_plan(task, %{plan: revised, design: "table"})
+      _settled = render(view)
+
+      assert has_element?(view, "#review-plan", "the one place that writes")
+      refute has_element?(view, "#review-plan", "the only thing that writes")
+      assert has_element?(view, "#review-plan-approved #review-plan-revised-at")
+      assert has_element?(view, "#review-plan-approved", "revised")
+      assert has_element?(view, "#review-item-plan[title='Plan: Revised after approval']")
+    end
+
+    test "a ticket saved while its item is open shows without a reload", %{conn: conn, task: task} do
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=ticket")
+      assert has_element?(view, "#review-ticket-title", "Sandboxes show usage")
+
+      {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Sandboxes show memory", description: "Slow."})
+      _settled = render(view)
+
+      assert has_element?(view, "#review-ticket-title", "Sandboxes show memory")
+      assert has_element?(view, "#review-item-ticket[title='Ticket: Saved']")
+    end
+  end
+
+  test "with nothing Plan saved, each document says so", %{conn: conn, task: task} do
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    view |> element("#review-item-ticket") |> render_click()
+    assert has_element?(view, "#review-ticket-none", "No ticket saved.")
+
+    view |> element("#review-item-design") |> render_click()
+    assert has_element?(view, "#review-design-none", "No screen in this change")
+    assert has_element?(view, "#review-design-none", "Nothing anyone sees changes, so there are no design options.")
+    refute has_element?(view, "#review-design-none", "Approve")
+
+    view |> element("#review-item-plan") |> render_click()
+    assert has_element?(view, "#review-plan-none", "No approved plan.")
+  end
+
+  test "a plan that does not lay out as a sheet reads as markdown under its approval", %{conn: conn, task: task} do
+    Repo.insert!(%ImplementationPlan{
+      task_id: task.id,
+      content: "## Implementation plan\n\nAll of it.",
+      captured_at: DateTime.utc_now()
+    })
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+    assert has_element?(view, "#review-plan-approved", "Approved")
+    assert has_element?(view, "#review-plan", "All of it.")
+    refute has_element?(view, "#review-plan #plan-sheet")
+  end
+
+  test "opening Plan while a round runs, then Findings, finds the round still running and the same finding open", %{
+    conn: conn,
+    task: task,
+    run: run,
+    code: code,
+    screen: screen
+  } do
+    {:ok, _code} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
+    {:ok, _screen} = Pipeline.save_finding(task, Map.put(screen, :key, "send-twice"))
+    {:ok, _working} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    view |> element("#finding-send-twice") |> render_click()
+    assert has_element?(view, "#review-finding-detail", "Send stays enabled while a round is on its way")
+
+    view |> element("#review-item-plan") |> render_click()
+    refute has_element?(view, "#review-finding-detail")
+
+    view |> element("#review-item-findings") |> render_click()
+    assert has_element?(view, "#review-item-findings[title='Findings: Round 1 running']")
+    assert has_element?(view, "#review-finding-detail", "Send stays enabled while a round is on its way")
+  end
+
+  test "the tray opening a finding while Plan is open opens Findings on it", %{
+    conn: conn,
+    task: task,
+    code: code,
+    screen: screen
+  } do
+    {:ok, _code} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
+    {:ok, _screen} = Pipeline.save_finding(task, Map.put(screen, :key, "send-twice"))
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+    assert has_element?(view, "#review-item-plan[aria-current=true]")
+
+    send(view.pid, {:open_review_finding, "send-twice"})
+    _settled = render(view)
+
+    assert has_element?(view, "#review-item-findings[aria-current=true]")
+    assert has_element?(view, "#review-finding-detail", "Send stays enabled while a round is on its way")
+    refute has_element?(view, "#review-document")
+  end
+
+  test "a child of a split reads its own ticket, its part of the plan, and its parent's design only when it builds the screen",
+       %{conn: conn, project: project} do
+    for {identifier, title} <- [{"RST-10", "Work on RST-10"}, {"RST-11", "Child RST-11"}, {"RST-12", "Child RST-12"}] do
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{
+                "id" => "lin_#{identifier}",
+                "identifier" => identifier,
+                "title" => title,
+                "description" => "#{identifier} alone.\n\n## Acceptance criteria\n\n- One"
+              }
+            }
+          }
+        })
+      end)
+    end
+
+    {:ok, parent_issue} = Issues.create_issue(system_scope(), project, %{title: "Work on RST-10"})
+    {:ok, parent} = Pipeline.create_task(parent_issue, :split)
+    parent = Repo.preload(parent, [:issue, :project])
+    on_exit(fn -> File.rm_rf(parent.scratch_path) end)
+    dir = Path.join(parent.scratch_path, "design")
+    File.mkdir_p!(dir)
+    File.write!(Path.join(dir, "table.html"), "<h1>table</h1>")
+    File.write!(Path.join(dir, "table.png"), "png bytes")
+    {:ok, _option} = Pipeline.save_design_option(parent, %{key: "table", title: "Table", summary: "Dense."})
+    File.write!(Path.join(dir, "picked"), "table")
+    {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
+
+    for {identifier, number, builds_screen} <- [{"RST-11", 1, true}, {"RST-12", 2, false}] do
+      attrs = %{title: "Child #{identifier}", description: "#{identifier} alone.", estimate: 2, parent: parent_issue}
+      {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
+
+      part = %{
+        number: number,
+        builds_on: [],
+        builds_screen: builds_screen,
+        plan: "## Implementation plan\n\nPart #{number}."
+      }
+
+      {:ok, child} = Pipeline.create_child_task(parent, issue, part)
+      {:ok, _child} = Pipeline.update_task(child, %{stage: :review})
+
+      {:ok, _run} =
+        Pipeline.create_run(%{
+          task_id: child.id,
+          role_id: lead.id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.utc_now()
+        })
+    end
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=RST-12&item=ticket")
+    assert has_element?(view, "#review-ticket-title", "Child RST-12")
+    assert has_element?(view, "#review-ticket-description", "RST-12 alone.")
+    assert has_element?(view, "#review-ticket-estimate", "2 Points")
+
+    view |> element("#review-item-plan") |> render_click()
+    assert has_element?(view, "#review-plan-approved", "Approved in RST-10 · part 2 of 2")
+    assert has_element?(view, "#review-plan", "Part 2.")
+    refute has_element?(view, "#review-plan", "Part 1.")
+
+    view |> element("#review-item-design") |> render_click()
+    assert has_element?(view, "#review-design-none", "No screen in this change")
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=RST-11&item=design")
+    assert has_element?(view, "#review-item-ticket[title='Ticket: 1 criterion']")
+    assert has_element?(view, "#review-item-design[title='Design: Picked: Table']")
+    assert has_element?(view, "#review-design #design-option-table", "Picked")
   end
 end

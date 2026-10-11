@@ -35,4 +35,23 @@ defmodule Rail.Pipeline.Actions.ReadTicketTest do
   test "no file yet is no ticket", %{task: task} do
     assert Pipeline.read_ticket(task) == nil
   end
+
+  test "a child of a split reads its own issue, though it has no scratch ticket", %{scratch: scratch} do
+    issue = %Issue{identifier: "RDT-2", title: "Part two", description: "The part.", priority: :high, estimate: 2}
+    task = %Task{scratch_path: scratch, parent_task_id: "tsk_parent", inserted_at: ~U[2026-10-11 09:00:00Z], issue: issue}
+
+    assert %{
+             title: "Part two",
+             description: "The part.",
+             priority: :high,
+             estimate: 2,
+             saved_at: ~U[2026-10-11 09:00:00Z]
+           } = Pipeline.read_ticket(task)
+  end
+
+  test "a task with no parent reads only its scratch ticket, not its issue", %{task: task} do
+    task = %{task | issue: %Issue{identifier: "RDT-1", title: "The issue", description: "Issue body."}}
+
+    assert Pipeline.read_ticket(task) == nil
+  end
 end
