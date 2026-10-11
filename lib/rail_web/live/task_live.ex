@@ -409,8 +409,9 @@ defmodule RailWeb.TaskLive do
   end
 
   def handle_info({:run_events, run_id, events}, socket) do
-    if MapSet.member?(socket.assigns.subscribed_run_ids, run_id) do
-      send_update(RunConversation, id: "run-conversation", run_id: run_id, appended_events: events)
+    for {run_id, batches} <- Enum.group_by(queued_run_events([{run_id, events}]), &elem(&1, 0), &elem(&1, 1)),
+        MapSet.member?(socket.assigns.subscribed_run_ids, run_id) do
+      send_update(RunConversation, id: "run-conversation", run_id: run_id, appended_events: Enum.concat(batches))
     end
 
     socket = refresh_diff(socket)
@@ -683,6 +684,16 @@ defmodule RailWeb.TaskLive do
   end
 
   defp refresh_diff(socket), do: socket
+
+  # A run writing faster than the page reads has batches waiting behind this one.
+  # They are read with it, so a click is never queued behind a redraw per batch.
+  defp queued_run_events(batches) do
+    receive do
+      {:run_events, run_id, events} -> queued_run_events([{run_id, events} | batches])
+    after
+      0 -> Enum.reverse(batches)
+    end
+  end
 
   defp due?(nil, _now), do: true
   defp due?(last, now), do: now - last >= @diff_refresh_ms
