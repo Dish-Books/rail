@@ -3,8 +3,7 @@ defmodule RailWeb.Components.BrowserPicker do
   Review's Browser item: a header row with how many browsers there are and whether any is driving or
   recording, the choice of QA explorer N or Demo recorder with the account each is signed in as, and the
   picked one's tab, its address and size, and a line saying it is idle or how many beats the recording
-  has said. The frames are pushed to the image by the page, never drawn through a render. Once no run on
-  the task is in flight the picked tab takes clicks, keys and scrolls; until then it is watch only.
+  has said. The frames are pushed to the image by the page, never drawn through a render.
   """
   use RailWeb, :html
 
@@ -12,7 +11,6 @@ defmodule RailWeb.Components.BrowserPicker do
   attr :picked, :string, default: nil
   attr :url, :string, default: nil
   attr :beats, :integer, default: 0, doc: "how many captions the recording has said"
-  attr :interactive, :boolean, default: false, doc: "whether the picked tab takes the viewer's input"
   attr :target, :any, required: true
 
   def browser_picker(assigns) do
@@ -110,21 +108,7 @@ defmodule RailWeb.Components.BrowserPicker do
             </span>
             <span class="font-mono text-[11px] text-slate-400 dark:text-slate-500">1920 × 1080</span>
           </div>
-          <%!-- The hook reads the mode off this, since LiveView never patches the image inside it. --%>
-          <div
-            id="review-browser-frame"
-            data-interactive={to_string(@interactive)}
-            tabindex={@interactive && "0"}
-            aria-label={
-              @interactive && "#{browser_label(@current.name)}'s browser: click and type to use it"
-            }
-            class={[
-              "relative w-full aspect-video bg-slate-900",
-              @interactive &&
-                "cursor-default focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 focus:outline-2 focus:-outline-offset-2 focus:outline-blue-500",
-              not @interactive && "cursor-not-allowed"
-            ]}
-          >
+          <div class="relative w-full aspect-video bg-slate-900">
             <img
               id={"review-screencast-#{@current.name}"}
               data-qa="review_screencast"
@@ -146,9 +130,7 @@ defmodule RailWeb.Components.BrowserPicker do
             class="flex gap-2 px-3 py-2 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 font-mono text-[11.5px]"
           >
             <span class={["shrink-0", state_class(@current.state)]}>{@current.state}</span>
-            <span id="review-browser-mode" class="min-w-0 truncate text-slate-600 dark:text-slate-300">
-              {line(@current, @beats, @interactive)}
-            </span>
+            <span class="min-w-0 truncate text-slate-600 dark:text-slate-300">{line(@current, @beats)}</span>
           </p>
         </div>
       </div>
@@ -164,11 +146,10 @@ defmodule RailWeb.Components.BrowserPicker do
     |> Enum.map_join(", ", fn {state, word} -> "#{counts[state]} #{word}" end)
   end
 
-  defp line(%{state: :recording} = session, beats, _interactive),
-    do: "Recording · #{beats(beats)} said so far#{signed_in(session)}"
+  defp line(%{state: :recording} = session, beats), do: "Recording · #{beats(beats)} said so far#{signed_in(session)}"
 
-  defp line(session, _beats, true), do: "Click and type to use it#{signed_in(session)}"
-  defp line(session, _beats, false), do: "Watch only while Review drives it#{signed_in(session)}"
+  defp line(%{state: :driving} = session, _beats), do: "Driving#{signed_in(session)}"
+  defp line(session, _beats), do: "Idle#{signed_in(session)}"
 
   defp beats(1), do: "1 beat"
   defp beats(count), do: "#{count} beats"

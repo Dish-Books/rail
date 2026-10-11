@@ -5677,7 +5677,7 @@ defmodule RailWeb.TaskLiveTest do
       refute_push_event(view, "browser:frame", %{data: "item closed"}, 100)
     end
 
-    # A teammate's click lands in the shared tab, so every page watching that browser sees what it changed.
+    # Every page watching a browser gets its frames, not only the first one opened on it.
     test "a frame from the picked browser reaches two pages open on the task", %{conn: conn, task: task} do
       Repo.insert!(%BrowserSession{
         task_id: task.id,
@@ -5688,7 +5688,6 @@ defmodule RailWeb.TaskLiveTest do
         started_at: DateTime.utc_now()
       })
 
-      stub(Tools, :start_browser_session, fn _task, "explorer-1", [existing: true] -> {:error, :no_browser} end)
       assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -5717,7 +5716,6 @@ defmodule RailWeb.TaskLiveTest do
         started_at: DateTime.utc_now()
       })
 
-      stub(Tools, :start_browser_session, fn _task, "explorer-1", [existing: true] -> {:error, :no_browser} end)
       stub(Tools, :get_browser_frame, fn %Task{}, "explorer-1" -> "held" end)
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -5725,49 +5723,6 @@ defmodule RailWeb.TaskLiveTest do
       _settled = render(view)
 
       assert_push_event(view, "browser:frame", %{data: "held"})
-    end
-
-    # A session a restart took is attached again, and has nothing to show until it is.
-    test "a browser attached again after a restart shows the frame it holds once attached", %{
-      conn: conn,
-      task: task
-    } do
-      Repo.insert!(%BrowserSession{
-        task_id: task.id,
-        name: "explorer-1",
-        status: :running,
-        browser_context_id: "ctx",
-        target_id: "tgt",
-        started_at: DateTime.utc_now()
-      })
-
-      {:ok, attached} = Agent.start_link(fn -> false end)
-      test_pid = self()
-
-      # Held until the page has asked once, so the frame can only come from asking again once attached.
-      stub(Tools, :start_browser_session, fn _task, "explorer-1", [existing: true] ->
-        send(test_pid, {:attaching, self()})
-
-        receive do
-          :attach -> :ok = Agent.update(attached, fn _before -> true end)
-        end
-
-        {:ok, test_pid}
-      end)
-
-      stub(Tools, :get_browser_frame, fn %Task{}, "explorer-1" ->
-        send(test_pid, :frame_asked)
-        if Agent.get(attached, & &1), do: "reattached"
-      end)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#review-item-browser") |> render_click()
-
-      assert_receive :frame_asked, 1_000
-      assert_receive {:attaching, attach}, 1_000
-      send(attach, :attach)
-
-      assert_push_event(view, "browser:frame", %{data: "reattached"}, 1_000)
     end
 
     # A frame the old browser sent before the switch must not stand in for the new one's.
@@ -5786,7 +5741,6 @@ defmodule RailWeb.TaskLiveTest do
       })
 
       test_pid = self()
-      stub(Tools, :start_browser_session, fn _task, _name, [existing: true] -> {:error, :no_browser} end)
 
       # The demo's frame is answered only once the old browser's late frame has reached the page.
       stub(Tools, :get_browser_frame, fn
@@ -5823,8 +5777,8 @@ defmodule RailWeb.TaskLiveTest do
       refute_push_event(view, "browser:frame", %{data: "explorer's late"}, 400)
     end
 
-    # The shared Chrome keeps a tab only while a run uses it, so one can close under a page offering it to click.
-    test "a browser closed while the page shows it leaves the picker, with no Click and type over a dead tab", %{
+    # The shared Chrome keeps a tab only while a run uses it, so one can close under a page showing it.
+    test "a browser closed while the page shows it leaves the picker without a reload", %{
       conn: conn,
       task: task
     } do
@@ -5835,16 +5789,15 @@ defmodule RailWeb.TaskLiveTest do
         started_at: DateTime.utc_now()
       })
 
-      stub(Tools, :start_browser_session, fn _task, "explorer-1", [existing: true] -> {:error, :no_browser} end)
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       view |> element("#review-item-browser") |> render_click()
-      assert has_element?(view, "#review-browser-mode", "Click and type")
+      assert has_element?(view, "#review-browser-explorer-1[aria-pressed=true]")
 
       :ok = Tools.stop_browser_session(task, "explorer-1")
       _settled = render(view)
 
-      refute has_element?(view, "#review-browser-mode")
       refute has_element?(view, "#review-browser-explorer-1")
+      refute has_element?(view, "[data-qa=review_screencast]")
     end
 
     # A frame for a task nobody is reading is nothing to send anywhere.

@@ -547,15 +547,6 @@ defmodule RailWeb.TaskLive do
     {:noreply, socket}
   end
 
-  # A session a restart took held no frame when the item opened, so it is asked again once attached.
-  def handle_info({:browser_attached, name}, socket) do
-    %{task: task, watched_browser: watched, awaited_frame: awaited} = socket.assigns
-
-    if watched == "browser:#{task.id}:#{name}" and awaited == watched,
-      do: {:noreply, show_held_frame(socket, task, name)},
-      else: {:noreply, socket}
-  end
-
   # A queued message went out, or came back, on its own time.
   def handle_info({:run_changed, _run_id}, socket) do
     {:noreply, refresh_task(socket)}
