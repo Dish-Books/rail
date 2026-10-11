@@ -6393,6 +6393,143 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "#finalize-marked")
     end
 
+    test "an approval that lands after the lead switched children shows on its own child, not the one on screen",
+         %{conn: conn, scope: scope, project: project, parent: parent, first: first, second: second} do
+      {:ok, lead_user} = Users.update_user(system_scope(), scope.user, %{tech_lead: true, github_token: "gho_lead"})
+      {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
+      test_pid = self()
+
+      for {child, pr_number} <- [{first, 31}, {second, 32}] do
+        {:ok, _review} =
+          Pipeline.create_run(%{
+            task_id: child.id,
+            role_id: lead.id,
+            status: :finished,
+            stage_outcome: :done,
+            started_at: DateTime.utc_now()
+          })
+
+        {:ok, _ready} =
+          Pipeline.update_task(child, %{stage: :finalize, pr_number: pr_number, marked_ready_at: DateTime.utc_now()})
+      end
+
+      {:ok, reviews} = Agent.start_link(fn -> [] end)
+
+      Req.Test.stub(Client, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"POST", "/app/installations/" <> _id} ->
+            Req.Test.json(conn, %{"token" => "ghs_app"})
+
+          {"GET", "/repos/example/test-seed/pulls/31/reviews"} ->
+            Req.Test.json(conn, Agent.get(reviews, & &1))
+
+          {"GET", "/repos/example/test-seed/pulls/32/reviews"} ->
+            Req.Test.json(conn, [])
+
+          # GitHub holds TLV-11's approval until the lead is looking at TLV-12.
+          {"POST", "/repos/example/test-seed/pulls/31/reviews"} ->
+            send(test_pid, {:approving, self()})
+            receive do: (:answer -> :ok)
+            review = %{"user" => %{"login" => lead_user.login}, "state" => "APPROVED"}
+            Agent.update(reviews, &[Map.put(review, "submitted_at", "2026-10-11T14:40:00Z") | &1])
+            Req.Test.json(conn, Map.put(review, "id", 80))
+        end
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-11&tab=finalize")
+      render_async(view)
+      view |> element("#finalize-approve") |> render_click()
+      assert_receive {:approving, approval}, 2_000
+
+      view |> element("#child-switcher-TLV-12") |> render_click()
+      assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-12")
+      assert has_element?(view, "#child-switcher-button", "2 of 3")
+      assert has_element?(view, "#finalize-approve:not([disabled])", "Approve")
+
+      Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{first.id}")
+      send(approval, :answer)
+      assert_receive {:approvals_changed, _first_id}, 2_000
+      render_async(view)
+
+      assert has_element?(view, "#finalize-approve:not([disabled])", "Approve")
+      refute has_element?(view, "#finalize-approved")
+      refute has_element?(view, "#finalize-approvals")
+
+      view |> element("#child-switcher-TLV-11") |> render_click()
+
+      eventually(fn ->
+        assert has_element?(view, "#finalize-approved", "Approved by")
+        assert has_element?(view, "#finalize-approval-#{lead_user.login}")
+      end)
+    end
+
+    test "an approval that lands while a sibling not yet marked ready is shown is read again on switching back",
+         %{conn: conn, scope: scope, project: project, parent: parent, first: first, second: second} do
+      {:ok, lead_user} = Users.update_user(system_scope(), scope.user, %{tech_lead: true, github_token: "gho_lead"})
+      {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
+      test_pid = self()
+
+      for {child, attrs} <- [
+            {first, %{stage: :finalize, pr_number: 31, marked_ready_at: DateTime.utc_now()}},
+            {second, %{stage: :finalize, pr_number: 32}}
+          ] do
+        {:ok, _review} =
+          Pipeline.create_run(%{
+            task_id: child.id,
+            role_id: lead.id,
+            status: :finished,
+            stage_outcome: :done,
+            started_at: DateTime.utc_now()
+          })
+
+        {:ok, _finalizing} = Pipeline.update_task(child, attrs)
+      end
+
+      {:ok, reviews} = Agent.start_link(fn -> [] end)
+
+      # TLV-12 is not marked ready, so its approvals are never asked for.
+      Req.Test.stub(Client, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"POST", "/app/installations/" <> _id} ->
+            Req.Test.json(conn, %{"token" => "ghs_app"})
+
+          {"GET", "/repos/example/test-seed/pulls/31/reviews"} ->
+            Req.Test.json(conn, Agent.get(reviews, & &1))
+
+          {"POST", "/repos/example/test-seed/pulls/31/reviews"} ->
+            send(test_pid, {:approving, self()})
+            receive do: (:answer -> :ok)
+            review = %{"user" => %{"login" => lead_user.login}, "state" => "APPROVED"}
+            Agent.update(reviews, &[Map.put(review, "submitted_at", "2026-10-11T14:40:00Z") | &1])
+            Req.Test.json(conn, Map.put(review, "id", 1002))
+        end
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-11&tab=finalize")
+      render_async(view)
+      view |> element("#finalize-approve") |> render_click()
+      assert_receive {:approving, approval}, 2_000
+
+      view |> element("#child-switcher-TLV-12") |> render_click()
+      assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-12")
+      assert has_element?(view, "#finalize-pane[data-state='not_ready'] #finalize-mark-ready")
+
+      Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{first.id}")
+      send(approval, :answer)
+      assert_receive {:approvals_changed, _first_id}, 2_000
+      render_async(view)
+      refute has_element?(view, "#finalize-approvals")
+      refute has_element?(view, "#finalize-error")
+
+      view |> element("#child-switcher-TLV-11") |> render_click()
+
+      eventually(fn ->
+        assert has_element?(view, "#finalize-approved", "Approved by")
+        assert has_element?(view, "#finalize-approval-#{lead_user.login}")
+        refute has_element?(view, "#finalize-approve")
+      end)
+    end
+
     test "a child's Children tab goes back to its parent's board", %{conn: conn, parent: parent} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-11")
 

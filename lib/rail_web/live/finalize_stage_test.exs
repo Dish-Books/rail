@@ -346,6 +346,64 @@ defmodule RailWeb.Live.FinalizeStageTest do
     end)
   end
 
+  test "an approval that never heard back is not called a refusal, and one GitHub took shows though its read failed", %{
+    conn: conn,
+    task: task,
+    dan: dan,
+    priya: priya
+  } do
+    {:ok, _marked} = Pipeline.mark_ready(Rail.Scope.for_user(dan), task)
+    stub(Pipeline, :list_approvals, &Mimic.call_original(Pipeline, :list_approvals, [&1]))
+    {:ok, github} = Agent.start_link(fn -> %{reviews: [], reads: 0, posts: 0} end)
+
+    # The first post times out; the second is taken, and the read just after it fails.
+    Req.Test.stub(Client, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"POST", "/app/installations/1/access_tokens"} ->
+          Req.Test.json(conn, %{"token" => "ghs_app"})
+
+        {"GET", _reviews} ->
+          %{reviews: reviews, reads: reads, posts: posts} =
+            Agent.get_and_update(github, &{&1, %{&1 | reads: &1.reads + 1}})
+
+          if posts == 2 and reads == 3,
+            do: conn |> Plug.Conn.put_status(502) |> Req.Test.json(%{}),
+            else: Req.Test.json(conn, reviews)
+
+        {"POST", _reviews} ->
+          %{posts: posts} = Agent.get_and_update(github, &{&1, %{&1 | posts: &1.posts + 1}})
+
+          if posts == 0 do
+            Req.Test.transport_error(conn, :timeout)
+          else
+            review = %{"user" => %{"login" => priya.login}, "state" => "APPROVED"}
+            review = Map.put(review, "submitted_at", "2026-10-11T14:40:00Z")
+            Agent.update(github, &%{&1 | reviews: [review]})
+            Req.Test.json(conn, Map.put(review, "id", 80))
+          end
+      end
+    end)
+
+    assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
+    render_async(view)
+    view |> element("#finalize-approve") |> render_click()
+
+    eventually(fn ->
+      assert has_element?(view, "#finalize-error", "The approval did not finish. Try again.")
+      assert has_element?(view, "#finalize-approve:not([disabled])", "Approve")
+      refute has_element?(view, "#finalize-approve-error")
+    end)
+
+    view |> element("#finalize-approve") |> render_click()
+
+    eventually(fn ->
+      assert has_element?(view, "#finalize-approved", "Approved by Priya Raman at")
+      assert has_element?(view, "#finalize-approval-#{priya.login}", "Priya Raman")
+      refute has_element?(view, "#finalize-error")
+      refute has_element?(view, "#finalize-approve-error")
+    end)
+  end
+
   test "a tech lead with no GitHub token is told to sign in again", %{
     conn: conn,
     task: task,

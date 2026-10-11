@@ -18,6 +18,7 @@ defmodule RailWeb.Live.FinalizeStage do
 
     socket =
       socket
+      |> forget_other_task(assigns)
       |> assign(assigns)
       |> assign_new(:error, fn -> nil end)
       |> assign_new(:merging, fn -> false end)
@@ -356,9 +357,8 @@ defmodule RailWeb.Live.FinalizeStage do
       |> assign(:error, nil)
       |> start_async(:approve, fn ->
         # Unlinked, so leaving the page does not cut an approval off between GitHub's answer and telling every tab.
-        Rail.TaskSupervisor
-        |> Elixir.Task.Supervisor.async_nolink(fn -> Pipeline.approve_task(scope, task) end)
-        |> Elixir.Task.await(:infinity)
+        approval = Elixir.Task.Supervisor.async_nolink(Rail.TaskSupervisor, fn -> Pipeline.approve_task(scope, task) end)
+        {task.id, Elixir.Task.yield(approval, :infinity)}
       end)
 
     {:noreply, socket}
@@ -386,13 +386,22 @@ defmodule RailWeb.Live.FinalizeStage do
     {:noreply, socket}
   end
 
-  def handle_async(:approve, {:ok, {:ok, approvals}}, socket) do
+  # Split children share this pane: another child's answer is dropped, and its approvals come back on the broadcast.
+  def handle_async(:approve, {:ok, {task_id, _outcome}}, %{assigns: %{task: %Task{id: shown_id}}} = socket)
+      when task_id != shown_id, do: {:noreply, socket}
+
+  # GitHub took it but could not be read back; the broadcast has every page, this one too, read it again.
+  def handle_async(:approve, {:ok, {_task_id, {:ok, {:ok, :unread}}}}, socket) do
+    {:noreply, assign(socket, :approving, false)}
+  end
+
+  def handle_async(:approve, {:ok, {_task_id, {:ok, {:ok, approvals}}}}, socket) do
     socket = socket |> assign(:approving, false) |> assign_approvals(approvals)
     {:noreply, socket}
   end
 
   # Nothing stores a refusal, so only the tab that clicked shows it, at the time it heard it.
-  def handle_async(:approve, {:ok, {:error, {:approve_refused, message}}}, socket) do
+  def handle_async(:approve, {:ok, {_task_id, {:ok, {:error, {:approve_refused, message}}}}}, socket) do
     alert = %{
       title: "GitHub refused the approval at",
       at: DateTime.utc_now(),
@@ -405,7 +414,7 @@ defmodule RailWeb.Live.FinalizeStage do
     {:noreply, socket}
   end
 
-  def handle_async(:approve, {:ok, {:error, :no_github_token}}, socket) do
+  def handle_async(:approve, {:ok, {_task_id, {:ok, {:error, :no_github_token}}}}, socket) do
     alert = %{
       title: "Sign in with GitHub again to approve",
       at: nil,
@@ -418,15 +427,23 @@ defmodule RailWeb.Live.FinalizeStage do
     {:noreply, socket}
   end
 
-  def handle_async(:approve, {:ok, {:error, reason}}, socket) do
+  def handle_async(:approve, {:ok, {_task_id, {:ok, {:error, reason}}}}, socket) do
     socket = socket |> assign(:approving, false) |> assign(:error, approve_message_for(reason))
     {:noreply, socket}
   end
 
+  def handle_async(:approve, {:ok, {_task_id, {:exit, _reason}}}, socket) do
+    socket = socket |> assign(:approving, false) |> assign(:error, "The approval did not finish. Try again.")
+    {:noreply, socket}
+  end
+
+  # coveralls-ignore-start (the approval never started, as when the task supervisor is shutting down in a deploy)
   def handle_async(:approve, {:exit, _reason}, socket) do
     socket = socket |> assign(:approving, false) |> assign(:error, "The approval did not finish. Try again.")
     {:noreply, socket}
   end
+
+  # coveralls-ignore-stop
 
   # A read for a task the pane has since left, or one GitHub failed, leaves the approvals as they were.
   def handle_async(:approvals, {:ok, {task_id, {:ok, approvals}}}, %{assigns: %{task: %Task{id: task_id}}} = socket) do
@@ -434,6 +451,20 @@ defmodule RailWeb.Live.FinalizeStage do
   end
 
   def handle_async(:approvals, _unread, socket), do: {:noreply, socket}
+
+  # Split children share this pane, so the next child shows nothing of the last, and coming back to one reads it again.
+  defp forget_other_task(%{assigns: %{task: %Task{id: shown_id}}} = socket, %{task: %Task{id: next_id}})
+       when next_id != shown_id do
+    socket
+    |> assign(:approving, false)
+    |> assign(:approve_alert, nil)
+    |> assign(:error, nil)
+    |> assign(:approvals_task_id, nil)
+    |> assign(:approvals, [])
+    |> assign(:own_approval, nil)
+  end
+
+  defp forget_other_task(socket, _assigns), do: socket
 
   defp load(socket) do
     %{task: task, current_scope: scope} = socket.assigns
@@ -516,6 +547,6 @@ defmodule RailWeb.Live.FinalizeStage do
   defp approve_message_for(:merged), do: "This task is already merged."
   defp approve_message_for(:no_pull_request), do: "This task has no pull request to approve."
   defp approve_message_for({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not Finalize."
-  # GitHub could not be read for the approvals standing, so nothing was posted.
-  defp approve_message_for(_unread), do: "The approval did not finish. Try again."
+  # GitHub could not be read, or never answered the approval, so the lead tries again and finds it if it landed.
+  defp approve_message_for(_unfinished), do: "The approval did not finish. Try again."
 end

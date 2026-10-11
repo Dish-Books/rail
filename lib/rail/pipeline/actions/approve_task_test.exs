@@ -114,7 +114,7 @@ defmodule Rail.Pipeline.Actions.ApproveTaskTest do
     refute_received {:pipeline_changed, ^task_id}
   end
 
-  test "a refusal GitHub gives no message for, or that never reached GitHub, still says why", %{
+  test "a refusal GitHub gives no message for still says why", %{
     task: task,
     scope: scope
   } do
@@ -127,16 +127,46 @@ defmodule Rail.Pipeline.Actions.ApproveTaskTest do
     end)
 
     assert {:error, {:approve_refused, "GitHub answered 502."}} = Pipeline.approve_task(scope, task)
+  end
+
+  # GitHub may have recorded an approval whose answer never came back, so it is not called a refusal.
+  test "an approval that never heard back from GitHub returns the connection's error, not a refusal", %{
+    task: %Task{id: task_id} = task,
+    scope: scope
+  } do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task_id}")
 
     Req.Test.expect(Client, 3, fn conn ->
       case conn.method do
         "POST" when conn.request_path == "/app/installations/1/access_tokens" -> Req.Test.json(conn, %{"token" => "t"})
         "GET" -> Req.Test.json(conn, [])
-        "POST" -> Req.Test.transport_error(conn, :econnrefused)
+        "POST" -> Req.Test.transport_error(conn, :timeout)
       end
     end)
 
-    assert {:error, {:approve_refused, "connection refused"}} = Pipeline.approve_task(scope, task)
+    assert {:error, %Req.TransportError{reason: :timeout}} = Pipeline.approve_task(scope, task)
+    refute_received {:approvals_changed, ^task_id}
+  end
+
+  test "an approval GitHub took but that cannot be read back is still heard by every page", %{
+    task: %Task{id: task_id} = task,
+    scope: scope,
+    github: github
+  } do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task_id}")
+    {:ok, reads} = Agent.start_link(fn -> 0 end)
+
+    Req.Test.stub(Client, fn conn ->
+      read = if conn.method == "GET", do: Agent.get_and_update(reads, &{&1 + 1, &1 + 1})
+
+      if read == 2,
+        do: conn |> Plug.Conn.put_status(502) |> Req.Test.json(%{}),
+        else: github.(conn)
+    end)
+
+    assert {:ok, :unread} = Pipeline.approve_task(scope, task)
+    assert_received {:posting, _github}
+    assert_received {:approvals_changed, ^task_id}
   end
 
   test "approvals GitHub cannot read come back as the read's error, and nothing is posted", %{

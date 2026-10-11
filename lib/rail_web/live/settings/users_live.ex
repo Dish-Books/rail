@@ -344,7 +344,7 @@ defmodule RailWeb.Settings.UsersLive do
             />
             <span>
               <span class="block text-sm font-medium text-slate-900 dark:text-slate-100">Tech lead</span>
-              <span class="block text-xs text-slate-500 dark:text-slate-400">Merges tasks from Finalize.</span>
+              <span class="block text-xs text-slate-500 dark:text-slate-400">Approves and merges tasks from Finalize.</span>
             </span>
           </label>
 

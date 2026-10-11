@@ -14,28 +14,28 @@ defmodule Rail.Pipeline.Actions.ApproveTask do
 
   @doc """
   Approves `task`'s pull request as the scope's tech lead and returns `{:ok, approvals}` read after it, or
-  `{:error, reason}`: `{:approve_refused, message}` when GitHub turned it down, `:no_github_token` when the lead
-  has no token, and otherwise for a task not at Finalize, not marked ready, already merged or with no pull request.
+  `{:ok, :unread}` when GitHub took it but could not be read back. `{:error, {:approve_refused, message}}` is
+  GitHub's own refusal; other errors are a lead with no token, a task Finalize cannot approve, or GitHub unreached.
   """
   def approve_task(%Scope{} = scope, %Task{} = task) do
     task = Task |> Repo.get!(task.id) |> Repo.preload(:project)
 
     with true <- Scope.can_access_project?(scope, task.project_id) || {:error, :not_found},
          :ok <- approvable(task),
-         {:ok, %User{github_token: token, login: login} = user} <- lead(scope) do
-      # Held per lead, so a second click or tab waits for the first and finds its approval rather than posting another.
-      result =
-        :global.trans({{:approve_task, task.id, user.id}, self()}, fn ->
-          with {:ok, approvals} <- Pipeline.list_approvals(task),
-               :ok <- approve(approvals, login, token, task) do
-            Pipeline.list_approvals(task)
-          end
-        end)
+         {:ok, %User{github_token: token, login: login} = user} <- lead(scope),
+         # Held per lead, so a second click or tab waits for the first and finds its approval rather than posting another.
+         :ok <-
+           :global.trans({{:approve_task, task.id, user.id}, self()}, fn ->
+             with {:ok, approvals} <- Pipeline.list_approvals(task), do: approve(approvals, login, token, task)
+           end) do
+      read = Pipeline.list_approvals(task)
+      # GitHub holds the approval now, so every page reads it again even when this read failed.
+      Phoenix.PubSub.broadcast(Rail.PubSub, "outputs:#{task.id}", {:approvals_changed, task.id})
 
-      if match?({:ok, _approvals}, result),
-        do: Phoenix.PubSub.broadcast(Rail.PubSub, "outputs:#{task.id}", {:approvals_changed, task.id})
-
-      result
+      case read do
+        {:ok, approvals} -> {:ok, approvals}
+        {:error, _unread} -> {:ok, :unread}
+      end
     end
   end
 
@@ -58,7 +58,8 @@ defmodule Rail.Pipeline.Actions.ApproveTask do
     else
       case GitHub.approve_pull_request(token, project.github_repo, task.pr_number) do
         {:ok, _review} -> :ok
-        {:error, reason} -> {:error, {:approve_refused, message(reason)}}
+        {:error, {:github_api_error, _status, _body} = refusal} -> {:error, {:approve_refused, message(refusal)}}
+        {:error, _unreached} = error -> error
       end
     end
   end
@@ -70,7 +71,6 @@ defmodule Rail.Pipeline.Actions.ApproveTask do
   end
 
   defp message({:github_api_error, status, _body}), do: "GitHub answered #{status}."
-  defp message(reason), do: if(is_exception(reason), do: Exception.message(reason), else: inspect(reason))
 
   defp error_text("" <> text), do: text
   defp error_text(%{"message" => "" <> text}), do: text
