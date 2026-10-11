@@ -868,6 +868,46 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       assert note =~ String.slice(head_sha, 0, 7)
     end
 
+    test "that passed on a fix round after a take that encoded tells the next round to leave it", %{
+      task: task,
+      exited: exited,
+      head_sha: head_sha
+    } do
+      {:ok, _demo} = Pipeline.save_demo(task, %{"title" => "Filters", "summary" => "It filters."})
+      assert %{success: 1} = Oban.drain_queue(queue: :issues)
+      File.write!(Path.join([task.scratch_path, "demo", "demo.webm"]), "webm")
+      git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Guard the nil"])
+      fixed_sha = String.trim(git!(task.worktree_path, ["rev-parse", "HEAD"]))
+      {%Run{id: run_id}, os_process} = exited.(:review_lead, %{review_on_ci_pass: true})
+      os_process = os_process |> OsProcess.changeset(%{kind: :ci, head_sha: fixed_sha}) |> Repo.update!()
+
+      expect(Git, :push_branch, fn _scope, _task -> :ok end)
+      expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      assert {:ok, %Run{pending_answer: note}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+      assert note =~ String.slice(head_sha, 0, 7)
+    end
+
+    # The recorder saved a write-up without calling demo_start, so the encode ran and left no video.
+    test "that passed on a fix round after a take that encoded no video names no recorded take", %{
+      task: task,
+      exited: exited,
+      head_sha: head_sha
+    } do
+      {:ok, _demo} = Pipeline.save_demo(task, %{"title" => "Filters", "summary" => "It filters."})
+      assert %{success: 1} = Oban.drain_queue(queue: :issues)
+      git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Guard the nil"])
+      fixed_sha = String.trim(git!(task.worktree_path, ["rev-parse", "HEAD"]))
+      {%Run{id: run_id}, os_process} = exited.(:review_lead, %{review_on_ci_pass: true})
+      os_process = os_process |> OsProcess.changeset(%{kind: :ci, head_sha: fixed_sha}) |> Repo.update!()
+
+      expect(Git, :push_branch, fn _scope, _task -> :ok end)
+      expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      assert {:ok, %Run{pending_answer: note}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+      refute note =~ String.slice(head_sha, 0, 7)
+    end
+
     test "that passed on a fix round with no demo saved names no recorded take", %{
       task: task,
       exited: exited,

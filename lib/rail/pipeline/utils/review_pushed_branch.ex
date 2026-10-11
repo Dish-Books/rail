@@ -4,11 +4,14 @@ defmodule Rail.Pipeline.Utils.ReviewPushedBranch do
   lead's run, its fixes or a merge of the default branch, starts the lead's next round.
   """
 
+  import Ecto.Query
+
   alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Demo
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Workers.EncodeDemo
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
@@ -32,14 +35,20 @@ defmodule Rail.Pipeline.Utils.ReviewPushedBranch do
 
     Pipeline.append_run_events(run.id, nil, ["[rail] Round #{round} started after #{after_what}"])
 
-    # A resumed lead never sees the brief again, so the saved demo is named here, read from the write-up
-    # rather than the video, which exists only once the encode has run.
-    demo =
-      case Pipeline.read_demo(task) do
-        %Demo{commit: commit} ->
-          "The demo recorded#{if commit, do: " on #{String.slice(commit, 0, 7)}"} is saved: leave it, and record no new take this round, since a new one comes only when a person asks for it."
+    encoding =
+      from(job in Oban.Job,
+        where: job.worker == ^inspect(EncodeDemo) and job.args["task_id"] == ^task.id,
+        where: job.state in ["available", "scheduled", "executing", "retryable"]
+      )
 
-        nil ->
+    # A resumed lead never sees the brief again, so the saved demo is named here: a write-up whose encode is
+    # still to come or left a video, the queue read first so an encode finishing in between still counts.
+    demo =
+      with %Demo{commit: commit} <- Pipeline.read_demo(task),
+           true <- Repo.exists?(encoding) or Task.demo_recorded?(task) do
+        "The demo recorded#{if commit, do: " on #{String.slice(commit, 0, 7)}"} is saved: leave it, and record no new take this round, since a new one comes only when a person asks for it."
+      else
+        unsaved when unsaved in [nil, false] ->
           "No demo is saved yet, so when the change has something on screen, have the demo recorder record the first one this round."
       end
 
