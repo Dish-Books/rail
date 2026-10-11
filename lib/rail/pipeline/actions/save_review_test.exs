@@ -59,6 +59,15 @@ defmodule Rail.Pipeline.Actions.SaveReviewTest do
     assert [%{round: 1, finished_at: ^finished_at}, %{round: 2, finished_at: nil}] = Pipeline.read_review(task)
   end
 
+  # A comment resumes the lead at Finalize and after the merge, and nobody can rule a round opened there.
+  test "past Review a save is refused and no pass is added", %{task: task} do
+    for stage <- [:finalize, :merged] do
+      assert {:error, {:review_finished, ^stage}} = Pipeline.save_review(%{task | stage: stage})
+    end
+
+    assert [] = Pipeline.read_review(task)
+  end
+
   test "a worktree no longer on disk saves a pass with no commit", %{task: task} do
     assert {:ok, %{round: 1, head: nil}} = Pipeline.save_review(%{task | worktree_path: "/nonexistent/svr"})
   end

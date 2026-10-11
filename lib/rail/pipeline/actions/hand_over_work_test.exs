@@ -688,7 +688,7 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
         |> Repo.insert!()
 
       assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(ci, %{exit_code: 0})
-      assert %Task{stage: :review, pr_is_draft: false} = Repo.reload!(task)
+      assert %Task{stage: :finalize, pr_is_draft: false} = Repo.reload!(task)
       assert [_first, %{finished_at: %DateTime{}}] = task |> Repo.preload(:issue) |> Pipeline.read_review()
     end
 
@@ -732,6 +732,112 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
       assert {:error, "Dispatch is off, so round 2 was not started."} = Pipeline.hand_over_work(scope, lead_run)
       refute Git.branch_unpushed?(repo)
       assert %Run{status: :finished} = Repo.reload!(lead_run)
+    end
+
+    # Rulings and Finish review refuse anything not at Review, so a round started past it could never close.
+    test "at Finalize, the lead's commit is only pushed: no round starts and the mark stays", %{
+      scope: scope,
+      task: task,
+      lead_run: lead_run,
+      repo: repo
+    } do
+      marked_at = DateTime.utc_now()
+      {:ok, _finalizing} = Pipeline.update_task(task, %{stage: :finalize, marked_ready_at: marked_at})
+      git!(repo, ["commit", "--allow-empty", "-m", "Say No comments yet"])
+      reject(Tools, :start_os_process, 2)
+
+      assert {:ok, %Run{status: :finished, stage_outcome: :done, review_on_ci_pass: false}} =
+               Pipeline.hand_over_work(scope, lead_run)
+
+      refute Git.branch_unpushed?(repo)
+      assert [] = Pipeline.list_run_events(lead_run)
+      assert [%{round: 1}] = task |> Repo.preload(:issue) |> Pipeline.read_review()
+      assert %Task{stage: :finalize, marked_ready_at: ^marked_at} = Repo.reload!(task)
+    end
+
+    test "at Finalize, with CI, the lead's commit is pushed once CI passes and starts no round", %{
+      scope: scope,
+      project: project,
+      task: task,
+      lead_run: %Run{id: lead_run_id} = lead_run,
+      repo: repo
+    } do
+      {:ok, _finished} = Pipeline.start_fix_round(system_scope(), lead_run)
+      {:ok, _project} = Projects.update_project(scope, project, %{ci_command: "mise run ci"})
+      git!(repo, ["commit", "--allow-empty", "-m", "Say No comments yet"])
+      stub(Git, :credential_env, fn _project -> {:ok, %{}} end)
+      reject(Tools, :start_os_process, 2)
+
+      expect(Tools, :start_command_process, fn %Run{id: ^lead_run_id} = spawned, :ci, "mise run ci", _opts ->
+        {:ok, _running} = Pipeline.update_run(spawned, %{status: :running})
+        {:ok, %OsProcess{kind: :ci, run: spawned}}
+      end)
+
+      assert {:ok, %Run{status: :running, review_on_ci_pass: false}} = Pipeline.hand_over_work(scope, lead_run)
+
+      ci =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: lead_run_id,
+          task_id: task.id,
+          kind: :ci,
+          stream_path: "/tmp/cmw-finalize-ci.log",
+          status: :running,
+          started_at: DateTime.utc_now()
+        })
+        |> Repo.insert!()
+
+      assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(ci, %{exit_code: 0})
+      refute Git.branch_unpushed?(repo)
+      refute Enum.any?(Pipeline.list_run_events(lead_run), &(&1.line =~ "Round 2"))
+      assert %Task{stage: :finalize} = Repo.reload!(task)
+    end
+
+    # The pull request merged, but the branch stays, so what a comment has the lead commit still lands on it.
+    test "after the merge, the lead's commit is only pushed to the branch, starting no round", %{
+      scope: scope,
+      task: task,
+      lead_run: lead_run,
+      repo: repo
+    } do
+      {:ok, _merged} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
+      git!(repo, ["commit", "--allow-empty", "-m", "Say No comments yet"])
+      reject(Tools, :start_os_process, 2)
+
+      assert {:ok, %Run{status: :finished, stage_outcome: :done, review_on_ci_pass: false}} =
+               Pipeline.hand_over_work(scope, lead_run)
+
+      refute Git.branch_unpushed?(repo)
+      assert [] = Pipeline.list_run_events(lead_run)
+      assert %Task{stage: :merged} = Repo.reload!(task)
+    end
+
+    test "at Finalize, the lead's turn that committed ends pushed, with no round and nothing owed", %{
+      task: task,
+      lead_run: %Run{id: lead_run_id} = lead_run,
+      repo: repo
+    } do
+      {:ok, _finished} = Pipeline.start_fix_round(system_scope(), lead_run)
+      {:ok, _marked} = task |> Repo.reload!() |> Pipeline.update_task(%{marked_ready_at: DateTime.utc_now()})
+      {:ok, _resumed} = Pipeline.update_run(lead_run, %{status: :running})
+      git!(repo, ["commit", "--allow-empty", "-m", "Say No comments yet"])
+      reject(Tools, :start_os_process, 2)
+
+      turn =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: lead_run_id,
+          task_id: task.id,
+          stream_path: Path.join(repo, "missing.jsonl"),
+          status: :running,
+          started_at: DateTime.utc_now()
+        })
+        |> Repo.insert!()
+
+      assert {:ok, %Run{status: :finished, error: nil}} = Pipeline.run_finished(turn, %{exit_code: 0})
+      refute Git.branch_unpushed?(repo)
+      assert [%{round: 1, finished_at: %DateTime{}}] = task |> Repo.preload(:issue) |> Pipeline.read_review()
+      assert %Task{stage: :finalize} = Repo.reload!(task)
     end
 
     test "the lead's hand-over on a task back at Engineer is refused, with nothing pushed", %{

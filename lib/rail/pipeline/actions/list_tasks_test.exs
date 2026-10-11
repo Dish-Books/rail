@@ -281,4 +281,97 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     assert [%Task{id: ^second_id}, %Task{id: ^first_id}] = Pipeline.list_tasks(parent_task_id: parent.id)
   end
+
+  # The review queue: what a teammate marked ready at Finalize and nobody has merged, the oldest mark first.
+  test "ready: true keeps tasks at Finalize marked ready and unmerged, Merging and refused included, oldest first",
+       %{project: project, task: unmarked} do
+    Req.Test.stub(Rail.Linear, fn conn ->
+      n = System.unique_integer([:positive])
+
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_ready_#{n}", "identifier" => "RDY-#{n}", "title" => "Ready #{n}"}
+          }
+        }
+      })
+    end)
+
+    now = DateTime.utc_now()
+
+    task = fn stage, attrs ->
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Ready"})
+      {:ok, task} = Pipeline.create_task(issue, stage)
+      {:ok, task} = Pipeline.update_task(task, attrs)
+      task
+    end
+
+    {:ok, _unmarked} = Pipeline.update_task(unmarked, %{stage: :finalize})
+    %Task{id: newest_id} = task.(:finalize, %{marked_ready_at: now})
+    %Task{id: refused_id} = task.(:finalize, %{marked_ready_at: DateTime.shift(now, minute: -1), merge_error: "Conflict"})
+    %Task{id: merging_id} = task.(:finalize, %{marked_ready_at: DateTime.shift(now, minute: -2), merge_started_at: now})
+    %Task{} = task.(:review, %{marked_ready_at: DateTime.shift(now, minute: -3)})
+    %Task{} = task.(:merged, %{marked_ready_at: DateTime.shift(now, minute: -4), merged_at: now})
+
+    assert [%Task{id: ^merging_id}, %Task{id: ^refused_id}, %Task{id: ^newest_id}] =
+             Pipeline.list_tasks(project_id: project.id, ready: true)
+  end
+
+  # Merged on GitHub, Linear completes the issue and Overview drops it, so the queue does too.
+  test "ready: true leaves out tasks whose issue Linear completed, canceled or marked duplicate", %{
+    project: project,
+    issue: open_issue,
+    task: %Task{id: open_id} = open
+  } do
+    Req.Test.stub(Rail.Linear, fn conn ->
+      n = System.unique_integer([:positive])
+
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_closed_#{n}", "identifier" => "CLS-#{n}", "title" => "Closed #{n}"}
+          }
+        }
+      })
+    end)
+
+    now = DateTime.utc_now()
+    {:ok, _open} = Pipeline.update_task(open, %{stage: :finalize, marked_ready_at: now})
+    open_issue |> Issue.linear_changeset(%{state: :in_review}) |> Repo.update!()
+
+    for closed <- [%{state: :done, completed_at: now}, %{state: :canceled}, %{state: :duplicate}] do
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Closed"})
+      issue |> Issue.linear_changeset(closed) |> Repo.update!()
+      {:ok, task} = Pipeline.create_task(issue, :finalize)
+      {:ok, _marked} = Pipeline.update_task(task, %{marked_ready_at: now})
+    end
+
+    assert [%Task{id: ^open_id}] = Pipeline.list_tasks(project_id: project.id, ready: true)
+    assert [] = Pipeline.list_tasks(project_id: project.id, owner_user_id: "usr_nobody", ready: true)
+  end
+
+  test "ready: true breaks a tie in the time marked by id", %{project: project, task: first} do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_ready_tie", "identifier" => "RDY-T", "title" => "Tie"}
+          }
+        }
+      })
+    end)
+
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Tie"})
+    {:ok, second} = Pipeline.create_task(issue, :finalize)
+    marked = DateTime.utc_now()
+    [%Task{id: low_id}, %Task{id: high_id}] = Enum.sort_by([first, second], & &1.id)
+
+    for task <- [second, first],
+        do: {:ok, _marked} = Pipeline.update_task(task, %{stage: :finalize, marked_ready_at: marked})
+
+    assert [%Task{id: ^low_id}, %Task{id: ^high_id}] = Pipeline.list_tasks(project_id: project.id, ready: true)
+  end
 end

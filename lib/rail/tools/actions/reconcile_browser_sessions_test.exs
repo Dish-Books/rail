@@ -136,7 +136,7 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
 
   # Chrome restarted under a running pass: every context it had is gone, and the row
   # says so, which is what tells the agent when it asks for its browser again.
-  test "settles a session whose context Chrome no longer has as lost", %{task: task, running: running} do
+  test "settles a session whose context Chrome no longer has as lost", %{task: %{id: task_id} = task, running: running} do
     {:ok, %BrowserSession{id: lost}} =
       %BrowserSession{}
       |> BrowserSession.changeset(%{task_id: task.id, name: "explorer-1", status: :running, browser_context_id: "gone"})
@@ -157,9 +157,13 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
     stub(Tools, :list_browser_contexts, fn -> {:ok, MapSet.new(["here"])} end)
     expect(Tools, :start_browser_session, fn _task, "explorer-2", [existing: true] -> {:ok, self()} end)
     reject(Tools, :stop_browser_session, 1)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task_id}:explorer-1")
 
     assert [%BrowserSession{id: ^lost, status: :finished, ended_reason: :browser_gone, finished_at: %DateTime{}}] =
              Tools.reconcile_browser_sessions()
+
+    # A page showing it stops offering it.
+    assert_received {:browser_closed, ^task_id, "explorer-1"}
   end
 
   # The session watching a tab that went with Chrome has nothing left to watch.
@@ -175,6 +179,28 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
 
     assert [%BrowserSession{ended_reason: :browser_gone}] = Tools.reconcile_browser_sessions()
     refute Process.alive?(holder)
+  end
+
+  # A comment resumes the lead at Finalize and after the merge, and its turn keeps the tabs Review's turns would.
+  test "a task at Finalize or merged keeps its tabs only while one of its runs is running", %{
+    task: task,
+    running: running
+  } do
+    for stage <- [:finalize, :merged] do
+      {:ok, %BrowserSession{id: session_id}} =
+        %BrowserSession{}
+        |> BrowserSession.changeset(%{task_id: task.id, name: "qa", status: :running, target_id: "tgt"})
+        |> Repo.insert()
+
+      task |> Ecto.Changeset.change(stage: stage) |> Repo.update!()
+      run = running.()
+      stub(Tools, :start_browser_session, fn _task, "qa", [existing: true] -> {:error, :no_browser} end)
+
+      assert Tools.reconcile_browser_sessions() == []
+
+      {:ok, _finished} = Pipeline.update_run(run, %{status: :finished})
+      assert [%BrowserSession{id: ^session_id, status: :finished}] = Tools.reconcile_browser_sessions()
+    end
   end
 
   # A session with a process is that process's while its task still wants it.

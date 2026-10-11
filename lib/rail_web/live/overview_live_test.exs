@@ -3,6 +3,7 @@ defmodule RailWeb.OverviewLiveTest do
 
   import Phoenix.LiveViewTest
 
+  alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -433,6 +434,77 @@ defmodule RailWeb.OverviewLiveTest do
       end
 
       %{conn: log_in_user(conn, user), user: user, project: project, roles: roles, rival: rival, task_for: task_for}
+    end
+
+    # The queue is every ready task in the switcher's projects, whoever owns it, so the rival's shows in My work.
+    test "a task marked ready joins another Overview's queue without a reload, and its row opens Finalize", %{
+      conn: conn,
+      user: user,
+      rival: rival,
+      task_for: task_for
+    } do
+      ready = task_for.("Comments go as one round", %{stage: :finalize, pr_number: 151, owner_user_id: rival.id})
+      reviewing = task_for.("Still in Review", %{stage: :review, pr_number: 152, marked_ready_at: DateTime.utc_now()})
+      unmarked = task_for.("Not marked", %{stage: :finalize, pr_number: 153})
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+      assert has_element?(view, "#review-queue-empty", "Nothing is waiting for a tech lead.")
+
+      {:ok, _marked} = Pipeline.mark_ready(Scope.for_user(user), ready)
+      row = "#review-queue-row-#{ready.issue.identifier}"
+
+      assert has_element?(view, "#{row}[href='/tasks/#{ready.id}?tab=finalize'][data-state='ready']")
+      assert has_element?(view, row, "marked by overview_queue_user")
+      assert has_element?(view, row, "#151")
+      assert has_element?(view, "#review-queue-count", "1 task")
+      refute has_element?(view, "#review-queue-empty")
+      refute has_element?(view, "#review-queue-row-#{reviewing.issue.identifier}")
+      refute has_element?(view, "#review-queue-row-#{unmarked.issue.identifier}")
+      refute has_element?(view, "#{row} button")
+    end
+
+    test "a refused task stays in the queue saying so, a merging one says so, and a merged one leaves it", %{
+      conn: conn,
+      task_for: task_for
+    } do
+      task = task_for.("Merge me", %{stage: :finalize, pr_number: 151})
+      {:ok, _marked} = Pipeline.mark_ready(system_scope(), task)
+      row = "#review-queue-row-#{task.issue.identifier}"
+
+      merging =
+        task_for.("Being merged", %{
+          stage: :finalize,
+          pr_number: 152,
+          marked_ready_at: DateTime.utc_now(),
+          merge_started_at: DateTime.utc_now()
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+      assert has_element?(view, row, "marked by someone")
+      assert has_element?(view, "#review-queue-row-#{merging.issue.identifier}[data-state='merging']", "Merging")
+      assert has_element?(view, "#review-queue-count", "2 tasks")
+
+      Req.Test.expect(Client, 4, fn conn ->
+        case conn.method do
+          "POST" -> Req.Test.json(conn, %{"token" => "ghs_app"})
+          "PUT" -> conn |> Plug.Conn.put_status(409) |> Req.Test.json(%{"message" => "Merge conflict"})
+          "GET" -> Req.Test.json(conn, %{"number" => 151, "merged" => false, "merge_commit_sha" => nil})
+        end
+      end)
+
+      assert {:error, {:merge_refused, "Merge conflict"}} = Pipeline.merge_task(system_scope(), task)
+      assert has_element?(view, "#{row}[data-state='refused']", "Merge refused")
+
+      Req.Test.expect(Client, 2, fn conn ->
+        case conn.method do
+          "POST" -> Req.Test.json(conn, %{"token" => "ghs_app"})
+          "PUT" -> Req.Test.json(conn, %{"merged" => true, "sha" => "3c9a1f0"})
+        end
+      end)
+
+      assert {:ok, _merged} = Pipeline.merge_task(system_scope(), task)
+      refute has_element?(view, row)
+      assert has_element?(view, "#review-queue-count", "1 task")
     end
 
     test "a child blocked by a canceled sibling is in Up next and counted as waiting on its owner", %{
@@ -950,7 +1022,7 @@ defmodule RailWeb.OverviewLiveTest do
       view |> element("#overview-view-everyone") |> render_click()
 
       assert has_element?(view, "#in-progress-task-#{mine.id}")
-      assert has_element?(view, "#in-progress-task-#{theirs.id}", "Engineer running")
+      assert has_element?(view, "#in-progress-task-#{theirs.id}", "Implement running")
       assert has_element?(view, "#in-progress-count", "2 tasks")
       assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "2")
     end
@@ -1151,7 +1223,7 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/")
 
-      assert has_element?(view, "#up-next-featured-#{plan_run.id}", "#{task.issue.identifier} · plan role")
+      assert has_element?(view, "#up-next-featured-#{plan_run.id}", "#{task.issue.identifier} · Plan")
       assert has_element?(view, "#up-next-featured-#{plan_run.id} [data-qa='up-next-action']", "Pick")
 
       assert has_element?(
@@ -1324,7 +1396,7 @@ defmodule RailWeb.OverviewLiveTest do
 
       # Only a run at the task's own stage says where it stands, not the Plan
       # run it moved on from.
-      assert has_element?(view, "#in-progress-task-#{moved_on.id}[data-state='queued']", "Queued for Engineer")
+      assert has_element?(view, "#in-progress-task-#{moved_on.id}[data-state='queued']", "Queued for Implement")
 
       # Of two tasks that broke, the one broken longest comes first.
       assert html |> :binary.match("in-progress-task-#{old_task.id}") |> elem(0) <
@@ -1392,7 +1464,7 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#in-progress-task-#{task.id}[data-state='running']", "Review running")
     end
 
-    test "a Review run whose review is finished leads as ready to merge", %{
+    test "a Review run whose review is finished becomes a Finalize row, ready to finalize", %{
       conn: conn,
       roles: roles,
       task_for: task_for
@@ -1425,8 +1497,15 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, %Run{id: ^run_id}} = Pipeline.start_fix_round(system_scope(), run)
 
       assert {:ok, view, _html} = live(conn, ~p"/")
-      assert has_element?(view, "#up-next-featured-#{run_id} [data-qa='up-next-chip']", "Ready to merge")
-      assert has_element?(view, "#in-progress-task-#{task.id}", "Ready to merge")
+      assert has_element?(view, "#up-next-finalize-row-#{run_id}[href='/tasks/#{task.id}?tab=finalize']", "Finalize")
+      assert has_element?(view, "#in-progress-task-#{task.id}.bg-amber-50", "Ready to finalize")
+
+      # Marked ready, it waits on a tech lead, so its owner's row, the stat and Up next all let it go.
+      {:ok, _marked} = Pipeline.mark_ready(system_scope(), task)
+      refute has_element?(view, "#up-next-finalize-row-#{run_id}")
+      assert has_element?(view, "#in-progress-task-#{task.id}", "Ready for tech lead")
+      refute has_element?(view, "#in-progress-task-#{task.id}.bg-amber-50")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
     end
 
     test "a Review round whose commits pass CI shows on Up next as ready for review without a reload", %{
@@ -1558,7 +1637,7 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert {:ok, view, html} = live(conn, ~p"/")
 
-      assert has_element?(view, "#in-progress-task-#{engineer.id}[data-state='running']", "Engineer running")
+      assert has_element?(view, "#in-progress-task-#{engineer.id}[data-state='running']", "Implement running")
       assert has_element?(view, "#in-progress-task-#{engineer.id} [data-qa='in-progress-age']", "4h 0m")
       assert has_element?(view, "#in-progress-task-#{architect.id}[data-state='done']", "Review the plan")
       assert has_element?(view, "#in-progress-task-#{architect.id}", "Prorate seat changes")
@@ -1625,7 +1704,7 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(
                view,
                "#in-progress-task-#{engineer.id}[data-state='waiting']",
-               "Engineer waiting for resources"
+               "Implement waiting for resources"
              )
 
       assert has_element?(view, "#sandbox-meters #sandbox-meters-count", "1 running · 1 waiting")

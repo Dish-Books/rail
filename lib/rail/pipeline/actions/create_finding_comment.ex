@@ -1,8 +1,8 @@
 defmodule Rail.Pipeline.Actions.CreateFindingComment do
   @moduledoc """
   Saves a comment on one piece of a Review finding, unsent, for the person writing it, quoting the piece as it reads
-  now. Any finding of the task takes one, however it is ruled, while the task is at Review, after the review is
-  finished too, until it is cleaned up.
+  now. Any finding of the task takes one, however it is ruled, from Review on, at Finalize and after the merge too,
+  until the task is cleaned up.
   """
 
   import Ecto.Query
@@ -19,7 +19,7 @@ defmodule Rail.Pipeline.Actions.CreateFindingComment do
   scope user's comment on `task`.
 
   Returns `{:ok, comment}` with its finding, `{:error, changeset}`, or `{:error, reason}` when the task is cleaned up,
-  is not at Review, or has no such finding or piece.
+  has not reached Review, or has no such finding or piece.
   """
   def create_finding_comment(%Scope{user: %{id: user_id}}, %Task{id: task_id}, attrs) do
     changeset = FindingComment.changeset(%FindingComment{task_id: task_id, user_id: user_id}, attrs)
@@ -28,7 +28,8 @@ defmodule Rail.Pipeline.Actions.CreateFindingComment do
     index = Ecto.Changeset.get_field(changeset, :index)
 
     # Read again, so a page drawn before the task moved on cannot write after it.
-    with %Task{cleaned_up_at: nil, stage: :review} <- Repo.get!(Task, task_id),
+    with %Task{cleaned_up_at: nil, stage: stage} when stage in [:review, :finalize, :merged] <-
+           Repo.get!(Task, task_id),
          %Finding{} = finding <-
            finding_id && Repo.one(from f in Finding, where: f.id == ^finding_id and f.task_id == ^task_id),
          %{label: label, quote: quote} <- FindingComment.calculate_piece(finding, piece, index),

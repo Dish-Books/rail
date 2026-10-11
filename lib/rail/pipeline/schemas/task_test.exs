@@ -163,8 +163,9 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   test "stage_label/1 names each stage" do
     assert Enum.map(Task.stages(), &Task.stage_label/1) == [
              "Plan",
-             "Engineer",
+             "Implement",
              "Review",
+             "Finalize",
              "Merged",
              "Debugger",
              "Split"
@@ -174,10 +175,11 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   end
 
   # Review is one run of the Review lead, whose subagents are the review, QA, engineer and demo roles.
-  test "role_stage/1 names the Review lead for Review and every other stage's own role" do
+  test "role_stage/1 names the Review lead for Review and Finalize and every other stage's own role" do
     assert Enum.map(Task.stages(), &Task.role_stage/1) == [
              :plan,
              :engineer,
+             :review_lead,
              :review_lead,
              :merged,
              :debugger,
@@ -217,5 +219,24 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
              errors_on(Task.changeset(task, %{split_position: 2, builds_on: [0]}))
 
     assert %{split_position: ["must be greater than 0"]} = errors_on(Task.changeset(task, %{split_position: 0}))
+  end
+
+  test "finalize_state/1 reads unready, ready, merging, refused and merged off the task" do
+    now = DateTime.utc_now()
+
+    assert Task.finalize_state(%Task{stage: :finalize}) == :not_ready
+    assert Task.finalize_state(%Task{stage: :finalize, marked_ready_at: now}) == :ready
+    assert Task.finalize_state(%Task{stage: :finalize, marked_ready_at: now, merge_started_at: now}) == :merging
+    assert Task.finalize_state(%Task{marked_ready_at: now, merge_started_at: now, merge_error: "Conflict"}) == :merging
+    assert Task.finalize_state(%Task{stage: :finalize, marked_ready_at: now, merge_error: "Conflict"}) == :refused
+    assert Task.finalize_state(%Task{stage: :merged, marked_ready_at: now, merged_at: now}) == :merged
+  end
+
+  # A merge whose caller died never answers, so after a minute it no longer holds the task.
+  test "finalize_state/1 reads a merge started over a minute ago as abandoned" do
+    stale = DateTime.shift(DateTime.utc_now(), second: -61)
+
+    assert Task.finalize_state(%Task{marked_ready_at: stale, merge_started_at: stale}) == :ready
+    assert Task.finalize_state(%Task{marked_ready_at: stale, merge_started_at: stale, merge_error: "No"}) == :refused
   end
 end

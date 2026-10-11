@@ -97,6 +97,34 @@ defmodule RailWeb.Components.UpNextTest do
     assert html =~ "plan ready for review"
   end
 
+  # Marking ready is one click on Finalize, so the run never leads and its row opens the Finalize tab.
+  test "a task at Finalize nobody marked ready is a Finalize row that opens the Finalize tab", %{waiting: waiting} do
+    finalize = %{waiting.(:finalize) | id: "run_finalize", task_id: "tsk_finalize"}
+    plan = waiting.(:plan)
+
+    html = render_component(&UpNext.up_next/1, runs: [finalize, plan])
+    row = html |> Floki.parse_fragment!() |> Floki.find("#up-next-finalize-row-run_finalize")
+
+    assert html =~ "up-next-featured-run_plan"
+    assert ["/tasks/tsk_finalize?tab=finalize"] = Floki.attribute(row, "href")
+    assert Floki.text(row) =~ "review finished"
+    assert Floki.text(row) =~ "Finalize"
+
+    html = render_component(&UpNext.up_next/1, runs: [finalize])
+    refute html =~ "up-next-featured"
+    assert html =~ "up-next-finalize-row-run_finalize"
+  end
+
+  test "the featured card names the task's step, Implement for an engineer run", %{waiting: waiting} do
+    for {stage, step} <- [plan: "Plan", engineer: "Implement", review: "Review"] do
+      html = render_component(&UpNext.up_next/1, runs: [waiting.(stage)])
+      featured = html |> Floki.parse_fragment!() |> Floki.find("[data-qa=up-next-featured]") |> Floki.text()
+
+      assert featured =~ ~r/UPN-1 · #{step}\b/
+      refute featured =~ "#{stage} role"
+    end
+  end
+
   test "a failed run leads with the error, and reads as a problem", %{waiting: waiting} do
     failed = %{waiting.(:engineer) | stage_outcome: :in_progress, error: "The engineer changed nothing."}
 

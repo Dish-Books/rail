@@ -21,9 +21,11 @@ defmodule Rail.Pipeline do
   Plan can also end with a split: approval then makes each child an issue and a task of its own at
   Engineer, and parks the parent at Split until the last child merges.
 
-  Merge is a stage a task can reach and nothing drives or reaches: a task put
-  there parks there.
+  A finished review moves the task on to Finalize, which has no run of its own: a teammate marks it ready
+  for a tech lead, and a tech lead's Merge squash-merges its pull request on GitHub and enters Merged.
   """
+
+  use Rail.PermissionsDecorator
 
   alias Rail.Pipeline.Actions
 
@@ -60,6 +62,11 @@ defmodule Rail.Pipeline do
   defdelegate save_review(task), to: Actions.SaveReview
   defdelegate read_review(task), to: Actions.ReadReview
   defdelegate start_fix_round(scope, run), to: Actions.StartFixRound
+
+  defdelegate mark_ready(scope, task), to: Actions.MarkReady
+
+  @decorate can?(resource: :tasks, action: :merge)
+  defdelegate merge_task(scope, task), to: Actions.MergeTask
 
   defdelegate write_qa_checklist(task, checks), to: Actions.WriteQaChecklist
   defdelegate read_qa_checklist(task), to: Actions.ReadQaChecklist

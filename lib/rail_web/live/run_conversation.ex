@@ -93,7 +93,10 @@ defmodule RailWeb.Live.RunConversation do
     assigns =
       assigns
       |> assign(:has_runs, assigns.selected_run != nil)
-      |> assign(:show_review_tray, not assigns.show_raw_log and review_run?(assigns) and assigns.review_tray != nil)
+      |> assign(
+        :show_review_tray,
+        assigns.review_pane and not assigns.show_raw_log and review_run?(assigns) and assigns.review_tray != nil
+      )
 
     ~H"""
     <div
@@ -849,6 +852,7 @@ defmodule RailWeb.Live.RunConversation do
         :if={@open?}
         id={"command-output-#{@idx}"}
         data-qa="command-output"
+        phx-hook="CommandOutput"
         phx-no-format
         class="border-t border-slate-200 dark:border-slate-700 px-3 py-2 max-h-96 overflow-auto font-mono text-[11px] leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap wrap-break-word select-text"
       >{@msg.content}</pre>
@@ -1383,6 +1387,7 @@ defmodule RailWeb.Live.RunConversation do
     |> assign_new(:lifted_comments, fn -> [] end)
     |> assign_new(:tray_open, fn -> true end)
     |> assign_new(:review_tray, fn -> nil end)
+    |> assign_new(:review_pane, fn -> false end)
     |> assign_new(:review_finding_comments, fn -> [] end)
     |> assign_new(:review_diff_comments, fn -> [] end)
     |> assign_new(:review_screen_comments, fn -> [] end)
@@ -1434,6 +1439,7 @@ defmodule RailWeb.Live.RunConversation do
   defp tray_message(:nothing_to_start), do: "There is nothing to send: the review is finished."
   defp tray_message(:dispatch_disabled), do: "Dispatch is off, so the Review lead was not resumed."
   defp tray_message(:ci_not_passed), do: "CI has not passed on the fix commit, so the review cannot finish yet."
+  defp tray_message(:cleaned_up), do: "This task is cleaned up, so nothing more can be sent."
   defp tray_message({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not Review."
 
   # The log the component holds; the rendered lines and the turns read out of it

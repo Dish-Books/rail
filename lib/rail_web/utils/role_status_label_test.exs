@@ -64,4 +64,12 @@ defmodule RailWeb.Utils.RoleStatusLabelTest do
 
     assert role_status_label(%Role{stage: :plan}, done, %Task{stage: :engineer}) == "done"
   end
+
+  # Finalize has its own tab, so the Review tab behind it reads done, not needs review.
+  test "the Review lead reads done once the task is at Finalize or merged" do
+    done = %Run{status: :finished, stage_outcome: :done}
+
+    assert role_status_label(%Role{stage: :review_lead}, done, %Task{stage: :finalize}) == "done"
+    assert role_status_label(%Role{stage: :review_lead}, done, %Task{stage: :merged}) == "done"
+  end
 end

@@ -56,7 +56,7 @@ defmodule RailWeb.Components.SplitBoardTest do
   end
 
   test "the header reads each column once, with no QA or Demo", %{board: board} do
-    assert ["#", "Child", "Engineer", "Review", "Merged", "Where it stands"] =
+    assert ["#", "Child", "Implement", "Review", "Finalize", "Merged", "Where it stands"] =
              board |> Floki.find("thead th") |> Enum.map(&String.trim(Floki.text(&1)))
   end
 
@@ -76,13 +76,13 @@ defmodule RailWeb.Components.SplitBoardTest do
   } do
     assert "Merged · PR #171" = Floki.text(Floki.find(board, "#split-row-SPL-1 td:last-child [data-qa=split-row-line]"))
     assert [] = Floki.find(board, "#split-row-SPL-1 td:last-child a")
-    assert "Merged" = board |> Floki.find("#split-row-SPL-1 td:nth-child(5)") |> Floki.text() |> String.trim()
+    assert "Merged" = board |> Floki.find("#split-row-SPL-1 td:nth-child(6)") |> Floki.text() |> String.trim()
 
     assert "Starts when SPL-3 and SPL-4 merge" =
              Floki.text(Floki.find(board, "#split-row-SPL-5 td:last-child [data-qa=split-row-line]"))
 
     assert [] = Floki.find(board, "#split-row-SPL-5 td:last-child a")
-    assert [] = Floki.find(board, "#split-row-SPL-5 td:nth-child(5) [title]")
+    assert [] = Floki.find(board, "#split-row-SPL-5 td:nth-child(6) [title]")
   end
 
   test "a failed row clamps its error to two lines, carries it whole on hover and puts Fix under it", %{
@@ -90,7 +90,7 @@ defmodule RailWeb.Components.SplitBoardTest do
     error: error
   } do
     [line] = Floki.find(board, "#split-row-SPL-4 td:last-child [data-qa=split-row-line]")
-    full = "Engineer failed: #{error}"
+    full = "Implement failed: #{error}"
 
     assert [^full] = Floki.attribute(line, "title")
     assert [class] = Floki.attribute(line, "class")
@@ -150,6 +150,6 @@ defmodule RailWeb.Components.SplitBoardTest do
   end
 
   test "a done stage reads Done to a screen reader", %{board: board} do
-    assert ["Done", "Done"] = board |> Floki.find("#split-row-SPL-1 .sr-only") |> Enum.map(&Floki.text/1)
+    assert ["Done", "Done", "Done"] = board |> Floki.find("#split-row-SPL-1 .sr-only") |> Enum.map(&Floki.text/1)
   end
 end

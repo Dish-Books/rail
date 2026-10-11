@@ -52,6 +52,23 @@ defmodule Rail.Mcp.Utils.RunToolSaveFindingTest do
     assert [%Finding{key: "unhandled-nil", file: "lib/a.ex", decision: nil}] = Pipeline.list_findings(task)
   end
 
+  test "past Review a new finding is refused with where the task is, for the agent to say in the conversation",
+       %{task: task, finding: finding} do
+    {:ok, finalizing} = Pipeline.update_task(task, %{stage: :finalize})
+
+    assert {:refused, "Nothing saved: the review is finished and the task is at Finalize" <> rest} =
+             run_tool_save_finding(finalizing, finding, [])
+
+    assert rest =~ "in the conversation"
+
+    {:ok, merged} = Pipeline.update_task(finalizing, %{stage: :merged})
+
+    assert {:refused, "Nothing saved: the review is finished and the task has merged" <> _rest} =
+             run_tool_save_finding(merged, finding, [])
+
+    assert [] = Pipeline.list_findings(task)
+  end
+
   test "more than one piece of evidence is counted in pieces", %{task: task, finding: finding} do
     evidence = [
       %{"name" => "The clause", "kind" => "code", "file" => "lib/a.ex", "line" => 3},

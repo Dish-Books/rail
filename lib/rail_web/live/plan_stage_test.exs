@@ -144,6 +144,7 @@ defmodule RailWeb.Live.PlanStageTest do
 
     view |> element("#plan-item-split") |> render_click()
     assert has_element?(view, "#plan-split-none", "Not split")
+    assert has_element?(view, "#plan-split-none", "Approve makes one task, which moves to Implement.")
   end
 
   test "a saved split lays its children out in the rounds they start in, and Approve shows", %{

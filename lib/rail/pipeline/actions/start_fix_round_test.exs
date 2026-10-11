@@ -134,12 +134,13 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
     assert {:ok, %Run{}} = Pipeline.start_fix_round(system_scope(), run)
   end
 
-  test "with nothing ruled Fix the review finishes and the pull request leaves draft, once", %{
-    task: task,
-    run: run,
-    crash: crash,
-    nit: nit
-  } do
+  test "with nothing ruled Fix the review finishes, the pull request leaves draft and the task moves to Finalize, once",
+       %{
+         task: task,
+         run: run,
+         crash: crash,
+         nit: nit
+       } do
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
 
@@ -151,9 +152,12 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
       end
     end)
 
-    assert {:ok, %Run{status: :finished}} = Pipeline.start_fix_round(system_scope(), run)
-    assert %Task{pr_is_draft: false} = Repo.reload!(task)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+
+    assert {:ok, %Run{status: :finished, task_id: task_id}} = Pipeline.start_fix_round(system_scope(), run)
+    assert %Task{stage: :finalize, pr_is_draft: false} = Repo.reload!(task)
     assert [%{finished_at: %DateTime{}}] = Pipeline.read_review(task)
+    assert_received {:pipeline_changed, ^task_id}
     assert {:error, :nothing_to_start} = Pipeline.start_fix_round(system_scope(), run)
   end
 
@@ -238,12 +242,21 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
     assert %Task{stage: :review} = Repo.reload!(task)
   end
 
-  test "nothing starts before a round has finished, or on a task that left Review", %{task: task, run: run} do
+  test "nothing starts before a round has finished, on a task back before Review, or on one cleaned up", %{
+    task: task,
+    run: run
+  } do
     File.rm!(Path.join([task.scratch_path, "reviews", "SFR-1.json"]))
     assert {:error, :nothing_to_start} = Pipeline.start_fix_round(system_scope(), run)
 
-    {:ok, _merged} = Pipeline.update_task(task, %{stage: :merged})
-    assert {:error, {:invalid_stage, :merged}} = Pipeline.start_fix_round(system_scope(), run)
+    {:ok, merged} = Pipeline.update_task(task, %{stage: :merged})
+    assert {:error, :nothing_to_start} = Pipeline.start_fix_round(system_scope(), run)
+
+    {:ok, engineering} = Pipeline.update_task(merged, %{stage: :engineer})
+    assert {:error, {:invalid_stage, :engineer}} = Pipeline.start_fix_round(system_scope(), run)
+
+    {:ok, _cleaned} = Pipeline.update_task(engineering, %{stage: :finalize, cleaned_up_at: DateTime.utc_now()})
+    assert {:error, :cleaned_up} = Pipeline.start_fix_round(system_scope(), run)
   end
 
   test "a lead that cannot be spawned keeps its failure on the run, and dispatch off says so", %{
@@ -588,7 +601,8 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
       assert [%ScreenComment{status: :unsent}] = Pipeline.list_screen_comments(grace, task)
     end
 
-    test "after Finish review a Send of comments resumes the lead on them, and one with none is refused", %{
+    # Comments stay open until cleanup, and past Review they resume the lead without moving the task.
+    test "after Finish review, at Finalize, a Send of comments resumes the lead on them and leaves the stage", %{
       task: task,
       run: run,
       crash: crash,
@@ -612,6 +626,63 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
 
       assert {:ok, %Run{status: :running, completed_at: nil}} = Pipeline.start_fix_round(ada, run)
       assert [%{finished_at: %DateTime{}}] = Pipeline.read_review(task)
+      assert %Task{stage: :finalize} = Repo.reload!(task)
+    end
+
+    # The merged branch stays until cleanup, so a comment still reaches the lead, whose commits only go onto it.
+    test "after the merge a Send of comments resumes the lead and the task stays merged, and an empty one is refused",
+         %{task: task, run: run, ada: ada, diff: diff} do
+      {:ok, _merged} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
+
+      # Merged with its last pass still open, the review is over all the same: an empty Send finishes nothing.
+      assert {:error, :nothing_to_start} = Pipeline.start_fix_round(ada, run)
+      assert [%{finished_at: nil}] = Pipeline.read_review(task)
+
+      {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "Rename it."))
+
+      expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+        assert prompt =~ "on the human's 1 comment."
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %Run{status: :running}} = Pipeline.start_fix_round(ada, run)
+      assert %Task{stage: :merged} = Repo.reload!(task)
+    end
+
+    # Nobody rules past Review, so a Fix finding a later turn marked not fixed is not sent as one there.
+    test "at Finalize a Send carries the comments alone, never a Fix finding", %{
+      task: task,
+      run: run,
+      crash: crash,
+      nit: nit,
+      ada: ada,
+      diff: diff
+    } do
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
+
+      {:ok, _fixed} =
+        Pipeline.save_finding(task, %{
+          "key" => "nil-crash",
+          "status" => "fixed",
+          "covered" => [1, 2],
+          "test" => %{"file" => "a_test.exs", "name" => "handles nil"},
+          "files" => ["lib/a.ex"]
+        })
+
+      {:ok, _no_pr} = Pipeline.update_task(task, %{pr_number: nil})
+      {:ok, %Run{status: :finished}} = Pipeline.start_fix_round(ada, run)
+      assert %Task{stage: :finalize} = finalizing = Repo.reload!(task)
+      {:ok, _noted} = Pipeline.save_finding(finalizing, %{"key" => "nil-crash", "status" => "not_fixed"})
+      {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "Name it."))
+
+      expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+        assert prompt =~ "on the human's 1 comment."
+        refute prompt =~ "<finding"
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %Run{status: :running}} = Pipeline.start_fix_round(ada, run)
     end
 
     test "nothing goes while a finding is unruled or the lead works, and the comments stay unsent", %{

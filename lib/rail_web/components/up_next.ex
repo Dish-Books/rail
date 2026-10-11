@@ -4,8 +4,9 @@ defmodule RailWeb.Components.UpNext do
 
   The first leads as a card and the rest follow as rows. Nothing here acts on a
   run: what the human does next — reading a ticket, answering a question — needs
-  the task in front of them, so every entry is only a way there. A change whose
-  review is finished is ready to merge, and its entry opens on Review.
+  the task in front of them, so every entry is only a way there. A task whose
+  review finished and that nobody has marked ready is a Finalize row, opening on
+  Finalize.
   """
   use RailWeb, :html
 
@@ -29,12 +30,15 @@ defmodule RailWeb.Components.UpNext do
           into: MapSet.new(),
           do: run.id
 
+    # Marking ready is one click, not something to read, so it is never the card that leads.
+    featured = Enum.find(assigns.runs, &(not finalizing?(&1)))
+
     assigns =
       assigns
-      |> assign(:featured, List.first(assigns.runs))
-      |> assign(:rest, Enum.drop(assigns.runs, 1))
+      |> assign(:featured, featured)
+      |> assign(:rest, List.delete(assigns.runs, featured))
       |> assign(:picking, picking)
-      |> assign(:featured_icon, featured_icon(List.first(assigns.runs)))
+      |> assign(:featured_icon, featured_icon(featured))
 
     ~H"""
     <div id="up-next" data-qa="up-next" class="space-y-3">
@@ -68,7 +72,7 @@ defmodule RailWeb.Components.UpNext do
                 )}
               </span>
               <span class="font-mono text-xs text-slate-600 dark:text-slate-400 truncate">
-                {@featured.task.issue.identifier} · {@featured.role.name}
+                {@featured.task.issue.identifier} · {Task.stage_label(@featured.task.stage)}
                 <span :if={parent_identifier(@featured)} class="text-slate-500 dark:text-slate-400">
                   in {parent_identifier(@featured)}
                 </span>
@@ -102,7 +106,7 @@ defmodule RailWeb.Components.UpNext do
       <.link
         :for={run <- @rest}
         {destination(run)}
-        id={"up-next-row-#{run.id}"}
+        id={if finalizing?(run), do: "up-next-finalize-row-#{run.id}", else: "up-next-row-#{run.id}"}
         data-qa="up-next-row"
         class="group flex items-center gap-4 rounded-xl border border-slate-200 dark:border-slate-700/70 bg-white dark:bg-slate-800/40 px-5 py-3.5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/70"
       >
@@ -154,12 +158,18 @@ defmodule RailWeb.Components.UpNext do
   defp parent_identifier(%Run{task: %Task{parent_task: %Task{issue: %{identifier: identifier}}}}), do: identifier
   defp parent_identifier(%Run{}), do: nil
 
-  # Review is what the merge is decided on, so a change ready for it opens there.
+  # Review is what the merge is decided on, so a change ready for it opens there, and one at Finalize on Finalize.
   defp destination(run) do
-    if ready_to_merge?(run),
-      do: [navigate: ~p"/tasks/#{run.task_id}?tab=#{run.role_id}"],
-      else: [navigate: ~p"/tasks/#{run.task_id}"]
+    cond do
+      finalizing?(run) -> [navigate: ~p"/tasks/#{run.task_id}?tab=finalize"]
+      ready_to_merge?(run) -> [navigate: ~p"/tasks/#{run.task_id}?tab=#{run.role_id}"]
+      true -> [navigate: ~p"/tasks/#{run.task_id}"]
+    end
   end
+
+  # The Review run of a task at Finalize waits only on someone marking it ready.
+  defp finalizing?(%Run{task: %Task{stage: :finalize}} = run), do: Run.state(run) == :done
+  defp finalizing?(%Run{}), do: false
 
   # A Review round waiting on a person carries the Review screen's Findings icon; every other card is words alone.
   defp featured_icon(%Run{task: %Task{} = task} = run) do
@@ -192,6 +202,7 @@ defmodule RailWeb.Components.UpNext do
     case Run.state(run) do
       :done ->
         cond do
+          finalizing?(run) -> "Finalize"
           ready_to_merge?(run) -> "Ready to merge"
           MapSet.member?(picking, run.id) -> "Pick"
           true -> "Review"
@@ -226,7 +237,7 @@ defmodule RailWeb.Components.UpNext do
     case Run.state(run) do
       :done ->
         cond do
-          ready_to_merge?(run) -> "review finished"
+          finalizing?(run) or ready_to_merge?(run) -> "review finished"
           MapSet.member?(picking, run.id) -> "pick a design"
           true -> "#{work(run)} ready for review"
         end

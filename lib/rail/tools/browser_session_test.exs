@@ -189,7 +189,7 @@ defmodule Rail.Tools.BrowserSessionTest do
     assert mine != theirs
 
     {:ok, _navigated} = BrowserSession.call(explorer, "Page.navigate", %{url: page})
-    assert_receive {:browser_frame, _task_id, _data}, 10_000
+    assert_receive {:browser_frame, _task_id, _name, _data}, 10_000
 
     eventually(fn -> assert Tools.get_browser_url(task, "explorer 2") == page end)
     assert Tools.get_browser_url(task, "qa") in [nil, "about:blank"]
@@ -347,6 +347,31 @@ defmodule Rail.Tools.BrowserSessionTest do
     assert byte_size(target) > 0
   end
 
+  # Reconcile and an agent's browser tools act only on the tab they had, so a tab that has gone is said, not replaced
+  # by a blank one.
+  test "asking only for a tab the browser still has opens nothing when its tab is gone or never was", %{task: task} do
+    {:ok, session} = Tools.start_browser_session(task, "qa")
+    %Session{id: id, browser_context_id: context} = Repo.get_by!(Session, task_id: task.id)
+    :ok = GenServer.stop(session, :shutdown, 10_000)
+
+    {:ok, %{url: url}} = ensure_browser_host(start: false)
+    {:ok, connection} = Browser.start_link(url: url)
+    {:ok, _closed} = Browser.call(connection, "Target.disposeBrowserContext", %{browserContextId: context})
+    GenServer.stop(connection)
+
+    assert {:error, :browser_restarted} = Tools.start_browser_session(task, "qa", existing: true)
+    assert %Session{status: :finished, ended_reason: :browser_gone} = Repo.get!(Session, id)
+
+    {:ok, %Session{id: stuck}} =
+      %Session{}
+      |> Session.changeset(%{task_id: task.id, name: "qa", status: :starting, started_at: DateTime.utc_now()})
+      |> Repo.insert()
+
+    assert {:error, :no_browser} = Tools.start_browser_session(task, "qa", existing: true)
+    assert %Session{status: :finished} = Repo.get!(Session, stuck)
+    refute Repo.exists?(from s in Session, where: s.task_id == ^task.id and s.status != :finished)
+  end
+
   # A Chrome that cannot be started is no answer about whether the tab is still
   # there, so the row pointing at it is left for when it can be.
   test "a tab that cannot be reached for want of a browser keeps its row", %{task: task} do
@@ -456,7 +481,7 @@ defmodule Rail.Tools.BrowserSessionTest do
     {:ok, session} = Tools.start_browser_session(task, "qa")
     {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
 
-    assert_receive {:browser_frame, task_id, data}, 10_000
+    assert_receive {:browser_frame, task_id, "qa", data}, 10_000
     assert task_id == task.id
     assert {:ok, <<0xFF, 0xD8, _rest::binary>>} = Base.decode64(data)
 
@@ -561,7 +586,7 @@ defmodule Rail.Tools.BrowserSessionTest do
     assert BrowserSession.last_frame(session) == nil
 
     Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}:qa")
-    assert_receive {:browser_frame, _task_id, _data}, 10_000
+    assert_receive {:browser_frame, _task_id, _name, _data}, 10_000
 
     # Chrome keeps two frames in flight, so the one received can be the second,
     # sent while the first ack was still held and before its next look found us.
@@ -575,7 +600,7 @@ defmodule Rail.Tools.BrowserSessionTest do
     {:ok, session} = Tools.start_browser_session(task, "qa")
     %Session{browser_context_id: context} = Repo.get_by!(Session, task_id: task.id)
     {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
-    assert_receive {:browser_frame, _task_id, _data}, 10_000
+    assert_receive {:browser_frame, _task_id, _name, _data}, 10_000
 
     {:ok, %{url: url}} = ensure_browser_host(start: false)
     {:ok, connection} = Browser.start_link(url: url)

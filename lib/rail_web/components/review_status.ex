@@ -1,8 +1,8 @@
 defmodule RailWeb.Components.ReviewStatus do
   @moduledoc """
   What the Findings item shows above the list while the Review run works or waits: a round running, a fix
-  round, CI on the fix commit with the end of its log, the next round, CI failed three times, or nothing
-  left to rule, with each agent at work and the work it was given.
+  round, CI on the fix commit, the next round, CI failed three times, or nothing left to rule, with each
+  agent at work and the work it was given.
   """
   use RailWeb, :html
 
@@ -11,7 +11,6 @@ defmodule RailWeb.Components.ReviewStatus do
   attr :sha, :string, default: nil, doc: "the short commit CI or the round is on"
   attr :counts, :map, required: true, doc: "`%{fix:, fixed:, dismissed:}`"
   attr :agents, :list, default: [], doc: "`%{name:, work:, running:}` for each subagent of the turn"
-  attr :tail, :list, default: [], doc: "the end of the CI log"
   attr :pr_number, :integer, default: nil
 
   def review_status(assigns) do
@@ -24,7 +23,10 @@ defmodule RailWeb.Components.ReviewStatus do
       data-phase={@phase}
       class="shrink-0 px-4 py-3 space-y-2 border-b border-slate-200 dark:border-slate-700"
     >
-      <p class={["flex items-center gap-2 text-[13.5px] font-semibold", tone(@phase)]}>
+      <p class={[
+        "flex flex-wrap items-center gap-x-2 gap-y-1 text-[13.5px] font-semibold",
+        tone(@phase)
+      ]}>
         <span :if={@phase in [:round, :fixing, :ci]} class="relative flex size-2 shrink-0">
           <span class="absolute inline-flex size-full rounded-full bg-blue-400 opacity-75 motion-safe:animate-ping" />
           <span class="relative inline-flex size-2 rounded-full bg-blue-500" />
@@ -56,23 +58,6 @@ defmodule RailWeb.Components.ReviewStatus do
           <span class="min-w-0 truncate text-slate-500 dark:text-slate-400">{agent.work}</span>
         </span>
       </div>
-
-      <div
-        :if={@tail != [] and @phase in [:ci, :ci_failed]}
-        data-qa="review_status_log"
-        class="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden"
-      >
-        <p class="flex items-center gap-2 px-3 py-1.5 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 text-[11px] text-slate-500 dark:text-slate-400">
-          <.icon name="pi-terminal-window" class="size-[13px]" />End of the CI log
-        </p>
-        <div class="overflow-x-auto bg-slate-50 dark:bg-slate-800/40 py-1.5 font-mono text-[11px] leading-[1.6]">
-          <%!-- The row is whitespace-pre, so the line sits in it with no template whitespace around it. --%><div
-            :for={line <- @tail}
-            phx-no-format
-            class="pl-3 pr-4 whitespace-pre text-slate-700 dark:text-slate-300"
-          >{line}</div>
-        </div>
-      </div>
     </div>
     """
   end
@@ -102,7 +87,7 @@ defmodule RailWeb.Components.ReviewStatus do
 
   defp said(%{phase: :ci_failed} = assigns) do
     {"CI failed 3 times on fix round #{assigns.round}",
-     "The Review lead stopped. Read the log, then message the lead: it can run CI again with nothing changed."}
+     "The Review lead stopped. Read the CI output in the conversation, then message the lead. It can run CI again with nothing changed."}
   end
 
   defp said(%{phase: :finished} = assigns) do

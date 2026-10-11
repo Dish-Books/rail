@@ -495,6 +495,45 @@ defmodule RailWeb.Live.RunConversationTest do
     assert html =~ "mise run ci"
   end
 
+  test "an open CI block and an open Worktree setup block each render their output in a box that scrolls to its end",
+       %{task: task, roles: roles, roles_map: roles_map} do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:review_lead].id,
+        status: :running,
+        started_at: ~U[2026-09-09 10:00:00.000000Z]
+      })
+
+    for {kind, command, line} <- [{:setup, "./bin/setup", "Cannot copy rail_dev"}, {:ci, "mise run ci", "1 failure"}] do
+      process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: task.id,
+          kind: kind,
+          command: command,
+          exit_code: 1,
+          stream_path: "/tmp/#{run.id}-#{kind}.log",
+          status: :finished,
+          started_at: ~U[2026-09-09 10:00:00.000000Z]
+        })
+        |> Repo.insert!()
+
+      Pipeline.append_run_events(run.id, process.id, [line])
+    end
+
+    outputs =
+      RunConversation
+      |> render_component(id: "conv", task: task, runs: [run], roles_map: roles_map)
+      |> Floki.parse_fragment!()
+      |> Floki.find("pre[data-qa=command-output][phx-hook=CommandOutput]")
+
+    assert [setup_id, ci_id] = Enum.map(outputs, &(&1 |> Floki.attribute("id") |> List.first()))
+    assert setup_id != ci_id
+    assert ["Cannot copy rail_dev", "1 failure"] = Enum.map(outputs, &Floki.text/1)
+  end
+
   test "a setup script that passed keeps its output folded away until asked", %{
     task: task,
     roles: roles,
@@ -1747,6 +1786,23 @@ defmodule RailWeb.Live.RunConversationTest do
       assert has_element?(view, "#send-review-tray:not([disabled])")
     end
 
+    # Cleanup in another tab takes the branch away under a page still showing Send.
+    test "a Send on a page drawn before the task was cleaned up says so and sends nothing", %{
+      task: task,
+      ada: ada,
+      ada_conn: ada_conn,
+      diff: diff
+    } do
+      {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "One more thing."))
+      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
+      {:ok, _cleaned} = Pipeline.update_task(task, %{cleaned_up_at: DateTime.utc_now()})
+      reject(Tools, :start_os_process, 2)
+
+      view |> element("#send-review-tray") |> render_click()
+
+      assert has_element?(view, "#review-send-tray-hint", "cleaned up")
+    end
+
     test "after Finish review the conversation stays open, and a comment's Send resumes the lead", %{
       task: task,
       run: run,
@@ -1763,6 +1819,8 @@ defmodule RailWeb.Live.RunConversationTest do
       refute has_element?(view, "#review-send-tray")
       assert has_element?(view, "#composer-root")
 
+      # The page followed the task on to Finalize; its Review tab is where comments are sent from.
+      view |> element("#task-tab-#{run.role_id}") |> render_click()
       {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "One more thing."))
       _settled = render(view)
 
@@ -1774,6 +1832,7 @@ defmodule RailWeb.Live.RunConversationTest do
       view |> element("#send-review-tray", "Send 1") |> render_click()
 
       assert %{status: :running} = Repo.reload!(run)
+      assert %{stage: :finalize} = Repo.reload!(task)
     end
   end
 end

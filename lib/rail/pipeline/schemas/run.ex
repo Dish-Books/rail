@@ -201,8 +201,8 @@ defmodule Rail.Pipeline.Schemas.Run do
   A blocked run stays blocked until its answers are sent, so it keeps its place
   in the queue while the human works through the batch. A run at a stage a human
   signs off is waiting on that sign-off once it is done: its ticket, design pick
-  and plan approved, its diff sent to review, its findings ruled, or, once
-  nothing is left to rule or fix, the change merged.
+  and plan approved, its diff sent to review, its findings ruled, or, at Finalize,
+  the task marked ready for a tech lead.
 
   A run that failed or stopped is waiting too, and on the same person. Neither
   moves on its own - a failure is fixed by a message and a stopped run is resumed
@@ -214,7 +214,7 @@ defmodule Rail.Pipeline.Schemas.Run do
   def needs_attention?(%__MODULE__{role: %Role{} = role, task: %Task{issue: %Issue{} = issue} = task} = run) do
     task.stage != :merged and is_nil(task.merged_at) and is_nil(issue.completed_at) and
       issue.state not in [:canceled, :duplicate] and role.stage == Task.role_stage(task.stage) and
-      waiting_state?(state(run), task.stage)
+      waiting_state?(state(run), task)
   end
 
   # A run read as its issue was deleted has no issue left to wait on anyone for.
@@ -266,11 +266,13 @@ defmodule Rail.Pipeline.Schemas.Run do
 
   def can_chat?(_other), do: false
 
-  defp waiting_state?(:blocked, _stage), do: true
-  defp waiting_state?(:failed, _stage), do: true
-  defp waiting_state?(:stopped, _stage), do: true
-  defp waiting_state?(:done, stage), do: stage in [:plan, :engineer, :review]
-  defp waiting_state?(_running_or_queued, _stage), do: false
+  defp waiting_state?(:blocked, _task), do: true
+  defp waiting_state?(:failed, _task), do: true
+  defp waiting_state?(:stopped, _task), do: true
+  # Once a teammate marks it ready, a task at Finalize is the review queue's, not its owner's.
+  defp waiting_state?(:done, %Task{stage: :finalize, marked_ready_at: marked}), do: is_nil(marked)
+  defp waiting_state?(:done, %Task{stage: stage}), do: stage in [:plan, :engineer, :review]
+  defp waiting_state?(_running_or_queued, _task), do: false
 
   # A run is one conversation with one agent. Moving it to another would silently
   # strand everything said so far, so a caller trying it is told rather than

@@ -95,7 +95,6 @@ defmodule RailWeb.Live.ReviewStage do
                 sha={@sha}
                 counts={@counts}
                 agents={@agents}
-                tail={@tail}
                 pr_number={@task.pr_number}
               />
 
@@ -436,7 +435,6 @@ defmodule RailWeb.Live.ReviewStage do
     |> assign(:round, round(phase, passes))
     |> assign(:sha, ci_sha(ci))
     |> assign(:counts, counts)
-    |> assign(:tail, if(ci, do: ci.tail, else: []))
     |> assign(
       :agents,
       if(socket.assigns.item == :findings and phase in [:round, :fixing], do: agents(run), else: [])
@@ -452,7 +450,7 @@ defmodule RailWeb.Live.ReviewStage do
     |> assign(:url, browser && socket.assigns.item == :browser && Tools.get_browser_url(task, browser))
     |> assign_items()
     |> assign_selected(selected, findings)
-    |> assign(:commentable, task.stage == :review and is_nil(task.cleaned_up_at))
+    |> assign(:commentable, task.stage in [:review, :finalize, :merged] and is_nil(task.cleaned_up_at))
     |> assign_finding_comments()
     |> watch(browser)
     |> tray(findings, passes, phase, counts)
@@ -460,21 +458,23 @@ defmodule RailWeb.Live.ReviewStage do
 
   # The conversation's tray shows what Send sends and whether it can; the page holds both and hands them on.
   defp tray(socket, findings, passes, phase, counts) do
+    %{stage: stage, cleaned_up_at: cleaned_up_at} = socket.assigns.task
+
+    # Past Review the review is over and nobody rules, so only the reader's comments go, with no Finish review.
     gate = %{
       working: phase in [:round, :fixing, :ci],
-      undecided: counts.undecided,
-      finished: passes != [] and List.last(passes).finished_at != nil,
+      undecided: if(stage == :review, do: counts.undecided, else: 0),
+      finished: stage != :review or (passes != [] and List.last(passes).finished_at != nil),
       ci_failed: phase == :ci_failed,
       saved: passes != []
     }
 
     # The Fix findings went out with the Send, so they come back only if the round ends with them still outstanding.
     # A fix commit moves HEAD past the pass, and the gate then reads :round, so every working phase hides them.
-    fix = if gate.working, do: [], else: Enum.filter(findings, &Finding.outstanding?/1)
+    fix = if gate.working or stage != :review, do: [], else: Enum.filter(findings, &Finding.outstanding?/1)
 
-    # A task that has left Review, or was cleaned up at it, sends nothing from it.
-    %{stage: stage, cleaned_up_at: cleaned_up_at} = socket.assigns.task
-    tray = if stage == :review and is_nil(cleaned_up_at), do: %{fix: fix, gate: gate}
+    # Comments are taken until cleanup, so a cleaned-up task, or one not yet at Review, sends nothing from it.
+    tray = if stage in [:review, :finalize, :merged] and is_nil(cleaned_up_at), do: %{fix: fix, gate: gate}
     send(self(), {:review_tray, tray})
     socket
   end

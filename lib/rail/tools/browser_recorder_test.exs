@@ -18,8 +18,17 @@ defmodule Rail.Tools.BrowserRecorderTest do
   test "writes every frame the browser paints, with when it arrived", %{task: task, directory: directory} do
     {:ok, recorder} = Tools.start_browser_recording(task, "demo")
 
-    Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:demo", {:browser_frame, task.id, Base.encode64("first")})
-    Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:demo", {:browser_frame, task.id, Base.encode64("second")})
+    Phoenix.PubSub.broadcast(
+      Rail.PubSub,
+      "browser:#{task.id}:demo",
+      {:browser_frame, task.id, "demo", Base.encode64("first")}
+    )
+
+    Phoenix.PubSub.broadcast(
+      Rail.PubSub,
+      "browser:#{task.id}:demo",
+      {:browser_frame, task.id, "demo", Base.encode64("second")}
+    )
 
     eventually(fn ->
       assert File.read!(Path.join(directory, "frames/000000.jpg")) == "first"
@@ -42,8 +51,13 @@ defmodule Rail.Tools.BrowserRecorderTest do
   test "films only the browser it was started on", %{task: task, directory: directory} do
     {:ok, recorder} = Tools.start_browser_recording(task, "demo")
 
-    Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:qa", {:browser_frame, task.id, Base.encode64("qa")})
-    Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:demo", {:browser_frame, task.id, Base.encode64("demo")})
+    Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:qa", {:browser_frame, task.id, "qa", Base.encode64("qa")})
+
+    Phoenix.PubSub.broadcast(
+      Rail.PubSub,
+      "browser:#{task.id}:demo",
+      {:browser_frame, task.id, "demo", Base.encode64("demo")}
+    )
 
     eventually(fn -> assert File.read!(Path.join(directory, "frames/000000.jpg")) == "demo" end)
     assert BrowserRecorder.finish(recorder)
@@ -58,7 +72,11 @@ defmodule Rail.Tools.BrowserRecorderTest do
 
     assert BrowserRecorder.elapsed_ms(recorder) == 0
 
-    Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:demo", {:browser_frame, task.id, Base.encode64("painted")})
+    Phoenix.PubSub.broadcast(
+      Rail.PubSub,
+      "browser:#{task.id}:demo",
+      {:browser_frame, task.id, "demo", Base.encode64("painted")}
+    )
 
     eventually(fn -> assert BrowserRecorder.elapsed_ms(recorder) >= 0 end)
     assert BrowserRecorder.finish(recorder)

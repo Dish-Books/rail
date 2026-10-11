@@ -72,10 +72,10 @@ defmodule Rail.Tools.Actions.StartBrowserSession do
   end
 
   # A row that never got as far as a tab stands for nothing, and only one live row
-  # is allowed per name.
+  # is allowed per name; it is then as if there were none, so `existing: true` still opens nothing.
   defp resume(%Task{} = task, name, %Session{} = session, opts) do
     settle(session, :no_tab)
-    launch(task, name, opts)
+    resume(task, name, nil, opts)
   end
 
   # A tool acting on a browser the agent named opens nothing when there is none,

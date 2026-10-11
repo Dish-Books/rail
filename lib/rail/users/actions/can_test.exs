@@ -104,6 +104,14 @@ defmodule Rail.Users.Actions.CanTest do
       refute Users.can?(scope, :linear_workspace, :update)
     end
 
+    test "only tech leads may merge tasks, and an admin without the setting is refused" do
+      assert Users.can?(Scope.for_system(), :tasks, :merge)
+      assert Users.can?(Scope.for_user(%{admin: false, tech_lead: true}), :tasks, :merge)
+      refute Users.can?(Scope.for_user(%{admin: true, tech_lead: false}), :tasks, :merge)
+      refute Users.can?(Scope.for_user(%{admin: false}), :tasks, :merge)
+      refute Users.can?(Scope.for_user(%{admin: false, tech_lead: true}), :tasks, :manage)
+    end
+
     test "non-admin scope is denied regardless of resource or action" do
       scope = Scope.for_user(%{admin: false})
       refute Users.can?(scope, :projects, :view)

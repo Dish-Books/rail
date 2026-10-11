@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Actions.CreateScreenCommentTest do
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ScreenComment
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles
   alias Rail.Users
 
@@ -45,7 +46,11 @@ defmodule Rail.Pipeline.Actions.CreateScreenCommentTest do
              })
   end
 
-  test "takes a comment after the review is finished", %{project: project, task: task, ada: ada} do
+  test "takes a comment after the review is finished, at Finalize and after the merge", %{
+    project: project,
+    task: task,
+    ada: ada
+  } do
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
 
     {:ok, run} =
@@ -55,19 +60,23 @@ defmodule Rail.Pipeline.Actions.CreateScreenCommentTest do
     {:ok, _finished} = Pipeline.start_fix_round(system_scope(), run)
 
     assert [%{finished_at: %DateTime{}}] = Pipeline.read_review(task)
+    assert %Task{stage: :finalize} = finalizing = Repo.reload!(task)
+    assert {:ok, %ScreenComment{}} = Pipeline.create_screen_comment(ada, task, %{"key" => "file-list", "body" => "Hi."})
+
+    {:ok, _merged} = Pipeline.update_task(finalizing, %{stage: :merged})
     assert {:ok, %ScreenComment{}} = Pipeline.create_screen_comment(ada, task, %{"key" => "file-list", "body" => "Hi."})
   end
 
-  test "refuses a state that is not listed, a task not at Review, and a cleaned-up task", %{task: task, ada: ada} do
+  test "refuses a state that is not listed, a task back before Review, and a cleaned-up task", %{task: task, ada: ada} do
     attrs = %{"key" => "file-list", "body" => "Fold it."}
 
     assert {:error, :not_found} = Pipeline.create_screen_comment(ada, task, %{attrs | "key" => "toolbar"})
     assert {:error, %Ecto.Changeset{}} = Pipeline.create_screen_comment(ada, task, %{attrs | "body" => " "})
 
-    {:ok, merged} = Pipeline.update_task(task, %{stage: :merged})
-    assert {:error, {:invalid_stage, :merged}} = Pipeline.create_screen_comment(ada, task, attrs)
+    {:ok, engineering} = Pipeline.update_task(task, %{stage: :engineer})
+    assert {:error, {:invalid_stage, :engineer}} = Pipeline.create_screen_comment(ada, task, attrs)
 
-    {:ok, _cleaned} = Pipeline.update_task(merged, %{stage: :review, cleaned_up_at: DateTime.utc_now()})
+    {:ok, _cleaned} = Pipeline.update_task(engineering, %{stage: :finalize, cleaned_up_at: DateTime.utc_now()})
     assert {:error, :cleaned_up} = Pipeline.create_screen_comment(ada, task, attrs)
     assert Repo.all(ScreenComment) == []
   end
