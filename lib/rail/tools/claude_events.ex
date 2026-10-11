@@ -24,6 +24,7 @@ defmodule Rail.Tools.ClaudeEvents do
     usage: %Run.Usage{},
     base_usage: %Run.Usage{},
     message_usage: %{},
+    streamed_usage: %Run.Usage{},
     tool_names: %{},
     subagent_calls: %{},
     num_turns: 0,
@@ -308,11 +309,31 @@ defmodule Rail.Tools.ClaudeEvents do
   # The result carries the turn's total, but a turn a person stopped before it
   # says nothing; so each message is counted once as it streams.
   defp stream_usage(state, %{"id" => id, "usage" => %{} = usage}) when is_binary(id) do
-    messages = Map.put(state.message_usage, id, usage_from(usage))
-    %{state | message_usage: messages, usage: Enum.reduce(Map.values(messages), state.base_usage, &Run.add_usage(&2, &1))}
+    spent = usage_from(usage)
+    streamed = state.streamed_usage |> Run.add_usage(spent) |> Run.add_usage(taken_back(state.message_usage[id]))
+
+    %{
+      state
+      | message_usage: Map.put(state.message_usage, id, spent),
+        streamed_usage: streamed,
+        usage: Run.add_usage(state.base_usage, streamed)
+    }
   end
 
   defp stream_usage(state, _message), do: state
+
+  # A message streams its usage more than once, each count replacing its last, so
+  # the last is taken off the running total rather than every message added up again.
+  defp taken_back(nil), do: %Run.Usage{}
+
+  defp taken_back(%Run.Usage{} = counted) do
+    %Run.Usage{
+      input_tokens: -counted.input_tokens,
+      output_tokens: -counted.output_tokens,
+      cache_read_input_tokens: -counted.cache_read_input_tokens,
+      cache_creation_input_tokens: -counted.cache_creation_input_tokens
+    }
+  end
 
   defp usage_from(u) do
     %Run.Usage{

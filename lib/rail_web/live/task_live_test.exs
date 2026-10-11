@@ -17,6 +17,7 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.RunEvent
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Repo
@@ -4599,6 +4600,54 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='activity-step'].border-l-red-500 .font-medium", "save_finding")
       assert has_element?(view, "[data-qa='activity-step'].border-l-red-500 p", "must be a whole number")
       refute has_element?(view, "[data-qa='activity-step']", "mcp__rail__")
+    end
+
+    test "a line added to a turn is read with what the turn had already said", %{conn: conn, task: task, run: run} do
+      call = %{"type" => "tool_use", "id" => "toolu_1", "name" => "Read", "input" => %{"file_path" => "lib/gone.ex"}}
+      refusal = %{"type" => "tool_result", "tool_use_id" => "toolu_1", "is_error" => true, "content" => "No such file."}
+
+      _logged =
+        Pipeline.append_run_events(run.id, nil, [
+          Jason.encode!(%{"type" => "assistant", "message" => %{"content" => [call]}})
+        ])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      _logged =
+        Pipeline.append_run_events(run.id, nil, [
+          Jason.encode!(%{"type" => "user", "message" => %{"content" => [refusal]}})
+        ])
+
+      view |> element("[data-qa='activity-tile']:last-of-type button") |> render_click()
+
+      # The refusal names its call only by id, so it reads under the tool's name
+      # only if the call read before it is still held.
+      assert has_element?(view, "[data-qa='activity-step'].border-l-red-500 .font-medium", "Read")
+      assert has_element?(view, "[data-qa='activity-step'].border-l-red-500 p", "No such file.")
+    end
+
+    test "a turn whose lines are no longer the ones read is read afresh", %{conn: conn, task: task, run: run} do
+      [_kept, gone] = Pipeline.append_run_events(run.id, nil, ["Reading the schema.", "It needs a new column."])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "[data-qa='role-bubble']", "It needs a new column.")
+
+      Repo.delete_all(from(event in RunEvent, where: event.id == ^gone.id))
+      view |> element("#chat-composer-form") |> render_submit(%{"message" => "Please add a test"})
+
+      assert has_element?(view, "[data-qa='role-bubble']", "Reading the schema.")
+      refute has_element?(view, "[data-qa='role-bubble']", "It needs a new column.")
+    end
+
+    test "lines that arrive faster than the page reads them are read together", %{conn: conn, task: task, run: run} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      :ok = :sys.suspend(view.pid)
+      _logged = Pipeline.append_run_events(run.id, nil, ["Reading the schema."])
+      _logged = Pipeline.append_run_events(run.id, nil, ["It needs a new column."])
+      :ok = :sys.resume(view.pid)
+
+      assert view |> element("[data-qa='role-bubble']") |> render() =~ ~r/Reading the schema\..*It needs a new column\./s
     end
 
     test "a message typed while the agent works waits on its run", %{conn: conn, task: task, run: run} do
