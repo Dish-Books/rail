@@ -129,7 +129,7 @@ defmodule Rail.Pipeline.Schemas.Run do
   done — a run the user stopped, and a run that ended without stating a verdict,
   are the same situation and are resolved the same way, by sending a message.
 
-  `:waiting` is a run in line for the CPU and memory its role reserves, or for
+  `:waiting` is a run in line for the CPUs its role reserves, or for
   an account with usage left, which starts on its own once there is.
 
   `nil` reads as `:queued`: a stage with no run has not started. With its questions

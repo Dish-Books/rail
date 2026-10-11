@@ -26,8 +26,7 @@ defmodule Rail.Tools.Actions.GetQueuePositionTest do
             status: :waiting_for_resources,
             started_at: now,
             queued_at: DateTime.shift(now, second: -seconds_ago),
-            reserved_cpus: 1,
-            reserved_memory_gb: 2
+            reserved_cpus: 1
           })
 
         {run, os_process}

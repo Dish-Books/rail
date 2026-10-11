@@ -85,7 +85,6 @@ defmodule Rail.Roles.Schemas.Role do
     field :mcp_tools, {:array, :string}, default: []
     # What each of its sandboxes, and the setup and CI its runs start, holds while it runs.
     field :reserved_cpus, :integer, default: 1
-    field :reserved_memory_gb, :integer, default: 2
 
     belongs_to :project, Project
 
@@ -104,7 +103,6 @@ defmodule Rail.Roles.Schemas.Role do
     :project_id,
     :reasoning_effort,
     :reserved_cpus,
-    :reserved_memory_gb,
     :stage,
     :system_prompt
   ]
@@ -118,8 +116,7 @@ defmodule Rail.Roles.Schemas.Role do
     :icon_name,
     :max_concurrent,
     :position,
-    :reserved_cpus,
-    :reserved_memory_gb
+    :reserved_cpus
   ]
 
   @doc "Returns the list of canonical pipeline stages for agent roles."
@@ -139,7 +136,6 @@ defmodule Rail.Roles.Schemas.Role do
     |> validate_number(:max_concurrent, greater_than_or_equal_to: 1)
     |> validate_number(:position, greater_than_or_equal_to: 0)
     |> validate_number(:reserved_cpus, greater_than_or_equal_to: 1)
-    |> validate_number(:reserved_memory_gb, greater_than_or_equal_to: 1)
     |> validate_capacity()
     |> unique_constraint(:stage, name: :roles_project_id_stage_index)
     |> foreign_key_constraint(:project_id)
@@ -147,22 +143,14 @@ defmodule Rail.Roles.Schemas.Role do
 
   @doc """
   How many sandboxes reserving what `role` does fit on a machine of `capacity` at
-  once, and which resource runs out first. Takes a role or a map of the two fields.
+  once. Takes a role or a map of its `reserved_cpus`.
   """
-  def fit_count(%{reserved_cpus: cpus, reserved_memory_gb: memory_gb}, %{cpus: total_cpus, memory_gb: total_memory_gb})
-      when is_integer(cpus) and cpus > 0 and is_integer(memory_gb) and memory_gb > 0 do
-    by_cpus = div(total_cpus, cpus)
-    by_memory = div(total_memory_gb, memory_gb)
-
-    if by_memory < by_cpus,
-      do: %{count: by_memory, limited_by: :memory},
-      else: %{count: by_cpus, limited_by: :cpus}
-  end
+  def fit_count(%{reserved_cpus: cpus}, %{cpus: total_cpus}) when is_integer(cpus) and cpus > 0, do: div(total_cpus, cpus)
 
   # The machine is only asked when the reservation changes, and one it cannot be
   # asked about is left to the line, which refuses what never fits.
   defp validate_capacity(%Ecto.Changeset{valid?: true} = changeset) do
-    with true <- changed?(changeset, :reserved_cpus) or changed?(changeset, :reserved_memory_gb),
+    with true <- changed?(changeset, :reserved_cpus),
          {:ok, capacity} <- Tools.get_sandbox_capacity() do
       refuse_over_capacity(changeset, capacity)
     else
@@ -172,29 +160,18 @@ defmodule Rail.Roles.Schemas.Role do
 
   defp validate_capacity(changeset), do: changeset
 
-  defp refuse_over_capacity(changeset, %{cpus: cpus, memory_gb: memory_gb}) do
+  defp refuse_over_capacity(changeset, %{cpus: cpus}) do
     role = if String.match?(get_field(changeset, :name), ~r/^[aeiou]/i), do: "an", else: "a"
     role = "#{role} #{get_field(changeset, :name)}"
     needs_cpus = get_field(changeset, :reserved_cpus)
-    needs_memory = get_field(changeset, :reserved_memory_gb)
     machine_cpus = if cpus == 1, do: "1 CPU", else: "#{cpus} CPUs"
 
-    changeset =
-      if needs_cpus > cpus,
-        do:
-          add_error(
-            changeset,
-            :reserved_cpus,
-            "This machine has #{machine_cpus} to reserve, so #{role} that needs #{needs_cpus} could never start."
-          ),
-        else: changeset
-
-    if needs_memory > memory_gb,
+    if needs_cpus > cpus,
       do:
         add_error(
           changeset,
-          :reserved_memory_gb,
-          "This machine has #{memory_gb} GB to reserve, so #{role} that needs #{needs_memory} GB could never start."
+          :reserved_cpus,
+          "This machine has #{machine_cpus} to reserve, so #{role} that needs #{needs_cpus} could never start."
         ),
       else: changeset
   end

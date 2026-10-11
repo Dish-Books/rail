@@ -16,4 +16,11 @@ defmodule RailWeb.Components.SandboxUsageMeterTest do
     assert meter.(2.0) =~ "at limit"
     assert meter.(nil) =~ "—"
   end
+
+  test "is the figure alone for what is not reserved" do
+    html = render_component(&SandboxUsageMeter.sandbox_usage_meter/1, id: "m", used: 2.94, unit: "GB")
+
+    assert html =~ "2.9 GB"
+    refute html =~ "of"
+  end
 end

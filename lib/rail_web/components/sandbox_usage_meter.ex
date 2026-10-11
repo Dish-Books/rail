@@ -1,19 +1,28 @@
 defmodule RailWeb.Components.SandboxUsageMeter do
   @moduledoc """
-  How much of what a running sandbox reserves it is using right now, as a bar and
-  a figure, flagged as it nears the limit it cannot pass.
+  What a running sandbox is using right now. Against what it reserves it is a bar
+  and a figure, flagged as it nears its share; with nothing reserved, as memory
+  never is, it is the figure alone.
   """
   use RailWeb, :html
 
   attr :id, :string, required: true
   attr :used, :any, required: true, doc: "a float, or nil when there is no reading"
-  attr :reserved, :integer, required: true
+  attr :reserved, :integer, default: nil
   attr :unit, :string, required: true
   attr :rest, :global
 
   def sandbox_usage_meter(%{used: nil} = assigns) do
     ~H"""
     <span id={@id} class="font-mono text-xs text-slate-500 dark:text-slate-400" {@rest}>—</span>
+    """
+  end
+
+  def sandbox_usage_meter(%{reserved: nil} = assigns) do
+    assigns = assign(assigns, :figure, :erlang.float_to_binary(assigns.used / 1, decimals: 1))
+
+    ~H"""
+    <span id={@id} class="font-mono text-xs text-slate-700 dark:text-slate-300" {@rest}>{@figure} {@unit}</span>
     """
   end
 

@@ -154,8 +154,7 @@ defmodule Rail.Tools.Utils.EnsureBrowserHost do
         "NetworkMode" => "host",
         "Binds" => Rail.sandbox_binds(),
         "CpuShares" => Rail.browser_cpus() * 1024,
-        "Memory" => Rail.browser_memory_gb() * @gib,
-        "MemorySwap" => Rail.browser_memory_gb() * @gib,
+        "OomScoreAdj" => 500,
         "ShmSize" => Rail.browser_shm_size_gb() * @gib,
         "Init" => true,
         "RestartPolicy" => %{"Name" => "unless-stopped"}

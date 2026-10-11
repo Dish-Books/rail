@@ -76,7 +76,6 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
         status: :running,
         started_at: now,
         reserved_cpus: 1,
-        reserved_memory_gb: 2,
         launch: Jason.encode!(%{"executable" => "/bin/true", "args" => [], "env" => %{}, "cwd" => "/tmp"})
       })
 

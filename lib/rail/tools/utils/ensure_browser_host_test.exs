@@ -155,7 +155,7 @@ defmodule Rail.Tools.Utils.EnsureBrowserHostTest do
 
       assert_received {:created, "name=rail-browser", body}
       assert %{"NetworkMode" => "host", "RestartPolicy" => %{"Name" => "unless-stopped"}} = body["HostConfig"]
-      assert body["HostConfig"]["Memory"] == Rail.browser_memory_gb() * 1024 ** 3
+      refute Map.has_key?(body["HostConfig"], "Memory")
       assert body["HostConfig"]["CpuShares"] == Rail.browser_cpus() * 1024
       refute Map.has_key?(body["HostConfig"], "NanoCpus")
       assert body["Image"] == Rail.sandbox_image()

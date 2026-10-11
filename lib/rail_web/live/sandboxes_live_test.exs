@@ -70,7 +70,6 @@ defmodule RailWeb.SandboxesLiveTest do
             status: :running,
             started_at: DateTime.shift(now, minute: -1),
             reserved_cpus: 1,
-            reserved_memory_gb: 2,
             launch: Jason.encode!(%{"executable" => "/bin/true", "args" => [], "env" => %{}, "cwd" => "/tmp"})
           },
           attrs
@@ -86,7 +85,6 @@ defmodule RailWeb.SandboxesLiveTest do
         runtime: :docker,
         container_id: "c-busy",
         reserved_cpus: 2,
-        reserved_memory_gb: 4,
         started_at: DateTime.shift(now, minute: -31)
       })
 
@@ -101,7 +99,6 @@ defmodule RailWeb.SandboxesLiveTest do
         inserted_at: ~U[2026-10-01 00:01:00.000000Z],
         status: :waiting_for_resources,
         reserved_cpus: 2,
-        reserved_memory_gb: 4,
         queued_at: DateTime.shift(now, second: -252)
       })
 
@@ -113,7 +110,7 @@ defmodule RailWeb.SandboxesLiveTest do
     {ended_run, _issue} = run_on.("Supplier credit notes reduce the invoice total")
     ended = &sandbox.(ended_run, Map.merge(%{status: :finished, ended_at: DateTime.shift(now, minute: -10)}, &1))
     finished = ended.(%{ended_reason: :finished})
-    killed = ended.(%{ended_reason: :out_of_memory, reserved_cpus: 2, reserved_memory_gb: 4})
+    killed = ended.(%{ended_reason: :out_of_memory, reserved_cpus: 2})
     stopped = ended.(%{ended_reason: :stopped, stopped_by_id: user.id})
     handed_over = ended.(%{ended_reason: :handed_over})
     timed_out = ended.(%{kind: :ci, ended_reason: :timed_out})
@@ -214,12 +211,13 @@ defmodule RailWeb.SandboxesLiveTest do
 
     assert has_element?(view, "#stat-cpus-reserved", "3")
     assert has_element?(view, "#stat-cpus-reserved", "of 4 · 1 free")
-    assert has_element?(view, "#stat-memory-reserved", "6 GB")
-    assert has_element?(view, "#stat-memory-reserved", "of 8 · 2 GB free")
+    # The suite's machine cannot say what is in use, so only what it has is shown.
+    assert has_element?(view, "#stat-memory-used", "—")
+    assert has_element?(view, "#stat-memory-used", "of 8 GB on this machine")
     assert has_element?(view, "#stat-running", "1 agent turn · 0 setup · 1 CI")
     assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "2")
     assert has_element?(view, "#stat-waiting", "oldest 4m")
-    assert has_element?(view, "#stat-waiting", "Short on CPUs and memory.")
+    assert has_element?(view, "#stat-waiting", "Short on CPUs.")
   end
 
   test "lists the line oldest first, with what each needs and is short of", %{
@@ -235,8 +233,8 @@ defmodule RailWeb.SandboxesLiveTest do
     assert has_element?(view, "#waiting-#{next.id}", waiting_issue.identifier)
     assert has_element?(view, "#waiting-#{next.id}", "Issues list remembers its filters per project")
     assert has_element?(view, "#waiting-#{next.id} [data-qa='for']", "Turn 2")
-    assert has_element?(view, "#waiting-#{next.id} [data-qa='needs']", "2 CPUs · 4 GB")
-    assert has_element?(view, "#waiting-#{next.id} [data-qa='short-of']", "1 CPU · 2 GB")
+    assert has_element?(view, "#waiting-#{next.id} [data-qa='needs']", "2 CPUs")
+    assert has_element?(view, "#waiting-#{next.id} [data-qa='short-of']", "1 CPU")
 
     # It would fit, but waits behind the one ahead of it.
     assert has_element?(view, "#waiting-#{behind.id} [data-qa='line']", "2nd")
@@ -262,8 +260,9 @@ defmodule RailWeb.SandboxesLiveTest do
     assert render_async(view) =~ "1.9"
 
     assert has_element?(view, "#running-#{busy.id} [data-qa='cpu-in-use']", "of 2 CPU · near limit")
-    assert has_element?(view, "#running-#{busy.id} [data-qa='memory-in-use']", "2.9")
-    assert has_element?(view, "#running-#{busy.id} [data-qa='memory-in-use']", "of 4 GB")
+    # Memory is not reserved, so it is what the sandbox uses and nothing it is measured against.
+    assert has_element?(view, "#running-#{busy.id} [data-qa='memory-in-use']", "2.9 GB")
+    refute has_element?(view, "#running-#{busy.id} [data-qa='memory-in-use']", "of")
 
     # A sandbox beside Rail has no reading to show.
     assert has_element?(view, "#running-#{ci.id} [data-qa='for']", "CI")
@@ -283,7 +282,7 @@ defmodule RailWeb.SandboxesLiveTest do
     {:ok, view, _html} = live(conn, ~p"/sandboxes")
 
     assert has_element?(view, "#ended-#{finished.id} [data-qa='ended-how']", "Finished")
-    assert has_element?(view, "#ended-#{killed.id} [data-qa='ended-how']", "Killed · used more than its 4 GB")
+    assert has_element?(view, "#ended-#{killed.id} [data-qa='ended-how']", "Killed · the machine ran out of memory")
     refute has_element?(view, "#ended-sandboxes thead", "Freed")
     refute has_element?(view, "#ended-#{killed.id} [data-qa='freed']")
     assert has_element?(view, "#ended-#{stopped.id} [data-qa='ended-how']", "Stopped by Lucas Stellet")
@@ -500,19 +499,7 @@ defmodule RailWeb.SandboxesLiveTest do
     assert has_element?(
              view,
              "#ended-#{killed.id} [data-qa='ended-how']",
-             "Killed · used more than its 4 GB, most of it cc1plus"
+             "Killed · the machine ran out of memory, most of its own in cc1plus"
            )
-  end
-
-  test "names the one resource a run is short of", %{conn: conn, next: next} do
-    {:ok, view, _html} = live(conn, ~p"/sandboxes")
-
-    next = next |> Ecto.Changeset.change(reserved_memory_gb: 2) |> Repo.update!()
-    send(view.pid, :sandboxes_changed)
-    assert has_element?(view, "#waiting-#{next.id} [data-qa='short-of']", "1 CPU")
-
-    next |> Ecto.Changeset.change(reserved_cpus: 1, reserved_memory_gb: 4) |> Repo.update!()
-    send(view.pid, :sandboxes_changed)
-    assert has_element?(view, "#waiting-#{next.id} [data-qa='short-of']", "2 GB")
   end
 end

@@ -31,7 +31,7 @@ defmodule Rail.Tools.Utils.Env do
   @app_prefixes ["RAIL_", "RELEASE_"]
 
   # A missing tool fails where it is asked for. Left to install it, mise compiles
-  # Erlang inside a sandbox's memory cap, with a build cache that is thrown away.
+  # Erlang inside a sandbox, with a build cache that is thrown away.
   @mise_vars %{
     "MISE_AUTO_INSTALL" => "false",
     "MISE_EXEC_AUTO_INSTALL" => "false",

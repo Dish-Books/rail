@@ -237,7 +237,6 @@ defmodule RailWeb.SandboxesLive do
                       id={"memory-in-use-#{sandbox.id}"}
                       data-qa="memory-in-use"
                       used={@usage[sandbox.id] && @usage[sandbox.id].memory_gb}
-                      reserved={sandbox.reserved_memory_gb}
                       unit="GB"
                     />
                   </td>
@@ -464,9 +463,7 @@ defmodule RailWeb.SandboxesLive do
 
     ended = Tools.list_os_processes(ended_after: DateTime.shift(now, hour: -1), sandboxed: true, preload: @preload)
 
-    free =
-      capacity &&
-        %{cpus: capacity.cpus - capacity.reserved_cpus, memory_gb: capacity.memory_gb - capacity.reserved_memory_gb}
+    free = capacity && %{cpus: capacity.cpus - capacity.reserved_cpus}
 
     # The stats count the whole machine, but a row shows only a project the user can access,
     # and a waiting row keeps its place in the whole line. One read part-way through a task's
@@ -504,11 +501,9 @@ defmodule RailWeb.SandboxesLive do
 
   defp stats(capacity, free, running, waiting, now) do
     kinds = Enum.frequencies_by(running, & &1.kind)
-    shorts = Enum.map(waiting, &OsProcess.short_of(&1, free))
-    short_on = %{cpus: Enum.any?(shorts, &(&1.cpus > 0)), memory: Enum.any?(shorts, &(&1.memory_gb > 0))}
 
     capacity
-    |> Map.take([:cpus, :memory_gb, :reserved_cpus, :reserved_memory_gb])
+    |> Map.take([:cpus, :reserved_cpus, :memory_gb, :used_memory_gb])
     |> Map.merge(%{
       running: length(running),
       agent_turns: Map.get(kinds, :agent, 0),
@@ -516,7 +511,7 @@ defmodule RailWeb.SandboxesLive do
       cis: Map.get(kinds, :ci, 0),
       waiting: length(waiting),
       oldest_waiting: oldest_waiting(waiting, now),
-      short_on: short_on
+      short_on_cpus?: Enum.any?(waiting, &(OsProcess.short_of(&1, free) > 0))
     })
   end
 
@@ -540,10 +535,8 @@ defmodule RailWeb.SandboxesLive do
 
   defp short_of(%OsProcess{} = sandbox, free) when is_map(free) do
     case OsProcess.short_of(sandbox, free) do
-      %{cpus: 0, memory_gb: 0} -> "—"
-      %{cpus: 0, memory_gb: memory_gb} -> "#{memory_gb} GB"
-      %{cpus: cpus, memory_gb: 0} -> "#{cpus} #{if cpus == 1, do: "CPU", else: "CPUs"}"
-      short -> format_reservation(%{reserved_cpus: short.cpus, reserved_memory_gb: short.memory_gb})
+      0 -> "—"
+      cpus -> format_reservation(%{reserved_cpus: cpus})
     end
   end
 
@@ -556,16 +549,12 @@ defmodule RailWeb.SandboxesLive do
   defp ending(%OsProcess{ended_reason: reason}) when reason in [:finished, :handed_over],
     do: %{label: "Finished", icon: "pi-check-circle", class: @finished}
 
-  defp ending(%OsProcess{ended_reason: :out_of_memory, memory_top: [%{"command" => command} | _rest]} = sandbox) do
-    %{
-      label: "Killed · used more than its #{sandbox.reserved_memory_gb} GB, most of it #{command}",
-      icon: "pi-x-circle",
-      class: @failed
-    }
+  defp ending(%OsProcess{ended_reason: :out_of_memory, memory_top: [%{"command" => command} | _rest]}) do
+    %{label: "Killed · the machine ran out of memory, most of its own in #{command}", icon: "pi-x-circle", class: @failed}
   end
 
-  defp ending(%OsProcess{ended_reason: :out_of_memory} = sandbox),
-    do: %{label: "Killed · used more than its #{sandbox.reserved_memory_gb} GB", icon: "pi-x-circle", class: @failed}
+  defp ending(%OsProcess{ended_reason: :out_of_memory}),
+    do: %{label: "Killed · the machine ran out of memory", icon: "pi-x-circle", class: @failed}
 
   defp ending(%OsProcess{ended_reason: :killed}), do: %{label: "Killed", icon: "pi-x-circle", class: @failed}
   defp ending(%OsProcess{ended_reason: :timed_out}), do: %{label: "Timed out", icon: "pi-clock", class: @failed}

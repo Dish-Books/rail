@@ -4,7 +4,7 @@ defmodule Rail do
   itself without changing them for the tests beside it.
   """
 
-  @doc "Where sandboxes run: `:local`, beside Rail, or `:docker`, which enforces what each reserves."
+  @doc "Where sandboxes run: `:local`, beside Rail, or `:docker`, each in a container of its own."
   def sandbox_runtime, do: sandbox(:runtime, :local)
 
   @doc "The image a Docker sandbox is created from."
@@ -19,9 +19,6 @@ defmodule Rail do
   @doc "The CPUs kept back from sandboxes for Rail, Postgres and project services."
   def sandbox_headroom_cpus, do: sandbox(:headroom_cpus, 0)
 
-  @doc "The memory kept back from sandboxes for Rail, Postgres and project services, in GB."
-  def sandbox_headroom_memory_gb, do: sandbox(:headroom_memory_gb, 0)
-
   @doc "The CPUs the local runtime is fixed to, or nil to read the machine's."
   def local_cpus, do: sandbox(:local_cpus, nil)
 
@@ -33,9 +30,6 @@ defmodule Rail do
 
   @doc "The CPUs the shared browser's container is given, and kept back from the sandbox line."
   def browser_cpus, do: browser(:cpus, 2)
-
-  @doc "The memory the shared browser's container is given, in GB, and kept back from the sandbox line."
-  def browser_memory_gb, do: browser(:memory_gb, 4)
 
   @doc "The shared memory the browser's container gets, in GB; Chrome renders every tab through it."
   def browser_shm_size_gb, do: browser(:shm_size_gb, 2)

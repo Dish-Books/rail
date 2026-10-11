@@ -81,8 +81,7 @@ if config_env() == :prod do
   config :rail, :sandbox,
     runtime: if(System.get_env("RAIL_SANDBOX_RUNTIME") == "docker", do: :docker, else: :local),
     image: System.get_env("RAIL_SANDBOX_IMAGE", "rail-sandbox:latest"),
-    headroom_cpus: String.to_integer(System.get_env("RAIL_SANDBOX_HEADROOM_CPUS", "2")),
-    headroom_memory_gb: String.to_integer(System.get_env("RAIL_SANDBOX_HEADROOM_MEMORY_GB", "8"))
+    headroom_cpus: String.to_integer(System.get_env("RAIL_SANDBOX_HEADROOM_CPUS", "2"))
 
   # Under /srv/rail, so the profile and the address Chrome writes into it outlive Rail's container.
   if browser_root = System.get_env("RAIL_BROWSER_ROOT"), do: config(:rail, :browser, root: browser_root)
@@ -91,6 +90,5 @@ if config_env() == :prod do
   # A container that already exists keeps what it was created with: remove `rail-browser` to apply a change.
   config :rail, :browser,
     cpus: String.to_integer(System.get_env("RAIL_BROWSER_CPUS", "2")),
-    memory_gb: String.to_integer(System.get_env("RAIL_BROWSER_MEMORY_GB", "4")),
     max_per_task: String.to_integer(System.get_env("RAIL_BROWSER_MAX_PER_TASK", "6"))
 end

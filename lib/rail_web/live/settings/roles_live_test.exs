@@ -476,7 +476,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert has_element?(view, "#role-prompt-input", "Stored engineer prompt.")
   end
 
-  # The test machine has 4 CPUs and 8 GB to reserve (config/test.exs).
+  # The test machine has 4 CPUs to reserve (config/test.exs).
   test "a role's sandbox reservation shows on its row, and the editor says how many fit and refuses what never would",
        %{admin_conn: conn, admin_user: admin_user} do
     {:ok, project} =
@@ -501,29 +501,28 @@ defmodule RailWeb.Settings.RolesLiveTest do
 
     assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
 
-    assert has_element?(view, "#bound-role-reservation-debugger", "1 CPU · 2 GB")
+    assert has_element?(view, "#bound-role-reservation-debugger", "1 CPU")
 
     view |> element("#edit-role-button-#{role_id}") |> render_click()
     assert has_element?(view, "#role-cpus-input[value='1']")
-    assert has_element?(view, "#role-memory-input[value='2']")
+    refute has_element?(view, "#role-memory-input")
     assert has_element?(view, "#role-sandbox-fit", "4 Bug Hunter sandboxes fit on this machine at once")
-    assert has_element?(view, "#role-sandbox-fit", "1 of 4 CPUs · 2 of 8 GB each")
-    assert has_element?(view, "#role-sandbox-fit", "CPUs are what limit it here.")
+    assert has_element?(view, "#role-sandbox-fit", "1 of 4 CPUs each")
+    assert has_element?(view, "#role-sandbox-fit", "Its memory is not limited.")
 
-    view |> element("#role-form") |> render_change(%{"role" => %{"reserved_cpus" => "1", "reserved_memory_gb" => "8"}})
+    view |> element("#role-form") |> render_change(%{"role" => %{"reserved_cpus" => "4"}})
     assert has_element?(view, "#role-sandbox-fit", "1 Bug Hunter sandbox fits on this machine at once")
-    assert has_element?(view, "#role-sandbox-fit", "Memory is what limits it here.")
 
-    view |> element("#role-form") |> render_change(%{"role" => %{"reserved_cpus" => "2", "reserved_memory_gb" => "4"}})
+    view |> element("#role-form") |> render_change(%{"role" => %{"reserved_cpus" => "2"}})
     assert has_element?(view, "#role-sandbox-fit", "2 Bug Hunter sandboxes fit on this machine at once")
-    assert has_element?(view, "#role-unsaved-changes", "2 unsaved changes · CPUs, memory")
-    assert has_element?(view, "#role-tab-summary-configuration", "Identity · Opus 5.5 · high · 2 CPUs, 4 GB")
+    assert has_element?(view, "#role-unsaved-changes", "1 unsaved change · CPUs")
+    assert has_element?(view, "#role-tab-summary-configuration", "Identity · Opus 5.5 · high · 2 CPUs")
 
-    view |> element("#role-form") |> render_change(%{"role" => %{"reserved_cpus" => "", "reserved_memory_gb" => "4"}})
+    view |> element("#role-form") |> render_change(%{"role" => %{"reserved_cpus" => ""}})
     refute has_element?(view, "#role-sandbox-fit")
     refute has_element?(view, "#role-sandbox-no-fit")
 
-    view |> element("#role-form") |> render_change(%{"role" => %{"reserved_cpus" => "16", "reserved_memory_gb" => "4"}})
+    view |> element("#role-form") |> render_change(%{"role" => %{"reserved_cpus" => "16"}})
     assert has_element?(view, "#role-sandbox-no-fit", "No Bug Hunter sandbox would fit on this machine")
     assert has_element?(view, "#role-sandbox-no-fit", "16 of 4 CPUs")
 
@@ -535,8 +534,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "stage" => "debugger",
         "model_choice" => "claude:claude-opus-5-5",
         "system_prompt" => "You chase down defects.",
-        "reserved_cpus" => "16",
-        "reserved_memory_gb" => "4"
+        "reserved_cpus" => "16"
       }
     })
 

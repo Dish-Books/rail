@@ -1681,8 +1681,7 @@ defmodule RailWeb.OverviewLiveTest do
         status: :waiting_for_resources,
         started_at: now,
         queued_at: DateTime.shift(now, minute: -4),
-        reserved_cpus: 2,
-        reserved_memory_gb: 4
+        reserved_cpus: 2
       })
 
       Repo.insert!(%OsProcess{
@@ -1691,8 +1690,7 @@ defmodule RailWeb.OverviewLiveTest do
         stream_path: "/dev/null",
         status: :running,
         started_at: now,
-        reserved_cpus: 3,
-        reserved_memory_gb: 2
+        reserved_cpus: 3
       })
 
       assert {:ok, view, html} = live(conn, ~p"/")
@@ -1710,11 +1708,23 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#sandbox-meters #sandbox-meters-count", "1 running · 1 waiting")
       assert has_element?(view, "#sandbox-meter-cpus", "3 of 4")
       assert has_element?(view, "#sandbox-meter-cpus", "1 CPU free")
-      assert has_element?(view, "#sandbox-meter-memory", "6 GB free")
+      # The suite's machine cannot say what is in use, so only what it has is shown.
+      assert has_element?(view, "#sandbox-meter-memory", "— of 8 GB")
       assert has_element?(view, "#open-sandboxes[href='/sandboxes']", "1 waiting · oldest 4m")
 
       # The machine comes before the tasks on it.
       assert elem(:binary.match(html, "sandbox-meters"), 0) < elem(:binary.match(html, "in-progress-tasks"), 0)
+    end
+
+    test "says how much of the machine's memory is in use", %{conn: conn} do
+      stub(Rail.Tools, :get_sandbox_capacity, fn ->
+        {:ok, %{cpus: 30, reserved_cpus: 0, memory_gb: 125, used_memory_gb: 37.2}}
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#sandbox-meter-memory", "37.2 of 125 GB")
+      assert has_element?(view, "#sandbox-meter-memory", "in use")
     end
 
     test "a machine whose capacity cannot be read shows no meters, and still counts the line", %{conn: conn} do
@@ -1962,8 +1972,7 @@ defmodule RailWeb.OverviewLiveTest do
         status: :waiting_for_resources,
         started_at: now,
         queued_at: now,
-        reserved_cpus: 2,
-        reserved_memory_gb: 4
+        reserved_cpus: 2
       })
 
       Phoenix.PubSub.broadcast(Rail.PubSub, "sandboxes", :sandboxes_changed)

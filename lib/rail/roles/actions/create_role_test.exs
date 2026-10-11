@@ -59,7 +59,7 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
   } do
     attrs = %{cli: :claude, name: "Engineer", model: "claude-opus-5-5", system_prompt: "Build."}
 
-    assert {:ok, %Role{reserved_cpus: 1, reserved_memory_gb: 2}} = Roles.create_role(system_scope(), project, attrs)
+    assert {:ok, %Role{reserved_cpus: 1}} = Roles.create_role(system_scope(), project, attrs)
 
     assert {:error, changeset} = Roles.create_role(system_scope(), project, Map.put(attrs, :reserved_cpus, 16))
 

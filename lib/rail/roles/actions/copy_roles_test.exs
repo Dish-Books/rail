@@ -51,8 +51,7 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
         name: "Source Engineer",
         model: "claude-haiku-5",
         system_prompt: "Source Engineer prompt",
-        reserved_cpus: 2,
-        reserved_memory_gb: 4
+        reserved_cpus: 2
       })
 
     assert {:ok, [%Role{name: "Source PM"}, %Role{name: "Source Engineer"}]} =
@@ -65,7 +64,7 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
     assert Enum.any?(
              target_roles,
              &(&1.name == "Source Engineer" and &1.stage == :engineer and &1.cli == :claude and
-                 &1.model == "claude-haiku-5" and &1.reserved_cpus == 2 and &1.reserved_memory_gb == 4)
+                 &1.model == "claude-haiku-5" and &1.reserved_cpus == 2)
            )
   end
 

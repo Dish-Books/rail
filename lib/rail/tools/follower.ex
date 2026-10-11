@@ -62,7 +62,6 @@ defmodule Rail.Tools.Follower do
     :os_pid,
     :runtime,
     :container_id,
-    :reserved_memory_gb,
     :stopped_by_id,
     :checked_at,
     :port,
@@ -138,7 +137,6 @@ defmodule Rail.Tools.Follower do
       os_pid: os_process.os_pid,
       runtime: os_process.runtime,
       container_id: os_process.container_id,
-      reserved_memory_gb: os_process.reserved_memory_gb,
       port: Keyword.get(opts, :port),
       event_state: event_state,
       deadline_at: os_process.deadline_at,
@@ -471,14 +469,10 @@ defmodule Rail.Tools.Follower do
     {124, "Timed out, so it was stopped."}
   end
 
-  # 137 is the SIGKILL the kernel sent when the container reached its limit.
-  defp settle_exit(
-         %__MODULE__{oom_killed?: true, reserved_memory_gb: memory_gb},
-         %OsProcess{} = os_process,
-         _event_state,
-         _raw_stderr
-       ) do
-    killed = "Killed: it used more than the #{memory_gb} GB its role reserves."
+  # 137 is the SIGKILL the kernel sent: nothing limits a sandbox's memory, so it is
+  # the machine that ran out, and this sandbox the kernel chose to stop for it.
+  defp settle_exit(%__MODULE__{oom_killed?: true}, %OsProcess{} = os_process, _event_state, _raw_stderr) do
+    killed = "Killed: this machine ran out of memory."
 
     case OsProcess.describe_memory_top(os_process) do
       top when is_binary(top) -> {137, "#{killed} Using the most when last seen: #{top}."}

@@ -118,10 +118,10 @@ defmodule Rail.Tools.Schemas.OsProcessTest do
   end
 
   test "says what a sandbox lacks against what is free, and whether it holds a reservation at all" do
-    sandbox = %OsProcess{reserved_cpus: 2, reserved_memory_gb: 4}
+    sandbox = %OsProcess{reserved_cpus: 2}
 
-    assert %{cpus: 2, memory_gb: 0} = OsProcess.short_of(sandbox, %{cpus: 0, memory_gb: 26})
-    assert %{cpus: 0, memory_gb: 1} = OsProcess.short_of(sandbox, %{cpus: 3, memory_gb: 3})
+    assert OsProcess.short_of(sandbox, %{cpus: 0}) == 2
+    assert OsProcess.short_of(sandbox, %{cpus: 3}) == 0
     assert OsProcess.sandboxed?(sandbox)
     refute OsProcess.sandboxed?(%OsProcess{})
   end

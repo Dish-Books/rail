@@ -23,8 +23,7 @@ defmodule Rail.Tools.Actions.StopOsProcessTest do
         stream_path: "/tmp/stop_os_process.ndjson",
         status: :running,
         started_at: DateTime.utc_now(),
-        reserved_cpus: 4,
-        reserved_memory_gb: 2
+        reserved_cpus: 4
       })
       |> Repo.insert!()
 
@@ -70,7 +69,6 @@ defmodule Rail.Tools.Actions.StopOsProcessTest do
           started_at: DateTime.utc_now(),
           queued_at: DateTime.utc_now(),
           reserved_cpus: 2,
-          reserved_memory_gb: 2,
           launch: Jason.encode!(spec)
         })
 

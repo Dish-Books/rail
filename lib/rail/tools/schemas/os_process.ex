@@ -57,7 +57,6 @@ defmodule Rail.Tools.Schemas.OsProcess do
     field :container_id, :string
     # What it holds while it runs, fixed when it joined the line.
     field :reserved_cpus, :integer
-    field :reserved_memory_gb, :integer
     field :queued_at, :utc_datetime_usec
     # How to start it, kept until it starts: it carries the turn's MCP token.
     field :launch, EncryptedBinary, redact: true
@@ -92,7 +91,6 @@ defmodule Rail.Tools.Schemas.OsProcess do
     :runtime,
     :container_id,
     :reserved_cpus,
-    :reserved_memory_gb,
     :queued_at,
     :launch,
     :ended_at,
@@ -152,15 +150,9 @@ defmodule Rail.Tools.Schemas.OsProcess do
   def sandboxed?(%__MODULE__{reserved_cpus: cpus}), do: is_integer(cpus)
 
   @doc """
-  The CPUs and GB this process lacks against what is `free`, 0 for a resource
-  there is already enough of.
+  The CPUs this process lacks against what is `free`, 0 when there are already enough.
   """
-  def short_of(%__MODULE__{reserved_cpus: cpus, reserved_memory_gb: memory_gb}, %{
-        cpus: free_cpus,
-        memory_gb: free_memory_gb
-      }) do
-    %{cpus: max(cpus - free_cpus, 0), memory_gb: max(memory_gb - free_memory_gb, 0)}
-  end
+  def short_of(%__MODULE__{reserved_cpus: cpus}, %{cpus: free_cpus}), do: max(cpus - free_cpus, 0)
 
   @doc """
   How long this process has been going, in seconds.

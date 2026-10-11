@@ -2,6 +2,7 @@ defmodule Rail.Tools.Actions.GetSandboxCapacityTest do
   use Rail.DataCase, async: true
 
   import Rail.Tools.Utils.LocalCapacity
+  import Rail.Tools.Utils.UsedMemory
 
   alias Rail.Pipeline
   alias Rail.Tools
@@ -17,20 +18,14 @@ defmodule Rail.Tools.Actions.GetSandboxCapacityTest do
         started_at: DateTime.utc_now()
       })
 
-    for {status, cpus, memory_gb} <- [
-          {:running, 2, 4},
-          {:starting, 1, 2},
-          {:waiting_for_resources, 1, 2},
-          {:finished, 3, 3}
-        ] do
+    for {status, cpus} <- [running: 2, starting: 1, waiting_for_resources: 1, finished: 3] do
       Repo.insert!(%OsProcess{
         run_id: run.id,
         task_id: run.task_id,
         stream_path: "/dev/null",
         status: status,
         started_at: DateTime.utc_now(),
-        reserved_cpus: cpus,
-        reserved_memory_gb: memory_gb
+        reserved_cpus: cpus
       })
     end
 
@@ -38,36 +33,40 @@ defmodule Rail.Tools.Actions.GetSandboxCapacityTest do
   end
 
   test "reserves what is starting or running, and nothing that waits or has ended" do
-    assert {:ok, %{cpus: 4, memory_gb: 8, reserved_cpus: 3, reserved_memory_gb: 6}} = Tools.get_sandbox_capacity()
+    assert {:ok, %{cpus: 4, reserved_cpus: 3}} = Tools.get_sandbox_capacity()
+  end
+
+  # The suite's machine is a fixed one, which has nothing in use to read.
+  test "has all of the machine's memory, none of it reserved" do
+    assert {:ok, %{memory_gb: 8, used_memory_gb: nil}} = Tools.get_sandbox_capacity()
   end
 
   test "is the machine Rail runs on, read now, where nothing fixes it" do
     stub(Rail, :local_cpus, fn -> nil end)
     stub(Rail, :sandbox_headroom_cpus, fn -> 1 end)
-    stub(Rail, :sandbox_headroom_memory_gb, fn -> 1 end)
     {cpus, memory_gb} = local_capacity()
     free_cpus = cpus - 1
-    free_memory_gb = memory_gb - 1
+    used_memory_gb = used_memory()
 
-    assert {:ok, %{cpus: ^free_cpus, memory_gb: ^free_memory_gb}} = Tools.get_sandbox_capacity()
+    assert {:ok, %{cpus: ^free_cpus, memory_gb: ^memory_gb, used_memory_gb: in_use}} = Tools.get_sandbox_capacity()
+    assert is_nil(used_memory_gb) == is_nil(in_use)
   end
 
   describe "in Docker" do
     setup do
       stub(Rail, :sandbox_runtime, fn -> :docker end)
       stub(Rail, :sandbox_headroom_cpus, fn -> 2 end)
-      stub(Rail, :sandbox_headroom_memory_gb, fn -> 8 end)
       :ok
     end
 
-    # The shared browser's container is held to what it is given, so that is
-    # never the line's to hand out either.
-    test "is what the machine has, less the headroom kept for Rail and the browser, in whole GB" do
+    # The shared browser's container has a share of its own, so that is never the
+    # line's to hand out either. Memory is the machine's whole, with what is in use.
+    test "is the machine's CPUs less the headroom kept for Rail and the browser, and all its memory in whole GB" do
       stub(Rail, :browser_cpus, fn -> 2 end)
-      stub(Rail, :browser_memory_gb, fn -> 4 end)
+      stub(File, :read, fn "/proc/meminfo" -> {:ok, "MemTotal: 67108864 kB\nMemAvailable: 41943040 kB\n"} end)
       Req.Test.expect(Docker, &Req.Test.json(&1, %{"NCPU" => 16, "MemTotal" => 64 * 1024 ** 3 + 12_345}))
 
-      assert {:ok, %{cpus: 12, memory_gb: 52, reserved_cpus: 3, reserved_memory_gb: 6}} = Tools.get_sandbox_capacity()
+      assert {:ok, %{cpus: 12, reserved_cpus: 3, memory_gb: 64, used_memory_gb: 24.0}} = Tools.get_sandbox_capacity()
     end
 
     test "is not known when Docker cannot be asked" do

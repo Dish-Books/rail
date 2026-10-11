@@ -635,8 +635,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
         stream_path: "/dev/null",
         status: :running,
         started_at: DateTime.utc_now(),
-        reserved_cpus: 4,
-        reserved_memory_gb: 2
+        reserved_cpus: 4
       })
 
       :ok

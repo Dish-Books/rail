@@ -17,8 +17,7 @@ defmodule Rail.Tools.Utils.LaunchSandbox do
   a Follower. `os_process` must carry its run, preloaded down to its `role`.
 
   `:local` spawns beside Rail. `:docker` runs it in a container of its own, which
-  outlives Rail and holds the memory the row reserves. Its CPUs are the row's
-  share rather than a cap: `capacity` is what `Rail.Tools.get_sandbox_capacity/0`
+  outlives Rail. Its CPUs are the row's share rather than a cap: `capacity` is what `Rail.Tools.get_sandbox_capacity/0`
   said the machine has, and a sandbox may use all of it while it is idle. Its
   clock starts now, so time spent in line never counts against a command's
   timeout. Returns `{:ok, os_process}`, or `{:error, reason}` with the row failed
@@ -83,8 +82,9 @@ defmodule Rail.Tools.Utils.LaunchSandbox do
   # CPU time is weighed rather than capped: a sandbox takes whatever the others
   # leave idle, and when they all want more, each gets its reservation's share.
   # The ceiling is the machine less its headroom, so Rail, Postgres and project
-  # services keep theirs. Memory stays a hard limit: with no swap, a sandbox
-  # that took more than it reserved could push the host into killing Postgres.
+  # services keep theirs. Memory is not limited at all: a sandbox takes what it
+  # needs, and if the machine runs out the kernel is told to stop a sandbox
+  # before it stops Rail or Postgres.
   defp start(:docker, %OsProcess{} = os_process, spec, capacity) do
     {shell, args, env} =
       redirected_command(spec["executable"], spec["args"],
@@ -105,9 +105,7 @@ defmodule Rail.Tools.Utils.LaunchSandbox do
         "Binds" => Rail.sandbox_binds(),
         "CpuShares" => os_process.reserved_cpus * 1024,
         "NanoCpus" => capacity.cpus * 1_000_000_000,
-        # Swap is capped at the same figure, so a sandbox cannot use more by swapping.
-        "Memory" => os_process.reserved_memory_gb * @gib,
-        "MemorySwap" => os_process.reserved_memory_gb * @gib,
+        "OomScoreAdj" => 500,
         "Init" => true,
         "ShmSize" => Rail.sandbox_shm_size_gb() * @gib
       }
