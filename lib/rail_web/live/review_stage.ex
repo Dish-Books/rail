@@ -290,8 +290,13 @@ defmodule RailWeb.Live.ReviewStage do
     end
   end
 
-  # Frames from an attached tab arrive on the page's own subscription, so its answer changes nothing here.
+  # Frames from an attached tab arrive on the page's own subscription; the page asks once for what it holds.
   @impl true
+  def handle_async({:attach, name}, {:ok, {:ok, _pid}}, socket) do
+    send(self(), {:browser_attached, name})
+    {:noreply, socket}
+  end
+
   def handle_async({:attach, _name}, _result, socket), do: {:noreply, socket}
 
   # Everything the open item shows is read off the rows and the disk again; what only one item needs is
@@ -321,7 +326,7 @@ defmodule RailWeb.Live.ReviewStage do
       if(socket.assigns.item == :findings and phase in [:round, :fixing], do: agents(run), else: [])
     )
     |> assign(:tally, tally(phase, counts, findings, passes))
-    |> assign(:button, button(phase, counts, passes, socket.assigns.approvable))
+    |> assign(:button, if(task.stage == :review, do: button(phase, counts, passes, socket.assigns.approvable)))
     |> assign_branch(passes)
     |> assign(:beats, beats)
     |> assign(:recorded, Task.demo_recorded?(task))

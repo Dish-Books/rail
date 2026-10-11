@@ -318,6 +318,40 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
              Pipeline.list_tasks(project_id: project.id, ready: true)
   end
 
+  # Merged on GitHub, Linear completes the issue and Overview drops it, so the queue does too.
+  test "ready: true leaves out tasks whose issue Linear completed, canceled or marked duplicate", %{
+    project: project,
+    issue: open_issue,
+    task: %Task{id: open_id} = open
+  } do
+    Req.Test.stub(Rail.Linear, fn conn ->
+      n = System.unique_integer([:positive])
+
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_closed_#{n}", "identifier" => "CLS-#{n}", "title" => "Closed #{n}"}
+          }
+        }
+      })
+    end)
+
+    now = DateTime.utc_now()
+    {:ok, _open} = Pipeline.update_task(open, %{stage: :finalize, marked_ready_at: now})
+    open_issue |> Issue.linear_changeset(%{state: :in_review}) |> Repo.update!()
+
+    for closed <- [%{state: :done, completed_at: now}, %{state: :canceled}, %{state: :duplicate}] do
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Closed"})
+      issue |> Issue.linear_changeset(closed) |> Repo.update!()
+      {:ok, task} = Pipeline.create_task(issue, :finalize)
+      {:ok, _marked} = Pipeline.update_task(task, %{marked_ready_at: now})
+    end
+
+    assert [%Task{id: ^open_id}] = Pipeline.list_tasks(project_id: project.id, ready: true)
+    assert [] = Pipeline.list_tasks(project_id: project.id, owner_user_id: "usr_nobody", ready: true)
+  end
+
   test "ready: true breaks a tie in the time marked by id", %{project: project, task: first} do
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

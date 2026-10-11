@@ -189,7 +189,7 @@ defmodule Rail.Tools.BrowserSessionTest do
     assert mine != theirs
 
     {:ok, _navigated} = BrowserSession.call(explorer, "Page.navigate", %{url: page})
-    assert_receive {:browser_frame, _task_id, _data}, 10_000
+    assert_receive {:browser_frame, _task_id, _name, _data}, 10_000
 
     eventually(fn -> assert Tools.get_browser_url(task, "explorer 2") == page end)
     assert Tools.get_browser_url(task, "qa") in [nil, "about:blank"]
@@ -440,7 +440,7 @@ defmodule Rail.Tools.BrowserSessionTest do
     {:ok, session} = Tools.start_browser_session(task, "qa")
     {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
 
-    assert_receive {:browser_frame, task_id, data}, 10_000
+    assert_receive {:browser_frame, task_id, "qa", data}, 10_000
     assert task_id == task.id
     assert {:ok, <<0xFF, 0xD8, _rest::binary>>} = Base.decode64(data)
 
@@ -545,7 +545,7 @@ defmodule Rail.Tools.BrowserSessionTest do
     assert BrowserSession.last_frame(session) == nil
 
     Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}:qa")
-    assert_receive {:browser_frame, _task_id, _data}, 10_000
+    assert_receive {:browser_frame, _task_id, _name, _data}, 10_000
 
     # Chrome keeps two frames in flight, so the one received can be the second,
     # sent while the first ack was still held and before its next look found us.
@@ -559,7 +559,7 @@ defmodule Rail.Tools.BrowserSessionTest do
     {:ok, session} = Tools.start_browser_session(task, "qa")
     %Session{browser_context_id: context} = Repo.get_by!(Session, task_id: task.id)
     {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
-    assert_receive {:browser_frame, _task_id, _data}, 10_000
+    assert_receive {:browser_frame, _task_id, _name, _data}, 10_000
 
     {:ok, %{url: url}} = ensure_browser_host(start: false)
     {:ok, connection} = Browser.start_link(url: url)

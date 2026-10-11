@@ -484,10 +484,11 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#review-queue-row-#{merging.issue.identifier}[data-state='merging']", "Merging")
       assert has_element?(view, "#review-queue-count", "2 tasks")
 
-      Req.Test.expect(Client, 2, fn conn ->
+      Req.Test.expect(Client, 4, fn conn ->
         case conn.method do
           "POST" -> Req.Test.json(conn, %{"token" => "ghs_app"})
           "PUT" -> conn |> Plug.Conn.put_status(409) |> Req.Test.json(%{"message" => "Merge conflict"})
+          "GET" -> Req.Test.json(conn, %{"number" => 151, "merged" => false, "merge_commit_sha" => nil})
         end
       end)
 
@@ -1497,11 +1498,14 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/")
       assert has_element?(view, "#up-next-finalize-row-#{run_id}[href='/tasks/#{task.id}?tab=finalize']", "Finalize")
-      assert has_element?(view, "#in-progress-task-#{task.id}", "Ready to finalize")
+      assert has_element?(view, "#in-progress-task-#{task.id}.bg-amber-50", "Ready to finalize")
 
+      # Marked ready, it waits on a tech lead, so its owner's row, the stat and Up next all let it go.
       {:ok, _marked} = Pipeline.mark_ready(system_scope(), task)
       refute has_element?(view, "#up-next-finalize-row-#{run_id}")
       assert has_element?(view, "#in-progress-task-#{task.id}", "Ready for tech lead")
+      refute has_element?(view, "#in-progress-task-#{task.id}.bg-amber-50")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
     end
 
     test "a Review round whose commits pass CI shows on Up next as ready for review without a reload", %{

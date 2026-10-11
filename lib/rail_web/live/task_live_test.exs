@@ -4647,7 +4647,11 @@ defmodule RailWeb.TaskLiveTest do
       _logged = Pipeline.append_run_events(run.id, nil, ["It needs a new column."])
       :ok = :sys.resume(view.pid)
 
-      assert view |> element("[data-qa='role-bubble']") |> render() =~ ~r/Reading the schema\..*It needs a new column\./s
+      # The page hands the lines on in an update it sends itself, which can land after the render asked here.
+      eventually(fn ->
+        assert view |> element("[data-qa='role-bubble']") |> render() =~
+                 ~r/Reading the schema\..*It needs a new column\./s
+      end)
     end
 
     test "a message typed while the agent works waits on its run", %{conn: conn, task: task, run: run} do
@@ -4870,6 +4874,34 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "#task-tab-#{engineer_role.id}[aria-selected='true']", "Implement")
       refute has_element?(view, "#task-tab-#{engineer_role.id}", "engineer role")
+    end
+
+    # The server refuses rulings, Finish review and fix rounds past Review, so the page offers none of them.
+    test "at Finalize and after the merge the Review tab offers no rulings, Finish review or fix round", %{
+      conn: conn,
+      task: task,
+      role: role,
+      review_run: run,
+      code: code
+    } do
+      {:ok, _saved} = Pipeline.save_finding(task, code)
+      {:ok, _pass} = Pipeline.save_review(task)
+      {:ok, finalizing} = Pipeline.update_task(task, %{stage: :finalize, pr_number: 151})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
+      assert has_element?(view, "#task-tab-#{role.id}[aria-selected='true']")
+      assert has_element?(view, "#review-finding-list", "Nil is not handled")
+      refute has_element?(view, "#decide-fix-unhandled-nil")
+      refute has_element?(view, "#start-fix-round")
+
+      # A comment resumes the lead at Finalize and after the merge, and its turn is no round to fix.
+      {:ok, _resumed} = Pipeline.update_run(run, %{status: :running})
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
+      refute has_element?(view, "#start-fix-round")
+
+      {:ok, _merged} = Pipeline.update_task(finalizing, %{stage: :merged, merged_at: DateTime.utc_now()})
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
+      refute has_element?(view, "#start-fix-round")
     end
 
     test "clicking Finish review lands the page on the Finalize tab, with the Review conversation beside it", %{
@@ -5468,9 +5500,17 @@ defmodule RailWeb.TaskLiveTest do
     # A frame goes to the client rather than through the render, because it
     # arrives several times a second and nothing else on the page moves with it.
     test "a frame from the browser is pushed straight to the client", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      Repo.insert!(%BrowserSession{
+        task_id: task.id,
+        name: "explorer-1",
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
 
-      send(view.pid, {:browser_frame, task.id, "some-base64"})
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#review-item-browser") |> render_click()
+
+      send(view.pid, {:browser_frame, task.id, "explorer-1", "some-base64"})
       _settled = render(view)
 
       assert_push_event(view, "browser:frame", %{data: "some-base64"})
@@ -5479,9 +5519,17 @@ defmodule RailWeb.TaskLiveTest do
     # An animated page paints dozens of frames a second, more than the socket can
     # carry, and clicks queue behind them. Only the newest of a burst follows the first.
     test "a burst of frames reaches the client as its first and its newest", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      Repo.insert!(%BrowserSession{
+        task_id: task.id,
+        name: "explorer-1",
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
 
-      for data <- ["first", "second", "newest"], do: send(view.pid, {:browser_frame, task.id, data})
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#review-item-browser") |> render_click()
+
+      for data <- ["first", "second", "newest"], do: send(view.pid, {:browser_frame, task.id, "explorer-1", data})
       _settled = render(view)
 
       assert_push_event(view, "browser:frame", %{data: "first"})
@@ -5492,11 +5540,19 @@ defmodule RailWeb.TaskLiveTest do
     # A page that has stopped moving owes its viewer nothing, and the next change
     # on it should show at once rather than wait out a window.
     test "a frame after a quiet window goes straight to the client", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      Repo.insert!(%BrowserSession{
+        task_id: task.id,
+        name: "explorer-1",
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
 
-      send(view.pid, {:browser_frame, task.id, "first"})
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#review-item-browser") |> render_click()
+
+      send(view.pid, {:browser_frame, task.id, "explorer-1", "first"})
       send(view.pid, :frame_window_closed)
-      send(view.pid, {:browser_frame, task.id, "after the lull"})
+      send(view.pid, {:browser_frame, task.id, "explorer-1", "after the lull"})
       _settled = render(view)
 
       assert_push_event(view, "browser:frame", %{data: "first"})
@@ -5518,26 +5574,43 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:explorer-1", {:browser_frame, task.id, "unseen"})
+      Phoenix.PubSub.broadcast(
+        Rail.PubSub,
+        "browser:#{task.id}:explorer-1",
+        {:browser_frame, task.id, "explorer-1", "unseen"}
+      )
+
       _settled = render(view)
       refute_push_event(view, "browser:frame", %{data: "unseen"}, 100)
 
       view |> element("#review-item-browser") |> render_click()
-      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:explorer-1", {:browser_frame, task.id, "explorer's"})
+
+      Phoenix.PubSub.broadcast(
+        Rail.PubSub,
+        "browser:#{task.id}:explorer-1",
+        {:browser_frame, task.id, "explorer-1", "explorer's"}
+      )
+
       _settled = render(view)
       assert_push_event(view, "browser:frame", %{data: "explorer's"})
 
       send(view.pid, :frame_window_closed)
       view |> element("#review-browser-demo") |> render_click()
-      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:explorer-1", {:browser_frame, task.id, "not picked"})
-      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:demo", {:browser_frame, task.id, "demo's"})
+
+      Phoenix.PubSub.broadcast(
+        Rail.PubSub,
+        "browser:#{task.id}:explorer-1",
+        {:browser_frame, task.id, "explorer-1", "not picked"}
+      )
+
+      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:demo", {:browser_frame, task.id, "demo", "demo's"})
       _settled = render(view)
       assert_push_event(view, "browser:frame", %{data: "demo's"})
       refute_push_event(view, "browser:frame", %{data: "not picked"}, 100)
 
       send(view.pid, :frame_window_closed)
       view |> element("#review-item-findings") |> render_click()
-      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:demo", {:browser_frame, task.id, "item closed"})
+      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:demo", {:browser_frame, task.id, "demo", "item closed"})
       _settled = render(view)
       refute_push_event(view, "browser:frame", %{data: "item closed"}, 100)
     end
@@ -5558,7 +5631,12 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       for view <- [one, two], do: view |> element("#review-item-browser") |> render_click()
-      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:explorer-1", {:browser_frame, task.id, "typed"})
+
+      Phoenix.PubSub.broadcast(
+        Rail.PubSub,
+        "browser:#{task.id}:explorer-1",
+        {:browser_frame, task.id, "explorer-1", "typed"}
+      )
 
       for view <- [one, two] do
         _settled = render(view)
@@ -5566,11 +5644,136 @@ defmodule RailWeb.TaskLiveTest do
       end
     end
 
-    # A frame for a task nobody is reading is nothing to send anywhere.
-    test "a frame for another task is ignored", %{conn: conn, task: task} do
+    # A browser left on a still page paints nothing more, so opening it shows the frame it holds.
+    test "opening the Browser item on a browser that holds a frame shows that frame", %{conn: conn, task: task} do
+      Repo.insert!(%BrowserSession{
+        task_id: task.id,
+        name: "explorer-1",
+        status: :running,
+        browser_context_id: "ctx",
+        target_id: "tgt",
+        started_at: DateTime.utc_now()
+      })
+
+      stub(Tools, :start_browser_session, fn _task, "explorer-1", [existing: true] -> {:error, :no_browser} end)
+      stub(Tools, :get_browser_frame, fn %Task{}, "explorer-1" -> "held" end)
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      send(view.pid, {:browser_frame, "tsk_somebody_else", "some-base64"})
+      view |> element("#review-item-browser") |> render_click()
+      _settled = render(view)
+
+      assert_push_event(view, "browser:frame", %{data: "held"})
+    end
+
+    # A session a restart took is attached again, and has nothing to show until it is.
+    test "a browser attached again after a restart shows the frame it holds once attached", %{
+      conn: conn,
+      task: task
+    } do
+      Repo.insert!(%BrowserSession{
+        task_id: task.id,
+        name: "explorer-1",
+        status: :running,
+        browser_context_id: "ctx",
+        target_id: "tgt",
+        started_at: DateTime.utc_now()
+      })
+
+      {:ok, attached} = Agent.start_link(fn -> false end)
+      test_pid = self()
+
+      # Held until the page has asked once, so the frame can only come from asking again once attached.
+      stub(Tools, :start_browser_session, fn _task, "explorer-1", [existing: true] ->
+        send(test_pid, {:attaching, self()})
+
+        receive do
+          :attach -> :ok = Agent.update(attached, fn _before -> true end)
+        end
+
+        {:ok, test_pid}
+      end)
+
+      stub(Tools, :get_browser_frame, fn %Task{}, "explorer-1" ->
+        send(test_pid, :frame_asked)
+        if Agent.get(attached, & &1), do: "reattached"
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#review-item-browser") |> render_click()
+
+      assert_receive :frame_asked, 1_000
+      assert_receive {:attaching, attach}, 1_000
+      send(attach, :attach)
+
+      assert_push_event(view, "browser:frame", %{data: "reattached"}, 1_000)
+    end
+
+    # A frame the old browser sent before the switch must not stand in for the new one's.
+    test "switching from a browser that paints to one holding a frame shows the held frame", %{
+      conn: conn,
+      task: task
+    } do
+      now = DateTime.utc_now()
+      Repo.insert!(%BrowserSession{task_id: task.id, name: "explorer-1", status: :running, started_at: now})
+
+      Repo.insert!(%BrowserSession{
+        task_id: task.id,
+        name: "demo",
+        status: :running,
+        started_at: DateTime.shift(now, second: 1)
+      })
+
+      test_pid = self()
+      stub(Tools, :start_browser_session, fn _task, _name, [existing: true] -> {:error, :no_browser} end)
+
+      # The demo's frame is answered only once the old browser's late frame has reached the page.
+      stub(Tools, :get_browser_frame, fn
+        %Task{}, "explorer-1" ->
+          nil
+
+        %Task{}, "demo" ->
+          send(test_pid, {:fetching, self()})
+
+          receive do
+            :answer -> "demo held"
+          end
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#review-item-browser") |> render_click()
+
+      Phoenix.PubSub.broadcast(
+        Rail.PubSub,
+        "browser:#{task.id}:explorer-1",
+        {:browser_frame, task.id, "explorer-1", "explorer's"}
+      )
+
+      _settled = render(view)
+      assert_push_event(view, "browser:frame", %{data: "explorer's"})
+
+      view |> element("#review-browser-demo") |> render_click()
+      send(view.pid, {:browser_frame, task.id, "explorer-1", "explorer's late"})
+      assert_receive {:fetching, fetch}, 1_000
+      _settled = render(view)
+      send(fetch, :answer)
+
+      assert_push_event(view, "browser:frame", %{data: "demo held"}, 1_000)
+      refute_push_event(view, "browser:frame", %{data: "explorer's late"}, 400)
+    end
+
+    # A frame for a task nobody is reading is nothing to send anywhere.
+    test "a frame for another task is ignored", %{conn: conn, task: task} do
+      Repo.insert!(%BrowserSession{
+        task_id: task.id,
+        name: "explorer-1",
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#review-item-browser") |> render_click()
+
+      send(view.pid, {:browser_frame, "tsk_somebody_else", "explorer-1", "some-base64"})
       _settled = render(view)
 
       refute_push_event(view, "browser:frame", %{data: "some-base64"}, 100)
@@ -5872,6 +6075,43 @@ defmodule RailWeb.TaskLiveTest do
       # A save the lead makes on a comment's turn reaches the pane as it does any stage's.
       send(view.pid, {:output_saved, first.id})
       assert has_element?(view, "#finalize-review", "Finished in 0 rounds")
+    end
+
+    test "a child marked ready, and one merged, open on their Finalize tab naming who marked and merged them",
+         %{conn: conn, scope: scope, project: project, parent: parent, first: first, second: second, third: third} do
+      {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
+      at = DateTime.utc_now()
+
+      for child <- [first, second, third] do
+        {:ok, _review} =
+          Pipeline.create_run(%{
+            task_id: child.id,
+            role_id: lead.id,
+            status: :finished,
+            stage_outcome: :done,
+            started_at: at
+          })
+      end
+
+      marked = %{stage: :finalize, pr_number: 31, marked_ready_at: at, marked_ready_by_id: scope.user.id}
+      {:ok, _first} = Pipeline.update_task(first, marked)
+
+      merged = %{marked | stage: :merged, pr_number: 33}
+      merged = Map.merge(merged, %{merged_at: at, merged_by_id: scope.user.id, merge_sha: "3c9a1f0e2b"})
+      {:ok, _third} = Pipeline.update_task(third, merged)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-11&tab=finalize")
+      assert has_element?(view, "#finalize-marked", "Marked ready by task_live_user")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-13&tab=finalize")
+      assert has_element?(view, "#finalize-merged", "by task_live_user")
+      assert has_element?(view, "#finalize-merged", "3c9a1f0")
+
+      # Merged by code before Finalize, with nobody's mark on it.
+      {:ok, _second} = Pipeline.update_task(second, %{stage: :merged, pr_number: 32, merged_at: at})
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-12&tab=finalize")
+      assert has_element?(view, "#finalize-pane[data-state='merged'] #finalize-merged")
+      refute has_element?(view, "#finalize-marked")
     end
 
     test "a child's Children tab goes back to its parent's board", %{conn: conn, parent: parent} do

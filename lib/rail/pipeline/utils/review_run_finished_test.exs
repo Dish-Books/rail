@@ -119,8 +119,6 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
     assert %Task{stage: :finalize} = Repo.reload!(task)
 
     {:ok, merged} = Pipeline.update_task(finalizing, %{stage: :merged, merged_at: DateTime.utc_now()})
-    File.rm!(Path.join([task.scratch_path, "reviews", "#{task.issue.identifier}.json"]))
-    {:ok, _again} = Pipeline.save_review(task)
 
     assert %Run{error: nil} = review_run_finished(%{run | task: merged}, [])
     assert %Task{stage: :merged} = Repo.reload!(task)

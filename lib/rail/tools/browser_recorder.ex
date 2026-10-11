@@ -77,7 +77,7 @@ defmodule Rail.Tools.BrowserRecorder do
   def handle_call(:finish, _from, state), do: {:stop, :normal, state.directory, state}
 
   @impl true
-  def handle_info({:browser_frame, _task_id, data}, state) do
+  def handle_info({:browser_frame, _task_id, _name, data}, state) do
     case Base.decode64(data) do
       {:ok, bytes} -> {:noreply, write(state, bytes)}
       # coveralls-ignore-next-line (Chrome sending a frame that is not base64)

@@ -131,10 +131,19 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
   } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
 
-    Req.Test.expect(Client, fn conn ->
-      conn
-      |> Plug.Conn.put_status(405)
-      |> Req.Test.json(%{"message" => ~s{Required status check "test (1.18, 27)" is failing.}})
+    Req.Test.expect(Client, 3, fn conn ->
+      case conn.method do
+        "PUT" ->
+          conn
+          |> Plug.Conn.put_status(405)
+          |> Req.Test.json(%{"message" => ~s{Required status check "test (1.18, 27)" is failing.}})
+
+        "POST" ->
+          Req.Test.json(conn, %{"token" => "ghs_app"})
+
+        "GET" ->
+          Req.Test.json(conn, %{"number" => 151, "merged" => false, "merge_commit_sha" => nil})
+      end
     end)
 
     assert {:error, {:merge_refused, ~s{Required status check "test (1.18, 27)" is failing.}}} =
@@ -157,18 +166,117 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert {:ok, %Task{stage: :merged, merge_error: nil}} = Pipeline.merge_task(scope, refused)
   end
 
+  # Someone merged it on GitHub, so the merge GitHub turns away is the one already done, by them and when they did.
+  test "a refusal on a pull request GitHub already merged records that merge and enters Merged", %{
+    project: project,
+    task: task,
+    scope: scope
+  } do
+    {:ok, %{id: dan_id} = dan} =
+      Users.register_oauth_user(%{github_id: "gh_mt_dan_gh", login: "dan-gh", email: "dan@example.com"})
+
+    {:ok, _dan} = Users.update_user(system_scope(), dan, %{project_ids: [project.id]})
+
+    pull = fn merged_by ->
+      %{
+        "number" => 151,
+        "merged" => true,
+        "merged_at" => "2026-10-08T14:03:11Z",
+        "merged_by" => merged_by,
+        "merge_commit_sha" => "7e1d2c3b4a"
+      }
+    end
+
+    Req.Test.stub(Client, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"PUT", "/repos/example/test-seed/pulls/151/merge"} ->
+          conn |> Plug.Conn.put_status(405) |> Req.Test.json(%{"message" => "Pull Request is not mergeable"})
+
+        {"POST", "/app/installations/1/access_tokens"} ->
+          Req.Test.json(conn, %{"token" => "ghs_app"})
+
+        {"GET", "/repos/example/test-seed/pulls/151"} ->
+          Req.Test.json(conn, pull.(%{"login" => "dan-gh"}))
+      end
+    end)
+
+    assert {:ok,
+            %Task{
+              stage: :merged,
+              merged_by_id: ^dan_id,
+              merge_sha: "7e1d2c3b4a",
+              merged_at: ~U[2026-10-08 14:03:11.000000Z],
+              merge_error: nil
+            }} = Pipeline.merge_task(scope, task)
+
+    assert %Task{stage: :merged, merge_started_at: nil} = Repo.reload!(task)
+    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: task.issue_id})
+
+    # Merged by someone Rail does not know, it names nobody rather than whoever clicked.
+    for merged_by <- [%{"login" => "stranger"}, nil] do
+      {:ok, unmerged} =
+        task |> Repo.reload!() |> Pipeline.update_task(%{stage: :finalize, merged_at: nil, merged_by_id: nil})
+
+      Req.Test.stub(Client, fn conn ->
+        case conn.method do
+          "PUT" -> conn |> Plug.Conn.put_status(405) |> Req.Test.json(%{"message" => "Pull Request is not mergeable"})
+          "POST" -> Req.Test.json(conn, %{"token" => "ghs_app"})
+          "GET" -> Req.Test.json(conn, pull.(merged_by))
+        end
+      end)
+
+      assert {:ok, %Task{stage: :merged, merged_by_id: nil, merged_at: ~U[2026-10-08 14:03:11.000000Z]}} =
+               Pipeline.merge_task(scope, unmerged)
+    end
+  end
+
+  test "a refusal whose pull request cannot be read, or is not merged, keeps GitHub's refusal", %{
+    task: task,
+    scope: scope
+  } do
+    Req.Test.stub(Client, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"PUT", _merge} -> conn |> Plug.Conn.put_status(405) |> Req.Test.json(%{"message" => "Not mergeable"})
+        {"POST", _token} -> Req.Test.json(conn, %{"token" => "ghs_app"})
+        {"GET", _pull} -> conn |> Plug.Conn.put_status(502) |> Req.Test.json(%{})
+      end
+    end)
+
+    assert {:error, {:merge_refused, "Not mergeable"}} = Pipeline.merge_task(scope, task)
+    assert %Task{stage: :finalize, merged_at: nil, merge_error: "Not mergeable"} = Repo.reload!(task)
+
+    Req.Test.stub(Client, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"PUT", _merge} -> conn |> Plug.Conn.put_status(405) |> Req.Test.json(%{"message" => "Not mergeable"})
+        {"POST", _token} -> Req.Test.json(conn, %{"token" => "ghs_app"})
+        {"GET", _pull} -> Req.Test.json(conn, %{"number" => 151, "merged" => false, "merge_commit_sha" => nil})
+      end
+    end)
+
+    assert {:error, {:merge_refused, "Not mergeable"}} = Pipeline.merge_task(scope, task)
+    assert %Task{stage: :finalize, merged_at: nil} = Repo.reload!(task)
+  end
+
   test "a refusal GitHub gives no message for, or that never reached GitHub, still says why", %{
     task: task,
     scope: scope
   } do
-    Req.Test.expect(Client, &(&1 |> Plug.Conn.put_status(409) |> Req.Test.json(%{})))
+    Req.Test.expect(Client, 3, fn conn ->
+      case conn.method do
+        "PUT" -> conn |> Plug.Conn.put_status(409) |> Req.Test.json(%{})
+        "POST" -> Req.Test.json(conn, %{"token" => "ghs_app"})
+        "GET" -> Req.Test.json(conn, %{"number" => 151, "merged" => false, "merge_commit_sha" => nil})
+      end
+    end)
+
     assert {:error, {:merge_refused, "GitHub answered 409."}} = Pipeline.merge_task(scope, task)
 
-    Req.Test.expect(Client, &Req.Test.transport_error(&1, :econnrefused))
+    # Reading the pull request fails the same way, so the merge's own failure is the one kept.
+    Req.Test.expect(Client, 2, &Req.Test.transport_error(&1, :econnrefused))
     assert {:error, {:merge_refused, "connection refused"}} = Pipeline.merge_task(scope, task)
 
     {:ok, tokenless} = Users.update_user(system_scope(), scope.user, %{github_token: nil})
-    Req.Test.expect(Client, &(&1 |> Plug.Conn.put_status(401) |> Req.Test.json(%{"message" => "Bad credentials"})))
+    Req.Test.expect(Client, 2, &(&1 |> Plug.Conn.put_status(401) |> Req.Test.json(%{"message" => "Bad credentials"})))
     assert {:error, {:merge_refused, "Bad credentials"}} = Pipeline.merge_task(Scope.for_user(tokenless), task)
     assert %Task{stage: :finalize, merged_at: nil} = Repo.reload!(task)
   end

@@ -91,6 +91,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:watched_outputs_task_id, nil)
       |> assign(:frame_window_open?, false)
       |> assign(:held_frame, nil)
+      |> assign(:awaited_frame, nil)
       |> assign(:roles_map, %{})
       |> assign(:round_questions, [])
       |> assign(:suggestions, %{})
@@ -466,18 +467,12 @@ defmodule RailWeb.TaskLive do
   # of full-size frames a second - more than the socket to a viewer can carry, and
   # every click waits behind the pictures queued ahead of it. So a viewer gets at
   # most one per window: the newest frame that arrives during a window goes out when
-  # it closes, and the rest are dropped, since each one only replaces the last.
-  def handle_info({:browser_frame, task_id, data}, socket) do
-    cond do
-      socket.assigns.task_id != task_id or socket.assigns.pane != :review ->
-        {:noreply, socket}
-
-      socket.assigns.frame_window_open? ->
-        {:noreply, assign(socket, :held_frame, data)}
-
-      true ->
-        {:noreply, push_frame(socket, data)}
-    end
+  # it closes, and the rest are dropped, since each one only replaces the last. A frame from a browser the
+  # page has stopped watching, still in its mailbox, is dropped too.
+  def handle_info({:browser_frame, task_id, name, data}, socket) do
+    if socket.assigns.watched_browser == "browser:#{task_id}:#{name}",
+      do: {:noreply, show_frame(socket, data)},
+      else: {:noreply, socket}
   end
 
   def handle_info(:frame_window_closed, socket) do
@@ -518,7 +513,16 @@ defmodule RailWeb.TaskLive do
   # The Review tab's Browser item is open on this browser, or on none; only the subscription moves.
   def handle_info({:watch_browser, name}, socket) do
     socket = assign(socket, :review_browser, name)
-    {:noreply, assign(socket, :watched_browser, watch_browser(socket, socket.assigns.task_id, socket.assigns.pane))}
+    {:noreply, watch_browser(socket, socket.assigns.task, socket.assigns.pane)}
+  end
+
+  # A session a restart took held no frame when the item opened, so it is asked again once attached.
+  def handle_info({:browser_attached, name}, socket) do
+    %{task: task, watched_browser: watched, awaited_frame: awaited} = socket.assigns
+
+    if watched == "browser:#{task.id}:#{name}" and awaited == watched,
+      do: {:noreply, show_held_frame(socket, task, name)},
+      else: {:noreply, socket}
   end
 
   # A queued message went out, or came back, on its own time.
@@ -605,6 +609,12 @@ defmodule RailWeb.TaskLive do
 
     {:noreply, socket}
   end
+
+  # A live frame that arrived first is newer than the one asked for, which is then dropped.
+  def handle_async({:held_frame, topic}, {:ok, "" <> data}, %{assigns: %{awaited_frame: topic}} = socket),
+    do: {:noreply, show_frame(socket, data)}
+
+  def handle_async({:held_frame, _topic}, _none_or_stale, socket), do: {:noreply, socket}
 
   attr :task, :any, required: true
 
@@ -761,7 +771,7 @@ defmodule RailWeb.TaskLive do
       Pipeline.list_tasks(
         parent_task_id: task.id,
         include_cleaned_up: true,
-        preload: [:project, :issue, runs: [:role, :questions]]
+        preload: [:project, :issue, :marked_ready_by, :merged_by, runs: [:role, :questions]]
       )
 
     shown = Enum.find(children, task, &(&1.issue.identifier == socket.assigns.child))
@@ -952,9 +962,9 @@ defmodule RailWeb.TaskLive do
     end
   end
 
-  # Nothing is approved while its run is still working on it.
+  # Nothing is approved while its run is still working on it, and Review's rulings close once it moves on to Finalize.
   defp approvable?(%Role{stage: role_stage}, %Task{stage: stage}, %Run{} = run),
-    do: role_stage == Task.role_stage(stage) and not Run.running?(run)
+    do: role_stage == Task.role_stage(stage) and stage != :finalize and not Run.running?(run)
 
   defp approvable?(_role, _task, _run), do: false
 
@@ -1257,8 +1267,7 @@ defmodule RailWeb.TaskLive do
     current
   end
 
-  defp assign_watched_browser(socket, %Task{id: task_id}),
-    do: assign(socket, :watched_browser, watch_browser(socket, task_id, socket.assigns.pane))
+  defp assign_watched_browser(socket, %Task{} = task), do: watch_browser(socket, task, socket.assigns.pane)
 
   # One topic per task and browser name, carrying whatever that browser is painting,
   # heard only while the panel can show it: the browser the Review tab's Browser
@@ -1266,7 +1275,7 @@ defmodule RailWeb.TaskLive do
   # a page that keeps repainting would otherwise send every viewer frames nobody
   # sees, which every click on the page waits behind. Being heard is also what keeps
   # Chrome painting them, so a tab nobody can see costs nothing.
-  defp watch_browser(socket, task_id, pane) do
+  defp watch_browser(socket, %Task{id: task_id} = task, pane) do
     watched = socket.assigns.watched_browser
     name = socket.assigns.review_browser
     wanted = if pane == :review and is_binary(name), do: "browser:#{task_id}:#{name}"
@@ -1274,9 +1283,26 @@ defmodule RailWeb.TaskLive do
     if connected?(socket) and watched != wanted do
       if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, watched)
       if wanted, do: Phoenix.PubSub.subscribe(Rail.PubSub, wanted)
+      socket = socket |> assign(:watched_browser, wanted) |> assign(:held_frame, nil)
+      if wanted, do: show_held_frame(socket, task, name), else: assign(socket, :awaited_frame, nil)
+    else
+      socket
     end
+  end
 
-    if connected?(socket), do: wanted, else: watched
+  # A browser on a still page paints nothing new for a new watcher, so the frame it holds is asked for, off
+  # the page's process since a busy session can be slow to answer.
+  defp show_held_frame(socket, %Task{} = task, name) do
+    topic = "browser:#{task.id}:#{name}"
+
+    socket
+    |> assign(:awaited_frame, topic)
+    |> start_async({:held_frame, topic}, fn -> Tools.get_browser_frame(task, name) end)
+  end
+
+  defp show_frame(socket, data) do
+    socket = assign(socket, :awaited_frame, nil)
+    if socket.assigns.frame_window_open?, do: assign(socket, :held_frame, data), else: push_frame(socket, data)
   end
 
   # Sent and resolved comments are everyone's, so the task has a topic; unsent ones

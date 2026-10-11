@@ -197,6 +197,30 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
     assert :ok = perform_job(AdvanceLinearState, %{issue_id: issue.id})
   end
 
+  # The catch-up after a claim, or a Review job retried after an outage, can run once the task is at Finalize.
+  test "a task at Finalize moves an In Progress ticket to In Review", %{
+    issue: issue,
+    task: task,
+    nodes: nodes,
+    states: states
+  } do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :finalize})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{"issue" => %{"state" => states["st_in_progress"], "team" => %{"states" => %{"nodes" => nodes}}}}
+      })
+    end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"input" => %{"stateId" => "st_in_review"}} = Jason.decode!(body)["variables"]
+      Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
+    end)
+
+    assert :ok = perform_job(AdvanceLinearState, %{issue_id: issue.id})
+  end
+
   # Two jobs running together must not let the earlier stage's write land last.
   test "a job queued at the engineer stage aims at In Review once the task has moved to review", %{
     issue: issue,

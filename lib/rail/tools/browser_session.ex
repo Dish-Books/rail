@@ -307,7 +307,7 @@ defmodule Rail.Tools.BrowserSession do
   end
 
   defp show(%__MODULE__{} = state, data) do
-    Phoenix.PubSub.broadcast(Rail.PubSub, topic(state), {:browser_frame, state.task_id, data})
+    Phoenix.PubSub.broadcast(Rail.PubSub, topic(state), {:browser_frame, state.task_id, state.name, data})
 
     %{state | frame: data}
   end

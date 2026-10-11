@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Actions.ListTasks do
 
   import Ecto.Query
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
 
@@ -14,7 +15,8 @@ defmodule Rail.Pipeline.Actions.ListTasks do
   `:issue_id` keeps one issue's tasks.
   `:parent_task_id` keeps one split's children, in their order unless `:order_by` says otherwise, and
   `split_child: true` every child of every split.
-  `ready: true` keeps the review queue: tasks at Finalize marked ready and not merged, oldest mark first.
+  `ready: true` keeps the review queue: tasks at Finalize marked ready and not merged, whose issue Linear has
+  not closed, oldest mark first.
   Cleaned-up tasks are left out unless `include_cleaned_up: true`.
   """
   def list_tasks(opts \\ []) do
@@ -79,8 +81,12 @@ defmodule Rail.Pipeline.Actions.ListTasks do
     where(query, [task: t], t.stage == ^stage)
   end
 
+  # A pull request merged on GitHub closes its issue without Rail hearing of the merge, so it leaves as on Overview.
   defp filter_ready(query, true) do
-    where(query, [task: t], t.stage == :finalize and not is_nil(t.marked_ready_at) and is_nil(t.merged_at))
+    query
+    |> with_named_binding(:issue, &join(&1, :inner, [task: t], i in assoc(t, :issue), as: ^&2))
+    |> where([task: t], t.stage == :finalize and not is_nil(t.marked_ready_at) and is_nil(t.merged_at))
+    |> where([issue: i], is_nil(i.completed_at) and i.state not in ^Issue.finished_states())
   end
 
   defp filter_ready(query, nil), do: query

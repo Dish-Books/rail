@@ -101,10 +101,10 @@ defmodule RailWeb.Settings.UsersLive do
             <div class="rounded-xl border border-slate-200 dark:border-slate-700/70 overflow-hidden bg-slate-50 dark:bg-slate-800/40">
               <table class="w-full table-fixed" id="users-list">
                 <colgroup>
-                  <col class="w-[34%]" />
                   <col class="w-[30%]" />
+                  <col class="w-[22%]" />
                   <col />
-                  <col class="w-24" />
+                  <col class="w-32" />
                   <col class="w-12" />
                 </colgroup>
                 <thead class="bg-slate-50 dark:bg-slate-800/60">
@@ -174,7 +174,7 @@ defmodule RailWeb.Settings.UsersLive do
                       <.linear_badge user={user} />
                     </td>
                     <td class="px-4 py-3 whitespace-nowrap">
-                      <div class="flex items-center gap-1.5">
+                      <div class="flex flex-col items-start gap-1">
                         <span
                           :if={user.admin}
                           id={"user-role-badge-#{user.id}"}
@@ -224,10 +224,10 @@ defmodule RailWeb.Settings.UsersLive do
             >
               <table class="w-full table-fixed" id="invites-list">
                 <colgroup>
-                  <col class="w-[34%]" />
                   <col class="w-[30%]" />
+                  <col class="w-[22%]" />
                   <col />
-                  <col class="w-24" />
+                  <col class="w-32" />
                   <col class="w-12" />
                 </colgroup>
                 <tbody>

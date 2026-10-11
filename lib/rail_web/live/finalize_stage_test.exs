@@ -30,7 +30,7 @@ defmodule RailWeb.Live.FinalizeStageTest do
     _michael = register.("mkerr", %{name: "Michael Kerr", tech_lead: true})
 
     {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
-    task = learnings_task(project, "FST-1", :finalize)
+    task = learnings_task(project, "FST-1", :review)
     worktree = create_temp_git_repo()
     git!(worktree, ["update-ref", "refs/remotes/origin/main", "HEAD"])
     File.write!(Path.join(worktree, "round.ex"), "one\ntwo\n")
@@ -57,7 +57,9 @@ defmodule RailWeb.Live.FinalizeStageTest do
         started_at: DateTime.utc_now()
       })
 
+    # Saved while the task was at Review, as Finalize takes no pass of its own.
     {:ok, _pass} = Pipeline.save_review(task)
+    {:ok, task} = Pipeline.update_task(task, %{stage: :finalize})
 
     %{conn: conn, task: task, dan: dan, priya: priya}
   end
@@ -135,10 +137,19 @@ defmodule RailWeb.Live.FinalizeStageTest do
   } do
     {:ok, _marked} = Pipeline.mark_ready(Rail.Scope.for_user(dan), task)
 
-    Req.Test.expect(Client, fn conn ->
-      conn
-      |> Plug.Conn.put_status(405)
-      |> Req.Test.json(%{"message" => ~s{Required status check "test (1.18, 27)" is failing.}})
+    Req.Test.expect(Client, 3, fn conn ->
+      case conn.method do
+        "PUT" ->
+          conn
+          |> Plug.Conn.put_status(405)
+          |> Req.Test.json(%{"message" => ~s{Required status check "test (1.18, 27)" is failing.}})
+
+        "POST" ->
+          Req.Test.json(conn, %{"token" => "ghs_app"})
+
+        "GET" ->
+          Req.Test.json(conn, %{"number" => 151, "merged" => false, "merge_commit_sha" => nil})
+      end
     end)
 
     assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")

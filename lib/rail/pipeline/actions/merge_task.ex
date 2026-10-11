@@ -2,7 +2,8 @@ defmodule Rail.Pipeline.Actions.MergeTask do
   @moduledoc """
   A tech lead's Merge on Finalize: the merge is claimed and broadcast, so every tab shows Merging and a second
   click is refused, then the pull request is squash-merged on GitHub outside any transaction. A refusal is kept
-  with GitHub's message; a merge records who and the sha, starts the parent's next children, and enters Merged.
+  with GitHub's message unless the pull request was merged there already; a merge records who and the sha,
+  starts the parent's next children, and enters Merged.
   """
 
   import Ecto.Query
@@ -15,6 +16,7 @@ defmodule Rail.Pipeline.Actions.MergeTask do
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Scope
+  alias Rail.Users
   alias Rail.Users.Schemas.User
 
   @doc """
@@ -32,8 +34,11 @@ defmodule Rail.Pipeline.Actions.MergeTask do
       broadcast_pipeline_changed(task)
 
       case merge(scope, task) do
-        {:ok, sha} -> merged(scope, task, sha)
-        {:error, reason} -> refused(task, reason)
+        {:ok, sha} ->
+          merged(task, %{merged_at: DateTime.utc_now(), merged_by_id: scope.user && scope.user.id, merge_sha: sha})
+
+        {:error, reason} ->
+          merged_elsewhere(task, reason)
       end
     end
   end
@@ -87,17 +92,12 @@ defmodule Rail.Pipeline.Actions.MergeTask do
   end
 
   # The next children start without waiting on Linear to complete the issue, whose own job is the same one.
-  defp merged(%Scope{} = scope, %Task{} = task, sha) do
+  defp merged(%Task{} = task, merge) do
     {:ok, task} =
       Repo.transaction(fn ->
         task =
           task
-          |> Task.changeset(%{
-            merged_at: DateTime.utc_now(),
-            merged_by_id: scope.user && scope.user.id,
-            merge_sha: sha,
-            merge_started_at: nil
-          })
+          |> Task.changeset(Map.put(merge, :merge_started_at, nil))
           |> Repo.update!()
 
         if task.parent_task_id,
@@ -108,6 +108,28 @@ defmodule Rail.Pipeline.Actions.MergeTask do
 
     Pipeline.enter_stage(task, :merged, start: false)
   end
+
+  # A pull request merged on GitHub is turned away as unmergeable, so it is read before the refusal is kept. Who
+  # merged it and when are GitHub's, not the clicker's, and a merger with no Rail account is left unnamed.
+  defp merged_elsewhere(%Task{project: %Project{} = project} = task, reason) do
+    with {:ok, token} <- GitHub.installation_token(project.github_installation_id),
+         {:ok, %{"merged" => true, "merge_commit_sha" => "" <> sha, "merged_at" => "" <> at} = pull} <-
+           GitHub.get_pull_request(token, project.github_repo, task.pr_number),
+         {:ok, merged_at, _offset} <- DateTime.from_iso8601(at) do
+      merged(task, %{merged_at: merged_at, merged_by_id: merger_id(pull["merged_by"]), merge_sha: sha})
+    else
+      _unmerged_or_unread -> refused(task, reason)
+    end
+  end
+
+  defp merger_id(%{"login" => "" <> login}) do
+    case Users.get_user(login: login) do
+      {:ok, %User{id: id}} -> id
+      {:error, :not_found} -> nil
+    end
+  end
+
+  defp merger_id(_unknown), do: nil
 
   defp refused(%Task{} = task, reason) do
     message = message(reason)

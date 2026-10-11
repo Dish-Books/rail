@@ -70,6 +70,16 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
     assert_received {:output_saved, ^task_id}
   end
 
+  # Nobody can rule a finding raised past Review, so there is no round to raise it in.
+  test "past Review a new finding is refused and nothing is saved", %{task: task, attrs: attrs} do
+    for stage <- [:finalize, :merged] do
+      {:ok, moved} = Pipeline.update_task(task, %{stage: stage})
+      assert {:error, {:review_finished, ^stage}} = Pipeline.save_finding(moved, attrs)
+    end
+
+    assert [] = Pipeline.list_findings(task)
+  end
+
   test "a finding saved on a commit after round 1 was closed is raised in round 2", %{task: task, attrs: attrs} do
     {:ok, %{round: 1}} = Pipeline.save_review(task)
     git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 1"])

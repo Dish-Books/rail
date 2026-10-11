@@ -147,7 +147,7 @@ defmodule RailWeb.Live.FinalizeStage do
           </div>
 
           <p
-            :if={@state != :not_ready}
+            :if={@state != :not_ready and @task.marked_ready_at != nil}
             id="finalize-marked"
             class="flex items-center gap-2 text-[13px] text-slate-600 dark:text-slate-300"
           >
@@ -306,7 +306,7 @@ defmodule RailWeb.Live.FinalizeStage do
   defp or_last([only]), do: only
   defp or_last(names), do: " or " <> List.last(names)
 
-  # A user deleted since leaves the record with nobody's name on it.
+  # A user deleted since, or a GitHub merger with no Rail account, leaves the record with nobody's name on it.
   defp name(%{name: name, login: login}), do: if(name in [nil, ""], do: login, else: name)
   defp name(nil), do: "someone"
 
