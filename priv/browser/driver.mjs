@@ -325,7 +325,8 @@ export async function openBrowser(pageUrl) {
       return path
     },
 
-    // Narrow viewport check without another tab. Put it back with resize(1920, 1080).
+    // Narrow viewport check without another tab. Put it back with resize(1920, 1080). The width lasts only
+    // while this script is connected, so a picture at it is qa_shot's or save_screen's `width`, not a resize.
     async resize(width, height) {
       await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 768 })
       await sleep(400)

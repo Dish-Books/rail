@@ -60,6 +60,16 @@ defmodule Rail.Mcp.Utils.McpTools do
         "a name it never opened is refused."
   }
 
+  @width %{
+    "type" => "integer",
+    "minimum" => 320,
+    "maximum" => 1920,
+    "description" =>
+      "The viewport width to take the picture at, from 320 to 1920. A script's resize is gone once the script " <>
+        "closes, so a narrow picture is taken by passing its width here. Left out, it is the tab's own 1920. " <>
+        "Afterwards the tab is back at its own width, so a script holding a resize has to set it again."
+  }
+
   @browser_tools [
     %{
       "name" => "browser_connect",
@@ -186,12 +196,14 @@ defmodule Rail.Mcp.Utils.McpTools do
       "description" =>
         "Photograph the page and save it in the QA folder. Say what the picture is of; Rail names the file " <>
           "and returns its path, which goes to the lead to cite in a finding's evidence: the path, never " <>
-          "the picture. Take it at the point a check asserts something on screen, not after every keystroke.",
+          "the picture. Take it at the point a check asserts something on screen, not after every keystroke. A " <>
+          "picture all one color is refused and nothing is saved.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{
           "name" => %{"type" => "string", "description" => "What this picture shows."},
-          "browser" => @browser
+          "browser" => @browser,
+          "width" => @width
         },
         "required" => ["name"]
       }
@@ -201,8 +213,8 @@ defmodule Rail.Mcp.Utils.McpTools do
       "description" =>
         "Photograph one screen state the lead named and save it as that state's image for HEAD's commit. It " <>
           "replaces the state's earlier picture each round. Take it of the state as the change leaves it, under the " <>
-          "same `key` every round. Refused while the worktree has uncommitted changes. Returns the path, which a finding " <>
-          "can cite as evidence.",
+          "same `key` every round. Refused while the worktree has uncommitted changes, and for a picture all one color, " <>
+          "which keeps the earlier one. Returns the path, which a finding can cite as evidence.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{
@@ -215,7 +227,8 @@ defmodule Rail.Mcp.Utils.McpTools do
             "type" => "string",
             "description" => "What the state shows, as the human reads it, such as `File list just after Send`."
           },
-          "browser" => @browser
+          "browser" => @browser,
+          "width" => @width
         },
         "required" => ["key", "label"]
       }

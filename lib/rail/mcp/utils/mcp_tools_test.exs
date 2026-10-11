@@ -60,16 +60,21 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
   end
 
   # Rail names the file, so a shot takes a caption and a browser and never a path.
-  test "qa_shot takes what the picture shows and which browser, and nothing else" do
+  test "qa_shot takes what the picture shows, which browser and at what width, and nothing else" do
     assert %{"inputSchema" => %{"properties" => properties, "required" => ["name"]}} =
              %Role{stage: :review_lead} |> mcp_tools() |> Enum.find(&(&1["name"] == "qa_shot"))
 
-    assert %{"name" => %{"type" => "string"}, "browser" => %{"type" => "string"}} = properties
-    assert map_size(properties) == 2
+    assert %{
+             "name" => %{"type" => "string"},
+             "browser" => %{"type" => "string"},
+             "width" => %{"type" => "integer", "minimum" => 320, "maximum" => 1920}
+           } = properties
+
+    assert map_size(properties) == 3
   end
 
   # The key is what pairs a state's pictures across rounds, and Rail names the file.
-  test "save_screen takes the state's key, what it shows and which browser, and never a path" do
+  test "save_screen takes the state's key, what it shows, which browser and at what width, and never a path" do
     assert %{
              "inputSchema" => %{
                "properties" => %{"key" => %{"type" => "string"}, "label" => %{"type" => "string"}} = properties,
@@ -77,7 +82,7 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
              }
            } = %Role{stage: :review_lead} |> mcp_tools() |> Enum.find(&(&1["name"] == "save_screen"))
 
-    assert Map.keys(properties) == ["browser", "key", "label"]
+    assert Map.keys(properties) == ["browser", "key", "label", "width"]
   end
 
   test "the lead's subagents are offered only the knowledge base", %{names: names} do

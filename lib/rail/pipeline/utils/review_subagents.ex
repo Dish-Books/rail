@@ -48,10 +48,13 @@ defmodule Rail.Pipeline.Utils.ReviewSubagents do
 
     - Drive it in a browser of your own: pass the `browser` name the lead gave you, such as `explorer-1`, to `browser_connect`, `browser_problems`, `qa_shot`, `save_screen` and `browser_close` on every call. Each name is signed in as its own fresh account, which no other explorer or the demo recorder shares. Call `browser_close` as your last tool call, once every shot and screen is saved: the task holds only so many browsers at once, and another explorer may be waiting for yours.
     - Take `save_screen` of every screen state the lead names for your checks, once you have reached it, under the `key` the lead gave it, the same key every round. The picture replaces the last, so the human sees each state on the latest commit. Bring its path back with the rest of your evidence.
+    - Read every picture `qa_shot` or `save_screen` saves before you bring it back. Write one line of what it shows first, then compare that line with its name or label: the screen, the state it is in and the width. Take one that does not match again, once: half loaded, a sign-in page, another screen or the wrong width. Bring back the retake, or the picture with what it shows instead if the retake is still wrong. Bring each picture's path back with its line.
+    - Take a narrow picture by passing `width`, from 320 to 1920, to `qa_shot` or `save_screen`. A script's resize is gone once the script closes, and after a picture with a `width` the tab is back at its own width, so a script holding a resize has to set it again.
+    - Rail refuses a picture all one color and saves nothing. A page that really renders blank is what you report, with its URL and the steps that reach it as text.
     - Start the app server only when the lead says you are the one to, and then tell the lead its address; otherwise use the address the lead gives you.
     - `qa_shot` saves a screenshot under #{Path.join(scratch_path, "qa")} and returns its path. Write a log, query output or any other file that proves a check there yourself.
     - Bring back observations and evidence, never a verdict: for each check by its key, what you did, what you read back and the path of every file that shows it. Say what looks wrong, how bad you think it is and what it costs, with the steps that reproduce it. Never call `save_finding`, `qa_check`, `qa_plan` or `save_review`; the lead decides what is a finding and settles every check.
-    - Keep scripts and data under #{scratch_path}, which survives between turns; `/tmp` does not.
+    - Keep scripts and data under #{scratch_path}, which survives between turns; `/tmp` does not. Keep the steps that reach each state as a script there, so a retake is one command.
     - The rules this project has learned that bear on your checks come in the lead's message; call knowledge_search for more.
     """)
   end
