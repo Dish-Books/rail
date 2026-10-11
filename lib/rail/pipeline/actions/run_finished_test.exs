@@ -849,6 +849,42 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       assert [%{line: ^started}] = Pipeline.list_run_events(run)
     end
 
+    # A resumed lead reads only the note, so the note is what keeps a fix round from recording again.
+    test "that passed on a fix round tells the next round to leave the demo already saved", %{
+      task: task,
+      exited: exited,
+      head_sha: head_sha
+    } do
+      {:ok, _demo} = Pipeline.save_demo(task, %{"title" => "Filters", "summary" => "It filters."})
+      git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Guard the nil"])
+      fixed_sha = String.trim(git!(task.worktree_path, ["rev-parse", "HEAD"]))
+      {%Run{id: run_id}, os_process} = exited.(:review_lead, %{review_on_ci_pass: true})
+      os_process = os_process |> OsProcess.changeset(%{kind: :ci, head_sha: fixed_sha}) |> Repo.update!()
+
+      expect(Git, :push_branch, fn _scope, _task -> :ok end)
+      expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      assert {:ok, %Run{pending_answer: note}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+      assert note =~ String.slice(head_sha, 0, 7)
+    end
+
+    test "that passed on a fix round with no demo saved names no recorded take", %{
+      task: task,
+      exited: exited,
+      head_sha: head_sha
+    } do
+      git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Guard the nil"])
+      fixed_sha = String.trim(git!(task.worktree_path, ["rev-parse", "HEAD"]))
+      {%Run{id: run_id}, os_process} = exited.(:review_lead, %{review_on_ci_pass: true})
+      os_process = os_process |> OsProcess.changeset(%{kind: :ci, head_sha: fixed_sha}) |> Repo.update!()
+
+      expect(Git, :push_branch, fn _scope, _task -> :ok end)
+      expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      assert {:ok, %Run{pending_answer: note}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+      refute note =~ String.slice(head_sha, 0, 7)
+    end
+
     # CI Rail ran on its own, such as Run CI from the diff, asked for no round.
     test "that passed on a commit that did not ask for review pushes and starts no round", %{
       task: task,

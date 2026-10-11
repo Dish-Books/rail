@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Utils.ReviewPushedBranch do
 
   alias Rail.Git
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Demo
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -31,8 +32,19 @@ defmodule Rail.Pipeline.Utils.ReviewPushedBranch do
 
     Pipeline.append_run_events(run.id, nil, ["[rail] Round #{round} started after #{after_what}"])
 
+    # A resumed lead never sees the brief again, so the saved demo is named here, read from the write-up
+    # rather than the video, which exists only once the encode has run.
+    demo =
+      case Pipeline.read_demo(task) do
+        %Demo{commit: commit} ->
+          "The demo recorded#{if commit, do: " on #{String.slice(commit, 0, 7)}"} is saved: leave it, and record no new take this round, since a new one comes only when a person asks for it."
+
+        nil ->
+          "No demo is saved yet, so when the change has something on screen, have the demo recorder record the first one this round."
+      end
+
     note = """
-    The branch has moved since round #{round - 1}#{if head, do: ", to #{String.slice(head, 0, 7)},"} and #{after_what}. Run round #{round}: have the code reviewer read what changed since round #{round - 1} against the findings, and the explorers re-check the screens it touched. Save every finding not ruled Don't fix again with its status, raise anything new, and call `save_review`.
+    The branch has moved since round #{round - 1}#{if head, do: ", to #{String.slice(head, 0, 7)},"} and #{after_what}. Run round #{round}: have the code reviewer read what changed since round #{round - 1} against the findings, and the explorers re-check the screens it touched. #{demo} Save every finding not ruled Don't fix again with its status, raise anything new, and call `save_review`.
     """
 
     {:ok, briefed} =

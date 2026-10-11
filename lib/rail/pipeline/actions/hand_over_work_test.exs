@@ -468,6 +468,22 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
                lead_run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
     end
 
+    test "a merge of the default branch the lead pushed starts a round told to leave the saved demo", %{
+      scope: scope,
+      task: task,
+      lead_run: lead_run,
+      repo: repo
+    } do
+      {:ok, _demo} = Pipeline.save_demo(task, %{"title" => "Filters", "summary" => "It filters."})
+      recorded_on = repo |> git!(["rev-parse", "--short=7", "HEAD"]) |> String.trim()
+      git!(repo, ["commit", "--allow-empty", "-m", "Merge origin/main into rail-93"])
+
+      expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      assert {:ok, %Run{pending_answer: note}} = Pipeline.hand_over_work(scope, lead_run)
+      assert note =~ recorded_on
+    end
+
     # The lead saves a fix before or after the engineer commits it; either way it is in the commit handed over.
     test "a finding the lead saved fixed is noted as fixed in the commit handed over", %{
       scope: scope,
