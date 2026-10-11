@@ -26,7 +26,7 @@ defmodule Rail.Issues.Workers.LinearSync do
 
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Issues.Workers.AdvanceLinearState
+  alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Linear.Client, as: Linear
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
@@ -47,7 +47,7 @@ defmodule Rail.Issues.Workers.LinearSync do
     :branch_name,
     :url,
     :completed_at,
-    :linear_updated_at,
+    :external_updated_at,
     :updated_at
   ]
 
@@ -240,7 +240,7 @@ defmodule Rail.Issues.Workers.LinearSync do
 
     for %{external_id: external_id, owner_user_id: owner_user_id} <- rows,
         is_binary(owner_user_id) and external_id in unowned do
-      %{issue_id: Map.fetch!(issue_ids, external_id)} |> AdvanceLinearState.new() |> Oban.insert!()
+      %{issue_id: Map.fetch!(issue_ids, external_id)} |> AdvanceTrackerState.new() |> Oban.insert!()
     end
 
     issue_ids

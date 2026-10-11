@@ -13,7 +13,7 @@ defmodule Rail.Learnings.Workers.ScheduleCuratorsTest do
         github_repo: "example/inactive",
         github_installation_id: 1,
         default_branch: "main",
-        linear_team_key: "INA",
+        key: "INA",
         clone_path: "/tmp/repos/inactive",
         active: false
       })

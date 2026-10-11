@@ -33,7 +33,7 @@ defmodule RailWeb.Settings.ProjectsLive do
       |> assign(:show_modal, nil)
       |> assign(:modal_title, nil)
       |> assign(:selected_project, nil)
-      |> assign(:changeset, nil)
+      |> assign_changeset(nil)
 
     {:ok, socket}
   end
@@ -64,7 +64,7 @@ defmodule RailWeb.Settings.ProjectsLive do
             Projects
           </h1>
           <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Manage repositories, Linear team links, and project configurations.
+            Manage repositories, issue trackers, and project configurations.
           </p>
         </div>
 
@@ -143,8 +143,11 @@ defmodule RailWeb.Settings.ProjectsLive do
                   </span>
                   <span>•</span>
                   <span id={"project-team-key-#{project.id}"}>
-                    Team Key:
-                    <span class="font-semibold text-slate-900 dark:text-slate-100">{project.linear_team_key}</span>
+                    Key:
+                    <span class="font-semibold text-slate-900 dark:text-slate-100">
+                      {project.key}
+                    </span>
+                    <span class="text-slate-500 dark:text-slate-400">({tracker_label(project.tracker)})</span>
                   </span>
                   <span>•</span>
                   <span id={"project-branch-#{project.id}"}>
@@ -274,22 +277,55 @@ defmodule RailWeb.Settings.ProjectsLive do
                 </div>
               </div>
 
+              <fieldset>
+                <legend class="block text-sm font-medium text-slate-900 dark:text-slate-100">
+                  Issue Tracker
+                </legend>
+                <div class="mt-1 flex items-center gap-6">
+                  <label
+                    :for={{value, label} <- [linear: "Linear", github: "GitHub Issues"]}
+                    class="flex items-center gap-2 text-sm text-slate-900 dark:text-slate-100"
+                  >
+                    <input
+                      type="radio"
+                      name="project[tracker]"
+                      id={"project-tracker-#{value}-input"}
+                      value={value}
+                      checked={Ecto.Changeset.get_field(@changeset, :tracker) == value}
+                    />
+                    {label}
+                  </label>
+                </div>
+                <span
+                  :if={@changeset.errors[:tracker]}
+                  class="text-xs text-red-600"
+                  id="project-tracker-error"
+                >
+                  {elem(@changeset.errors[:tracker], 0)}
+                </span>
+              </fieldset>
+
               <div>
-                <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">Linear Team Key</label>
+                <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">
+                  {if @show_linear_fields, do: "Linear Team Key", else: "Key"}
+                </label>
                 <input
                   type="text"
-                  name="project[linear_team_key]"
-                  id="project-linear-team-key-input"
-                  value={Ecto.Changeset.get_field(@changeset, :linear_team_key)}
-                  placeholder="e.g. DIS"
+                  name="project[key]"
+                  id="project-key-input"
+                  value={Ecto.Changeset.get_field(@changeset, :key)}
+                  placeholder={if @show_linear_fields, do: "e.g. DIS", else: "the repository's name"}
                   class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                 />
+                <p :if={@show_github_fields} class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Names its issues, as in key#123. Fixed once the project has issues. The GitHub App needs Issues: read and write.
+                </p>
                 <span
-                  :if={@changeset.errors[:linear_team_key]}
+                  :if={@changeset.errors[:key]}
                   class="text-xs text-red-600"
-                  id="project-linear-team-key-error"
+                  id="project-key-error"
                 >
-                  {elem(@changeset.errors[:linear_team_key], 0)}
+                  {elem(@changeset.errors[:key], 0)}
                 </span>
               </div>
 
@@ -447,7 +483,10 @@ defmodule RailWeb.Settings.ProjectsLive do
                 </label>
               </div>
 
-              <div class="pt-4 border-t border-slate-200 dark:border-slate-700">
+              <div
+                :if={@show_linear_fields}
+                class="pt-4 border-t border-slate-200 dark:border-slate-700"
+              >
                 <label
                   for="project-linear-workspace-input"
                   class="block text-sm font-medium text-slate-900 dark:text-slate-100"
@@ -704,7 +743,7 @@ defmodule RailWeb.Settings.ProjectsLive do
       |> assign(:show_modal, :new)
       |> assign(:modal_title, "New Project")
       |> assign(:selected_project, nil)
-      |> assign(:changeset, changeset)
+      |> assign_changeset(changeset)
 
     {:noreply, socket}
   end
@@ -730,7 +769,7 @@ defmodule RailWeb.Settings.ProjectsLive do
           |> assign(:show_modal, :edit)
           |> assign(:modal_title, "Edit Project")
           |> assign(:selected_project, project)
-          |> assign(:changeset, changeset)
+          |> assign_changeset(changeset)
 
         {:noreply, socket}
 
@@ -788,7 +827,7 @@ defmodule RailWeb.Settings.ProjectsLive do
       |> assign(:show_modal, nil)
       |> assign(:modal_title, nil)
       |> assign(:selected_project, nil)
-      |> assign(:changeset, nil)
+      |> assign_changeset(nil)
 
     {:noreply, socket}
   end
@@ -801,7 +840,7 @@ defmodule RailWeb.Settings.ProjectsLive do
       |> Project.changeset(params)
       |> Map.put(:action, :validate)
 
-    socket = assign(socket, :changeset, changeset)
+    socket = assign_changeset(socket, changeset)
     {:noreply, socket}
   end
 
@@ -820,12 +859,12 @@ defmodule RailWeb.Settings.ProjectsLive do
               |> assign(:show_modal, nil)
               |> assign(:modal_title, nil)
               |> assign(:selected_project, nil)
-              |> assign(:changeset, nil)
+              |> assign_changeset(nil)
 
             {:noreply, socket}
 
           {:error, %Ecto.Changeset{} = changeset} ->
-            socket = assign(socket, :changeset, changeset)
+            socket = assign_changeset(socket, changeset)
             {:noreply, socket}
         end
 
@@ -842,12 +881,12 @@ defmodule RailWeb.Settings.ProjectsLive do
               |> assign(:show_modal, nil)
               |> assign(:modal_title, nil)
               |> assign(:selected_project, nil)
-              |> assign(:changeset, nil)
+              |> assign_changeset(nil)
 
             {:noreply, socket}
 
           {:error, %Ecto.Changeset{} = changeset} ->
-            socket = assign(socket, :changeset, changeset)
+            socket = assign_changeset(socket, changeset)
             {:noreply, socket}
         end
 
@@ -865,6 +904,18 @@ defmodule RailWeb.Settings.ProjectsLive do
 
   # The navigation hook subscribes this view to pipeline events it does not use.
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  defp assign_changeset(socket, changeset) do
+    tracker = changeset && Ecto.Changeset.get_field(changeset, :tracker)
+
+    socket
+    |> assign(:changeset, changeset)
+    |> assign(:show_linear_fields, tracker == :linear)
+    |> assign(:show_github_fields, tracker == :github)
+  end
+
+  defp tracker_label(:github), do: "GitHub"
+  defp tracker_label(:linear), do: "Linear"
 
   defp refresh_project(socket, project_id) do
     {:ok, project} = Projects.get_project(project_id)

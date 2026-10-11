@@ -11,7 +11,7 @@ defmodule Rail.Linear.ClientTest do
   alias Rail.Users
 
   setup do
-    %{project: %Project{linear_team_key: "TEAM", linear_workspace: %LinearWorkspace{token: "ws_token"}}}
+    %{project: %Project{key: "TEAM", linear_workspace: %LinearWorkspace{token: "ws_token"}}}
   end
 
   describe "authorize_url/1" do
@@ -257,11 +257,11 @@ defmodule Rail.Linear.ClientTest do
       end)
 
       assert {:ok, %{"issues" => %{"nodes" => []}}} =
-               Client.issues(%Project{linear_workspace_id: "lw_test_seed", linear_team_key: "CLK"})
+               Client.issues(%Project{linear_workspace_id: "lw_test_seed", key: "CLK"})
     end
 
     test "no workspace token means no request" do
-      assert {:error, :no_workspace_token} = Client.issues(%Project{linear_team_key: "TEAM"})
+      assert {:error, :no_workspace_token} = Client.issues(%Project{key: "TEAM"})
       assert {:error, :no_workspace_token} = Client.file_upload(nil, "f.png", "image/png", "x")
     end
   end

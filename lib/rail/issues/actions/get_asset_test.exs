@@ -59,7 +59,7 @@ defmodule Rail.Issues.Actions.GetAssetTest do
         name: "Get Asset No Workspace",
         github_repo: "org/get-asset-none",
         github_installation_id: 5302,
-        linear_team_key: "GAN",
+        key: "GAN",
         default_branch: "main",
         clone_path: "/tmp/repos/get-asset-none"
       })
@@ -67,5 +67,9 @@ defmodule Rail.Issues.Actions.GetAssetTest do
     issue = %Issue{project: project}
 
     assert {:error, :no_workspace_token} = Issues.get_asset(issue, "ws/img/screenshot.png")
+  end
+
+  test "get_asset/2 has nothing to fetch for a GitHub issue", %{github_project: project} do
+    assert {:error, :unsupported} = Issues.get_asset(github_issue(project), "any/path.png")
   end
 end

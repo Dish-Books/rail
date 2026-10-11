@@ -4,7 +4,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
   alias Rail.GitHub.Client
   alias Rail.Issues
-  alias Rail.Issues.Workers.AdvanceLinearState
+  alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.AdvanceSplit
@@ -64,7 +64,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert_received {:merging, %DateTime{}}
     assert_received {:pipeline_changed, ^task_id}
     assert %Task{stage: :merged, merge_started_at: nil} = Repo.reload!(task)
-    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: task.issue_id})
+    assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: task.issue_id})
     refute_enqueued(worker: AdvanceSplit)
   end
 
@@ -210,7 +210,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
             }} = Pipeline.merge_task(scope, task)
 
     assert %Task{stage: :merged, merge_started_at: nil} = Repo.reload!(task)
-    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: task.issue_id})
+    assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: task.issue_id})
 
     # Merged by someone Rail does not know, it names nobody rather than whoever clicked.
     for merged_by <- [%{"login" => "stranger"}, nil] do

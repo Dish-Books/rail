@@ -12,7 +12,7 @@ defmodule Rail.Learnings.Actions.ListLearningsTest do
         github_repo: "example/other",
         github_installation_id: 1,
         default_branch: "main",
-        linear_team_key: "OTH",
+        key: "OTH",
         clone_path: "/tmp/repos/other"
       })
 

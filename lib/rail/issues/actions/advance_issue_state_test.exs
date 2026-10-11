@@ -3,7 +3,7 @@ defmodule Rail.Issues.Actions.AdvanceIssueStateTest do
   use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Issues
-  alias Rail.Issues.Workers.AdvanceLinearState
+  alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Repo
 
   setup %{project: project} do
@@ -26,7 +26,7 @@ defmodule Rail.Issues.Actions.AdvanceIssueStateTest do
   test "queues the Linear move rather than making it", %{issue: issue} do
     assert {:ok, %Oban.Job{}} = Issues.advance_issue_state(issue)
 
-    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: issue.id})
+    assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: issue.id})
   end
 
   # The job reads the task's stage when it runs, so the one already queued covers the later stage too.

@@ -12,7 +12,7 @@ defmodule Rail.Issues.Actions.SyncIssuesTest do
         name: "Sync Issues Project",
         github_repo: "org/sync-issues",
         github_installation_id: 5501,
-        linear_team_key: "SYN",
+        key: "SYN",
         default_branch: "main",
         clone_path: "/tmp/repos/sync-issues"
       })

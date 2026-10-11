@@ -1,16 +1,12 @@
 defmodule Rail.Issues.Actions.UploadAsset do
   @moduledoc false
 
-  alias Rail.Linear.Client, as: Linear
+  alias Rail.Issues.Tracker
 
   @doc """
-  Uploads a file to Linear and returns the URL it can be linked from.
+  Stores a file where `target`'s tickets can link to it and returns its URL, or
+  `{:error, :unsupported}` from a tracker that cannot hold files.
   """
-  def upload_asset(target, filename, content_type, data_binary) do
-    case Linear.file_upload(target, filename, content_type, data_binary) do
-      {:ok, %{"fileUpload" => %{"uploadFile" => %{"assetUrl" => asset_url}}}} -> {:ok, asset_url}
-      {:ok, _not_uploaded} -> {:error, {:linear_mutation_failed, "fileUpload"}}
-      {:error, reason} -> {:error, reason}
-    end
-  end
+  def upload_asset(target, filename, content_type, data_binary),
+    do: Tracker.tracker(target).upload_asset(target, filename, content_type, data_binary)
 end

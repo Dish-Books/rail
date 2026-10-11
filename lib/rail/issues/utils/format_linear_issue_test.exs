@@ -38,11 +38,11 @@ defmodule Rail.Issues.Utils.FormatLinearIssueTest do
   end
 
   test "reads when Linear last changed the issue, to the microsecond the column holds" do
-    assert %{linear_updated_at: ~U[2026-09-01 12:30:00.250000Z]} =
+    assert %{external_updated_at: ~U[2026-09-01 12:30:00.250000Z]} =
              format_linear_issue(%{"updatedAt" => "2026-09-01T12:30:00.250Z"})
 
-    assert %{linear_updated_at: nil} = format_linear_issue(%{})
-    assert %{linear_updated_at: nil} = format_linear_issue(%{"updatedAt" => "not a time"})
+    assert %{external_updated_at: nil} = format_linear_issue(%{})
+    assert %{external_updated_at: nil} = format_linear_issue(%{"updatedAt" => "not a time"})
   end
 
   test "names Linear's priority numbers, with no priority as medium" do

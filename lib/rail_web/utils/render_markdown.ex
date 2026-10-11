@@ -1,6 +1,6 @@
 defmodule RailWeb.Utils.RenderMarkdown do
   @moduledoc """
-  Renders markdown — Linear descriptions and comments, agent tickets and replies —
+  Renders markdown (issue descriptions and comments, agent tickets and replies)
   as HTML with GitHub's extensions.
 
   Raw HTML in the source is escaped and dangerous links are dropped, so the

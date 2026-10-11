@@ -1,6 +1,7 @@
 defmodule Rail.Issues.Actions.CreateIssueTest do
   use Rail.DataCase, async: true
 
+  alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
@@ -184,7 +185,7 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
         name: "No Team Project",
         github_repo: "org/create-issue-no-team",
         github_installation_id: 6120,
-        linear_team_key: "NTP",
+        key: "NTP",
         default_branch: "main",
         clone_path: "/tmp/repos/create-issue-no-team"
       })
@@ -199,5 +200,97 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
     end)
 
     assert {:error, {:linear_api_error, 500, _body}} = Issues.create_issue(system_scope(), project, %{title: "Failing"})
+  end
+
+  describe "a GitHub project" do
+    test "opens the issue in triage, labelled with its priority, assigned to its owner", %{github_project: project} do
+      {:ok, %{id: owner_id}} =
+        Users.register_oauth_user(%{github_id: "gh_gi_owner", login: "gi-owner", email: "gi@example.com"})
+
+      created = github_issue_json(%{"title" => "Fix the login redirect", "labels" => [%{"name" => "rail:triage"}]})
+
+      Req.Test.expect(Client, 2, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"POST", "/app/installations/1/access_tokens"} ->
+            Req.Test.json(conn, %{"token" => "ghs_token"})
+
+          {"POST", "/repos/example/test-gh/issues"} ->
+            {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+            assert %{
+                     "title" => "Fix the login redirect",
+                     "body" => "It sends people home",
+                     "labels" => ["rail:triage", "rail:high"],
+                     "assignees" => ["gi-owner"]
+                   } == Jason.decode!(body)
+
+            conn |> Plug.Conn.put_status(201) |> Req.Test.json(created)
+        end
+      end)
+
+      external_id = created["node_id"]
+
+      assert {:ok,
+              %Issue{
+                tracker: :github,
+                external_id: ^external_id,
+                number: 42,
+                identifier: "tgh#42",
+                branch_name: "tgh-42-fix-the-login-redirect",
+                state: :triage,
+                state_name: "Triage",
+                priority: :high,
+                owner_user_id: ^owner_id,
+                url: "https://github.com/example/test-gh/issues/42"
+              }} =
+               Issues.create_issue(system_scope(), project, %{
+                 title: "Fix the login redirect",
+                 description: "It sends people home",
+                 priority: :high,
+                 owner_user_id: owner_id
+               })
+    end
+
+    test "keeps the row a poll saved first instead of failing on it", %{github_project: project} do
+      created = github_issue_json(%{"labels" => [%{"name" => "rail:triage"}]})
+
+      %Issue{id: mirrored_id} =
+        github_issue(project, %{external_id: created["node_id"], number: 42, identifier: "tgh#42"})
+
+      Req.Test.expect(Client, 2, fn conn ->
+        case conn.request_path do
+          "/app/installations/1/access_tokens" -> Req.Test.json(conn, %{"token" => "ghs_token"})
+          "/repos/example/test-gh/issues" -> conn |> Plug.Conn.put_status(201) |> Req.Test.json(created)
+        end
+      end)
+
+      assert {:ok, %Issue{id: ^mirrored_id, state: :triage}} =
+               Issues.create_issue(system_scope(), project, %{title: "Short title"})
+    end
+
+    test "says so when the App was never granted Issues", %{github_project: project} do
+      Req.Test.expect(Client, 2, fn conn ->
+        case conn.request_path do
+          "/app/installations/1/access_tokens" ->
+            Req.Test.json(conn, %{"token" => "ghs_token"})
+
+          "/repos/example/test-gh/issues" ->
+            conn |> Plug.Conn.put_status(403) |> Req.Test.json(%{"message" => "Resource not accessible by integration"})
+        end
+      end)
+
+      assert {:error, :github_issues_permission_missing} = Issues.create_issue(system_scope(), project, %{title: "Nope"})
+    end
+  end
+
+  test "keeps what the tracker names the ticket and adds Rail's own fields", %{
+    github_project: %{id: project_id} = project
+  } do
+    expect(Rail.Issues.Tracker.Github, :create_issue, fn _scope, ^project, %{title: "Contract"} ->
+      {:ok, %{external_id: "I_contract", identifier: "tgh#5000", title: "Contract", state: :triage, number: 5000}}
+    end)
+
+    assert {:ok, %Issue{tracker: :github, project_id: ^project_id, priority: :medium, identifier: "tgh#5000"}} =
+             Issues.create_issue(system_scope(), project, %{title: "Contract"})
   end
 end

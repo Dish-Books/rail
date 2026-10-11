@@ -10,7 +10,7 @@ We use Mise to manage our development environment and ensure all developers are 
 
 ## System dependencies
 
-Three things Rail needs are not Mise's to manage, because they are a database extension, browsers and codecs rather than language runtimes:
+Three things Rail needs are not Mise's to manage, because they are a database extension, browsers and codecs rather than language runtimes. [docs/machine-setup.md](machine-setup.md) walks a whole machine through setup, with a check for each step:
 
 - **pgvector**, which the learnings tables store embeddings in. The local Postgres needs the extension: `docker-compose.yml` runs `pgvector/pgvector:pg17-trixie`, and `brew install pgvector` adds it to a Homebrew Postgres.
 - **Chrome**, which the QA and demo stages drive. Rail looks for Google Chrome or Chromium in the usual places.

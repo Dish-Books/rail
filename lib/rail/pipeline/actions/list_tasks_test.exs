@@ -142,7 +142,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         name: "List Tasks Project 7108",
         github_repo: "org/list-tasks-7108",
         github_installation_id: 7108,
-        linear_team_key: "P7108",
+        key: "P7108",
         default_branch: "main",
         clone_path: "/tmp/repos/list-tasks-7108",
         linear_state_ids: %{
@@ -339,11 +339,11 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     now = DateTime.utc_now()
     {:ok, _open} = Pipeline.update_task(open, %{stage: :finalize, marked_ready_at: now})
-    open_issue |> Issue.linear_changeset(%{state: :in_review}) |> Repo.update!()
+    open_issue |> Issue.tracker_changeset(%{state: :in_review}) |> Repo.update!()
 
     for closed <- [%{state: :done, completed_at: now}, %{state: :canceled}, %{state: :duplicate}] do
       {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Closed"})
-      issue |> Issue.linear_changeset(closed) |> Repo.update!()
+      issue |> Issue.tracker_changeset(closed) |> Repo.update!()
       {:ok, task} = Pipeline.create_task(issue, :finalize)
       {:ok, _marked} = Pipeline.update_task(task, %{marked_ready_at: now})
     end

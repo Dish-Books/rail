@@ -1,11 +1,11 @@
-defmodule Rail.Users.Actions.ListLinearUsersTest do
+defmodule Rail.Users.Actions.ListAssignableUsersTest do
   use Rail.DataCase, async: true
 
   alias Rail.Repo
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
-  test "list_linear_users/0 lists only the users with a linked Linear account" do
+  test "for a Linear issue, lists only the users with a linked Linear account" do
     {:ok, linked} =
       Users.register_oauth_user(%{github_id: "gh_linked", login: "linked", email: "linked@example.com"})
 
@@ -14,7 +14,7 @@ defmodule Rail.Users.Actions.ListLinearUsersTest do
 
     %User{id: linked_id} = linked |> Ecto.Changeset.change(linear_user_id: "lin_usr_linked") |> Repo.update!()
 
-    assert [%User{id: ^linked_id}] = Users.list_linear_users()
+    assert [%User{id: ^linked_id}] = Users.list_assignable_users()
   end
 
   test "with a project, lists only admins and the users granted that project" do
@@ -29,8 +29,16 @@ defmodule Rail.Users.Actions.ListLinearUsersTest do
     %User{} = linked.("nowhere", %{})
 
     assert Enum.sort([admin_id, granted_id]) ==
-             [project_id: "prj_a"] |> Users.list_linear_users() |> Enum.map(& &1.id) |> Enum.sort()
+             [project_id: "prj_a"] |> Users.list_assignable_users() |> Enum.map(& &1.id) |> Enum.sort()
 
-    assert length(Users.list_linear_users()) == 4
+    assert length(Users.list_assignable_users()) == 4
+  end
+
+  test "for a GitHub issue, lists everyone, since everyone signs in with GitHub" do
+    {:ok, %User{id: user_id}} =
+      Users.register_oauth_user(%{github_id: "gh_assignable", login: "assignable", email: "assignable@example.com"})
+
+    assert user_id in Enum.map(Users.list_assignable_users(tracker: :github), & &1.id)
+    refute user_id in Enum.map(Users.list_assignable_users(), & &1.id)
   end
 end

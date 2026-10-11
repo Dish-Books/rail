@@ -1,6 +1,7 @@
 defmodule Rail.Projects.Actions.UpdateProjectTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
@@ -17,7 +18,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                name: "Original Name",
                github_repo: repo,
                github_installation_id: 55_667,
-               linear_team_key: "ORIG",
+               key: "ORIG",
                default_branch: "main",
                clone_path: "/tmp/orig"
              })
@@ -28,6 +29,54 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                active: false,
                default_branch: "develop"
              })
+  end
+
+  test "a project's tracker and key are fixed once it has issues", %{github_project: github_project} do
+    admin_scope = Scope.for_user(%{admin: true})
+
+    assert {:ok, %Project{tracker: :linear} = project} =
+             Projects.create_project(admin_scope, %{
+               name: "Tracked",
+               github_repo: "example/tracked-#{System.unique_integer([:positive])}",
+               github_installation_id: 55_669,
+               key: "TRK",
+               default_branch: "main",
+               clone_path: "/tmp/tracked"
+             })
+
+    assert {:ok, %Project{tracker: :github, key: "trk"} = project} =
+             Projects.update_project(admin_scope, project, %{tracker: "github", key: "trk"})
+
+    %Issue{}
+    |> Issue.changeset(%{
+      project_id: project.id,
+      external_id: "I_trk1",
+      identifier: "trk#1",
+      title: "One",
+      state: :backlog
+    })
+    |> Repo.insert!()
+
+    assert {:error, changeset} = Projects.update_project(admin_scope, project, %{tracker: "linear"})
+    assert %{tracker: ["cannot change once the project has issues"]} = errors_on(changeset)
+
+    assert {:error, changeset} = Projects.update_project(admin_scope, project, %{key: "other"})
+    assert %{tracker: ["cannot change once the project has issues"]} = errors_on(changeset)
+
+    assert {:ok, %Project{name: "Renamed"}} = Projects.update_project(admin_scope, project, %{name: "Renamed"})
+
+    assert {:error, changeset} =
+             Projects.create_project(admin_scope, %{
+               name: "Same Key",
+               github_repo: "example/same-key-#{System.unique_integer([:positive])}",
+               github_installation_id: 55_670,
+               tracker: "github",
+               key: github_project.key,
+               default_branch: "main",
+               clone_path: "/tmp/same-key"
+             })
+
+    assert %{key: ["has already been taken"]} = errors_on(changeset)
   end
 
   test "moving a project to another workspace looks its team up through that one" do
@@ -58,7 +107,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                name: "Moving Project",
                github_repo: "example/moving-#{System.unique_integer([:positive])}",
                github_installation_id: 55_668,
-               linear_team_key: "MOV",
+               key: "MOV",
                default_branch: "main",
                clone_path: "/tmp/move",
                linear_workspace_id: old_id
@@ -82,7 +131,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                name: "Valid Project",
                github_repo: repo,
                github_installation_id: 55_669,
-               linear_team_key: "INV",
+               key: "INV",
                default_branch: "main",
                clone_path: "/tmp/inv"
              })
@@ -100,7 +149,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                name: "Project to Guard",
                github_repo: repo,
                github_installation_id: 55_670,
-               linear_team_key: "GRD",
+               key: "GRD",
                default_branch: "main",
                clone_path: "/tmp/guard"
              })
@@ -118,7 +167,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                name: "Project to Guard Nil",
                github_repo: repo,
                github_installation_id: 55_671,
-               linear_team_key: "GRDN",
+               key: "GRDN",
                default_branch: "main",
                clone_path: "/tmp/guard_nil"
              })
@@ -134,7 +183,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                name: "Setup Project",
                github_repo: "example/setup-repo-#{System.unique_integer([:positive])}",
                github_installation_id: 55_670,
-               linear_team_key: "SET",
+               key: "SET",
                default_branch: "main",
                clone_path: "/tmp/set"
              })
@@ -272,7 +321,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
           name: "Other",
           github_repo: "example/other-#{System.unique_integer([:positive])}",
           github_installation_id: 2,
-          linear_team_key: "OTH",
+          key: "OTH",
           default_branch: "main",
           clone_path: "/tmp/other"
         })
@@ -357,7 +406,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
           name: "Other",
           github_repo: "example/other-#{System.unique_integer([:positive])}",
           github_installation_id: 2,
-          linear_team_key: "OTH",
+          key: "OTH",
           default_branch: "main",
           clone_path: "/tmp/other"
         })

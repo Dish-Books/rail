@@ -1,6 +1,6 @@
 defmodule Rail.Issues.Schemas.Comment do
   @moduledoc """
-  A comment on an issue, mirrored from Linear. A reply points at the top-level
+  A comment on an issue, mirrored from its tracker. A reply points at the top-level
   comment it answers; Linear threads only one level deep.
   """
   use Rail.Schema

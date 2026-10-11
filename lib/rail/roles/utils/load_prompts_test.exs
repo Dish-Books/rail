@@ -18,7 +18,7 @@ defmodule Rail.Roles.Utils.LoadPromptsTest do
         name: "Load Prompts #{id}",
         github_repo: "org/load-prompts-#{id}",
         github_installation_id: id,
-        linear_team_key: "LP#{id}",
+        key: "LP#{id}",
         default_branch: "main",
         clone_path: clone
       })
@@ -205,7 +205,7 @@ defmodule Rail.Roles.Utils.LoadPromptsTest do
         name: "Other #{project.name}",
         github_repo: "#{project.github_repo}-other",
         github_installation_id: project.github_installation_id,
-        linear_team_key: "#{project.linear_team_key}O",
+        key: "#{project.key}O",
         default_branch: "main",
         clone_path: other_clone
       })

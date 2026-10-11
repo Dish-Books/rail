@@ -75,7 +75,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                name: "Active App",
                github_repo: "example/active-#{id}",
                github_installation_id: 111,
-               linear_team_key: "ACT",
+               key: "ACT",
                default_branch: "main",
                clone_path: "/tmp/active",
                active: true
@@ -86,7 +86,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                name: "Inactive App",
                github_repo: "example/inactive-#{id}",
                github_installation_id: 222,
-               linear_team_key: "INACT",
+               key: "INACT",
                default_branch: "main",
                clone_path: "/tmp/inactive",
                active: false
@@ -124,7 +124,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
         "name" => "",
         "github_repo" => "",
         "github_installation_id" => "",
-        "linear_team_key" => "",
+        "key" => "",
         "clone_path" => ""
       }
     })
@@ -152,7 +152,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
         "github_repo" => repo,
         "github_installation_id" => "9988",
         "default_branch" => "main",
-        "linear_team_key" => "BNP",
+        "key" => "BNP",
         "clone_path" => "/tmp/bnp",
         "active" => "true"
       }
@@ -163,6 +163,53 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     refute has_element?(view, "#project-modal")
     assert render(view) =~ "Brand New Project"
     assert render(view) =~ repo
+  end
+
+  test "a project tracked in GitHub Issues is made without any Linear fields", %{admin_conn: conn} do
+    assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+    view |> element("#new-project-button") |> render_click()
+
+    assert has_element?(view, "#project-key-input[placeholder='e.g. DIS']")
+
+    view |> form("#project-form", %{"project" => %{"tracker" => "github"}}) |> render_change()
+
+    refute has_element?(view, "#project-linear-workspace-input")
+    assert has_element?(view, "#project-key-input[placeholder=\"the repository's name\"]")
+
+    key = "gh-#{System.unique_integer([:positive])}"
+    repo = "example/#{key}"
+
+    view
+    |> form("#project-form", %{
+      "project" => %{
+        "name" => "GitHub Tracked",
+        "github_repo" => repo,
+        "github_installation_id" => "9989",
+        "default_branch" => "main",
+        "tracker" => "github",
+        "key" => "",
+        "clone_path" => "/tmp/ght"
+      }
+    })
+    |> render_submit()
+
+    refute has_element?(view, "#project-modal")
+
+    assert %Project{tracker: :github, key: ^key} =
+             project = Repo.get_by!(Project, github_repo: repo)
+
+    assert has_element?(view, "#project-team-key-#{project.id}", "(GitHub)")
+  end
+
+  test "a project with issues keeps its tracker, and says so", %{admin_conn: conn, github_project: project} do
+    github_issue(project)
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+    view |> element("#edit-project-#{project.id}") |> render_click()
+    view |> form("#project-form", %{"project" => %{"tracker" => "linear"}}) |> render_change()
+    view |> form("#project-form", %{"project" => %{"tracker" => "linear", "key" => "TGH"}}) |> render_submit()
+
+    assert has_element?(view, "#project-tracker-error", "cannot change once the project has issues")
   end
 
   test "opens edit project modal, changes active status and name, and updates project", %{
@@ -177,7 +224,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                name: "Editable App",
                github_repo: "example/edit-#{id}",
                github_installation_id: 333,
-               linear_team_key: "EDT",
+               key: "EDT",
                default_branch: "main",
                clone_path: "/tmp/edit",
                active: true
@@ -198,7 +245,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
         "github_repo" => "example/edit-#{id}",
         "github_installation_id" => "333",
         "default_branch" => "develop",
-        "linear_team_key" => "EDT",
+        "key" => "EDT",
         "clone_path" => "/tmp/edit",
         "active" => "false"
       }
@@ -216,7 +263,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                name: "Setup App",
                github_repo: "example/setup-#{System.unique_integer([:positive])}",
                github_installation_id: 334,
-               linear_team_key: "SUP",
+               key: "SUP",
                default_branch: "main",
                clone_path: "/tmp/setup"
              })
@@ -246,7 +293,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                name: "CI App",
                github_repo: "example/ci-#{System.unique_integer([:positive])}",
                github_installation_id: 335,
-               linear_team_key: "CIA",
+               key: "CIA",
                default_branch: "main",
                clone_path: "/tmp/ci"
              })
@@ -274,7 +321,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                name: "Seed App",
                github_repo: "example/seed-#{System.unique_integer([:positive])}",
                github_installation_id: 336,
-               linear_team_key: "SED",
+               key: "SED",
                default_branch: "main",
                clone_path: "/tmp/seed"
              })
@@ -307,7 +354,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                name: "Workspace App",
                github_repo: "example/workspace-#{System.unique_integer([:positive])}",
                github_installation_id: 334,
-               linear_team_key: "WSP",
+               key: "WSP",
                default_branch: "main",
                clone_path: "/tmp/workspace"
              })
@@ -401,7 +448,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                name: "Edit Error Test",
                github_repo: "example/edit-err-#{id}",
                github_installation_id: 444,
-               linear_team_key: "EE",
+               key: "EE",
                default_branch: "main",
                clone_path: "/tmp/ee"
              })
@@ -445,7 +492,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                name: "First Project",
                github_repo: "example/p1-#{id}",
                github_installation_id: 111,
-               linear_team_key: "P1",
+               key: "P1",
                default_branch: "main",
                clone_path: "/tmp/p1"
              })
@@ -455,7 +502,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                name: "Second Project",
                github_repo: "example/p2-#{id}",
                github_installation_id: 222,
-               linear_team_key: "P2",
+               key: "P2",
                default_branch: "main",
                clone_path: "/tmp/p2"
              })
@@ -471,7 +518,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
         "github_repo" => "example/p1-#{id}",
         "github_installation_id" => "111",
         "default_branch" => "main",
-        "linear_team_key" => "P1",
+        "key" => "P1",
         "clone_path" => "/tmp/p1",
         "active" => "true"
       }
@@ -654,7 +701,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
           name: "Other",
           github_repo: "example/other-#{System.unique_integer([:positive])}",
           github_installation_id: 9,
-          linear_team_key: "OTH",
+          key: "OTH",
           default_branch: "main",
           clone_path: "/tmp/other"
         })
