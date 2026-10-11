@@ -269,6 +269,72 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnectTest do
              Repo.all(from s in Session, where: s.task_id == ^task.id)
   end
 
+  # Every tab is memory in the one Chrome all tasks share, so a task's explorers beyond
+  # its share wait their turn, and get it as soon as one that has finished is closed.
+  test "a browser asked for beyond the task's share waits for one of its others to close", %{task: task, opts: opts} do
+    stub(Rail, :browser_max_per_task, fn -> 1 end)
+
+    {:ok, task} = Pipeline.get_task(task.id)
+    assert {:ok, _first} = run_tool_browser_connect(task, %{"browser" => "explorer 1"}, opts)
+    # The one already open is handed back whatever else is: only a new browser takes a place.
+    assert {:ok, _again} = run_tool_browser_connect(task, %{"browser" => "explorer 1"}, opts)
+
+    waiting = Elixir.Task.async(fn -> run_tool_browser_connect(task, %{"browser" => "explorer 2"}, opts) end)
+
+    refute Elixir.Task.yield(waiting, 1_500)
+    assert Tools.get_browser_session(task, "explorer 2") == nil
+
+    :ok = Tools.stop_browser_session(task, "explorer 1")
+
+    assert {:ok, second} = Elixir.Task.await(waiting, 15_000)
+    assert second =~ "Browser: explorer 2"
+  end
+
+  test "a browser nothing made room for is refused, saying why", %{task: task, opts: opts} do
+    stub(Rail, :browser_max_per_task, fn -> 1 end)
+    stub(Rail, :browser_slot_wait_ms, fn -> 0 end)
+
+    {:ok, task} = Pipeline.get_task(task.id)
+    assert {:ok, _first} = run_tool_browser_connect(task, %{"browser" => "explorer 1"}, opts)
+
+    assert {:refused, said} = run_tool_browser_connect(task, %{"browser" => "explorer 2"}, opts)
+    assert said =~ "already has 1 browsers open"
+    assert [%Session{name: "explorer 1"}] = Repo.all(from s in Session, where: s.task_id == ^task.id)
+  end
+
+  # Chrome restarted under a running pass. The explorer gets a browser again, and is told it is
+  # not the one it had, rather than left to work out why it is looking at a blank page.
+  test "a browser Chrome lost is opened again and said to be a new one", %{task: task, opts: opts} do
+    {:ok, task} = Pipeline.get_task(task.id)
+    assert {:ok, first} = run_tool_browser_connect(task, %{"browser" => "explorer 1"}, opts)
+    refute first =~ "Chrome restarted"
+
+    %Session{browser_context_id: context} = Repo.get_by!(Session, task_id: task.id)
+    :ok = GenServer.stop(Tools.get_browser_session(task, "explorer 1"), :shutdown, 10_000)
+
+    {:ok, %{url: url}} = ensure_browser_host(start: false)
+    {:ok, connection} = Tools.Browser.start_link(url: url)
+    {:ok, _closed} = Tools.Browser.call(connection, "Target.disposeBrowserContext", %{browserContextId: context})
+    GenServer.stop(connection)
+
+    assert {:ok, again} = run_tool_browser_connect(task, %{"browser" => "explorer 1"}, opts)
+    assert again =~ "Chrome restarted since `explorer 1` was opened, so this is a new tab"
+
+    assert {:ok, later} = run_tool_browser_connect(task, %{"browser" => "explorer 1"}, opts)
+    refute later =~ "Chrome restarted"
+  end
+
+  test "a browser that cannot be opened is Rail's failure, not the agent's", %{task: task, opts: opts} do
+    stub(Tools, :start_browser_session, fn
+      _task, "explorer 1", [{:existing, true} | _opts] -> {:error, {:browser_unavailable, :enoent}}
+      _task, "explorer 2", [{:existing, true} | _opts] -> {:error, :no_browser}
+      _task, "explorer 2", _opts -> {:error, {:browser_unavailable, :enoent}}
+    end)
+
+    assert {:error, {:browser_unavailable, :enoent}} = run_tool_browser_connect(task, %{"browser" => "explorer 1"}, opts)
+    assert {:error, {:browser_unavailable, :enoent}} = run_tool_browser_connect(task, %{"browser" => "explorer 2"}, opts)
+  end
+
   test "a seed that prints no link signs nobody in and says what it printed", %{task: task, project: project, opts: opts} do
     project |> Ecto.Changeset.change(account_seed_command: "sh scripts/linkless.sh") |> Repo.update!()
     {:ok, task} = Pipeline.get_task(task.id)

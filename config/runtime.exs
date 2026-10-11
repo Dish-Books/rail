@@ -86,4 +86,11 @@ if config_env() == :prod do
 
   # Under /srv/rail, so the profile and the address Chrome writes into it outlive Rail's container.
   if browser_root = System.get_env("RAIL_BROWSER_ROOT"), do: config(:rail, :browser, root: browser_root)
+
+  # What the shared Chrome's container reserves, and how many tabs one task holds open in it at once.
+  # A container that already exists keeps what it was created with: remove `rail-browser` to apply a change.
+  config :rail, :browser,
+    cpus: String.to_integer(System.get_env("RAIL_BROWSER_CPUS", "2")),
+    memory_gb: String.to_integer(System.get_env("RAIL_BROWSER_MEMORY_GB", "4")),
+    max_per_task: String.to_integer(System.get_env("RAIL_BROWSER_MAX_PER_TASK", "6"))
 end
