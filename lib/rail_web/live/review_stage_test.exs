@@ -854,6 +854,30 @@ defmodule RailWeb.Live.ReviewStageTest do
     refute has_element?(view, "[data-qa=finding_diff] [data-qa=diff_line_row]", "changed")
   end
 
+  test "a Where in a file the branch deletes keeps its box, saying so, with Open in Diff", %{
+    conn: conn,
+    task: %{worktree_path: worktree} = task,
+    code: code
+  } do
+    File.write!(Path.join(worktree, "gone.ex"), Enum.map_join(1..12, "", &"line #{&1}\n"))
+    git!(worktree, ["add", "."])
+    git!(worktree, ["commit", "-m", "before"])
+    git!(worktree, ["update-ref", "refs/remotes/origin/main", "HEAD"])
+    git!(worktree, ["rm", "gone.ex"])
+    git!(worktree, ["commit", "-m", "the deletion"])
+
+    {:ok, _finding} =
+      Pipeline.save_finding(task, Map.put(%{code | file: "gone.ex", line: 3, end_line: 5}, :key, "deleted"))
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    view |> element("#finding-deleted") |> render_click()
+
+    assert has_element?(view, "[data-qa=finding_diff] [data-qa=finding_code_missing]", "The branch deletes this file.")
+    assert has_element?(view, "[data-qa=finding_diff] [data-qa=diff_stat]", "12")
+    assert has_element?(view, "[data-qa=finding_open_in_diff][phx-value-file='gone.ex']")
+    refute has_element?(view, "[data-qa=finding_diff] [data-qa=diff_hunk]")
+  end
+
   test "after a fix save each card reads covered or left, and before any fix neither", %{
     conn: conn,
     task: task,

@@ -107,7 +107,14 @@
 .diff-bracket-row[data-bracket] .diff-bracket::before,
 .diff-bracket-row:is([data-bracket="start"], [data-bracket="only"]) .diff-bracket::after,
 .diff-bracket-row:is([data-bracket="end"], [data-bracket="only"]) .diff-bracket > i {
-  @apply absolute left-[5px] bg-blue-600 dark:bg-blue-400;
+  @apply absolute left-[5px] bg-blue-600;
+}
+
+/* The theme as an ancestor rather than `dark:`, which nests under `&`, and `&` never matches a pseudo-element. */
+[data-theme="dark"] .diff-bracket-row[data-bracket] .diff-bracket::before,
+[data-theme="dark"] .diff-bracket-row:is([data-bracket="start"], [data-bracket="only"]) .diff-bracket::after,
+[data-theme="dark"] .diff-bracket-row:is([data-bracket="end"], [data-bracket="only"]) .diff-bracket > i {
+  @apply bg-blue-400;
 }
 
 .diff-bracket-row[data-bracket] .diff-bracket::before {

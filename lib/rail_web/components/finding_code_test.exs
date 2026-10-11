@@ -6,7 +6,7 @@ defmodule RailWeb.Components.FindingCodeTest do
   alias RailWeb.Components.FindingCode
 
   @row %{kind: :line, line_kind: :context, old_line: nil, new_line: 40, text: "line 40", named?: true}
-  @excerpt %{rows: [@row], changed?: false, hidden_lines: 0, other_changes: 0}
+  @excerpt %{rows: [@row], changed?: false, missing: nil, hidden_lines: 0, other_changes: 0}
   @head "9e4f1c2aaaabbbbcccc"
 
   test "unchanged lines say so and name the commit they read as, and changed ones do not" do
@@ -54,6 +54,29 @@ defmodule RailWeb.Components.FindingCodeTest do
     for counts <- [%{changed?: true}, %{changed?: false}] do
       html = render_component(&FindingCode.finding_code/1, excerpt: Map.merge(@excerpt, counts))
       refute html =~ "finding_code_footer"
+    end
+  end
+
+  test "lines the branch does not have say why, with no rows" do
+    cases = [
+      {:deleted, "The branch deletes this file."},
+      {:unreadable, "This file is not a regular file in the worktree, so its lines are not drawn."},
+      {{:past_end, 0}, "These lines are past the file's end, which has no lines on the branch."},
+      {{:past_end, 1}, "These lines are past the file's end, which has 1 line on the branch."},
+      {{:past_end, 80}, "These lines are past the file's end, which has 80 lines on the branch."}
+    ]
+
+    for {missing, note} <- cases do
+      doc =
+        (&FindingCode.finding_code/1)
+        |> render_component(excerpt: %{@excerpt | rows: [], missing: missing}, head: @head)
+        |> Floki.parse_fragment!()
+
+      assert ^note =
+               doc |> Floki.find("[data-qa=finding_code_missing]") |> Floki.text() |> String.split() |> Enum.join(" ")
+
+      assert [] = Floki.find(doc, "[data-qa=finding_code_unchanged]")
+      assert [] = Floki.find(doc, "[data-qa=diff_hunk]")
     end
   end
 

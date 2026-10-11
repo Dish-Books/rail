@@ -578,7 +578,8 @@ defmodule RailWeb.Components.FindingDetail do
 
   attr :excerpt, :map, required: true
 
-  defp code_state(%{excerpt: %{changed?: false}} = assigns) do
+  # Lines the branch does not have are not unchanged, so their file's stat stands in the chip's place.
+  defp code_state(%{excerpt: %{changed?: false, missing: nil}} = assigns) do
     ~H"""
     <span
       data-qa="finding_code_unchanged_chip"

@@ -164,8 +164,21 @@ defmodule Rail.Git.Actions.LoadDiffHunksTest do
     assert [%{path: "lib/example.ex"}] = Git.load_diff_hunks(scope, task, [{"example.ex", 5, nil}])
   end
 
-  test "a file that is not there, or a range past the file's end, has nothing to show", %{scope: scope, task: task} do
-    assert [nil, nil] = Git.load_diff_hunks(scope, task, [{"lib/untouched.ex", 1, nil}, {"lib/example.ex", 90, 95}])
+  test "a file that is not there, or a range past the end of a file outside the diff, has nothing to show", %{
+    scope: scope,
+    task: task
+  } do
+    assert [nil, nil] = Git.load_diff_hunks(scope, task, [{"lib/untouched.ex", 1, nil}, {"lib/other.ex", 30, 31}])
+  end
+
+  # The plan's rule: no rows from elsewhere in the file, only why there are none, with the file still in the diff.
+  test "a range past the end of a file in the diff names the file's length and no rows", %{scope: scope, task: task} do
+    File.write!(Path.join(task.worktree_path, "lib/other.ex"), "")
+
+    assert [
+             %{path: "lib/example.ex", in_diff?: true, additions: 2, rows: [], missing: {:past_end, 80}},
+             %{path: "lib/other.ex", in_diff?: true, deletions: 20, rows: [], missing: {:past_end, 0}}
+           ] = Git.load_diff_hunks(scope, task, [{"lib/example.ex", 90, 95}, {"lib/other.ex", 1, nil}])
   end
 
   test "a cleaned-up worktree has nothing to read", %{scope: scope, task: task} do
@@ -234,16 +247,19 @@ defmodule Rail.Git.Actions.LoadDiffHunksTest do
              Git.load_diff_hunks(scope, task, [{"script.sh", 1, nil}, {"script.sh", nil, nil}])
   end
 
-  test "a whole file deleted on the branch has no lines to name", %{scope: scope, task: task} do
+  test "a whole file deleted on the branch says so, with no rows", %{scope: scope, task: task} do
     File.rm!(Path.join(task.worktree_path, "lib/other.ex"))
 
-    assert [nil] = Git.load_diff_hunks(scope, task, [{"lib/other.ex", 1, 2}])
+    assert [%{path: "lib/other.ex", in_diff?: true, deletions: 20, rows: [], missing: :deleted, other_changes: 0}] =
+             Git.load_diff_hunks(scope, task, [{"lib/other.ex", 1, 2}])
   end
 
-  test "a file emptied on the branch has no lines left to name", %{scope: scope, task: task} do
-    File.write!(Path.join(task.worktree_path, "lib/other.ex"), "")
+  # FileLines reads no link, so the lines a range names in one are not drawn.
+  test "a link the branch changes says its lines are not read", %{scope: scope, task: task} do
+    File.ln_s!("lib/example.ex", Path.join(task.worktree_path, "linked.ex"))
 
-    assert [nil] = Git.load_diff_hunks(scope, task, [{"lib/other.ex", 1, nil}])
+    assert [%{path: "linked.ex", in_diff?: true, rows: [], missing: :unreadable}] =
+             Git.load_diff_hunks(scope, task, [{"linked.ex", 1, nil}])
   end
 
   test "what a range replaced shows above it, and only what was deleted between its lines is named", %{

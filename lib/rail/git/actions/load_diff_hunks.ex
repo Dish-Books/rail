@@ -21,10 +21,11 @@ defmodule Rail.Git.Actions.LoadDiffHunks do
   @doc """
   Returns one excerpt or nil for each `{path, line, end_line}` in `ranges`, in order.
 
-  An excerpt is `%{path:, display_path:, additions:, deletions:, rows:, changed?:, in_diff?:,
+  An excerpt is `%{path:, display_path:, additions:, deletions:, rows:, changed?:, in_diff?:, missing:,
   hidden_lines:, other_changes:}`: one unbroken run of rows with no hunk header, each row in the range
-  carrying `named?: true`. A range with no `line` takes its file's first change, and nil means there
-  is nothing to show.
+  carrying `named?: true`. A range with no `line` takes its file's first change. A range in a file of the
+  diff with no lines on the branch has no rows and says why in `missing`: `:deleted`, `:unreadable` or
+  `{:past_end, lines}`. Nil means there is nothing to show.
   """
   def load_diff_hunks(%Scope{} = scope, %Task{} = task, ranges) when is_list(ranges) do
     case Git.load_diff(scope, task, :branch) do
@@ -86,9 +87,14 @@ defmodule Rail.Git.Actions.LoadDiffHunks do
       display_path: file.display_path,
       additions: file.additions,
       deletions: file.deletions,
-      in_diff?: in_diff?
+      in_diff?: in_diff?,
+      missing: nil
     }
   end
+
+  # No rows from elsewhere in the file stand in for lines the branch does not have.
+  defp missing(file, why),
+    do: Map.merge(stat(file, true), %{rows: [], changed?: false, hidden_lines: 0, other_changes: 0, missing: why})
 
   defp lines(file, path, line, end_line, worktree_path, read) do
     path = if file, do: file.path, else: String.trim_leading(path, "./")
@@ -96,8 +102,15 @@ defmodule Rail.Git.Actions.LoadDiffHunks do
     last = if is_integer(end_line) and end_line > line, do: end_line, else: line
 
     case {file, source} do
-      {_file, nil} ->
+      {nil, nil} ->
         {nil, read}
+
+      # A deleted file's rows are numbered as main read them, which a range named in an earlier round need not be.
+      {%{status: :deleted}, nil} ->
+        {missing(file, :deleted), read}
+
+      {file, nil} ->
+        {missing(file, :unreadable), read}
 
       {file, :binary} ->
         {binary(file || %{path: path, display_path: path, additions: 0, deletions: 0}, file != nil), read}
@@ -151,7 +164,11 @@ defmodule Rail.Git.Actions.LoadDiffHunks do
     # What was deleted after the file's last line follows it.
     rows = if to == count, do: rows ++ Map.get(deleted_at, count + 1, []), else: rows
 
-    if Enum.any?(rows, &(&1[:named?] == true)), do: {summarize(file, path, rows, hunks), read}, else: {nil, read}
+    cond do
+      Enum.any?(rows, &(&1[:named?] == true)) -> {summarize(file, path, rows, hunks), read}
+      file -> {missing(file, {:past_end, count}), read}
+      true -> {nil, read}
+    end
   end
 
   # Highlighted whole, so a line inside a heredoc reads as the file does, and only once a range needs it.

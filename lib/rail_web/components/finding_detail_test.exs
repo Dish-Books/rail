@@ -39,6 +39,7 @@ defmodule RailWeb.Components.FindingDetailTest do
     in_diff?: true,
     changed?: true,
     rows: [@context, @named],
+    missing: nil,
     hidden_lines: 0,
     other_changes: 0
   }
@@ -342,6 +343,47 @@ defmodule RailWeb.Components.FindingDetailTest do
 
       assert [_chip] = Floki.find(box, "[data-qa=finding_diff] [data-qa=finding_code_unchanged_chip]")
       assert [] = Floki.find(box, "[data-qa=finding_open_in_diff]")
+    end
+
+    test "a Where box and a card in a file the branch deletes keep their header, note and Open in Diff", %{
+      attrs: attrs
+    } do
+      deleted = %{
+        @excerpt
+        | path: "lib/b.ex",
+          display_path: "lib/b.ex",
+          additions: 0,
+          deletions: 12,
+          changed?: false,
+          rows: [],
+          missing: :deleted
+      }
+
+      doc =
+        (&FindingDetail.finding_detail/1)
+        |> render_component(Keyword.put(attrs, :place_codes, %{1 => deleted}))
+        |> Floki.parse_fragment!()
+
+      [card] = Floki.find(doc, "#finding-place-2")
+      assert Floki.text(card) =~ "lib/b.ex:40-42"
+      assert Floki.text(card) =~ "resend/1"
+      assert card |> Floki.find("[data-qa=diff_stat]") |> Floki.text() =~ "12"
+      assert card |> Floki.find("[data-qa=finding_code_missing]") |> Floki.text() =~ "The branch deletes this file."
+      assert ["lib/b.ex"] = card |> Floki.find("#finding-place-2-open-in-diff") |> Floki.attribute("phx-value-file")
+      assert [] = Floki.find(card, "[data-qa=finding_code_unchanged_chip]")
+      assert [] = Floki.find(card, "[data-qa=diff_hunk]")
+
+      box =
+        (&FindingDetail.finding_detail/1)
+        |> render_component(Keyword.merge(attrs, where_place: nil, where_code: deleted))
+        |> Floki.parse_fragment!()
+
+      [where] = Floki.find(box, "[data-qa=finding_diff]")
+      assert Floki.text(where) =~ "lib/b.ex"
+      assert where |> Floki.find("[data-qa=finding_code_missing]") |> Floki.text() =~ "The branch deletes this file."
+      assert ["lib/b.ex"] = where |> Floki.find("[data-qa=finding_open_in_diff]") |> Floki.attribute("phx-value-file")
+      assert [] = Floki.find(where, "[data-qa=finding_code_unchanged_chip]")
+      assert [] = Floki.find(where, "[data-qa=diff_hunk]")
     end
 
     test "a screen card shows its numbered steps, with no code and no Open in Diff", %{attrs: attrs} do
