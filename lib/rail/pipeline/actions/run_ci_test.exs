@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Actions.RunCiTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Roles
   alias Rail.Tools
@@ -74,7 +75,7 @@ defmodule Rail.Pipeline.Actions.RunCiTest do
 
     stub(Git, :credential_env, fn _project -> {:ok, %{"RAIL_GIT_TOKEN" => "ghs_token"}} end)
 
-    %{project: project, run: run, worktree_path: worktree_path}
+    %{project: project, role: role, run: run, worktree_path: worktree_path}
   end
 
   # A person asking for CI is saying the work is ready, as a commit from them does.
@@ -86,6 +87,122 @@ defmodule Rail.Pipeline.Actions.RunCiTest do
 
     assert {:ok, %Run{status: :running, ci_failure_streak: 0, review_on_ci_pass: true, error: nil}} =
              Pipeline.run_ci(system_scope(), run)
+  end
+
+  # The engineer role holds 1 CPU; CI holds the project's number, read afresh at each start.
+  test "CI holds the project's CPUs, not its role's, and the next CI holds a raised number", %{
+    project: project,
+    run: %{id: run_id} = run
+  } do
+    stub(Rail, :local_cpus, fn -> 8 end)
+    {:ok, project} = Projects.update_project(system_scope(), project, %{ci_reserved_cpus: 4})
+
+    assert {:ok, %Run{status: :running}} = Pipeline.run_ci(system_scope(), run)
+    assert %OsProcess{status: :running, reserved_cpus: 4} = first = Repo.get_by!(OsProcess, run_id: run_id)
+
+    {:ok, %Project{ci_reserved_cpus: 6}} = Projects.update_project(system_scope(), project, %{ci_reserved_cpus: 6})
+    {:ok, _stopped} = Tools.stop_os_process(system_scope(), first, grace_period: 50)
+    {:ok, run} = Pipeline.update_run(run, %{status: :finished})
+
+    assert {:ok, %Run{status: :running}} = Pipeline.run_ci(system_scope(), run)
+
+    assert [%OsProcess{status: :finished, reserved_cpus: 4}, %OsProcess{status: :running, reserved_cpus: 6}] =
+             Repo.all(from p in OsProcess, where: p.run_id == ^run_id, order_by: [asc: p.inserted_at, asc: p.id])
+  end
+
+  # Nothing reads the project again once the row is written, so a CI in line keeps
+  # the number it was queued with, and another project's CI keeps its own.
+  test "a CI waiting in line keeps its reservation when the project's is raised", %{
+    project: project,
+    role: role,
+    run: %{id: run_id} = run
+  } do
+    stub(Rail, :local_cpus, fn -> 8 end)
+    {:ok, project} = Projects.update_project(system_scope(), project, %{ci_reserved_cpus: 4})
+
+    {:ok, other_run} =
+      Pipeline.create_run(%{task_id: run.task_id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
+
+    blocker =
+      Repo.insert!(%OsProcess{
+        run_id: other_run.id,
+        task_id: other_run.task_id,
+        stream_path: "/dev/null",
+        status: :running,
+        started_at: DateTime.utc_now(),
+        reserved_cpus: 8
+      })
+
+    assert {:ok, %Run{status: :waiting_for_resources}} = Pipeline.run_ci(system_scope(), run)
+
+    other_project =
+      %Project{}
+      |> Project.changeset(%{
+        name: "Other CI Project",
+        github_repo: "org/other-ci",
+        github_installation_id: 47_042,
+        key: "OCI",
+        default_branch: "main",
+        clone_path: "/tmp/repos/other-ci",
+        ci_command: "mix test",
+        ci_reserved_cpus: 2
+      })
+      |> Repo.insert!()
+
+    {:ok, other_role} =
+      Roles.create_role(system_scope(), other_project, %{
+        cli: :claude,
+        stage: :engineer,
+        name: "engineer role",
+        model: "claude-opus-5-5",
+        system_prompt: "You are the engineer."
+      })
+
+    other_issue =
+      %Issue{}
+      |> Issue.changeset(%{
+        project_id: other_project.id,
+        external_id: "lin_other_ci",
+        identifier: "OCI-1",
+        title: "Other CI",
+        state: :backlog
+      })
+      |> Repo.insert!()
+
+    other_task =
+      %Task{}
+      |> Task.changeset(
+        %{
+          issue_id: other_issue.id,
+          stage: :engineer,
+          worktree_name: "oci-1",
+          worktree_path: create_temp_git_repo(),
+          scratch_path: Path.join(System.tmp_dir!(), "run_ci_#{System.unique_integer([:positive])}")
+        },
+        other_project.id
+      )
+      |> Repo.insert!()
+
+    {:ok, %{id: other_ci_run_id} = other_ci_run} =
+      Pipeline.create_run(%{
+        task_id: other_task.id,
+        role_id: other_role.id,
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
+    assert {:ok, %Run{status: :waiting_for_resources}} = Pipeline.run_ci(system_scope(), other_ci_run)
+
+    {:ok, %Project{ci_reserved_cpus: 6}} = Projects.update_project(system_scope(), project, %{ci_reserved_cpus: 6})
+    {:ok, _stopped} = Tools.stop_os_process(system_scope(), blocker, grace_period: 50)
+
+    assert %OsProcess{status: :running, reserved_cpus: 4} = Repo.get_by!(OsProcess, run_id: run_id)
+    assert %OsProcess{status: :running, reserved_cpus: 2} = Repo.get_by!(OsProcess, run_id: other_ci_run_id)
+
+    assert [
+             "[rail] CI needs 4 CPUs, and every CPU on this machine is reserved. " <>
+               "It is 1st in line and starts on its own as soon as enough is free."
+           ] = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
   end
 
   test "a project without CI has none to run", %{project: project, run: run} do

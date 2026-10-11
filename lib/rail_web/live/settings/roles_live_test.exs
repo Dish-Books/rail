@@ -505,10 +505,18 @@ defmodule RailWeb.Settings.RolesLiveTest do
 
     view |> element("#edit-role-button-#{role_id}") |> render_click()
     assert has_element?(view, "#role-cpus-input[value='1']")
+    assert has_element?(view, "#role-cpus-help", "Each of this role's agent turns and worktree setups holds this many.")
     refute has_element?(view, "#role-memory-input")
     assert has_element?(view, "#role-sandbox-fit", "4 Bug Hunter sandboxes fit on this machine at once")
     assert has_element?(view, "#role-sandbox-fit", "1 of 4 CPUs each")
-    assert has_element?(view, "#role-sandbox-fit", "Its memory is not limited.")
+
+    assert has_element?(
+             view,
+             "#role-sandbox-fit",
+             "Each sandbox gets this share of the machine's CPUs when they are all busy. Its memory is not limited."
+           )
+
+    refute has_element?(view, "#role-sandbox-section", "CI")
 
     view |> element("#role-form") |> render_change(%{"role" => %{"reserved_cpus" => "4"}})
     assert has_element?(view, "#role-sandbox-fit", "1 Bug Hunter sandbox fits on this machine at once")

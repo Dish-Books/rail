@@ -31,7 +31,7 @@ defmodule Rail.Tools.Utils.PlaceOnAccount do
   holds it until that account is signed in. `run` carries its task, down to the
   project, and its role.
 
-  Returns what `enqueue_sandbox/3` does, `{:waiting_for_usage, os_process,
+  Returns what `enqueue_sandbox/4` does, `{:waiting_for_usage, os_process,
   resets_at}`, or `{:error, reason}` with the row failed to start.
   """
   def place_on_account(%OsProcess{} = os_process, %Run{task: %Task{} = task, role: %Role{} = role} = run, argv, token) do
@@ -51,7 +51,8 @@ defmodule Rail.Tools.Utils.PlaceOnAccount do
     case placed do
       {:ok, backend, stamped} ->
         with :ok <- ensure_executable(backend.executable_path, stamped, run) do
-          enqueue_sandbox(stamped, run, launch_spec(backend, argv, stamped.stream_path, task, token))
+          spec = launch_spec(backend, argv, stamped.stream_path, task, token)
+          enqueue_sandbox(stamped, run, spec, role.reserved_cpus)
         end
 
       {:wait, resets_at} ->

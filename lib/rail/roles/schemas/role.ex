@@ -83,7 +83,7 @@ defmodule Rail.Roles.Schemas.Role do
     field :max_concurrent, :integer, default: 1
     field :position, :integer, default: 0
     field :mcp_tools, {:array, :string}, default: []
-    # What each of its sandboxes, and the setup and CI its runs start, holds while it runs.
+    # What each of its agent turns, and the worktree setups its runs start, holds while it runs.
     field :reserved_cpus, :integer, default: 1
 
     belongs_to :project, Project

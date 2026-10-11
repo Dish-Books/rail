@@ -312,6 +312,106 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     assert %Project{ci_command: "mise run ci", ci_timeout_minutes: 45} = Repo.get!(Project, project_id)
   end
 
+  # Capacity in test is 4 CPUs (config/test.exs).
+  test "sets the CPUs a project's CI holds, refusing what the machine could never free", %{
+    admin_conn: conn,
+    admin_user: admin
+  } do
+    assert {:ok, %Project{id: project_id}} =
+             Projects.create_project(Scope.for_user(admin), %{
+               name: "CI CPUs App",
+               github_repo: "example/ci-cpus-#{System.unique_integer([:positive])}",
+               github_installation_id: 336,
+               key: "CIC",
+               default_branch: "main",
+               clone_path: "/tmp/ci-cpus",
+               ci_command: "mise run ci",
+               ci_reserved_cpus: 3
+             })
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+    view |> element("#edit-project-#{project_id}") |> render_click()
+
+    assert has_element?(view, "#project-ci-section h3", "CI")
+    assert has_element?(view, "#project-ci-section", "Leave the command empty to skip CI")
+    assert has_element?(view, "#project-ci-cpus-input[value='3']")
+
+    assert has_element?(
+             view,
+             "#project-ci-cpus-help",
+             "Each CI run waits for, holds and runs its suite on this many. A change applies from the next CI run."
+           )
+
+    view |> form("#project-form", %{"project" => %{"ci_reserved_cpus" => "12"}}) |> render_change()
+
+    assert has_element?(
+             view,
+             "#project-ci-cpus-error",
+             "This machine has 4 CPUs to reserve, so CI that needs 12 could never start."
+           )
+
+    view |> form("#project-form", %{"project" => %{"ci_reserved_cpus" => "12"}}) |> render_submit()
+
+    assert has_element?(view, "#project-ci-cpus-input[aria-invalid='true']")
+    assert has_element?(view, "#project-ci-cpus-error", "could never start")
+    assert %Project{ci_reserved_cpus: 3} = Repo.get!(Project, project_id)
+
+    view |> form("#project-form", %{"project" => %{"ci_reserved_cpus" => "0"}}) |> render_submit()
+
+    assert has_element?(view, "#project-ci-cpus-error", "must be at least 1 CPU")
+
+    view |> form("#project-form", %{"project" => %{"ci_reserved_cpus" => "2"}}) |> render_submit()
+
+    assert %Project{ci_reserved_cpus: 2} = Repo.get!(Project, project_id)
+    refute has_element?(view, "#project-form")
+    assert has_element?(view, "#project-ci-#{project_id}", "CI: 2 CPUs")
+  end
+
+  test "lists each project's CI CPUs, or that it has no CI", %{admin_conn: conn, admin_user: admin} do
+    id = System.unique_integer([:positive])
+
+    {:ok, %Project{id: four_id}} =
+      Projects.create_project(Scope.for_user(admin), %{
+        name: "Four",
+        github_repo: "example/four-#{id}",
+        github_installation_id: 337,
+        key: "FOUR",
+        default_branch: "main",
+        clone_path: "/tmp/four",
+        ci_command: "mise run ci",
+        ci_reserved_cpus: 4
+      })
+
+    {:ok, %Project{id: one_id}} =
+      Projects.create_project(Scope.for_user(admin), %{
+        name: "One",
+        github_repo: "example/one-#{id}",
+        github_installation_id: 338,
+        key: "ONE",
+        default_branch: "main",
+        clone_path: "/tmp/one",
+        ci_command: "mix test"
+      })
+
+    {:ok, %Project{id: none_id}} =
+      Projects.create_project(Scope.for_user(admin), %{
+        name: "None",
+        github_repo: "example/none-#{id}",
+        github_installation_id: 339,
+        key: "NONE",
+        default_branch: "main",
+        clone_path: "/tmp/none",
+        ci_reserved_cpus: 2
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/settings/projects")
+
+    assert has_element?(view, "#project-ci-#{four_id}", "CI: 4 CPUs")
+    assert has_element?(view, "#project-ci-#{one_id}", "CI: 1 CPU")
+    refute has_element?(view, "#project-ci-#{one_id}", "CPUs")
+    assert has_element?(view, "#project-ci-#{none_id}", "CI: No CI")
+  end
+
   test "sets the seed that signs each agent's browser in as a fresh account, and clears it", %{
     admin_conn: conn,
     admin_user: admin

@@ -7,26 +7,26 @@ defmodule Rail.Tools.Utils.EnqueueSandbox do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Repo
-  alias Rail.Roles.Schemas.Role
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
 
   @doc """
-  Puts `os_process` in line for the sandbox `spec` describes, holding what its
-  run's role reserves, and starts it at once if it fits.
+  Puts `os_process` in line for the sandbox `spec` describes, holding
+  `reserved_cpus`, and starts it at once if it fits.
 
   Returns `{:ok, os_process}` once it runs, `{:waiting, os_process}` with its run
   marked waiting and a line in its log saying what it waits for, or
   `{:error, reason}` when it could not be started.
   """
-  def enqueue_sandbox(%OsProcess{} = os_process, %Run{role: %Role{} = role} = run, spec) when is_map(spec) do
+  def enqueue_sandbox(%OsProcess{} = os_process, %Run{} = run, spec, reserved_cpus)
+      when is_map(spec) and is_integer(reserved_cpus) do
     queued =
       os_process
       |> OsProcess.changeset(%{
         status: :waiting_for_resources,
         runtime: Rail.sandbox_runtime(),
-        reserved_cpus: role.reserved_cpus,
+        reserved_cpus: reserved_cpus,
         queued_at: DateTime.utc_now(),
         launch: Jason.encode!(spec)
       })
