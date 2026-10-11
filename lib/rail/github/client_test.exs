@@ -232,6 +232,34 @@ defmodule Rail.GitHub.ClientTest do
     assert {:error, %Req.TransportError{}} = Client.update_pull_request("ghs_token", "acme/app", 43, %{})
   end
 
+  test "squash-merges a pull request and returns the merge sha" do
+    Req.Test.expect(Client, fn conn ->
+      assert conn.method == "PUT"
+      assert conn.request_path == "/repos/acme/app/pulls/43/merge"
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"merge_method" => "squash"} = Jason.decode!(body)
+      Req.Test.json(conn, %{"merged" => true, "sha" => "3c9a1f0e", "message" => "Pull Request successfully merged"})
+    end)
+
+    assert {:ok, "3c9a1f0e"} = Client.merge_pull_request("ghs_token", "acme/app", 43)
+
+    Req.Test.expect(Client, &(&1 |> Plug.Conn.put_status(405) |> Req.Test.json(%{"message" => "Required check failed"})))
+
+    assert {:error, {:github_api_error, 405, %{"message" => "Required check failed"}}} =
+             Client.merge_pull_request("ghs_token", "acme/app", 43)
+
+    Req.Test.expect(
+      Client,
+      &(&1 |> Plug.Conn.put_status(409) |> Req.Test.json(%{"message" => "Head branch was modified"}))
+    )
+
+    assert {:error, {:github_api_error, 409, %{"message" => "Head branch was modified"}}} =
+             Client.merge_pull_request("ghs_token", "acme/app", 43)
+
+    Req.Test.expect(Client, &Req.Test.transport_error(&1, :econnrefused))
+    assert {:error, %Req.TransportError{}} = Client.merge_pull_request("ghs_token", "acme/app", 43)
+  end
+
   describe "reading pull requests for learnings" do
     test "lists a page of pull requests with GitHub's own params" do
       Req.Test.expect(Client, fn conn ->

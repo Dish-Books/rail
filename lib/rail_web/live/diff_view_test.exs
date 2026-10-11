@@ -94,7 +94,7 @@ defmodule RailWeb.Live.DiffViewTest do
       |> Floki.find("#diff-commit-listbox [data-qa='diff_commit_title']")
       |> Enum.map(&String.trim(Floki.text(&1)))
 
-    assert labels == ["Whole branch", "Fix round 1", "Merge main", "Engineer"]
+    assert labels == ["Whole branch", "Fix round 1", "Merge main", "Implement"]
     assert has_element?(view, "#diff-commit-picker", "Whole branch")
     assert has_element?(view, "[data-qa='diff_file_section'][data-path='rows.ex']")
     assert has_element?(view, "[data-qa='diff_file_section'][data-path='fix.ex']")
@@ -121,7 +121,7 @@ defmodule RailWeb.Live.DiffViewTest do
       focus_file: "rows.ex"
     )
 
-    assert has_element?(view, "#diff-commit-picker", "Engineer")
+    assert has_element?(view, "#diff-commit-picker", "Implement")
     assert has_element?(view, "[data-qa='diff_file_section'][data-path='rows.ex']")
     refute has_element?(view, "[data-qa='diff_file_section'][data-path='fix.ex']")
   end
@@ -135,7 +135,7 @@ defmodule RailWeb.Live.DiffViewTest do
 
     view |> element("#diff-commit-option-#{String.slice(engineer, 0, 7)}") |> render_click()
 
-    assert has_element?(view, "#diff-commit-picker", "Engineer")
+    assert has_element?(view, "#diff-commit-picker", "Implement")
     assert has_element?(view, "[data-qa='diff_first_parent']", "against its first parent")
     assert has_element?(view, "[data-qa='diff_file_section'][data-path='rows.ex']")
     refute has_element?(view, "[data-qa='diff_file_section'][data-path='fix.ex']")

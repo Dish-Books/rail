@@ -115,6 +115,10 @@ defmodule Rail.Pipeline.Actions.DecideFindingTest do
     {:ok, _skipped} = Pipeline.decide_finding(system_scope(), finding, :skip)
     {:ok, %Run{status: :finished}} = Pipeline.start_fix_round(run)
 
+    assert {:error, {:invalid_stage, :finalize}} = Pipeline.decide_finding(system_scope(), finding, :fix)
+
+    # A review finished before Finalize shipped left its task at Review.
+    {:ok, _legacy} = Pipeline.update_task(Repo.reload!(task), %{stage: :review})
     assert {:error, :review_finished} = Pipeline.decide_finding(system_scope(), finding, :fix)
     assert %Finding{id: ^finding_id, decision: :skip} = Repo.get!(Finding, finding_id)
   end

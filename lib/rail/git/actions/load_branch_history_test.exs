@@ -85,7 +85,7 @@ defmodule Rail.Git.Actions.LoadBranchHistoryTest do
                },
                %{subject: "Follow main's rename through", label: "Fix round 1", files: 1, additions: 1, deletions: 1},
                %{label: "Merge main", merge?: true, merged: ^main, conflicts: 1, files: 1, additions: 1, deletions: 0},
-               %{subject: "Send comments as one round", label: "Engineer", conflicts: 0, files: 1, additions: 2}
+               %{subject: "Send comments as one round", label: "Implement", conflicts: 0, files: 1, additions: 2}
              ]
            } = Git.load_branch_history(task, [round_1, round_2])
   end
@@ -102,7 +102,7 @@ defmodule Rail.Git.Actions.LoadBranchHistoryTest do
     git!(repo, ["fetch", "origin", "main"])
     git!(repo, ["merge", "--no-edit", "origin/main"])
 
-    assert %{commits: [%{label: "Merge main", conflicts: 0}, %{label: "Engineer", conflicts: 0}]} =
+    assert %{commits: [%{label: "Merge main", conflicts: 0}, %{label: "Implement", conflicts: 0}]} =
              Git.load_branch_history(task)
   end
 
@@ -131,8 +131,8 @@ defmodule Rail.Git.Actions.LoadBranchHistoryTest do
                  main?: false,
                  merged: ^theirs
                },
-               %{label: "Engineer", main?: false},
-               %{label: "Engineer"}
+               %{label: "Implement", main?: false},
+               %{label: "Implement"}
              ]
            } = Git.load_branch_history(task)
   end

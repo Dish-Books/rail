@@ -160,7 +160,7 @@ defmodule RailWeb.TaskLiveTest do
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-    assert has_element?(view, "[data-qa='task_status_chip']", "Engineer waiting for resources")
+    assert has_element?(view, "[data-qa='task_status_chip']", "Implement waiting for resources")
     assert has_element?(view, "#task-line[href='/sandboxes']", "1st in line for 2 CPUs · 4 GB")
     assert has_element?(view, "#task-tab-#{engineer.id}", "waiting for resources")
     assert has_element?(view, "#task-tab-#{engineer.id} [data-qa='task-tab-dot'][data-tone='waiting']")
@@ -204,7 +204,7 @@ defmodule RailWeb.TaskLiveTest do
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{engineer.id}")
 
-    assert has_element?(view, "[data-qa='task_status_chip']", "Engineer waiting for usage")
+    assert has_element?(view, "[data-qa='task_status_chip']", "Implement waiting for usage")
     assert has_element?(view, "#task-usage-starts", "· starts")
     assert has_element?(view, "#task-usage-starts-at[data-at='#{DateTime.to_iso8601(reset)}']")
     refute has_element?(view, "#task-line")
@@ -222,7 +222,7 @@ defmodule RailWeb.TaskLiveTest do
     assert {:ok, %OsProcess{status: :running}} = Tools.start_after_usage_reset(waiting_id)
 
     eventually(fn ->
-      assert has_element?(view, "[data-qa='task_status_chip']", "Engineer running")
+      assert has_element?(view, "[data-qa='task_status_chip']", "Implement running")
       refute has_element?(view, "#usage-banner")
     end)
   end
@@ -257,7 +257,7 @@ defmodule RailWeb.TaskLiveTest do
     assert {:ok, %OsProcess{status: :waiting_for_usage}} = Tools.start_os_process(run, ["2"])
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{engineer.id}")
-    assert has_element?(view, "[data-qa='task_status_chip']", "Engineer waiting for usage")
+    assert has_element?(view, "[data-qa='task_status_chip']", "Implement waiting for usage")
 
     view |> element("#usage-banner [data-qa='stop-run']") |> render_click()
 
@@ -284,7 +284,7 @@ defmodule RailWeb.TaskLiveTest do
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-    assert has_element?(view, "[data-qa='task_status_chip']", "Engineer waiting for usage")
+    assert has_element?(view, "[data-qa='task_status_chip']", "Implement waiting for usage")
     refute has_element?(view, "#task-usage-starts")
   end
 
@@ -1423,7 +1423,7 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(view, "#task-tab-issue", "Linear Issue")
-      assert has_element?(view, "#task-tab-#{role.id}[aria-selected='true']", "plan role")
+      assert has_element?(view, "#task-tab-#{role.id}[aria-selected='true']", "Plan")
       assert html |> Floki.parse_document!() |> Floki.find("[role='tab'][id^='task-tab-']") |> length() == 2
     end
 
@@ -1713,9 +1713,9 @@ defmodule RailWeb.TaskLiveTest do
 
       view |> element("#approve-plan") |> render_click()
 
-      assert has_element?(view, "#plan-error", "This task is at Engineer, not Plan.")
+      assert has_element?(view, "#plan-error", "This task is at Implement, not Plan.")
       refute has_element?(view, "#approve-plan")
-      assert has_element?(view, "[data-qa='task_status_chip']", "Queued for Engineer")
+      assert has_element?(view, "[data-qa='task_status_chip']", "Queued for Implement")
     end
 
     test "a page left open ignores another task's move", %{
@@ -4803,13 +4803,105 @@ defmodule RailWeb.TaskLiveTest do
       assert [_issue, _plan, _engineer, ^review_tab] =
                html |> Floki.parse_document!() |> Floki.find("[role='tab']") |> Floki.attribute("id")
 
-      assert has_element?(view, "#task-tab-#{role.id}[aria-selected='true']", role.name)
+      assert has_element?(view, "#task-tab-#{role.id}[aria-selected='true']", "Review")
       assert has_element?(view, "#task-tab-#{role.id} [data-qa='task-tab-badge']", "3")
 
       {:ok, _running} = Pipeline.update_run(blocked, %{status: :running})
       send(view.pid, :task_changed)
 
       assert has_element?(view, "#task-tab-#{role.id} [data-qa='task-tab-badge']", "1")
+    end
+
+    test "the engineer role's tab reads Implement, while its id and ?tab= link stay the role's", %{
+      conn: conn,
+      task: task,
+      engineer_role: engineer_role
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{engineer_role.id}")
+
+      assert has_element?(view, "#task-tab-#{engineer_role.id}[aria-selected='true']", "Implement")
+      refute has_element?(view, "#task-tab-#{engineer_role.id}", "engineer role")
+    end
+
+    test "clicking Finish review lands the page on the Finalize tab, with the Review conversation beside it", %{
+      conn: conn,
+      task: task,
+      role: role
+    } do
+      {:ok, _task} = Pipeline.update_task(task, %{pr_number: 151, pr_is_draft: false})
+      {:ok, _pass} = Pipeline.save_review(task)
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#start-fix-round", "Finish review") |> render_click()
+
+      assert has_element?(view, "#task-tab-finalize[aria-selected='true']", "ready to finalize")
+      assert has_element?(view, "#task-tab-#{role.id}[aria-selected='false']", "done")
+      assert has_element?(view, "#finalize-pane[data-state='not_ready'] #finalize-pr", "#151")
+      assert has_element?(view, "#finalize-mark-ready", "Mark ready")
+      assert has_element?(view, "#conversation-role-#{role.id}")
+      assert has_element?(view, "[data-qa='task_status_chip']", "Ready to finalize")
+    end
+
+    # Merging is claimed and heard before GitHub answers, so a second page holds Merge too.
+    test "a second page shows Merging then Merged without a reload, and the Review conversation still sends", %{
+      conn: conn,
+      scope: scope,
+      task: task,
+      review_run: %Run{id: run_id}
+    } do
+      {:ok, _lead} = Users.update_user(system_scope(), scope.user, %{tech_lead: true})
+
+      {:ok, _task} =
+        Pipeline.update_task(task, %{
+          stage: :finalize,
+          pr_number: 151,
+          pr_is_draft: false,
+          marked_ready_at: DateTime.utc_now()
+        })
+
+      {:ok, _pass} = Pipeline.save_review(task)
+      test_pid = self()
+
+      Req.Test.stub(Client, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"POST", "/app/installations/" <> _id} ->
+            Req.Test.json(conn, %{"token" => "ghs_app"})
+
+          {"PUT", "/repos/example/test-seed/pulls/151/merge"} ->
+            send(test_pid, {:merging, self()})
+            assert_receive :answer, 2_000
+            Req.Test.json(conn, %{"merged" => true, "sha" => "3c9a1f0e2b"})
+        end
+      end)
+
+      assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(two, "#finalize-pane[data-state='ready']")
+
+      one |> element("#finalize-merge") |> render_click()
+      assert_receive {:merging, github}, 2_000
+
+      eventually(fn ->
+        assert has_element?(two, "#finalize-merge[disabled]", "Merging…")
+        assert has_element?(two, "[data-qa='task_status_chip']", "Merging")
+      end)
+
+      send(github, :answer)
+
+      eventually(fn ->
+        assert has_element?(two, "#finalize-pane[data-state='merged'] #finalize-merged", "3c9a1f0")
+        assert has_element?(two, "[data-qa='task_status_chip']", "Merged")
+        assert has_element?(two, "#task-tab-finalize[aria-selected='true']", "merged")
+        refute has_element?(two, "#finalize-merge")
+      end)
+
+      expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, _argv ->
+        send(test_pid, :resumed)
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      two |> element("#chat-composer-form") |> render_submit(%{"message" => "Say No comments yet"})
+      assert_receive :resumed, 2_000
     end
 
     test "ruling the last finding to rule takes the count off the Review tab", %{
@@ -4831,7 +4923,7 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "#task-tab-#{role.id} [data-qa='task-tab-badge']")
     end
 
-    test "the header says whether Review is running, failed, waiting on the findings or ready to merge", %{
+    test "the header says whether Review is running, failed, waiting on the findings or ready to finalize", %{
       conn: conn,
       task: task,
       role: role,
@@ -4867,10 +4959,18 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, done} = Pipeline.update_run(stopped, %{stage_outcome: :done})
       {:ok, _finished} = Pipeline.start_fix_round(done)
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "[data-qa='task_status_chip']", "Ready to merge")
-      assert has_element?(view, "[data-qa='task_status_chip'] .pi-check-circle")
+      assert has_element?(view, "[data-qa='task_status_chip']", "Ready to finalize")
+      assert has_element?(view, "[data-qa='task_status_chip'] .pi-flag")
       refute has_element?(view, "[data-qa='task_status_chip'] .pi-list-checks")
       assert has_element?(view, "#task-tab-#{role.id} [data-qa='task-tab-dot'][data-tone='done']")
+      assert has_element?(view, "#task-tab-#{role.id}", ~r/\bdone\s*$/)
+
+      # A review finished before Finalize shipped leaves its task at Review, ready to merge on GitHub.
+      {:ok, _legacy} = Pipeline.update_task(Repo.reload!(task), %{stage: :review})
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "[data-qa='task_status_chip']", "Ready to merge")
+      assert has_element?(view, "[data-qa='task_status_chip'] .pi-check-circle")
+      refute has_element?(view, "#task-tab-finalize")
     end
 
     test "working in the question card does not read the findings again", %{conn: conn, task: task, review_run: run} do
@@ -5393,6 +5493,30 @@ defmodule RailWeb.TaskLiveTest do
       refute_push_event(view, "browser:frame", %{data: "item closed"}, 100)
     end
 
+    # A teammate's click lands in the shared tab, so every page watching that browser sees what it changed.
+    test "a frame from the picked browser reaches two pages open on the task", %{conn: conn, task: task} do
+      Repo.insert!(%BrowserSession{
+        task_id: task.id,
+        name: "explorer-1",
+        status: :running,
+        browser_context_id: "ctx",
+        target_id: "tgt",
+        started_at: DateTime.utc_now()
+      })
+
+      stub(Tools, :start_browser_session, fn _task, "explorer-1", [existing: true] -> {:error, :no_browser} end)
+      assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      for view <- [one, two], do: view |> element("#review-item-browser") |> render_click()
+      Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{task.id}:explorer-1", {:browser_frame, task.id, "typed"})
+
+      for view <- [one, two] do
+        _settled = render(view)
+        assert_push_event(view, "browser:frame", %{data: "typed"})
+      end
+    end
+
     # A frame for a task nobody is reading is nothing to send anywhere.
     test "a frame for another task is ignored", %{conn: conn, task: task} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
@@ -5604,7 +5728,7 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#split-row-TLV-11 [data-qa='split-row-line']", "Diff ready for review")
       assert has_element?(view, "#split-row-TLV-12", "after TLV-11")
       assert has_element?(view, "#split-row-TLV-12[data-state='waiting_on']", "Starts when TLV-11 merges")
-      assert has_element?(view, "#split-row-TLV-13[data-state='failed']", "Engineer failed: Chrome could not reach it")
+      assert has_element?(view, "#split-row-TLV-13[data-state='failed']", "Implement failed: Chrome could not reach it")
       assert has_element?(view, "#split-row-TLV-13 [data-qa='split-row-badge']")
 
       view |> element("#split-action-TLV-11", "Review the diff") |> render_click()
@@ -5673,6 +5797,34 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "#approve-plan")
     end
 
+    test "a child Review finished sits in the board's Finalize column and opens on its Finalize tab with the switcher",
+         %{conn: conn, project: project, parent: parent, first: first} do
+      {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
+      {:ok, _first} = Pipeline.update_task(first, %{stage: :finalize, pr_number: 31})
+
+      {:ok, _review} =
+        Pipeline.create_run(%{
+          task_id: first.id,
+          role_id: lead.id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.utc_now()
+        })
+
+      assert {:ok, board, _html} = live(conn, ~p"/tasks/#{parent.id}")
+      assert has_element?(board, "#split-row-TLV-11[data-state='not_ready']", "Ready to finalize")
+      assert has_element?(board, "#split-action-TLV-11[href*='tab=finalize']", "Finalize")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-11&tab=finalize")
+      assert has_element?(view, "#task-tab-finalize[aria-selected='true']")
+      assert has_element?(view, "#child-switcher-button", "1 of 3")
+      assert has_element?(view, "#finalize-pane[data-state='not_ready']", "#31")
+
+      # A save the lead makes on a comment's turn reaches the pane as it does any stage's.
+      send(view.pid, {:output_saved, first.id})
+      assert has_element?(view, "#finalize-review", "Finished in 0 rounds")
+    end
+
     test "a child's Children tab goes back to its parent's board", %{conn: conn, parent: parent} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-11")
 
@@ -5693,7 +5845,7 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#child-switcher-button", "2 of 3")
       assert has_element?(view, "#child-switcher-TLV-11", "Review the diff")
       assert has_element?(view, "#child-switcher-TLV-12[aria-current='true']", "Waiting on TLV-11")
-      assert has_element?(view, "#child-switcher-TLV-13", "Engineer failed")
+      assert has_element?(view, "#child-switcher-TLV-13", "Implement failed")
       assert has_element?(view, "#child-switcher-all", "All children of TLV-10")
       assert has_element?(view, "#child-switcher-waiting[class*='slate']", "2 other children need attention")
 

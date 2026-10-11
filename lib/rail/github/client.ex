@@ -168,6 +168,26 @@ defmodule Rail.GitHub.Client do
     end
   end
 
+  @doc """
+  Squash-merges a pull request in `repo` with GitHub's default title, leaving its branch in place, and
+  returns the merge commit's sha. A refusal carries GitHub's status and body.
+  """
+  def merge_pull_request(token, repo, number, opts \\ []) do
+    opts
+    |> build_req()
+    |> Req.put(
+      url: "/repos/#{repo}/pulls/#{number}/merge",
+      auth: {:bearer, token},
+      headers: headers(),
+      json: %{merge_method: "squash"}
+    )
+    |> case do
+      {:ok, %{status: 200, body: %{"merged" => true, "sha" => sha}}} -> {:ok, sha}
+      {:ok, %{status: status, body: body}} -> {:error, {:github_api_error, status, body}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @doc "Reads one pull request in `repo` by its number."
   def get_pull_request(token, repo, number, opts \\ []) do
     opts

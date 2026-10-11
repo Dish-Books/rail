@@ -325,6 +325,30 @@ defmodule Rail.Tools.BrowserSessionTest do
     assert byte_size(target) > 0
   end
 
+  # A teammate's input attaches to the tab Review left, so a tab that has gone is said, not replaced by a blank one.
+  test "asking only for a tab the browser still has opens nothing when its tab is gone or never was", %{task: task} do
+    {:ok, session} = Tools.start_browser_session(task, "qa")
+    %Session{id: id, browser_context_id: context} = Repo.get_by!(Session, task_id: task.id)
+    :ok = GenServer.stop(session, :shutdown, 10_000)
+
+    {:ok, %{url: url}} = ensure_browser_host(start: false)
+    {:ok, connection} = Browser.start_link(url: url)
+    {:ok, _closed} = Browser.call(connection, "Target.disposeBrowserContext", %{browserContextId: context})
+    GenServer.stop(connection)
+
+    assert {:error, :no_browser} = Tools.start_browser_session(task, "qa", existing: true)
+    assert %Session{status: :finished} = Repo.get!(Session, id)
+
+    {:ok, %Session{id: stuck}} =
+      %Session{}
+      |> Session.changeset(%{task_id: task.id, name: "qa", status: :starting, started_at: DateTime.utc_now()})
+      |> Repo.insert()
+
+    assert {:error, :no_browser} = Tools.start_browser_session(task, "qa", existing: true)
+    assert %Session{status: :finished} = Repo.get!(Session, stuck)
+    refute Repo.exists?(from s in Session, where: s.task_id == ^task.id and s.status != :finished)
+  end
+
   # A Chrome that cannot be started is no answer about whether the tab is still
   # there, so the row pointing at it is left for when it can be.
   test "a tab that cannot be reached for want of a browser keeps its row", %{task: task} do

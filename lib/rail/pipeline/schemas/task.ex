@@ -12,14 +12,17 @@ defmodule Rail.Pipeline.Schemas.Task do
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects.Schemas.Project
+  alias Rail.Users.Schemas.User
 
   # The linear pipeline, then stages a task can be parked in off that path.
   # `:debugger` has no position in the sequence: nothing advances into or out of it.
   # `:split` is a parent whose children carry the work, and it waits there until they merge.
+  # `:finalize` has no run of its own: the Review lead's run stays the task's while a person merges it.
   @stages [
     :plan,
     :engineer,
     :review,
+    :finalize,
     :merged,
     :debugger,
     :split
@@ -45,8 +48,16 @@ defmodule Rail.Pipeline.Schemas.Task do
     # A child of a split: its place in it, from 1, and the earlier places it waits on to merge.
     field :split_position, :integer
     field :builds_on, {:array, :integer}, default: []
+    # Finalize: who marked it ready, a merge started and not yet answered, GitHub's refusal and the squash commit.
+    field :marked_ready_at, :utc_datetime_usec
+    field :merge_started_at, :utc_datetime_usec
+    field :merge_error, :string
+    field :merge_error_at, :utc_datetime_usec
+    field :merge_sha, :string
 
     belongs_to :project, Project
+    belongs_to :marked_ready_by, User
+    belongs_to :merged_by, User
     belongs_to :issue, Issue
     belongs_to :parent_task, __MODULE__
 
@@ -75,7 +86,14 @@ defmodule Rail.Pipeline.Schemas.Task do
     :pr_is_draft,
     :learnings_extracted_at,
     :split_position,
-    :builds_on
+    :builds_on,
+    :marked_ready_by_id,
+    :marked_ready_at,
+    :merge_started_at,
+    :merge_error,
+    :merge_error_at,
+    :merged_by_id,
+    :merge_sha
   ]
 
   @required_fields [
@@ -140,7 +158,29 @@ defmodule Rail.Pipeline.Schemas.Task do
   subagents are the review, QA, engineer and demo roles.
   """
   def role_stage(:review), do: :review_lead
+  def role_stage(:finalize), do: :review_lead
   def role_stage(stage) when is_atom(stage), do: stage
+
+  # A merge GitHub has not answered in this long is one whose caller died, so another can be started.
+  @merge_claim_seconds 60
+
+  @doc """
+  Where `task` stands in Finalize: `:not_ready` until a teammate marks it ready, then `:ready`, `:merging`
+  while a merge waits on GitHub, `:refused` after GitHub turned the last one down, and `:merged`.
+  """
+  def finalize_state(%__MODULE__{merged_at: %DateTime{}}), do: :merged
+  def finalize_state(%__MODULE__{marked_ready_at: nil}), do: :not_ready
+
+  def finalize_state(%__MODULE__{} = task) do
+    cond do
+      merge_claimed?(task.merge_started_at) -> :merging
+      is_binary(task.merge_error) -> :refused
+      true -> :ready
+    end
+  end
+
+  @doc "How long a merge claim holds, for the query that takes one."
+  def merge_claim_seconds, do: @merge_claim_seconds
 
   @doc "True when Review's demo recorder has a video on disk for `task`."
   def demo_recorded?(%__MODULE__{scratch_path: scratch_path}) do
@@ -164,8 +204,9 @@ defmodule Rail.Pipeline.Schemas.Task do
   end
 
   def stage_label(:plan), do: "Plan"
-  def stage_label(:engineer), do: "Engineer"
+  def stage_label(:engineer), do: "Implement"
   def stage_label(:review), do: "Review"
+  def stage_label(:finalize), do: "Finalize"
   def stage_label(:merged), do: "Merged"
   def stage_label(:debugger), do: "Debugger"
   def stage_label(:split), do: "Split"
@@ -192,6 +233,9 @@ defmodule Rail.Pipeline.Schemas.Task do
         else: [builds_on: "must name only earlier children"]
     end)
   end
+
+  defp merge_claimed?(%DateTime{} = started), do: DateTime.diff(DateTime.utc_now(), started) < @merge_claim_seconds
+  defp merge_claimed?(nil), do: false
 
   defp maybe_put_project_id(changeset, nil), do: changeset
   defp maybe_put_project_id(changeset, project_id), do: put_change(changeset, :project_id, project_id)

@@ -672,7 +672,7 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
         |> Repo.insert!()
 
       assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(ci, %{exit_code: 0})
-      assert %Task{stage: :review, pr_is_draft: false} = Repo.reload!(task)
+      assert %Task{stage: :finalize, pr_is_draft: false} = Repo.reload!(task)
       assert [_first, %{finished_at: %DateTime{}}] = task |> Repo.preload(:issue) |> Pipeline.read_review()
     end
 
@@ -716,6 +716,22 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
       assert {:error, "Dispatch is off, so round 2 was not started."} = Pipeline.hand_over_work(scope, lead_run)
       refute Git.branch_unpushed?(repo)
       assert %Run{status: :finished} = Repo.reload!(lead_run)
+    end
+
+    # The pull request merged, but the branch stays, so what a comment has the lead commit still lands on it.
+    test "after the merge, the lead's commit is still pushed to the branch", %{
+      scope: scope,
+      task: task,
+      lead_run: lead_run,
+      repo: repo
+    } do
+      {:ok, _merged} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
+      git!(repo, ["commit", "--allow-empty", "-m", "Say No comments yet"])
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      assert {:ok, %Run{}} = Pipeline.hand_over_work(scope, lead_run)
+      refute Git.branch_unpushed?(repo)
+      assert %Task{stage: :merged} = Repo.reload!(task)
     end
 
     test "the lead's hand-over on a task back at Engineer is refused, with nothing pushed", %{

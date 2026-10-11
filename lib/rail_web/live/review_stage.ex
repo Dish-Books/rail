@@ -39,6 +39,7 @@ defmodule RailWeb.Live.ReviewStage do
       |> assign_new(:diff_file, fn -> nil end)
       |> assign_new(:screen_open, fn -> nil end)
       |> assign_new(:screen_earlier, fn -> nil end)
+      |> assign_new(:attached, fn -> MapSet.new() end)
       |> load()
 
     {:ok, socket}
@@ -166,6 +167,7 @@ defmodule RailWeb.Live.ReviewStage do
                 picked={@browser}
                 url={@url}
                 beats={length(@beats)}
+                interactive={@interactive}
                 target={@myself}
               />
             </div>
@@ -233,6 +235,13 @@ defmodule RailWeb.Live.ReviewStage do
     {:noreply, socket}
   end
 
+  # A run driving the browser may have started since the page drew it, so the action decides, not the frame.
+  def handle_event("browser_input", params, socket) do
+    %{current_scope: scope, task: task, browser: browser} = socket.assigns
+    if is_binary(browser), do: Tools.send_browser_input(scope, task, browser, params)
+    {:noreply, socket}
+  end
+
   def handle_event("select_finding", %{"key" => key}, socket) do
     socket = socket |> assign(:selected_key, key) |> assign(:filed_index, 0) |> load()
     {:noreply, socket}
@@ -281,6 +290,10 @@ defmodule RailWeb.Live.ReviewStage do
     end
   end
 
+  # Frames from an attached tab arrive on the page's own subscription, so its answer changes nothing here.
+  @impl true
+  def handle_async({:attach, _name}, _result, socket), do: {:noreply, socket}
+
   # Everything the open item shows is read off the rows and the disk again; what only one item needs is
   # read only while it is the one open.
   defp load(socket) do
@@ -315,6 +328,7 @@ defmodule RailWeb.Live.ReviewStage do
     |> assign(:recording, recording)
     |> assign(:sessions, sessions)
     |> assign(:browser, browser)
+    |> assign(:interactive, browser != nil and not Task.running?(task))
     |> assign(:url, browser && socket.assigns.item == :browser && Tools.get_browser_url(task, browser))
     |> assign_items()
     |> assign_selected(selected, findings)
@@ -335,11 +349,21 @@ defmodule RailWeb.Live.ReviewStage do
     |> assign(:stale, stale(demo, history))
   end
 
-  # The page holds the subscription a frame arrives on, so it is told which browser is being watched.
+  # The page holds the subscription a frame arrives on, so it is told which browser is being watched. A tab
+  # whose session went with a restart is attached again, so the picture is live before the first click.
   defp watch(socket, browser) do
     watched = if socket.assigns.item == :browser, do: browser
+    %{task: task, interactive: interactive, attached: attached} = socket.assigns
     send(self(), {:watch_browser, watched})
-    socket
+
+    # Tried once a page, off the page's process, since Chrome can take a while to answer.
+    if watched && interactive && not MapSet.member?(attached, watched) && Tools.get_browser_session(task, watched) == nil do
+      socket
+      |> assign(:attached, MapSet.put(attached, watched))
+      |> start_async({:attach, watched}, fn -> Tools.start_browser_session(task, watched, existing: true) end)
+    else
+      socket
+    end
   end
 
   defp assign_selected(socket, nil, _findings) do

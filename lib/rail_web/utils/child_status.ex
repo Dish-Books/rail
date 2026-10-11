@@ -12,7 +12,7 @@ defmodule RailWeb.Utils.ChildStatus do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
 
-  @stages [:engineer, :review]
+  @stages [:engineer, :review, :finalize]
 
   @amber "bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200"
   @slate_text "text-slate-500 dark:text-slate-400"
@@ -30,7 +30,7 @@ defmodule RailWeb.Utils.ChildStatus do
     run = stage_run(child)
 
     unstarted? = issue.completed_at == nil and child.runs == []
-    open = Enum.filter(earlier, &(is_nil(&1.issue.completed_at) and not canceled?(&1)))
+    open = Enum.filter(earlier, &(is_nil(&1.merged_at) and is_nil(&1.issue.completed_at) and not canceled?(&1)))
     waiting_on = if unstarted?, do: Enum.map(open, & &1.issue.identifier), else: []
     blocked_by = if unstarted?, do: Task.split_blockers(child, siblings), else: {[], []}
 
@@ -42,10 +42,11 @@ defmodule RailWeb.Utils.ChildStatus do
     }
 
     cond do
-      issue.completed_at != nil -> Map.merge(base, merged(child))
+      child.merged_at != nil or issue.completed_at != nil -> Map.merge(base, merged(child))
       issue.state in [:canceled, :duplicate] -> Map.merge(base, canceled(issue))
       blocked_by != {[], []} -> Map.merge(base, blocked(blocked_by))
       waiting_on != [] -> Map.merge(base, waiting(waiting_on))
+      child.stage == :finalize -> Map.merge(base, finalizing(child, run))
       true -> Map.merge(base, working(child, run))
     end
   end
@@ -130,6 +131,33 @@ defmodule RailWeb.Utils.ChildStatus do
       line: "#{gone}, so this will not start; cancel it in Linear to finish the split",
       line_class: "text-amber-700 dark:text-amber-300",
       action: nil
+    }
+  end
+
+  # Finalize waits on people, so it reads the same whatever a run a comment resumed there is doing.
+  defp finalizing(%Task{} = child, run) do
+    style = run_state_style(run, child)
+    state = Task.finalize_state(child)
+    needs = state == :not_ready
+    label = stage_label(child, run)
+    chip = %{label: label, icon: style.icon, class: style.chip_class}
+
+    %{
+      state: state,
+      label: label,
+      icon: style.icon,
+      text_class: style.text_class,
+      cells:
+        Enum.map(
+          @stages,
+          &if(&1 == :finalize, do: %{stage: &1, mark: :current, chip: chip}, else: %{stage: &1, mark: :done, chip: nil})
+        ),
+      merged: %{mark: :pending, chip: nil},
+      needs_attention: needs,
+      badge: if(needs, do: :dot),
+      line: if(state == :refused, do: "Merge refused: #{child.merge_error}", else: label),
+      line_class: style.text_class,
+      action: if(needs, do: %{label: "Finalize", tab: "finalize"})
     }
   end
 

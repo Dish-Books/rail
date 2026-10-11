@@ -20,7 +20,7 @@ defmodule RailWeb.Utils.StageLabelTest do
 
     assert stage_label(child.([1, 3]), nil) == "Waiting on SPL-1"
     assert stage_label(child.([1, 2]), nil) == "Blocked by SPL-2"
-    assert stage_label(child.([3]), nil) == "Queued for Engineer"
+    assert stage_label(child.([3]), nil) == "Queued for Implement"
     assert stage_label(child.([1, 4]), nil) == "Blocked by child 4"
   end
 
@@ -40,8 +40,8 @@ defmodule RailWeb.Utils.StageLabelTest do
 
   test "a working stage says so" do
     assert stage_label(%Task{stage: :plan}, %Run{status: :running}) == "Plan running"
-    assert stage_label(%Task{stage: :engineer}, %Run{status: :waiting_for_resources}) == "Engineer waiting for resources"
-    assert stage_label(%Task{stage: :engineer}, %Run{status: :waiting_for_usage}) == "Engineer waiting for usage"
+    assert stage_label(%Task{stage: :engineer}, %Run{status: :waiting_for_resources}) == "Implement waiting for resources"
+    assert stage_label(%Task{stage: :engineer}, %Run{status: :waiting_for_usage}) == "Implement waiting for usage"
   end
 
   test "a stage parked on a question asks for the answer" do
@@ -158,5 +158,30 @@ defmodule RailWeb.Utils.StageLabelTest do
 
     refute waiting_on_pick?(task)
     assert stage_label(task, done) == "Review the plan"
+  end
+
+  # Finalize waits on people, so a run a comment resumed there does not change what the task says.
+  test "a task at Finalize reads where it stands there, whatever its Review run is doing" do
+    now = DateTime.utc_now()
+
+    for run <- [nil, %Run{status: :running}, %Run{status: :finished, stage_outcome: :done}] do
+      assert stage_label(%Task{stage: :finalize}, run) == "Ready to finalize"
+      assert stage_label(%Task{stage: :finalize, marked_ready_at: now}, run) == "Ready for tech lead"
+      assert stage_label(%Task{stage: :finalize, marked_ready_at: now, merge_started_at: now}, run) == "Merging"
+      assert stage_label(%Task{stage: :finalize, marked_ready_at: now, merge_error: "No"}, run) == "Merge refused"
+      assert stage_label(%Task{stage: :merged, merged_at: now}, run) == "Merged"
+    end
+  end
+
+  test "a running engineer run reads Implement running" do
+    assert stage_label(%Task{stage: :engineer}, %Run{status: :running}) == "Implement running"
+  end
+
+  # Finalize records the merge before Linear completes the issue, and the child need not wait for Linear.
+  test "a child is not held on a sibling merged through Finalize" do
+    siblings = [%Task{split_position: 1, merged_at: DateTime.utc_now(), issue: %Issue{identifier: "SPL-1"}}]
+    child = %Task{stage: :engineer, runs: [], builds_on: [1], parent_task: %Task{children: siblings}}
+
+    assert stage_label(child, nil) == "Queued for Implement"
   end
 end

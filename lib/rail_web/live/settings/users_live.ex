@@ -174,20 +174,29 @@ defmodule RailWeb.Settings.UsersLive do
                       <.linear_badge user={user} />
                     </td>
                     <td class="px-4 py-3 whitespace-nowrap">
-                      <span
-                        :if={user.admin}
-                        id={"user-role-badge-#{user.id}"}
-                        class="inline-flex items-center rounded-md bg-indigo-50 dark:bg-indigo-400/10 px-2.5 py-1 text-xs font-semibold text-indigo-700 dark:text-indigo-300 ring-1 ring-inset ring-indigo-600/20 dark:ring-indigo-400/30"
-                      >
-                        Admin
-                      </span>
-                      <span
-                        :if={!user.admin}
-                        id={"user-role-badge-#{user.id}"}
-                        class="inline-flex items-center rounded-md bg-slate-100 dark:bg-slate-700 px-2.5 py-1 text-xs font-medium text-slate-500 dark:text-slate-400 ring-1 ring-inset ring-zinc-500/20"
-                      >
-                        User
-                      </span>
+                      <div class="flex items-center gap-1.5">
+                        <span
+                          :if={user.admin}
+                          id={"user-role-badge-#{user.id}"}
+                          class="inline-flex items-center rounded-md bg-indigo-50 dark:bg-indigo-400/10 px-2.5 py-1 text-xs font-semibold text-indigo-700 dark:text-indigo-300 ring-1 ring-inset ring-indigo-600/20 dark:ring-indigo-400/30"
+                        >
+                          Admin
+                        </span>
+                        <span
+                          :if={!user.admin}
+                          id={"user-role-badge-#{user.id}"}
+                          class="inline-flex items-center rounded-md bg-slate-100 dark:bg-slate-700 px-2.5 py-1 text-xs font-medium text-slate-500 dark:text-slate-400 ring-1 ring-inset ring-zinc-500/20"
+                        >
+                          User
+                        </span>
+                        <span
+                          :if={user.tech_lead}
+                          id={"user-tech-lead-badge-#{user.login}"}
+                          class="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-700 px-2 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 ring-1 ring-inset ring-slate-500/40"
+                        >
+                          <.icon name="pi-seal-check" class="size-3.5" />Tech lead
+                        </span>
+                      </div>
                     </td>
                     <td class="px-4 py-3 text-right">
                       <.icon name="pi-caret-right" class="h-4 w-4 text-slate-400" />
@@ -320,6 +329,22 @@ defmodule RailWeb.Settings.UsersLive do
               <span class="block text-xs text-slate-500 dark:text-slate-400">
                 Every project, and the settings screens.
               </span>
+            </span>
+          </label>
+
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input type="hidden" name="user[tech_lead]" value="false" />
+            <input
+              type="checkbox"
+              id="user-sheet-tech-lead"
+              name="user[tech_lead]"
+              value="true"
+              checked={@sheet_user.tech_lead}
+              class="h-4 w-4 shrink-0 rounded border-slate-300 dark:border-slate-600 accent-indigo-500 cursor-pointer mt-0.5"
+            />
+            <span>
+              <span class="block text-sm font-medium text-slate-900 dark:text-slate-100">Tech lead</span>
+              <span class="block text-xs text-slate-500 dark:text-slate-400">Merges tasks from Finalize.</span>
             </span>
           </label>
 

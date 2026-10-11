@@ -892,7 +892,7 @@ defmodule RailWeb.Live.PlanStage do
       </div>
       <h2 class="mt-5 text-base font-semibold text-slate-900 dark:text-slate-100">Not split</h2>
       <p class="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-        Approve makes one task, which moves to Engineer. Ask Plan for a split when the work is too big for one ticket.
+        Approve makes one task, which moves to Implement. Ask Plan for a split when the work is too big for one ticket.
       </p>
     </div>
     """

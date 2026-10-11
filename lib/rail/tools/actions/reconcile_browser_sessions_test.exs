@@ -118,6 +118,46 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
     assert Tools.reconcile_browser_sessions() == []
   end
 
+  # Finalize is where a teammate uses the browser Review left, so its tabs stay too.
+  test "keeps the tabs of a task at Finalize", %{task: task} do
+    {:ok, _waiting} =
+      %BrowserSession{}
+      |> BrowserSession.changeset(%{task_id: task.id, name: "qa", status: :running, target_id: "tgt"})
+      |> Repo.insert()
+
+    task |> Ecto.Changeset.change(stage: :finalize) |> Repo.update!()
+    reject(Tools, :stop_browser_session, 1)
+
+    assert Tools.reconcile_browser_sessions() == []
+  end
+
+  # A comment resumes the lead after the merge, and the browser it opens is its until the turn ends.
+  test "keeps a merged task's tabs while one of its runs is in flight, and closes them after", %{
+    task: task,
+    project: project
+  } do
+    {:ok, %BrowserSession{id: session_id}} =
+      %BrowserSession{}
+      |> BrowserSession.changeset(%{task_id: task.id, name: "qa", status: :running, target_id: "tgt"})
+      |> Repo.insert()
+
+    task |> Ecto.Changeset.change(stage: :merged) |> Repo.update!()
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :waiting_for_resources,
+        started_at: DateTime.utc_now()
+      })
+
+    assert Tools.reconcile_browser_sessions() == []
+
+    {:ok, _finished} = Pipeline.update_run(run, %{status: :finished})
+    assert [%BrowserSession{id: ^session_id, status: :finished}] = Tools.reconcile_browser_sessions()
+  end
+
   # A session with a process is that process's while its task still wants it.
   test "leaves a session something is still driving", %{task: task} do
     {:ok, _held} =

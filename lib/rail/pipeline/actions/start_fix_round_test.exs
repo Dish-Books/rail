@@ -129,12 +129,13 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
     assert {:ok, %Run{}} = Pipeline.start_fix_round(run)
   end
 
-  test "with nothing ruled Fix the review finishes and the pull request leaves draft, once", %{
-    task: task,
-    run: run,
-    crash: crash,
-    nit: nit
-  } do
+  test "with nothing ruled Fix the review finishes, the pull request leaves draft and the task moves to Finalize, once",
+       %{
+         task: task,
+         run: run,
+         crash: crash,
+         nit: nit
+       } do
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
 
@@ -146,10 +147,13 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
       end
     end)
 
-    assert {:ok, %Run{status: :finished}} = Pipeline.start_fix_round(run)
-    assert %Task{pr_is_draft: false} = Repo.reload!(task)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+
+    assert {:ok, %Run{status: :finished, task_id: task_id}} = Pipeline.start_fix_round(run)
+    assert %Task{stage: :finalize, pr_is_draft: false} = Repo.reload!(task)
     assert [%{finished_at: %DateTime{}}] = Pipeline.read_review(task)
-    assert {:error, :nothing_to_start} = Pipeline.start_fix_round(run)
+    assert_received {:pipeline_changed, ^task_id}
+    assert {:error, {:invalid_stage, :finalize}} = Pipeline.start_fix_round(run)
   end
 
   # A fix's commit not yet through CI is still waiting on it, however the findings were ruled.

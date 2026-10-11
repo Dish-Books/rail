@@ -33,7 +33,7 @@ defmodule Rail.Tools.Actions.StartBrowserSession do
   `opts` are passed to the session: `:subscribe` for a process that should
   receive the browser's own events, and `:ready_timeout_ms` for how long a Chrome
   that had to be started gets to answer. `existing: true` opens nothing for a name
-  the task has no live session under, and returns `{:error, :no_browser}`.
+  the task has no live tab under, and returns `{:error, :no_browser}`.
   """
   def start_browser_session(%Task{} = task, name, opts \\ []) when is_binary(name) do
     case Tools.get_browser_session(task, name) do
@@ -61,7 +61,7 @@ defmodule Rail.Tools.Actions.StartBrowserSession do
 
       {:error, {:browser_unavailable, :tab_gone}} ->
         settle(session, :tab_gone)
-        launch(task, name, opts)
+        relaunch(task, name, opts)
 
       {:error, reason} ->
         {:error, reason}
@@ -72,12 +72,17 @@ defmodule Rail.Tools.Actions.StartBrowserSession do
   # is allowed per name.
   defp resume(%Task{} = task, name, %Session{} = session, opts) do
     settle(session, :no_tab)
-    launch(task, name, opts)
+    relaunch(task, name, opts)
   end
 
   # A tool acting on a browser the agent named opens nothing when there is none,
   # so a slip in the name is said rather than answered from a blank tab.
   defp resume(%Task{} = task, name, nil, opts) do
+    if Keyword.get(opts, :existing, false), do: {:error, :no_browser}, else: launch(task, name, opts)
+  end
+
+  # A teammate's input attaches to a tab the browser still has, and never puts a blank one in its place.
+  defp relaunch(%Task{} = task, name, opts) do
     if Keyword.get(opts, :existing, false), do: {:error, :no_browser}, else: launch(task, name, opts)
   end
 

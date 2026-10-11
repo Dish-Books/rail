@@ -99,9 +99,31 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
     end)
 
     {:ok, _closed} = Pipeline.save_review(task)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
 
     assert %Run{error: nil} = review_run_finished(run, [])
-    assert %Task{stage: :review, pr_is_draft: false} = Repo.reload!(task)
+    assert %Task{stage: :finalize, pr_is_draft: false} = Repo.reload!(task)
+    assert [%{finished_at: %DateTime{}}] = Pipeline.read_review(task)
+    assert_received {:pipeline_changed, _changed}
+  end
+
+  # A comment resumes the lead at Finalize and after the merge, and its turn ends here again.
+  test "a turn resumed by a comment at Finalize or after the merge leaves the stage where it is", %{
+    task: task,
+    run: run
+  } do
+    {:ok, _closed} = Pipeline.save_review(task)
+    {:ok, finalizing} = Pipeline.update_task(task, %{stage: :finalize, pr_is_draft: false})
+
+    assert %Run{error: nil} = review_run_finished(%{run | task: finalizing}, [])
+    assert %Task{stage: :finalize} = Repo.reload!(task)
+
+    {:ok, merged} = Pipeline.update_task(finalizing, %{stage: :merged, merged_at: DateTime.utc_now()})
+    File.rm!(Path.join([task.scratch_path, "reviews", "#{task.issue.identifier}.json"]))
+    {:ok, _again} = Pipeline.save_review(task)
+
+    assert %Run{error: nil} = review_run_finished(%{run | task: merged}, [])
+    assert %Task{stage: :merged} = Repo.reload!(task)
     assert [%{finished_at: %DateTime{}}] = Pipeline.read_review(task)
   end
 

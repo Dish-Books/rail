@@ -25,6 +25,9 @@ defmodule RailWeb.Utils.StageLabel do
   # No role runs at merged, so there is no run to say anything; the task is done.
   def stage_label(%Task{stage: :merged}, _run), do: "Merged"
 
+  # Finalize waits on people, not on the run, so a run a comment resumed there does not change what it says.
+  def stage_label(%Task{stage: :finalize} = task, _run), do: task |> Task.finalize_state() |> finalize_label()
+
   # A split parent's work is its children's, so all it says of itself is that its plan was approved.
   def stage_label(%Task{stage: :split}, _run), do: "Plan approved"
 
@@ -34,7 +37,7 @@ defmodule RailWeb.Utils.StageLabel do
     open =
       Enum.filter(
         siblings,
-        &(&1.split_position in task.builds_on and is_nil(&1.issue.completed_at) and
+        &(&1.split_position in task.builds_on and is_nil(&1.merged_at) and is_nil(&1.issue.completed_at) and
             &1.issue.state not in [:canceled, :duplicate])
       )
 
@@ -63,6 +66,13 @@ defmodule RailWeb.Utils.StageLabel do
       :done -> approval_label(task)
     end
   end
+
+  @doc "What a task at Finalize says of itself in `state`, `Task.finalize_state/1`'s."
+  def finalize_label(:not_ready), do: "Ready to finalize"
+  def finalize_label(:ready), do: "Ready for tech lead"
+  def finalize_label(:merging), do: "Merging"
+  def finalize_label(:refused), do: "Merge refused"
+  def finalize_label(:merged), do: "Merged"
 
   @doc """
   What the human is being asked to read, for a stage that has finished.

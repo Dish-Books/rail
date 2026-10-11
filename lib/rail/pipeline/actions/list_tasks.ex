@@ -14,14 +14,13 @@ defmodule Rail.Pipeline.Actions.ListTasks do
   `:issue_id` keeps one issue's tasks.
   `:parent_task_id` keeps one split's children, in their order unless `:order_by` says otherwise, and
   `split_child: true` every child of every split.
+  `ready: true` keeps the review queue: tasks at Finalize marked ready and not merged, oldest mark first.
   Cleaned-up tasks are left out unless `include_cleaned_up: true`.
   """
   def list_tasks(opts \\ []) do
     Task
     |> from(as: :task)
-    |> order_by(
-      ^Keyword.get(opts, :order_by, if(opts[:parent_task_id], do: [asc: :split_position], else: [asc: :inserted_at]))
-    )
+    |> order_by(^Keyword.get(opts, :order_by, default_order(opts)))
     |> preload(^Keyword.get(opts, :preload, []))
     |> filter_project(opts[:project_id])
     |> filter_owner(opts[:owner_user_id])
@@ -29,8 +28,17 @@ defmodule Rail.Pipeline.Actions.ListTasks do
     |> filter_parent(opts[:parent_task_id])
     |> filter_split_child(opts[:split_child])
     |> filter_stage(opts[:stage])
+    |> filter_ready(opts[:ready])
     |> filter_cleaned_up(opts[:include_cleaned_up])
     |> Repo.all()
+  end
+
+  defp default_order(opts) do
+    cond do
+      opts[:ready] -> [asc: :marked_ready_at, asc: :id]
+      opts[:parent_task_id] -> [asc: :split_position]
+      true -> [asc: :inserted_at]
+    end
   end
 
   defp filter_cleaned_up(query, true), do: query
@@ -70,4 +78,10 @@ defmodule Rail.Pipeline.Actions.ListTasks do
   defp filter_stage(query, stage) when is_atom(stage) do
     where(query, [task: t], t.stage == ^stage)
   end
+
+  defp filter_ready(query, true) do
+    where(query, [task: t], t.stage == :finalize and not is_nil(t.marked_ready_at) and is_nil(t.merged_at))
+  end
+
+  defp filter_ready(query, nil), do: query
 end

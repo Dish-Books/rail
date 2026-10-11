@@ -43,12 +43,17 @@ defmodule Rail.Pipeline.Actions.HandOverWork do
     end
   end
 
-  # The branch is the current stage's: once Engineer hands it on, Review's lead commits it.
+  # The branch is the current stage's: once Engineer hands it on, Review's lead commits it, after the merge too.
   defp handable(%Task{stage: stage} = task, %Run{role: %Role{stage: role_stage}}) do
     cond do
-      Task.role_stage(stage) != role_stage -> {:error, {:invalid_stage, stage}}
-      not Git.branch_unpushed?(task.worktree_path) -> {:error, :nothing_to_send}
-      true -> :ok
+      Task.role_stage(stage) != role_stage and {stage, role_stage} != {:merged, :review_lead} ->
+        {:error, {:invalid_stage, stage}}
+
+      not Git.branch_unpushed?(task.worktree_path) ->
+        {:error, :nothing_to_send}
+
+      true ->
+        :ok
     end
   end
 

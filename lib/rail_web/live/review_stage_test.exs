@@ -194,7 +194,7 @@ defmodule RailWeb.Live.ReviewStageTest do
   end
 
   test "Start fix round reads Finish review when every finding is ruled Don't fix, and it and the rulings are gone once finished",
-       %{conn: conn, task: task, code: code} do
+       %{conn: conn, task: task, run: run, code: code} do
     {:ok, finding} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
     {:ok, _pass} = Pipeline.save_review(task)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), finding, :skip)
@@ -205,12 +205,16 @@ defmodule RailWeb.Live.ReviewStageTest do
 
     view |> element("#start-fix-round") |> render_click()
 
+    # The page follows the task on to Finalize, and the Review tab behind it reads finished.
+    assert has_element?(view, "#task-tab-finalize[aria-selected=true]")
+    view |> element("#task-tab-#{run.role_id}") |> render_click()
+
     refute has_element?(view, "#start-fix-round")
     refute has_element?(view, "#decide-fix-view-only-send")
     refute has_element?(view, "#decide-skip-view-only-send")
     assert has_element?(view, "#review-status[data-phase=finished]", "Nothing left to rule")
     assert has_element?(view, "#review-item-findings [data-qa=review_item_done]")
-    assert has_element?(view, "#task-status-chip", "Ready to merge")
+    assert has_element?(view, "#task-status-chip", "Ready to finalize")
   end
 
   test "a finding reads whole: Problem, Where, Fix, Why, its evidence, the rule with every place, its commits and history",
@@ -533,7 +537,12 @@ defmodule RailWeb.Live.ReviewStageTest do
     assert has_element?(view, "#review-browser-demo", "Demo recorder")
     refute has_element?(view, "#review-browser-explorer-2")
     assert has_element?(view, "[data-qa=review_browser_url]", "localhost:4012/tasks")
-    assert has_element?(view, "[data-qa=review_browser_line]", "Driving · signed in as explorer-1@rail.test")
+
+    assert has_element?(
+             view,
+             "[data-qa=review_browser_line]",
+             "Watch only while Review drives it · signed in as explorer-1@rail.test"
+           )
 
     view |> element("#review-browser-demo") |> render_click()
 
@@ -546,6 +555,68 @@ defmodule RailWeb.Live.ReviewStageTest do
            )
 
     assert has_element?(view, "#review-screencast-demo")
+  end
+
+  test "the picked browser is watch only while a run is in flight, and takes input once it has finished", %{
+    conn: conn,
+    task: task,
+    run: run
+  } do
+    Repo.insert!(%BrowserSession{
+      task_id: task.id,
+      name: "explorer-1",
+      account: "explorer-1@rail.test",
+      status: :running,
+      started_at: DateTime.utc_now()
+    })
+
+    {:ok, running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+    test_pid = self()
+    stub(Tools, :get_browser_session, fn _task, "explorer-1" -> test_pid end)
+    stub(Tools, :get_browser_url, fn _task, _name -> "localhost:4012/tasks" end)
+
+    stub(Rail.Tools.BrowserSession, :call, fn _session, method, params ->
+      send(test_pid, {:cdp, method, params})
+      {:ok, %{}}
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    view |> element("#review-item-browser") |> render_click()
+
+    assert has_element?(view, "#review-browser-mode", "Watch only while Review drives it")
+    assert has_element?(view, "#review-browser-frame[data-interactive=false]")
+
+    view |> with_target("#review-stage") |> render_hook("browser_input", %{"type" => "click", "x" => 5, "y" => 5})
+    refute_received {:cdp, _method, _params}
+
+    {:ok, _finished} = Pipeline.update_run(running, %{status: :finished, stage_outcome: :done})
+    send(view.pid, :task_changed)
+
+    assert has_element?(view, "#review-browser-mode", "Click and type to use it · signed in as explorer-1@rail.test")
+    assert has_element?(view, "#review-browser-frame[data-interactive=true][tabindex='0']")
+
+    view |> with_target("#review-stage") |> render_hook("browser_input", %{"type" => "click", "x" => 5, "y" => 5})
+    assert_received {:cdp, "Input.dispatchMouseEvent", %{type: "mousePressed", x: 5, y: 5}}
+  end
+
+  # Rail restarted since the round, so nothing holds the tab; opening the browser attaches to it, never a new one.
+  test "opening a browser whose session went with a restart attaches to its tab", %{conn: conn, task: task} do
+    Repo.insert!(%BrowserSession{task_id: task.id, name: "explorer-1", status: :running, started_at: DateTime.utc_now()})
+    test_pid = self()
+
+    expect(Tools, :start_browser_session, fn _task, "explorer-1", [existing: true] ->
+      send(test_pid, :attached)
+      {:ok, self()}
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    view |> element("#review-item-browser") |> render_click()
+    assert_receive :attached, 2_000
+
+    # Once a page, however often the item redraws.
+    view |> element("#review-item-findings") |> render_click()
+    view |> element("#review-item-browser") |> render_click()
+    _settled = render(view)
   end
 
   test "with no browser open the Browser item says so", %{conn: conn, task: task} do
@@ -737,7 +808,7 @@ defmodule RailWeb.Live.ReviewStageTest do
       view |> element("#review-item-findings") |> render_click()
       view |> element("[data-qa=finding_fixed_in] [data-qa=finding_commit_link]") |> render_click()
 
-      assert has_element?(view, "#diff-commit-picker", "Engineer")
+      assert has_element?(view, "#diff-commit-picker", "Implement")
       assert has_element?(view, "[data-qa='diff_file_section'][data-path='a.ex']")
       refute has_element?(view, "[data-qa='diff_file_section'][data-path='b.ex']")
 
@@ -912,7 +983,7 @@ defmodule RailWeb.Live.ReviewStageTest do
       assert has_element?(view, "#review-error", "Something is still running on this task.")
 
       view |> element("#demo-stale button", short) |> render_click()
-      assert has_element?(view, "#review-pane[data-item=diff] #diff-commit-picker", "Engineer")
+      assert has_element?(view, "#review-pane[data-item=diff] #diff-commit-picker", "Implement")
 
       File.write!(
         Path.join(demo_dir, "RST-1.json"),
