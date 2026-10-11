@@ -88,16 +88,50 @@
   @apply text-transparent;
 }
 
-.diff-line[data-focus] {
-  @apply ring-1 ring-inset ring-amber-500/70 bg-amber-500/10 border-amber-500;
+/* A finding's excerpt marks the lines it names with a bracket in a gutter of its own, outside the row,
+ * so green and red still mean only added and removed. The gutter stretches with a wrapped row, and the
+ * end's tick is an inner element because the gutter's two pseudo-elements already draw the line and the start's.
+ */
+.diff-bracket-row {
+  @apply flex items-stretch;
 }
 
-.diff-line[data-focus] :is(.diff-num, .diff-glyph) {
-  @apply bg-amber-100 dark:bg-amber-950;
+.diff-bracket-row > .diff-line {
+  @apply flex-1 min-w-0 w-auto;
 }
 
-.diff-line[data-focus] .diff-num {
-  @apply font-bold text-amber-800 dark:text-amber-300;
+.diff-bracket {
+  @apply relative w-3.5 shrink-0 bg-white dark:bg-slate-900;
+}
+
+.diff-bracket-row[data-bracket] .diff-bracket::before,
+.diff-bracket-row:is([data-bracket="start"], [data-bracket="only"]) .diff-bracket::after,
+.diff-bracket-row:is([data-bracket="end"], [data-bracket="only"]) .diff-bracket > i {
+  @apply absolute left-[5px] bg-blue-600 dark:bg-blue-400;
+}
+
+.diff-bracket-row[data-bracket] .diff-bracket::before {
+  @apply content-[''] w-0.5 inset-y-0;
+}
+
+.diff-bracket-row:is([data-bracket="start"], [data-bracket="only"]) .diff-bracket::before {
+  @apply top-1;
+}
+
+.diff-bracket-row:is([data-bracket="end"], [data-bracket="only"]) .diff-bracket::before {
+  @apply bottom-1;
+}
+
+.diff-bracket-row:is([data-bracket="start"], [data-bracket="only"]) .diff-bracket::after {
+  @apply content-[''] top-1 w-2 h-0.5;
+}
+
+.diff-bracket-row:is([data-bracket="end"], [data-bracket="only"]) .diff-bracket > i {
+  @apply bottom-1 w-2 h-0.5;
+}
+
+.diff-bracket-row[data-bracket] .diff-num {
+  @apply font-bold text-slate-700 dark:text-slate-300;
 }
 
 /* The "+" that opens a comment sits over the glyph and shows only on the line

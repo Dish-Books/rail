@@ -30,6 +30,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate dispatch_banner(assigns), to: Components.DispatchBanner
   defdelegate document_comment(assigns), to: Components.DocumentComment
   defdelegate element_preview(assigns), to: Components.ElementPreview
+  defdelegate finding_code(assigns), to: Components.FindingCode
   defdelegate finding_detail(assigns), to: Components.FindingDetail
   defdelegate finding_list(assigns), to: Components.FindingList
   defdelegate icon(assigns), to: Components.Icon

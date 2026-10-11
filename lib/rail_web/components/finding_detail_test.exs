@@ -29,6 +29,19 @@ defmodule RailWeb.Components.FindingDetailTest do
     notes: []
   }
   @attrs [position: 1, count: 1, decidable: true, running: false, neighbours: %{}, target: nil]
+  @named %{kind: :line, line_kind: :added, old_line: nil, new_line: 3, text: "send(round)", named?: true}
+  @context %{kind: :line, line_kind: :context, old_line: 2, new_line: 2, text: "def handle do"}
+  @excerpt %{
+    path: "lib/a.ex",
+    display_path: "lib/a.ex",
+    additions: 2,
+    deletions: 1,
+    in_diff?: true,
+    changed?: true,
+    rows: [@context, @named],
+    hidden_lines: 0,
+    other_changes: 0
+  }
 
   describe "comments on its pieces" do
     setup do
@@ -120,8 +133,8 @@ defmodule RailWeb.Components.FindingDetailTest do
       assert ["remove_finding_comment"] =
                fix |> Floki.find("[data-qa=document_comment_remove]") |> Floki.attribute("phx-click")
 
-      assert [_second_place] = Floki.find(doc, "[data-qa=finding_place]:nth-child(2) [data-qa=document_comment]")
-      assert [] = Floki.find(doc, "[data-qa=finding_place]:nth-child(1) [data-qa=document_comment]")
+      assert [_second_place] = Floki.find(doc, "#finding-place-2 [data-qa=document_comment]")
+      assert [] = Floki.find(doc, "#finding-place-1 [data-qa=document_comment]")
 
       [box] = Floki.find(doc, "[data-qa=finding_note] #finding-comment-form")
       assert ["Comment on Round 1, raised"] = box |> Floki.find("textarea") |> Floki.attribute("aria-label")
@@ -146,17 +159,7 @@ defmodule RailWeb.Components.FindingDetailTest do
     assert "Suppressed" = doc |> Floki.find("[data-qa=finding_state]") |> Floki.text() |> String.trim()
   end
 
-  test "the code range says what it leaves out, and an attached log shows its text, commit, time and browser" do
-    hunk = %{
-      path: "lib/a.ex",
-      display_path: "lib/a.ex",
-      additions: 2,
-      deletions: 1,
-      rows: [],
-      hidden_lines: 1,
-      other_hunks: 2
-    }
-
+  test "the Where's code says what it leaves out, and an attached log shows its text, commit, time and browser" do
     log = %FindingEvidence{
       kind: :log,
       name: "server log",
@@ -168,14 +171,15 @@ defmodule RailWeb.Components.FindingDetailTest do
     }
 
     filed = [%{index: 0, evidence: log, kind: :inline, url: "/findings/send-twice/evidence/0"}]
+    code = %{@excerpt | hidden_lines: 1, other_changes: 2}
 
     doc =
       (&FindingDetail.finding_detail/1)
-      |> render_component([finding: @finding, hunk: hunk, filed: filed] ++ @attrs)
+      |> render_component([finding: @finding, where_code: code, filed: filed] ++ @attrs)
       |> Floki.parse_fragment!()
 
-    assert "1 more line and 2 more other changes in this file." =
-             doc |> Floki.find("[data-qa=finding_other_hunks]") |> Floki.text() |> String.trim()
+    assert "1 more changed line and 2 other changes in this file." =
+             doc |> Floki.find("[data-qa=finding_diff] [data-qa=finding_code_footer]") |> Floki.text() |> String.trim()
 
     assert ["Open in Diff"] =
              doc |> Floki.find("[data-qa=finding_open_in_diff]") |> Enum.map(&String.trim(Floki.text(&1)))
@@ -193,22 +197,11 @@ defmodule RailWeb.Components.FindingDetailTest do
     fixed = String.duplicate("b", 40)
     gone = String.duplicate("c", 40)
     finding = %{@finding | raised_in: raised, fixed_in: fixed}
-
-    hunk = %{
-      path: "lib/a.ex",
-      display_path: "lib/a.ex",
-      additions: 2,
-      deletions: 1,
-      rows: [],
-      hidden_lines: 0,
-      other_hunks: 0
-    }
-
     labels = %{raised => "Engineer", fixed => "Fix round 1"}
 
     doc =
       (&FindingDetail.finding_detail/1)
-      |> render_component([finding: finding, hunk: hunk, labels: labels] ++ @attrs)
+      |> render_component([finding: finding, where_code: @excerpt, labels: labels] ++ @attrs)
       |> Floki.parse_fragment!()
 
     assert [open] = Floki.find(doc, "[data-qa=finding_open_in_diff]")
@@ -226,12 +219,216 @@ defmodule RailWeb.Components.FindingDetailTest do
 
     rebased =
       (&FindingDetail.finding_detail/1)
-      |> render_component([finding: %{finding | raised_in: gone, fixed_in: nil}, hunk: hunk, labels: labels] ++ @attrs)
+      |> render_component(
+        [finding: %{finding | raised_in: gone, fixed_in: nil}, where_code: @excerpt, labels: labels] ++ @attrs
+      )
       |> Floki.parse_fragment!()
 
     assert [] = Floki.find(rebased, "[data-qa=finding_commit_link]")
     assert rebased |> Floki.find("[data-qa=finding_raised_in]") |> Floki.text() =~ "ccccccc"
     assert [] = rebased |> Floki.find("[data-qa=finding_open_in_diff]") |> Floki.attribute("phx-value-commit")
+  end
+
+  describe "a finding that applies in several places" do
+    setup do
+      raised = String.duplicate("a", 40)
+
+      finding = %{
+        @finding
+        | rule: "A round is sent once.",
+          raised_in: raised,
+          places: [
+            %FindingPlace{file: "lib/a.ex", line: 3, label: "handle/1"},
+            %FindingPlace{file: "lib/b.ex", line: 40, end_line: 42, label: "resend/1"},
+            %FindingPlace{file: "lib/c.ex", line: 9},
+            %FindingPlace{screen: "Engineer tab", label: "Send button", steps: ["Open the tab", "Click Send"]}
+          ]
+      }
+
+      unchanged = %{
+        @excerpt
+        | path: "lib/b.ex",
+          display_path: "lib/b.ex",
+          changed?: false,
+          other_changes: 2,
+          rows: [Map.merge(@context, %{new_line: 40, text: "resend(round)", named?: true})]
+      }
+
+      outside = %{unchanged | path: "lib/c.ex", display_path: "lib/c.ex", in_diff?: false, other_changes: 0}
+
+      %{
+        finding: finding,
+        raised: raised,
+        attrs:
+          [
+            finding: finding,
+            where_code: @excerpt,
+            where_place: 0,
+            place_codes: %{1 => unchanged, 2 => outside},
+            head: "9e4f1c2aaaa",
+            labels: %{raised => "Engineer"}
+          ] ++ @attrs
+      }
+    end
+
+    test "every place is a numbered card, each code place with its code drawn and its lines bracketed", %{
+      attrs: attrs
+    } do
+      doc = (&FindingDetail.finding_detail/1) |> render_component(attrs) |> Floki.parse_fragment!()
+
+      assert doc |> Floki.find("[data-qa=finding_places]") |> Floki.text() =~ "Applies in 4 places"
+
+      assert ["1", "2", "3", "4"] =
+               doc |> Floki.find("[data-qa=finding_place] [aria-label^=Place]") |> Enum.map(&String.trim(Floki.text(&1)))
+
+      assert [_one, _two, _three] = Floki.find(doc, "[data-qa=finding_place] [data-qa=finding_code]")
+      assert doc |> Floki.find("#finding-place-1 [data-bracket=only]") |> Floki.text() =~ "send(round)"
+      assert doc |> Floki.find("#finding-place-2 [data-bracket=only]") |> Floki.text() =~ "resend(round)"
+      assert doc |> Floki.find("#finding-rule") |> Floki.text() =~ "A round is sent once."
+      refute doc |> Floki.find("#finding-rule") |> Floki.text() =~ "Applies in"
+    end
+
+    test "the place on the Where's lines is the card tagged Where, and no Where box is drawn", %{
+      attrs: attrs,
+      raised: raised
+    } do
+      doc = (&FindingDetail.finding_detail/1) |> render_component(attrs) |> Floki.parse_fragment!()
+
+      assert [] = Floki.find(doc, "[data-qa=finding_diff]")
+      assert [_where] = Floki.find(doc, "#finding-place-1 [data-qa=finding_place_where]")
+      assert [_only_one] = Floki.find(doc, "[data-qa=finding_place_where]")
+
+      assert [open] = Floki.find(doc, "#finding-place-1-open-in-diff")
+      assert Floki.text(open) =~ "Open aaaaaaa in Diff"
+      assert Floki.attribute(open, "phx-value-commit") == [raised]
+
+      # Every other card opens the whole branch at its file.
+      assert [other] = Floki.find(doc, "#finding-place-2-open-in-diff")
+      assert String.trim(Floki.text(other)) == "Open in Diff"
+      assert Floki.attribute(other, "phx-value-commit") == []
+      assert Floki.attribute(other, "phx-value-file") == ["lib/b.ex"]
+    end
+
+    test "a Where on none of its places keeps the Where box, bracketed, above untagged cards", %{attrs: attrs} do
+      doc =
+        (&FindingDetail.finding_detail/1)
+        |> render_component(Keyword.merge(attrs, where_place: nil, place_codes: %{0 => @excerpt}))
+        |> Floki.parse_fragment!()
+
+      assert doc |> Floki.find("[data-qa=finding_diff] [data-bracket=only]") |> Floki.text() =~ "send(round)"
+      assert [] = Floki.find(doc, "[data-qa=finding_place_where]")
+      assert [_code] = Floki.find(doc, "#finding-place-1 [data-qa=finding_code]")
+    end
+
+    test "unchanged lines carry the chip, with Open in Diff only for a file in the branch's diff", %{attrs: attrs} do
+      doc = (&FindingDetail.finding_detail/1) |> render_component(attrs) |> Floki.parse_fragment!()
+
+      assert [_chip] = Floki.find(doc, "#finding-place-2 [data-qa=finding_code_unchanged_chip]")
+      assert [_open] = Floki.find(doc, "#finding-place-2-open-in-diff")
+      assert doc |> Floki.find("#finding-place-2 [data-qa=finding_code_unchanged]") |> Floki.text() =~ "on 9e4f1c2"
+
+      assert [_chip] = Floki.find(doc, "#finding-place-3 [data-qa=finding_code_unchanged_chip]")
+      assert [] = Floki.find(doc, "#finding-place-3-open-in-diff")
+
+      assert [] = Floki.find(doc, "#finding-place-1 [data-qa=finding_code_unchanged_chip]")
+      assert doc |> Floki.find("#finding-place-1 [data-qa=diff_stat]") |> Floki.text() =~ "+2"
+
+      outside = %{@excerpt | changed?: false, in_diff?: false}
+
+      box =
+        (&FindingDetail.finding_detail/1)
+        |> render_component(Keyword.merge(attrs, where_place: nil, where_code: outside))
+        |> Floki.parse_fragment!()
+
+      assert [_chip] = Floki.find(box, "[data-qa=finding_diff] [data-qa=finding_code_unchanged_chip]")
+      assert [] = Floki.find(box, "[data-qa=finding_open_in_diff]")
+    end
+
+    test "a screen card shows its numbered steps, with no code and no Open in Diff", %{attrs: attrs} do
+      doc = (&FindingDetail.finding_detail/1) |> render_component(attrs) |> Floki.parse_fragment!()
+
+      [card] = Floki.find(doc, "#finding-place-4")
+      assert Floki.text(card) =~ "Engineer tab"
+      assert ["Open the tab", "Click Send"] = card |> Floki.find("ol li") |> Enum.map(&Floki.text/1)
+      assert [] = Floki.find(card, "[data-qa=finding_code]")
+      assert [] = Floki.find(card, "[data-qa=finding_place_open_in_diff]")
+    end
+
+    test "each card reads covered or left by the latest fix, and an untouched finding's neither", %{
+      attrs: attrs,
+      finding: finding
+    } do
+      untouched = (&FindingDetail.finding_detail/1) |> render_component(attrs) |> Floki.parse_fragment!()
+      assert [] = Floki.find(untouched, "[data-qa=finding_place_fix]")
+
+      [first, second | rest] = finding.places
+
+      fixed = %{
+        finding
+        | status: :fixed,
+          places: [first, %{second | left_reason: "Only on staging."} | rest],
+          notes: [%FindingNote{round: 1, kind: :fix, at: @at, test: "test/a_test.exs: once"}]
+      }
+
+      doc =
+        (&FindingDetail.finding_detail/1)
+        |> render_component(Keyword.put(attrs, :finding, fixed))
+        |> Floki.parse_fragment!()
+
+      fixes =
+        doc
+        |> Floki.find("[data-qa=finding_place_fix]")
+        |> Enum.map(&(&1 |> Floki.text() |> String.split() |> Enum.join(" ")))
+
+      assert [
+               "Covered by fix round 1",
+               "Left by fix round 1: Only on staging.",
+               "Covered by fix round 1",
+               "Covered by fix round 1"
+             ] = fixes
+    end
+
+    test "a card's comments and its open box sit under that card", %{attrs: attrs} do
+      doc =
+        (&FindingDetail.finding_detail/1)
+        |> render_component(
+          Keyword.merge(attrs,
+            offered: true,
+            comments: %{{:place, 2} => [{%{id: "fcm_1", body: "Use it here too."}, 1}]},
+            draft: %{piece: :place, index: 1, body: "And here"}
+          )
+        )
+        |> Floki.parse_fragment!()
+
+      assert doc |> Floki.find("#finding-place-3 [data-qa=document_comment]") |> Floki.text() =~ "Use it here too."
+      assert [box] = Floki.find(doc, "#finding-place-2 #finding-comment-form")
+      assert ["Comment on Place 2, resend/1"] = box |> Floki.find("textarea") |> Floki.attribute("aria-label")
+
+      assert ["Comment on Place 2, resend/1"] =
+               doc |> Floki.find("#finding-place-2 > [data-qa=finding_comment_add]") |> Floki.attribute("aria-label")
+    end
+  end
+
+  test "a finding with one place keeps the Where box, bracketed, and its plain row in the Rule box" do
+    finding = %{
+      @finding
+      | rule: "A round is sent once.",
+        places: [%FindingPlace{file: "lib/b.ex", line: 9, label: "elsewhere", left_reason: "Generated."}],
+        notes: [%FindingNote{round: 2, kind: :fix, at: @at, test: "test/a_test.exs: once"}]
+    }
+
+    doc =
+      (&FindingDetail.finding_detail/1)
+      |> render_component([finding: finding, where_code: @excerpt, where_place: nil] ++ @attrs)
+      |> Floki.parse_fragment!()
+
+    assert doc |> Floki.find("[data-qa=finding_diff] [data-bracket=only]") |> Floki.text() =~ "send(round)"
+    assert [] = Floki.find(doc, "[data-qa=finding_places]")
+    assert [row] = Floki.find(doc, "#finding-rule li[data-qa=finding_place]")
+    assert Floki.text(row) =~ "lib/b.ex:9"
+    assert row |> Floki.text() |> String.split() |> Enum.join(" ") =~ "Left by fix round 2: Generated."
+    assert [] = Floki.find(row, "[data-qa=finding_code]")
+    assert doc |> Floki.find("#finding-rule") |> Floki.text() =~ "Applies in 1 place"
   end
 
   test "a picked screenshot shows full size, and a PDF or other file shows its own icon and no text" do
@@ -368,8 +565,15 @@ defmodule RailWeb.Components.FindingDetailTest do
     assert checked =~ "Checked fixed on 2222222"
     assert doc |> Floki.find("[data-qa=finding_fixed_in]") |> Floki.text() =~ "Fix round 3"
     assert doc |> Floki.find("[data-qa=finding_round]") |> Floki.text() =~ "Round 1, carried into round 3"
-    assert doc |> Floki.find("[data-qa=finding_rule]") |> Floki.text() =~ "Applies in 2 places"
-    assert doc |> Floki.find("[data-qa=finding_rule]") |> Floki.text() =~ "Left as it is: Out of reach"
+    assert doc |> Floki.find("[data-qa=finding_places]") |> Floki.text() =~ "Applies in 2 places"
+
+    assert doc
+           |> Floki.find("#finding-place-1 [data-qa=finding_place_fix]")
+           |> Floki.text()
+           |> String.split()
+           |> Enum.join(" ") ==
+             "Left by fix round 3: Out of reach"
+
     assert [] = Floki.find(doc, "[data-qa=decide_fix]")
   end
 

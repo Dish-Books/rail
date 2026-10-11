@@ -162,6 +162,28 @@ defmodule Rail.Pipeline.Schemas.FindingTest do
     refute Finding.suppressed?(%Finding{suppressed_by_id: "lrn_1", status: :fixed})
   end
 
+  test "a place reads covered or left by the latest fix, and neither before any fix" do
+    left = %FindingPlace{file: "lib/a.ex", line: 3, left_reason: "Generated."}
+    covered = %FindingPlace{file: "lib/b.ex", line: 9}
+    at = DateTime.utc_now()
+
+    untouched = %Finding{places: [left, covered], notes: [%FindingNote{kind: :raised, round: 1, at: at}]}
+    assert Finding.calculate_place_fix(untouched, left) == nil
+    assert Finding.calculate_place_fix(untouched, covered) == nil
+
+    fixed = %{
+      untouched
+      | notes: [
+          %FindingNote{kind: :fix, round: 1, at: at},
+          %FindingNote{kind: :pass, round: 2, at: at},
+          %FindingNote{kind: :fix, round: 2, at: at}
+        ]
+    }
+
+    assert Finding.calculate_place_fix(fixed, left) == {:left, 2}
+    assert Finding.calculate_place_fix(fixed, covered) == {:covered, 2}
+  end
+
   test "a finding is where its code is, or the screen it was seen on" do
     assert Finding.where(%Finding{file: "lib/a.ex", line: 3}) == "lib/a.ex:3"
     assert Finding.where(%Finding{file: "lib/a.ex"}) == "lib/a.ex"

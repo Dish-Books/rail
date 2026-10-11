@@ -12,6 +12,8 @@ defmodule RailWeb.Components.DiffRow do
   attr :expanded, :any, default: nil, doc: "the lines of a gap the reader opened"
   attr :target, :any, default: nil
   attr :commentable, :boolean, default: false, doc: "offers the reader a comment on a line"
+  attr :gutter, :boolean, default: false, doc: "draws a line with a gutter beside it for a finding's bracket"
+  attr :bracket, :atom, default: nil, doc: "the line's place in that bracket: `:start`, `:middle`, `:end` or `:only`"
 
   def diff_row(%{row: %{kind: :binary}} = assigns) do
     ~H"""
@@ -80,6 +82,16 @@ defmodule RailWeb.Components.DiffRow do
     """
   end
 
+  # The gutter sits outside the row, so its tint and its left border stay what the Diff pane draws.
+  def diff_row(%{row: %{kind: :line}, gutter: true} = assigns) do
+    ~H"""
+    <div data-qa="diff_bracket_row" data-bracket={@bracket} class="diff-bracket-row">
+      <span class="diff-bracket"><i></i></span>
+      <.line line={@row} commentable={@commentable} />
+    </div>
+    """
+  end
+
   def diff_row(%{row: %{kind: :line}} = assigns) do
     ~H"""
     <.line line={@row} commentable={@commentable} />
@@ -96,14 +108,7 @@ defmodule RailWeb.Components.DiffRow do
     assigns = assign(assigns, :hang, if(hang == 4, do: [], else: [style: "--hang: #{hang}ch"]))
 
     ~H"""
-    <%!-- A row fetched because something points at it says so: a reader arriving
-    from a finding should not have to count lines to find the one it meant. --%>
-    <div
-      data-qa="diff_line_row"
-      data-kind={@line.line_kind}
-      data-focus={Map.get(@line, :focus?, false)}
-      class="diff-line"
-    >
+    <div data-qa="diff_line_row" data-kind={@line.line_kind} class="diff-line">
       <div class="diff-num">{@line.old_line}</div>
       <div class="diff-num">{@line.new_line}</div>
       <div class="diff-glyph">

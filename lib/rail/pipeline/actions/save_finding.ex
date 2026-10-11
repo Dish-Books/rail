@@ -134,6 +134,7 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
     end
   end
 
+  # Every place is covered or left by now, so a reason an earlier fix gave goes once this one covers the place.
   defp save_fix(%Task{} = task, %Finding{} = finding, fix, attrs, said) do
     places =
       finding.places
@@ -141,7 +142,7 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
       |> Enum.map(fn {place, n} ->
         case List.keyfind(fix.left, n, 0) do
           {^n, reason} -> FindingPlace.leave_changeset(place, reason)
-          nil -> place
+          nil -> FindingPlace.leave_changeset(place, nil)
         end
       end)
 

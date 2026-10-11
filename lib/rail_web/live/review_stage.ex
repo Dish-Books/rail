@@ -16,6 +16,7 @@ defmodule RailWeb.Live.ReviewStage do
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.FindingComment
   alias Rail.Pipeline.Schemas.FindingEvidence
+  alias Rail.Pipeline.Schemas.FindingPlace
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
@@ -25,6 +26,7 @@ defmodule RailWeb.Live.ReviewStage do
   alias RailWeb.Live.DiffView
 
   @double_click_ms 400
+  @no_code %{where: nil, places: %{}, where_place: nil}
 
   # The conversation's tray asked for a finding or a screen state, which this stage shows.
   @impl true
@@ -53,6 +55,7 @@ defmodule RailWeb.Live.ReviewStage do
       |> assign_new(:screen_open, fn -> nil end)
       |> assign_new(:screen_draft, fn -> nil end)
       |> assign_new(:finding_draft, fn -> nil end)
+      |> assign_new(:code_cache, fn -> %{fingerprint: :unread, by_key: %{}} end)
       |> load()
 
     {:ok, socket}
@@ -114,7 +117,10 @@ defmodule RailWeb.Live.ReviewStage do
                     count={length(@findings)}
                     decidable={@approvable and @phase not in [:round, :fixing, :ci, :finished]}
                     running={@phase == :round}
-                    hunk={@hunk}
+                    where_code={@code.where}
+                    place_codes={@code.places}
+                    where_place={@code.where_place}
+                    head={@head}
                     filed={@filed}
                     filed_index={@filed_index}
                     labels={@labels}
@@ -561,7 +567,7 @@ defmodule RailWeb.Live.ReviewStage do
     |> assign(:selected_key, nil)
     |> assign(:position, 0)
     |> assign(:neighbours, %{previous: nil, next: nil})
-    |> assign(:hunk, nil)
+    |> assign_code(nil)
     |> assign(:filed, [])
     |> assign(:names, %{})
     |> assign(:suppressor, nil)
@@ -579,10 +585,10 @@ defmodule RailWeb.Live.ReviewStage do
       previous: if(index > 0, do: Enum.at(findings, index - 1).key),
       next: if(index < length(findings) - 1, do: Enum.at(findings, index + 1).key)
     })
-    |> assign(:hunk, if(open?, do: hunk(socket, selected)))
     |> assign(:filed, if(open?, do: filed(socket, selected), else: []))
     |> assign(:names, if(open?, do: names(socket, selected), else: %{}))
     |> assign(:suppressor, if(open?, do: suppressor(selected)))
+    |> assign_code(if(open?, do: selected))
   end
 
   defp assign_items(socket) do
@@ -829,22 +835,52 @@ defmodule RailWeb.Live.ReviewStage do
   defp ci_sha(%{os_process: %{head_sha: sha}}) when is_binary(sha), do: String.slice(sha, 0, 7)
   defp ci_sha(_no_ci), do: nil
 
-  # The code a finding points at is read off the worktree, its whole range marked.
-  defp hunk(socket, %Finding{file: file, line: line} = finding) when is_binary(file) do
-    case Git.load_diff_hunk(socket.assigns.current_scope, socket.assigns.task, file, line) do
-      %{rows: rows} = hunk -> %{hunk | rows: Enum.map(rows, &focus(&1, finding))}
-      nil -> nil
-    end
+  # A finding's code is read once, and again only once the branch moves, as DiffView keeps its diff.
+  defp assign_code(socket, nil), do: socket |> assign(:code, @no_code) |> assign(:head, nil)
+
+  defp assign_code(socket, %Finding{key: key} = finding) do
+    %{task: task, current_scope: scope, code_cache: cache} = socket.assigns
+    fingerprint = if Task.worktree_present?(task), do: Git.branch_fingerprint(task.worktree_path)
+    by_key = if cache.fingerprint == fingerprint, do: cache.by_key, else: %{}
+    code = Map.get_lazy(by_key, key, fn -> load_code(scope, task, finding) end)
+
+    socket
+    |> assign(:code, code)
+    |> assign(:head, fingerprint[:head_sha])
+    |> assign(:code_cache, %{fingerprint: fingerprint, by_key: Map.put(by_key, key, code)})
   end
 
-  defp hunk(_socket, %Finding{}), do: nil
+  # The Where first, then each code place, in one read. A place on the Where's lines shares its code, and a
+  # finding with one place keeps its plain row, so only its Where's code is read.
+  defp load_code(scope, task, %Finding{places: places} = finding) do
+    where = if is_binary(finding.file), do: {finding.file, finding.line, finding.end_line}
+    where_place = where && Enum.find_index(places, &same_lines?(&1, where))
 
-  defp focus(%{kind: :line, new_line: new_line} = row, %Finding{line: first, end_line: last})
-       when is_integer(new_line) and is_integer(first) and is_integer(last) do
-    if new_line in first..last//1, do: Map.put(row, :focus?, true), else: row
+    coded =
+      for {%FindingPlace{file: file} = place, n} <- Enum.with_index(places),
+          length(places) > 1 and is_binary(file) and n != where_place,
+          do: {n, {file, place.line, place.end_line}}
+
+    ranges = List.wrap(where) ++ Enum.map(coded, &elem(&1, 1))
+    excerpts = if ranges == [], do: [], else: Git.load_diff_hunks(scope, task, ranges)
+    {where_excerpt, place_excerpts} = if where, do: {hd(excerpts), tl(excerpts)}, else: {nil, excerpts}
+
+    %{
+      where: where_excerpt,
+      where_place: where_place,
+      places: coded |> Enum.map(&elem(&1, 0)) |> Enum.zip(place_excerpts) |> Map.new()
+    }
   end
 
-  defp focus(row, %Finding{}), do: row
+  defp same_lines?(%FindingPlace{file: file} = place, {where_file, line, end_line}) when is_binary(file) do
+    String.trim_leading(file, "./") == String.trim_leading(where_file, "./") and place.line == line and
+      last_line(place.line, place.end_line) == last_line(line, end_line)
+  end
+
+  defp same_lines?(%FindingPlace{}, _where), do: false
+
+  defp last_line(line, end_line) when is_integer(end_line) and end_line > line, do: end_line
+  defp last_line(line, _end_line), do: line
 
   # Read off the row alone: a text file's opening was read into the finding when it was attached.
   defp filed(socket, %Finding{key: key, evidence: evidence}) do

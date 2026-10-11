@@ -181,6 +181,17 @@ defmodule Rail.Pipeline.Schemas.Finding do
   def state(%__MODULE__{status: :not_fixed}), do: :not_fixed
   def state(%__MODULE__{}), do: :to_fix
 
+  @doc """
+  What the latest fix did with `place`: `{:left, round}` when it gave a reason, `{:covered, round}` when it did
+  not, or nil before any fix. A fix accounts for every place, so a place it gave no reason for it covered.
+  """
+  def calculate_place_fix(%__MODULE__{notes: notes}, %FindingPlace{left_reason: reason}) do
+    case notes |> Enum.filter(&(&1.kind == :fix)) |> List.last() do
+      %FindingNote{round: round} -> if(is_binary(reason), do: {:left, round}, else: {:covered, round})
+      nil -> nil
+    end
+  end
+
   @doc "Where a finding is, as one line: its code range, or its screen."
   def where(%__MODULE__{file: file} = finding) when is_binary(file),
     do: FindingPlace.describe(%FindingPlace{file: file, line: finding.line, end_line: finding.end_line})
