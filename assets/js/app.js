@@ -5,6 +5,7 @@ import topbar from "../vendor/topbar";
 import { BrowserScreencast } from "./hooks/browser_screencast";
 import { ChatAutoscroll } from "./hooks/chat_autoscroll";
 import { ChatComposer } from "./hooks/chat_composer";
+import { CommandOutput } from "./hooks/command_output";
 import { CopyText } from "./hooks/copy_text";
 import { CurrentInView } from "./hooks/current_in_view";
 import { DemoCaptions } from "./hooks/demo_captions";
@@ -31,6 +32,7 @@ const Hooks = {
   Elapsed,
   ChatAutoscroll,
   ChatComposer,
+  CommandOutput,
   DiffScroller,
   DiffSection,
   DiffWrap,

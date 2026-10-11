@@ -849,6 +849,7 @@ defmodule RailWeb.Live.RunConversation do
         :if={@open?}
         id={"command-output-#{@idx}"}
         data-qa="command-output"
+        phx-hook="CommandOutput"
         phx-no-format
         class="border-t border-slate-200 dark:border-slate-700 px-3 py-2 max-h-96 overflow-auto font-mono text-[11px] leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap wrap-break-word select-text"
       >{@msg.content}</pre>
