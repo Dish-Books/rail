@@ -5064,6 +5064,50 @@ defmodule RailWeb.TaskLiveTest do
       assert_receive :resumed, 2_000
     end
 
+    test "a second page shows a new approval without a reload", %{conn: conn, scope: scope, task: task} do
+      {:ok, lead} = Users.update_user(system_scope(), scope.user, %{tech_lead: true, github_token: "gho_lead"})
+
+      {:ok, _task} =
+        Pipeline.update_task(task, %{
+          stage: :finalize,
+          pr_number: 151,
+          pr_is_draft: false,
+          marked_ready_at: DateTime.utc_now()
+        })
+
+      {:ok, _pass} = Pipeline.save_review(task)
+      {:ok, reviews} = Agent.start_link(fn -> [] end)
+
+      Req.Test.stub(Client, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"POST", "/app/installations/" <> _id} ->
+            Req.Test.json(conn, %{"token" => "ghs_app"})
+
+          {"GET", "/repos/example/test-seed/pulls/151/reviews"} ->
+            Req.Test.json(conn, Agent.get(reviews, & &1))
+
+          {"POST", "/repos/example/test-seed/pulls/151/reviews"} ->
+            review = %{"user" => %{"login" => lead.login}, "state" => "APPROVED"}
+            Agent.update(reviews, &[Map.put(review, "submitted_at", "2026-10-11T14:40:00Z") | &1])
+            Req.Test.json(conn, Map.put(review, "id", 80))
+        end
+      end)
+
+      assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}")
+      render_async(two)
+      assert has_element?(two, "#finalize-approve")
+      refute has_element?(two, "#finalize-approvals")
+
+      one |> element("#finalize-approve") |> render_click()
+
+      eventually(fn ->
+        assert has_element?(two, "#finalize-approvals #finalize-approval-#{lead.login}")
+        assert has_element?(two, "#finalize-approved", "Approved by")
+        refute has_element?(two, "#finalize-approve")
+      end)
+    end
+
     test "the tray opening a finding or a screen puts its item in the URL, as the stage opens it", %{
       conn: conn,
       task: task,

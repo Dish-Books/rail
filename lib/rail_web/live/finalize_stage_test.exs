@@ -27,7 +27,7 @@ defmodule RailWeb.Live.FinalizeStageTest do
 
     dan = register.("dano", %{name: "Dan Okafor"})
     priya = register.("priya", %{name: "Priya Raman", tech_lead: true, github_token: "gho_priya"})
-    _michael = register.("mkerr", %{name: "Michael Kerr", tech_lead: true})
+    michael = register.("mkerr", %{name: "Michael Kerr", tech_lead: true})
 
     {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
     task = learnings_task(project, "FST-1", :review)
@@ -61,7 +61,10 @@ defmodule RailWeb.Live.FinalizeStageTest do
     {:ok, _pass} = Pipeline.save_review(task)
     {:ok, task} = Pipeline.update_task(task, %{stage: :finalize})
 
-    %{conn: conn, task: task, dan: dan, priya: priya}
+    # GitHub is asked for approvals as the pane opens past Mark ready; a test about them says what it answers.
+    stub(Pipeline, :list_approvals, fn _task -> {:ok, []} end)
+
+    %{conn: conn, task: task, dan: dan, priya: priya, michael: michael}
   end
 
   test "the pane shows the pull request and Mark ready, and marking says who marked it and when", %{
@@ -244,5 +247,285 @@ defmodule RailWeb.Live.FinalizeStageTest do
       assert has_element?(view, "#finalize-error", "The merge did not finish. Try again.")
       assert has_element?(view, "#finalize-merge:not([disabled])", "Merge")
     end)
+  end
+
+  test "a tech lead's Approve approves as them on GitHub, and their approval takes the button's place", %{
+    conn: conn,
+    task: task,
+    dan: dan,
+    priya: priya
+  } do
+    {:ok, _marked} = Pipeline.mark_ready(Rail.Scope.for_user(dan), task)
+    stub(Pipeline, :list_approvals, &Mimic.call_original(Pipeline, :list_approvals, [&1]))
+
+    # Approvals given on GitHub: Dan's under his Rail name, and one from someone with no Rail account.
+    {:ok, reviews} =
+      Agent.start_link(fn ->
+        [
+          %{"user" => %{"login" => "jkowalski-dev"}, "state" => "APPROVED", "submitted_at" => "2026-10-10T16:02:00Z"},
+          %{"user" => %{"login" => dan.login}, "state" => "APPROVED", "submitted_at" => "2026-10-11T14:31:00Z"}
+        ]
+      end)
+
+    Req.Test.stub(Client, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"POST", "/app/installations/1/access_tokens"} ->
+          Req.Test.json(conn, %{"token" => "ghs_app"})
+
+        {"GET", "/repos/example/test-seed/pulls/151/reviews"} ->
+          Req.Test.json(conn, Agent.get(reviews, & &1))
+
+        {"POST", "/repos/example/test-seed/pulls/151/reviews"} ->
+          assert ["Bearer gho_priya"] = Plug.Conn.get_req_header(conn, "authorization")
+          review = %{"user" => %{"login" => priya.login}, "state" => "APPROVED"}
+          Agent.update(reviews, &[Map.put(review, "submitted_at", "2026-10-11T14:40:00Z") | &1])
+          Req.Test.json(conn, Map.put(review, "id", 80))
+      end
+    end)
+
+    assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
+    render_async(view)
+
+    assert has_element?(view, "#finalize-approvals #finalize-approval-jkowalski-dev .font-mono", "jkowalski-dev")
+    assert has_element?(view, "#finalize-approval-#{dan.login}", "Dan Okafor")
+    assert has_element?(view, "#finalize-approval-#{dan.login} time[datetime]")
+    assert has_element?(view, "#finalize-actions.flex-wrap > #finalize-approve:not([disabled])", "Approve")
+    assert has_element?(view, "#finalize-actions > .flex-wrap > #finalize-merge", "Merge")
+
+    view |> element("#finalize-approve") |> render_click()
+
+    eventually(fn ->
+      assert has_element?(view, "#finalize-actions > #finalize-approved", "Approved by Priya Raman at")
+      assert has_element?(view, "#finalize-approved time[datetime='2026-10-11T14:40:00Z']")
+      assert has_element?(view, "#finalize-approval-#{priya.login}", "Priya Raman")
+      refute has_element?(view, "#finalize-approve")
+      assert has_element?(view, "#finalize-merge:not([disabled])")
+    end)
+  end
+
+  test "a refusal shows GitHub's message above Approve, lists no approval from the lead, and leaves Merge", %{
+    conn: conn,
+    task: task,
+    dan: dan,
+    priya: priya
+  } do
+    {:ok, _marked} = Pipeline.mark_ready(Rail.Scope.for_user(dan), task)
+    stub(Pipeline, :list_approvals, &Mimic.call_original(Pipeline, :list_approvals, [&1]))
+
+    Req.Test.stub(Client, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"POST", "/app/installations/1/access_tokens"} ->
+          Req.Test.json(conn, %{"token" => "ghs_app"})
+
+        {"GET", _reviews} ->
+          Req.Test.json(conn, [])
+
+        {"POST", _reviews} ->
+          conn
+          |> Plug.Conn.put_status(422)
+          |> Req.Test.json(%{
+            "message" => "Unprocessable Entity",
+            "errors" => ["Can not approve your own pull request"]
+          })
+      end
+    end)
+
+    assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
+    view |> element("#finalize-approve") |> render_click()
+
+    eventually(fn ->
+      assert has_element?(view, "#finalize-approve-error[role='alert']", "GitHub refused the approval at")
+      assert has_element?(view, "#finalize-approve-error time[datetime]")
+      assert has_element?(view, "#finalize-approve-error", "Unprocessable Entity: Can not approve your own pull request")
+      assert has_element?(view, "#finalize-approve-error + #finalize-marked")
+      assert has_element?(view, "#finalize-approve:not([disabled])", "Approve")
+      assert has_element?(view, "#finalize-merge:not([disabled])", "Merge")
+      refute has_element?(view, "#finalize-approvals")
+      refute has_element?(view, "#finalize-approve-sign-in")
+      refute has_element?(view, "#finalize-error")
+    end)
+  end
+
+  test "a tech lead with no GitHub token is told to sign in again", %{
+    conn: conn,
+    task: task,
+    dan: dan,
+    michael: michael
+  } do
+    {:ok, _marked} = Pipeline.mark_ready(Rail.Scope.for_user(dan), task)
+    assert {:ok, view, _html} = live(log_in_user(conn, michael), ~p"/tasks/#{task.id}")
+
+    view |> element("#finalize-approve") |> render_click()
+
+    eventually(fn ->
+      assert has_element?(view, "#finalize-approve-error[role='alert']", "Sign in with GitHub again to approve")
+      assert has_element?(view, "#finalize-approve-error", "Rail holds no GitHub token for you, so nothing was sent.")
+      assert has_element?(view, "#finalize-approve-sign-in[href='/auth/github']", "Sign in with GitHub")
+      refute has_element?(view, "#finalize-approve-error time")
+    end)
+  end
+
+  test "a teammate or an admin without the setting sees the approvals and the waiting line, and no Approve", %{
+    conn: conn,
+    task: task,
+    dan: dan
+  } do
+    {:ok, _marked} = Pipeline.mark_ready(Rail.Scope.for_user(dan), task)
+
+    stub(Pipeline, :list_approvals, fn _task ->
+      {:ok, [%{login: "jkowalski-dev", user: nil, approved_at: ~U[2026-10-10 16:02:00Z]}]}
+    end)
+
+    {:ok, admin} =
+      Users.register_oauth_user(%{github_id: "fst-admin", login: "fst-admin", email: "fst-admin@fst"})
+
+    {:ok, admin} = Users.update_user(system_scope(), admin, %{admin: true, github_token: "gho_admin"})
+
+    for viewer <- [dan, admin] do
+      assert {:ok, view, _html} = live(log_in_user(conn, viewer), ~p"/tasks/#{task.id}")
+      render_async(view)
+
+      assert has_element?(view, "#finalize-approval-jkowalski-dev", "jkowalski-dev")
+      assert has_element?(view, "#finalize-waiting", "Waiting for a tech lead")
+      refute has_element?(view, "#finalize-approve")
+      refute has_element?(view, "#finalize-actions")
+    end
+  end
+
+  test "nobody sees Approve or the approvals before Mark ready, and after the merge the approvals stay", %{
+    conn: conn,
+    task: task,
+    priya: priya
+  } do
+    stub(Pipeline, :list_approvals, fn _task ->
+      {:ok, [%{login: "jkowalski-dev", user: nil, approved_at: ~U[2026-10-10 16:02:00Z]}]}
+    end)
+
+    assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
+    render_async(view)
+
+    assert has_element?(view, "#finalize-mark-ready")
+    refute has_element?(view, "#finalize-approve")
+    refute has_element?(view, "#finalize-approvals")
+
+    {:ok, _merged} =
+      Pipeline.update_task(task, %{
+        stage: :merged,
+        marked_ready_at: DateTime.utc_now(),
+        merged_at: DateTime.utc_now(),
+        merge_sha: "3c9a1f0e2b"
+      })
+
+    assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}?tab=finalize")
+    render_async(view)
+
+    assert has_element?(view, "#finalize-merged")
+    assert has_element?(view, "#finalize-approval-jkowalski-dev")
+    refute has_element?(view, "#finalize-approve")
+    refute has_element?(view, "#finalize-approved")
+  end
+
+  test "with no approvals, or a read GitHub failed, the card has no Approvals row and says nothing", %{
+    conn: conn,
+    task: task,
+    dan: dan,
+    priya: priya
+  } do
+    {:ok, _marked} = Pipeline.mark_ready(Rail.Scope.for_user(dan), task)
+    assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
+    render_async(view)
+
+    refute has_element?(view, "#finalize-approvals")
+    assert has_element?(view, "#finalize-approve")
+
+    stub(Pipeline, :list_approvals, fn _task -> {:error, {:github_api_error, 502, %{}}} end)
+    assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
+    render_async(view)
+
+    refute has_element?(view, "#finalize-approvals")
+    refute has_element?(view, "#finalize-error")
+    assert has_element?(view, "#finalize-approve")
+  end
+
+  test "the pane draws before GitHub answers the approvals read", %{conn: conn, task: task, dan: dan, priya: priya} do
+    {:ok, _marked} = Pipeline.mark_ready(Rail.Scope.for_user(dan), task)
+    test_pid = self()
+
+    stub(Pipeline, :list_approvals, fn _task ->
+      send(test_pid, {:reading, self()})
+      assert_receive :answer, 2_000
+      {:ok, [%{login: "jkowalski-dev", user: nil, approved_at: ~U[2026-10-10 16:02:00Z]}]}
+    end)
+
+    assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
+    assert_receive {:reading, github}, 2_000
+
+    assert has_element?(view, "#finalize-pr", "#151")
+    assert has_element?(view, "#finalize-approve")
+    refute has_element?(view, "#finalize-approvals")
+
+    send(github, :answer)
+    eventually(fn -> assert has_element?(view, "#finalize-approval-jkowalski-dev") end)
+  end
+
+  # A second click while the first approval waits on GitHub sends nothing, and Merge stays to click meanwhile.
+  test "a second click while approving does nothing, and an approval that dies can be tried again", %{
+    conn: conn,
+    task: task,
+    dan: dan,
+    priya: priya
+  } do
+    {:ok, _marked} = Pipeline.mark_ready(Rail.Scope.for_user(dan), task)
+    test_pid = self()
+
+    expect(Pipeline, :approve_task, fn _scope, _task ->
+      send(test_pid, {:approving, self()})
+      receive do: (:die -> exit(:github_went_away))
+    end)
+
+    assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
+    view |> element("#finalize-approve") |> render_click()
+    assert_receive {:approving, approval}, 2_000
+
+    assert has_element?(view, "#finalize-approve[disabled]", "Approving…")
+    assert has_element?(view, "#finalize-merge:not([disabled])", "Merge")
+    view |> with_target("#finalize-stage") |> render_click("approve", %{})
+    refute_received {:approving, _second}
+
+    send(approval, :die)
+
+    eventually(fn ->
+      assert has_element?(view, "#finalize-error", "The approval did not finish. Try again.")
+      assert has_element?(view, "#finalize-approve:not([disabled])", "Approve")
+    end)
+  end
+
+  # Each is a page drawn before another tab moved the task on, or an event sent past the hidden button.
+  test "an approval the task no longer takes says why", %{conn: conn, task: task, dan: dan, priya: priya} do
+    assert {:ok, as_dan, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
+    assert {:ok, as_priya, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
+
+    as_priya |> with_target("#finalize-stage") |> render_click("approve", %{})
+    eventually(fn -> assert has_element?(as_priya, "#finalize-error", "Mark the task ready before approving it.") end)
+
+    {:ok, task} = Pipeline.mark_ready(Rail.Scope.for_user(dan), task)
+    as_dan |> with_target("#finalize-stage") |> render_click("approve", %{})
+    eventually(fn -> assert has_element?(as_dan, "#finalize-error", "Only a tech lead can approve a task.") end)
+
+    stub(Pipeline, :list_approvals, fn _task -> {:error, {:github_api_error, 502, %{}}} end)
+    as_priya |> with_target("#finalize-stage") |> render_click("approve", %{})
+    eventually(fn -> assert has_element?(as_priya, "#finalize-error", "The approval did not finish. Try again.") end)
+
+    {:ok, task} = Pipeline.update_task(task, %{pr_number: nil})
+    as_priya |> with_target("#finalize-stage") |> render_click("approve", %{})
+    eventually(fn -> assert has_element?(as_priya, "#finalize-error", "no pull request to approve.") end)
+
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review, pr_number: 151})
+    as_priya |> with_target("#finalize-stage") |> render_click("approve", %{})
+    eventually(fn -> assert has_element?(as_priya, "#finalize-error", "This task is at Review, not Finalize.") end)
+
+    {:ok, _merged} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
+    as_priya |> with_target("#finalize-stage") |> render_click("approve", %{})
+    eventually(fn -> assert has_element?(as_priya, "#finalize-error", "This task is already merged.") end)
   end
 end

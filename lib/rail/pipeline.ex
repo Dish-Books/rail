@@ -22,7 +22,8 @@ defmodule Rail.Pipeline do
   Engineer, and parks the parent at Split until the last child merges.
 
   A finished review moves the task on to Finalize, which has no run of its own: a teammate marks it ready
-  for a tech lead, and a tech lead's Merge squash-merges its pull request on GitHub and enters Merged.
+  for a tech lead, a tech lead's Approve approves its pull request on GitHub as that lead, and a tech lead's
+  Merge squash-merges it and enters Merged.
   """
 
   use Rail.PermissionsDecorator
@@ -67,6 +68,11 @@ defmodule Rail.Pipeline do
 
   @decorate can?(resource: :tasks, action: :merge)
   defdelegate merge_task(scope, task), to: Actions.MergeTask
+
+  @decorate can?(resource: :tasks, action: :approve)
+  defdelegate approve_task(scope, task), to: Actions.ApproveTask
+
+  defdelegate list_approvals(task), to: Actions.ListApprovals
 
   defdelegate write_qa_checklist(task, checks), to: Actions.WriteQaChecklist
   defdelegate read_qa_checklist(task), to: Actions.ReadQaChecklist

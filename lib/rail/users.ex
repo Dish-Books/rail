@@ -16,6 +16,7 @@ defmodule Rail.Users do
 
   defdelegate get_user(by), to: Actions.GetUser
   defdelegate list_users_by_ids(scope, ids), to: Actions.ListUsersByIds
+  defdelegate list_users_by_logins(logins), to: Actions.ListUsersByLogins
   defdelegate list_assignable_users(opts \\ []), to: Actions.ListAssignableUsers
   defdelegate list_tech_leads(project_id), to: Actions.ListTechLeads
 

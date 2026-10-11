@@ -112,6 +112,12 @@ defmodule Rail.Users.Actions.CanTest do
       refute Users.can?(Scope.for_user(%{admin: false, tech_lead: true}), :tasks, :manage)
     end
 
+    test "only tech leads may approve tasks, and an admin without the setting is refused" do
+      assert Users.can?(Scope.for_user(%{admin: false, tech_lead: true}), :tasks, :approve)
+      refute Users.can?(Scope.for_user(%{admin: true, tech_lead: false}), :tasks, :approve)
+      refute Users.can?(Scope.for_user(%{admin: false}), :tasks, :approve)
+    end
+
     test "non-admin scope is denied regardless of resource or action" do
       scope = Scope.for_user(%{admin: false})
       refute Users.can?(scope, :projects, :view)
