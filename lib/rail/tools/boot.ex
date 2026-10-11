@@ -264,8 +264,8 @@ defmodule Rail.Tools.Boot do
   defp ended_reason(_exited, 137), do: :killed
   defp ended_reason(_exited, _code), do: :finished
 
-  defp settle_dead_exit(%OsProcess{reserved_memory_gb: memory_gb}, _event_state, _raw_stderr, {_exit_code, true}) do
-    {137, "Killed: it used more than the #{memory_gb} GB its role reserves."}
+  defp settle_dead_exit(%OsProcess{}, _event_state, _raw_stderr, {_exit_code, true}) do
+    {137, "Killed: this machine ran out of memory."}
   end
 
   # A command says how it went with its status, which it wrote to a file on its

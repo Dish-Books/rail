@@ -47,7 +47,7 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
     {:ok, seeded} = Roles.get_role(project_id: project.id, stage: :engineer)
 
     {:ok, role} =
-      Roles.update_role(system_scope(), seeded, %{model: model, reserved_cpus: 2, reserved_memory_gb: 4})
+      Roles.update_role(system_scope(), seeded, %{model: model, reserved_cpus: 2})
 
     issue =
       %Issue{}
@@ -128,20 +128,21 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
   # The machine has 16 CPUs, keeps 3 back and gives the shared browser 2, so the
   # other 11 are the sandbox's to use while idle; its reservation is its weight
   # when others want them too.
-  test "weighs the sandbox's CPUs by its reservation up to what the machine can spare, and caps memory with no swap", %{
-    run: run
-  } do
+  test "weighs the sandbox's CPUs by its reservation up to what the machine can spare, and leaves its memory unlimited",
+       %{
+         run: run
+       } do
     stub(Rail, :sandbox_headroom_cpus, fn -> 3 end)
     stub(Rail, :browser_cpus, fn -> 2 end)
 
-    assert {:ok, %OsProcess{reserved_cpus: 2, reserved_memory_gb: 4}} = Tools.start_os_process(run, ["-p", "Build it."])
-
-    four_gb = 4 * @gib
+    assert {:ok, %OsProcess{reserved_cpus: 2}} = Tools.start_os_process(run, ["-p", "Build it."])
 
     assert_received {:created, %{"HostConfig" => host_config}}
 
-    assert %{"CpuShares" => 2048, "NanoCpus" => 11_000_000_000, "Memory" => ^four_gb, "MemorySwap" => ^four_gb} =
-             host_config
+    # With nothing to hold it to, a sandbox is what the kernel stops first if the machine runs out.
+    assert %{"CpuShares" => 2048, "NanoCpus" => 11_000_000_000, "OomScoreAdj" => 500} = host_config
+    refute Map.has_key?(host_config, "Memory")
+    refute Map.has_key?(host_config, "MemorySwap")
   end
 
   test "a sandbox Docker will not start fails the run with why, and leaves nothing behind", %{run: run} do
@@ -185,7 +186,7 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
     assert {:ok, %OsProcess{status: :waiting_for_resources}} = Tools.start_os_process(run, ["-p", "Build it."])
 
     assert [
-             "[rail] Turn 1 needs 2 CPUs and 4 GB, and Rail could not read what this machine has free. " <>
+             "[rail] Turn 1 needs 2 CPUs, and Rail could not read what this machine has free. " <>
                "It is 1st in line and starts on its own as soon as enough is free."
            ] = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
   end

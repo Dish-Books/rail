@@ -13,7 +13,32 @@ defmodule RailWeb.Components.DiffRowTest do
 
     assert html =~ ~s(data-kind="deleted")
     assert html =~ "def filter(list), do: list"
-    refute html =~ "data-focus"
+  end
+
+  # The Diff pane draws its rows with no gutter, so they gain no column.
+  test "a line drawn without the gutter has no gutter cell and no bracket" do
+    row = %{kind: :line, line_kind: :added, old_line: nil, new_line: 2, text: "x = 1", named?: true}
+
+    html = (&DiffRow.diff_row/1) |> render_component(row: row) |> Floki.parse_fragment!()
+
+    assert [{"div", _attrs, _cells}] = html
+    assert [] = Floki.find(html, ".diff-bracket")
+    assert [] = Floki.find(html, "[data-bracket]")
+  end
+
+  test "a line drawn with the gutter keeps its kind on the inner line and its bracket on the wrapper" do
+    row = %{kind: :line, line_kind: :deleted, old_line: 2, new_line: nil, text: "x = 1"}
+
+    html =
+      (&DiffRow.diff_row/1) |> render_component(row: row, gutter: true, bracket: :start) |> Floki.parse_fragment!()
+
+    assert [{"div", _attrs, _children} = wrapper] = Floki.find(html, ".diff-bracket-row[data-bracket=start]")
+    assert [_gutter] = Floki.find(wrapper, ".diff-bracket-row > .diff-bracket")
+    assert [_line] = Floki.find(wrapper, ".diff-bracket-row > .diff-line[data-kind=deleted]")
+
+    plain = (&DiffRow.diff_row/1) |> render_component(row: row, gutter: true) |> Floki.parse_fragment!()
+    assert [_gutter] = Floki.find(plain, ".diff-bracket")
+    assert [] = Floki.find(plain, "[data-bracket]")
   end
 
   test "draws the highlighted code when the line came with any" do

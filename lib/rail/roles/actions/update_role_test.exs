@@ -13,7 +13,7 @@ defmodule Rail.Roles.Actions.UpdateRoleTest do
         name: "Update Role Project",
         github_repo: "org/update-role",
         github_installation_id: 4405,
-        linear_team_key: "URL",
+        key: "URL",
         default_branch: "main",
         clone_path: "/tmp/repos/update-role"
       })
@@ -65,14 +65,12 @@ defmodule Rail.Roles.Actions.UpdateRoleTest do
            } = errors_on(changeset)
   end
 
-  # Capacity in test is 4 CPUs and 8 GB (config/test.exs), so 16 CPUs could never start.
+  # Capacity in test is 4 CPUs (config/test.exs), so 16 CPUs could never start.
   test "refuses a reservation larger than the machine can ever free", %{role: role} do
-    assert {:error, changeset} = Roles.update_role(system_scope(), role, %{reserved_cpus: 16, reserved_memory_gb: 64})
+    assert {:error, changeset} = Roles.update_role(system_scope(), role, %{reserved_cpus: 16})
 
-    assert %{
-             reserved_cpus: ["This machine has 4 CPUs to reserve, so an Old Name that needs 16 could never start."],
-             reserved_memory_gb: ["This machine has 8 GB to reserve, so an Old Name that needs 64 GB could never start."]
-           } = errors_on(changeset)
+    assert %{reserved_cpus: ["This machine has 4 CPUs to reserve, so an Old Name that needs 16 could never start."]} =
+             errors_on(changeset)
   end
 
   test "saves any reservation while Docker cannot say what the machine has", %{role: role} do
@@ -82,8 +80,8 @@ defmodule Rail.Roles.Actions.UpdateRoleTest do
   end
 
   test "saves a reservation the machine can hold", %{role: role} do
-    assert {:ok, %Role{reserved_cpus: 2, reserved_memory_gb: 4}} =
-             Roles.update_role(system_scope(), role, %{reserved_cpus: 2, reserved_memory_gb: 4})
+    assert {:ok, %Role{reserved_cpus: 2}} =
+             Roles.update_role(system_scope(), role, %{reserved_cpus: 2})
   end
 
   test "returns not authorized for non-admin scope", %{role: role} do

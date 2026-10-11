@@ -33,7 +33,7 @@ defmodule Rail.Tools.Actions.InstallToolchainTest do
         name: "Toolchain Project #{id}",
         github_repo: "org/toolchain-#{id}",
         github_installation_id: id,
-        linear_team_key: "TCI#{id}",
+        key: "TCI#{id}",
         default_branch: "main",
         clone_path: clone,
         toolchain_command: "cat .tool-versions > #{tmp_dir}/ran"

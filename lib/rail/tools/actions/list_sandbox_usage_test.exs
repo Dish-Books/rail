@@ -24,8 +24,7 @@ defmodule Rail.Tools.Actions.ListSandboxUsageTest do
             stream_path: "/dev/null",
             status: :running,
             started_at: DateTime.utc_now(),
-            reserved_cpus: 2,
-            reserved_memory_gb: 4
+            reserved_cpus: 2
           },
           attrs
         )

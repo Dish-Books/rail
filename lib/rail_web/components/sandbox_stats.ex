@@ -1,7 +1,8 @@
 defmodule RailWeb.Components.SandboxStats do
   @moduledoc """
-  The four numbers across the top of the Sandboxes page: how much of the machine's
-  CPU and memory is reserved, what is running, and what is waiting for resources.
+  The four numbers across the top of the Sandboxes page: how many of the machine's
+  CPUs are reserved, how much of its memory is in use, what is running, and what
+  is waiting for resources.
   """
   use RailWeb, :html
 
@@ -23,7 +24,7 @@ defmodule RailWeb.Components.SandboxStats do
             {@stats.reserved_cpus}
           </span>
           <span class="text-sm text-slate-500 dark:text-slate-400">
-            of {@stats.cpus} · {free(@stats.cpus - @stats.reserved_cpus, "")}
+            of {@stats.cpus} · {free(@stats.cpus - @stats.reserved_cpus)}
           </span>
         </p>
         <div class="mt-3 flex h-2 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-700/70">
@@ -34,22 +35,22 @@ defmodule RailWeb.Components.SandboxStats do
         </div>
       </div>
 
-      <div id="stat-memory-reserved" class="px-5 py-4">
+      <div id="stat-memory-used" class="px-5 py-4">
         <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-          Memory reserved
+          Memory in use
         </p>
         <p class="mt-1 flex items-baseline gap-2">
           <span class="text-3xl font-semibold tabular-nums text-slate-900 dark:text-slate-100">
-            {@stats.reserved_memory_gb} GB
+            {memory(@stats.used_memory_gb)}
           </span>
           <span class="text-sm text-slate-500 dark:text-slate-400">
-            of {@stats.memory_gb} · {free(@stats.memory_gb - @stats.reserved_memory_gb, " GB")}
+            of {@stats.memory_gb} GB on this machine
           </span>
         </p>
         <div class="mt-3 flex h-2 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-700/70">
           <span
             class="h-full bg-blue-500"
-            style={"width:#{percent(@stats.reserved_memory_gb, @stats.memory_gb)}%"}
+            style={"width:#{percent(@stats.used_memory_gb || 0, @stats.memory_gb)}%"}
           />
         </div>
       </div>
@@ -86,21 +87,23 @@ defmodule RailWeb.Components.SandboxStats do
           </span>
         </p>
         <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
-          {short_on(@stats.waiting, @stats.short_on)}
+          {short_on(@stats.waiting, @stats.short_on_cpus?)}
         </p>
       </div>
     </div>
     """
   end
 
-  defp free(amount, _unit) when amount <= 0, do: "none free"
-  defp free(amount, unit), do: "#{amount}#{unit} free"
+  defp free(amount) when amount <= 0, do: "none free"
+  defp free(amount), do: "#{amount} free"
+
+  # Nothing is in use on a machine that cannot say; it is a dash, not a zero.
+  defp memory(nil), do: "—"
+  defp memory(used), do: "#{:erlang.float_to_binary(used / 1, decimals: 1)} GB"
 
   defp percent(reserved, total), do: min(Float.round(reserved / max(total, 1) * 100, 1), 100)
 
-  defp short_on(0, _short), do: "Nothing is waiting."
-  defp short_on(_waiting, %{cpus: true, memory: true}), do: "Short on CPUs and memory."
-  defp short_on(_waiting, %{cpus: true}), do: "Short on CPUs. Memory is not what they wait for."
-  defp short_on(_waiting, %{memory: true}), do: "Short on memory. CPUs are not what they wait for."
-  defp short_on(_waiting, _neither), do: "Each waits for the ones ahead of it."
+  defp short_on(0, _short_on_cpus?), do: "Nothing is waiting."
+  defp short_on(_waiting, true), do: "Short on CPUs."
+  defp short_on(_waiting, false), do: "Each waits for the ones ahead of it."
 end

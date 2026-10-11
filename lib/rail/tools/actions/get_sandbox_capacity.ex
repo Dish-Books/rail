@@ -3,45 +3,43 @@ defmodule Rail.Tools.Actions.GetSandboxCapacity do
 
   import Ecto.Query
   import Rail.Tools.Utils.LocalCapacity
+  import Rail.Tools.Utils.UsedMemory
 
   alias Rail.Repo
   alias Rail.Tools.Clients.Docker
   alias Rail.Tools.Schemas.OsProcess
 
   @doc """
-  What this machine can reserve for sandboxes, and how much of it is reserved now.
+  What this machine can reserve for sandboxes, how much of it is reserved now,
+  and how its memory stands.
 
-  Returns `{:ok, %{cpus, memory_gb, reserved_cpus, reserved_memory_gb}}`. The totals
-  are the machine's less the headroom kept for Rail, Postgres and project services
-  and, under Docker, what the shared browser's container is given; `{:error,
-  reason}` when Docker cannot say what the machine has.
+  Returns `{:ok, %{cpus, reserved_cpus, memory_gb, used_memory_gb}}`. The CPUs are
+  the machine's less the headroom kept for Rail, Postgres and project services
+  and, under Docker, what the shared browser's container is given. Memory is not
+  reserved: `memory_gb` is all the machine has and `used_memory_gb` what is in use
+  on it now, by anything, or `nil` when that cannot be read. `{:error, reason}`
+  when Docker cannot say what the machine has.
   """
   def get_sandbox_capacity do
-    with {:ok, cpus, memory_gb} <- machine() do
-      {browser_cpus, browser_memory_gb} = browser()
-
-      {reserved_cpus, reserved_memory_gb} =
-        Repo.one(
-          from p in OsProcess,
-            where: p.status in [:starting, :running],
-            select: {coalesce(sum(p.reserved_cpus), 0), coalesce(sum(p.reserved_memory_gb), 0)}
-        )
+    with {:ok, cpus, memory_gb, used_memory_gb} <- machine() do
+      reserved_cpus =
+        Repo.one(from p in OsProcess, where: p.status in [:starting, :running], select: coalesce(sum(p.reserved_cpus), 0))
 
       {:ok,
        %{
-         cpus: max(cpus - Rail.sandbox_headroom_cpus() - browser_cpus, 0),
-         memory_gb: max(memory_gb - Rail.sandbox_headroom_memory_gb() - browser_memory_gb, 0),
+         cpus: max(cpus - Rail.sandbox_headroom_cpus() - browser_cpus(), 0),
          reserved_cpus: reserved_cpus,
-         reserved_memory_gb: reserved_memory_gb
+         memory_gb: memory_gb,
+         used_memory_gb: used_memory_gb
        }}
     end
   end
 
-  # Only a container holds Chrome to what it was given; beside Rail it takes what it uses.
-  defp browser do
+  # Only a container holds Chrome to its share; beside Rail it takes what it uses.
+  defp browser_cpus do
     case Rail.sandbox_runtime() do
-      :docker -> {Rail.browser_cpus(), Rail.browser_memory_gb()}
-      :local -> {0, 0}
+      :docker -> Rail.browser_cpus()
+      :local -> 0
     end
   end
 
@@ -50,15 +48,15 @@ defmodule Rail.Tools.Actions.GetSandboxCapacity do
     case {Rail.sandbox_runtime(), Rail.local_cpus()} do
       {:docker, _local} ->
         with {:ok, %{"NCPU" => cpus, "MemTotal" => memory}} <- Docker.info() do
-          {:ok, cpus, div(memory, 1024 ** 3)}
+          {:ok, cpus, div(memory, 1024 ** 3), used_memory()}
         end
 
       {:local, nil} ->
         {cpus, memory_gb} = local_capacity()
-        {:ok, cpus, memory_gb}
+        {:ok, cpus, memory_gb, used_memory()}
 
       {:local, cpus} ->
-        {:ok, cpus, Rail.local_memory_gb()}
+        {:ok, cpus, Rail.local_memory_gb(), nil}
     end
   end
 end

@@ -72,7 +72,7 @@ defmodule RailWeb.OverviewLiveTest do
       for external_id <- ["lin_overview_deleted", "lin_overview_archived"] do
         {:ok, task} =
           %Issue{}
-          |> Issue.linear_changeset(%{
+          |> Issue.tracker_changeset(%{
             project_id: project.id,
             external_id: external_id,
             identifier: external_id,
@@ -134,7 +134,7 @@ defmodule RailWeb.OverviewLiveTest do
     [{:ok, %{id: kept_id}}, {:ok, %{id: vanishing_id}}] =
       for external_id <- ["lin_overview_kept", "lin_overview_vanishing"] do
         %Issue{}
-        |> Issue.linear_changeset(%{
+        |> Issue.tracker_changeset(%{
           project_id: project.id,
           external_id: external_id,
           identifier: external_id,
@@ -192,7 +192,7 @@ defmodule RailWeb.OverviewLiveTest do
                name: "Project One",
                github_repo: "example/p1",
                github_installation_id: 111,
-               linear_team_key: "P1",
+               key: "P1",
                default_branch: "main",
                clone_path: "/tmp/p1",
                active: true,
@@ -204,7 +204,7 @@ defmodule RailWeb.OverviewLiveTest do
                name: "Project Two",
                github_repo: "example/p2",
                github_installation_id: 222,
-               linear_team_key: "P2",
+               key: "P2",
                default_branch: "main",
                clone_path: "/tmp/p2",
                active: true,
@@ -215,7 +215,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     # Initial state: All projects
     assert has_element?(view, "#selected-project-name", "All projects")
-    assert has_element?(view, "#active-project-count", "3")
+    assert has_element?(view, "#active-project-count", "4")
     refute has_element?(view, "#project-switcher-dialog")
 
     # Open project switcher
@@ -252,7 +252,7 @@ defmodule RailWeb.OverviewLiveTest do
                name: "Preset Project",
                github_repo: "example/preset",
                github_installation_id: 333,
-               linear_team_key: "PRE",
+               key: "PRE",
                default_branch: "main",
                clone_path: "/tmp/preset",
                active: true,
@@ -425,7 +425,7 @@ defmodule RailWeb.OverviewLiveTest do
 
         issue =
           issue
-          |> Issue.linear_changeset(%{completed_at: completed_at, owner_user_id: owner_user_id})
+          |> Issue.tracker_changeset(%{completed_at: completed_at, owner_user_id: owner_user_id})
           |> Repo.update!()
 
         {:ok, task} = Pipeline.create_task(issue, :plan)
@@ -547,7 +547,7 @@ defmodule RailWeb.OverviewLiveTest do
           Repo.preload(child, [:issue, :project])
         end
 
-      first.issue |> Issue.linear_changeset(%{state: :canceled}) |> Repo.update!()
+      first.issue |> Issue.tracker_changeset(%{state: :canceled}) |> Repo.update!()
 
       assert {:ok, view, _html} = live(conn, ~p"/")
 
@@ -1681,8 +1681,7 @@ defmodule RailWeb.OverviewLiveTest do
         status: :waiting_for_resources,
         started_at: now,
         queued_at: DateTime.shift(now, minute: -4),
-        reserved_cpus: 2,
-        reserved_memory_gb: 4
+        reserved_cpus: 2
       })
 
       Repo.insert!(%OsProcess{
@@ -1691,8 +1690,7 @@ defmodule RailWeb.OverviewLiveTest do
         stream_path: "/dev/null",
         status: :running,
         started_at: now,
-        reserved_cpus: 3,
-        reserved_memory_gb: 2
+        reserved_cpus: 3
       })
 
       assert {:ok, view, html} = live(conn, ~p"/")
@@ -1710,11 +1708,23 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#sandbox-meters #sandbox-meters-count", "1 running · 1 waiting")
       assert has_element?(view, "#sandbox-meter-cpus", "3 of 4")
       assert has_element?(view, "#sandbox-meter-cpus", "1 CPU free")
-      assert has_element?(view, "#sandbox-meter-memory", "6 GB free")
+      # The suite's machine cannot say what is in use, so only what it has is shown.
+      assert has_element?(view, "#sandbox-meter-memory", "— of 8 GB")
       assert has_element?(view, "#open-sandboxes[href='/sandboxes']", "1 waiting · oldest 4m")
 
       # The machine comes before the tasks on it.
       assert elem(:binary.match(html, "sandbox-meters"), 0) < elem(:binary.match(html, "in-progress-tasks"), 0)
+    end
+
+    test "says how much of the machine's memory is in use", %{conn: conn} do
+      stub(Rail.Tools, :get_sandbox_capacity, fn ->
+        {:ok, %{cpus: 30, reserved_cpus: 0, memory_gb: 125, used_memory_gb: 37.2}}
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#sandbox-meter-memory", "37.2 of 125 GB")
+      assert has_element?(view, "#sandbox-meter-memory", "in use")
     end
 
     test "a machine whose capacity cannot be read shows no meters, and still counts the line", %{conn: conn} do
@@ -1736,7 +1746,7 @@ defmodule RailWeb.OverviewLiveTest do
           name: "Other Project",
           github_repo: "example/other",
           github_installation_id: 444,
-          linear_team_key: "OTH",
+          key: "OTH",
           default_branch: "main",
           clone_path: "/tmp/other",
           linear_workspace_id: project.linear_workspace_id
@@ -1784,7 +1794,7 @@ defmodule RailWeb.OverviewLiveTest do
           name: "Other Project",
           github_repo: "example/other",
           github_installation_id: 444,
-          linear_team_key: "OTH",
+          key: "OTH",
           default_branch: "main",
           clone_path: "/tmp/other",
           linear_workspace_id: project.linear_workspace_id
@@ -1962,8 +1972,7 @@ defmodule RailWeb.OverviewLiveTest do
         status: :waiting_for_resources,
         started_at: now,
         queued_at: now,
-        reserved_cpus: 2,
-        reserved_memory_gb: 4
+        reserved_cpus: 2
       })
 
       Phoenix.PubSub.broadcast(Rail.PubSub, "sandboxes", :sandboxes_changed)
@@ -1981,7 +1990,7 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#stat-shipped [data-qa='stat-value']", "0")
       assert has_element?(view, "#throughput-total", "0 total")
 
-      task.issue |> Issue.linear_changeset(%{completed_at: DateTime.utc_now()}) |> Repo.update!()
+      task.issue |> Issue.tracker_changeset(%{completed_at: DateTime.utc_now()}) |> Repo.update!()
       Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, task.issue.id})
 
       refute has_element?(view, "#in-progress-task-#{task.id}")
@@ -2012,7 +2021,7 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#up-next-featured-#{run.id}")
       assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")
 
-      task.issue |> Issue.linear_changeset(%{completed_at: DateTime.utc_now()}) |> Repo.update!()
+      task.issue |> Issue.tracker_changeset(%{completed_at: DateTime.utc_now()}) |> Repo.update!()
       Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, task.issue.id})
 
       refute has_element?(view, "[id^='up-next-'][href^='/tasks/#{task.id}']")
@@ -2059,7 +2068,7 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert has_element?(view, "#in-progress-task-#{task.id}")
 
-      task.issue |> Issue.linear_changeset(%{completed_at: DateTime.utc_now()}) |> Repo.update!()
+      task.issue |> Issue.tracker_changeset(%{completed_at: DateTime.utc_now()}) |> Repo.update!()
       Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issues_synced, project.id})
 
       refute has_element?(view, "#in-progress-task-#{task.id}")
@@ -2082,7 +2091,7 @@ defmodule RailWeb.OverviewLiveTest do
           name: "Other Project",
           github_repo: "example/other",
           github_installation_id: 444,
-          linear_team_key: "OTH",
+          key: "OTH",
           default_branch: "main",
           clone_path: "/tmp/other",
           linear_workspace_id: project.linear_workspace_id
@@ -2227,7 +2236,7 @@ defmodule RailWeb.OverviewLiveIssueEventsTest do
     end)
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Queued work"})
-    issue = issue |> Issue.linear_changeset(%{owner_user_id: user.id}) |> Repo.update!()
+    issue = issue |> Issue.tracker_changeset(%{owner_user_id: user.id}) |> Repo.update!()
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 
     assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/")

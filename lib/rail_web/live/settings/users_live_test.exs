@@ -43,7 +43,7 @@ defmodule RailWeb.Settings.UsersLiveTest do
         name: "Harbor API",
         github_repo: "harbor-labs/harbor-api",
         github_installation_id: 4_040,
-        linear_team_key: "HAR",
+        key: "HAR",
         default_branch: "main",
         clone_path: "/tmp/repos/harbor-api"
       })
@@ -53,7 +53,7 @@ defmodule RailWeb.Settings.UsersLiveTest do
         name: "Data pipelines",
         github_repo: "railai/pipelines",
         github_installation_id: 4_041,
-        linear_team_key: "DAT",
+        key: "DAT",
         default_branch: "main",
         clone_path: "/tmp/repos/pipelines",
         active: false

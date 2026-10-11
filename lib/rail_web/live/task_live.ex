@@ -4,10 +4,10 @@ defmodule RailWeb.TaskLive do
   with that role's work on the left and its conversation on the right.
 
   A tab is the whole page - the work and the conversation move together - and it
-  is in the URL, so a refresh comes back to it. The role a human picks stays
-  picked until the task moves to another stage, when the role for the new stage
-  takes the page over. A role that has not run has nothing to read, so it has no
-  tab until it does.
+  is in the URL with the Review item open on it, so a refresh comes back to both.
+  The role a human picks stays picked until the task moves to another stage, when
+  the role for the new stage takes the page over. A role that has not run has
+  nothing to read, so it has no tab until it does.
 
   A split parent's page adds a Children tab, a board of its children, right after Plan. A child is shown
   on its parent's page, named in the URL, with the same tab and a switcher to its siblings. A task Review
@@ -97,6 +97,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:suggestions, %{})
       |> assign(:cleaning_up, false)
       |> assign(:focus_file, nil)
+      |> assign(:review_item, nil)
       |> assign(:url_id, nil)
       |> assign(:child, nil)
       |> assign(:parent, nil)
@@ -120,16 +121,24 @@ defmodule RailWeb.TaskLive do
   def handle_params(%{"id" => task_id} = params, _uri, socket) do
     # The board is the parent's, so a child named beside it is left for the board.
     child = if params["tab"] != @children_tab, do: params["child"]
+    url = %{url_id: task_id, child: child, selected_tab: params["tab"], focus_file: params["file"]}
 
+    # The stage naming its item, or sync_tab_url catching the URL up, reads nothing again. A stale item is safe: the
+    # stage reads it only on mount or a new task, and the page clears it when it leaves a tab the URL named.
     socket =
-      socket
-      |> assign(:url_id, task_id)
-      |> assign(:task_id, task_id)
-      |> assign(:child, child)
-      |> assign(:url_tab, params["tab"])
-      |> assign(:selected_tab, params["tab"])
-      |> assign(:focus_file, params["file"])
-      |> refresh_task()
+      if socket.assigns.task != nil and Map.take(socket.assigns, Map.keys(url)) == url do
+        assign(socket, :url_tab, params["tab"])
+      else
+        socket
+        |> assign(:url_id, task_id)
+        |> assign(:task_id, task_id)
+        |> assign(:child, child)
+        |> assign(:url_tab, params["tab"])
+        |> assign(:selected_tab, params["tab"])
+        |> assign(:focus_file, params["file"])
+        |> assign(:review_item, params["item"])
+        |> refresh_task()
+      end
 
     {:noreply, socket}
   end
@@ -251,6 +260,7 @@ defmodule RailWeb.TaskLive do
           line={@line}
           approvable={@approvable}
           current_scope={@current_scope}
+          url_item={@review_item}
         >
           <:breadcrumb :if={@show_switcher}>
             <.child_switcher
@@ -414,13 +424,16 @@ defmodule RailWeb.TaskLive do
     {:noreply, handle_issue_event(event, params, socket, &refresh_task/1)}
   end
 
+  # The tab already open stays as it is, with the Review item it shows.
+  def handle_event("select_tab", %{"tab" => tab}, %{assigns: %{selected_tab: tab}} = socket), do: {:noreply, socket}
+
   # The board is the parent's, so a child's Children tab goes back to it.
   def handle_event("select_tab", %{"tab" => @children_tab}, socket) do
     {:noreply, push_patch(socket, to: ~p"/tasks/#{socket.assigns.parent.id}?tab=#{@children_tab}")}
   end
 
   def handle_event("select_tab", %{"tab" => tab}, socket) do
-    {:noreply, push_patch(socket, to: task_path(socket, tab))}
+    {:noreply, push_patch(socket, to: task_path(socket, tab, nil))}
   end
 
   def handle_event("cleanup", _params, socket) do
@@ -534,6 +547,14 @@ defmodule RailWeb.TaskLive do
     send_update(RunConversation, id: "run-conversation", lifted_plan_comments: ids)
     {:noreply, socket}
   end
+
+  # The Review stage opened another item, which the URL names in place for a reload; Findings, the default, goes unnamed.
+  def handle_info({:review_item, item}, %{assigns: %{pane: :review, selected_tab: tab}} = socket) do
+    item = if item != :findings, do: Atom.to_string(item)
+    {:noreply, push_patch(socket, to: task_path(socket, tab, item), replace: true)}
+  end
+
+  def handle_info({:review_item, _item}, socket), do: {:noreply, socket}
 
   # The Review tab's Browser item is open on this browser, or on none; only the subscription moves.
   def handle_info({:watch_browser, name}, socket) do
@@ -795,7 +816,13 @@ defmodule RailWeb.TaskLive do
 
   # Every link to a child, its own included, lands on its parent's page with it selected.
   defp show_task(socket, %Task{parent_task_id: parent_id, issue: issue}) when is_binary(parent_id) do
-    params = [child: issue.identifier, tab: socket.assigns.url_tab, file: socket.assigns.focus_file]
+    params = [
+      child: issue.identifier,
+      tab: socket.assigns.url_tab,
+      file: socket.assigns.focus_file,
+      item: socket.assigns.review_item
+    ]
+
     params = Enum.reject(params, fn {_key, value} -> is_nil(value) end)
     push_patch(socket, to: ~p"/tasks/#{parent_id}?#{params}")
   end
@@ -839,7 +866,8 @@ defmodule RailWeb.TaskLive do
     do: socket
 
   defp load_assignees(socket, %Task{} = task),
-    do: assign(socket, :assignees, Users.list_linear_users(project_id: task.project_id))
+    do:
+      assign(socket, :assignees, Users.list_assignable_users(project_id: task.project_id, tracker: task.project.tracker))
 
   defp apply_task(socket, %Task{} = task) do
     roles = if task.project_id, do: Rail.Roles.list_roles(task.project_id), else: []
@@ -1034,8 +1062,12 @@ defmodule RailWeb.TaskLive do
     socket
   end
 
+  # The item went with the tab the URL named, which the page has left, so a Review pane this render opens
+  # shows Findings, as the new URL says.
   defp sync_tab_url(%{assigns: %{selected_tab: tab}} = socket) do
-    push_patch(socket, to: task_path(socket, tab))
+    socket
+    |> assign(:review_item, nil)
+    |> push_patch(to: task_path(socket, tab, nil))
   end
 
   defp pane(nil), do: :issue
@@ -1060,7 +1092,7 @@ defmodule RailWeb.TaskLive do
     issue_tab = %{
       id: @issue_tab,
       stage: nil,
-      label: "Linear Issue",
+      label: "Issue",
       sublabel: task.issue.identifier,
       tone: :issue,
       badge: 0,
@@ -1258,11 +1290,19 @@ defmodule RailWeb.TaskLive do
   end
 
   # A child's tabs are its parent's page, so the child goes in the URL with the tab.
-  defp task_path(%{assigns: %{parent: %Task{id: parent_id}, task: %Task{id: id} = task}}, tab) when parent_id != id do
-    ~p"/tasks/#{parent_id}?child=#{task.issue.identifier}&tab=#{tab}"
-  end
+  defp task_path(socket, tab, item) do
+    {id, child} =
+      case socket.assigns do
+        %{parent: %Task{id: parent_id}, task: %Task{id: id, issue: issue}} when parent_id != id ->
+          {parent_id, issue.identifier}
 
-  defp task_path(%{assigns: %{url_id: url_id}}, tab), do: ~p"/tasks/#{url_id}?tab=#{tab}"
+        %{url_id: url_id} ->
+          {url_id, nil}
+      end
+
+    params = Enum.reject([child: child, tab: tab, item: item], fn {_key, value} -> is_nil(value) end)
+    ~p"/tasks/#{id}?#{params}"
+  end
 
   # A run waiting for usage reads apart from one waiting for a sandbox, and a Review round waiting on a person
   # is amber like a question.

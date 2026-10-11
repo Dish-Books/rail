@@ -10,49 +10,43 @@ defmodule RailWeb.Components.SandboxStatsTest do
       stats: %{
         cpus: 14,
         memory_gb: 56,
+        used_memory_gb: 30.25,
         reserved_cpus: 14,
-        reserved_memory_gb: 30,
         running: 9,
         agent_turns: 7,
         setups: 1,
         cis: 1,
         waiting: 3,
         oldest_waiting: "4m 12s",
-        short_on: %{cpus: true, memory: false}
+        short_on_cpus?: true
       }
     }
   end
 
-  test "says how much of the machine is reserved and what is free", %{stats: stats} do
+  test "says how many CPUs are reserved and how much memory is in use", %{stats: stats} do
     html = render_component(&SandboxStats.sandbox_stats/1, stats: stats)
 
     assert html =~ "of 14 · none free"
-    assert html =~ "of 56 · 26 GB free"
+    assert html =~ "30.3 GB"
+    assert html =~ "of 56 GB on this machine"
     assert html =~ "7 agent turns · 1 setup · 1 CI"
     assert html =~ "oldest 4m 12s"
   end
 
-  test "names what the line is waiting for" do
-    for {short_on, waiting, text} <- [
-          {%{cpus: true, memory: false}, 3, "Short on CPUs. Memory is not what they wait for."},
-          {%{cpus: false, memory: true}, 3, "Short on memory. CPUs are not what they wait for."},
-          {%{cpus: true, memory: true}, 3, "Short on CPUs and memory."},
-          {%{cpus: false, memory: false}, 3, "Each waits for the ones ahead of it."},
-          {%{cpus: false, memory: false}, 0, "Nothing is waiting."}
+  test "has a dash for memory on a machine that cannot say what is in use", %{stats: stats} do
+    html = render_component(&SandboxStats.sandbox_stats/1, stats: %{stats | used_memory_gb: nil})
+
+    assert html =~ "—"
+    assert html =~ "of 56 GB on this machine"
+  end
+
+  test "names what the line is waiting for", %{stats: stats} do
+    for {short_on_cpus?, waiting, text} <- [
+          {true, 3, "Short on CPUs."},
+          {false, 3, "Each waits for the ones ahead of it."},
+          {false, 0, "Nothing is waiting."}
         ] do
-      stats = %{
-        cpus: 0,
-        memory_gb: 0,
-        reserved_cpus: 0,
-        reserved_memory_gb: 0,
-        running: 0,
-        agent_turns: 1,
-        setups: 0,
-        cis: 0,
-        waiting: waiting,
-        oldest_waiting: nil,
-        short_on: short_on
-      }
+      stats = %{stats | waiting: waiting, oldest_waiting: nil, short_on_cpus?: short_on_cpus?}
 
       assert render_component(&SandboxStats.sandbox_stats/1, stats: stats) =~ text
     end

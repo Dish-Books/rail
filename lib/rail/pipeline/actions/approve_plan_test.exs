@@ -196,6 +196,21 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
     assert %Task{stage: :engineer} = Repo.reload!(task)
   end
 
+  test "a tracker that cannot hold the screenshot still gets the design's section", %{
+    task: task,
+    run: run,
+    picked: picked
+  } do
+    picked.()
+    {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan, design: "table"})
+    expect(Issues, :upload_asset, fn _project, _filename, "image/png", _bytes -> {:error, :unsupported} end)
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(system_scope(), run)
+
+    description = "The approved ticket body.\n\n## Design: Table\n\nDense rows."
+    assert %Issue{title: "Approved title", description: ^description} = Repo.get!(Issue, task.issue_id)
+  end
+
   test "a second approval gets the invalid-stage error and publishes nothing again", %{task: task, run: run} do
     assert {:ok, _approved} = Pipeline.approve_plan(system_scope(), run)
     {:ok, _issue} = Issues.update_issue(Repo.get!(Issue, task.issue_id), %{description: "Edited in Linear since."})

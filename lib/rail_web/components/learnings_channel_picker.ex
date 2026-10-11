@@ -321,7 +321,7 @@ defmodule RailWeb.Components.LearningsChannelPicker do
   defp close(socket), do: socket |> assign(:open, false) |> assign(:query, "")
 
   # Slack is asked once, on first open; a workspace it cannot list for adds no group. The digest names
-  # Linear issues, so a channel triage marked as shared outside the team is never offered.
+  # tracker issues, so a channel triage marked as shared outside the team is never offered.
   defp load_groups(%{assigns: %{groups: nil}} = socket) do
     external = MapSet.new(Projects.list_slack_channels(external: true), &{&1.slack_workspace_id, &1.external_id})
 

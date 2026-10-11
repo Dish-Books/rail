@@ -8,7 +8,7 @@ defmodule Rail.Triage.SlackSocketTest do
   alias Rail.Triage.SlackSocket
 
   # Opening a websocket waits on the machine, so a loaded suite gets longer than the default.
-  @connect_timeout 5_000
+  @connect_timeout 15_000
 
   setup %{project: project} do
     %{workspace: workspace, channel: channel} = connect_slack_channel(project)

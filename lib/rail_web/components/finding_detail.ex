@@ -1,10 +1,10 @@
 defmodule RailWeb.Components.FindingDetail do
   @moduledoc """
   One finding, read whole: what is wrong, where, the fix that points the way and why, the evidence, the
-  rule with every place it applies, the commits it was raised and fixed in, and its dated history, a note
-  per pass, ruling and fix, each in its round. Fix and Don't fix sit in its header. Each commit on the
-  branch, and Open in Diff, opens that commit in the Diff item at the finding's file. Each piece of it
-  takes the reader's comments, under it, as a line of the plan does.
+  rule with every place it applies, each with its code and what the latest fix did there, the commits it
+  was raised and fixed in, and its dated history, a note per pass, ruling and fix, each in its round. Fix
+  and Don't fix sit in its header. Each commit on the branch opens in the Diff item at the finding's file.
+  Each piece of it takes the reader's comments, under it, as a line of the plan does.
   """
   use RailWeb, :html
 
@@ -18,7 +18,10 @@ defmodule RailWeb.Components.FindingDetail do
   attr :count, :integer, required: true
   attr :decidable, :boolean, required: true
   attr :running, :boolean, required: true
-  attr :hunk, :any, default: nil, doc: "the code range the finding points at, as `Rail.Git.load_diff_hunk/4` reads it"
+  attr :where_code, :any, default: nil, doc: "the Where's lines, as `Rail.Git.load_diff_hunks/3` reads them"
+  attr :place_codes, :map, default: %{}, doc: "each code place's lines by its index, its Where place's left out"
+  attr :where_place, :integer, default: nil, doc: "the index of the place whose lines are the Where's"
+  attr :head, :string, default: nil, doc: "the commit the branch is on, which unchanged lines read as"
   attr :filed, :list, default: [], doc: "`%{index:, evidence:, kind:, url:}` for each attached piece"
   attr :filed_index, :integer, default: 0
 
@@ -44,7 +47,16 @@ defmodule RailWeb.Components.FindingDetail do
     picked = Enum.find(assigns.filed, &(&1.index == assigns.filed_index)) || List.first(assigns.filed)
 
     commenting = Map.take(assigns, [:finding, :comments, :draft, :offered, :target])
-    assigns = assigns |> assign(:picked, picked) |> assign(:commenting, commenting)
+    cards? = length(assigns.finding.places) > 1
+    # A card tagged Where shows the Where's code, so the box above draws it only when no card does.
+    where_box? = assigns.where_code != nil and (not cards? or assigns.where_place == nil)
+
+    assigns =
+      assigns
+      |> assign(:picked, picked)
+      |> assign(:commenting, commenting)
+      |> assign(:cards?, cards?)
+      |> assign(:where_box?, where_box?)
 
     ~H"""
     <div
@@ -208,37 +220,25 @@ defmodule RailWeb.Components.FindingDetail do
           </p>
 
           <div
-            :if={@hunk}
+            :if={@where_box?}
             data-qa="finding_diff"
             class="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden"
           >
-            <div class="flex items-center gap-2.5 px-3.5 py-2.5 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
-              <span class="min-w-0 truncate font-mono text-[11.5px] text-slate-700 dark:text-slate-300">
-                {@hunk.display_path}
+            <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-3.5 py-2.5 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+              <span class="min-w-0 break-all font-mono text-[11.5px] text-slate-700 dark:text-slate-300">
+                {@where_code.display_path}
               </span>
-              <.diff_stat additions={@hunk.additions} deletions={@hunk.deletions} font_size={11} />
-              <button
-                type="button"
+              <.code_state excerpt={@where_code} />
+              <.open_in_diff
+                :if={@where_code.in_diff?}
                 id="finding-open-in-diff"
-                data-qa="finding_open_in_diff"
-                phx-click="open_diff"
-                phx-value-commit={on_branch(@finding.raised_in, @labels)}
-                phx-value-file={@hunk.path}
-                phx-target={@target}
-                class="ml-auto shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-              >
-                Open{if on_branch(@finding.raised_in, @labels), do: " #{short(@finding.raised_in)}"} in Diff
-                <.icon name="pi-arrow-up-right" class="size-3" />
-              </button>
+                qa="finding_open_in_diff"
+                commit={on_branch(@finding.raised_in, @labels)}
+                file={@where_code.path}
+                target={@target}
+              />
             </div>
-            <.diff_hunk rows={@hunk.rows} />
-            <p
-              :if={elided(@hunk)}
-              data-qa="finding_other_hunks"
-              class="px-3.5 py-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 text-[11.5px] text-slate-500 dark:text-slate-400"
-            >
-              {elided(@hunk)}
-            </p>
+            <.finding_code excerpt={@where_code} head={@head} />
           </div>
 
           <div
@@ -312,7 +312,7 @@ defmodule RailWeb.Components.FindingDetail do
           </div>
 
           <div
-            :if={@finding.rule != nil or @finding.places != []}
+            :if={@finding.rule != nil or (@finding.places != [] and not @cards?)}
             id="finding-rule"
             data-qa="finding_rule"
             class="rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-3"
@@ -328,14 +328,15 @@ defmodule RailWeb.Components.FindingDetail do
               <.under commenting={@commenting} piece={:rule} class="mt-1.5" />
             </div>
             <p
-              :if={@finding.places != []}
+              :if={@finding.places != [] and not @cards?}
               class="mt-3 text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400"
             >
-              Applies in {places(@finding.places)}
+              Applies in 1 place
             </p>
-            <ul class="mt-1.5 space-y-1">
+            <ul :if={not @cards?} class="mt-1.5 space-y-1">
               <li
                 :for={{place, n} <- Enum.with_index(@finding.places)}
+                id={"finding-place-#{n + 1}"}
                 data-qa="finding_place"
                 class="group/line relative flex flex-wrap items-baseline gap-x-2 min-w-0"
               >
@@ -354,12 +355,10 @@ defmodule RailWeb.Components.FindingDetail do
                   >
                     {place.label}
                   </span>
-                  <span
-                    :if={place.left_reason}
-                    class="block text-[11.5px] text-amber-700 dark:text-amber-300 wrap-anywhere"
-                  >
-                    Left as it is: {place.left_reason}
-                  </span>
+                  <.place_fix
+                    fix={Finding.calculate_place_fix(@finding, place)}
+                    reason={place.left_reason}
+                  />
                 </span>
                 <.under
                   commenting={@commenting}
@@ -369,6 +368,23 @@ defmodule RailWeb.Components.FindingDetail do
                 />
               </li>
             </ul>
+          </div>
+
+          <div :if={@cards?} id="finding-places" data-qa="finding_places" class="space-y-3">
+            <p class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Applies in {length(@finding.places)} places
+            </p>
+            <.place_card
+              :for={{place, n} <- Enum.with_index(@finding.places)}
+              place={place}
+              index={n}
+              excerpt={if n == @where_place, do: @where_code, else: @place_codes[n]}
+              where?={n == @where_place}
+              fix={Finding.calculate_place_fix(@finding, place)}
+              raised_in={on_branch(@finding.raised_in, @labels)}
+              head={@head}
+              commenting={@commenting}
+            />
           </div>
 
           <div data-qa="finding_commits" class="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -439,6 +455,169 @@ defmodule RailWeb.Components.FindingDetail do
         </button>
       </div>
     </div>
+    """
+  end
+
+  attr :place, FindingPlace, required: true
+  attr :index, :integer, required: true
+  attr :excerpt, :map, default: nil
+  attr :where?, :boolean, required: true
+  attr :fix, :any, required: true
+  attr :raised_in, :string, default: nil, doc: "the commit the Where card opens, when the branch still has it"
+  attr :head, :string, default: nil
+  attr :commenting, :map, required: true
+
+  # A code place shows its lines, always open; a screen place its steps. Comments sit under the card.
+  defp place_card(assigns) do
+    ~H"""
+    <div
+      id={"finding-place-#{@index + 1}"}
+      data-qa="finding_place"
+      data-where={@where?}
+      class="group/line relative"
+    >
+      <.add commenting={@commenting} piece={:place} index={@index} class="-left-[26px] top-2" />
+      <div class="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+        <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-3.5 py-2 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+          <span
+            aria-label={"Place #{@index + 1}"}
+            class="size-[18px] shrink-0 grid place-items-center rounded-md bg-slate-200 dark:bg-slate-700 text-[10px] font-bold text-slate-700 dark:text-slate-200"
+          >
+            {@index + 1}
+          </span>
+          <.icon
+            :if={!@place.file}
+            name="pi-browser"
+            class="size-[13px] text-slate-500 dark:text-slate-400"
+          />
+          <span
+            :if={@place.file}
+            class="min-w-0 break-all font-mono text-[11.5px] text-slate-700 dark:text-slate-300"
+          >
+            {FindingPlace.describe(@place)}
+          </span>
+          <span
+            :if={!@place.file}
+            class="min-w-0 text-[12.5px] font-semibold text-slate-700 dark:text-slate-200 wrap-anywhere"
+          >
+            {@place.screen}
+          </span>
+          <span
+            :if={@where?}
+            data-qa="finding_place_where"
+            class="shrink-0 rounded px-1.5 py-px text-[10px] font-semibold bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 ring-1 ring-inset ring-slate-300 dark:ring-slate-600"
+          >
+            Where
+          </span>
+          <.code_state :if={@excerpt} excerpt={@excerpt} />
+          <span
+            :if={@place.label}
+            class="min-w-0 text-[11.5px] text-slate-500 dark:text-slate-400 wrap-anywhere"
+          >
+            {@place.label}
+          </span>
+          <.open_in_diff
+            :if={@excerpt && @excerpt.in_diff?}
+            id={"finding-place-#{@index + 1}-open-in-diff"}
+            qa="finding_place_open_in_diff"
+            commit={if @where?, do: @raised_in}
+            file={@excerpt.path}
+            target={@commenting.target}
+          />
+        </div>
+        <div
+          :if={@fix}
+          class="px-3.5 py-1.5 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+        >
+          <.place_fix fix={@fix} reason={@place.left_reason} />
+        </div>
+        <.finding_code :if={@excerpt} excerpt={@excerpt} head={@head} />
+        <ol
+          :if={!@place.file and @place.steps != []}
+          class="py-2.5 pr-3.5 list-decimal pl-9 text-[13px] text-slate-700 dark:text-slate-200 space-y-0.5 bg-white dark:bg-slate-900"
+        >
+          <li :for={step <- @place.steps} class="wrap-anywhere">{step}</li>
+        </ol>
+      </div>
+      <.under commenting={@commenting} piece={:place} index={@index} class="mt-1.5" />
+    </div>
+    """
+  end
+
+  attr :fix, :any, required: true, doc: "`Rail.Pipeline.Schemas.Finding.calculate_place_fix/2`"
+  attr :reason, :string, default: nil
+
+  # Covered and left read in the same gray: a place left on purpose is not a warning.
+  defp place_fix(%{fix: nil} = assigns), do: ~H""
+
+  defp place_fix(%{fix: {:covered, _round}} = assigns) do
+    ~H"""
+    <p
+      data-qa="finding_place_fix"
+      class="flex items-center gap-1 text-[11.5px] font-semibold text-slate-600 dark:text-slate-300"
+    >
+      <.icon name="pi-check-circle" class="size-[13px]" />Covered by fix round {elem(@fix, 1)}
+    </p>
+    """
+  end
+
+  defp place_fix(%{fix: {:left, _round}} = assigns) do
+    ~H"""
+    <p
+      data-qa="finding_place_fix"
+      class="flex items-start gap-1 text-[11.5px] text-slate-600 dark:text-slate-300 wrap-anywhere"
+    >
+      <.icon
+        name="pi-arrow-bend-down-right"
+        class="size-[13px] mt-px text-slate-500 dark:text-slate-400"
+      />
+      <span><span class="font-semibold">Left by fix round {elem(@fix, 1)}:</span> {@reason}</span>
+    </p>
+    """
+  end
+
+  attr :excerpt, :map, required: true
+
+  # Lines the branch does not have are not unchanged, so their file's stat stands in the chip's place.
+  defp code_state(%{excerpt: %{changed?: false, missing: nil}} = assigns) do
+    ~H"""
+    <span
+      data-qa="finding_code_unchanged_chip"
+      class="inline-flex items-center gap-1 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200"
+    >
+      <.icon name="pi-equals" class="size-[11px]" />Unchanged
+    </span>
+    """
+  end
+
+  defp code_state(assigns) do
+    ~H"""
+    <.diff_stat additions={@excerpt.additions} deletions={@excerpt.deletions} font_size={11} />
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :qa, :string, required: true
+  attr :commit, :string, default: nil
+  attr :file, :string, required: true
+  attr :target, :any, required: true
+
+  # Only a file in the branch's diff has a section to put in front.
+  defp open_in_diff(assigns) do
+    ~H"""
+    <button
+      type="button"
+      id={@id}
+      data-qa={@qa}
+      phx-click="open_diff"
+      phx-value-commit={@commit}
+      phx-value-file={@file}
+      phx-target={@target}
+      class="ml-auto shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+    >
+      Open{if @commit, do: " #{short(@commit)}"} in Diff
+      <.icon name="pi-arrow-up-right" class="size-3" />
+    </button>
     """
   end
 
@@ -675,9 +854,6 @@ defmodule RailWeb.Components.FindingDetail do
 
   defp on_branch(commit, labels), do: if(is_binary(commit) and Map.has_key?(labels, commit), do: commit)
 
-  defp places([_one]), do: "1 place"
-  defp places(places), do: "#{length(places)} places"
-
   defp round_chip(%Finding{carried_round: carried, round: round}) when is_integer(carried),
     do: "Round #{round}, carried into round #{carried}"
 
@@ -722,20 +898,6 @@ defmodule RailWeb.Components.FindingDetail do
   defp evidence_icon(:pdf), do: "pi-file-pdf"
   defp evidence_icon(:file), do: "pi-file"
   defp evidence_icon(_text), do: "pi-file-text"
-
-  # Only a window around the lines the finding names is shown, so the pane says what it left out.
-  defp elided(%{hidden_lines: hidden, other_hunks: others}) do
-    [{hidden, "line", "lines"}, {others, "other change", "other changes"}]
-    |> Enum.reject(fn {count, _one, _many} -> count == 0 end)
-    |> Enum.map(fn
-      {1, one, _many} -> "1 more #{one}"
-      {count, _one, many} -> "#{count} more #{many}"
-    end)
-    |> case do
-      [] -> nil
-      parts -> "#{Enum.join(parts, " and ")} in this file."
-    end
-  end
 
   defp severity_chip(:blocker), do: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
   defp severity_chip(:major), do: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"

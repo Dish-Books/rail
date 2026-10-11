@@ -35,7 +35,7 @@ defmodule Rail.Tools.BootTest do
         name: "Boot Project",
         github_repo: "org/boot-#{System.unique_integer([:positive])}",
         github_installation_id: System.unique_integer([:positive]),
-        linear_team_key: "BOO",
+        key: "BOO",
         default_branch: "main",
         clone_path: Path.join(tmp_dir, "clone")
       })
@@ -649,8 +649,7 @@ defmodule Rail.Tools.BootTest do
           container_id: "c-live",
           stream_offset: byte_size(before) + 1,
           started_at: DateTime.utc_now(),
-          reserved_cpus: 1,
-          reserved_memory_gb: 2
+          reserved_cpus: 1
         })
 
       Pipeline.append_run_events(run.id, os_process.id, [before])
@@ -720,12 +719,11 @@ defmodule Rail.Tools.BootTest do
         runtime: :docker,
         container_id: "c-oom",
         started_at: DateTime.utc_now(),
-        reserved_cpus: 2,
-        reserved_memory_gb: 4
+        reserved_cpus: 2
       })
 
       assert [{:adopted_dead, %OsProcess{exit_code: 137, ended_reason: :out_of_memory}}] = Boot.reconcile()
-      assert {:ok, %Run{error: "Killed: it used more than the 4 GB its role reserves."}} = Pipeline.get_run(run.id)
+      assert {:ok, %Run{error: "Killed: this machine ran out of memory."}} = Pipeline.get_run(run.id)
     end
 
     test "running CI has its exit file as its result", %{run: run, tmp_dir: tmp_dir} do

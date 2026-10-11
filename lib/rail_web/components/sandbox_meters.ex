@@ -1,7 +1,7 @@
 defmodule RailWeb.Components.SandboxMeters do
   @moduledoc """
-  The Overview's view of the machine: how much of its CPU and memory running
-  sandboxes reserve, one segment each, and what waits for the rest.
+  The Overview's view of the machine: how many of its CPUs running sandboxes
+  reserve, one segment each, how much of its memory is in use, and what waits.
   """
   use RailWeb, :html
 
@@ -54,20 +54,16 @@ defmodule RailWeb.Components.SandboxMeters do
               <.icon name="pi-memory" class="size-4 text-slate-400" />Memory
             </span>
             <span class="font-mono text-slate-500 dark:text-slate-400">
-              <span class="text-slate-900 dark:text-slate-100">{@capacity.reserved_memory_gb} of {@capacity.memory_gb} GB</span>
-              reserved
+              <span class="text-slate-900 dark:text-slate-100">{memory(@capacity.used_memory_gb)} of {@capacity.memory_gb} GB</span>
+              in use
             </span>
           </div>
-          <div class="flex h-2.5 gap-[2px] rounded-full overflow-hidden bg-slate-200 dark:bg-slate-700/70">
+          <div class="flex h-2.5 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-700/70">
             <span
-              :for={sandbox <- @running}
               class="h-full bg-blue-500"
-              style={"width:#{share(sandbox.reserved_memory_gb, @capacity.memory_gb)}%"}
+              style={"width:#{share(@capacity.used_memory_gb || 0, @capacity.memory_gb)}%"}
             />
           </div>
-          <p class="mt-1 font-mono text-[11px] text-slate-500 dark:text-slate-400">
-            {max(@capacity.memory_gb - @capacity.reserved_memory_gb, 0)} GB free
-          </p>
         </div>
 
         <.link
@@ -86,5 +82,9 @@ defmodule RailWeb.Components.SandboxMeters do
     """
   end
 
-  defp share(reserved, total), do: Float.round(reserved / max(total, 1) * 100, 2)
+  defp share(reserved, total), do: min(Float.round(reserved / max(total, 1) * 100, 2), 100)
+
+  # Nothing is in use on a machine that cannot say; it is a dash, not a zero.
+  defp memory(nil), do: "—"
+  defp memory(used), do: :erlang.float_to_binary(used / 1, decimals: 1)
 end

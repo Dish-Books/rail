@@ -440,60 +440,26 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
       %{other: other}
     end
 
-    test "waits in line, reads as waiting, and says which resource it is short of", %{run: run, other: other} do
+    test "waits in line, reads as waiting, and says every CPU is reserved", %{run: run, other: other} do
       Repo.insert!(%OsProcess{
         run_id: other.id,
         task_id: other.task_id,
         stream_path: "/dev/null",
         status: :running,
         started_at: DateTime.utc_now(),
-        reserved_cpus: 4,
-        reserved_memory_gb: 2
+        reserved_cpus: 4
       })
 
       reject(Tools, :spawn_os_process, 3)
 
-      assert {:ok, %OsProcess{status: :waiting_for_resources, reserved_cpus: 1, reserved_memory_gb: 2, os_pid: nil}} =
+      assert {:ok, %OsProcess{status: :waiting_for_resources, reserved_cpus: 1, os_pid: nil}} =
                Tools.start_os_process(run, ["2"])
 
       assert :waiting = run.id |> then(&Repo.get!(Run, &1)) |> Run.state()
 
       assert [
-               "[rail] Turn 1 needs 1 CPU and 2 GB, and every CPU on this machine is reserved. " <>
+               "[rail] Turn 1 needs 1 CPU, and every CPU on this machine is reserved. " <>
                  "It is 1st in line and starts on its own as soon as enough is free."
-             ] = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
-    end
-
-    test "names memory when memory is what it lacks, and its place behind the runs ahead", %{run: run, other: other} do
-      Repo.insert!(%OsProcess{
-        run_id: other.id,
-        task_id: other.task_id,
-        stream_path: "/dev/null",
-        status: :running,
-        started_at: DateTime.utc_now(),
-        reserved_cpus: 1,
-        reserved_memory_gb: 7
-      })
-
-      Repo.insert!(%OsProcess{
-        run_id: other.id,
-        task_id: other.task_id,
-        stream_path: "/dev/null",
-        status: :waiting_for_resources,
-        started_at: DateTime.utc_now(),
-        queued_at: DateTime.shift(DateTime.utc_now(), minute: -1),
-        reserved_cpus: 1,
-        reserved_memory_gb: 4,
-        launch: "{}"
-      })
-
-      reject(Tools, :spawn_os_process, 3)
-
-      assert {:ok, %OsProcess{status: :waiting_for_resources}} = Tools.start_os_process(run, ["2"])
-
-      assert [
-               "[rail] Turn 1 needs 1 CPU and 2 GB, and only 1 GB of this machine's memory is free. " <>
-                 "It is 2nd in line and starts on its own as soon as enough is free."
              ] = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
     end
 
@@ -505,8 +471,7 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
         stream_path: "/dev/null",
         status: :running,
         started_at: DateTime.utc_now(),
-        reserved_cpus: 2,
-        reserved_memory_gb: 2
+        reserved_cpus: 2
       })
 
       Repo.insert!(%OsProcess{
@@ -517,7 +482,6 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
         started_at: DateTime.utc_now(),
         queued_at: DateTime.shift(DateTime.utc_now(), minute: -1),
         reserved_cpus: 3,
-        reserved_memory_gb: 2,
         launch: "{}"
       })
 
@@ -526,7 +490,7 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
       assert {:ok, %OsProcess{status: :waiting_for_resources}} = Tools.start_os_process(run, ["2"])
 
       assert [
-               "[rail] Turn 1 needs 1 CPU and 2 GB, and the runs ahead of it in line get what is free first. " <>
+               "[rail] Turn 1 needs 1 CPU, and the runs ahead of it in line get what is free first. " <>
                  "It is 2nd in line and starts on its own as soon as enough is free."
              ] = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
     end
@@ -541,7 +505,6 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
         started_at: DateTime.utc_now(),
         queued_at: DateTime.shift(DateTime.utc_now(), minute: -1),
         reserved_cpus: 16,
-        reserved_memory_gb: 2,
         launch: "{}"
       })
 
@@ -553,14 +516,13 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
       assert {:ok,
               %Run{
                 status: :finished,
-                error:
-                  "It needs 16 CPUs and 2 GB, and this machine has 4 CPUs and 8 GB to reserve, so it could never start."
+                error: "It needs 16 CPUs, and this machine has 4 CPUs to reserve, so it could never start."
               }} = Pipeline.get_run(other.id)
     end
 
-    test "names both resources when it is short of both", %{run: run, other: other, scope: scope} do
+    test "says how many CPUs are free when there are some, but too few", %{run: run, other: other, scope: scope} do
       {:ok, role} = Roles.get_role(id: run.role_id)
-      {:ok, _role} = Roles.update_role(scope, role, %{reserved_cpus: 3, reserved_memory_gb: 4})
+      {:ok, _role} = Roles.update_role(scope, role, %{reserved_cpus: 3})
 
       Repo.insert!(%OsProcess{
         run_id: other.id,
@@ -568,8 +530,7 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
         stream_path: "/dev/null",
         status: :running,
         started_at: DateTime.utc_now(),
-        reserved_cpus: 2,
-        reserved_memory_gb: 8
+        reserved_cpus: 2
       })
 
       reject(Tools, :spawn_os_process, 3)
@@ -577,8 +538,8 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
       assert {:ok, %OsProcess{status: :waiting_for_resources}} = Tools.start_os_process(run, ["2"])
 
       assert [
-               "[rail] Turn 1 needs 3 CPUs and 4 GB, and only 2 CPUs on this machine are free and " <>
-                 "all of this machine's memory is reserved. It is 1st in line and starts on its own as soon as enough is free."
+               "[rail] Turn 1 needs 3 CPUs, and only 2 CPUs on this machine are free. " <>
+                 "It is 1st in line and starts on its own as soon as enough is free."
              ] = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
     end
 
@@ -604,7 +565,6 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
         started_at: DateTime.utc_now(),
         queued_at: DateTime.shift(DateTime.utc_now(), minute: -1),
         reserved_cpus: 1,
-        reserved_memory_gb: 2,
         launch: launch
       })
 
@@ -629,7 +589,7 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
       Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
       reject(Tools, :spawn_os_process, 3)
 
-      error = "It needs 3 CPUs and 2 GB, and this machine has 2 CPUs and 8 GB to reserve, so it could never start."
+      error = "It needs 3 CPUs, and this machine has 2 CPUs to reserve, so it could never start."
 
       assert {:error, {:spawn_failed, _reason, %Run{status: :finished, error: ^error} = failed}} =
                Tools.start_os_process(run, ["2"])

@@ -63,8 +63,13 @@ defmodule Rail.Pipeline.Utils.OpenPullRequest do
     end
   end
 
-  defp body(%Issue{url: url}) do
+  # `Closes` closes the issue when the pull request merges into the default branch, as Rail's do.
+  defp body(%Issue{url: url} = issue) do
     ready = "Opened by Rail as a draft. It is marked ready for review once the change is ready to merge."
-    if is_binary(url), do: "#{url}\n\n#{ready}", else: ready
+    Enum.join(Enum.filter(["Closes #{closing_ref(issue)}", url, ready], &is_binary/1), "\n\n")
   end
+
+  # GitHub only closes `#N` in the pull request's own repository; Linear's integration reads the identifier.
+  defp closing_ref(%Issue{tracker: :github, number: number}), do: "##{number}"
+  defp closing_ref(%Issue{identifier: identifier}), do: identifier
 end

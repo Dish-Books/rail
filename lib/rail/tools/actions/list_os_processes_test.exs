@@ -63,8 +63,7 @@ defmodule Rail.Tools.Actions.ListOsProcessesTest do
           status: :waiting_for_resources,
           started_at: now,
           queued_at: queued_at,
-          reserved_cpus: 1,
-          reserved_memory_gb: 2
+          reserved_cpus: 1
         })
       end
 
@@ -83,8 +82,7 @@ defmodule Rail.Tools.Actions.ListOsProcessesTest do
         status: :finished,
         started_at: now,
         ended_at: now,
-        reserved_cpus: 1,
-        reserved_memory_gb: 2
+        reserved_cpus: 1
       })
 
     Repo.insert!(%OsProcess{
@@ -94,8 +92,7 @@ defmodule Rail.Tools.Actions.ListOsProcessesTest do
       status: :finished,
       started_at: now,
       ended_at: DateTime.shift(now, hour: -2),
-      reserved_cpus: 1,
-      reserved_memory_gb: 2
+      reserved_cpus: 1
     })
 
     assert [%OsProcess{id: ^recent_id}] =

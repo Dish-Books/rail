@@ -15,8 +15,8 @@ defmodule Rail.Tools.Actions.InstallToolchain do
 
   @doc """
   Runs a queued install's command through `/bin/sh` in a checkout of the project's
-  default branch, beside Rail rather than in a sandbox, so no role's memory cap
-  applies and what it builds with is kept. One at a time on this machine.
+  default branch, beside Rail rather than in a sandbox, so what it builds with is
+  kept. One at a time on this machine.
 
   Returns `{:ok, install}`, finished or failed with the end of what the command
   wrote, or `{:error, :not_queued}` for one that has settled or is gone.

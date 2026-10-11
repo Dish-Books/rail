@@ -71,7 +71,6 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
         started_at: DateTime.utc_now(),
         queued_at: DateTime.utc_now(),
         reserved_cpus: 4,
-        reserved_memory_gb: 2,
         launch: launch
       })
 
@@ -86,7 +85,6 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
         started_at: DateTime.utc_now(),
         queued_at: DateTime.shift(DateTime.utc_now(), second: 1),
         reserved_cpus: 4,
-        reserved_memory_gb: 2,
         launch: launch
       })
 

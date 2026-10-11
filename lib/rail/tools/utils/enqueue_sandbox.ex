@@ -27,7 +27,6 @@ defmodule Rail.Tools.Utils.EnqueueSandbox do
         status: :waiting_for_resources,
         runtime: Rail.sandbox_runtime(),
         reserved_cpus: role.reserved_cpus,
-        reserved_memory_gb: role.reserved_memory_gb,
         queued_at: DateTime.utc_now(),
         launch: Jason.encode!(spec)
       })
@@ -58,7 +57,7 @@ defmodule Rail.Tools.Utils.EnqueueSandbox do
     {:ok, %{position: position}} = Tools.get_queue_position(run)
 
     line =
-      "[rail] #{label(os_process)} needs #{cpus(os_process.reserved_cpus)} and #{os_process.reserved_memory_gb} GB, " <>
+      "[rail] #{label(os_process)} needs #{cpus(os_process.reserved_cpus)}, " <>
         "and #{reason(os_process, Tools.get_sandbox_capacity())}. " <>
         "It is #{ordinal(position)} in line and starts on its own as soon as enough is free."
 
@@ -84,16 +83,11 @@ defmodule Rail.Tools.Utils.EnqueueSandbox do
   end
 
   defp reason(%OsProcess{} = os_process, {:ok, capacity}) do
-    free = %{
-      cpus: max(capacity.cpus - capacity.reserved_cpus, 0),
-      memory_gb: max(capacity.memory_gb - capacity.reserved_memory_gb, 0)
-    }
+    free = max(capacity.cpus - capacity.reserved_cpus, 0)
 
-    case OsProcess.short_of(os_process, free) do
-      %{cpus: 0, memory_gb: 0} -> "the runs ahead of it in line get what is free first"
-      %{cpus: 0} -> memory_free(free.memory_gb)
-      %{memory_gb: 0} -> cpus_free(free.cpus)
-      _both -> "#{cpus_free(free.cpus)} and #{memory_free(free.memory_gb)}"
+    case OsProcess.short_of(os_process, %{cpus: free}) do
+      0 -> "the runs ahead of it in line get what is free first"
+      _short -> cpus_free(free)
     end
   end
 
@@ -101,9 +95,6 @@ defmodule Rail.Tools.Utils.EnqueueSandbox do
 
   defp cpus_free(0), do: "every CPU on this machine is reserved"
   defp cpus_free(free), do: "only #{cpus(free)} on this machine #{if free == 1, do: "is", else: "are"} free"
-
-  defp memory_free(0), do: "all of this machine's memory is reserved"
-  defp memory_free(free), do: "only #{free} GB of this machine's memory is free"
 
   defp cpus(count), do: if(count == 1, do: "1 CPU", else: "#{count} CPUs")
 

@@ -129,7 +129,7 @@ defmodule Rail.Pipeline.Schemas.Run do
   done — a run the user stopped, and a run that ended without stating a verdict,
   are the same situation and are resolved the same way, by sending a message.
 
-  `:waiting` is a run in line for the CPU and memory its role reserves, or for
+  `:waiting` is a run in line for the CPUs its role reserves, or for
   an account with usage left, which starts on its own once there is.
 
   `nil` reads as `:queued`: a stage with no run has not started. With its questions
@@ -208,8 +208,8 @@ defmodule Rail.Pipeline.Schemas.Run do
   moves on its own - a failure is fixed by a message and a stopped run is resumed
   by one - so leaving them out is how a stage goes quiet with nobody told.
 
-  A task whose issue Linear completed has shipped, so it waits on nobody either, and nor does one whose
-  issue Linear canceled or marked a duplicate, since nobody will work on it again.
+  A task whose issue its tracker completed has shipped, so it waits on nobody either, and nor does one whose
+  issue its tracker canceled or marked a duplicate, since nobody will work on it again.
   """
   def needs_attention?(%__MODULE__{role: %Role{} = role, task: %Task{issue: %Issue{} = issue} = task} = run) do
     task.stage != :merged and is_nil(task.merged_at) and is_nil(issue.completed_at) and

@@ -186,8 +186,7 @@ defmodule Rail.Tools.Actions.StartAfterUsageResetTest do
       stream_path: "/dev/null",
       status: :running,
       started_at: DateTime.utc_now(),
-      reserved_cpus: 4,
-      reserved_memory_gb: 8
+      reserved_cpus: 4
     })
 
     reject(Tools, :spawn_os_process, 3)

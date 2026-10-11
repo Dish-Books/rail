@@ -141,7 +141,7 @@ defmodule RailWeb.TaskLiveTest do
     project: project
   } do
     {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
-    {:ok, engineer} = Roles.update_role(system_scope(), engineer, %{reserved_cpus: 2, reserved_memory_gb: 4})
+    {:ok, engineer} = Roles.update_role(system_scope(), engineer, %{reserved_cpus: 2})
     {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
     now = DateTime.utc_now()
 
@@ -155,14 +155,13 @@ defmodule RailWeb.TaskLiveTest do
       status: :waiting_for_resources,
       started_at: now,
       queued_at: now,
-      reserved_cpus: 2,
-      reserved_memory_gb: 4
+      reserved_cpus: 2
     })
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
     assert has_element?(view, "[data-qa='task_status_chip']", "Implement waiting for resources")
-    assert has_element?(view, "#task-line[href='/sandboxes']", "1st in line for 2 CPUs · 4 GB")
+    assert has_element?(view, "#task-line[href='/sandboxes']", "1st in line for 2 CPUs")
     assert has_element?(view, "#task-tab-#{engineer.id}", "waiting for resources")
     assert has_element?(view, "#task-tab-#{engineer.id} [data-qa='task-tab-dot'][data-tone='waiting']")
   end
@@ -1001,7 +1000,7 @@ defmodule RailWeb.TaskLiveTest do
              "#cleanup-task[data-confirm='TLV-1 is not marked done in Linear. Clean up this task anyway? Its worktree and scratch files will be deleted.']"
            )
 
-    issue |> Issue.linear_changeset(%{state: :done}) |> Repo.update!()
+    issue |> Issue.tracker_changeset(%{state: :done}) |> Repo.update!()
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
     assert has_element?(
@@ -1170,7 +1169,7 @@ defmodule RailWeb.TaskLiveTest do
 
     other_issue =
       %Issue{}
-      |> Issue.linear_changeset(%{
+      |> Issue.tracker_changeset(%{
         project_id: project.id,
         external_id: "lin_task_live_other",
         identifier: "TLV-2",
@@ -1211,7 +1210,7 @@ defmodule RailWeb.TaskLiveTest do
     test "the issue comes first and the stage's role is the one open", %{conn: conn, task: task, role: role} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      assert has_element?(view, "#task-tab-issue", "Linear Issue")
+      assert has_element?(view, "#task-tab-issue", "Issue")
       assert has_element?(view, "#task-tab-#{role.id}[aria-selected='true']", "review the plan")
       assert has_element?(view, "[data-qa='plan-stage']")
     end
@@ -1237,7 +1236,7 @@ defmodule RailWeb.TaskLiveTest do
 
       # Linear serves its own images only to a token, so they come back through Rail.
       assert render(view) =~ ~s(src="/issues/#{issue.id}/assets/ws/shot.png")
-      assert has_element?(view, "#issue-linear-link[href='https://linear.app/tlv/issue/TLV-1']")
+      assert has_element?(view, "#issue-tracker-link[href='https://linear.app/tlv/issue/TLV-1']")
 
       # The issue is read on its own, and the task it is already on is not a link.
       refute has_element?(view, "[data-qa='plan-stage']")
@@ -1423,7 +1422,7 @@ defmodule RailWeb.TaskLiveTest do
     test "a task shows the Linear Issue and Plan tabs only", %{conn: conn, task: task, role: role} do
       assert {:ok, view, html} = live(conn, ~p"/tasks/#{task.id}")
 
-      assert has_element?(view, "#task-tab-issue", "Linear Issue")
+      assert has_element?(view, "#task-tab-issue", "Issue")
       assert has_element?(view, "#task-tab-#{role.id}[aria-selected='true']", "Plan")
       assert html |> Floki.parse_document!() |> Floki.find("[role='tab'][id^='task-tab-']") |> length() == 2
     end
@@ -3032,6 +3031,59 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{run.role_id}")
 
       refute has_element?(view, "#push-work")
+    end
+
+    test "a Review item the page fell back from stays closed when the task reaches Review", %{
+      conn: conn,
+      project: project,
+      task: task,
+      role: role
+    } do
+      {:ok, %{id: lead_id}} = Roles.get_role(project_id: project.id, stage: :review_lead)
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
+
+      render_patch(view, ~p"/tasks/#{task.id}?tab=#{lead_id}&item=demo")
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{role.id}")
+
+      {:ok, _review_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: lead_id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.utc_now()
+        })
+
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
+      send(view.pid, {:pipeline_changed, task.id})
+
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{lead_id}")
+      assert has_element?(view, "#review-pane[data-item=findings]")
+    end
+
+    test "a Review item the URL names on another tab stays closed when the page follows the task into Review", %{
+      conn: conn,
+      project: project,
+      task: task,
+      role: role
+    } do
+      {:ok, %{id: lead_id}} = Roles.get_role(project_id: project.id, stage: :review_lead)
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}&item=demo")
+
+      {:ok, _review_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: lead_id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.utc_now()
+        })
+
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
+      send(view.pid, {:pipeline_changed, task.id})
+
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{lead_id}")
+      assert has_element?(view, "#review-pane[data-item=findings]")
     end
 
     test "says so when the engineer has changed nothing", %{conn: conn, task: task, repo: repo} do
@@ -5012,6 +5064,87 @@ defmodule RailWeb.TaskLiveTest do
       assert_receive :resumed, 2_000
     end
 
+    test "the tray opening a finding or a screen puts its item in the URL, as the stage opens it", %{
+      conn: conn,
+      task: task,
+      role: role,
+      code: code
+    } do
+      {:ok, _saved} = Pipeline.save_finding(task, code)
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}&item=demo")
+      assert has_element?(view, "#review-pane[data-item=demo]")
+
+      send(view.pid, {:open_review_finding, "unhandled-nil"})
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{role.id}")
+      assert has_element?(view, "#review-pane[data-item=findings]")
+      assert has_element?(view, "#finding-unhandled-nil[aria-current=true]")
+
+      send(view.pid, {:open_review_screen, "toolbar"})
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{role.id}&item=screens")
+      assert has_element?(view, "#review-pane[data-item=screens]")
+    end
+
+    test "two pages on one task each keep their own item, and a link naming Demo opens Demo", %{
+      conn: conn,
+      task: task,
+      role: role
+    } do
+      assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      one |> element("#review-item-demo") |> render_click()
+      to = assert_patch(one, ~p"/tasks/#{task.id}?tab=#{role.id}&item=demo")
+
+      _settled = render(two)
+      refute_patched(two)
+      assert has_element?(two, "#review-pane[data-item=findings]")
+
+      assert {:ok, pasted, _html} = live(conn, to)
+      assert has_element?(pasted, "#review-pane[data-item=demo]")
+    end
+
+    test "the Review tab clicked again keeps its item, and a stage left and come back to opens Findings", %{
+      conn: conn,
+      task: task,
+      role: role,
+      engineer_role: engineer_role
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}&item=demo")
+
+      view |> element("#task-tab-#{role.id}") |> render_click()
+      _settled = render(view)
+      refute_patched(view)
+      assert has_element?(view, "#review-pane[data-item=demo]")
+
+      view |> element("#task-tab-#{engineer_role.id}") |> render_click()
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{engineer_role.id}")
+
+      # An item the stage named before the page left Review moves nothing.
+      send(view.pid, {:review_item, :demo})
+      _settled = render(view)
+      refute_patched(view)
+
+      view |> element("#task-tab-#{role.id}") |> render_click()
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{role.id}")
+      assert has_element?(view, "#review-pane[data-item=findings]")
+    end
+
+    test "a task moving on to Finalize with Demo open takes the page there, with no item in the URL", %{
+      conn: conn,
+      task: task,
+      role: role
+    } do
+      {:ok, _pass} = Pipeline.save_review(task)
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}&item=demo")
+
+      {:ok, _finalizing} = Pipeline.update_task(task, %{stage: :finalize, pr_number: 151})
+      send(view.pid, {:pipeline_changed, task.id})
+
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=finalize")
+      assert has_element?(view, "#task-tab-finalize[aria-selected='true']")
+      refute has_element?(view, "#review-pane")
+    end
+
     test "ruling the last finding to rule takes the count off the Review tab", %{
       conn: conn,
       task: task,
@@ -5211,9 +5344,9 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='diff_file_section'][data-path='lib/rail/example.ex']")
     end
 
-    # Only a window around the line the finding names is shown, so the pane has
+    # Only the lines the finding names and a few either side are shown, so the pane has
     # to say what it left out rather than let the reader take it for the whole change.
-    test "a hunk says what it left out", %{conn: conn, task: task, code: code} do
+    test "a finding's code says what it left out", %{conn: conn, task: task, code: code} do
       File.mkdir_p!(Path.join(task.worktree_path, "lib/rail"))
       File.write!(Path.join(task.worktree_path, "lib/rail/example.ex"), Enum.map_join(1..80, "", &"line #{&1}\n"))
       git!(task.worktree_path, ["add", "."])
@@ -5236,8 +5369,8 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      assert has_element?(view, "[data-qa='finding_other_hunks']", "more lines")
-      assert has_element?(view, "[data-qa='finding_other_hunks']", "1 more other change in this file.")
+      assert has_element?(view, "[data-qa='finding_code_footer']", "more changed lines")
+      assert has_element?(view, "[data-qa='finding_code_footer']", "and 1 other change in this file.")
     end
 
     # Severity is the first thing a reader takes off the list, so every grade has to be distinguishable.
@@ -6027,7 +6160,7 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "#child-switcher")
 
       # Only the split's owner is told the children need them.
-      parent.issue |> Issue.linear_changeset(%{owner_user_id: scope.user.id}) |> Repo.update!()
+      parent.issue |> Issue.tracker_changeset(%{owner_user_id: scope.user.id}) |> Repo.update!()
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
       assert has_element?(view, "[data-qa='task_status_chip']", "2 children need you")
     end
@@ -6092,6 +6225,43 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, to)
       assert has_element?(view, "#diff-scroller[data-scroll-to='shipped.ex']")
+    end
+
+    test "a child's Review item is in its parent's URL, its own path keeps it, and a sibling opens on Findings", %{
+      conn: conn,
+      project: project,
+      parent: parent,
+      first: first,
+      third: third
+    } do
+      {:ok, %{id: lead_id}} = Roles.get_role(project_id: project.id, stage: :review_lead)
+
+      for child <- [first, third] do
+        {:ok, _reviewing} = Pipeline.update_task(child, %{stage: :review, worktree_path: create_temp_git_repo()})
+
+        {:ok, _lead} =
+          Pipeline.create_run(%{
+            task_id: child.id,
+            role_id: lead_id,
+            status: :finished,
+            stage_outcome: :done,
+            started_at: DateTime.utc_now()
+          })
+      end
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-11&tab=#{lead_id}")
+      view |> element("#review-item-demo") |> render_click()
+      to = assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-11&tab=#{lead_id}&item=demo")
+
+      assert {:error, {:live_redirect, %{to: ^to}}} = live(conn, ~p"/tasks/#{first.id}?tab=#{lead_id}&item=demo")
+      assert {:ok, view, _html} = live(conn, to)
+      assert has_element?(view, "[data-qa='task_detail_title']", "Child TLV-11")
+      assert has_element?(view, "#review-pane[data-item=demo]")
+
+      view |> element("#child-switcher-TLV-13") |> render_click()
+      assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-13")
+      assert has_element?(view, "[data-qa='task_detail_title']", "Child TLV-13")
+      assert has_element?(view, "#review-pane[data-item=findings]")
     end
 
     test "a waiting child shows only Issue, Plan and Children, its approved part and no conversation or branch", %{
@@ -6203,7 +6373,7 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#child-switcher-all", "All children of TLV-10")
       assert has_element?(view, "#child-switcher-waiting[class*='slate']", "2 other children need attention")
 
-      parent.issue |> Issue.linear_changeset(%{owner_user_id: scope.user.id}) |> Repo.update!()
+      parent.issue |> Issue.tracker_changeset(%{owner_user_id: scope.user.id}) |> Repo.update!()
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-12")
       assert has_element?(view, "#child-switcher-waiting[class*='amber']", "2 other children need you")
 
@@ -6248,7 +6418,7 @@ defmodule RailWeb.TaskLiveTest do
       send(view.pid, {:pipeline_changed, first.id})
       assert has_element?(view, "#split-row-TLV-11[data-state='running']")
 
-      first.issue |> Issue.linear_changeset(%{state: :done, completed_at: DateTime.utc_now(:second)}) |> Repo.update!()
+      first.issue |> Issue.tracker_changeset(%{state: :done, completed_at: DateTime.utc_now(:second)}) |> Repo.update!()
       send(view.pid, {:issue_changed, first.issue_id})
       assert has_element?(view, "#split-row-TLV-11[data-state='merged']", "Merged")
       assert has_element?(view, "#task-tab-children", "1 of 3 merged")
@@ -6266,7 +6436,7 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='task_status_chip']", "2 children need attention")
 
       for child <- Pipeline.list_tasks(parent_task_id: parent.id, preload: [:issue]) do
-        child.issue |> Issue.linear_changeset(%{completed_at: DateTime.utc_now(:second)}) |> Repo.update!()
+        child.issue |> Issue.tracker_changeset(%{completed_at: DateTime.utc_now(:second)}) |> Repo.update!()
       end
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
@@ -6358,13 +6528,13 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-11")
       refute has_element?(view, "#cleanup-task")
 
-      first.issue |> Issue.linear_changeset(%{state: :done}) |> Repo.update!()
+      first.issue |> Issue.tracker_changeset(%{state: :done}) |> Repo.update!()
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
 
       assert view |> element("#cleanup-task") |> render() =~
                "2 of 3 children are not marked done in Linear: TLV-12, TLV-13. Clean up this task and all of its children anyway?"
 
-      for child <- [second, third], do: child.issue |> Issue.linear_changeset(%{state: :done}) |> Repo.update!()
+      for child <- [second, third], do: child.issue |> Issue.tracker_changeset(%{state: :done}) |> Repo.update!()
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
       assert view |> element("#cleanup-task") |> render() =~ "Clean up this task and its 3 children?"
@@ -6375,7 +6545,7 @@ defmodule RailWeb.TaskLiveTest do
       parent: parent,
       first: first
     } do
-      first.issue |> Issue.linear_changeset(%{state: :canceled}) |> Repo.update!()
+      first.issue |> Issue.tracker_changeset(%{state: :canceled}) |> Repo.update!()
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
       assert has_element?(view, "#split-row-TLV-12[data-state='blocked_by_canceled']", "TLV-11 was canceled")

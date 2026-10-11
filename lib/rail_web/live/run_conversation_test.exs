@@ -742,8 +742,7 @@ defmodule RailWeb.Live.RunConversationTest do
           status: :waiting_for_resources,
           started_at: ~U[2026-09-09 14:27:00.000000Z],
           queued_at: ~U[2026-09-09 14:27:00.000000Z],
-          reserved_cpus: 2,
-          reserved_memory_gb: 4
+          reserved_cpus: 2
         })
 
       %{run: run, os_process: os_process}

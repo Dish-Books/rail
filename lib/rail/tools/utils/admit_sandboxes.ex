@@ -37,10 +37,7 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
   defp admit(own) do
     case Tools.get_sandbox_capacity() do
       {:ok, capacity} ->
-        free = %{
-          cpus: capacity.cpus - capacity.reserved_cpus,
-          memory_gb: capacity.memory_gb - capacity.reserved_memory_gb
-        }
+        free = %{cpus: capacity.cpus - capacity.reserved_cpus}
 
         waiting =
           Repo.all(
@@ -66,10 +63,10 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
       held?(os_process) ->
         {:cont, {free, results}}
 
-      os_process.reserved_cpus > capacity.cpus or os_process.reserved_memory_gb > capacity.memory_gb ->
+      os_process.reserved_cpus > capacity.cpus ->
         {:cont, {free, Map.put(results, os_process.id, refuse(os_process, capacity, own))}}
 
-      OsProcess.short_of(os_process, free) == %{cpus: 0, memory_gb: 0} ->
+      OsProcess.short_of(os_process, free) == 0 ->
         result = launch(os_process, capacity, own)
         {:cont, {taken(free, os_process, result), Map.put(results, os_process.id, result)}}
 
@@ -111,8 +108,8 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
   # reservation that can never fit would otherwise hold the line forever.
   defp refuse(%OsProcess{} = os_process, capacity, own) do
     error =
-      "It needs #{os_process.reserved_cpus} CPUs and #{os_process.reserved_memory_gb} GB, and this machine has " <>
-        "#{capacity.cpus} CPUs and #{capacity.memory_gb} GB to reserve, so it could never start."
+      "It needs #{os_process.reserved_cpus} CPUs, and this machine has #{capacity.cpus} CPUs to reserve, " <>
+        "so it could never start."
 
     failed =
       os_process
@@ -138,7 +135,7 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
   # A process that started, or failed after starting, holds its reservation.
   defp taken(free, %OsProcess{id: id} = os_process, result) do
     if match?({:ok, _started}, result) or Repo.get!(OsProcess, id).status == :running,
-      do: %{cpus: free.cpus - os_process.reserved_cpus, memory_gb: free.memory_gb - os_process.reserved_memory_gb},
+      do: %{cpus: free.cpus - os_process.reserved_cpus},
       else: free
   end
 end

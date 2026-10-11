@@ -2,7 +2,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
   @moduledoc """
   Mirrors an issue event Linear sent for a workspace into Rail.
 
-  The row is written with `Issue.linear_changeset/2`: the change came from
+  The row is written with `Issue.tracker_changeset/2`: the change came from
   Linear, so nothing is pushed back to it. An update that finishes an open issue
   is handed to Learnings and the pipeline, which only queue their work.
 
@@ -119,7 +119,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
 
             if stale?(existing, attrs),
               do: {existing, :ok},
-              else: {existing, existing |> Issue.linear_changeset(attrs) |> Repo.insert_or_update()}
+              else: {existing, existing |> Issue.tracker_changeset(attrs) |> Repo.insert_or_update()}
           end)
 
         with {:ok, issue} <- result do
@@ -215,7 +215,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
 
   defp finished?(_action, _existing, _issue), do: false
 
-  defp stale?(%Issue{linear_updated_at: %DateTime{} = have}, %{linear_updated_at: %DateTime{} = sent}),
+  defp stale?(%Issue{external_updated_at: %DateTime{} = have}, %{external_updated_at: %DateTime{} = sent}),
     do: DateTime.before?(sent, have)
 
   defp stale?(_existing, _attrs), do: false

@@ -597,16 +597,6 @@ defmodule RailWeb.Settings.RolesLive do
                         suffix="CPUs"
                         errors={List.wrap(@modal_errors[:reserved_cpus])}
                       />
-                      <.input
-                        type="number"
-                        label="Memory"
-                        min="1"
-                        name="role[reserved_memory_gb]"
-                        id="role-memory-input"
-                        value={@modal_form["reserved_memory_gb"]}
-                        suffix="GB"
-                        errors={List.wrap(@modal_errors[:reserved_memory_gb])}
-                      />
                     </div>
 
                     <.sandbox_fit
@@ -944,7 +934,6 @@ defmodule RailWeb.Settings.RolesLive do
       "system_prompt" => "You are an agent persona.",
       "max_concurrent" => 1,
       "reserved_cpus" => 1,
-      "reserved_memory_gb" => 2,
       "mcp_tools" => []
     }
 
@@ -978,7 +967,6 @@ defmodule RailWeb.Settings.RolesLive do
         "system_prompt" => role.system_prompt,
         "max_concurrent" => role.max_concurrent,
         "reserved_cpus" => role.reserved_cpus,
-        "reserved_memory_gb" => role.reserved_memory_gb,
         "mcp_tools" => role.mcp_tools
       }
 
@@ -1302,7 +1290,6 @@ defmodule RailWeb.Settings.RolesLive do
       system_prompt: String.trim(role_params["system_prompt"] || ""),
       max_concurrent: parse_int(role_params["max_concurrent"], 1),
       reserved_cpus: parse_int(role_params["reserved_cpus"], 1),
-      reserved_memory_gb: parse_int(role_params["reserved_memory_gb"], 2),
       mcp_tools: parse_mcp_tools(role_params["mcp_tools"]),
       position: if(existing_role, do: existing_role.position, else: roles_count)
     }
@@ -1333,7 +1320,6 @@ defmodule RailWeb.Settings.RolesLive do
     {"system_prompt", "prompt"},
     {"max_concurrent", "max concurrent"},
     {"reserved_cpus", "CPUs"},
-    {"reserved_memory_gb", "memory"},
     {"mcp_tools", "MCP tools"}
   ]
 
@@ -1379,10 +1365,8 @@ defmodule RailWeb.Settings.RolesLive do
   end
 
   defp reservation_summary(form) do
-    with {cpus, ""} <- Integer.parse(to_string(form["reserved_cpus"])),
-         {memory_gb, ""} <- Integer.parse(to_string(form["reserved_memory_gb"])) do
-      "#{cpus} #{if cpus == 1, do: "CPU", else: "CPUs"}, #{memory_gb} GB"
-    else
+    case Integer.parse(to_string(form["reserved_cpus"])) do
+      {cpus, ""} -> "#{cpus} #{if cpus == 1, do: "CPU", else: "CPUs"}"
       _unparsed -> nil
     end
   end
@@ -1433,11 +1417,8 @@ defmodule RailWeb.Settings.RolesLive do
   # How many sandboxes of what is typed fit at once, or nil while it is not a
   # reservation at all.
   defp fit_preview(form, capacity) do
-    with {cpus, ""} when cpus > 0 <- Integer.parse(to_string(form["reserved_cpus"])),
-         {memory_gb, ""} when memory_gb > 0 <- Integer.parse(to_string(form["reserved_memory_gb"])) do
-      reservation = %{reserved_cpus: cpus, reserved_memory_gb: memory_gb}
-      Map.merge(reservation, Role.fit_count(reservation, capacity))
-    else
+    case Integer.parse(to_string(form["reserved_cpus"])) do
+      {cpus, ""} when cpus > 0 -> %{reserved_cpus: cpus, count: Role.fit_count(%{reserved_cpus: cpus}, capacity)}
       _unparsed -> nil
     end
   end
@@ -1451,13 +1432,8 @@ defmodule RailWeb.Settings.RolesLive do
 
   # A save the machine refused says so in place of the unsaved changes.
   defp refused_reservation(errors, form) do
-    over =
-      for {field, resource} <- [reserved_cpus: "CPUs", reserved_memory_gb: "memory"],
-          String.starts_with?(to_string(errors[field]), "This machine has"),
-          do: resource
-
-    if over != [],
-      do: "Not saved: the #{role_name(form)} reserves more #{Enum.join(over, " and ")} than this machine has."
+    if String.starts_with?(to_string(errors[:reserved_cpus]), "This machine has"),
+      do: "Not saved: the #{role_name(form)} reserves more CPUs than this machine has."
   end
 
   defp error_tab(errors) do
@@ -1488,7 +1464,9 @@ defmodule RailWeb.Settings.RolesLive do
         <span class="flex items-center gap-1.5 font-semibold text-red-700 dark:text-red-300">
           <.icon name="pi-x-circle" class="size-3.5" />No {@role_name} sandbox would fit on this machine
         </span>
-        <span class="font-mono text-slate-500 dark:text-slate-400">{over_capacity(@fit, @capacity)}</span>
+        <span class="font-mono text-slate-500 dark:text-slate-400">
+          {@fit.reserved_cpus} of {@capacity.cpus} CPUs
+        </span>
       </div>
       <div class="relative h-2 rounded-full bg-slate-200 dark:bg-slate-700/70">
         <span class="absolute inset-y-0 left-0 right-0 rounded-full bg-red-500/70" />
@@ -1511,7 +1489,7 @@ defmodule RailWeb.Settings.RolesLive do
           {fits_at_once(@fit.count, @role_name)}
         </span>
         <span class="font-mono text-slate-500 dark:text-slate-400">
-          {@fit.reserved_cpus} of {@capacity.cpus} CPUs · {@fit.reserved_memory_gb} of {@capacity.memory_gb} GB each
+          {@fit.reserved_cpus} of {@capacity.cpus} CPUs each
         </span>
       </div>
       <div class="flex h-2 gap-[2px] rounded-full overflow-hidden">
@@ -1521,9 +1499,7 @@ defmodule RailWeb.Settings.RolesLive do
         />
       </div>
       <p class="text-[11px] text-slate-500 dark:text-slate-400">
-        Each sandbox, and the setup and CI it runs, gets exactly this and cannot use more. {limits(
-          @fit.limited_by
-        )}
+        Each sandbox, and the setup and CI it runs, gets this share of the machine's CPUs when they are all busy. Its memory is not limited.
       </p>
     </div>
     """
@@ -1531,16 +1507,4 @@ defmodule RailWeb.Settings.RolesLive do
 
   defp fits_at_once(1, role_name), do: "1 #{role_name} sandbox fits on this machine at once"
   defp fits_at_once(count, role_name), do: "#{count} #{role_name} sandboxes fit on this machine at once"
-
-  defp limits(:cpus), do: "CPUs are what limit it here."
-  defp limits(:memory), do: "Memory is what limits it here."
-
-  defp over_capacity(fit, capacity) do
-    [
-      fit.reserved_cpus > capacity.cpus && "#{fit.reserved_cpus} of #{capacity.cpus} CPUs",
-      fit.reserved_memory_gb > capacity.memory_gb && "#{fit.reserved_memory_gb} of #{capacity.memory_gb} GB"
-    ]
-    |> Enum.filter(& &1)
-    |> Enum.join(" · ")
-  end
 end

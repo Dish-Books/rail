@@ -906,7 +906,7 @@ defmodule Rail.Tools.FollowerTest do
         name: "Follower Project 12502",
         github_repo: "org/follower-12502",
         github_installation_id: 12_502,
-        linear_team_key: "P12502",
+        key: "P12502",
         default_branch: "main",
         clone_path: "/tmp/repos/follower-12502",
         linear_state_ids: %{
@@ -1298,7 +1298,7 @@ defmodule Rail.Tools.FollowerTest do
 
     # The run under test holds the test machine's 4 CPUs, and another run waits for 2.
     setup %{run: run, os_process: os_process, tmp_dir: tmp_dir} do
-      os_process = os_process |> OsProcess.changeset(%{reserved_cpus: 4, reserved_memory_gb: 4}) |> Repo.update!()
+      os_process = os_process |> OsProcess.changeset(%{reserved_cpus: 4}) |> Repo.update!()
 
       %OsProcess{id: waiting_id} =
         waiting =
@@ -1310,7 +1310,6 @@ defmodule Rail.Tools.FollowerTest do
           started_at: DateTime.utc_now(),
           queued_at: DateTime.utc_now(),
           reserved_cpus: 2,
-          reserved_memory_gb: 2,
           launch:
             Jason.encode!(%{
               "executable" => "/bin/true",
@@ -1388,7 +1387,7 @@ defmodule Rail.Tools.FollowerTest do
     setup %{os_process: os_process} do
       os_process =
         os_process
-        |> OsProcess.changeset(%{runtime: :docker, container_id: "c0ffee", reserved_cpus: 2, reserved_memory_gb: 4})
+        |> OsProcess.changeset(%{runtime: :docker, container_id: "c0ffee", reserved_cpus: 2})
         |> Repo.update!()
 
       %{os_process: os_process}
@@ -1420,12 +1419,12 @@ defmodule Rail.Tools.FollowerTest do
       Sandbox.allow(Repo, self(), follower_pid)
 
       assert_receive {:os_process_finished, %OsProcess{exit_code: 137, ended_reason: :out_of_memory},
-                      %{error: "Killed: it used more than the 4 GB its role reserves."}},
+                      %{error: "Killed: this machine ran out of memory."}},
                      5_000
 
       assert_receive :removed
       assert [^line] = Enum.map(Pipeline.list_run_events(run), & &1.line)
-      assert {:ok, %Run{error: "Killed: it used more than the 4 GB its role reserves."}} = Pipeline.get_run(run.id)
+      assert {:ok, %Run{error: "Killed: this machine ran out of memory."}} = Pipeline.get_run(run.id)
     end
 
     test "killed for memory says what was using the most when it was last looked at", %{
@@ -1477,7 +1476,7 @@ defmodule Rail.Tools.FollowerTest do
       Sandbox.allow(Repo, self(), follower_pid)
 
       error =
-        "Killed: it used more than the 4 GB its role reserves. Using the most when last seen: " <>
+        "Killed: this machine ran out of memory. Using the most when last seen: " <>
           "cc1plus 1.9 GB (under g++, make, kerl, mise, claude), claude 412 MB, mise 30 MB (under claude)."
 
       assert_receive {:os_process_finished, %OsProcess{ended_reason: :out_of_memory, memory_top: top}, %{error: ^error}},

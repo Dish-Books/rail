@@ -71,17 +71,16 @@ config :rail, RailWeb.Endpoint,
 # do and outlives Rail; what it reserves is kept back from the sandbox line. `root` is where its
 # profile lives, and nil means the system temp directory. `max_per_task` is how many tabs one task's
 # agents hold open at once.
-config :rail, :browser, root: nil, cpus: 2, memory_gb: 4, shm_size_gb: 2, max_per_task: 6
+config :rail, :browser, root: nil, cpus: 2, shm_size_gb: 2, max_per_task: 6
 config :rail, :fetch_parsers, true
 
 # Where agents, setup and CI run, and what is kept back for Rail, Postgres and project services.
-# The machine's CPUs and memory are read at runtime; only `:docker` (prod) enforces a reservation.
+# The machine's CPUs and memory are read at runtime; only `:docker` (prod) holds a sandbox to its share of CPU.
 config :rail, :sandbox,
   runtime: :local,
   image: "rail-sandbox:latest",
   binds: ["/srv/rail:/srv/rail"],
   headroom_cpus: 2,
-  headroom_memory_gb: 8,
   shm_size_gb: 1
 
 config :rail,

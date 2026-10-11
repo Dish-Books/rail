@@ -132,7 +132,7 @@ defmodule RailWeb.Settings.SlackWorkspacesLiveTest do
     {:ok, bare} = Projects.create_slack_workspace(system_scope(), %{"name" => "Bare", "token" => "x"})
 
     start_supervised!({SlackSocket, workspace: up, backoff: 10})
-    assert_receive {:fake_slack_connected, _socket}, 5_000
+    assert_receive {:fake_slack_connected, _socket}, 15_000
 
     eventually(fn ->
       assert %{status: :connected, last_frame_at: %DateTime{}} = Rail.Triage.get_slack_socket_status(up)

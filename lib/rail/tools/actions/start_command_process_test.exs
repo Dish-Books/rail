@@ -25,7 +25,7 @@ defmodule Rail.Tools.Actions.StartCommandProcessTest do
         name: "Command Project",
         github_repo: "org/command-#{System.unique_integer([:positive])}",
         github_installation_id: System.unique_integer([:positive]),
-        linear_team_key: "CMD",
+        key: "CMD",
         default_branch: "main",
         clone_path: Path.join(tmp_dir, "clone")
       })
@@ -154,8 +154,7 @@ defmodule Rail.Tools.Actions.StartCommandProcessTest do
       stream_path: "/dev/null",
       status: :running,
       started_at: DateTime.utc_now(),
-      reserved_cpus: 3,
-      reserved_memory_gb: 8
+      reserved_cpus: 4
     })
 
     reject(Tools, :spawn_os_process, 3)
@@ -168,9 +167,9 @@ defmodule Rail.Tools.Actions.StartCommandProcessTest do
     assert {:ok, %OsProcess{status: :waiting_for_resources}} = Tools.start_command_process(run, :setup, "./setup")
 
     assert [
-             "[rail] CI needs 1 CPU and 2 GB, and all of this machine's memory is reserved. " <>
+             "[rail] CI needs 1 CPU, and every CPU on this machine is reserved. " <>
                "It is 1st in line and starts on its own as soon as enough is free.",
-             "[rail] Worktree setup needs 1 CPU and 2 GB, and all of this machine's memory is reserved. " <>
+             "[rail] Worktree setup needs 1 CPU, and every CPU on this machine is reserved. " <>
                "It is 2nd in line and starts on its own as soon as enough is free."
            ] = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
   end
