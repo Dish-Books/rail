@@ -304,8 +304,8 @@ defmodule RailWeb.Live.ReviewStageTest do
     assert has_element?(view, "[data-qa=finding_why]", "Why fix")
     assert has_element?(view, "[data-qa=finding_recommendation]", "Code reviewer recommends Fix")
     assert has_element?(view, "#finding-rule", "Only a member who can edit the task can send its comments.")
-    assert has_element?(view, "#finding-rule", "Applies in 2 places")
-    assert has_element?(view, "#finding-rule [data-qa=finding_place]", "send_diff_comments/2")
+    assert has_element?(view, "#finding-places", "Applies in 2 places")
+    assert has_element?(view, "#finding-places [data-qa=finding_place]", "send_diff_comments/2")
     assert has_element?(view, "[data-qa=finding_raised_in]", short)
     assert has_element?(view, "[data-qa=finding_fixed_in]", "not yet")
     assert has_element?(view, "[data-qa=finding_note]", "Raised on #{short}, from code reviewer: From the diff.")
@@ -329,9 +329,9 @@ defmodule RailWeb.Live.ReviewStageTest do
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), finding, :skip)
 
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-    view |> element("[data-qa=finding_place]:nth-child(2) [data-qa=finding_comment_add]") |> render_click()
+    view |> element("#finding-place-2 > [data-qa=finding_comment_add]") |> render_click()
     view |> form("#finding-comment-form", %{"body" => "   "}) |> render_submit()
-    assert has_element?(view, "[data-qa=finding_place]:nth-child(2) #finding-comment-form")
+    assert has_element?(view, "#finding-place-2 #finding-comment-form")
 
     view |> form("#finding-comment-form", %{"body" => "It is the caller too."}) |> render_change()
     view |> form("#finding-comment-form", %{"body" => "It is the caller too."}) |> render_submit()
@@ -340,7 +340,7 @@ defmodule RailWeb.Live.ReviewStageTest do
 
     assert has_element?(
              view,
-             "[data-qa=finding_place]:nth-child(2) [data-qa=document_comment]",
+             "#finding-place-2 [data-qa=document_comment]",
              "It is the caller too."
            )
 
@@ -805,34 +805,139 @@ defmodule RailWeb.Live.ReviewStageTest do
     assert has_element?(view, "[data-qa=review_browser_none]")
   end
 
-  test "a code finding marks its whole range in its hunk, and no line outside it or replaced", %{
+  test "a code finding brackets its whole range, and no line outside it or replaced", %{
     conn: conn,
     task: %{worktree_path: worktree} = task,
     code: code
   } do
-    File.write!(Path.join(worktree, "example.ex"), Enum.map_join(1..8, "", &"line #{&1}\n"))
+    File.write!(Path.join(worktree, "example.ex"), Enum.map_join(1..12, "", &"line #{&1}\n"))
     git!(worktree, ["add", "."])
     git!(worktree, ["commit", "-m", "before"])
     git!(worktree, ["update-ref", "refs/remotes/origin/main", "HEAD"])
 
     File.write!(
       Path.join(worktree, "example.ex"),
-      Enum.map_join(1..8, "", &if(&1 in 3..5, do: "changed #{&1}\n", else: "line #{&1}\n"))
+      Enum.map_join(1..12, "", &if(&1 in 3..5, do: "changed #{&1}\n", else: "line #{&1}\n"))
     )
 
     git!(worktree, ["commit", "-am", "the change"])
+    head = worktree |> git!(["rev-parse", "HEAD"]) |> String.trim()
 
     {:ok, _finding} =
       Pipeline.save_finding(task, Map.put(%{code | file: "example.ex", line: 3, end_line: 5}, :key, "range"))
 
-    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    {:ok, _unchanged} =
+      Pipeline.save_finding(task, Map.put(%{code | file: "example.ex", line: 10, end_line: 11}, :key, "unchanged"))
 
-    assert ["+ changed3", "+ changed4", "+ changed5"] =
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    view |> element("#finding-range") |> render_click()
+
+    assert [{"start", "+ changed3"}, {"middle", "+ changed4"}, {"end", "+ changed5"}] =
              view
              |> render()
              |> Floki.parse_document!()
-             |> Floki.find("[data-qa=finding_diff] [data-focus]")
-             |> Enum.map(&(&1 |> Floki.text() |> String.split() |> Enum.take(-2) |> Enum.join(" ")))
+             |> Floki.find("[data-qa=finding_diff] [data-bracket]")
+             |> Enum.map(fn row ->
+               {row |> Floki.attribute("data-bracket") |> hd(),
+                row |> Floki.text() |> String.split() |> Enum.take(-2) |> Enum.join(" ")}
+             end)
+
+    refute has_element?(view, "[data-qa=finding_diff] [data-qa=finding_code_unchanged_chip]")
+
+    # Lines the branch did not change are those lines, never the file's change in their place.
+    view |> element("#finding-unchanged") |> render_click()
+
+    assert has_element?(view, "[data-qa=finding_diff] [data-qa=finding_code_unchanged_chip]")
+    assert has_element?(view, "[data-qa=finding_code_unchanged]", "on #{String.slice(head, 0, 7)}")
+    assert has_element?(view, "[data-qa=finding_diff] [data-bracket=start]", "line 10")
+    assert has_element?(view, "[data-qa=finding_diff] [data-bracket=end]", "line 11")
+    refute has_element?(view, "[data-qa=finding_diff] [data-qa=diff_line_row]", "changed")
+  end
+
+  test "a Where in a file the branch deletes keeps its box, saying so, with Open in Diff", %{
+    conn: conn,
+    task: %{worktree_path: worktree} = task,
+    code: code
+  } do
+    File.write!(Path.join(worktree, "gone.ex"), Enum.map_join(1..12, "", &"line #{&1}\n"))
+    git!(worktree, ["add", "."])
+    git!(worktree, ["commit", "-m", "before"])
+    git!(worktree, ["update-ref", "refs/remotes/origin/main", "HEAD"])
+    git!(worktree, ["rm", "gone.ex"])
+    git!(worktree, ["commit", "-m", "the deletion"])
+
+    {:ok, _finding} =
+      Pipeline.save_finding(task, Map.put(%{code | file: "gone.ex", line: 3, end_line: 5}, :key, "deleted"))
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    view |> element("#finding-deleted") |> render_click()
+
+    assert has_element?(view, "[data-qa=finding_diff] [data-qa=finding_code_missing]", "The branch deletes this file.")
+    assert has_element?(view, "[data-qa=finding_diff] [data-qa=diff_stat]", "12")
+    assert has_element?(view, "[data-qa=finding_open_in_diff][phx-value-file='gone.ex']")
+    refute has_element?(view, "[data-qa=finding_diff] [data-qa=diff_hunk]")
+  end
+
+  test "after a fix save each card reads covered or left, and before any fix neither", %{
+    conn: conn,
+    task: task,
+    code: code
+  } do
+    [handler, action] = code.places
+    places = [handler, action, %{screen: "Engineer tab, Diff toolbar", label: "Send button"}]
+    {:ok, finding} = Pipeline.save_finding(task, Map.merge(code, %{key: "view-only-send", places: places}))
+    {:ok, _pass} = Pipeline.save_review(task)
+    {:ok, _ruled} = Pipeline.decide_finding(system_scope(), finding, :fix)
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    refute has_element?(view, "[data-qa=finding_place_fix]")
+
+    {:ok, _fixed} =
+      Pipeline.save_finding(task, %{
+        key: "view-only-send",
+        status: "fixed",
+        covered: [1, 3],
+        left: [%{place: 2, reason: "Already checked there."}],
+        test: %{file: "test/a_test.exs", name: "refuses a view-only member"}
+      })
+
+    send(view.pid, {:output_saved, task.id})
+    # The page hands the reload to the stage as an update of its own, which lands after this render.
+    _settled = render(view)
+
+    assert has_element?(view, "#finding-place-1 [data-qa=finding_place_fix]", "Covered by fix round 1")
+    assert has_element?(view, "#finding-place-2 [data-qa=finding_place_fix]", "Left by fix round 1:")
+    assert has_element?(view, "#finding-place-2 [data-qa=finding_place_fix]", "Already checked there.")
+    assert has_element?(view, "#finding-place-3 [data-qa=finding_place_fix]", "Covered by fix round 1")
+  end
+
+  test "switching findings reads each one's code once, until a commit moves the branch", %{
+    conn: conn,
+    task: %{worktree_path: worktree} = task,
+    code: code
+  } do
+    {:ok, _first} = Pipeline.save_finding(task, Map.put(code, :key, "first"))
+    {:ok, _second} = Pipeline.save_finding(task, Map.put(%{code | line: 1, end_line: nil}, :key, "second"))
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    # The page opened on one of the two, so only the other is read.
+    expect(Rail.Git, :load_diff_hunks, fn scope, task, ranges ->
+      call_original(Rail.Git, :load_diff_hunks, [scope, task, ranges])
+    end)
+
+    view |> element("#finding-second") |> render_click()
+    view |> element("#finding-first") |> render_click()
+    view |> element("#finding-second") |> render_click()
+    verify!()
+
+    git!(worktree, ["commit", "--allow-empty", "-m", "moved on"])
+
+    expect(Rail.Git, :load_diff_hunks, fn scope, task, ranges ->
+      call_original(Rail.Git, :load_diff_hunks, [scope, task, ranges])
+    end)
+
+    view |> element("#finding-first") |> render_click()
   end
 
   # The log's opening was read into the finding when attached, so the tab shows it with no file opened.
@@ -999,6 +1104,46 @@ defmodule RailWeb.Live.ReviewStageTest do
       view |> with_target("#review-stage") |> render_click("open_diff", %{"commit" => String.duplicate("0", 40)})
 
       assert has_element?(view, "#diff-commit-picker", "Whole branch")
+    end
+
+    # The fix commit added b.ex, and round 1 read it, so the Where in b.ex opens on that commit.
+    test "every place's code shows in its card, and each card's Open in Diff puts its file in front", %{
+      conn: conn,
+      task: task,
+      code: code
+    } do
+      places = [
+        %{file: "b.ex", line: 1, label: "the module"},
+        %{file: "a.ex", line: 1, end_line: 2, label: "the other module"},
+        %{file: "b.ex", line: 2},
+        %{screen: "Engineer tab", label: "Send button", steps: ["Open the tab", "Click Send"]}
+      ]
+
+      finding = %{code | file: "b.ex", line: 1, end_line: nil, places: places}
+      {:ok, _finding} = Pipeline.save_finding(task, Map.put(finding, :key, "four-places"))
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      refute has_element?(view, "[data-qa=finding_diff]")
+      assert has_element?(view, "#finding-place-1 [data-qa=finding_place_where]")
+      assert has_element?(view, "#finding-place-1 [data-bracket=only]", "defmodule B do")
+      assert has_element?(view, "#finding-place-2 [data-bracket=start]", "defmodule A do")
+      assert has_element?(view, "#finding-place-2 [data-bracket=end]", "end")
+      assert has_element?(view, "#finding-place-3 [data-bracket=only]", "end")
+      assert has_element?(view, "#finding-place-4 ol li", "Click Send")
+      refute has_element?(view, "#finding-place-4 [data-qa=finding_code]")
+
+      view |> element("#finding-place-2-open-in-diff") |> render_click()
+
+      assert has_element?(view, "#review-pane[data-item=diff] #diff-commit-picker", "Whole branch")
+      assert has_element?(view, "#diff-scroller[data-scroll-to='a.ex']")
+
+      view |> element("#review-item-findings") |> render_click()
+      view |> element("#finding-place-1-open-in-diff") |> render_click()
+
+      assert has_element?(view, "#diff-commit-picker", "Fix round 1")
+      assert has_element?(view, "[data-qa='diff_file_section'][data-path='b.ex']")
+      refute has_element?(view, "[data-qa='diff_file_section'][data-path='a.ex']")
     end
 
     test "the Screens item shows each state's one shot, and the screen view steps through them in the grid's order", %{

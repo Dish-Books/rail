@@ -444,6 +444,19 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
       refute Finding.outstanding?(fixed)
     end
 
+    # A place's reason belongs to the latest fix, so one a later fix covers no longer reads left.
+    test "a later fix that covers a place an earlier one left clears its reason", %{task: task, report: report} do
+      {:ok, _fixed} = Pipeline.save_finding(task, report)
+      {:ok, _failing} = Pipeline.save_finding(task, %{"key" => "send-twice", "status" => "not_fixed"})
+
+      assert {:ok, %Finding{status: :fixed, places: [%{left_reason: "Only on staging."}, %{left_reason: nil}]}} =
+               Pipeline.save_finding(task, %{
+                 report
+                 | "covered" => [2],
+                   "left" => [%{"place" => 1, "reason" => "Only on staging."}]
+               })
+    end
+
     test "that covers no place is refused", %{task: task, report: report} do
       assert {:error, changeset} = Pipeline.save_finding(task, Map.delete(report, "covered"))
       assert %{covered: ["is the numbers of the places, from 1, the fix covers"]} = errors_on(changeset)

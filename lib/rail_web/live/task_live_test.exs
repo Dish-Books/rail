@@ -5210,9 +5210,9 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='diff_file_section'][data-path='lib/rail/example.ex']")
     end
 
-    # Only a window around the line the finding names is shown, so the pane has
+    # Only the lines the finding names and a few either side are shown, so the pane has
     # to say what it left out rather than let the reader take it for the whole change.
-    test "a hunk says what it left out", %{conn: conn, task: task, code: code} do
+    test "a finding's code says what it left out", %{conn: conn, task: task, code: code} do
       File.mkdir_p!(Path.join(task.worktree_path, "lib/rail"))
       File.write!(Path.join(task.worktree_path, "lib/rail/example.ex"), Enum.map_join(1..80, "", &"line #{&1}\n"))
       git!(task.worktree_path, ["add", "."])
@@ -5235,8 +5235,8 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      assert has_element?(view, "[data-qa='finding_other_hunks']", "more lines")
-      assert has_element?(view, "[data-qa='finding_other_hunks']", "1 more other change in this file.")
+      assert has_element?(view, "[data-qa='finding_code_footer']", "more changed lines")
+      assert has_element?(view, "[data-qa='finding_code_footer']", "and 1 other change in this file.")
     end
 
     # Severity is the first thing a reader takes off the list, so every grade has to be distinguishable.

@@ -36,9 +36,10 @@ defmodule Rail.Pipeline.Schemas.FindingPlace do
   end
 
   @doc """
-  Records why a fix round left this place as it was.
+  Records why a fix round left this place as it was, or with nil that a later fix covered it.
   """
   def leave_changeset(place, reason) when is_binary(reason), do: change(place, left_reason: String.trim(reason))
+  def leave_changeset(place, nil), do: change(place, left_reason: nil)
 
   @doc """
   The place as one line a reader recognizes it by.
