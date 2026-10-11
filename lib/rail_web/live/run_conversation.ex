@@ -1373,6 +1373,7 @@ defmodule RailWeb.Live.RunConversation do
     |> assign_new(:chat_input, fn -> "" end)
     |> assign_new(:chat_sending, fn -> false end)
     |> assign_new(:run_events, fn -> [] end)
+    |> assign_new(:read_turns, fn -> %{} end)
     |> assign_new(:current_scope, fn -> nil end)
     |> assign_new(:senders, fn -> %{} end)
     |> assign_new(:line, fn -> nil end)
@@ -1448,14 +1449,23 @@ defmodule RailWeb.Live.RunConversation do
     processes = socket.assigns.os_processes
     lines = Enum.map(run_events, & &1.line)
 
-    {turns, _next_number} =
+    cli = cli(socket.assigns)
+
+    {turns, {_next_number, read}} =
       run_events
       |> group_by_turn()
-      |> Enum.flat_map_reduce(1, fn {os_process_id, events}, number ->
+      |> Enum.flat_map_reduce({1, %{}}, fn {os_process_id, [%{id: first} | _rest] = events}, {number, read} ->
         case Map.get(processes, os_process_id) do
-          %OsProcess{kind: :agent} = os_process -> {[turn_start(os_process, number) | said(events, socket)], number + 1}
-          %OsProcess{} = os_process -> {command_turn(os_process, events, socket), number}
-          nil -> {said(events, socket), number}
+          %OsProcess{kind: :agent} = os_process ->
+            reading = read_on(socket.assigns.read_turns[{first, cli}], events, socket.assigns)
+            {[turn_start(os_process, number) | reading.turns], {number + 1, Map.put(read, {first, cli}, reading)}}
+
+          %OsProcess{} = os_process ->
+            {command_turn(os_process, events, socket), {number, read}}
+
+          nil ->
+            reading = read_on(socket.assigns.read_turns[{first, cli}], events, socket.assigns)
+            {reading.turns, {number, Map.put(read, {first, cli}, reading)}}
         end
       end)
 
@@ -1465,6 +1475,7 @@ defmodule RailWeb.Live.RunConversation do
     |> assign_senders(turns)
     |> assign(:account, latest_account(processes))
     |> assign(:run_events, run_events)
+    |> assign(:read_turns, read)
     |> assign(:log_lines, lines)
     |> assign(:turns, turns)
     |> assign_elapsed(Map.values(processes))
@@ -1555,10 +1566,6 @@ defmodule RailWeb.Live.RunConversation do
   defp sender_label(%Turn{sender_id: reader_id}, reader_id, _senders), do: "You"
   defp sender_label(%Turn{sender_id: sender_id}, _reader_id, senders), do: senders[sender_id] || "Someone"
 
-  defp said(events, socket) do
-    events |> Enum.map(& &1.line) |> readable_lines(socket.assigns) |> Pipeline.parse_transcript()
-  end
-
   # What a waiting run waits on, its place in the line or the accounts it waits
   # for, read for the run being read rather than for every line appended to it.
   defp assign_line(socket, %Run{status: :waiting_for_usage} = run) do
@@ -1623,7 +1630,7 @@ defmodule RailWeb.Live.RunConversation do
       process: os_process
     }
 
-    [turn | said(interjected, socket)]
+    [turn | read_on(nil, interjected, socket.assigns).turns]
   end
 
   # Consecutive events of one process are one turn. Rail writes lines of its own
@@ -1714,11 +1721,49 @@ defmodule RailWeb.Live.RunConversation do
     |> assign(:elapsed_seconds, settled_seconds + OsProcess.total_duration_seconds(running))
   end
 
-  defp readable_lines(lines, %{selected_run: %Run{role_id: role_id}, roles_map: %{} = roles_map}) do
+  defp cli(%{selected_run: %Run{role_id: role_id}, roles_map: %{} = roles_map}) do
     case roles_map do
-      %{^role_id => %{cli: cli}} -> Tools.parse_stream(cli, lines).logs
-      _unknown_role -> lines
+      %{^role_id => %{cli: cli}} -> cli
+      _unknown_role -> nil
     end
+  end
+
+  defp cli(_no_run), do: nil
+
+  # A turn is kept as it was read, keyed by its first line and the CLI that reads it, and a turn that has
+  # grown is read on from where it was left: a run's log is appended to for as
+  # long as it runs, and reading all of it for each line added is what a long
+  # run cannot afford. One whose lines are not the ones kept is read afresh.
+  defp read_on(%{count: count, last: last} = kept, events, assigns) do
+    if match?(%{id: ^last}, Enum.at(events, count - 1)),
+      do: read_more(kept, Enum.drop(events, count)),
+      else: read_on(nil, events, assigns)
+  end
+
+  defp read_on(nil, events, assigns) do
+    read_more(%{count: 0, last: nil, cli: cli(assigns), stream: nil, lines: [], turns: []}, events)
+  end
+
+  defp read_more(kept, []), do: kept
+
+  defp read_more(%{cli: nil} = kept, fresh), do: reread(kept, fresh, nil, Enum.map(fresh, & &1.line))
+
+  defp read_more(%{cli: cli, stream: stream} = kept, fresh) do
+    stream = Tools.parse_stream(cli, Enum.map(fresh, & &1.line), from: stream && %{stream | logs: []})
+    reread(kept, fresh, stream, stream.logs)
+  end
+
+  defp reread(kept, fresh, stream, readable) do
+    lines = kept.lines ++ readable
+
+    %{
+      kept
+      | count: kept.count + length(fresh),
+        last: List.last(fresh).id,
+        stream: stream,
+        lines: lines,
+        turns: Pipeline.parse_transcript(lines)
+    }
   end
 
   defp load_run_events(%Run{} = run), do: Pipeline.list_run_events(run)
