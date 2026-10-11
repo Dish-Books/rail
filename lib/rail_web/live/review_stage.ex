@@ -31,21 +31,21 @@ defmodule RailWeb.Live.ReviewStage do
   # The conversation's tray asked for a finding or a screen state, which this stage shows.
   @impl true
   def update(%{open_finding: key}, socket) do
-    socket = socket |> assign(:item, :findings) |> assign(:selected_key, key) |> assign(:filed_index, 0) |> load()
+    socket = socket |> pick(:findings) |> assign(:selected_key, key) |> assign(:filed_index, 0) |> load()
     {:ok, socket}
   end
 
   def update(%{open_screen: key}, socket) do
-    socket = socket |> assign(:item, :screens) |> open_screen(key) |> load()
+    socket = socket |> pick(:screens) |> open_screen(key) |> load()
     {:ok, socket}
   end
 
   def update(assigns, socket) do
     socket =
       socket
+      |> open_url_item(assigns)
       |> assign(assigns)
       |> assign_new(:error, fn -> nil end)
-      |> assign_new(:item, fn -> :findings end)
       |> assign_new(:selected_key, fn -> nil end)
       |> assign_new(:advanced_to, fn -> nil end)
       |> assign_new(:filed_index, fn -> 0 end)
@@ -213,7 +213,7 @@ defmodule RailWeb.Live.ReviewStage do
 
   @impl true
   def handle_event("pick_item", %{"item" => item}, socket) do
-    socket = socket |> assign(:item, item(item)) |> load()
+    socket = socket |> pick(item(item)) |> load()
     {:noreply, socket}
   end
 
@@ -221,7 +221,7 @@ defmodule RailWeb.Live.ReviewStage do
   def handle_event("open_diff", params, socket) do
     socket =
       socket
-      |> assign(:item, :diff)
+      |> pick(:diff)
       |> assign(:diff_open, %{commit: params["commit"], at: System.unique_integer([:positive])})
       |> assign(:diff_file, params["file"])
       |> load()
@@ -359,7 +359,7 @@ defmodule RailWeb.Live.ReviewStage do
     socket =
       socket
       |> open_screen(nil)
-      |> assign(:item, :findings)
+      |> pick(:findings)
       |> assign(:selected_key, key)
       |> assign(:filed_index, 0)
       |> load()
@@ -418,6 +418,17 @@ defmodule RailWeb.Live.ReviewStage do
       end
 
     {:noreply, socket}
+  end
+
+  # The URL's item opens a task the stage starts showing, a child switched to included; after that the stage
+  # keeps its own, so the page's patches never send it back to an item it has left.
+  defp open_url_item(%{assigns: %{task: %Task{id: id}}} = socket, %{task: %Task{id: id}}), do: socket
+  defp open_url_item(socket, assigns), do: assign(socket, :item, item(assigns[:url_item]))
+
+  # The page puts the open item in the URL, so a reload comes back to it.
+  defp pick(socket, item) do
+    if item != socket.assigns.item, do: send(self(), {:review_item, item})
+    assign(socket, :item, item)
   end
 
   # Everything the open item shows is read off the rows and the disk again; what only one item needs is

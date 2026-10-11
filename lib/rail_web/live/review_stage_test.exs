@@ -746,6 +746,47 @@ defmodule RailWeb.Live.ReviewStageTest do
     assert has_element?(view, "[data-qa=review_demo_none]", "No demo was recorded.")
   end
 
+  test "the URL names the item picked and leaves Findings out, without reading the task again", %{
+    conn: conn,
+    task: task,
+    run: %{role_id: role_id}
+  } do
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    reject(&Pipeline.get_task/1)
+
+    for item <- ["diff", "screens", "demo", "browser"] do
+      view |> element("#review-item-#{item}") |> render_click()
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{role_id}&item=#{item}")
+      assert has_element?(view, "#review-pane[data-item=#{item}]")
+    end
+
+    view |> element("#review-item-findings") |> render_click()
+    assert_patch(view, ~p"/tasks/#{task.id}?tab=#{role_id}")
+    assert has_element?(view, "#review-pane[data-item=findings]")
+
+    # The item already open is where the URL already is.
+    view |> element("#review-item-findings") |> render_click()
+    _settled = render(view)
+    refute_patched(view)
+  end
+
+  test "a URL naming an item opens Review on it, and one naming none or an unknown one opens Findings", %{
+    conn: conn,
+    task: task,
+    run: %{role_id: role_id}
+  } do
+    {:ok, view, html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role_id}&item=demo")
+    assert html =~ ~s(data-item="demo")
+    assert has_element?(view, "#review-item-demo[aria-current=true]")
+    assert has_element?(view, "#review-pane[data-item=demo]")
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role_id}&item=whatever")
+    assert has_element?(view, "#review-pane[data-item=findings]")
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role_id}")
+    assert has_element?(view, "#review-pane[data-item=findings]")
+  end
+
   test "the Browser item offers each tab by QA explorer N or Demo recorder with its account, and the demo's beats", %{
     conn: conn,
     task: task,
@@ -1078,6 +1119,7 @@ defmodule RailWeb.Live.ReviewStageTest do
     test "Raised in, Fixed in and Open in Diff open their commit at the finding's file, or the branch without it", %{
       conn: conn,
       task: task,
+      run: %{role_id: role_id},
       code: code,
       engineer: engineer
     } do
@@ -1089,6 +1131,7 @@ defmodule RailWeb.Live.ReviewStageTest do
 
       view |> element("[data-qa=finding_raised_in] [data-qa=finding_commit_link]") |> render_click()
 
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{role_id}&item=diff")
       assert has_element?(view, "#review-pane[data-item=diff] #diff-commit-picker", "Whole branch")
       assert has_element?(view, "#diff-scroller[data-scroll-to='a.ex']")
       assert has_element?(view, "[data-qa='diff_file_section'][data-path='a.ex']")
@@ -1148,6 +1191,7 @@ defmodule RailWeb.Live.ReviewStageTest do
 
     test "the Screens item shows each state's one shot, and the screen view steps through them in the grid's order", %{
       conn: conn,
+      run: %{role_id: role_id},
       task: %{worktree_path: worktree} = task,
       screen: screen
     } do
@@ -1221,6 +1265,7 @@ defmodule RailWeb.Live.ReviewStageTest do
 
       view |> element("#screen-file-list-after-send") |> render_click()
       view |> element("[data-qa=screen_finding]", "Send stays enabled") |> render_click()
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{role_id}")
       refute has_element?(view, "#screen-view")
       assert has_element?(view, "#review-pane[data-item=findings]")
       assert has_element?(view, "[data-qa=review_finding_detail]", "Send stays enabled")
