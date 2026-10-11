@@ -1,7 +1,7 @@
 defmodule RailWeb.Live.FinalizeStage do
   @moduledoc """
-  Finalize: the pull request Review finished, Mark ready for a teammate, then Merge for a tech lead, beside the
-  Review conversation. Everyone else is told which tech leads to ask.
+  Finalize: the pull request Review finished, Mark ready for a teammate, then Approve and Merge for a tech lead,
+  beside the Review conversation. Everyone else sees the approvals and is told which tech leads to ask.
   """
   use RailWeb, :live_component
 
@@ -14,12 +14,21 @@ defmodule RailWeb.Live.FinalizeStage do
 
   @impl true
   def update(assigns, socket) do
+    {reload_approvals, assigns} = Map.pop(assigns, :reload_approvals, false)
+
     socket =
       socket
+      |> forget_other_task(assigns)
       |> assign(assigns)
       |> assign_new(:error, fn -> nil end)
       |> assign_new(:merging, fn -> false end)
+      |> assign_new(:approving, fn -> false end)
+      |> assign_new(:approve_alert, fn -> nil end)
+      |> assign_new(:approvals, fn -> [] end)
+      |> assign_new(:own_approval, fn -> nil end)
+      |> assign_new(:approvals_task_id, fn -> nil end)
       |> load()
+      |> read_approvals(reload_approvals)
 
     {:ok, socket}
   end
@@ -112,6 +121,31 @@ defmodule RailWeb.Live.FinalizeStage do
               </dd>
               <dt class="text-slate-500 dark:text-slate-400">Review</dt>
               <dd id="finalize-review" class="text-slate-800 dark:text-slate-200">{@review}</dd>
+              <dt
+                :if={@state != :not_ready and @approvals != []}
+                class="text-slate-500 dark:text-slate-400"
+              >
+                Approvals
+              </dt>
+              <dd
+                :if={@state != :not_ready and @approvals != []}
+                id="finalize-approvals"
+                class="min-w-0 text-slate-800 dark:text-slate-200"
+              >
+                <ul class="space-y-1">
+                  <li :for={approval <- @approvals} id={"finalize-approval-#{approval.login}"}>
+                    <span :if={approval.user}>{name(approval.user)}</span>
+                    <span :if={!approval.user} class="font-mono text-[12px]">{approval.login}</span>
+                    <span class="text-slate-500 dark:text-slate-400">
+                      at
+                      <.local_time
+                        id={"finalize-approval-#{approval.login}-at"}
+                        at={approval.approved_at}
+                      />
+                    </span>
+                  </li>
+                </ul>
+              </dd>
             </dl>
           </div>
 
@@ -131,6 +165,37 @@ defmodule RailWeb.Live.FinalizeStage do
                 <.local_time id="finalize-merge-error-at" at={@task.merge_error_at} />
               </p>
               <p class="font-mono text-[11.5px] wrap-anywhere">{@task.merge_error}</p>
+            </div>
+          </div>
+
+          <div
+            :if={@approve_alert && @state in [:ready, :merging, :refused]}
+            id="finalize-approve-error"
+            role="alert"
+            class="flex gap-2.5 rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950 p-3 text-xs text-red-700 dark:text-red-300"
+          >
+            <.icon
+              name="pi-warning-circle"
+              class="size-4 shrink-0 mt-px text-red-500 dark:text-red-400"
+            />
+            <div class="min-w-0 space-y-1">
+              <p class="font-semibold text-red-800 dark:text-red-200">
+                {@approve_alert.title}
+                <.local_time
+                  :if={@approve_alert.at}
+                  id="finalize-approve-error-at"
+                  at={@approve_alert.at}
+                />
+              </p>
+              <p class={@approve_alert.message_class}>{@approve_alert.message}</p>
+              <a
+                :if={@approve_alert.sign_in}
+                href={~p"/auth/github"}
+                id="finalize-approve-sign-in"
+                class="inline-flex items-center gap-1 font-semibold text-red-800 dark:text-red-200 underline underline-offset-2"
+              >
+                <.icon name="pi-github-logo" class="size-3.5" />Sign in with GitHub
+              </a>
             </div>
           </div>
 
@@ -160,24 +225,56 @@ defmodule RailWeb.Live.FinalizeStage do
 
           <div
             :if={@state in [:ready, :merging, :refused] and @tech_lead}
-            class="flex items-center gap-3"
+            id="finalize-actions"
+            class="flex flex-wrap items-center gap-x-3 gap-y-2"
           >
             <.button
-              id="finalize-merge"
-              variant="primary"
-              phx-click="merge"
+              :if={!@own_approval}
+              id="finalize-approve"
+              phx-click="approve"
               phx-target={@myself}
-              disabled={@state == :merging or @merging}
+              disabled={@approving}
             >
               <.icon
-                name={if @state == :merging or @merging, do: "pi-circle-notch", else: "pi-git-merge"}
-                class={["size-4", (@state == :merging or @merging) && "motion-safe:animate-spin"]}
+                name={if @approving, do: "pi-circle-notch", else: "pi-check-bold"}
+                class={["size-4", @approving && "motion-safe:animate-spin"]}
               />
-              {if @state == :merging or @merging, do: "Merging…", else: "Merge"}
+              {if @approving, do: "Approving…", else: "Approve"}
             </.button>
-            <span class="text-xs text-slate-500 dark:text-slate-400">
-              Squash into <span class="font-mono">{@task.project.default_branch}</span>
-            </span>
+            <p
+              :if={@own_approval}
+              id="finalize-approved"
+              class="flex items-start gap-2 text-[13px] text-slate-800 dark:text-slate-200"
+            >
+              <.icon
+                name="pi-check-circle-fill"
+                class="size-4 shrink-0 mt-px text-emerald-600 dark:text-emerald-400"
+              />
+              <span class="min-w-0">
+                Approved by {name(@current_scope.user)} at
+                <.local_time id="finalize-approved-at" at={@own_approval.approved_at} />
+              </span>
+            </p>
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <.button
+                id="finalize-merge"
+                variant="primary"
+                phx-click="merge"
+                phx-target={@myself}
+                disabled={@state == :merging or @merging}
+              >
+                <.icon
+                  name={
+                    if @state == :merging or @merging, do: "pi-circle-notch", else: "pi-git-merge"
+                  }
+                  class={["size-4", (@state == :merging or @merging) && "motion-safe:animate-spin"]}
+                />
+                {if @state == :merging or @merging, do: "Merging…", else: "Merge"}
+              </.button>
+              <span class="text-xs text-slate-500 dark:text-slate-400">
+                Squash into <span class="font-mono">{@task.project.default_branch}</span>
+              </span>
+            </div>
           </div>
 
           <p
@@ -248,6 +345,25 @@ defmodule RailWeb.Live.FinalizeStage do
     {:noreply, socket}
   end
 
+  def handle_event("approve", _params, %{assigns: %{approving: true}} = socket), do: {:noreply, socket}
+
+  def handle_event("approve", _params, socket) do
+    %{current_scope: scope, task: task} = socket.assigns
+
+    socket =
+      socket
+      |> assign(:approving, true)
+      |> assign(:approve_alert, nil)
+      |> assign(:error, nil)
+      |> start_async(:approve, fn ->
+        # Unlinked, so leaving the page does not cut an approval off between GitHub's answer and telling every tab.
+        approval = Elixir.Task.Supervisor.async_nolink(Rail.TaskSupervisor, fn -> Pipeline.approve_task(scope, task) end)
+        {task.id, Elixir.Task.yield(approval, :infinity)}
+      end)
+
+    {:noreply, socket}
+  end
+
   # GitHub's refusal is the task's own, so the pane shows it from the row like every other tab does.
   @impl true
   def handle_async(:merge, {:ok, result}, socket) do
@@ -270,6 +386,86 @@ defmodule RailWeb.Live.FinalizeStage do
     {:noreply, socket}
   end
 
+  # Split children share this pane: another child's answer is dropped, and its approvals come back on the broadcast.
+  def handle_async(:approve, {:ok, {task_id, _outcome}}, %{assigns: %{task: %Task{id: shown_id}}} = socket)
+      when task_id != shown_id, do: {:noreply, socket}
+
+  # GitHub took it but could not be read back; the broadcast has every page, this one too, read it again.
+  def handle_async(:approve, {:ok, {_task_id, {:ok, {:ok, :unread}}}}, socket) do
+    {:noreply, assign(socket, :approving, false)}
+  end
+
+  def handle_async(:approve, {:ok, {_task_id, {:ok, {:ok, approvals}}}}, socket) do
+    socket = socket |> assign(:approving, false) |> assign_approvals(approvals)
+    {:noreply, socket}
+  end
+
+  # Nothing stores a refusal, so only the tab that clicked shows it, at the time it heard it.
+  def handle_async(:approve, {:ok, {_task_id, {:ok, {:error, {:approve_refused, message}}}}}, socket) do
+    alert = %{
+      title: "GitHub refused the approval at",
+      at: DateTime.utc_now(),
+      message: message,
+      message_class: "font-mono text-[11.5px] wrap-anywhere",
+      sign_in: false
+    }
+
+    socket = socket |> assign(:approving, false) |> assign(:approve_alert, alert)
+    {:noreply, socket}
+  end
+
+  def handle_async(:approve, {:ok, {_task_id, {:ok, {:error, :no_github_token}}}}, socket) do
+    alert = %{
+      title: "Sign in with GitHub again to approve",
+      at: nil,
+      message: "Rail holds no GitHub token for you, so nothing was sent.",
+      message_class: nil,
+      sign_in: true
+    }
+
+    socket = socket |> assign(:approving, false) |> assign(:approve_alert, alert)
+    {:noreply, socket}
+  end
+
+  def handle_async(:approve, {:ok, {_task_id, {:ok, {:error, reason}}}}, socket) do
+    socket = socket |> assign(:approving, false) |> assign(:error, approve_message_for(reason))
+    {:noreply, socket}
+  end
+
+  def handle_async(:approve, {:ok, {_task_id, {:exit, _reason}}}, socket) do
+    socket = socket |> assign(:approving, false) |> assign(:error, "The approval did not finish. Try again.")
+    {:noreply, socket}
+  end
+
+  # coveralls-ignore-start (the approval never started, as when the task supervisor is shutting down in a deploy)
+  def handle_async(:approve, {:exit, _reason}, socket) do
+    socket = socket |> assign(:approving, false) |> assign(:error, "The approval did not finish. Try again.")
+    {:noreply, socket}
+  end
+
+  # coveralls-ignore-stop
+
+  # A read for a task the pane has since left, or one GitHub failed, leaves the approvals as they were.
+  def handle_async(:approvals, {:ok, {task_id, {:ok, approvals}}}, %{assigns: %{task: %Task{id: task_id}}} = socket) do
+    {:noreply, assign_approvals(socket, approvals)}
+  end
+
+  def handle_async(:approvals, _unread, socket), do: {:noreply, socket}
+
+  # Split children share this pane, so the next child shows nothing of the last, and coming back to one reads it again.
+  defp forget_other_task(%{assigns: %{task: %Task{id: shown_id}}} = socket, %{task: %Task{id: next_id}})
+       when next_id != shown_id do
+    socket
+    |> assign(:approving, false)
+    |> assign(:approve_alert, nil)
+    |> assign(:error, nil)
+    |> assign(:approvals_task_id, nil)
+    |> assign(:approvals, [])
+    |> assign(:own_approval, nil)
+  end
+
+  defp forget_other_task(socket, _assigns), do: socket
+
   defp load(socket) do
     %{task: task, current_scope: scope} = socket.assigns
     passes = Pipeline.read_review(task)
@@ -286,6 +482,35 @@ defmodule RailWeb.Live.FinalizeStage do
       :tech_leads,
       if(tech_lead or state in [:not_ready, :merged], do: [], else: Users.list_tech_leads(task.project_id))
     )
+  end
+
+  # Read once a task is past Mark ready and again when an approval lands, never on every refresh of the task.
+  defp read_approvals(%{assigns: %{state: :not_ready}} = socket, _reload), do: socket
+
+  defp read_approvals(socket, reload) do
+    %{task: task, approvals_task_id: read_for} = socket.assigns
+
+    cond do
+      read_for != task.id ->
+        socket
+        |> assign(:approvals_task_id, task.id)
+        |> assign_approvals([])
+        |> start_async(:approvals, fn -> {task.id, Pipeline.list_approvals(task)} end)
+
+      reload ->
+        start_async(socket, :approvals, fn -> {task.id, Pipeline.list_approvals(task)} end)
+
+      true ->
+        socket
+    end
+  end
+
+  defp assign_approvals(socket, approvals) do
+    login = socket.assigns.current_scope.user.login
+
+    socket
+    |> assign(:approvals, approvals)
+    |> assign(:own_approval, Enum.find(approvals, &(&1.login == login)))
   end
 
   defp review(passes, findings) do
@@ -316,4 +541,12 @@ defmodule RailWeb.Live.FinalizeStage do
   defp message_for(:merged), do: "This task is already merged."
   defp message_for(:no_pull_request), do: "This task has no pull request to merge."
   defp message_for({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not Finalize."
+
+  defp approve_message_for(:not_authorized), do: "Only a tech lead can approve a task."
+  defp approve_message_for(:not_ready), do: "Mark the task ready before approving it."
+  defp approve_message_for(:merged), do: "This task is already merged."
+  defp approve_message_for(:no_pull_request), do: "This task has no pull request to approve."
+  defp approve_message_for({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not Finalize."
+  # GitHub could not be read, or never answered the approval, so the lead tries again and finds it if it landed.
+  defp approve_message_for(_unfinished), do: "The approval did not finish. Try again."
 end

@@ -260,6 +260,27 @@ defmodule Rail.GitHub.ClientTest do
     assert {:error, %Req.TransportError{}} = Client.merge_pull_request("ghs_token", "acme/app", 43)
   end
 
+  test "approves a pull request at its current head with the given token and returns the review" do
+    Req.Test.expect(Client, fn conn ->
+      assert {"POST", "/repos/acme/app/pulls/43/reviews"} = {conn.method, conn.request_path}
+      assert ["Bearer gho_lead"] = Plug.Conn.get_req_header(conn, "authorization")
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"event" => "APPROVE"} = decoded = Jason.decode!(body)
+      refute Map.has_key?(decoded, "commit_id")
+      Req.Test.json(conn, %{"id" => 80, "state" => "APPROVED", "user" => %{"login" => "lead"}})
+    end)
+
+    assert {:ok, %{"id" => 80, "state" => "APPROVED"}} = Client.approve_pull_request("gho_lead", "acme/app", 43)
+
+    refusal = %{"message" => "Unprocessable Entity", "errors" => ["Can not approve your own pull request"]}
+    Req.Test.expect(Client, &(&1 |> Plug.Conn.put_status(422) |> Req.Test.json(refusal)))
+
+    assert {:error, {:github_api_error, 422, ^refusal}} = Client.approve_pull_request("gho_lead", "acme/app", 43)
+
+    Req.Test.expect(Client, &Req.Test.transport_error(&1, :econnrefused))
+    assert {:error, %Req.TransportError{}} = Client.approve_pull_request("gho_lead", "acme/app", 43)
+  end
+
   describe "reading pull requests for learnings" do
     test "lists a page of pull requests with GitHub's own params" do
       Req.Test.expect(Client, fn conn ->

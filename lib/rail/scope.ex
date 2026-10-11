@@ -35,7 +35,7 @@ defmodule Rail.Scope do
   def admin?(%__MODULE__{user: %{admin: true}}), do: true
   def admin?(_scope), do: false
 
-  @doc "Returns true if the scope may merge tasks from Finalize: the system, and users with the tech lead setting."
+  @doc "Returns true if the scope may approve and merge tasks from Finalize: the system, and tech lead users."
   def tech_lead?(%__MODULE__{system: true}), do: true
   def tech_lead?(%__MODULE__{user: %{tech_lead: true}}), do: true
   def tech_lead?(_scope), do: false
