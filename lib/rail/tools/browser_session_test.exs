@@ -347,7 +347,8 @@ defmodule Rail.Tools.BrowserSessionTest do
     assert byte_size(target) > 0
   end
 
-  # A teammate's input attaches to the tab Review left, so a tab that has gone is said, not replaced by a blank one.
+  # Reconcile and an agent's browser tools act only on the tab they had, so a tab that has gone is said, not replaced
+  # by a blank one.
   test "asking only for a tab the browser still has opens nothing when its tab is gone or never was", %{task: task} do
     {:ok, session} = Tools.start_browser_session(task, "qa")
     %Session{id: id, browser_context_id: context} = Repo.get_by!(Session, task_id: task.id)
