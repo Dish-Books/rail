@@ -1683,6 +1683,29 @@ defmodule RailWeb.Live.ReviewStageTest do
       refute has_element?(view, "figure[id^='plan-diagram-change-'] [data-qa='plan_diagram_source']:not(.hidden)")
     end
 
+    test "every icon the rail draws as each opens is written out where Tailwind looks, so none is a blank pill", %{
+      conn: conn,
+      task: task
+    } do
+      # Tailwind generates only the classes written out in what it scans. It scans tests too, so they are left out.
+      source =
+        ["lib/rail/**/*.ex", "lib/rail_web/**/*.ex", "assets/css/**/*.css", "assets/js/**/*.js"]
+        |> Enum.flat_map(&Path.wildcard/1)
+        |> Enum.map_join("\n", &File.read!/1)
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      for key <- ["ticket", "design", "plan"] do
+        view |> element("#review-item-#{key}") |> render_click()
+        icons = view |> render() |> Floki.parse_document!() |> Floki.attribute("#review-items [class*='pi-']", "class")
+        assert [_icon | _rest] = icons
+
+        for class <- Enum.flat_map(icons, &String.split/1), String.starts_with?(class, "pi-") do
+          assert source =~ ~r/(?<![\w-])#{class}(?![\w-])/, "#{class} is written out nowhere Tailwind scans"
+        end
+      end
+    end
+
     test "a plan saved again after approval replaces the first in the open Plan item, which reads revised", %{
       conn: conn,
       task: task

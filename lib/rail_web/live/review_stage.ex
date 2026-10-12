@@ -768,9 +768,9 @@ defmodule RailWeb.Live.ReviewStage do
       end
 
     documents = [
-      document(:ticket, "Ticket", "pi-file-text", ticket_state(ticket)),
-      document(:design, "Design", "pi-palette", design_state(picked)),
-      document(:plan, "Plan", "pi-compass-tool", plan_state(plan))
+      document(:ticket, "Ticket", {"pi-file-text", "pi-file-text-fill"}, ticket_state(ticket)),
+      document(:design, "Design", {"pi-palette", "pi-palette-fill"}, design_state(picked)),
+      document(:plan, "Plan", {"pi-compass-tool", "pi-compass-tool-fill"}, plan_state(plan))
     ]
 
     socket
@@ -802,8 +802,9 @@ defmodule RailWeb.Live.ReviewStage do
     if revised?(plan), do: "Revised after approval", else: "Approved"
   end
 
-  defp document(key, label, icon, state) do
-    %{key: key, label: label, icon: icon, picked_icon: "#{icon}-fill", state: state, badge: nil, dot: nil, mark: nil}
+  # Both icons written out in full, since Tailwind generates only the classes it finds in the source.
+  defp document(key, label, {icon, picked_icon}, state) do
+    %{key: key, label: label, icon: icon, picked_icon: picked_icon, state: state, badge: nil, dot: nil, mark: nil}
   end
 
   # One row per task, which a revision replaces, so a row written again since it was made is a revised plan.
