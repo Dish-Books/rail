@@ -15,7 +15,8 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
   so the stage stays open for the message that settles them.
 
   A turn while a fix round's plan waits on approval only plans: it ends with the plan saved, or is recorded as ending
-  without one, and whatever it committed is held. The round stays open for the person whatever the findings say.
+  without one, and whatever it committed past the HEAD the round was sent on is held. The round stays open for the
+  person whatever the findings say.
   """
 
   import Ecto.Query
@@ -44,7 +45,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
 
     cond do
       match?(%FixPlan{approved_at: nil}, fix_plan) ->
-        planned(run, task, fix_plan, findings, unsent?)
+        planned(run, task, fix_plan, findings, unsent? and head(task) != fix_plan.head)
 
       unsent? and not saved?(passes, task) and unreported(findings) != [] ->
         fail(run, unreported_error(unreported(findings)))
@@ -57,7 +58,8 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
     end
   end
 
-  # Nothing a planning turn committed is sent on before the plan is approved.
+  # Nothing a planning turn committed is sent on before the plan is approved. Commits from before the Send, such as
+  # a fix CI failed, are the approved turn's to send on.
   defp planned(%Run{} = run, %Task{}, %FixPlan{}, _findings, true),
     do:
       fail(
@@ -129,9 +131,12 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
 
   defp saved?(passes, %Task{} = task) do
     read = List.last(passes).head
-    now = if Task.worktree_present?(task), do: Git.branch_fingerprint(task.worktree_path)[:head_sha]
+    now = head(task)
     is_nil(read) or is_nil(now) or read == now
   end
+
+  defp head(%Task{} = task),
+    do: if(Task.worktree_present?(task), do: Git.branch_fingerprint(task.worktree_path)[:head_sha])
 
   defp describe(reason) when is_binary(reason), do: reason
   defp describe(reason), do: inspect(reason)

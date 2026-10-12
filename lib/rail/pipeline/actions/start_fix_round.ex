@@ -2,7 +2,8 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
   @moduledoc """
   What a person's Send in the Review tray does once every finding is ruled: the Review run is reopened and resumed
   on the findings ruled Fix, a carried one included, with their rules and places, then the sender's unsent finding,
-  diff and screen comments, as one message that asks only for a fix plan, and the task stays at Review. With nothing
+  diff and screen comments, as one message that asks only for a fix plan, and the task stays at Review. The round's
+  fix plan records the branch's HEAD, so only commits past it count as the planning turn's. With nothing
   to send it reads Finish review, which finishes the review and takes the pull request out of draft. After that, at
   Finalize and after the merge until cleanup, a Send of comments resumes the lead on them alone.
 
@@ -24,6 +25,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
   import Rail.Pipeline.Utils.SendBack
   import Rail.Pipeline.Utils.WriteFixPlan
 
+  alias Rail.Git
   alias Rail.Learnings
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
@@ -173,6 +175,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
 
     fix_plan = %FixPlan{
       round: round,
+      head: if(Task.worktree_present?(run.task), do: Git.branch_fingerprint(run.task.worktree_path)[:head_sha]),
       findings: Enum.map(sent.fix, &%FixPlan.Finding{key: &1.key, title: &1.title}),
       comments: Enum.map(comments, &elem(&1, 0))
     }

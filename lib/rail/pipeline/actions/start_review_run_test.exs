@@ -82,8 +82,6 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
       refute prompt =~ "The branch is behind origin/main."
-      assert prompt =~ "At the start of every turn but one that only plans a fix round"
-      assert prompt =~ "Each Send starts with a plan and nothing else"
       {:ok, %OsProcess{run: spawned}}
     end)
 

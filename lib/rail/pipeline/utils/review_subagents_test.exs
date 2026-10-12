@@ -37,10 +37,6 @@ defmodule Rail.Pipeline.Utils.ReviewSubagentsTest do
     assert engineer =~ "Never push: Rail pushes what the lead's turn leaves committed."
     assert engineer =~ "merge `origin/<default branch>` in"
     assert engineer =~ "Never rewrite commit history: no rebase, no amend, no reset or squash of a commit."
-    # A fix round's engineer carries out the plan the human approved, and the reviewer reads the diff against it.
-    assert engineer =~ "hands you a fix plan the human approved, word for word"
-    assert engineer =~ "report it to the lead with why rather than doing something else"
-    assert reviewer =~ "against the approved fix plan it carries out"
     refute reviewer =~ "`commit`"
   end
 

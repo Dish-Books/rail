@@ -248,6 +248,33 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
              } = FixPlan.build_sheet(saved)
     end
 
+    # A Send while the plan waits replaces the snapshot, but the file on screen still says what it was written for.
+    test "a plan being revised lays out what it covers, titles kept, and says it no longer covers the round", %{
+      fix_plan: fix_plan
+    } do
+      {:ok, saved} = fix_plan |> FixPlan.save_changeset(%{"plan" => @plan}) |> apply_action(:update)
+
+      revising = %{
+        saved
+        | findings: [
+            %FixPlan.Finding{key: "tray-count-skips-finding-comments", title: "Tray count leaves out finding comments"}
+          ],
+          comments: [hd(saved.comments), %FixPlan.Comment{number: 2, kind: :diff, text: "And this."}]
+      }
+
+      assert %{
+               items: [
+                 %{key: "send-drops-screen-comments", title: "Send leaves screen comments out", files: [1, 4]},
+                 %{key: "tray-count-skips-finding-comments"},
+                 %{kind: :comment, number: 1}
+               ],
+               counts: %{findings: 2, comments: 1},
+               covers_round: false
+             } = FixPlan.build_sheet(revising)
+
+      assert %{covers_round: true} = FixPlan.build_sheet(saved)
+    end
+
     test "a plan with nothing to change has no files, and none is laid out before one is saved", %{fix_plan: fix_plan} do
       plan = "### What changes\n\n#### Comment 1\n\nAnswered."
       fix_plan = %{fix_plan | findings: []}

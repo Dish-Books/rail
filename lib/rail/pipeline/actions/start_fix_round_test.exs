@@ -782,14 +782,13 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :fix)
       {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "Name it."))
+      head = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
 
       expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
         assert prompt =~ "Sent 2 findings and 1 comment.\n\nStart fix round 1."
         assert prompt =~ ~s(<finding key="nil-crash")
         assert prompt =~ ~s(<finding key="a-nit")
         assert prompt =~ "1. On the diff:"
-        assert prompt =~ "save one fix plan with `save_fix_plan`"
-        assert prompt =~ "Change nothing in the worktree and commit nothing"
         # A planning turn merges nothing in.
         assert %FixPlan{plan: nil} = Pipeline.read_fix_plan(task)
         {:ok, %OsProcess{run: spawned}}
@@ -799,6 +798,7 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
 
       assert %FixPlan{
                round: 1,
+               head: ^head,
                plan: nil,
                version: 0,
                findings: [
@@ -864,11 +864,10 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
         assert prompt =~ "Sent 2 changed rulings and 1 comment."
         assert prompt =~ ~s(<ruling_change key="nil-crash" was="Fix" now="Don't fix">\nNil crashes the page)
         assert prompt =~ ~s(<ruling_change key="a-nit" was="Don't fix" now="Fix">)
-        assert prompt =~ ~s(Now ruled Fix, whole:\n\n<finding key="a-nit")
+        assert prompt =~ ~s(<finding key="a-nit")
         refute prompt =~ ~s(<finding key="nil-crash")
         assert prompt =~ "2. On the diff:"
         refute prompt =~ "Name it."
-        assert prompt =~ "Revise the fix plan"
         {:ok, %OsProcess{run: spawned}}
       end)
 

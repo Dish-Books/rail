@@ -1,7 +1,8 @@
 defmodule Rail.Pipeline.Schemas.FixPlan do
   @moduledoc """
-  A Review fix round's plan as it stands on disk, with no table behind it: what the round's Sends have sent, the
-  lead's latest plan for it and who approved it. Whether it can be approved is worked out when it is read.
+  A Review fix round's plan as it stands on disk, with no table behind it: what the round's Sends have sent and the
+  HEAD they were sent on, the lead's latest plan with what it covers, and who approved it. Whether it can be approved
+  is worked out when it is read.
   """
   use Rail.Schema
 
@@ -17,8 +18,12 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
   @primary_key false
   embedded_schema do
     field :round, :integer
+    # The branch's HEAD when the round was sent, so a planning turn is held only for commits of its own.
+    field :head, :string
     field :plan, :string
     field :covered_keys, {:array, :string}, default: []
+    # Kept at save, since a Send that drops a finding from the round leaves the saved plan still naming it.
+    field :covered_titles, {:map, :string}, default: %{}
     field :covered_comments, :integer, default: 0
     field :version, :integer, default: 0
     field :saved_at, :utc_datetime_usec
@@ -45,8 +50,10 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
     fix_plan
     |> cast(attrs, [
       :round,
+      :head,
       :plan,
       :covered_keys,
+      :covered_titles,
       :covered_comments,
       :version,
       :saved_at,
@@ -76,6 +83,7 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
         do:
           change(changeset,
             covered_keys: Enum.map(fix_plan.findings, & &1.key),
+            covered_titles: Map.new(fix_plan.findings, &{&1.key, &1.title}),
             covered_comments: length(fix_plan.comments),
             version: fix_plan.version + 1,
             saved_at: DateTime.utc_now()
@@ -116,8 +124,9 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
   end
 
   @doc """
-  Lays the plan out for the Review tab: its summary, an item per finding and comment the round sent, each with the
-  numbers of the files that name it, the numbered files, Verification and the counts. `nil` before a plan is saved.
+  Lays the plan out for the Review tab: its summary, an item per finding and comment it covers, each with the
+  numbers of the files that name it, the numbered files, Verification, the counts and whether it covers the round as
+  sent. `nil` before a plan is saved.
   """
   def build_sheet(%__MODULE__{plan: nil}), do: nil
 
@@ -127,19 +136,22 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
     files = ImplementationPlan.build_file_changes(plan) || []
 
     findings =
-      Enum.map(fix_plan.findings, fn finding ->
+      Enum.map(fix_plan.covered_keys, fn key ->
         %{
-          id: finding.key,
+          id: key,
           kind: :finding,
-          key: finding.key,
-          title: finding.title,
-          body: bodies |> Map.get({:finding, finding.key}, "") |> String.trim(),
-          files: for(file <- files, names?(file.description, {:finding, finding.key}), do: file.number)
+          key: key,
+          title: fix_plan.covered_titles[key],
+          body: bodies |> Map.get({:finding, key}, "") |> String.trim(),
+          files: for(file <- files, names?(file.description, {:finding, key}), do: file.number)
         }
       end)
 
+    # A Send only appends comments, so the plan covers the round's first ones.
     comments =
-      Enum.map(fix_plan.comments, fn comment ->
+      fix_plan.comments
+      |> Enum.take(fix_plan.covered_comments)
+      |> Enum.map(fn comment ->
         %{
           id: "comment-#{comment.number}",
           kind: :comment,
@@ -159,7 +171,10 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
       items: findings ++ comments,
       files: files,
       verification: if(verification != "", do: verification),
-      counts: %{findings: length(findings), comments: length(comments), files: length(files)}
+      counts: %{findings: length(findings), comments: length(comments), files: length(files)},
+      covers_round:
+        MapSet.new(fix_plan.covered_keys) == MapSet.new(fix_plan.findings, & &1.key) and
+          fix_plan.covered_comments == length(fix_plan.comments)
     }
   end
 

@@ -265,7 +265,12 @@ defmodule RailWeb.Live.ReviewStage do
                     <.icon name="pi-swap" class="size-4 mt-0.5 shrink-0" />
                     <span class="min-w-0 wrap-anywhere">
                       <span class="font-semibold">Out of date.</span>
-                      {outdated(@ruling_changes.since_plan)} after this plan was saved. Send the change from the tray for a revised plan, or change it back to approve this one.
+                      <span :for={{change, index} <- Enum.with_index(@ruling_changes.since_plan)}>{separator(
+                        index,
+                        length(@ruling_changes.since_plan)
+                      )}<code class="font-mono text-[12px]">{change.key}</code>
+                      changed from {ruling(change.was)} to {ruling(change.now)}</span>
+                      after this plan was saved. Send the change from the tray for a revised plan, or change it back to approve this one.
                     </span>
                   </div>
 
@@ -908,14 +913,9 @@ defmodule RailWeb.Live.ReviewStage do
     |> Enum.join(" and ")
   end
 
-  defp outdated(changes) do
-    said = Enum.map(changes, &"`#{&1.key}` changed from #{ruling(&1.was)} to #{ruling(&1.now)}")
-
-    case said do
-      [one] -> one
-      many -> Enum.join(Enum.drop(many, -1), ", ") <> " and " <> List.last(many)
-    end
-  end
+  # What goes before the change at `index` of `count`, so the banner reads as one sentence.
+  defp separator(0, _count), do: ""
+  defp separator(index, count), do: if(index == count - 1, do: " and ", else: ", ")
 
   defp ruling(:fix), do: "Fix"
   defp ruling(:skip), do: "Don't fix"
@@ -1225,6 +1225,4 @@ defmodule RailWeb.Live.ReviewStage do
   defp message_for({:fix_plan_not_waiting, :outdated}), do: "A ruling changed since that plan was saved. Nothing started."
   defp message_for({:fix_plan_not_waiting, :approved}), do: "That fix plan is already approved."
   defp message_for({:fix_plan_not_waiting, _writing}), do: "The lead is revising that fix plan. Nothing started."
-  defp message_for(:spawn_failed), do: "The Review lead could not be started, so the fix plan is not approved."
-  defp message_for(:dispatch_disabled), do: "Dispatch is off, so the Review lead was not resumed."
 end

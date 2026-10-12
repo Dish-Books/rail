@@ -299,12 +299,17 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
   end
 
   describe "a turn on a fix round's plan" do
-    setup %{task: task} do
+    setup %{task: task, worktree: worktree} do
       {:ok, _closed} = Pipeline.save_review(task)
       path = Path.join([task.scratch_path, "fix_plans", "RFN-1.json"])
       File.mkdir_p!(Path.dirname(path))
+      head = worktree |> git!(["rev-parse", "HEAD"]) |> String.trim()
       # As a Send of one comment leaves it.
-      File.write!(path, Jason.encode!(%{round: 1, findings: [], comments: [%{number: 1, kind: "diff", text: "Why?"}]}))
+      File.write!(
+        path,
+        Jason.encode!(%{round: 1, head: head, findings: [], comments: [%{number: 1, kind: "diff", text: "Why?"}]})
+      )
+
       %{path: path}
     end
 
@@ -332,6 +337,15 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
 
       assert %Run{error: "This turn committed while the fix plan waits on approval." <> _rest} =
                review_run_finished(run, [])
+    end
+
+    # A fix commit CI failed is still unpushed when the next Send asks for a plan, and is no commit of this turn's.
+    test "on a branch already unpushed when the round was sent ends done with the plan saved", %{task: task, run: run} do
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => "### What changes\n\n#### Comment 1\n\nAnswered."})
+      stub(Git, :branch_unpushed?, fn _path -> true end)
+      reject(&Pipeline.hand_over_work/2)
+
+      assert %Run{error: nil} = review_run_finished(run, [])
     end
 
     test "after approval hands its commits over as any fix round does", %{task: task, run: run, path: path} do

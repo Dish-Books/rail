@@ -1,10 +1,12 @@
 defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
   use Rail.DataCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Workers.StartApprovedFixPlan
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
@@ -74,25 +76,22 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
     %{task: task, run: run, crash: crash, nit: nit, ada: user_scope(user: %{ada | project_ids: [project.id]})}
   end
 
-  test "approving the latest waiting plan resumes the lead on it word for word and records who approved it", %{
+  test "approving the latest waiting plan claims the run on it word for word and queues the lead's start", %{
     task: %{id: task_id} = task,
     run: %{id: run_id} = run,
     ada: ada
   } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+    # The start is the job's, committed with the claim, so it survives the page that approved.
+    reject(Tools, :start_os_process, 2)
 
-    expect(Tools, :start_os_process, fn %Run{id: ^run_id, status: :running, pending_answer: note} = spawned,
-                                        ["-p", prompt | _rest] ->
-      assert note =~ "The human approved the fix plan for fix round 1."
-      assert note =~ "Hand the plan to a new engineer, word for word"
-      assert note =~ "<fix_plan>\n#{@plan}\n</fix_plan>"
-      assert prompt =~ @plan
-      {:ok, %OsProcess{run: spawned}}
-    end)
-
-    assert {:ok, %Run{id: ^run_id, status: :running}} = Pipeline.approve_fix_plan(ada, run, 1)
+    assert {:ok, %Run{id: ^run_id, status: :running, pending_answer: note}} = Pipeline.approve_fix_plan(ada, run, 1)
+    assert note =~ "<fix_plan>\n#{@plan}\n</fix_plan>"
+    assert %Run{status: :running} = Repo.reload!(run)
+    # Read approved before the job runs, so no page shows the claimed run as revising the plan.
     assert %FixPlan{approved_by: "ada", approved_at: %DateTime{}, version: 1} = Pipeline.read_fix_plan(task)
-    assert Enum.any?(Pipeline.list_run_events(run), &(&1.line == "[human] ada approved the fix plan."))
+    assert_enqueued(worker: StartApprovedFixPlan, args: %{run_id: run_id, version: 1, approved_by: "ada"})
+    refute Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "approved the fix plan"))
     assert_received {:pipeline_changed, ^task_id}
   end
 
@@ -126,20 +125,22 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
     assert %Run{status: :finished} = Repo.reload!(run)
 
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
-    expect(Tools, :start_os_process, fn %Run{} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
     assert {:ok, %Run{status: :running}} = Pipeline.approve_fix_plan(ada, run, 1)
   end
 
-  test "two Approves of the latest plan at once start the lead once", %{run: run, ada: ada} do
-    expect(Tools, :start_os_process, fn %Run{} = spawned, _argv ->
-      Process.sleep(50)
-      {:ok, %OsProcess{run: spawned}}
-    end)
-
+  test "two Approves of the latest plan at once queue the lead's start once", %{run: run, ada: ada} do
     results =
       Task.await_many(for _tab <- 1..2, do: Task.async(fn -> Pipeline.approve_fix_plan(ada, run, 1) end))
 
     assert [{:error, :stage_running}, {:ok, %Run{}}] = Enum.sort(results)
+    assert [%Oban.Job{}] = all_enqueued(worker: StartApprovedFixPlan)
+  end
+
+  test "an Approve while a start for the run is still queued claims nothing", %{run: %{id: run_id} = run, ada: ada} do
+    {:ok, _queued} = Oban.insert(StartApprovedFixPlan.new(%{run_id: run_id, version: 1}))
+
+    assert {:error, :stage_running} = Pipeline.approve_fix_plan(ada, run, 1)
+    assert %Run{status: :finished, stage_outcome: :done, pending_answer: "Sent 1 finding." <> _send} = Repo.reload!(run)
   end
 
   test "an Approve while the lead works, or with no plan saved, is refused", %{task: task, run: run, ada: ada} do
@@ -156,23 +157,6 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
 
     File.rm!(path)
     assert {:error, :no_fix_plan} = Pipeline.approve_fix_plan(ada, idle, 0)
-  end
-
-  test "a start with dispatch off leaves the plan unapproved and the run as it was", %{task: task, run: run, ada: ada} do
-    expect(Tools, :start_os_process, fn %Run{}, _argv -> {:error, :dispatch_disabled} end)
-
-    assert {:error, :dispatch_disabled} = Pipeline.approve_fix_plan(ada, run, 1)
-    assert %FixPlan{approved_at: nil, approved_by: nil} = Pipeline.read_fix_plan(task)
-    assert %Run{status: :finished, stage_outcome: :done} = Repo.reload!(run)
-  end
-
-  test "a start that fails to spawn leaves the plan unapproved", %{task: task, run: run, ada: ada} do
-    expect(Tools, :start_os_process, fn %Run{} = spawned, _argv ->
-      {:error, {:spawn_failed, :enoent, %{spawned | error: "Could not start"}}}
-    end)
-
-    assert {:error, :spawn_failed} = Pipeline.approve_fix_plan(ada, run, 1)
-    assert %FixPlan{approved_at: nil} = Pipeline.read_fix_plan(task)
   end
 
   test "a scope outside the task's project reads it as not found", %{run: run} do

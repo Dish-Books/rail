@@ -493,7 +493,6 @@ defmodule RailWeb.OverviewLiveTest do
       Phoenix.PubSub.broadcast(Rail.PubSub, "pipeline", {:pipeline_changed, task.id})
       assert render(view) =~ "Waiting on you to approve the fix plan."
 
-      expect(Rail.Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
       {:ok, _approved} = Pipeline.approve_fix_plan(Scope.for_user(user), run, 1)
       refute render(view) =~ "approve the fix plan"
     end

@@ -1,7 +1,7 @@
 defmodule RailWeb.Components.FixPlanSheet do
   @moduledoc """
-  A fix round's plan laid out for approval: its summary, What changes with an item per finding and comment the round
-  sent, In this plan beside it, then File-level changes numbered as on the Plan tab, and Verification. Nothing in it
+  A fix round's plan laid out for approval: its summary, What changes with an item per finding and comment the plan
+  covers, In this plan beside it, then File-level changes numbered as on the Plan tab, and Verification. Nothing in it
   takes a comment.
   """
   use RailWeb, :html
@@ -119,12 +119,16 @@ defmodule RailWeb.Components.FixPlanSheet do
             <.tally count={@sheet.counts.files} one="file" many="files" />
           </p>
           <div class="mt-2 space-y-1 text-sm text-slate-600 dark:text-slate-300">
-            <p class="flex gap-2">
+            <p :if={@sheet.covers_round} class="flex gap-2">
               <.icon
                 name="pi-check-circle"
                 class="size-4 mt-0.5 text-emerald-500 dark:text-emerald-400"
               />
               <span>{@covered} covered</span>
+            </p>
+            <p :if={not @sheet.covers_round} class="flex gap-2">
+              <.icon name="pi-warning" class="size-4 mt-0.5 text-amber-500 dark:text-amber-300" />
+              <span>{@covered} covered, before the last Send</span>
             </p>
             <p :if={@all_named} class="flex gap-2">
               <.icon
@@ -212,7 +216,7 @@ defmodule RailWeb.Components.FixPlanSheet do
   defp kind_label(:screen), do: "Screen"
   defp kind_label(:finding), do: "Finding"
 
-  # The save refuses a plan that leaves anything out, so a saved one covers all it was sent.
+  # The save refuses a plan that leaves anything out, so a saved one covers all it was sent when it was saved.
   defp covered(%{findings: findings}, items) do
     numbers = for %{kind: :comment, number: number} <- items, do: number
 

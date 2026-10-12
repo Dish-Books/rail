@@ -15,8 +15,10 @@ defmodule Rail.Pipeline.Utils.WriteFixPlan do
       fix_plan
       |> Map.take([
         :round,
+        :head,
         :plan,
         :covered_keys,
+        :covered_titles,
         :covered_comments,
         :version,
         :saved_at,
