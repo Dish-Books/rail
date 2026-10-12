@@ -1,9 +1,10 @@
 defmodule RailWeb.Components.ReviewItems do
   @moduledoc """
-  Review's slim rail: Findings, Diff, Screens, Demo and Browser, each an icon over a short label, the picked
-  one filled blue. Each item's state is its hover title and its screen-reader text; Findings carries the
-  amber count still to rule, a dot marks anything running, red while recording, and a clock marks a demo
-  the branch has moved past. Under 576px of main column it is one row across the top.
+  Review's slim rail: Findings, a fix round's Fix plan, Diff, Screens, Demo and Browser, each an icon over a short
+  label, the picked one filled blue. Each item's state is its hover title and its screen-reader text; Findings
+  carries the amber count still to rule, a dot marks anything running, red while recording, a raised hand a plan
+  waiting on the reader, and a clock marks a demo the branch has moved past. Under 576px of main column it is one
+  row across the top.
   """
   use RailWeb, :html
 
@@ -11,7 +12,7 @@ defmodule RailWeb.Components.ReviewItems do
     required: true,
     doc:
       "`%{key:, label:, icon:, picked_icon:, state:, badge:, dot:, mark:}`, `dot` `:running`, `:recording` or nil, " <>
-        "`mark` `:done`, `:failed`, `:stale` or nil"
+        "`mark` `:done`, `:failed`, `:stale`, `:waiting`, `:stopped` or nil"
 
   attr :picked, :atom, required: true
   attr :target, :any, required: true
@@ -26,7 +27,7 @@ defmodule RailWeb.Components.ReviewItems do
       <button
         :for={item <- @items}
         type="button"
-        id={"review-item-#{item.key}"}
+        id={"review-item-#{String.replace(to_string(item.key), "_", "-")}"}
         data-qa="review_item"
         aria-current={to_string(item.key == @picked)}
         title={"#{item.label}: #{item.state}"}
@@ -67,7 +68,14 @@ defmodule RailWeb.Components.ReviewItems do
             ]} />
           </span>
           <span
-            :if={item.mark && !item.dot && !item.badge}
+            :if={item.mark == :waiting && !item.dot && !item.badge}
+            data-qa="review_item_waiting"
+            class="absolute -top-1.5 -right-2.5 grid place-items-center size-[1.1rem] rounded-full bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200 ring-2 ring-slate-50 dark:ring-slate-900"
+          >
+            <.icon name="pi-hand-palm-fill" class="size-2.5" />
+          </span>
+          <span
+            :if={item.mark && item.mark != :waiting && !item.dot && !item.badge}
             data-qa={"review_item_#{item.mark}"}
             class="absolute -top-1 -right-1.5 grid place-items-center size-3.5 rounded-full bg-slate-50 dark:bg-slate-900"
           >
@@ -80,6 +88,11 @@ defmodule RailWeb.Components.ReviewItems do
               :if={item.mark == :failed}
               name="pi-warning-circle-fill"
               class="size-3.5 text-red-500"
+            />
+            <.icon
+              :if={item.mark == :stopped}
+              name="pi-stop-circle-fill"
+              class="size-3.5 text-slate-400"
             />
             <.icon
               :if={item.mark == :stale}

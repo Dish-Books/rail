@@ -297,4 +297,51 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
                review_run_finished(run, [])
     end
   end
+
+  describe "a turn on a fix round's plan" do
+    setup %{task: task} do
+      {:ok, _closed} = Pipeline.save_review(task)
+      path = Path.join([task.scratch_path, "fix_plans", "RFN-1.json"])
+      File.mkdir_p!(Path.dirname(path))
+      # As a Send of one comment leaves it.
+      File.write!(path, Jason.encode!(%{round: 1, findings: [], comments: [%{number: 1, kind: "diff", text: "Why?"}]}))
+      %{path: path}
+    end
+
+    test "that saved the plan ends done with the review open, even with nothing left to rule, and sends nothing on", %{
+      task: task,
+      run: run
+    } do
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => "### What changes\n\n#### Comment 1\n\nAnswered."})
+      reject(&Pipeline.hand_over_work/2)
+
+      assert %Run{error: nil} = review_run_finished(run, [])
+      assert %Task{stage: :review, pr_is_draft: true} = Repo.reload!(task)
+      assert [%{finished_at: nil}] = Pipeline.read_review(task)
+    end
+
+    test "that ended with no plan saved records that, with nothing to approve", %{run: run} do
+      assert %Run{error: "The Review lead did not save a fix plan."} = review_run_finished(run, [])
+    end
+
+    test "that committed before approval is held and sends nothing on", %{task: task, run: run, worktree: worktree} do
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => "### What changes\n\n#### Comment 1\n\nAnswered."})
+      git!(worktree, ["commit", "--allow-empty", "-m", "Too soon"])
+      stub(Git, :branch_unpushed?, fn _path -> true end)
+      reject(&Pipeline.hand_over_work/2)
+
+      assert %Run{error: "This turn committed while the fix plan waits on approval." <> _rest} =
+               review_run_finished(run, [])
+    end
+
+    test "after approval hands its commits over as any fix round does", %{task: task, run: run, path: path} do
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => "### What changes\n\n#### Comment 1\n\nAnswered."})
+      approved = path |> File.read!() |> Jason.decode!() |> Map.put("approved_at", "2026-10-12T16:58:00Z")
+      File.write!(path, Jason.encode!(approved))
+      stub(Git, :branch_unpushed?, fn _path -> true end)
+      expect(Pipeline, :hand_over_work, fn _scope, %Run{} = run -> {:ok, %{run | status: :running}} end)
+
+      assert %Run{status: :running, error: nil} = review_run_finished(run, [])
+    end
+  end
 end

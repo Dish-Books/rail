@@ -13,6 +13,9 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
   saved fixed with its report, and a branch Rail will not push goes back to the lead to merge. What else a turn can get wrong is ending without `save_review` when a round
   was due, which at Review is any time the branch has moved since the last pass read it. Both are recorded on the run,
   so the stage stays open for the message that settles them.
+
+  A turn while a fix round's plan waits on approval only plans: it ends with the plan saved, or is recorded as ending
+  without one, and whatever it committed is held. The round stays open for the person whatever the findings say.
   """
 
   import Ecto.Query
@@ -24,6 +27,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.FindingComment
+  alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
@@ -36,8 +40,12 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
     passes = Pipeline.read_review(task)
     findings = Pipeline.list_findings(task)
     unsent? = Task.worktree_present?(task) and Git.branch_unpushed?(task.worktree_path)
+    fix_plan = Pipeline.read_fix_plan(task)
 
     cond do
+      match?(%FixPlan{approved_at: nil}, fix_plan) ->
+        planned(run, task, fix_plan, findings, unsent?)
+
       unsent? and not saved?(passes, task) and unreported(findings) != [] ->
         fail(run, unreported_error(unreported(findings)))
 
@@ -47,6 +55,20 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinished do
       true ->
         round_finished(run, task, passes, findings)
     end
+  end
+
+  # Nothing a planning turn committed is sent on before the plan is approved.
+  defp planned(%Run{} = run, %Task{}, %FixPlan{}, _findings, true),
+    do:
+      fail(
+        run,
+        "This turn committed while the fix plan waits on approval. Nothing is sent on until the human approves the plan."
+      )
+
+  defp planned(%Run{} = run, %Task{} = task, %FixPlan{} = fix_plan, findings, false) do
+    if FixPlan.state(fix_plan, task, findings) in [:writing, :revising],
+      do: fail(run, "The Review lead did not save a fix plan."),
+      else: run
   end
 
   # A turn that only pushed what the last round already read still owes that round its checks.

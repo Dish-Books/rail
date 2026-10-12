@@ -17,6 +17,7 @@ defmodule RailWeb.Components.FindingDetail do
   attr :position, :integer, required: true
   attr :count, :integer, required: true
   attr :decidable, :boolean, required: true
+  attr :ruling_was, :atom, default: nil, doc: "the ruling the fix plan was saved for, when it changed since"
   attr :running, :boolean, required: true
   attr :where_code, :any, default: nil, doc: "the Where's lines, as `Rail.Git.load_diff_hunks/3` reads them"
   attr :place_codes, :map, default: %{}, doc: "each code place's lines by its index, its Where place's left out"
@@ -94,6 +95,15 @@ defmodule RailWeb.Components.FindingDetail do
               class={["inline-flex items-center gap-1 text-xs font-semibold", state_class(@finding)]}
             >
               {state_text(@finding, @running)}
+            </span>
+            <span
+              :if={@ruling_was}
+              id="finding-ruling-changed"
+              class="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 dark:text-amber-300"
+            >
+              <.icon name="pi-swap" class="size-[13px]" />Ruling changed since the fix plan · was {ruling(
+                @ruling_was
+              )}
             </span>
           </div>
           <div data-qa="finding_title" class="group/line relative mt-2">
@@ -908,4 +918,7 @@ defmodule RailWeb.Components.FindingDetail do
   defp dot(:major), do: "bg-amber-500"
   defp dot(:minor), do: "bg-amber-400"
   defp dot(:nit), do: "bg-slate-400"
+
+  defp ruling(:fix), do: "Fix"
+  defp ruling(:skip), do: "Don't fix"
 end

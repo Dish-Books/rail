@@ -9,6 +9,7 @@ defmodule RailWeb.Utils.StageLabel do
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
@@ -110,6 +111,23 @@ defmodule RailWeb.Utils.StageLabel do
   def waiting_on_pick?(%Task{} = task) do
     match?(%{options: [_first | _rest], picked: nil}, Pipeline.read_design(task, pages: false))
   end
+
+  @doc """
+  True when `task`'s fix round has a saved plan waiting on a person: approvable, or out of date after a ruling changed.
+  """
+  def fix_plan_waiting?(%Task{issue: %Issue{}} = task) do
+    # Up next asks this of every row, so the findings are read only for a saved plan whose rulings count.
+    case Pipeline.read_fix_plan(task) do
+      %FixPlan{plan: plan, approved_at: nil} = fix_plan when is_binary(plan) ->
+        findings = if task.stage == :review, do: Pipeline.list_findings(task), else: []
+        FixPlan.state(fix_plan, task, findings) in [:waiting, :outdated]
+
+      _none_or_settled ->
+        false
+    end
+  end
+
+  def fix_plan_waiting?(%Task{}), do: false
 
   # Read only off a task whose issue is loaded, which names the review file.
   defp review_finished?(%Task{issue: %Issue{}} = task) do

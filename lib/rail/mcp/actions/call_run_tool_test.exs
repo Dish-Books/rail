@@ -334,6 +334,7 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
         {:plan, "save_plan", :save_plan},
         {:plan, "save_split", :save_split},
         {:review_lead, "save_finding", :save_finding},
+        {:review_lead, "save_fix_plan", :save_fix_plan},
         {:review_lead, "save_demo", :save_demo}
       ]
 
@@ -378,6 +379,21 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
                Mcp.call_run_tool(lead, "save_finding", report)
 
       assert [%Finding{key: "round-query-scope", status: :open, decision: :fix}] = Pipeline.list_findings(task)
+    end
+
+    test "a lead's save_fix_plan saves the plan a Send made due", %{lead: lead, task: task} do
+      task = Repo.preload(task, :issue)
+      File.mkdir_p!(Path.join(task.scratch_path, "fix_plans"))
+
+      File.write!(
+        Path.join([task.scratch_path, "fix_plans", "#{task.issue.identifier}.json"]),
+        Jason.encode!(%{round: 1, findings: [], comments: [%{number: 1, kind: "diff", text: "Why?"}]})
+      )
+
+      assert {:ok, %{"content" => [%{"text" => "Fix plan saved as version 1" <> _rest}]}} =
+               Mcp.call_run_tool(lead, "save_fix_plan", %{"plan" => "### What changes\n\n#### Comment 1\n\nAnswered."})
+
+      assert %{version: 1, plan: "### What changes" <> _rest} = Pipeline.read_fix_plan(task)
     end
 
     test "saves and their refusals append nothing to the run's log", %{lead: lead, run: run, task: task} do

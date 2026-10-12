@@ -9,6 +9,7 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.FindingComment
+  alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
@@ -762,6 +763,216 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
       assert {:error, :stage_running} = Pipeline.start_fix_round(ada, run)
       assert [%DiffComment{status: :unsent}] = Pipeline.list_diff_comments(ada, task)
       refute Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "Start fix round"))
+    end
+  end
+
+  describe "the fix plan" do
+    setup %{task: task} do
+      {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_sfr_plan", login: "ada", email: "ada-plan@example.com"})
+
+      %{
+        ada: user_scope(user: ada),
+        diff: %{path: "lib/a.ex", line_kind: :added, line: 3, line_text: "x = 1", filter: :branch},
+        task: Repo.preload(task, :issue)
+      }
+    end
+
+    test "a Send of two Fix findings and a diff comment asks the lead for a plan only and writes the round's snapshot",
+         %{task: task, run: run, crash: crash, nit: nit, ada: ada, diff: diff} do
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :fix)
+      {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "Name it."))
+
+      expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+        assert prompt =~ "Sent 2 findings and 1 comment.\n\nStart fix round 1."
+        assert prompt =~ ~s(<finding key="nil-crash")
+        assert prompt =~ ~s(<finding key="a-nit")
+        assert prompt =~ "1. On the diff:"
+        assert prompt =~ "save one fix plan with `save_fix_plan`"
+        assert prompt =~ "Change nothing in the worktree and commit nothing"
+        # A planning turn merges nothing in.
+        assert %FixPlan{plan: nil} = Pipeline.read_fix_plan(task)
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %Run{status: :running}} = Pipeline.start_fix_round(ada, run)
+
+      assert %FixPlan{
+               round: 1,
+               plan: nil,
+               version: 0,
+               findings: [
+                 %FixPlan.Finding{key: "nil-crash", title: "Nil crashes the page"},
+                 %FixPlan.Finding{key: "a-nit", title: "A nit"}
+               ],
+               comments: [%FixPlan.Comment{number: 1, kind: :diff, place: "a.ex:3", text: "Name it."}]
+             } = Pipeline.read_fix_plan(task)
+    end
+
+    test "a Send of comments alone gets a plan at Review, at Finalize and after the merge", %{
+      task: task,
+      run: run,
+      crash: crash,
+      nit: nit,
+      ada: ada,
+      diff: diff
+    } do
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
+
+      for stage <- [:review, :finalize, :merged] do
+        {:ok, _staged} = Pipeline.update_task(task, %{stage: stage})
+        {:ok, _idle} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+        File.rm_rf!(Path.join(task.scratch_path, "fix_plans"))
+        {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "At #{stage}."))
+
+        expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+          assert prompt =~ "Sent 1 comment."
+          {:ok, %OsProcess{run: spawned}}
+        end)
+
+        assert {:ok, %Run{}} = Pipeline.start_fix_round(ada, run)
+
+        assert %FixPlan{findings: [], comments: [%FixPlan.Comment{number: 1, text: "At " <> _stage}]} =
+                 Pipeline.read_fix_plan(task)
+      end
+    end
+
+    test "while a plan waits, a Send carries only what changed and leaves the plan revising", %{
+      task: task,
+      run: run,
+      crash: crash,
+      nit: nit,
+      ada: ada,
+      diff: diff
+    } do
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
+      {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "Name it."))
+      expect(Tools, :start_os_process, fn %Run{} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      {:ok, _started} = Pipeline.start_fix_round(ada, run)
+
+      plan = "### What changes\n\n#### `nil-crash`\n\nGuard it.\n\n#### Comment 1\n\nNamed."
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :fix)
+      {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "And this."))
+
+      expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+        assert prompt =~ "Sent 2 changed rulings and 1 comment."
+        assert prompt =~ ~s(<ruling_change key="nil-crash" was="Fix" now="Don't fix">\nNil crashes the page)
+        assert prompt =~ ~s(<ruling_change key="a-nit" was="Don't fix" now="Fix">)
+        assert prompt =~ ~s(Now ruled Fix, whole:\n\n<finding key="a-nit")
+        refute prompt =~ ~s(<finding key="nil-crash")
+        assert prompt =~ "2. On the diff:"
+        refute prompt =~ "Name it."
+        assert prompt =~ "Revise the fix plan"
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %Run{status: :running}} = Pipeline.start_fix_round(ada, run)
+
+      assert %FixPlan{
+               plan: ^plan,
+               version: 1,
+               findings: [%FixPlan.Finding{key: "a-nit"}],
+               comments: [%FixPlan.Comment{number: 1}, %FixPlan.Comment{number: 2, text: "And this."}]
+             } = fix_plan = Pipeline.read_fix_plan(task)
+
+      assert FixPlan.state(fix_plan, task, Pipeline.list_findings(task)) == :revising
+      # The newly Fix ruling is learned from as it is delivered.
+      assert Repo.exists?(from o in Observation, where: o.source_id == ^nit.id and o.source_kind == :review_finding)
+    end
+
+    test "while a plan waits, a Send with nothing changed is refused, Finish review with it, and nothing resumes", %{
+      task: task,
+      run: run,
+      crash: crash,
+      nit: nit,
+      ada: ada
+    } do
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
+      expect(Tools, :start_os_process, fn %Run{} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      {:ok, _started} = Pipeline.start_fix_round(ada, run)
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => "### What changes\n\n#### `nil-crash`\n\nGuard it."})
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+
+      reject(Tools, :start_os_process, 2)
+      assert {:error, :fix_plan_waiting} = Pipeline.start_fix_round(ada, run)
+
+      # Changed and changed back is nothing changed.
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :fix)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
+      assert {:error, :fix_plan_waiting} = Pipeline.start_fix_round(ada, run)
+      assert %Run{status: :finished} = Repo.reload!(run)
+    end
+
+    test "a round changed down to nothing ends as Finish review does and leaves no plan", %{
+      task: task,
+      run: run,
+      crash: crash,
+      nit: nit,
+      ada: ada
+    } do
+      {:ok, _no_pr} = Pipeline.update_task(task, %{pr_number: nil})
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
+      expect(Tools, :start_os_process, fn %Run{} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      {:ok, _started} = Pipeline.start_fix_round(ada, run)
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => "### What changes\n\n#### `nil-crash`\n\nGuard it."})
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
+
+      assert {:ok, %Run{status: :finished, stage_outcome: :done}} = Pipeline.start_fix_round(ada, run)
+      assert %Task{stage: :finalize} = Repo.reload!(task)
+      assert Pipeline.read_fix_plan(task) == nil
+    end
+
+    test "Finish review on a round with no fix plan writes none", %{task: task, run: run, crash: crash, nit: nit} do
+      {:ok, _no_pr} = Pipeline.update_task(task, %{pr_number: nil})
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
+
+      assert {:ok, %Run{status: :finished}} = Pipeline.start_fix_round(system_scope(), run)
+      assert Pipeline.read_fix_plan(task) == nil
+    end
+
+    test "a failed start puts the round's plan back as it was", %{
+      task: task,
+      run: run,
+      crash: crash,
+      nit: nit,
+      ada: ada,
+      diff: diff
+    } do
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
+
+      expect(Tools, :start_os_process, fn %Run{} = spawned, _argv ->
+        {:error, {:spawn_failed, :enoent, %{spawned | error: "Could not start"}}}
+      end)
+
+      assert {:ok, %Run{error: "Could not start"}} = Pipeline.start_fix_round(ada, run)
+      assert Pipeline.read_fix_plan(task) == nil
+
+      {:ok, _settled} =
+        run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done, error: nil})
+
+      expect(Tools, :start_os_process, fn %Run{} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      {:ok, _started} = Pipeline.start_fix_round(ada, run)
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => "### What changes\n\n#### `nil-crash`\n\nGuard it."})
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+      before = Pipeline.read_fix_plan(task)
+
+      {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "And this."))
+      expect(Tools, :start_os_process, fn %Run{}, _argv -> {:error, :dispatch_disabled} end)
+
+      assert {:error, :dispatch_disabled} = Pipeline.start_fix_round(ada, run)
+      assert Pipeline.read_fix_plan(task) == before
+      assert [%DiffComment{status: :unsent}] = Pipeline.list_diff_comments(ada, task, unsent: true)
     end
   end
 end

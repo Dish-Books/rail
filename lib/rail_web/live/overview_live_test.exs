@@ -463,6 +463,41 @@ defmodule RailWeb.OverviewLiveTest do
       refute has_element?(view, "#{row} button")
     end
 
+    test "a fix round's plan joins Up next when the planning turn ends, and leaves it once approved, without a reload", %{
+      conn: conn,
+      user: user,
+      roles: roles,
+      task_for: task_for
+    } do
+      task = task_for.("Comments go as one round", %{stage: :review, worktree_path: create_temp_git_repo()})
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+      {:ok, run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:review_lead].id,
+          status: :running,
+          conversation_id: "sess_overview_fix_plan",
+          started_at: DateTime.utc_now()
+        })
+
+      path = Path.join([task.scratch_path, "fix_plans", "#{task.issue.identifier}.json"])
+      File.mkdir_p!(Path.dirname(path))
+      File.write!(path, Jason.encode!(%{round: 1, findings: [], comments: [%{number: 1, kind: "diff", text: "Why?"}]}))
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => "### What changes\n\n#### Comment 1\n\nAnswered."})
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+      refute has_element?(view, "#up-next", "approve the fix plan")
+
+      {:ok, run} = Pipeline.update_run(run, %{status: :finished, stage_outcome: :done})
+      Phoenix.PubSub.broadcast(Rail.PubSub, "pipeline", {:pipeline_changed, task.id})
+      assert render(view) =~ "Waiting on you to approve the fix plan."
+
+      expect(Rail.Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      {:ok, _approved} = Pipeline.approve_fix_plan(Scope.for_user(user), run, 1)
+      refute render(view) =~ "approve the fix plan"
+    end
+
     test "a refused task stays in the queue saying so, a merging one says so, and a merged one leaves it", %{
       conn: conn,
       task_for: task_for

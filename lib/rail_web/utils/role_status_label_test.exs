@@ -1,5 +1,5 @@
 defmodule RailWeb.Utils.RoleStatusLabelTest do
-  use ExUnit.Case, async: true
+  use Rail.DataCase, async: true
 
   import RailWeb.Utils.RoleStatusLabel
 
@@ -71,5 +71,83 @@ defmodule RailWeb.Utils.RoleStatusLabelTest do
 
     assert role_status_label(%Role{stage: :review_lead}, done, %Task{stage: :finalize}) == "done"
     assert role_status_label(%Role{stage: :review_lead}, done, %Task{stage: :merged}) == "done"
+  end
+
+  describe "on a fix round" do
+    setup do
+      scratch = Path.join(System.tmp_dir!(), "role_status_fix_#{System.unique_integer([:positive])}")
+      on_exit(fn -> File.rm_rf(scratch) end)
+      File.mkdir_p!(Path.join(scratch, "fix_plans"))
+      task = %Task{id: "tsk_role_status_fix", stage: :review, scratch_path: scratch, issue: %Issue{identifier: "RSF-1"}}
+
+      %{
+        task: task,
+        path: Path.join(scratch, "fix_plans/RSF-1.json"),
+        sent: %{round: 2, findings: [], comments: [%{number: 1, kind: "diff", text: "Why?"}]}
+      }
+    end
+
+    test "the Review tab reads the plan to approve, or out of date once a ruling changed", %{
+      task: task,
+      path: path,
+      sent: sent
+    } do
+      done = %Run{status: :finished, stage_outcome: :done}
+      lead = %Role{stage: :review_lead}
+      File.write!(path, Jason.encode!(Map.merge(sent, %{plan: "p", covered_comments: 1})))
+      assert role_status_label(lead, done, task) == "fix plan to approve"
+
+      outdated = Map.merge(sent, %{plan: "p", covered_comments: 1, covered_keys: ["gone"], findings: [%{key: "gone"}]})
+      File.write!(path, Jason.encode!(outdated))
+      assert role_status_label(lead, done, task) == "fix plan out of date"
+      assert role_status_label(%Role{stage: :engineer}, done, task) == "done"
+    end
+
+    test "while the round works or stops it reads writing, revising, fixing or stopped with its number", %{
+      task: task,
+      path: path,
+      sent: sent
+    } do
+      lead = %Role{stage: :review_lead}
+      running = %Run{status: :running}
+      File.write!(path, Jason.encode!(sent))
+      assert role_status_label(lead, running, task) == "fix round 2 · writing the fix plan"
+      assert role_status_label(lead, %Run{status: :finished}, task) == "fix round 2 · stopped"
+      assert role_status_label(lead, %Run{status: :finished, error: "No plan."}, task) == "fix round 2 · stopped"
+
+      File.write!(path, Jason.encode!(Map.merge(sent, %{plan: "p", covered_comments: 0})))
+      assert role_status_label(lead, running, task) == "fix round 2 · revising the fix plan"
+
+      # Approved, the round is fixing on the commit its last pass read, and a later round is no longer.
+      worktree = create_temp_git_repo()
+      head = worktree |> git!(["rev-parse", "HEAD"]) |> String.trim()
+      File.mkdir_p!(Path.join(task.scratch_path, "reviews"))
+
+      File.write!(
+        Path.join(task.scratch_path, "reviews/RSF-1.json"),
+        Jason.encode!(%{passes: [%{round: 1, saved_at: "2026-10-12T16:00:00Z", head: head}]})
+      )
+
+      File.write!(
+        path,
+        Jason.encode!(Map.merge(sent, %{plan: "p", covered_comments: 1, approved_at: "2026-10-12T16:58:00Z"}))
+      )
+
+      approved = %{task | worktree_path: worktree}
+      assert role_status_label(lead, running, approved) == "fix round 2 · fixing"
+      File.rm!(Path.join(task.scratch_path, "reviews/RSF-1.json"))
+      assert role_status_label(lead, running, approved) == "in progress"
+
+      File.write!(
+        Path.join(task.scratch_path, "reviews/RSF-1.json"),
+        Jason.encode!(%{passes: [%{round: 1, saved_at: "2026-10-12T16:00:00Z", head: head}]})
+      )
+
+      git!(worktree, ["commit", "--allow-empty", "-m", "The fix"])
+      assert role_status_label(lead, running, approved) == "in progress"
+
+      assert role_status_label(lead, running, %{approved | worktree_path: Path.join(task.scratch_path, "gone")}) ==
+               "in progress"
+    end
   end
 end

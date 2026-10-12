@@ -1833,5 +1833,38 @@ defmodule RailWeb.Live.RunConversationTest do
       assert %{status: :running} = Repo.reload!(run)
       assert %{stage: :finalize} = Repo.reload!(task)
     end
+
+    test "a Send reads back as the card of what it sent, and one refused while a plan waits says what to do", %{
+      task: task,
+      run: run,
+      ada: ada,
+      ada_conn: ada_conn,
+      diff: diff
+    } do
+      {:ok, _mine} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "Name it."))
+      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
+
+      expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: %{spawned | status: :running}}} end)
+      view |> element("#send-review-tray", "Send 2") |> render_click()
+      _settled = render(view)
+
+      assert has_element?(view, "[data-qa=review_send_card]", "sent 1 finding and 1 comment")
+      assert has_element?(view, "[data-qa=review_send_card_row]", "Nil crashes the page")
+      assert has_element?(view, "[data-qa=review_send_card_row]", "Name it.")
+      refute has_element?(view, "[data-qa=human-bubble]", "Sent 1 finding")
+
+      {:ok, _again} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "And this."))
+      {:ok, _idle} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
+
+      expect(Pipeline, :start_fix_round, fn _scope, _run -> {:error, :fix_plan_waiting} end)
+      view |> element("#send-review-tray", "Send 1") |> render_click()
+
+      assert has_element?(
+               view,
+               "#review-send-tray-hint",
+               "Nothing changed since the fix plan was saved. Approve the plan, change a ruling or add a comment."
+             )
+    end
   end
 end

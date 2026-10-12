@@ -81,6 +81,27 @@ defmodule Rail.Pipeline.Actions.DecideFindingTest do
     assert_receive {:pipeline_changed, ^task_id}
   end
 
+  test "while a fix plan waits, a ruling changes either way and the change is said to the page", %{
+    task: %{id: task_id} = task,
+    finding: finding
+  } do
+    task = Rail.Repo.preload(task, :issue)
+    path = Path.join([task.scratch_path, "fix_plans", "DCF-1.json"])
+    File.mkdir_p!(Path.dirname(path))
+
+    File.write!(
+      path,
+      Jason.encode!(%{round: 1, plan: "### What changes", version: 1, findings: [], comments: [], covered_keys: []})
+    )
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task_id}")
+
+    assert {:ok, %Finding{decision: :fix}} = Pipeline.decide_finding(system_scope(), finding, :fix)
+    assert_received {:output_saved, ^task_id}
+    assert {:ok, %Finding{decision: :skip}} = Pipeline.decide_finding(system_scope(), finding, :skip)
+    assert_received {:output_saved, ^task_id}
+  end
+
   test "a ruling changed before the fix round notes each, and the same ruling twice notes it once", %{
     finding: finding
   } do

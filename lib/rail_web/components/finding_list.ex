@@ -2,7 +2,7 @@ defmodule RailWeb.Components.FindingList do
   @moduledoc """
   Review's findings down the side, grouped by the round that raised them, newest first, with a Fix finding
   a later round found still failing under Carried into round N. Each row is its title, where it stands and
-  where it is. The footer's tally is the Findings item's state; what Send sends is in the conversation's tray.
+  where it is, and a ruling changed since the fix plan was saved says so. The footer's tally is the Findings item's state; what Send sends is in the conversation's tray.
   """
   use RailWeb, :html
 
@@ -13,6 +13,7 @@ defmodule RailWeb.Components.FindingList do
   attr :selected_key, :string, default: nil
   attr :running, :boolean, required: true
   attr :tally, :string, required: true
+  attr :changed, :map, default: %{}, doc: "the ruling now of each finding whose ruling changed since the fix plan"
   attr :target, :any, required: true
 
   def finding_list(assigns) do
@@ -63,7 +64,15 @@ defmodule RailWeb.Components.FindingList do
               ]}>
                 {finding.title}
               </span>
-              <span :if={state_line(finding, @running)} class="block">
+              <span :if={@changed[finding.key]} class="block">
+                <span
+                  data-qa="review_finding_state"
+                  class="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 dark:text-amber-300"
+                >
+                  <.icon name="pi-swap" class="size-[11px]" />{ruling(@changed[finding.key])} · changed since the plan
+                </span>
+              </span>
+              <span :if={!@changed[finding.key] and state_line(finding, @running)} class="block">
                 <span
                   data-qa="review_finding_state"
                   class={["text-[10px] font-semibold", state_class(finding)]}
@@ -125,6 +134,9 @@ defmodule RailWeb.Components.FindingList do
       :suppressed -> "Suppressed"
     end
   end
+
+  defp ruling(:fix), do: "Fix"
+  defp ruling(:skip), do: "Don't fix"
 
   defp on(nil), do: ""
   defp on(commit), do: " on #{short(commit)}"

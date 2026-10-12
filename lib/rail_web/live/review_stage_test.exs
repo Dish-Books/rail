@@ -1314,7 +1314,7 @@ defmodule RailWeb.Live.ReviewStageTest do
 
       refute has_element?(view, "#screen-view [data-qa=screen_comment]")
       refute has_element?(view, "[data-qa=screen_card_unsent]")
-      assert has_element?(view, "#review-item-findings[title='Findings: Fix round 2 running']")
+      assert has_element?(view, "#review-item-findings[title='Findings: Fix round 2 · writing the fix plan']")
     end
 
     test "Remove takes a comment out of the screen view, and a state a retake took away closes it", %{
@@ -1562,6 +1562,248 @@ defmodule RailWeb.Live.ReviewStageTest do
       view |> element("#review-item-demo") |> render_click()
 
       assert has_element?(view, "#demo-rerecord[disabled]")
+    end
+  end
+
+  describe "the fix plan" do
+    setup %{task: task, run: run, user: user, code: code, screen: screen} do
+      {:ok, view_only} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
+      {:ok, twice} = Pipeline.save_finding(task, Map.put(screen, :key, "send-twice"))
+      {:ok, _pass} = Pipeline.save_review(task)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), view_only, :fix)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), twice, :fix)
+      diff = %{path: "lib/a.ex", line_kind: :added, line: 3, line_text: "x = 1", filter: :branch}
+      {:ok, _comment} = Pipeline.create_diff_comment(user_scope(user: user), task, Map.put(diff, :body, "Name it."))
+
+      expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      {:ok, _started} = Pipeline.start_fix_round(user_scope(user: user), run)
+
+      plan =
+        "Two fixes.\n\n### What changes\n\n#### `view-only-send`\n\nCheck the role.\n\n#### `send-twice`\n\n" <>
+          "Disable Send.\n\n#### Comment 1\n\nNamed.\n\n### File-level changes\n\n" <>
+          "- `lib/rail/send.ex`: checks the role. For `view-only-send`.\n" <>
+          "- `lib/rail_web/tray.ex`: disables Send. For `send-twice` and comment 1."
+
+      %{plan: plan, diff: diff, view_only: view_only, twice: twice}
+    end
+
+    test "while the lead writes it, Fix plan runs under Findings with no Approve anywhere", %{conn: conn, task: task} do
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#review-item-fix-plan[title='Fix plan: Writing the plan'] [data-qa=review_item_running]")
+      assert has_element?(view, "#review-status", "Fix round 1 · Review lead writing the fix plan")
+      refute has_element?(view, "#approve-fix-plan")
+
+      view |> element("#review-item-fix-plan") |> render_click()
+      assert has_element?(view, "#fix-plan-empty", "Writing the fix plan")
+      assert has_element?(view, "#fix-plan-empty", "On the 2 findings ruled Fix and comment 1.")
+    end
+
+    test "a turn that stopped before a plan was saved leaves nothing to approve", %{conn: conn, task: task, run: run} do
+      {:ok, _stopped} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=fix_plan")
+
+      assert has_element?(view, "#review-item-fix-plan[title='Fix plan: No plan'] [data-qa=review_item_stopped]")
+      assert has_element?(view, "#fix-plan-empty", "No fix plan")
+      refute has_element?(view, "#approve-fix-plan")
+    end
+
+    test "a waiting plan reads under Findings, opens full pane with its items and files, and Approve sits in the header",
+         %{conn: conn, task: task, run: run, plan: plan} do
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(
+               view,
+               "#review-item-fix-plan[title='Fix plan: Waiting on your approval'] [data-qa=review_item_waiting]"
+             )
+
+      assert has_element?(view, "#review-status[data-phase=waiting]", "Fix round 1 · Fix plan waiting on your approval")
+      assert has_element?(view, "#decide-fix-view-only-send")
+      assert has_element?(view, "#decide-skip-view-only-send")
+      assert has_element?(view, "#approve-fix-plan")
+      assert has_element?(view, "#review-send-tray-hint", "saves a revised fix plan in place of this one")
+      refute has_element?(view, "#finish-review")
+
+      view |> element("#review-status-open-fix-plan") |> render_click()
+      assert has_element?(view, "#review-pane[data-item=fix_plan] #fix-plan-item-view-only-send")
+      assert has_element?(view, "#fix-plan-item-send-twice")
+      assert has_element?(view, "#fix-plan-item-comment-1", "Name it.")
+      assert has_element?(view, "#plan-file-2", "lib/rail_web/tray.ex")
+      assert_patch(view, ~p"/tasks/#{task.id}?#{[tab: run.role_id, item: "fix_plan"]}")
+    end
+
+    test "the fix_plan item in the URL opens the plan on load", %{conn: conn, task: task, run: run, plan: plan} do
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?#{[tab: run.role_id, item: "fix_plan"]}")
+
+      assert has_element?(view, "#review-item-fix-plan[aria-current=true]")
+      assert has_element?(view, "#fix-plan-sheet")
+    end
+
+    test "ruling a Fix finding Don't fix withdraws Approve and marks the change everywhere, and ruling it back undoes it",
+         %{conn: conn, task: task, run: run, plan: plan, view_only: view_only, twice: twice} do
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#finding-view-only-send") |> render_click()
+      view |> element("#decide-skip-view-only-send") |> render_click()
+      _settled = render(view)
+
+      refute has_element?(view, "#approve-fix-plan")
+      assert has_element?(view, "#review-item-fix-plan[title='Fix plan: Out of date']")
+      assert has_element?(view, "#review-status[data-phase=outdated]", "Fix round 1 · Fix plan out of date")
+      assert has_element?(view, "#finding-view-only-send", "Don't fix · changed since the plan")
+      assert has_element?(view, "#finding-ruling-changed", "Ruling changed since the fix plan · was Fix")
+      assert has_element?(view, "#review-tray-ruling-view-only-send", "Don't fix, was Fix")
+      assert has_element?(view, "#review-send-tray-hint", "The fix plan is out of date. Send asks the lead to revise it.")
+
+      view |> element("#review-item-fix-plan") |> render_click()
+      assert has_element?(view, "#fix-plan-outdated", "`view-only-send` changed from Fix to Don't fix")
+      assert has_element?(view, "#fix-plan-item-view-only-send [data-qa=fix_plan_item_changed]", "Now Don't fix")
+
+      view |> element("#review-item-findings") |> render_click()
+      Process.sleep(400)
+      view |> element("#decide-fix-view-only-send") |> render_click()
+      _settled = render(view)
+
+      assert has_element?(view, "#approve-fix-plan")
+      refute has_element?(view, "#review-tray-ruling-view-only-send")
+      refute has_element?(view, "#finding-ruling-changed")
+      assert has_element?(view, "#review-item-fix-plan[title='Fix plan: Waiting on your approval']")
+
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), view_only, :skip)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), twice, :skip)
+      view |> element("#review-item-fix-plan") |> render_click()
+
+      assert has_element?(
+               view,
+               "#fix-plan-outdated",
+               "`view-only-send` changed from Fix to Don't fix and `send-twice` changed from Fix to Don't fix"
+             )
+    end
+
+    test "a Send while the plan waits leaves the plan revising on what it carried, with no Approve", %{
+      conn: conn,
+      task: task,
+      run: run,
+      user: user,
+      plan: plan,
+      diff: diff
+    } do
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+      {:ok, _comment} = Pipeline.create_diff_comment(user_scope(user: user), task, Map.put(diff, :body, "And this."))
+      {:ok, _comment} = Pipeline.create_diff_comment(user_scope(user: user), task, Map.put(diff, :body, "And that."))
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=fix_plan")
+
+      expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      view |> element("#send-review-tray", "Send 2") |> render_click()
+      _settled = render(view)
+
+      refute has_element?(view, "#approve-fix-plan")
+      assert has_element?(view, "#review-item-fix-plan[title='Fix plan: Revising']")
+      assert has_element?(view, "#fix-plan-revising", "Revising on comments 2 and 3.")
+      assert has_element?(view, "#fix-plan-sheet")
+
+      {:ok, _stopped} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=fix_plan")
+      assert has_element?(view, "#fix-plan-revising", "The lead stopped before it saved the revised plan")
+      assert has_element?(view, "#review-item-fix-plan[title='Fix plan: Revision stopped']")
+    end
+
+    test "Approve starts the lead, and the header then says who approved it", %{
+      conn: conn,
+      task: task,
+      run: %{id: run_id} = run,
+      plan: plan
+    } do
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      expect(Tools, :start_os_process, fn %{id: ^run_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      view |> element("#approve-fix-plan") |> render_click()
+      _settled = render(view)
+
+      refute has_element?(view, "#approve-fix-plan")
+      assert has_element?(view, "#fix-plan-approved-header", "Approved by Dana")
+      assert has_element?(view, "#review-item-fix-plan [data-qa=review_item_done]")
+      assert %{status: :running} = Repo.reload!(run)
+    end
+
+    test "Approve on a replaced plan is refused with the time it was replaced, and nothing starts", %{
+      conn: conn,
+      task: task,
+      run: run,
+      plan: plan
+    } do
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      {:ok, _replaced} = Pipeline.save_fix_plan(task, %{"plan" => plan <> " Again."})
+
+      reject(Tools, :start_os_process, 2)
+      view |> element("#approve-fix-plan") |> render_click(%{"version" => "1"})
+
+      assert has_element?(view, "#review-error", "That fix plan was replaced at")
+      assert has_element?(view, "#review-error", "Nothing started. Read the plan on screen, then approve it.")
+      assert %{status: :finished} = Repo.reload!(run)
+    end
+
+    test "every other refusal of an Approve says why in the header", %{conn: conn, task: task, run: run, plan: plan} do
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      for {reason, said} <- [
+            {{:fix_plan_not_waiting, :outdated}, "A ruling changed since that plan was saved. Nothing started."},
+            {{:fix_plan_not_waiting, :approved}, "That fix plan is already approved."},
+            {{:fix_plan_not_waiting, :revising}, "The lead is revising that fix plan. Nothing started."},
+            {:no_fix_plan, "There is no fix plan to approve."},
+            {:spawn_failed, "The Review lead could not be started, so the fix plan is not approved."},
+            {:dispatch_disabled, "Dispatch is off, so the Review lead was not resumed."},
+            {:stage_running, "Something is still running on this task."}
+          ] do
+        expect(Pipeline, :approve_fix_plan, fn _scope, _run, 1 -> {:error, reason} end)
+        view |> element("#approve-fix-plan") |> render_click()
+        assert has_element?(view, "#review-error", said)
+      end
+    end
+
+    test "a second tab updates when a plan is saved, when a ruling changes and when the plan is approved", %{
+      conn: conn,
+      task: task,
+      run: run,
+      plan: plan,
+      view_only: view_only
+    } do
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=fix_plan")
+      {:ok, other, _html} = live(conn, ~p"/tasks/#{task.id}?item=fix_plan")
+
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
+      _settled = render(other)
+      assert has_element?(other, "#fix-plan-sheet")
+
+      # The turn's end is what the page hears next.
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+      Phoenix.PubSub.broadcast(Rail.PubSub, "pipeline", {:pipeline_changed, task.id})
+      _settled = render(other)
+      assert has_element?(other, "#approve-fix-plan")
+
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), view_only, :skip)
+      _settled = render(other)
+      refute has_element?(other, "#approve-fix-plan")
+
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), view_only, :fix)
+      _settled = render(view)
+      expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      view |> element("#approve-fix-plan") |> render_click()
+      _settled = render(other)
+      assert has_element?(other, "#fix-plan-approved-header", "Approved by")
     end
   end
 end

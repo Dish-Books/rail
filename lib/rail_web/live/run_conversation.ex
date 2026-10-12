@@ -13,6 +13,7 @@ defmodule RailWeb.Live.RunConversation do
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -260,6 +261,7 @@ defmodule RailWeb.Live.RunConversation do
             finding_comments={@review_finding_comments}
             diff_comments={@review_diff_comments}
             screen_comments={@review_screen_comments}
+            rulings={@review_tray.rulings}
             gate={@review_tray.gate}
             open={@tray_open}
             error={@tray_error}
@@ -376,6 +378,7 @@ defmodule RailWeb.Live.RunConversation do
       |> assign(:account, if(not usage_waiting?, do: turn_account(msg.process)))
       |> assign(:show_usage_card, usage_waiting? and match?(%{os_process: %{id: ^process_id}}, assigns.usage_wait))
       |> assign(:round, msg.author == :human && PlanComment.parse_message(msg.content || ""))
+      |> assign(:review_send, msg.author == :human && FixPlan.parse_note(msg.content || ""))
 
     ~H"""
     <%= case @author do %>
@@ -432,9 +435,11 @@ defmodule RailWeb.Live.RunConversation do
           round={@round}
           identifier={@identifier}
         />
+        <%!-- A Send from the Review tray reads back into what it sent. --%>
+        <.review_send_card :if={@review_send} id={"msg-#{@idx}"} sender={@sender} sent={@review_send} />
         <!-- 4.8 _HumanBubble (right-aligned, plain selectable text, NOT markdown) -->
         <div
-          :if={!@round}
+          :if={!@round and !@review_send}
           id={"msg-#{@idx}"}
           data-qa="human-bubble"
           class="w-fit max-w-[85%] ml-auto mt-3.5 px-3 py-2 rounded-xl rounded-br-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 space-y-1"
@@ -1435,6 +1440,10 @@ defmodule RailWeb.Live.RunConversation do
   defp review_run?(_assigns), do: false
 
   defp tray_message(:stage_running), do: "The Review lead is working. Send waits until it stops."
+
+  defp tray_message(:fix_plan_waiting),
+    do: "Nothing changed since the fix plan was saved. Approve the plan, change a ruling or add a comment."
+
   defp tray_message(:findings_undecided), do: "Some findings have no ruling yet. Rule on every one first."
   defp tray_message(:nothing_to_start), do: "There is nothing to send: the review is finished."
   defp tray_message(:dispatch_disabled), do: "Dispatch is off, so the Review lead was not resumed."

@@ -655,4 +655,27 @@ defmodule RailWeb.Components.FindingDetailTest do
       assert doc |> Floki.find("[data-qa=finding_recommendation]") |> Floki.text() =~ raiser
     end
   end
+
+  test "a finding whose ruling changed since the fix plan says so and keeps its ruling buttons" do
+    finding = %{@finding | decision: :skip}
+
+    doc =
+      (&FindingDetail.finding_detail/1)
+      |> render_component([finding: finding, ruling_was: :fix] ++ @attrs)
+      |> Floki.parse_fragment!()
+
+    assert doc |> Floki.find("#finding-ruling-changed") |> Floki.text() =~ "Ruling changed since the fix plan · was Fix"
+    assert [_fix] = Floki.find(doc, "#decide-fix-send-twice")
+    assert [_skip] = Floki.find(doc, "#decide-skip-send-twice")
+
+    doc =
+      (&FindingDetail.finding_detail/1)
+      |> render_component([finding: %{finding | decision: :fix}, ruling_was: :skip] ++ @attrs)
+      |> Floki.parse_fragment!()
+
+    assert doc |> Floki.find("#finding-ruling-changed") |> Floki.text() =~ "was Don't fix"
+
+    doc = (&FindingDetail.finding_detail/1) |> render_component([finding: finding] ++ @attrs) |> Floki.parse_fragment!()
+    assert Floki.find(doc, "#finding-ruling-changed") == []
+  end
 end

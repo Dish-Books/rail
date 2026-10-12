@@ -129,6 +129,50 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
     |> finish()
   end
 
+  @doc """
+  Refuses markdown in `field` whose `### File-level changes` section is not the bullet list the Plan tab lays
+  out, by the same rules as a plan's. Markdown without the section is left alone.
+  """
+  def validate_file_changes(%Ecto.Changeset{} = changeset, field) do
+    validate_change(changeset, field, fn ^field, content ->
+      case content |> sections() |> elem(1) |> List.keyfind("File-level changes", 0) do
+        {_title, _lines} = section ->
+          errors = section_errors(section, [])
+
+          errors =
+            if errors == [] and build_file_changes(content) == nil,
+              do: [
+                "does not lay out its `### File-level changes` as a list of bullets that each start with a path in backticks"
+              ],
+              else: errors
+
+          Enum.map(errors, &{field, &1})
+
+        nil ->
+          []
+      end
+    end)
+  end
+
+  @doc """
+  The `### File-level changes` of any markdown as the Plan tab numbers them, each `%{number:, path:, description:}`,
+  or `nil` when it has no such section or the section does not lay out.
+  """
+  def build_file_changes(content) when is_binary(content) do
+    content
+    |> MDEx.parse_document!(extension: @extension)
+    |> Map.fetch!(:nodes)
+    |> split(3)
+    |> Enum.find_value(fn
+      {%MDEx.Heading{} = heading, body} -> if text(heading) == "File-level changes", do: files(body)
+      {nil, _preamble} -> nil
+    end)
+    |> case do
+      [_first | _rest] = files -> files
+      _absent_or_unlaid -> nil
+    end
+  end
+
   # Splits on the `###` headings outside fenced blocks, keeping each section's body as lines.
   defp sections(body) do
     {lead, sections, _fenced} =

@@ -394,4 +394,40 @@ defmodule RailWeb.Components.UpNextTest do
     html = render_component(&UpNext.up_next/1, runs: [waiting.(:engineer), waiting.(:plan)])
     assert html =~ ~r/id="up-next-row-run_plan".*pick a design.*>\s*Pick\s*</s
   end
+
+  test "a Review run whose fix plan waits, out of date included, asks for its approval and opens the plan, also at Finalize",
+       %{waiting: waiting, scratch: scratch} do
+    File.mkdir_p!(Path.join(scratch, "fix_plans"))
+    sent = %{round: 1, findings: [], comments: [%{number: 1, kind: "diff", text: "Why?"}]}
+
+    for stage <- [:review, :finalize] do
+      run = waiting.(stage)
+      run = %{run | role_id: "rol_lead", task: %{run.task | id: "tsk_#{stage}"}}
+      href = "/tasks/tsk_#{stage}?tab=rol_lead&item=fix_plan"
+
+      File.write!(
+        Path.join(scratch, "fix_plans/UPN-1.json"),
+        Jason.encode!(Map.merge(sent, %{plan: "p", covered_comments: 1}))
+      )
+
+      card = (&UpNext.up_next/1) |> render_component(runs: [run]) |> Floki.parse_fragment!()
+      assert [^href] = card |> Floki.find("[data-qa=up-next-featured]") |> Floki.attribute("href")
+      assert card |> Floki.find("[data-qa=up-next-summary]") |> Floki.text() =~ "Waiting on you to approve the fix plan."
+      assert card |> Floki.find("[data-qa=up-next-action]") |> Floki.text() |> String.trim() == "Review"
+
+      other = %{waiting.(:plan) | id: "run_first", completed_at: ~U[2025-12-31 10:00:00Z]}
+      out_of_date = Map.merge(sent, %{plan: "p", covered_comments: 1, covered_keys: ["gone"], findings: [%{key: "gone"}]})
+      File.write!(Path.join(scratch, "fix_plans/UPN-1.json"), Jason.encode!(out_of_date))
+
+      row =
+        (&UpNext.up_next/1)
+        |> render_component(runs: [other, run])
+        |> Floki.parse_fragment!()
+        |> Floki.find("[data-qa=up-next-row]")
+
+      assert Floki.text(row) =~ "fix plan to approve"
+      assert Floki.text(row) =~ "Review"
+      assert [^href] = Floki.attribute(row, "href")
+    end
+  end
 end

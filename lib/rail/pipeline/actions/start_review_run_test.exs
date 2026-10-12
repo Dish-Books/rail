@@ -12,6 +12,9 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
+  # Stubbed, never called, so it is named rather than imported.
+  @prepare_turn Rail.Pipeline.Utils.PrepareTurn
+
   setup %{project: project} do
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
 
@@ -65,6 +68,35 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_review_run(run)
     assert File.dir?(Path.join([task.scratch_path, "qa", "evidence"]))
     assert File.dir?(Path.join(task.scratch_path, "demo"))
+  end
+
+  # A turn that only plans a fix round changes nothing, so the approved turn is the one that merges.
+  test "a planning turn on a branch behind the default gets no merge-first line, and the approved turn gets it", %{
+    task: task,
+    run: run
+  } do
+    path = Path.join([task.scratch_path, "fix_plans", "SRV-1.json"])
+    File.mkdir_p!(Path.dirname(path))
+    File.write!(path, Jason.encode!(%{round: 1, findings: [], comments: []}))
+    stub(@prepare_turn, :prepare_turn, fn %Run{} -> "The branch is behind origin/main.\n\n" end)
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      refute prompt =~ "The branch is behind origin/main."
+      assert prompt =~ "At the start of every turn but one that only plans a fix round"
+      assert prompt =~ "Each Send starts with a plan and nothing else"
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_review_run(run)
+
+    File.write!(path, Jason.encode!(%{round: 1, findings: [], comments: [], approved_at: "2026-10-12T16:58:00Z"}))
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned,
+                                        ["-p", "The branch is behind origin/main.\n\n" <> _brief | _rest] ->
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_review_run(run)
   end
 
   test "neither the lead nor any subagent is handed the design page or its images", %{task: task, run: run} do
@@ -148,7 +180,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
   } do
     test_pid = self()
 
-    expect(Rail.Pipeline.Utils.PrepareTurn, :prepare_turn, fn %Run{task: %Task{worktree_path: ^worktree_path}} ->
+    expect(@prepare_turn, :prepare_turn, fn %Run{task: %Task{worktree_path: ^worktree_path}} ->
       send(test_pid, :prepared)
       "The branch is behind origin/main.\n\n"
     end)
