@@ -570,8 +570,7 @@ defmodule Rail.Mcp.Utils.McpTools do
       "description" =>
         "Ask the human what you could not settle yourself, the whole round in one call, before you end your turn. " <>
           "The human sees the round when your turn ends and the answers come back as one message. A second call in " <>
-          "the same turn adds to the same round, and a question already asked is not asked twice. A call with a bad " <>
-          "entry is refused whole, naming each by its number, and nothing is asked.",
+          "the same turn adds to the same round, and a question already asked is not asked twice.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{

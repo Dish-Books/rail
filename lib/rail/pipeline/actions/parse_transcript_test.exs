@@ -269,46 +269,4 @@ defmodule Rail.Pipeline.Actions.ParseTranscriptTest do
     assert [%Turn{author: :human}, %Turn{author: :subagent, turns: [%Turn{author: :role, content: "Hi."}]}] =
              Pipeline.parse_transcript(["[human] Go", "[within toolu_y] Hi."])
   end
-
-  test "a lead's or a subagent's line opening with a question marker is gone, and a mention mid-sentence stays" do
-    turns =
-      Pipeline.parse_transcript([
-        "Two things the code does not settle.",
-        "[QUESTION: Which database?] [OPTIONS: Postgres | SQLite]",
-        "- [QUESTION: Behind a flag?]",
-        "  > \"[QUESTION: ...] [OPTIONS: <recommended> | <other>]\"",
-        "1. [QUESTION: Who reviews it?]",
-        "[OPTIONS: Sam | Dana]",
-        "Agents used to write [QUESTION: ...] lines, which the card now holds.",
-        "[subagent toolu_pm] product · write the ticket",
-        "[within toolu_pm] Saved the ticket.",
-        "[within toolu_pm] * [QUESTION: Which team owns it?] [OPTIONS: Billing | Core]",
-        "[subagent end toolu_pm]"
-      ])
-
-    assert [
-             %Turn{
-               author: :role,
-               content:
-                 "Two things the code does not settle.\nAgents used to write [QUESTION: ...] lines, which the card now holds."
-             },
-             %Turn{author: :subagent, turns: [%Turn{author: :role, content: "Saved the ticket."}]}
-           ] = turns
-  end
-
-  test "a message of only marker lines adds no turn, and a person's line starting with one is kept" do
-    assert [
-             %Turn{author: :human, content: "[QUESTION: Have you looked again?]"},
-             %Turn{author: :event, content: "[run] claude pid 1 in /tmp"},
-             %Turn{author: :activity}
-           ] =
-             Pipeline.parse_transcript([
-               "[human] [QUESTION: Have you looked again?]",
-               "[run] claude pid 1 in /tmp",
-               "[QUESTION: Which database?]",
-               "",
-               "[OPTIONS: Postgres | SQLite]",
-               "[tool] Read lib/rail.ex"
-             ])
-  end
 end

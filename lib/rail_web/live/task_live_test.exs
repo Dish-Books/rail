@@ -12,7 +12,6 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
-  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Question
@@ -492,10 +491,14 @@ defmodule RailWeb.TaskLiveTest do
     {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
     blocked = Repo.preload(blocked, task: :issue)
 
-    {:ok, _first} =
-      Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?", options: ["Postgres", "MySQL"]})
+    Repo.insert!(%Question{
+      task_id: blocked.task_id,
+      run_id: blocked.id,
+      prompt: "Which database?",
+      options: ["Postgres", "MySQL"]
+    })
 
-    {:ok, _second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which region?"})
+    Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which region?"})
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -513,10 +516,14 @@ defmodule RailWeb.TaskLiveTest do
     {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
     blocked = Repo.preload(blocked, task: :issue)
 
-    {:ok, _first} =
-      Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?", options: ["Postgres", "MySQL"]})
+    Repo.insert!(%Question{
+      task_id: blocked.task_id,
+      run_id: blocked.id,
+      prompt: "Which database?",
+      options: ["Postgres", "MySQL"]
+    })
 
-    {:ok, _second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which region?"})
+    Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which region?"})
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
     reject(&Pipeline.read_ticket/1)
@@ -541,7 +548,7 @@ defmodule RailWeb.TaskLiveTest do
     {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
     blocked = Repo.preload(blocked, task: :issue)
 
-    {:ok, question} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?"})
+    question = Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which database?"})
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -556,8 +563,12 @@ defmodule RailWeb.TaskLiveTest do
     {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
     blocked = Repo.preload(blocked, task: :issue)
 
-    {:ok, _question} =
-      Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?", options: ["Postgres", "MySQL"]})
+    Repo.insert!(%Question{
+      task_id: blocked.task_id,
+      run_id: blocked.id,
+      prompt: "Which database?",
+      options: ["Postgres", "MySQL"]
+    })
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -580,8 +591,8 @@ defmodule RailWeb.TaskLiveTest do
     {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
     blocked = Repo.preload(blocked, task: :issue)
 
-    {:ok, _first} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?"})
-    {:ok, _second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which region?"})
+    Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which database?"})
+    Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which region?"})
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
     assert has_element?(view, "[data-qa='question-card']", "Which database?")
@@ -600,7 +611,7 @@ defmodule RailWeb.TaskLiveTest do
 
   test "a question its run moved on from is still answered here and sent", %{conn: conn, task: task, run: run} do
     parked = Repo.preload(run, task: :issue)
-    {:ok, question} = Pipeline.register_question(parked, %DetectedQuestion{prompt: "Rebase onto main?"})
+    question = Repo.insert!(%Question{task_id: parked.task_id, run_id: parked.id, prompt: "Rebase onto main?"})
 
     # Updating the branch resumes the run without anyone answering what it asked.
     {:ok, _resumed} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished})
@@ -618,7 +629,7 @@ defmodule RailWeb.TaskLiveTest do
     {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
     blocked = Repo.preload(blocked, task: :issue)
 
-    {:ok, question} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?"})
+    question = Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which database?"})
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -631,7 +642,7 @@ defmodule RailWeb.TaskLiveTest do
     {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
     blocked = Repo.preload(blocked, task: :issue)
 
-    {:ok, question} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?"})
+    question = Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which database?"})
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -645,7 +656,7 @@ defmodule RailWeb.TaskLiveTest do
     {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
     blocked = Repo.preload(blocked, task: :issue)
 
-    {:ok, question} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?"})
+    question = Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which database?"})
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -663,8 +674,7 @@ defmodule RailWeb.TaskLiveTest do
   test "a round sent from another tab leaves this one", %{conn: conn, task: task, run: run} do
     {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
 
-    {:ok, question} =
-      blocked |> Repo.preload(task: :issue) |> Pipeline.register_question(%DetectedQuestion{prompt: "Which database?"})
+    question = Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which database?"})
 
     {:ok, _answered} = Pipeline.answer_question(system_scope(), question, "Postgres")
 
@@ -688,11 +698,16 @@ defmodule RailWeb.TaskLiveTest do
 
       blocked = Repo.preload(blocked, task: :issue)
 
-      {:ok, first} =
-        Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?", options: ["Postgres", "MySQL"]})
+      first =
+        Repo.insert!(%Question{
+          task_id: blocked.task_id,
+          run_id: blocked.id,
+          prompt: "Which database?",
+          options: ["Postgres", "MySQL"]
+        })
 
-      {:ok, second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which region?"})
-      {:ok, third} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Who reviews it?"})
+      second = Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which region?"})
+      third = Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Who reviews it?"})
 
       # A sent round resumes the conversation in the background, from the task's worktree.
       stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
@@ -743,6 +758,39 @@ defmodule RailWeb.TaskLiveTest do
       lines = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
       assert lines =~ "The answer is: Sqlite"
       refute lines =~ "Postgres"
+    end
+
+    test "a reload opens the card on the next question still open, not an answered first one", %{
+      conn: conn,
+      task: task,
+      questions: [first, second, _third]
+    } do
+      {:ok, _answered} = Pipeline.answer_question(system_scope(), first, "Postgres")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#question-tab-1[aria-selected='true']")
+      assert has_element?(view, "#question-prompt", "Which region?")
+      refute has_element?(view, "#answer-textarea", "Postgres")
+
+      view |> form("#answer-question-form", %{"answer" => "eu-west-1"}) |> render_submit()
+
+      assert {:ok, %{status: :answered, answer: "Postgres"}} = Pipeline.get_question(first.id)
+      assert {:ok, %{status: :answered, answer: "eu-west-1"}} = Pipeline.get_question(second.id)
+    end
+
+    test "a reload with every question answered opens the card on the first", %{
+      conn: conn,
+      task: task,
+      questions: questions
+    } do
+      for {question, answer} <- Enum.zip(questions, ["Postgres", "eu-west-1", "Sam"]),
+          do: {:ok, _answered} = Pipeline.answer_question(system_scope(), question, answer)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#question-tab-0[aria-selected='true']")
+      assert has_element?(view, "#answer-textarea", "Postgres")
     end
 
     test "answering every question keeps the card up and sends nothing until asked", %{
@@ -1068,8 +1116,7 @@ defmodule RailWeb.TaskLiveTest do
   } do
     {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
 
-    {:ok, %Question{}} =
-      blocked |> Repo.preload(task: :issue) |> Pipeline.register_question(%DetectedQuestion{prompt: "Which database?"})
+    %Question{} = Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which database?"})
 
     {:ok, outsider} =
       Users.register_oauth_user(%{github_id: "gh_task_outsider", login: "task_outsider", email: "outsider@example.com"})
@@ -1183,8 +1230,7 @@ defmodule RailWeb.TaskLiveTest do
   } do
     {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
 
-    {:ok, %Question{id: own_id}} =
-      blocked |> Repo.preload(task: :issue) |> Pipeline.register_question(%DetectedQuestion{prompt: "Which cache?"})
+    %Question{id: own_id} = Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which cache?"})
 
     other_issue =
       %Issue{}
@@ -1210,10 +1256,8 @@ defmodule RailWeb.TaskLiveTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, %Question{id: question_id}} =
-      other_run
-      |> Repo.preload(task: :issue)
-      |> Pipeline.register_question(%DetectedQuestion{prompt: "Which database?"})
+    %Question{id: question_id} =
+      Repo.insert!(%Question{task_id: other_run.task_id, run_id: other_run.id, prompt: "Which database?"})
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
     card = with_target(view, "#question-card-#{run.id}")
@@ -1328,8 +1372,8 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
       blocked = Repo.preload(blocked, task: :issue)
 
-      {:ok, _first} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which flow?"})
-      {:ok, _second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "How many?"})
+      Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which flow?"})
+      Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "How many?"})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -1982,8 +2026,8 @@ defmodule RailWeb.TaskLiveTest do
     test "working in the question card does not read the outputs again", %{conn: conn, task: task, run: run} do
       {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
       blocked = Repo.preload(blocked, task: :issue)
-      {:ok, _first} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which layout?", options: ["A", "B"]})
-      {:ok, _second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "How many per page?"})
+      Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which layout?", options: ["A", "B"]})
+      Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "How many per page?"})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       reject(&Pipeline.read_design/2)
@@ -2816,10 +2860,14 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
       blocked = Repo.preload(blocked, task: :issue)
 
-      {:ok, _first} =
-        Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?", options: ["Postgres", "MySQL"]})
+      Repo.insert!(%Question{
+        task_id: blocked.task_id,
+        run_id: blocked.id,
+        prompt: "Which database?",
+        options: ["Postgres", "MySQL"]
+      })
 
-      {:ok, _second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which region?"})
+      Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which region?"})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       reject(&Git.load_diff/3)
@@ -2854,7 +2902,7 @@ defmodule RailWeb.TaskLiveTest do
     } do
       {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
       blocked = Repo.preload(blocked, task: :issue)
-      {:ok, _question} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?"})
+      Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which database?"})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       view |> form("#answer-question-form", %{"answer" => "Half typed"}) |> render_change()
@@ -2878,7 +2926,7 @@ defmodule RailWeb.TaskLiveTest do
     } do
       {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
       blocked = Repo.preload(blocked, task: :issue)
-      {:ok, _question} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?"})
+      Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which database?"})
 
       assert {:ok, typing, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert {:ok, idle, _html} = live(conn, ~p"/tasks/#{task.id}")
@@ -4997,8 +5045,7 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, _pass} = Pipeline.save_review(task)
       {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
 
-      {:ok, _asked} =
-        blocked |> Repo.preload(task: :issue) |> Pipeline.register_question(%DetectedQuestion{prompt: "Why?"})
+      Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Why?"})
 
       assert {:ok, view, html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -5334,10 +5381,14 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
       blocked = Repo.preload(blocked, task: :issue)
 
-      {:ok, _first} =
-        Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Fix it here?", options: ["Yes", "No"]})
+      Repo.insert!(%Question{
+        task_id: blocked.task_id,
+        run_id: blocked.id,
+        prompt: "Fix it here?",
+        options: ["Yes", "No"]
+      })
 
-      {:ok, _second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Who owns it?"})
+      Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Who owns it?"})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       reject(&Pipeline.list_findings/1)
@@ -6122,10 +6173,15 @@ defmodule RailWeb.TaskLiveTest do
 
       blocked = Repo.preload(blocked, task: :issue)
 
-      {:ok, first} =
-        Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Do dismissed findings count as decided?"})
+      first =
+        Repo.insert!(%Question{
+          task_id: blocked.task_id,
+          run_id: blocked.id,
+          prompt: "Do dismissed findings count as decided?"
+        })
 
-      {:ok, second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which color is the Send button?"})
+      second =
+        Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which color is the Send button?"})
 
       {:ok, _by_rail} =
         first
@@ -6145,6 +6201,7 @@ defmodule RailWeb.TaskLiveTest do
     test "a question Rail answered opens with its answer in the box and whose it was, and stays Rail's until changed",
          %{conn: conn, task: task, questions: [first, _second]} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#question-tab-0") |> render_click()
 
       assert has_element?(view, "#question-tab-0[aria-label='Question 1, answered by Rail']")
       assert has_element?(view, "#question-meta", "Rail answered from Dana Okafor on")
@@ -6751,7 +6808,7 @@ defmodule RailWeb.TaskLiveTest do
     } do
       {:ok, blocked} = Pipeline.update_run(first_run, %{status: :blocked_on_input, stage_outcome: :in_progress})
       blocked = Repo.preload(blocked, task: :issue)
-      {:ok, _question} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which region?"})
+      Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which region?"})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
       assert has_element?(view, "#split-row-TLV-11 [data-qa='split-row-badge']", "1")

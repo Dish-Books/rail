@@ -47,7 +47,7 @@ defmodule Rail.Tools.ClaudeEventsTest do
         "content" => [
           %{
             "type" => "text",
-            "text" => "Analyzing repository...\n[QUESTION: Scope to one repo?] [OPTIONS: yes, no]\n"
+            "text" => "Analyzing repository...\nScoping it to one repo.\n"
           }
         ]
       }
@@ -56,11 +56,11 @@ defmodule Rail.Tools.ClaudeEventsTest do
     state = ClaudeEvents.handle_event(state, event)
 
     assert state.assistant_text ==
-             "Analyzing repository...\n[QUESTION: Scope to one repo?] [OPTIONS: yes, no]\n"
+             "Analyzing repository...\nScoping it to one repo.\n"
 
     assert state.logs == [
              "Analyzing repository...",
-             "[QUESTION: Scope to one repo?] [OPTIONS: yes, no]"
+             "Scoping it to one repo."
            ]
   end
 
@@ -99,7 +99,7 @@ defmodule Rail.Tools.ClaudeEventsTest do
           %{
             "type" => "tool_result",
             "is_error" => false,
-            "content" => "File contents [QUESTION: ignored question marker in tool output]"
+            "content" => "File contents, ignored in tool output"
           },
           %{
             "type" => "tool_result",

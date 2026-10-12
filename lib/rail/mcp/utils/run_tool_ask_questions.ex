@@ -27,6 +27,12 @@ defmodule Rail.Mcp.Utils.RunToolAskQuestions do
     {:refused, "Refused, nothing asked. questions is empty: list every question you could not close."}
   end
 
+  def run_tool_ask_questions(%Task{}, %{"questions" => _not_a_list}, _opts) do
+    {:refused,
+     "Refused, nothing asked. questions must be a list: " <>
+       "send each question as an object with a prompt and optional options."}
+  end
+
   def run_tool_ask_questions(%Task{}, _arguments, _opts) do
     {:refused,
      "Refused, nothing asked. questions is required: a list of objects, each with a prompt and optional options."}

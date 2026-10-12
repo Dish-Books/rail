@@ -21,9 +21,10 @@ defmodule RailWeb.Live.QuestionCard do
 
     %{questions: questions, selected_id: selected_id} = socket.assigns
 
+    # A card opened afresh starts where the person left off, as saving moves on to the next open question.
     if Enum.any?(questions, &(&1.id == selected_id)),
       do: {:ok, socket},
-      else: {:ok, open(socket, hd(questions))}
+      else: {:ok, open(socket, Enum.find(questions, hd(questions), &(&1.status == :pending)))}
   end
 
   @impl true

@@ -6,7 +6,6 @@ defmodule RailWeb.Live.RunConversationTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Repo
@@ -294,8 +293,11 @@ defmodule RailWeb.Live.RunConversationTest do
         })
 
       run = Repo.preload(run, task: :issue)
-      {:ok, first} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?", options: ["Postgres"]})
-      {:ok, second} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which region?"})
+
+      first =
+        Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?", options: ["Postgres"]})
+
+      second = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which region?"})
       stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
       {:ok, reader} =
@@ -341,7 +343,7 @@ defmodule RailWeb.Live.RunConversationTest do
       ])
 
       blocked = run |> Repo.reload!() |> Repo.preload(task: :issue)
-      {:ok, third} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Behind a flag?"})
+      third = Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Behind a flag?"})
 
       {:ok, _by_rail} =
         third |> Question.changeset(%{answer: "Yes.", status: :answered, answered_by_rail: true}) |> Repo.update()
@@ -375,20 +377,6 @@ defmodule RailWeb.Live.RunConversationTest do
       assert [bubble] = Floki.find(doc, "[data-qa='human-bubble']")
       assert Floki.text(bubble) =~ "You asked: why group by file?"
       refute html =~ ~s(data-qa="reminder-bubble")
-    end
-
-    test "a log from before the tool shows none of its marker lines", %{task: task, roles_map: roles_map, run: run} do
-      Pipeline.append_run_events(run.id, nil, [
-        "Two things the code does not settle.",
-        "[QUESTION: Which database?] [OPTIONS: Postgres | SQLite]",
-        "- [QUESTION: Which region?]"
-      ])
-
-      html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
-
-      assert html =~ "Two things the code does not settle."
-      refute html =~ "[QUESTION:"
-      refute html =~ "[OPTIONS:"
     end
   end
 

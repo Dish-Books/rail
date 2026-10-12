@@ -3,7 +3,6 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Roles
@@ -35,7 +34,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
       Pipeline.create_run(%{
         task_id: task.id,
         role_id: role.id,
-        status: :running,
+        status: :blocked_on_input,
         conversation_id: "sess_answer_question",
         started_at: DateTime.utc_now()
       })
@@ -46,7 +45,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
   end
 
   test "records the answer and tells the agent nothing", %{run: run} do
-    {:ok, question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
+    question = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
 
     assert {:ok, %Question{status: :answered, answer: "Postgres", answered_at: %DateTime{}}} =
              Pipeline.answer_question(system_scope(), question, "Postgres")
@@ -55,13 +54,13 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
   end
 
   test "an empty answer is not an answer", %{run: run} do
-    {:ok, question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
+    question = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
 
     assert {:error, :empty_answer} = Pipeline.answer_question(system_scope(), question, "   ")
   end
 
   test "an answered question takes a replacement until it is sent", %{run: run} do
-    {:ok, question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
+    question = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
     {:ok, answered} = Pipeline.answer_question(system_scope(), question, "Postgres")
 
     assert {:ok, %Question{status: :answered, answer: "Sqlite"}} =
@@ -69,7 +68,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
   end
 
   test "a dismissed question can be answered instead", %{run: run} do
-    {:ok, question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
+    question = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
     {:ok, dismissed} = Pipeline.dismiss_question(question)
 
     assert {:ok, %Question{status: :answered, answer: "Postgres"}} =
@@ -77,7 +76,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
   end
 
   test "a sent round cannot be changed", %{run: run} do
-    {:ok, question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
+    question = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
     {:ok, _answered} = Pipeline.answer_question(system_scope(), question, "Postgres")
 
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
@@ -89,7 +88,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
   end
 
   test "the replacement is what goes back", %{run: run} do
-    {:ok, question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
+    question = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
     {:ok, answered} = Pipeline.answer_question(system_scope(), question, "Postgres")
     {:ok, _replaced} = Pipeline.answer_question(system_scope(), answered, "Sqlite")
 
@@ -103,8 +102,8 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
   end
 
   test "a round with nothing answered is not sent", %{run: run} do
-    {:ok, first} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
-    {:ok, second} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Behind a flag?"})
+    first = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
+    second = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Behind a flag?"})
     {:ok, _dismissed} = Pipeline.dismiss_question(first)
     {:ok, _dismissed} = Pipeline.dismiss_question(second)
 
@@ -116,8 +115,8 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
   end
 
   test "the round goes back as one message once nothing is pending", %{run: run} do
-    {:ok, first} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
-    {:ok, second} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Behind a flag?"})
+    first = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
+    second = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Behind a flag?"})
 
     {:ok, _answered} = Pipeline.answer_question(system_scope(), first, "Postgres")
     {:ok, _dismissed} = Pipeline.dismiss_question(second)
@@ -136,8 +135,8 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
   end
 
   test "nothing goes back while something is still pending", %{run: run} do
-    {:ok, first} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
-    {:ok, _second} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Behind a flag?"})
+    first = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
+    Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Behind a flag?"})
 
     {:ok, _answered} = Pipeline.answer_question(system_scope(), first, "Postgres")
 
@@ -150,7 +149,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
   end
 
   test "a single answer reads as one question asked", %{run: run} do
-    {:ok, only} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
+    only = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
     {:ok, _answered} = Pipeline.answer_question(system_scope(), only, "Postgres")
 
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
@@ -173,7 +172,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
         email: "dana-#{id}@ans.example"
       })
 
-    {:ok, question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
+    question = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
 
     {:ok, by_rail} =
       question |> Question.changeset(%{answer: "Postgres", status: :answered, answered_by_rail: true}) |> Repo.update()
@@ -191,7 +190,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
         email: "dana-same@ans.example"
       })
 
-    {:ok, question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
+    question = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
 
     {:ok, %Question{updated_at: updated_at} = by_rail} =
       question |> Question.changeset(%{answer: "Postgres", status: :answered, answered_by_rail: true}) |> Repo.update()

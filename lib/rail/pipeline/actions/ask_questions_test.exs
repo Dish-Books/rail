@@ -46,6 +46,40 @@ defmodule Rail.Pipeline.Actions.AskQuestionsTest do
            ] = Pipeline.list_questions(task, order_by: [asc: :inserted_at, asc: :id])
   end
 
+  test "a call's new questions are filed in one insert and come back in the order asked", %{
+    task: task,
+    run: %Run{id: run_id} = run
+  } do
+    test_pid = self()
+    handler = "ask-questions-#{inspect(test_pid)}"
+
+    # The handler sees every test's queries, so only an insert carrying this run's id is counted.
+    :ok =
+      :telemetry.attach(
+        handler,
+        [:rail, :repo, :query],
+        fn
+          _event, _measurements, %{source: "questions", query: "INSERT" <> _rest, params: params}, _config ->
+            if run_id in params, do: send(test_pid, :inserted)
+
+          _event, _measurements, _metadata, _config ->
+            :ok
+        end,
+        nil
+      )
+
+    on_exit(fn -> :telemetry.detach(handler) end)
+    prompts = for number <- [12, 3, 7, 1, 10, 5, 9, 2, 11, 4, 8, 6], do: "Question #{number}?"
+
+    {:ok, %{asked: asked, already: [%Question{prompt: "Question 7?"}]}} =
+      Pipeline.ask_questions(run, for(prompt <- Enum.concat(prompts, ["question 7?"]), do: %{"prompt" => prompt}))
+
+    assert_received :inserted
+    refute_received :inserted
+    assert Enum.map(asked, & &1.prompt) == prompts
+    assert Enum.map(Pipeline.list_questions(task, order_by: [asc: :inserted_at, asc: :id]), & &1.prompt) == prompts
+  end
+
   test "a prompt the run holds open is reused rather than asked again", %{task: task, run: run} do
     {:ok, %{asked: [%Question{id: held_id}]}} = Pipeline.ask_questions(run, [%{"prompt" => "Which database?"}])
     Repo.update_all(from(q in Question, where: q.id == ^held_id), set: [status: :pending])

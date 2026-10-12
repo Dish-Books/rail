@@ -7,13 +7,10 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
   alias Rail.Issues
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Pipeline
-  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
-  alias Rail.Pipeline.Schemas.RunEvent
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles
-  alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
@@ -45,138 +42,12 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
         started_at: DateTime.utc_now()
       })
 
-    spawn_os_process = fn ->
-      %OsProcess{}
-      |> OsProcess.changeset(%{
-        run_id: run.id,
-        task_id: run.task_id,
-        stream_path: "/tmp/run_finished/#{UXID.generate!()}.ndjson",
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-      |> Repo.insert!()
-    end
-
-    say = fn os_process, text ->
-      Repo.insert!(%RunEvent{
-        run_id: run.id,
-        os_process_id: os_process.id,
-        line: ~s({"type":"assistant","message":{"content":[{"type":"text","text":"#{text}"}]}})
-      })
-    end
-
-    %{task: task, run: run, spawn_os_process: spawn_os_process, say: say}
-  end
-
-  test "files only the questions the exiting process itself asked", %{
-    task: %Task{id: task_id},
-    run: run,
-    spawn_os_process: spawn_os_process,
-    say: say
-  } do
-    first = spawn_os_process.()
-    say.(first, "[QUESTION: Which database?] [OPTIONS: Postgres, SQLite]")
-
-    second = spawn_os_process.()
-    say.(second, "[QUESTION: Which region?]")
-
-    assert [%DetectedQuestion{prompt: "Which database?"}] = register_asked_questions(first, run)
-
-    assert [%Question{prompt: "Which database?", options: ["Postgres", "SQLite"]}] =
-             pending_questions(task_id)
-  end
-
-  test "registers a batch in the order it was asked, parks the task, and blocks the run", %{
-    task: %Task{id: task_id},
-    run: run,
-    spawn_os_process: spawn_os_process,
-    say: say
-  } do
-    os_process = spawn_os_process.()
-    say.(os_process, "[QUESTION: Which database?] [OPTIONS: PG, MySQL]")
-    say.(os_process, "[QUESTION: Ship behind a flag?]")
-    say.(os_process, "[QUESTION: Which database?]")
-
-    assert [%DetectedQuestion{}, %DetectedQuestion{}] = register_asked_questions(os_process, run)
-
-    pending = pending_questions(task_id)
-    assert Enum.map(pending, & &1.prompt) == ["Which database?", "Ship behind a flag?"]
-
-    assert %Task{} = Repo.get!(Task, task_id)
-    assert %Run{status: :blocked_on_input} = Repo.get!(Run, run.id)
-  end
-
-  test "settles a process that asked nothing without parking the task", %{
-    task: %Task{id: task_id},
-    run: run,
-    spawn_os_process: spawn_os_process,
-    say: say
-  } do
-    os_process = spawn_os_process.()
-    say.(os_process, "Postgres it is.")
-
-    assert register_asked_questions(os_process, run) == []
-    assert pending_questions(task_id) == []
-  end
-
-  test "leaves out what Rail and the human contributed between turns", %{
-    task: %Task{id: task_id},
-    run: run,
-    spawn_os_process: spawn_os_process,
-    say: say
-  } do
-    os_process = spawn_os_process.()
-    say.(os_process, "[QUESTION: Which database?]")
-
-    Repo.insert!(%RunEvent{
-      run_id: run.id,
-      os_process_id: os_process.id,
-      line: "[human] [QUESTION: Have you taken another look?]"
-    })
-
-    Repo.insert!(%RunEvent{
-      run_id: run.id,
-      os_process_id: os_process.id,
-      line: "[human:usr_dana] Looks close.\n[QUESTION: Is this done yet?]"
-    })
-
-    Repo.insert!(%RunEvent{
-      run_id: run.id,
-      os_process_id: os_process.id,
-      line: "[reminder 1 of 2] Attach a screenshot.\n[QUESTION: Where is the evidence?]"
-    })
-
-    assert [%DetectedQuestion{prompt: "Which database?"}] =
-             register_asked_questions(os_process, run)
-
-    assert [%Question{prompt: "Which database?"}] = pending_questions(task_id)
-  end
-
-  test "a subagent's question is its lead's to relay, so it is not filed", %{
-    task: %Task{id: task_id},
-    run: run,
-    spawn_os_process: spawn_os_process,
-    say: say
-  } do
-    os_process = spawn_os_process.()
-
-    Repo.insert!(%RunEvent{
-      run_id: run.id,
-      os_process_id: os_process.id,
-      line:
-        ~s({"type":"assistant","parent_tool_use_id":"toolu_pm","message":{"content":[{"type":"text","text":"[QUESTION: Which team?]"}]}})
-    })
-
-    say.(os_process, "[QUESTION: Which database?]")
-
-    assert [%DetectedQuestion{prompt: "Which database?"}] = register_asked_questions(os_process, run)
-    assert [%Question{prompt: "Which database?"}] = pending_questions(task_id)
+    %{task: task, run: run}
   end
 
   test "what the run asked through the tool becomes the round in the order asked, and the run parks", %{
     task: %Task{id: task_id},
-    run: run,
-    spawn_os_process: spawn_os_process
+    run: run
   } do
     {:ok, _asked} =
       Pipeline.ask_questions(run, [
@@ -186,7 +57,7 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
 
     {:ok, _asked} = Pipeline.ask_questions(run, [%{"prompt" => "Who reviews it?"}])
 
-    assert [%Question{}, %Question{}, %Question{}] = register_asked_questions(spawn_os_process.(), run)
+    assert [%Question{}, %Question{}, %Question{}] = register_asked_questions(run)
 
     assert [
              %Question{prompt: "Which database?", options: ["Postgres"]},
@@ -197,32 +68,15 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
     assert %Run{status: :blocked_on_input} = Repo.get!(Run, run.id)
   end
 
-  test "a question asked through the tool and again as a marker line is filed once, ahead of the markers", %{
-    task: %Task{id: task_id},
-    run: run,
-    spawn_os_process: spawn_os_process,
-    say: say
-  } do
-    os_process = spawn_os_process.()
-    {:ok, _asked} = Pipeline.ask_questions(run, [%{"prompt" => "Which region?"}])
-    say.(os_process, "[QUESTION: Which database?]")
-    say.(os_process, "[QUESTION: which region?]")
-
-    register_asked_questions(os_process, run)
-
-    assert ["Which region?", "Which database?"] = task_id |> pending_questions() |> Enum.map(& &1.prompt)
-  end
-
   # Plan's subagents share its token, so a question one asks through the tool is the Plan run's.
   test "a question a subagent asked through the tool and the lead asked again is filed once on the run", %{
     task: %Task{id: task_id},
-    run: %Run{id: run_id} = run,
-    spawn_os_process: spawn_os_process
+    run: %Run{id: run_id} = run
   } do
     {:ok, _from_subagent} = Pipeline.ask_questions(run, [%{"prompt" => "Which team owns it?"}])
     {:ok, _from_lead} = Pipeline.ask_questions(run, [%{"prompt" => "Which team owns it?"}, %{"prompt" => "Ship it?"}])
 
-    register_asked_questions(spawn_os_process.(), run)
+    register_asked_questions(run)
 
     assert [%Question{run_id: ^run_id, prompt: "Which team owns it?"}, %Question{run_id: ^run_id, prompt: "Ship it?"}] =
              pending_questions(task_id)
@@ -230,32 +84,16 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
 
   test "a turn that asked nothing leaves another run's asked questions where they are", %{
     task: %Task{id: task_id},
-    run: run,
-    spawn_os_process: spawn_os_process
+    run: run
   } do
     {:ok, other} =
       Pipeline.create_run(%{task_id: task_id, role_id: run.role_id, status: :running, started_at: DateTime.utc_now()})
 
     {:ok, _asked} = Pipeline.ask_questions(other, [%{"prompt" => "Which database?"}])
 
-    assert register_asked_questions(spawn_os_process.(), run) == []
+    assert register_asked_questions(run) == []
     assert %Run{status: :running} = Repo.get!(Run, run.id)
     assert [%Question{status: :asked}] = Repo.all(from q in Question, where: q.task_id == ^task_id)
-  end
-
-  test "a run whose role is gone has no agent to have asked anything", %{
-    task: %Task{id: task_id},
-    run: run,
-    spawn_os_process: spawn_os_process,
-    say: say
-  } do
-    os_process = spawn_os_process.()
-    say.(os_process, "[QUESTION: Which database?]")
-
-    {:ok, _deleted} = Roles.delete_role(system_scope(), Repo.preload(run, :role).role)
-
-    assert register_asked_questions(os_process, run) == []
-    assert pending_questions(task_id) == []
   end
 
   describe "the questions gate" do
@@ -276,16 +114,16 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
          %{
            task: %Task{id: task_id},
            run: run,
-           rule: %{id: rule_id},
-           spawn_os_process: spawn_os_process,
-           say: say
+           rule: %{id: rule_id}
          } do
-      os_process = spawn_os_process.()
-      say.(os_process, "[QUESTION: Which database?]")
-      say.(os_process, "[QUESTION: Which store for blobs?]")
-      say.(os_process, "[QUESTION: Ship behind a flag?]")
+      {:ok, _asked} =
+        Pipeline.ask_questions(run, [
+          %{"prompt" => "Which database?"},
+          %{"prompt" => "Which store for blobs?"},
+          %{"prompt" => "Ship behind a flag?"}
+        ])
 
-      assert [_one, _two, _three] = register_asked_questions(os_process, run)
+      assert [_one, _two, _three] = register_asked_questions(run)
 
       assert [
                %Question{
@@ -305,29 +143,10 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
              ] = Repo.all(from q in Question, where: q.task_id == ^task_id, order_by: [asc: q.inserted_at, asc: q.id])
     end
 
-    test "a question asked through the tool and answered before is answered by Rail", %{
-      task: %Task{id: task_id},
-      run: run,
-      rule: %{id: rule_id},
-      spawn_os_process: spawn_os_process
-    } do
-      {:ok, _asked} =
-        Pipeline.ask_questions(run, [%{"prompt" => "Which database?"}, %{"prompt" => "Ship behind a flag?"}])
-
-      register_asked_questions(spawn_os_process.(), run)
-
-      assert [
-               %Question{status: :answered, answer: "Postgres.", answered_by_rail: true, suggested_learning_id: ^rule_id},
-               %Question{status: :pending, suggested_learning_id: nil}
-             ] = Repo.all(from q in Question, where: q.task_id == ^task_id, order_by: [asc: q.inserted_at, asc: q.id])
-    end
-
     test "a rule a person reworded answers with what it says now", %{
       task: %Task{id: task_id},
       run: run,
-      rule: rule,
-      spawn_os_process: spawn_os_process,
-      say: say
+      rule: rule
     } do
       {:ok, _edited} = Rail.Learnings.update_learning(system_scope(), rule, %{rule: "Postgres, with pgvector."})
 
@@ -335,10 +154,9 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
         set: [embedding: Pgvector.new(vector([1.0])), embedding_model: "gemini-embedding-001"]
       )
 
-      os_process = spawn_os_process.()
-      say.(os_process, "[QUESTION: Which database?]")
+      {:ok, _asked} = Pipeline.ask_questions(run, [%{"prompt" => "Which database?"}])
 
-      assert [_one] = register_asked_questions(os_process, run)
+      assert [_one] = register_asked_questions(run)
 
       assert [%Question{status: :answered, answer: "Postgres, with pgvector.", answered_by_rail: true}] =
                Repo.all(from q in Question, where: q.task_id == ^task_id)
@@ -349,9 +167,7 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
       project: project,
       task: %Task{id: task_id},
       run: run,
-      rule: rule,
-      spawn_os_process: spawn_os_process,
-      say: say
+      rule: rule
     } do
       taken = %Question{
         id: "qst_gate_taken",
@@ -362,10 +178,9 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
       }
 
       {:ok, []} = Rail.Learnings.record_corrections(learnings_task(project, "GTE-2"), [taken])
-      os_process = spawn_os_process.()
-      say.(os_process, "[QUESTION: Which database?]")
+      {:ok, _asked} = Pipeline.ask_questions(run, [%{"prompt" => "Which database?"}])
 
-      assert [_one] = register_asked_questions(os_process, run)
+      assert [_one] = register_asked_questions(run)
 
       assert [%Question{status: :answered, answer: "Postgres.", answered_by_rail: true}] =
                Repo.all(from q in Question, where: q.task_id == ^task_id)

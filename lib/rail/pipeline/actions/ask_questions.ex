@@ -2,7 +2,7 @@ defmodule Rail.Pipeline.Actions.AskQuestions do
   @moduledoc """
   Files the questions an agent asks through `ask_questions` on its run, held as asked until its turn ends.
 
-  The run is left working: `register_asked_questions/2` makes them the round, and parks the run, once the turn is over.
+  The run is left working: `register_asked_questions/1` makes them the round, and parks the run, once the turn is over.
   """
 
   import Ecto.Query
@@ -33,7 +33,11 @@ defmodule Rail.Pipeline.Actions.AskQuestions do
     %Question{task_id: run.task_id, run_id: run.id, status: :asked}
     |> Question.changeset(%{"prompt" => attrs["prompt"], "options" => attrs["options"] || []})
     |> Ecto.Changeset.update_change(:prompt, &String.trim/1)
-    |> Ecto.Changeset.update_change(:options, &for(option <- &1, String.trim(option) != "", do: String.trim(option)))
+    |> Ecto.Changeset.validate_change(:options, fn :options, options ->
+      if Enum.all?(options, &is_binary/1), do: [], else: [options: "must be a list of text"]
+    end)
+    # A non-text option already made the changeset invalid; the filter only keeps the trim from raising on it.
+    |> Ecto.Changeset.update_change(:options, &for(o <- &1, is_binary(o), String.trim(o) != "", do: String.trim(o)))
   end
 
   # An agent's call can hold anything, so an entry that is not a question is refused like a blank one.
@@ -48,29 +52,40 @@ defmodule Rail.Pipeline.Actions.AskQuestions do
     Repo.one!(from r in Run, where: r.id == ^run_id, lock: "FOR UPDATE")
 
     held =
-      Repo.all(
-        from q in Question,
-          where: q.run_id == ^run_id and q.status in [:asked, :pending],
-          order_by: [asc: q.inserted_at, asc: q.id]
+      from(q in Question,
+        where: q.run_id == ^run_id and q.status in [:asked, :pending],
+        order_by: [asc: q.inserted_at, asc: q.id]
       )
+      |> Repo.all()
+      |> Map.new(&{normalized(&1.prompt), &1})
 
-    seen = Map.new(held, &{normalized(&1.prompt), &1})
+    {fresh, repeated, _seen} = Enum.reduce(changesets, {[], [], MapSet.new(Map.keys(held))}, &sort_out/2)
+    now = DateTime.utc_now()
 
-    {asked, already, _seen} =
-      Enum.reduce(changesets, {[], [], seen}, fn changeset, {asked, already, seen} ->
-        key = normalized(Ecto.Changeset.get_field(changeset, :prompt))
+    # A round is read back by inserted_at, so each row is a microsecond after the one asked before it.
+    rows =
+      for {changeset, offset} <- fresh |> Enum.reverse() |> Enum.with_index() do
+        at = DateTime.add(now, offset, :microsecond)
 
-        case Map.fetch(seen, key) do
-          {:ok, question} ->
-            {asked, [question | already], seen}
+        changeset
+        |> Ecto.Changeset.apply_changes()
+        |> Map.take([:task_id, :run_id, :prompt, :options, :status])
+        |> Map.merge(%{id: UXID.generate!(prefix: "qst"), inserted_at: at, updated_at: at})
+      end
 
-          :error ->
-            question = Repo.insert!(changeset)
-            {[question | asked], already, Map.put(seen, key, question)}
-        end
-      end)
+    {_count, filed} = Repo.insert_all(Question, rows, returning: true)
+    asked = Enum.sort_by(filed, &DateTime.to_unix(&1.inserted_at, :microsecond))
+    by_key = Map.merge(held, Map.new(asked, &{normalized(&1.prompt), &1}))
 
-    %{asked: Enum.reverse(asked), already: Enum.reverse(already)}
+    %{asked: asked, already: repeated |> Enum.reverse() |> Enum.map(&Map.fetch!(by_key, &1))}
+  end
+
+  defp sort_out(changeset, {fresh, repeated, seen}) do
+    key = normalized(Ecto.Changeset.get_field(changeset, :prompt))
+
+    if MapSet.member?(seen, key),
+      do: {fresh, [key | repeated], seen},
+      else: {[changeset | fresh], repeated, MapSet.put(seen, key)}
   end
 
   defp normalized(prompt), do: prompt |> String.trim() |> String.downcase()

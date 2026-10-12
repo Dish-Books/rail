@@ -53,15 +53,31 @@ defmodule Rail.Mcp.Utils.RunToolAskQuestionsTest do
              task |> Pipeline.list_questions(order_by: [asc: :inserted_at, asc: :id]) |> Enum.map(& &1.prompt)
   end
 
-  test "an empty or missing list, or a list sent as text, is refused and files nothing", %{task: task, opts: opts} do
+  test "an empty or missing list is refused and files nothing", %{task: task, opts: opts} do
     assert {:refused, "Refused, nothing asked. questions is empty: " <> _rest} =
              run_tool_ask_questions(task, %{"questions" => []}, opts)
 
     assert {:refused, "Refused, nothing asked. questions is required: " <> _rest} =
              run_tool_ask_questions(task, %{}, opts)
 
-    assert {:refused, "Refused, nothing asked. questions is required: " <> _rest} =
+    assert Pipeline.list_questions(task) == []
+  end
+
+  test "a list sent as text is refused as not a list, and files nothing", %{task: task, opts: opts} do
+    assert {:refused,
+            "Refused, nothing asked. questions must be a list: " <>
+              "send each question as an object with a prompt and optional options."} =
              run_tool_ask_questions(task, %{"questions" => ~s([{"prompt": "Which database?"}])}, opts)
+
+    assert Pipeline.list_questions(task) == []
+  end
+
+  test "an option that is not text is refused, naming its entry, and files nothing", %{task: task, opts: opts} do
+    questions = [%{"prompt" => "Which region?"}, %{"prompt" => "Which database?", "options" => ["Postgres", nil]}]
+
+    assert {:refused,
+            "Refused, nothing asked. Question 2: options must be a list of text. Fix them and ask the whole list again."} =
+             run_tool_ask_questions(task, %{"questions" => questions}, opts)
 
     assert Pipeline.list_questions(task) == []
   end
