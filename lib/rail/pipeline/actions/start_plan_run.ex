@@ -121,7 +121,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
 
     Questions:
 
-    - One round per turn. Collect every question you and the subagents could not close and ask them all in your last message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass. A question you can settle from the docs, the code or a named assumption is not a question.
+    - One round per turn. Collect every question you and the subagents could not close, the ones each subagent lists in its last message included, and ask them all in one `ask_questions` call before you end your turn, each with its options, your recommended answer first. Leave the options out where the answer is free text. The human sees the round when your turn ends and answers the lot in a single pass. A question you can settle from the docs, the code or a named assumption is not a question.
     #{learnings_brief(run, ["#{issue.title}\n\n#{issue.description}"])}
     #{saved(task)}
 

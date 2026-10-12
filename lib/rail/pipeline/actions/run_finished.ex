@@ -10,8 +10,8 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   There is no such thing as a chat turn here. A stage's own dispatch and a message
   the human typed are the same event — a process carrying this run exited — and
   they settle identically. What separates them is not how they started but what
-  the agent said: the run is recorded, the questions it asked are filed, and a run
-  that came back clean with nothing outstanding has its stage's finish applied. A
+  the agent did: the run is recorded, what it asked through `ask_questions` becomes
+  its round, and a run that came back clean with nothing outstanding has its stage's finish applied. A
   run that stopped half way says nothing, so nothing happens to it, and the next
   message picks it up where it left off.
 
@@ -141,8 +141,8 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp finish(%Run{} = run, %OsProcess{kind: :setup}, opts), do: setup_run_finished(run, opts)
   defp finish(%Run{} = run, %OsProcess{kind: :ci} = os_process, _opts), do: ci_run_finished(run, os_process)
 
-  defp finish(%Run{} = run, %OsProcess{} = os_process, opts) do
-    case register_asked_questions(os_process, run) do
+  defp finish(%Run{} = run, %OsProcess{}, opts) do
+    case register_asked_questions(run) do
       [] -> maybe_finish(run, opts)
       _asked -> run
     end

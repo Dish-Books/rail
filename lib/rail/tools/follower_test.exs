@@ -892,7 +892,7 @@ defmodule Rail.Tools.FollowerTest do
     assert is_nil(outcome.error)
   end
 
-  test "detects question in stream and registers it to block task", %{
+  test "questions asked through the tool become the round, and park the run, when its process exits", %{
     tmp_dir: tmp_dir,
     project: %{linear_workspace_id: workspace_id}
   } do
@@ -977,13 +977,12 @@ defmodule Rail.Tools.FollowerTest do
         started_at: DateTime.utc_now()
       })
 
-    # The agent ends its step by asking, so both questions are in the log the
-    # process leaves behind rather than read off the stream as it runs.
-    File.write!(
-      stream,
-      ~s({"type":"assistant","message":{"content":[{"type":"text","text":"[QUESTION: Which db to choose?] [OPTIONS: PG, MySQL]"}]}}\n) <>
-        ~s({"type":"assistant","message":{"content":[{"type":"text","text":"[QUESTION: Ship behind a flag?]"}]}}\n)
-    )
+    # The agent asks mid-turn, and the round is filed only when its process exits.
+    {:ok, _asked} =
+      Pipeline.ask_questions(run, [
+        %{"prompt" => "Which db to choose?", "options" => ["PG", "MySQL"]},
+        %{"prompt" => "Ship behind a flag?"}
+      ])
 
     port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["0.1"]])
     {:os_pid, pid} = Port.info(port, :os_pid)

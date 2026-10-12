@@ -5,9 +5,9 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.FindingNote
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.RunEvent
   alias Rail.Pipeline.Schemas.Task
@@ -743,8 +743,7 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
       {:ok, %{round: 2}} = Pipeline.save_review(task)
       {:ok, lead_run} = Pipeline.update_run(lead_run, %{stage_outcome: :in_progress})
 
-      {:ok, _question} =
-        Pipeline.register_question(Repo.preload(lead_run, task: :issue), %DetectedQuestion{prompt: "Keep the guard?"})
+      Repo.insert!(%Question{task_id: lead_run.task_id, run_id: lead_run.id, prompt: "Keep the guard?"})
 
       ci =
         %OsProcess{}

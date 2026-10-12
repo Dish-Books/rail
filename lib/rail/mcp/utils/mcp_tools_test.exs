@@ -12,8 +12,46 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
 
   # The engineer commits with git itself, and its turn ending is what hands the commits over.
   test "each stage that writes something is offered exactly its own save tool", %{names: names} do
-    assert names[:plan] == ["save_ticket", "save_design_option", "save_plan", "save_split", "knowledge_search"]
-    assert names[:engineer] == ["knowledge_search"]
+    assert names[:plan] == [
+             "save_ticket",
+             "save_design_option",
+             "save_plan",
+             "save_split",
+             "ask_questions",
+             "knowledge_search"
+           ]
+
+    assert names[:engineer] == ["ask_questions", "knowledge_search"]
+  end
+
+  test "only the Plan, Engineer and Review leads are offered ask_questions, a list of prompts with options", %{
+    names: names
+  } do
+    for_result = for({stage, offered} <- names, "ask_questions" in offered, do: stage)
+
+    assert Enum.sort(for_result) ==
+             [:engineer, :plan, :review_lead]
+
+    for stage <- [:plan, :engineer, :review_lead] do
+      assert %{
+               "inputSchema" => %{
+                 "required" => ["questions"],
+                 "properties" => %{
+                   "questions" => %{
+                     "type" => "array",
+                     "items" => %{
+                       "type" => "object",
+                       "required" => ["prompt"],
+                       "properties" => %{
+                         "prompt" => %{"type" => "string"},
+                         "options" => %{"type" => "array", "items" => %{"type" => "string"}}
+                       }
+                     }
+                   }
+                 }
+               }
+             } = %Role{stage: stage} |> mcp_tools() |> Enum.find(&(&1["name"] == "ask_questions"))
+    end
   end
 
   test "the Review lead is offered the browser, the checklist, the camera, and the tools it reports with",
@@ -32,6 +70,7 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
              "save_fix_plan",
              "save_review",
              "save_demo",
+             "ask_questions",
              "knowledge_search"
            ]
   end
