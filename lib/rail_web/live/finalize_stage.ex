@@ -540,6 +540,7 @@ defmodule RailWeb.Live.FinalizeStage do
   defp message_for(:merging), do: "A merge is already under way."
   defp message_for(:merged), do: "This task is already merged."
   defp message_for(:no_pull_request), do: "This task has no pull request to merge."
+  defp message_for(:no_github_token), do: "Sign in with GitHub again to merge. Nothing was sent."
   defp message_for({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not Finalize."
 
   defp approve_message_for(:not_authorized), do: "Only a tech lead can approve a task."

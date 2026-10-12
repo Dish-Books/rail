@@ -34,7 +34,8 @@ defmodule Rail.Pipeline.Actions.ApproveTaskTest do
         name: "Priya Raman",
         tech_lead: true,
         project_ids: [project.id],
-        github_token: "gho_priya"
+        github_token: "gho_priya",
+        github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
       })
 
     # GitHub as the test sees it: an approval the lead posts is listed from then on.
@@ -188,13 +189,42 @@ defmodule Rail.Pipeline.Actions.ApproveTaskTest do
     {:ok, tokenless} = Users.update_user(system_scope(), lead, %{github_token: nil})
 
     assert {:error, :no_github_token} = Pipeline.approve_task(Scope.for_user(tokenless), task)
+    assert {:error, :no_github_token} = Pipeline.approve_task(system_scope(), task)
+  end
+
+  test "a lead whose token GitHub no longer takes is told to sign in again, not GitHub's own words", %{
+    task: task,
+    scope: scope
+  } do
+    Req.Test.expect(Client, 3, fn conn ->
+      case conn.method do
+        "POST" when conn.request_path == "/app/installations/1/access_tokens" -> Req.Test.json(conn, %{"token" => "t"})
+        "GET" -> Req.Test.json(conn, [])
+        "POST" -> conn |> Plug.Conn.put_status(401) |> Req.Test.json(%{"message" => "Bad credentials"})
+      end
+    end)
+
+    assert {:error, :no_github_token} = Pipeline.approve_task(scope, task)
   end
 
   test "a teammate without the setting is refused, admins included", %{project: project, task: task} do
     {:ok, admin} = Users.register_oauth_user(%{github_id: "gh_at_admin", login: "admin", email: "a@example.com"})
-    {:ok, admin} = Users.update_user(system_scope(), admin, %{admin: true, github_token: "gho_admin"})
+
+    {:ok, admin} =
+      Users.update_user(system_scope(), admin, %{
+        admin: true,
+        github_token: "gho_admin",
+        github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
+      })
+
     {:ok, dan} = Users.register_oauth_user(%{github_id: "gh_at_dan", login: "dano", email: "d@example.com"})
-    {:ok, dan} = Users.update_user(system_scope(), dan, %{project_ids: [project.id], github_token: "gho_dan"})
+
+    {:ok, dan} =
+      Users.update_user(system_scope(), dan, %{
+        project_ids: [project.id],
+        github_token: "gho_dan",
+        github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
+      })
 
     assert {:error, :not_authorized} = Pipeline.approve_task(Scope.for_user(admin), task)
     assert {:error, :not_authorized} = Pipeline.approve_task(Scope.for_user(dan), task)

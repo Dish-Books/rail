@@ -10,6 +10,7 @@ defmodule Rail.Pipeline.Actions.ApproveTask do
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Scope
+  alias Rail.Users
   alias Rail.Users.Schemas.User
 
   @doc """
@@ -22,7 +23,7 @@ defmodule Rail.Pipeline.Actions.ApproveTask do
 
     with true <- Scope.can_access_project?(scope, task.project_id) || {:error, :not_found},
          :ok <- approvable(task),
-         {:ok, %User{github_token: token, login: login} = user} <- lead(scope),
+         {:ok, %User{login: login} = user, token} <- lead(scope),
          # Held per lead, so a second click or tab waits for the first and finds its approval rather than posting another.
          :ok <-
            :global.trans({{:approve_task, task.id, user.id}, self()}, fn ->
@@ -39,7 +40,10 @@ defmodule Rail.Pipeline.Actions.ApproveTask do
     end
   end
 
-  defp lead(%Scope{user: %User{github_token: "" <> _token} = user}), do: {:ok, user}
+  defp lead(%Scope{user: %User{} = user} = scope) do
+    with {:ok, token} <- Users.github_token(scope), do: {:ok, user, token}
+  end
+
   defp lead(%Scope{}), do: {:error, :no_github_token}
 
   defp approvable(%Task{} = task) do
@@ -58,6 +62,8 @@ defmodule Rail.Pipeline.Actions.ApproveTask do
     else
       case GitHub.approve_pull_request(token, project.github_repo, task.pr_number) do
         {:ok, _review} -> :ok
+        # A token Rail believed good and GitHub does not is a lead who has to sign in again, like one with none.
+        {:error, {:github_api_error, 401, _body}} -> {:error, :no_github_token}
         {:error, {:github_api_error, _status, _body} = refusal} -> {:error, {:approve_refused, message(refusal)}}
         {:error, _unreached} = error -> error
       end

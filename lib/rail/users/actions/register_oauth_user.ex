@@ -59,7 +59,7 @@ defmodule Rail.Users.Actions.RegisterOAuthUser do
       auth.info.image ||
         (auth.extra && auth.extra.raw_info && get_in(auth.extra.raw_info, [:user, "avatar_url"]))
 
-    token = auth.credentials && auth.credentials.token
+    credentials = auth.credentials || %Ueberauth.Auth.Credentials{}
 
     %{
       github_id: to_string(auth.uid),
@@ -67,9 +67,15 @@ defmodule Rail.Users.Actions.RegisterOAuthUser do
       name: auth.info.name || auth.info.nickname,
       email: auth.info.email,
       avatar_url: avatar_url,
-      github_token: token
+      # All three are replaced together, so a sign-in never leaves the last one's refresh token behind.
+      github_token: credentials.token,
+      github_refresh_token: credentials.refresh_token,
+      github_token_expires_at: expires_at(credentials.expires_at)
     }
   end
+
+  defp expires_at(unix) when is_integer(unix), do: DateTime.from_unix!(unix)
+  defp expires_at(_never), do: nil
 
   defp normalize_attrs(attrs) do
     github_id = Attrs.get(attrs, :github_id)
@@ -81,6 +87,8 @@ defmodule Rail.Users.Actions.RegisterOAuthUser do
       email: Attrs.get(attrs, :email),
       avatar_url: Attrs.get(attrs, :avatar_url),
       github_token: Attrs.get(attrs, :github_token),
+      github_refresh_token: Attrs.get(attrs, :github_refresh_token),
+      github_token_expires_at: Attrs.get(attrs, :github_token_expires_at),
       admin: Attrs.get(attrs, :admin)
     }
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)

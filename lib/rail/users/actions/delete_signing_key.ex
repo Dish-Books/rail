@@ -9,16 +9,22 @@ defmodule Rail.Users.Actions.DeleteSigningKey do
   alias Rail.GitHub.Client, as: GitHub
   alias Rail.Repo
   alias Rail.Scope
+  alias Rail.Users
   alias Rail.Users.Schemas.User
 
   @doc """
   Forgets the scope's user's signing key. Returns `:ok`, including when there
-  was none.
+  was none, and `{:error, :no_github_token}` when the key is on GitHub and Rail
+  cannot reach their account to take it off.
   """
-  def delete_signing_key(%Scope{user: %User{signing_key_github_id: key_id, github_token: token} = user})
-      when is_integer(key_id) and is_binary(token) do
-    with :ok <- GitHub.delete_signing_key(token, key_id) do
+  def delete_signing_key(%Scope{user: %User{signing_key_github_id: key_id} = user} = scope) when is_integer(key_id) do
+    with {:ok, token} <- Users.github_token(scope),
+         :ok <- GitHub.delete_signing_key(token, key_id) do
       forget(user)
+    else
+      # A token Rail believed good and GitHub does not: they sign in again, like someone with none.
+      {:error, {:github_api_error, 401, _body}} -> {:error, :no_github_token}
+      error -> error
     end
   end
 

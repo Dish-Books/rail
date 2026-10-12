@@ -16,6 +16,8 @@ defmodule Rail.Pipeline.Utils.OpenPullRequest do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias Rail.Scope
+  alias Rail.Users
   alias Rail.Users.Schemas.User
 
   @doc """
@@ -55,7 +57,8 @@ defmodule Rail.Pipeline.Utils.OpenPullRequest do
       draft: true
     }
 
-    with %User{github_token: owner_token} when is_binary(owner_token) <- issue.owner_user,
+    with %User{} = owner <- issue.owner_user,
+         {:ok, owner_token} <- Users.github_token(Scope.for_user(owner)),
          {:ok, pull_request} <- GitHub.create_pull_request(owner_token, project.github_repo, attrs) do
       {:ok, pull_request}
     else

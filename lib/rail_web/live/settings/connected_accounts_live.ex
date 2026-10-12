@@ -382,11 +382,15 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
   end
 
   def handle_event("remove_signing", _params, socket) do
-    :ok = Users.delete_signing_key(socket.assigns.current_scope)
-    {:ok, user} = Users.get_user(id: socket.assigns.current_user.id)
-    socket = socket |> apply_user(user) |> assign(:signing_error, nil)
+    case Users.delete_signing_key(socket.assigns.current_scope) do
+      :ok ->
+        {:ok, user} = Users.get_user(id: socket.assigns.current_user.id)
+        socket = socket |> apply_user(user) |> assign(:signing_error, nil)
+        {:noreply, socket}
 
-    {:noreply, socket}
+      {:error, reason} ->
+        {:noreply, assign(socket, :signing_error, signing_message(reason))}
+    end
   end
 
   def handle_event("disconnect", _params, socket) do

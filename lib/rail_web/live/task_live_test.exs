@@ -5129,7 +5129,12 @@ defmodule RailWeb.TaskLiveTest do
       task: task,
       review_run: %Run{id: run_id}
     } do
-      {:ok, _lead} = Users.update_user(system_scope(), scope.user, %{tech_lead: true})
+      {:ok, _lead} =
+        Users.update_user(system_scope(), scope.user, %{
+          tech_lead: true,
+          github_token: "gho_lead",
+          github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
+        })
 
       {:ok, _task} =
         Pipeline.update_task(task, %{
@@ -5185,7 +5190,12 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "a second page shows a new approval without a reload", %{conn: conn, scope: scope, task: task} do
-      {:ok, lead} = Users.update_user(system_scope(), scope.user, %{tech_lead: true, github_token: "gho_lead"})
+      {:ok, lead} =
+        Users.update_user(system_scope(), scope.user, %{
+          tech_lead: true,
+          github_token: "gho_lead",
+          github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
+        })
 
       {:ok, _task} =
         Pipeline.update_task(task, %{
@@ -6533,7 +6543,13 @@ defmodule RailWeb.TaskLiveTest do
 
     test "an approval that lands after the lead switched children shows on its own child, not the one on screen",
          %{conn: conn, scope: scope, project: project, parent: parent, first: first, second: second} do
-      {:ok, lead_user} = Users.update_user(system_scope(), scope.user, %{tech_lead: true, github_token: "gho_lead"})
+      {:ok, lead_user} =
+        Users.update_user(system_scope(), scope.user, %{
+          tech_lead: true,
+          github_token: "gho_lead",
+          github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
+        })
+
       {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
       test_pid = self()
 
@@ -6603,7 +6619,13 @@ defmodule RailWeb.TaskLiveTest do
 
     test "an approval that lands while a sibling not yet marked ready is shown is read again on switching back",
          %{conn: conn, scope: scope, project: project, parent: parent, first: first, second: second} do
-      {:ok, lead_user} = Users.update_user(system_scope(), scope.user, %{tech_lead: true, github_token: "gho_lead"})
+      {:ok, lead_user} =
+        Users.update_user(system_scope(), scope.user, %{
+          tech_lead: true,
+          github_token: "gho_lead",
+          github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
+        })
+
       {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
       test_pid = self()
 

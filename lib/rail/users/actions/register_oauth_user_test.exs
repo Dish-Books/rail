@@ -46,7 +46,10 @@ defmodule Rail.Users.Actions.RegisterOAuthUserTest do
         image: "https://example.com/octocat.png"
       },
       credentials: %Credentials{
-        token: "gho_ueberauth_token"
+        token: "ghu_ueberauth_token",
+        refresh_token: "ghr_ueberauth_token",
+        expires: true,
+        expires_at: 1_800_000_000
       }
     }
 
@@ -61,7 +64,17 @@ defmodule Rail.Users.Actions.RegisterOAuthUserTest do
 
     # Token is encrypted and matches when loaded
     reloaded = Repo.get!(User, user.id)
-    assert reloaded.github_token == "gho_ueberauth_token"
+    assert reloaded.github_token == "ghu_ueberauth_token"
+    assert reloaded.github_refresh_token == "ghr_ueberauth_token"
+    assert reloaded.github_token_expires_at == ~U[2027-01-15 08:00:00.000000Z]
+    refute inspect(reloaded) =~ "ghr_ueberauth_token"
+
+    # A later sign-in that brings no refresh token or expiry leaves none of the last one's behind.
+    assert {:ok, %User{}} =
+             Users.register_oauth_user(%{auth | credentials: %Credentials{token: "gho_no_expiry"}})
+
+    assert %User{github_token: "gho_no_expiry", github_refresh_token: nil, github_token_expires_at: nil} =
+             Repo.get!(User, user.id)
   end
 
   test "updates existing user by github_id and preserves admin status" do
