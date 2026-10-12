@@ -143,8 +143,8 @@ defmodule Rail.Tools.Actions.StartCommandProcessTest do
     assert File.read(OsProcess.exit_path(os_process)) == {:ok, "0\n"}
   end
 
-  # Setup and CI hold what their run's role reserves, and wait for it like a turn does.
-  test "waits in line for what its role reserves, and says so as CI", %{run: run} do
+  # CI holds what its caller gives and setup what the run's role reserves, and both wait for it like a turn does.
+  test "waits in line for what it reserves, and says so as CI or setup", %{run: run} do
     {:ok, other} =
       Pipeline.create_run(%{task_id: run.task_id, role_id: run.role_id, status: :running, started_at: DateTime.utc_now()})
 
@@ -159,15 +159,16 @@ defmodule Rail.Tools.Actions.StartCommandProcessTest do
 
     reject(Tools, :spawn_os_process, 3)
 
-    assert {:ok, %OsProcess{status: :waiting_for_resources, kind: :ci, deadline_at: nil}} =
-             Tools.start_command_process(run, :ci, "mix ci", timeout_ms: 90_000)
+    assert {:ok, %OsProcess{status: :waiting_for_resources, kind: :ci, deadline_at: nil, reserved_cpus: 3}} =
+             Tools.start_command_process(run, :ci, "mix ci", timeout_ms: 90_000, reserved_cpus: 3)
 
     assert {:ok, %{status: :waiting_for_resources}} = Pipeline.get_run(run.id)
 
-    assert {:ok, %OsProcess{status: :waiting_for_resources}} = Tools.start_command_process(run, :setup, "./setup")
+    assert {:ok, %OsProcess{status: :waiting_for_resources, reserved_cpus: 1}} =
+             Tools.start_command_process(run, :setup, "./setup")
 
     assert [
-             "[rail] CI needs 1 CPU, and every CPU on this machine is reserved. " <>
+             "[rail] CI needs 3 CPUs, and every CPU on this machine is reserved. " <>
                "It is 1st in line and starts on its own as soon as enough is free.",
              "[rail] Worktree setup needs 1 CPU, and every CPU on this machine is reserved. " <>
                "It is 2nd in line and starts on its own as soon as enough is free."

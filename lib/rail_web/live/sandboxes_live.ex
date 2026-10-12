@@ -51,7 +51,7 @@ defmodule RailWeb.SandboxesLive do
             Sandboxes
           </h1>
           <p id="sandboxes-intro" class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Every agent turn, worktree setup and CI command runs in its own sandbox on this machine, holding what its role reserves.
+            Every agent turn, worktree setup and CI command runs in its own sandbox on this machine.
           </p>
         </div>
 

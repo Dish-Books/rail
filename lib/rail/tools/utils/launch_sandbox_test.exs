@@ -117,12 +117,12 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
 
   # ExUnit runs twice as many cases as the BEAM has schedulers, so CI's are held
   # to its reservation; a flag the project passes comes after, where it wins.
-  test "a CI sandbox's BEAM runs as many schedulers as its role reserves", %{run: run} do
-    assert {:ok, %OsProcess{kind: :ci}} =
-             Tools.start_command_process(run, :ci, "mix test", env: %{"ERL_FLAGS" => "+sbwt none"})
+  test "a CI sandbox's BEAM runs as many schedulers as it reserves, not its role", %{run: run} do
+    assert {:ok, %OsProcess{kind: :ci, reserved_cpus: 4}} =
+             Tools.start_command_process(run, :ci, "mix test", env: %{"ERL_FLAGS" => "+sbwt none"}, reserved_cpus: 4)
 
     assert_received {:created, %{"Env" => env}}
-    assert "ERL_FLAGS=+S 2:2 +sbwt none" in env
+    assert "ERL_FLAGS=+S 4:4 +sbwt none" in env
   end
 
   # The machine has 16 CPUs, keeps 3 back and gives the shared browser 2, so the

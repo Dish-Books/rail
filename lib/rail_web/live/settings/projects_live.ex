@@ -113,7 +113,7 @@ defmodule RailWeb.Settings.ProjectsLive do
               class="p-6 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-700"
               id={"project-item-#{project.id}"}
             >
-              <div class="space-y-1">
+              <div class="min-w-0 space-y-1">
                 <div class="flex items-center space-x-3">
                   <span
                     class="text-base font-semibold text-slate-900 dark:text-slate-100"
@@ -136,7 +136,7 @@ defmodule RailWeb.Settings.ProjectsLive do
                     Inactive
                   </span>
                 </div>
-                <div class="flex items-center space-x-4 text-xs text-slate-500 dark:text-slate-400">
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
                   <span id={"project-repo-#{project.id}"}>
                     Repo:
                     <span class="font-mono text-slate-900 dark:text-slate-100">{project.github_repo}</span>
@@ -153,6 +153,13 @@ defmodule RailWeb.Settings.ProjectsLive do
                   <span id={"project-branch-#{project.id}"}>
                     Branch:
                     <span class="font-mono text-slate-900 dark:text-slate-100">{project.default_branch}</span>
+                  </span>
+                  <span>•</span>
+                  <span id={"project-ci-#{project.id}"}>
+                    CI:
+                    <span class="font-mono text-slate-900 dark:text-slate-100">{ci_reservation(
+                      project
+                    )}</span>
                   </span>
                 </div>
               </div>
@@ -397,13 +404,24 @@ defmodule RailWeb.Settings.ProjectsLive do
                 </p>
               </div>
 
-              <div class="grid grid-cols-3 gap-4">
-                <div class="col-span-2">
+              <section
+                id="project-ci-section"
+                class="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-3"
+              >
+                <div class="flex items-baseline justify-between gap-4">
+                  <h3 class="font-mono text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+                    CI
+                  </h3>
+                  <span class="text-xs text-slate-500 dark:text-slate-400">
+                    Leave the command empty to skip CI
+                  </span>
+                </div>
+                <div>
                   <label
                     for="project-ci-command-input"
                     class="block text-sm font-medium text-slate-900 dark:text-slate-100"
                   >
-                    CI Command
+                    Command
                   </label>
                   <input
                     type="text"
@@ -413,35 +431,89 @@ defmodule RailWeb.Settings.ProjectsLive do
                     placeholder="mise run ci"
                     class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm font-mono focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                   />
+                  <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Runs in the worktree on every commit the engineer finishes. A failure goes back to the engineer,
+                    and a change goes to review only once it passes.
+                  </p>
                 </div>
-                <div>
-                  <label
-                    for="project-ci-timeout-input"
-                    class="block text-sm font-medium text-slate-900 dark:text-slate-100"
-                  >
-                    Timeout (minutes)
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    name="project[ci_timeout_minutes]"
-                    id="project-ci-timeout-input"
-                    value={Ecto.Changeset.get_field(@changeset, :ci_timeout_minutes)}
-                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                  />
+                <div class="grid grid-cols-2 gap-4">
+                  <div class="min-w-0">
+                    <label
+                      for="project-ci-timeout-input"
+                      class="block text-sm font-medium text-slate-900 dark:text-slate-100"
+                    >
+                      Timeout
+                    </label>
+                    <div class={[
+                      "mt-1 flex items-center pr-3 rounded-md border bg-white dark:bg-slate-900 shadow-sm focus-within:ring-1",
+                      @changeset.errors[:ci_timeout_minutes] &&
+                        "border-red-500 dark:border-red-500/80 focus-within:ring-red-500",
+                      !@changeset.errors[:ci_timeout_minutes] &&
+                        "border-slate-200 dark:border-slate-700/80 focus-within:border-indigo-500 focus-within:ring-indigo-500"
+                    ]}>
+                      <input
+                        type="number"
+                        min="1"
+                        name="project[ci_timeout_minutes]"
+                        id="project-ci-timeout-input"
+                        value={Ecto.Changeset.get_field(@changeset, :ci_timeout_minutes)}
+                        aria-invalid={@changeset.errors[:ci_timeout_minutes] && "true"}
+                        aria-describedby={
+                          @changeset.errors[:ci_timeout_minutes] && "project-ci-timeout-error"
+                        }
+                        class="block w-full min-w-0 !border-0 !bg-transparent text-sm focus:outline-none focus:ring-0"
+                      />
+                      <span class="shrink-0 text-sm text-slate-500 dark:text-slate-400">minutes</span>
+                    </div>
+                  </div>
+                  <div class="min-w-0">
+                    <label
+                      for="project-ci-cpus-input"
+                      class="block text-sm font-medium text-slate-900 dark:text-slate-100"
+                    >
+                      CPUs
+                    </label>
+                    <div class={[
+                      "mt-1 flex items-center pr-3 rounded-md border bg-white dark:bg-slate-900 shadow-sm focus-within:ring-1",
+                      @changeset.errors[:ci_reserved_cpus] &&
+                        "border-red-500 dark:border-red-500/80 focus-within:ring-red-500",
+                      !@changeset.errors[:ci_reserved_cpus] &&
+                        "border-slate-200 dark:border-slate-700/80 focus-within:border-indigo-500 focus-within:ring-indigo-500"
+                    ]}>
+                      <input
+                        type="number"
+                        min="1"
+                        name="project[ci_reserved_cpus]"
+                        id="project-ci-cpus-input"
+                        value={Ecto.Changeset.get_field(@changeset, :ci_reserved_cpus)}
+                        aria-invalid={@changeset.errors[:ci_reserved_cpus] && "true"}
+                        aria-describedby={
+                          @changeset.errors[:ci_reserved_cpus] && "project-ci-cpus-error"
+                        }
+                        class="block w-full min-w-0 !border-0 !bg-transparent text-sm focus:outline-none focus:ring-0"
+                      />
+                      <span class="shrink-0 text-sm text-slate-500 dark:text-slate-400">CPUs</span>
+                    </div>
+                  </div>
                 </div>
-                <p class="col-span-3 -mt-2 text-xs text-slate-500 dark:text-slate-400">
-                  Runs in the worktree on every commit the engineer finishes. A failure goes back to the engineer,
-                  and a change goes to review only once it passes. Leave empty to skip CI.
+                <p id="project-ci-cpus-help" class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Each CI run waits for, holds and runs its suite on this many. A change applies from the next CI run.
                 </p>
-                <span
+                <p
                   :if={@changeset.errors[:ci_timeout_minutes]}
-                  class="col-span-3 text-xs text-red-600"
+                  class="mt-1 text-xs text-red-600 dark:text-red-400"
                   id="project-ci-timeout-error"
                 >
                   {elem(@changeset.errors[:ci_timeout_minutes], 0)}
-                </span>
-              </div>
+                </p>
+                <p
+                  :if={@changeset.errors[:ci_reserved_cpus]}
+                  class="mt-1 text-xs text-red-600 dark:text-red-400"
+                  id="project-ci-cpus-error"
+                >
+                  {elem(@changeset.errors[:ci_reserved_cpus], 0)}
+                </p>
+              </section>
 
               <div>
                 <label
@@ -913,6 +985,9 @@ defmodule RailWeb.Settings.ProjectsLive do
     |> assign(:show_linear_fields, tracker == :linear)
     |> assign(:show_github_fields, tracker == :github)
   end
+
+  defp ci_reservation(%Project{ci_command: command}) when command in [nil, ""], do: "No CI"
+  defp ci_reservation(%Project{ci_reserved_cpus: cpus}), do: format_reservation(%{reserved_cpus: cpus})
 
   defp tracker_label(:github), do: "GitHub"
   defp tracker_label(:linear), do: "Linear"

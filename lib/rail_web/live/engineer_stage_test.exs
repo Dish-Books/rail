@@ -4,7 +4,10 @@ defmodule RailWeb.Live.EngineerStageTest do
   import Phoenix.LiveViewTest
 
   alias Rail.Pipeline
+  alias Rail.Projects
+  alias Rail.Repo
   alias Rail.Roles
+  alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
   setup %{conn: conn, project: project} do
@@ -35,7 +38,7 @@ defmodule RailWeb.Live.EngineerStageTest do
     task = learnings_task(project, "EST-1")
     {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: repo})
 
-    {:ok, _run} =
+    {:ok, run} =
       Pipeline.create_run(%{
         task_id: task.id,
         role_id: role.id,
@@ -45,7 +48,7 @@ defmodule RailWeb.Live.EngineerStageTest do
         started_at: DateTime.utc_now()
       })
 
-    %{conn: log_in_user(conn, user), user: user, task: task, repo: repo}
+    %{conn: log_in_user(conn, user), user: user, task: task, run: run, repo: repo}
   end
 
   test "once the task is in Review, the Engineer tab offers no Commit, CI, send or chat", %{
@@ -64,6 +67,36 @@ defmodule RailWeb.Live.EngineerStageTest do
     refute has_element?(view, "#send-to-review")
     refute has_element?(view, "#chat-input")
     assert has_element?(view, "#conversation-closed", "The work is in Review now, so this conversation is closed")
+  end
+
+  test "CI waiting in line for its CPUs says so, not that it failed", %{
+    conn: conn,
+    project: project,
+    task: task,
+    run: run
+  } do
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+    {:ok, run} = Pipeline.update_run(run, %{status: :waiting_for_resources})
+
+    %OsProcess{}
+    |> OsProcess.changeset(%{
+      run_id: run.id,
+      task_id: task.id,
+      kind: :ci,
+      command: "mise run ci",
+      stream_path: "/tmp/#{run.id}.log",
+      status: :waiting_for_resources,
+      reserved_cpus: 8,
+      queued_at: DateTime.utc_now(),
+      started_at: DateTime.utc_now()
+    })
+    |> Repo.insert!()
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=rol_test_seed_engineer")
+
+    assert has_element?(view, "#ci-status", "CI in line")
+    refute has_element?(view, "#ci-status", "failed")
+    refute has_element?(view, "#run-ci")
   end
 
   # At Review the tray sends diff comments with everything else, so the Engineer tab's diff has no Send.
