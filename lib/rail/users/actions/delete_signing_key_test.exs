@@ -11,7 +11,8 @@ defmodule Rail.Users.Actions.DeleteSigningKeyTest do
         github_id: "gh_delete_signing_1",
         login: "ada",
         email: "ada@example.com",
-        github_token: "gho_user_token"
+        github_token: "gho_user_token",
+        github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
       })
 
     %{user: user}
@@ -36,6 +37,20 @@ defmodule Rail.Users.Actions.DeleteSigningKeyTest do
 
     refute User.signing?(forgotten)
     assert User.signing_fingerprint(forgotten) == nil
+  end
+
+  test "a key on GitHub that Rail cannot reach their account to remove stays, and they sign in again", %{user: user} do
+    Req.Test.expect(Client, &(&1 |> Plug.Conn.put_status(201) |> Req.Test.json(%{"id" => 4711})))
+    {:ok, user} = Users.create_signing_key(user_scope(user: user))
+
+    Req.Test.expect(Client, &(&1 |> Plug.Conn.put_status(401) |> Req.Test.json(%{"message" => "Bad credentials"})))
+    assert {:error, :no_github_token} = Users.delete_signing_key(user_scope(user: user))
+
+    {:ok, _tokenless} = Users.update_user(system_scope(), user, %{github_token: nil})
+    assert {:error, :no_github_token} = Users.delete_signing_key(user_scope(user: user))
+
+    assert {:ok, %User{signing_key_github_id: 4711} = kept} = Users.get_user(id: user.id)
+    assert User.signing?(kept)
   end
 
   test "a user with no key to remove is already where they wanted to be", %{user: user} do

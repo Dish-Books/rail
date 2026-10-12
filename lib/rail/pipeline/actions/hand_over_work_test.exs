@@ -396,7 +396,8 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
           login: "ada",
           name: "Ada",
           email: "ada@example.com",
-          github_token: "gho_ada"
+          github_token: "gho_ada",
+          github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
         })
         |> Repo.insert()
 
@@ -434,7 +435,8 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
           login: "bo",
           name: "Bo",
           email: "bo@example.com",
-          github_token: "gho_bo"
+          github_token: "gho_bo",
+          github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
         })
         |> Repo.insert()
 

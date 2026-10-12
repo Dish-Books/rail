@@ -94,6 +94,37 @@ defmodule Rail.GitHub.ClientTest do
     assert {:error, {:github_api_error, 404, %{"message" => "Not Found"}}} = Client.installation_token(4711)
   end
 
+  test "trades a person's refresh token for new tokens, as the app's OAuth client" do
+    Req.Test.expect(Client, fn conn ->
+      assert {conn.method, conn.host, conn.request_path} == {"POST", "github.com", "/login/oauth/access_token"}
+      assert ["application/json"] = Plug.Conn.get_req_header(conn, "accept")
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      oauth = Application.get_env(:ueberauth, Ueberauth.Strategy.Github.OAuth)
+
+      assert URI.decode_query(body) == %{
+               "grant_type" => "refresh_token",
+               "refresh_token" => "ghr_old",
+               "client_id" => oauth[:client_id],
+               "client_secret" => oauth[:client_secret]
+             }
+
+      Req.Test.json(conn, %{"access_token" => "ghu_new", "expires_in" => 28_800, "refresh_token" => "ghr_new"})
+    end)
+
+    assert {:ok, %{"access_token" => "ghu_new", "expires_in" => 28_800, "refresh_token" => "ghr_new"}} =
+             Client.refresh_user_token("ghr_old")
+  end
+
+  test "a refresh token GitHub refuses, in a 200, is an error, and so is GitHub unreached" do
+    Req.Test.expect(Client, &Req.Test.json(&1, %{"error" => "bad_refresh_token"}))
+
+    assert {:error, {:github_token_refresh_error, 200, %{"error" => "bad_refresh_token"}}} =
+             Client.refresh_user_token("ghr_spent")
+
+    Req.Test.expect(Client, &Req.Test.transport_error(&1, :econnrefused))
+    assert {:error, %Req.TransportError{reason: :econnrefused}} = Client.refresh_user_token("ghr_old")
+  end
+
   test "registers a signing key on the token holder's account" do
     Req.Test.expect(Client, fn conn ->
       assert conn.request_path == "/user/ssh_signing_keys"

@@ -16,6 +16,7 @@ defmodule Rail.GitHub.Client do
   @api_url "https://api.github.com"
   @api_version "2022-11-28"
   @accept "application/vnd.github+json"
+  @oauth_token_url "https://github.com/login/oauth/access_token"
 
   def config, do: Application.get_env(:rail, :github, [])
 
@@ -60,6 +61,32 @@ defmodule Rail.GitHub.Client do
         {:ok, %{status: status, body: body}} -> {:error, {:github_api_error, status, body}}
         {:error, reason} -> {:error, reason}
       end
+    end
+  end
+
+  @doc """
+  Trades a person's refresh token for a new access token, and the refresh token that replaces the one spent.
+
+  GitHub answers a refresh token it refuses with a 200 carrying an `error`, so only a body with an access
+  token is a renewal.
+  """
+  def refresh_user_token(refresh_token, opts \\ []) do
+    oauth = Application.get_env(:ueberauth, Ueberauth.Strategy.Github.OAuth, [])
+
+    form = [
+      grant_type: "refresh_token",
+      refresh_token: refresh_token,
+      client_id: oauth[:client_id],
+      client_secret: oauth[:client_secret]
+    ]
+
+    opts
+    |> build_req()
+    |> Req.post(url: @oauth_token_url, form: form, headers: [{"accept", "application/json"}])
+    |> case do
+      {:ok, %{status: 200, body: %{"access_token" => _token} = body}} -> {:ok, body}
+      {:ok, %{status: status, body: body}} -> {:error, {:github_token_refresh_error, status, body}}
+      {:error, reason} -> {:error, reason}
     end
   end
 

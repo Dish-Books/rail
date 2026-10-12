@@ -26,7 +26,15 @@ defmodule RailWeb.Live.FinalizeStageTest do
     end
 
     dan = register.("dano", %{name: "Dan Okafor"})
-    priya = register.("priya", %{name: "Priya Raman", tech_lead: true, github_token: "gho_priya"})
+
+    priya =
+      register.("priya", %{
+        name: "Priya Raman",
+        tech_lead: true,
+        github_token: "gho_priya",
+        github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
+      })
+
     michael = register.("mkerr", %{name: "Michael Kerr", tech_lead: true})
 
     {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
@@ -423,6 +431,23 @@ defmodule RailWeb.Live.FinalizeStageTest do
     end)
   end
 
+  test "a tech lead with no GitHub token who merges is told to sign in again, and Merge stays", %{
+    conn: conn,
+    task: task,
+    dan: dan,
+    michael: michael
+  } do
+    {:ok, _marked} = Pipeline.mark_ready(Rail.Scope.for_user(dan), task)
+    assert {:ok, view, _html} = live(log_in_user(conn, michael), ~p"/tasks/#{task.id}")
+
+    view |> element("#finalize-merge") |> render_click()
+
+    eventually(fn ->
+      assert has_element?(view, "#finalize-error", "Sign in with GitHub again to merge")
+      assert has_element?(view, "#finalize-merge")
+    end)
+  end
+
   test "a teammate or an admin without the setting sees the approvals and the waiting line, and no Approve", %{
     conn: conn,
     task: task,
@@ -437,7 +462,12 @@ defmodule RailWeb.Live.FinalizeStageTest do
     {:ok, admin} =
       Users.register_oauth_user(%{github_id: "fst-admin", login: "fst-admin", email: "fst-admin@fst"})
 
-    {:ok, admin} = Users.update_user(system_scope(), admin, %{admin: true, github_token: "gho_admin"})
+    {:ok, admin} =
+      Users.update_user(system_scope(), admin, %{
+        admin: true,
+        github_token: "gho_admin",
+        github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
+      })
 
     for viewer <- [dan, admin] do
       assert {:ok, view, _html} = live(log_in_user(conn, viewer), ~p"/tasks/#{task.id}")
