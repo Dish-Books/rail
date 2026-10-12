@@ -39,7 +39,7 @@ defmodule Rail.Pipeline.Utils.PlanSubagents do
     - A comment on the ticket names its line by a label and quotes it. Answer it by changing that line, and leave every line nobody commented on reading exactly as it did, so the other comments stay under their lines.
     - The ticket you save stays whole, even when the work is too big for one ticket: say so in your last message. Whether and where the work splits into child tickets is Architect's call, made from the code, and Architect writes each child's ticket, so propose no split yourself.
     - The rules this project has learned that bear on your output come in Plan's message; call knowledge_search for more.
-    - End with what you saved. Put every question you could not close in that last message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, for Plan to ask the human.
+    - End with what you saved. List every question you could not close in that last message, each as a plain line with its options, your recommended answer first, for Plan to ask the human with `ask_questions`. Leave the asking to Plan.
     """)
   end
 
@@ -71,7 +71,7 @@ defmodule Rail.Pipeline.Utils.PlanSubagents do
     - When Plan passes on a change to the ticket or the plan that changes a screen, update the options it affects, retake their screenshots and save them again before you finish.
     - A comment on the design names its element by a CSS selector. Find the element with that selector, change the page, retake the screenshot and save under the same key. Keep the ids and structure of elements nobody commented on, so the other comments stay on their elements.
     - The rules this project has learned that bear on your output come in Plan's message; call knowledge_search for more.
-    - End with what you saved and which option you would pick, and why. Put every question you could not close in that last message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, for Plan to ask the human.
+    - End with what you saved and which option you would pick, and why. List every question you could not close in that last message, each as a plain line with its options, your recommended answer first, for Plan to ask the human with `ask_questions`. Leave the asking to Plan.
     """)
   end
 
@@ -98,7 +98,7 @@ defmodule Rail.Pipeline.Utils.PlanSubagents do
     - Each child's ticket has its own acceptance criteria, taken from the parent's. Its part is a complete plan in the same sections as yours, opening with the `## Implementation plan` heading, since the child's engineer reads nothing else of the plan.
     - Each `save_split` replaces the whole split, so every save carries every child complete, with its title, ticket and plan. Save an empty list to remove the split.
     - The rules this project has learned that bear on your output come in Plan's message; call knowledge_search for more.
-    - End with what you saved and the option it is written for. Put every question you could not close in that last message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, for Plan to ask the human.
+    - End with what you saved and the option it is written for. List every question you could not close in that last message, each as a plain line with its options, your recommended answer first, for Plan to ask the human with `ask_questions`. Leave the asking to Plan.
     """)
   end
 end

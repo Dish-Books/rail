@@ -20,13 +20,14 @@ defmodule Rail.Mcp.Actions.CallRunTool do
 
   A line is filed under the namespace of the tool that wrote it - `[browser]`,
   `[qa]`, `[demo]` - so driving the page reads apart from reporting on it. A
-  save is not logged at all: the transcript already shows the call.
+  save or a round of questions is not logged at all: the transcript already shows the call.
 
   A refusal is the agent's to fix, so it comes back as one sentence naming each
   field; any other failure is Rail's own, and is said to be.
   """
 
   import Rail.Mcp.Utils.McpTools
+  import Rail.Mcp.Utils.RunToolAskQuestions
   import Rail.Mcp.Utils.RunToolBrowserClose
   import Rail.Mcp.Utils.RunToolBrowserConnect
   import Rail.Mcp.Utils.RunToolBrowserProblems
@@ -54,7 +55,8 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
 
-  @saves [
+  @unlogged [
+    "ask_questions",
     "save_ticket",
     "save_design_option",
     "save_plan",
@@ -197,7 +199,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
 
   # A run that has not started has nowhere to write, which is every call made
   # while testing this rather than during a pass.
-  defp log(%RunContext{}, name, _line) when name in @saves, do: :ok
+  defp log(%RunContext{}, name, _line) when name in @unlogged, do: :ok
 
   defp log(%RunContext{os_process: %{run_id: run_id}}, name, line) when is_binary(run_id) do
     Pipeline.append_run_events(run_id, nil, ["[#{namespace(name)}] " <> line])
@@ -231,6 +233,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp run("save_review", task, arguments, opts), do: run_tool_save_review(task, arguments, opts)
 
   defp run("save_demo", task, arguments, opts), do: run_tool_save_demo(task, arguments, opts)
+  defp run("ask_questions", task, arguments, opts), do: run_tool_ask_questions(task, arguments, opts)
 
   defp task(%RunContext{os_process: %{task_id: task_id}}) when is_binary(task_id) do
     case Pipeline.get_task(task_id) do

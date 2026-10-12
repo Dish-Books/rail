@@ -7,8 +7,8 @@ defmodule RailWeb.OverviewLiveTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
-  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.ImplementationPlan
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
@@ -1135,14 +1135,13 @@ defmodule RailWeb.OverviewLiveTest do
           Pipeline.create_run(%{
             task_id: task.id,
             role_id: role.id,
-            status: :running,
+            status: :blocked_on_input,
             conversation_id: "sess_#{System.unique_integer([:positive])}",
             started_at: DateTime.shift(stopped_at, minute: -30)
           })
 
         Enum.each(prompts, fn prompt ->
-          {:ok, _question} =
-            Pipeline.register_question(Repo.preload(run, task: :issue), %DetectedQuestion{prompt: prompt})
+          Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: prompt})
         end)
 
         {:ok, blocked} = Pipeline.get_run(run.id)
@@ -1251,13 +1250,12 @@ defmodule RailWeb.OverviewLiveTest do
         Pipeline.create_run(%{
           task_id: task.id,
           role_id: roles[:plan].id,
-          status: :running,
+          status: :blocked_on_input,
           conversation_id: "sess_answered",
           started_at: DateTime.utc_now()
         })
 
-      {:ok, question} =
-        Pipeline.register_question(Repo.preload(run, task: :issue), %DetectedQuestion{prompt: "Which one?"})
+      question = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which one?"})
 
       {:ok, _answered} = Pipeline.answer_question(system_scope(), question, "That one")
 
@@ -1279,13 +1277,12 @@ defmodule RailWeb.OverviewLiveTest do
         Pipeline.create_run(%{
           task_id: task.id,
           role_id: roles[:plan].id,
-          status: :running,
+          status: :blocked_on_input,
           conversation_id: "sess_pending",
           started_at: DateTime.utc_now()
         })
 
-      {:ok, _question} =
-        Pipeline.register_question(Repo.preload(run, task: :issue), %DetectedQuestion{prompt: "Which database?"})
+      Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
 
       assert {:ok, view, _html} = live(conn, ~p"/")
 
@@ -1929,8 +1926,8 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
       assert has_element?(view, "#in-progress-task-#{task.id}[data-state='running']")
 
-      {:ok, _question} =
-        Pipeline.register_question(Repo.preload(run, task: :issue), %DetectedQuestion{prompt: "Which database?"})
+      Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
+      {:ok, _blocked} = Pipeline.update_run(run, %{status: :blocked_on_input})
 
       Phoenix.PubSub.broadcast(Rail.PubSub, "pipeline", {:pipeline_changed, task.id})
 

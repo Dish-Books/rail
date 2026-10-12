@@ -4,7 +4,6 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
-  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -116,10 +115,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, _question} =
-      Pipeline.register_question(Repo.preload(run, task: :issue), %DetectedQuestion{
-        prompt: "Question prompt 12609?"
-      })
+    Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Question prompt 12609?"})
 
     assert %Task{
              project: %{id: ^project_id},

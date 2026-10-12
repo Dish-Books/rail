@@ -43,7 +43,7 @@ defmodule Rail.Pipeline.Actions.SendAnswers do
         Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run.id}", {:run_changed, run.id})
 
         from = if Enum.all?(round, & &1.answered_by_rail), do: :past_answers
-        text = format(round, citations(round))
+        text = Question.calculate_answers_message(round, citations(round))
 
         # A person's answers are learned from once they have gone out, since until then they can change.
         with {:ok, _delivery, _run} = sent <- Pipeline.send_message(scope, run, text, from: from) do
@@ -73,29 +73,4 @@ defmodule Rail.Pipeline.Actions.SendAnswers do
       {rule.id, "#{Observation.actor_label(source)}'s answer#{on}, #{Calendar.strftime(source.inserted_at, "%b %-d")}"}
     end
   end
-
-  defp format([%Question{} = question], citations) do
-    "You asked: #{question.prompt}\n#{outcome(question, citations)}"
-  end
-
-  defp format(round, citations) do
-    body =
-      round
-      |> Enum.with_index(1)
-      |> Enum.map_join("\n\n", fn {question, index} ->
-        "#{index}. You asked: #{question.prompt}\n   #{outcome(question, citations)}"
-      end)
-
-    "You asked #{length(round)} questions. Answers, in order:\n\n#{body}"
-  end
-
-  defp outcome(%Question{status: :answered, answered_by_rail: true, answer: answer} = question, citations) do
-    case Map.fetch(citations, question.suggested_learning_id) do
-      {:ok, cited} -> "Answered by Rail from #{cited}: #{answer}"
-      :error -> "Answered by Rail from a past answer: #{answer}"
-    end
-  end
-
-  defp outcome(%Question{status: :answered, answer: answer}, _citations), do: "The answer is: #{answer}"
-  defp outcome(%Question{status: :dismissed}, _citations), do: "Dismissed without an answer; carry on without it."
 end

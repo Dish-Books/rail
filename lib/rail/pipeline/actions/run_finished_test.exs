@@ -7,10 +7,8 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
-  alias Rail.Pipeline.Schemas.RunEvent
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Roles
@@ -189,20 +187,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   test "a run that asked something parks on it rather than concluding", %{task: task, exited: exited} do
     {run, os_process} = exited.(:plan, %{})
-
-    # Questions are read back from what this process wrote, so the lines carry it.
-    now = DateTime.utc_now()
-
-    Repo.insert_all(RunEvent, [
-      %{
-        id: UXID.generate!(),
-        run_id: run.id,
-        os_process_id: os_process.id,
-        line: "[QUESTION: Which database?]",
-        inserted_at: now,
-        updated_at: now
-      }
-    ])
+    {:ok, _asked} = Pipeline.ask_questions(run, [%{"prompt" => "Which database?"}])
 
     assert {:ok, %Run{stage_outcome: :in_progress}} = Pipeline.run_finished(os_process, %{exit_code: 0})
 
@@ -275,8 +260,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     {:ok, task} = Pipeline.update_task(task, %{stage: :review})
     {engineer_run, _engineer_process} = exited.(:engineer, %{})
 
-    {:ok, _question} =
-      Pipeline.register_question(Repo.preload(engineer_run, task: :issue), %DetectedQuestion{prompt: "Rebase onto main?"})
+    Repo.insert!(%Question{task_id: engineer_run.task_id, run_id: engineer_run.id, prompt: "Rebase onto main?"})
 
     {:ok, _finding} =
       Pipeline.save_finding(task, %{
@@ -1159,18 +1143,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   } do
     {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
     {run, os_process} = exited.(:engineer, %{})
-    now = DateTime.utc_now()
-
-    Repo.insert_all(RunEvent, [
-      %{
-        id: UXID.generate!(),
-        run_id: run.id,
-        os_process_id: os_process.id,
-        line: "[QUESTION: Keep both migrations?]",
-        inserted_at: now,
-        updated_at: now
-      }
-    ])
+    {:ok, _asked} = Pipeline.ask_questions(run, [%{"prompt" => "Keep both migrations?"}])
 
     reject(&Pipeline.hand_over_work/2)
 
@@ -1230,18 +1203,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       {:ok, _pass} = Pipeline.save_review(Repo.preload(task, :issue))
       {:ok, :sent, %Run{}} = Pipeline.send_message(system_scope(), run, "Are you sure about the nil?")
       assert_receive {:spawned, os_process}
-      now = DateTime.utc_now()
-
-      Repo.insert_all(RunEvent, [
-        %{
-          id: UXID.generate!(),
-          run_id: run.id,
-          os_process_id: os_process.id,
-          line: "[QUESTION: Keep the guard?]",
-          inserted_at: now,
-          updated_at: now
-        }
-      ])
+      {:ok, _asked} = Pipeline.ask_questions(run, [%{"prompt" => "Keep the guard?"}])
 
       assert {:ok, %Run{} = asked} = Pipeline.run_finished(os_process, %{exit_code: 0})
       assert :blocked = asked |> Repo.preload(:questions, force: true) |> Run.state()
@@ -1263,31 +1225,12 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       )
 
       stub_vertex(%{"Which database" => vector([1.0, 0.1])})
-
-      asked = fn run, os_process, prompts ->
-        now = DateTime.utc_now()
-
-        Repo.insert_all(
-          RunEvent,
-          for prompt <- prompts do
-            %{
-              id: UXID.generate!(),
-              run_id: run.id,
-              os_process_id: os_process.id,
-              line: "[QUESTION: #{prompt}]",
-              inserted_at: now,
-              updated_at: now
-            }
-          end
-        )
-      end
-
-      %{asked: asked}
+      :ok
     end
 
-    test "is sent at once and the run carries on without a person", %{task: task, exited: exited, asked: asked} do
+    test "is sent at once and the run carries on without a person", %{task: task, exited: exited} do
       {run, os_process} = exited.(:plan, %{})
-      asked.(run, os_process, ["Which database?"])
+      {:ok, _asked} = Pipeline.ask_questions(run, [%{"prompt" => "Which database?"}])
 
       assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
 
@@ -1307,9 +1250,11 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       refute Enum.any?(lines, &(&1 =~ "When asked"))
     end
 
-    test "waits while a person still has a question to answer", %{task: task, exited: exited, asked: asked} do
+    test "waits while a person still has a question to answer", %{task: task, exited: exited} do
       {run, os_process} = exited.(:plan, %{})
-      asked.(run, os_process, ["Which database?", "Ship behind a flag?"])
+
+      {:ok, _asked} =
+        Pipeline.ask_questions(run, [%{"prompt" => "Which database?"}, %{"prompt" => "Ship behind a flag?"}])
 
       assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
 
@@ -1319,9 +1264,9 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
                Repo.all(from q in Question, where: q.task_id == ^task.id, order_by: [asc: q.inserted_at, asc: q.id])
     end
 
-    test "waits on a turn a person stopped, rather than resuming it", %{task: task, exited: exited, asked: asked} do
+    test "waits on a turn a person stopped, rather than resuming it", %{task: task, exited: exited} do
       {run, os_process} = exited.(:plan, %{})
-      asked.(run, os_process, ["Which database?"])
+      {:ok, _asked} = Pipeline.ask_questions(run, [%{"prompt" => "Which database?"}])
       {:ok, os_process} = os_process |> Ecto.Changeset.change(ended_reason: :stopped) |> Repo.update()
       reject(&Tools.start_os_process/2)
 

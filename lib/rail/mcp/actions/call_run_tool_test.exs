@@ -7,6 +7,7 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
   alias Rail.Mcp.Schemas.McpConnection
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools.Schemas.OsProcess
@@ -357,7 +358,26 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
             dropped ++ for field <- Map.keys(properties), not Map.has_key?(passed, field), do: {name, field}
         end
 
-      assert dropped == []
+      # A round of questions is a list, so what has to land is each entry's fields.
+      context = %RunContext{os_process: %OsProcess{task_id: task.id}, role: %Role{stage: :engineer, mcp_tools: []}}
+      {:ok, offered} = Mcp.list_run_tools(context)
+
+      %{"inputSchema" => %{"properties" => %{"questions" => %{"items" => %{"properties" => properties}}}}} =
+        Enum.find(offered, &(&1["name"] == "ask_questions"))
+
+      stub(Pipeline, :get_run, fn _id -> {:ok, %Rail.Pipeline.Schemas.Run{}} end)
+
+      expect(Pipeline, :ask_questions, fn _run, [entry] ->
+        send(test_pid, {:asked, entry})
+        {:error, []}
+      end)
+
+      {:error, {:refused, _nothing_asked}} =
+        Mcp.call_run_tool(context, "ask_questions", %{"questions" => [Map.new(properties, &{elem(&1, 0), 1})]})
+
+      assert_received {:asked, passed}
+
+      assert dropped ++ for(field <- Map.keys(properties), not Map.has_key?(passed, field), do: field) == []
     end
 
     test "a fix report naming no test is refused naming `test`, and the finding stays to be fixed", %{
@@ -386,6 +406,49 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
 
       assert Pipeline.list_run_events(run) == []
       assert [%{round: 1}] = task |> Repo.preload(:issue) |> Pipeline.read_review()
+    end
+  end
+
+  describe "ask_questions" do
+    setup %{project: project} do
+      task = learnings_task(project, "CRQ-1")
+      {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
+
+      {:ok, run} =
+        Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
+
+      context = %RunContext{os_process: %OsProcess{run_id: run.id, task_id: task.id}, role: role}
+      %{context: context, task: task, run: run}
+    end
+
+    test "an Engineer run's round, as Jason decodes it, is filed on the run and logs no line", %{
+      context: context,
+      task: task,
+      run: %{id: run_id} = run
+    } do
+      arguments =
+        Jason.decode!(
+          ~s({"questions": [{"prompt": "Which database?", "options": ["Postgres", "SQLite"]}, {"prompt": "Behind a flag?"}]})
+        )
+
+      assert {:ok, %{"content" => [%{"text" => "Asked 2 questions. " <> _rest}]}} =
+               Mcp.call_run_tool(context, "ask_questions", arguments)
+
+      assert [
+               %Question{run_id: ^run_id, status: :asked, prompt: "Which database?", options: ["Postgres", "SQLite"]},
+               %Question{run_id: ^run_id, status: :asked, prompt: "Behind a flag?", options: []}
+             ] = Pipeline.list_questions(task, order_by: [asc: :inserted_at, asc: :id])
+
+      assert Pipeline.list_run_events(run) == []
+    end
+
+    test "a role it is not offered to falls through to the proxy and finds nothing", %{context: context, project: project} do
+      {:ok, product} = Roles.get_role(project_id: project.id, stage: :product)
+
+      assert {:error, :unknown_tool} =
+               Mcp.call_run_tool(%{context | role: product}, "ask_questions", %{
+                 "questions" => [%{"prompt" => "Which database?"}]
+               })
     end
   end
 

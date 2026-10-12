@@ -3,7 +3,6 @@ defmodule Rail.Pipeline.Actions.DismissRoundTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Roles
@@ -34,7 +33,7 @@ defmodule Rail.Pipeline.Actions.DismissRoundTest do
       Pipeline.create_run(%{
         task_id: task.id,
         role_id: role.id,
-        status: :running,
+        status: :blocked_on_input,
         conversation_id: "sess_dismiss_round",
         started_at: DateTime.utc_now()
       })
@@ -45,8 +44,8 @@ defmodule Rail.Pipeline.Actions.DismissRoundTest do
   end
 
   test "an all-dismissed round closes without a message", %{run: run, role: role} do
-    {:ok, first} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
-    {:ok, second} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Behind a flag?"})
+    first = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
+    second = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Behind a flag?"})
     {:ok, _dismissed} = Pipeline.dismiss_question(first)
     {:ok, _dismissed} = Pipeline.dismiss_question(second)
 
@@ -63,8 +62,8 @@ defmodule Rail.Pipeline.Actions.DismissRoundTest do
   end
 
   test "a round with a question still open is not closed", %{run: run} do
-    {:ok, first} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
-    {:ok, _second} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Behind a flag?"})
+    first = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
+    Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Behind a flag?"})
     {:ok, _dismissed} = Pipeline.dismiss_question(first)
 
     assert {:error, :questions_pending} = run |> Repo.reload!() |> Repo.preload(:role) |> Pipeline.dismiss_round()
@@ -72,8 +71,8 @@ defmodule Rail.Pipeline.Actions.DismissRoundTest do
   end
 
   test "a round with an answer in it is sent, not dismissed", %{run: run} do
-    {:ok, first} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
-    {:ok, second} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Behind a flag?"})
+    first = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
+    second = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Behind a flag?"})
     {:ok, _answered} = Pipeline.answer_question(system_scope(), first, "Postgres")
     {:ok, _dismissed} = Pipeline.dismiss_question(second)
 
@@ -87,7 +86,7 @@ defmodule Rail.Pipeline.Actions.DismissRoundTest do
   end
 
   test "a run no longer parked on the round keeps its status", %{run: run} do
-    {:ok, question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Rebase onto main?"})
+    question = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Rebase onto main?"})
     {:ok, _dismissed} = Pipeline.dismiss_question(question)
 
     # Updating the branch resumes the run without anyone answering what it asked.

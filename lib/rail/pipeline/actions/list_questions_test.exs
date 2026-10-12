@@ -3,7 +3,6 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Repo
   alias Rail.Roles
@@ -49,9 +48,9 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
   end
 
   test "lists questions by task and supports order_by", %{task: task, run: run} do
-    {:ok, q1} = Pipeline.register_question(run, %DetectedQuestion{prompt: "First"})
+    q1 = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "First"})
     {:ok, _dismissed} = Pipeline.dismiss_question(q1)
-    {:ok, %Question{id: q2_id} = q2} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Second"})
+    %Question{id: q2_id} = q2 = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Second"})
 
     desc_order = Pipeline.list_questions(task, order_by: [desc: :inserted_at])
     assert Enum.map(desc_order, & &1.id) == [q2.id, q1.id]
@@ -71,17 +70,15 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, first} = Pipeline.register_question(run, %DetectedQuestion{prompt: "From plan?"})
+    first = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "From plan?"})
 
-    {:ok, second} =
-      Pipeline.register_question(Repo.preload(other_run, task: :issue), %DetectedQuestion{prompt: "From engineer?"})
+    second = Repo.insert!(%Question{task_id: other_run.task_id, run_id: other_run.id, prompt: "From engineer?"})
 
     assert Enum.map(Pipeline.list_questions(task, order_by: [asc: :inserted_at]), & &1.id) == [first.id, second.id]
   end
 
   test "get_question", %{run: run} do
-    {:ok, %Question{id: expected_id}} =
-      Pipeline.register_question(run, %DetectedQuestion{prompt: "Which option?"})
+    %Question{id: expected_id} = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which option?"})
 
     assert {:ok, %Question{id: ^expected_id}} = Pipeline.get_question(expected_id)
     assert {:error, :not_found} = Pipeline.get_question("qst_nonexistent")

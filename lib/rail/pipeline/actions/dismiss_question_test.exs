@@ -5,7 +5,6 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Repo
@@ -49,7 +48,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
       Pipeline.create_run(%{
         task_id: task.id,
         role_id: roles[:plan].id,
-        status: :running,
+        status: :blocked_on_input,
         conversation_id: "sess_dismiss",
         started_at: DateTime.utc_now()
       })
@@ -63,8 +62,8 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
     task: task,
     run: %Run{id: run_id} = run
   } do
-    {:ok, q} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Should we proceed?"})
-    {:ok, answered} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
+    q = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Should we proceed?"})
+    answered = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
     {:ok, _answered} = Pipeline.answer_question(system_scope(), answered, "Postgres")
 
     assert Repo.reload!(run).status == :blocked_on_input
@@ -85,8 +84,8 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
   end
 
   test "dismissing one of a batch leaves the rest and does not resume the run", %{task: task, run: run} do
-    {:ok, first} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Should we proceed?"})
-    {:ok, second} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Ship behind a flag?"})
+    first = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Should we proceed?"})
+    second = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Ship behind a flag?"})
 
     assert Enum.map(pending_questions(task.id), & &1.id) == [first.id, second.id]
 
@@ -99,11 +98,10 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
   end
 
   test "leaves a task that is no longer parked alone", %{task: task, run: run} do
-    {:ok, q} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Should we proceed?"})
+    q = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Should we proceed?"})
 
     # Another question is still pending, so waving this one off resumes nothing.
-    {:ok, _second} =
-      Pipeline.register_question(run, %DetectedQuestion{prompt: "And the migration?"})
+    Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "And the migration?"})
 
     stub(Tools, :start_os_process, fn _run, _argv -> {:error, :not_expected} end)
 
@@ -114,14 +112,14 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
   end
 
   test "an answered question can be dismissed until it is sent", %{run: run} do
-    {:ok, question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Answered question?"})
+    question = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Answered question?"})
     {:ok, answered} = Pipeline.answer_question(system_scope(), question, "Yes")
 
     assert {:ok, %Question{status: :dismissed, answer: nil, answered_at: nil}} = Pipeline.dismiss_question(answered)
   end
 
   test "a sent question cannot be dismissed", %{run: run} do
-    {:ok, question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Sent question?"})
+    question = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Sent question?"})
     {:ok, sent} = question |> Question.changeset(%{delivered_at: DateTime.utc_now()}) |> Repo.update()
 
     assert {:error, :already_sent} = Pipeline.dismiss_question(sent)
