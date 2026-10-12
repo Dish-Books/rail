@@ -68,6 +68,76 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-branch[phx-hook='CopyText'][data-copy-text='ipg-7-ap-aging']")
   end
 
+  test "an issue a workflow opened names it under the title, as plain text for someone who is not an admin", %{
+    conn: conn,
+    project: project
+  } do
+    [workflow] =
+      sync_workflow_files(project, %{
+        ".rail/workflows/flaky-test-sweep.yml" => workflow_yaml(%{"name" => "Flaky test sweep"})
+      })
+
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        workflow_id: workflow.id,
+        external_id: "lin_workflow_page_1",
+        identifier: "WFP-1",
+        title: "Flaky test sweep 2026-10-12",
+        state: :triage
+      })
+      |> Repo.insert!()
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    assert has_element?(view, "#issue-workflow-byline", "Opened by the Flaky test sweep workflow on Oct 12, 08:00 UTC")
+    refute has_element?(view, "#issue-workflow-link")
+    assert has_element?(view, "#issue-owner", "Unassigned")
+
+    # Only a workflow change on this issue's project reloads it.
+    Phoenix.PubSub.broadcast(Rail.PubSub, "workflows", {:workflows_changed, "prj_elsewhere"})
+    sync_workflow_files(project, %{".rail/workflows/flaky-test-sweep.yml" => workflow_yaml(%{"name" => "Flake sweep"})})
+    assert has_element?(view, "#issue-workflow-byline", "Opened by the Flake sweep workflow")
+  end
+
+  test "an admin follows the workflow's name to Settings, and a filed issue has no byline", %{
+    conn: conn,
+    project: project
+  } do
+    {:ok, admin} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issue_live_admin",
+        login: "issue_admin",
+        email: "issue_admin@example.com"
+      })
+
+    {:ok, _admin} = Users.update_user(system_scope(), admin, %{admin: true})
+    [workflow] = sync_workflow_files(project, %{".rail/workflows/sweep.yml" => workflow_yaml(%{"name" => "Sweep"})})
+
+    [opened, filed] =
+      for {workflow_id, n} <- [{workflow.id, 1}, {nil, 2}] do
+        %Issue{}
+        |> Issue.tracker_changeset(%{
+          project_id: project.id,
+          workflow_id: workflow_id,
+          external_id: "lin_workflow_page_admin_#{n}",
+          identifier: "WFA-#{n}",
+          title: "Admin #{n}",
+          state: :triage
+        })
+        |> Repo.insert!()
+      end
+
+    admin_conn = log_in_user(conn, Repo.reload!(admin))
+
+    assert {:ok, view, _html} = live(admin_conn, ~p"/issues/#{opened.identifier}")
+    assert has_element?(view, ~s(#issue-workflow-link[href="/settings/workflows"]), "Sweep")
+
+    assert {:ok, view, _html} = live(admin_conn, ~p"/issues/#{filed.identifier}")
+    refute has_element?(view, "#issue-workflow-byline")
+  end
+
   test "a GitHub issue opens from its key#number identifier, and anyone can own it", %{
     conn: conn,
     user: user,

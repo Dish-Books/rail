@@ -16,6 +16,13 @@ defmodule RailTest.Helpers do
   defdelegate github_comment_json(overrides \\ %{}), to: RailTest.GithubHelpers
   defdelegate github_issue(project, attrs \\ %{}), to: RailTest.GithubHelpers
 
+  defdelegate workflow_yaml(overrides \\ %{}), to: RailTest.WorkflowHelpers
+
+  defdelegate sync_workflow_files(project, files, synced_at \\ ~U[2026-10-12 08:00:00.000000Z]),
+    to: RailTest.WorkflowHelpers
+
+  defdelegate expect_linear_issue(identifier), to: RailTest.WorkflowHelpers
+
   defdelegate stub_vertex(vectors \\ %{}), to: RailTest.LearningsHelpers
   defdelegate stub_vertex_down(), to: RailTest.LearningsHelpers
   defdelegate vector(components), to: RailTest.LearningsHelpers
