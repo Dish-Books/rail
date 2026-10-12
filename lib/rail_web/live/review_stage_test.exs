@@ -1578,8 +1578,6 @@ defmodule RailWeb.Live.ReviewStageTest do
     setup %{project: project, task: task, user: user} do
       {:ok, task} = Pipeline.update_task(task, %{stage: :plan})
       {:ok, plan_role} = Roles.get_role(project_id: project.id, stage: :plan)
-      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-      stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
 
       {:ok, plan_run} =
         Pipeline.create_run(%{
