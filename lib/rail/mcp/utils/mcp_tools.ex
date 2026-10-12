@@ -40,6 +40,8 @@ defmodule Rail.Mcp.Utils.McpTools do
   called. The Review lead's subagents inherit its tools, so the one register is
   theirs too: that only the lead saves a finding is its brief's rule.
 
+  `@question_tools` are how a lead asks the human: the round it asks in a turn is shown when the turn ends.
+
   `@knowledge_tools` are offered to every role: `knowledge_search` reads the
   rules the project has learned, which no stage should have to guess at.
 
@@ -562,6 +564,39 @@ defmodule Rail.Mcp.Utils.McpTools do
     }
   ]
 
+  @question_tools [
+    %{
+      "name" => "ask_questions",
+      "description" =>
+        "Ask the human what you could not settle yourself, the whole round in one call, before you end your turn. " <>
+          "The human sees the round when your turn ends and the answers come back as one message. A second call in " <>
+          "the same turn adds to the same round, and a question already asked is not asked twice.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{
+          "questions" => %{
+            "type" => "array",
+            "description" => "Every question you could not close, in the order the human should answer them.",
+            "items" => %{
+              "type" => "object",
+              "properties" => %{
+                "prompt" => %{"type" => "string", "description" => "The question, in a sentence or two."},
+                "options" => %{
+                  "type" => "array",
+                  "items" => %{"type" => "string"},
+                  "description" =>
+                    "The answers to pick from, your recommended one first. Leave it out when the answer is free text."
+                }
+              },
+              "required" => ["prompt"]
+            }
+          }
+        },
+        "required" => ["questions"]
+      }
+    }
+  ]
+
   @knowledge_tools [
     %{
       "name" => "knowledge_search",
@@ -583,13 +618,15 @@ defmodule Rail.Mcp.Utils.McpTools do
   @doc """
   The tools Rail serves this run itself: the browser for the Review lead, whose
   explorers and demo recorder drive one, the save tools each lead hands its
-  output over with, and the knowledge base for all.
+  output over with, `ask_questions` for the leads, and the knowledge base for all.
   """
-  def mcp_tools(%Role{stage: :plan}), do: @plan_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :engineer}), do: @knowledge_tools
+  def mcp_tools(%Role{stage: :plan}), do: @plan_tools ++ @question_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :engineer}), do: @question_tools ++ @knowledge_tools
 
   def mcp_tools(%Role{stage: :review_lead}),
-    do: @browser_tools ++ @qa_tools ++ @demo_tools ++ @review_lead_tools ++ @demo_report_tools ++ @knowledge_tools
+    do:
+      @browser_tools ++
+        @qa_tools ++ @demo_tools ++ @review_lead_tools ++ @demo_report_tools ++ @question_tools ++ @knowledge_tools
 
   def mcp_tools(%Role{}), do: @knowledge_tools
 end

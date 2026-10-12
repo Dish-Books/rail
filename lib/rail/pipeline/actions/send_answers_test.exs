@@ -4,7 +4,6 @@ defmodule Rail.Pipeline.Actions.SendAnswersTest do
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline
-  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Roles
   alias Rail.Tools
@@ -31,8 +30,8 @@ defmodule Rail.Pipeline.Actions.SendAnswersTest do
     task: task,
     run: run
   } do
-    {:ok, %{id: first_id} = first} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
-    {:ok, second} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Behind a flag?"})
+    %{id: first_id} = first = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
+    second = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Behind a flag?"})
     {:ok, _first} = Pipeline.answer_question(system_scope(), first, "MySQL")
     {:ok, _changed} = Pipeline.answer_question(system_scope(), Repo.reload!(first), "Postgres")
 
@@ -58,7 +57,7 @@ defmodule Rail.Pipeline.Actions.SendAnswersTest do
   end
 
   test "a round that cannot go out learns nothing", %{task: task, run: run} do
-    {:ok, question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
+    question = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
     {:ok, _answered} = Pipeline.answer_question(system_scope(), question, "Postgres")
     {:ok, run} = Pipeline.update_run(Repo.reload!(run), %{status: :finished})
     Repo.update_all(from(r in Rail.Pipeline.Schemas.Run, where: r.id == ^run.id), set: [conversation_id: nil])
@@ -92,7 +91,7 @@ defmodule Rail.Pipeline.Actions.SendAnswersTest do
       rule: rule,
       cited: cited
     } do
-      {:ok, question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database to use?"})
+      question = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database to use?"})
 
       {:ok, _by_rail} =
         question
@@ -116,9 +115,9 @@ defmodule Rail.Pipeline.Actions.SendAnswersTest do
       rule: rule,
       cited: cited
     } do
-      {:ok, first} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database to use?"})
-      {:ok, second} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Behind a flag?"})
-      {:ok, third} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which cache?"})
+      first = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database to use?"})
+      second = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Behind a flag?"})
+      third = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which cache?"})
 
       {:ok, _by_rail} =
         first

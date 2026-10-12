@@ -103,7 +103,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
 
     Questions:
 
-    - Ask everything at once. Put every question you and the subagents could not close in your last message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. A question you can settle from the code, the ticket or the plan is not a question.
+    - Ask everything at once. Ask every question you and the subagents could not close, theirs included, in one `ask_questions` call before you end your turn, each with its options, your recommended answer first. Leave the options out where the answer is free text. A question you can settle from the code, the ticket or the plan is not a question.
 
     #{outstanding(task)}
     #{plan(task)}#{learnings_brief(run, fn -> file_queries(task) end)}

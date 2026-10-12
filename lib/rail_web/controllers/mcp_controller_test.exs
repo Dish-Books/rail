@@ -3,6 +3,7 @@ defmodule RailWeb.McpControllerTest do
 
   alias Rail.Mcp
   alias Rail.Mcp.RunContext
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Roles.Schemas.Role
 
   setup %{conn: conn} do
@@ -155,6 +156,47 @@ defmodule RailWeb.McpControllerTest do
 
     assert %{"result" => %{"isError" => true, "content" => [%{"text" => ^said}]}} =
              conn |> post(~p"/mcp", Jason.encode!(message)) |> json_response(200)
+  end
+
+  test "an ask_questions call round-trips into asked rows, and a malformed entry comes back named", %{
+    authed: conn,
+    project: project
+  } do
+    task = learnings_task(project, "MCQ-1")
+    {:ok, role} = Rail.Roles.get_role(project_id: project.id, stage: :engineer)
+
+    {:ok, %{id: run_id} = run} =
+      Rail.Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
+
+    engineer = %RunContext{os_process: %Rail.Tools.Schemas.OsProcess{run_id: run.id, task_id: task.id}, role: role}
+    stub(Mcp, :authenticate_run_token, fn "run_token" -> {:ok, engineer} end)
+
+    call = fn id, questions ->
+      message = %{
+        "jsonrpc" => "2.0",
+        "id" => id,
+        "method" => "tools/call",
+        "params" => %{"name" => "ask_questions", "arguments" => %{"questions" => questions}}
+      }
+
+      conn |> post(~p"/mcp", Jason.encode!(message)) |> json_response(200)
+    end
+
+    assert %{"result" => %{"content" => [%{"text" => "Asked 2 questions. " <> _rest}]}} =
+             call.(10, [
+               %{"prompt" => "Which database?", "options" => ["Postgres", "SQLite"]},
+               %{"prompt" => "Behind a flag?"}
+             ])
+
+    assert [
+             %Question{run_id: ^run_id, status: :asked, prompt: "Which database?", options: ["Postgres", "SQLite"]},
+             %Question{run_id: ^run_id, status: :asked, prompt: "Behind a flag?", options: []}
+           ] = Rail.Pipeline.list_questions(task, order_by: [asc: :inserted_at, asc: :id])
+
+    assert %{
+             "result" => %{"isError" => true, "content" => [%{"text" => "Refused, nothing asked. Question 2: " <> _rest}]}
+           } =
+             call.(11, [%{"prompt" => "Who reviews it?"}, %{"options" => ["Sam"]}])
   end
 
   test "GET offers no event stream", %{authed: conn} do

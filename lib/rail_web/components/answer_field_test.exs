@@ -7,324 +7,201 @@ defmodule RailWeb.Components.AnswerFieldTest do
   alias RailWeb.Components.AnswerField
   alias RailWeb.CoreComponents
 
-  test "renders question prompt, context summary, and option chips" do
-    question = %Question{
-      id: "qst_123",
-      prompt: "Should we migrate to PostgreSQL or stay with SQLite?",
-      context_summary: "Found conflicting database configs in repo",
-      options: ["PostgreSQL", "SQLite", "Other"]
+  setup do
+    by_rail = %Question{
+      id: "qst_1",
+      prompt: "Which database?",
+      status: :answered,
+      answer: "Postgres",
+      answered_by_rail: true,
+      options: ["Postgres", "SQLite"]
     }
 
-    html = render_component(&AnswerField.answer_field/1, question: question, answer_text: "", role_name: "Product")
+    open = %Question{id: "qst_2", prompt: "Ship behind a flag?", status: :pending, options: []}
+    answered = %Question{id: "qst_3", prompt: "Who reviews it?", status: :answered, answer: "Sam", options: []}
+    dismissed = %Question{id: "qst_4", prompt: "Which region?", status: :dismissed, options: ["eu", "us"]}
 
-    assert html =~ ~s(data-qa="answer-field")
-    assert html =~ ~s(data-qa="question-prompt")
-    assert html =~ "Should we migrate to PostgreSQL or stay with SQLite?"
-    assert html =~ ~s(data-qa="question-context-summary")
-    assert html =~ "Found conflicting database configs in repo"
-    assert html =~ ~s(data-qa="question-options")
-    assert html =~ ~s(data-qa="question-option-0")
-    assert html =~ "PostgreSQL"
-    assert html =~ ~s(data-qa="question-option-1")
-    assert html =~ "SQLite"
-    assert html =~ ~s(data-qa="question-option-2")
-    assert html =~ "Other"
-    assert html =~ ~s(data-qa="answer-textarea")
-    assert html =~ ~s(data-qa="dismiss-question-button")
-    assert html =~ ~s(data-qa="answer-resume-button")
-  end
-
-  test "highlights active option chip matching answer_text" do
-    question = %Question{
-      id: "qst_456",
-      prompt: "Select environment",
-      options: ["Staging", "Production"]
+    source = %{
+      answer: "Yes, behind a flag.",
+      by: "Mara Lind",
+      identifier: "RAIL-33",
+      task_id: "tsk_33",
+      date: ~U[2026-09-28 10:00:00Z]
     }
 
-    html = render_component(&AnswerField.answer_field/1, question: question, answer_text: "Staging", role_name: "Product")
-
-    assert html =~ "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200"
-    assert html =~ "Staging"
-  end
-
-  test "omits context summary when blank or nil" do
-    question = %Question{
-      id: "qst_789",
-      prompt: "Continue deployment?",
-      context_summary: nil,
-      options: ["Yes", "No"]
+    %{
+      round: [by_rail, open, answered, dismissed],
+      suggestions: %{"qst_1" => %{source | by: "Dan Okafor", identifier: "RAIL-31", task_id: "tsk_31"}, "qst_2" => source}
     }
-
-    html = render_component(&AnswerField.answer_field/1, question: question, answer_text: "", role_name: "Product")
-
-    refute html =~ ~s(data-qa="question-context-summary")
   end
 
-  test "omits option chips when options list is empty" do
-    question = %Question{
-      id: "qst_empty_opts",
-      prompt: "Provide custom API token",
-      options: []
-    }
+  test "each chip carries its number and says where its question stands", %{round: round, suggestions: suggestions} do
+    html = render_component(&AnswerField.answer_field/1, question: hd(round), questions: round, suggestions: suggestions)
 
-    html =
-      render_component(&AnswerField.answer_field/1, question: question, answer_text: "secret_123", role_name: "Product")
-
-    refute html =~ ~s(data-qa="question-options")
-    assert html =~ "secret_123"
+    assert html =~ ~r/id="question-tab-0"[^>]*aria-label="Question 1, answered by Rail"/
+    assert html =~ ~r/id="question-tab-1"[^>]*aria-label="Question 2, not answered yet"/
+    assert html =~ ~r/id="question-tab-2"[^>]*aria-label="Question 3, answered"/
+    assert html =~ ~r/id="question-tab-3"[^>]*aria-label="Question 4, dismissed"/
+    assert html |> Floki.parse_fragment!() |> Floki.find("#question-tab-3") |> Floki.text() =~ "4"
   end
 
-  test "renders properly via CoreComponents.answer_field delegation with map input and handles nil question" do
-    question = %{
-      id: "qst_map_1",
-      prompt: "Map prompt text",
-      context_summary: "Map summary",
-      options: ["Option A"]
-    }
+  test "the line under the prompt says whose answer the box holds, and a person's own needs none", %{
+    round: [by_rail, open, answered, dismissed] = round,
+    suggestions: suggestions
+  } do
+    meta = fn question, suggestions ->
+      (&AnswerField.answer_field/1)
+      |> render_component(question: question, questions: round, suggestions: suggestions, answer_text: "")
+      |> Floki.parse_fragment!()
+      |> Floki.find("#question-meta")
+    end
 
-    html =
-      render_component(&CoreComponents.answer_field/1, question: question, answer_text: "Option A", role_name: "Product")
+    assert by_rail |> meta.(suggestions) |> Floki.text() =~ ~r/Rail answered from Dan Okafor on\s*RAIL-31, Sep 28/
+    assert by_rail |> meta.(suggestions) |> Floki.find("a") |> Floki.attribute("href") == ["/tasks/tsk_31"]
+    assert by_rail |> meta.(%{}) |> Floki.text() =~ "Rail answered from a past answer"
+    assert open |> meta.(suggestions) |> Floki.text() =~ ~r/Likely answer, from Mara Lind on\s*RAIL-33, Sep 28/
 
-    assert html =~ "Map prompt text"
-    assert html =~ "Map summary"
-    assert html =~ "Option A"
+    unlinked = %{"qst_2" => %{suggestions["qst_2"] | identifier: nil, task_id: nil}}
+    assert open |> meta.(unlinked) |> Floki.text() =~ "Likely answer, from Mara Lind, Sep 28"
 
-    nil_html = render_component(&AnswerField.answer_field/1, question: nil, role_name: "Product")
-    assert nil_html =~ ~s(data-qa="answer-field")
+    elsewhere = %{"qst_2" => %{suggestions["qst_2"] | task_id: nil}}
+    assert open |> meta.(elsewhere) |> Floki.find("a") == []
+    assert open |> meta.(elsewhere) |> Floki.text() =~ "RAIL-33"
+
+    assert dismissed |> meta.(suggestions) |> Floki.text() =~ "Dismissed"
+    assert meta.(answered, suggestions) == []
+    assert meta.(open, %{}) == []
   end
 
-  test "renders one tab per pending question and marks the selected one" do
-    questions = [
-      %Question{id: "qst_1", prompt: "Which database?", options: []},
-      %Question{id: "qst_2", prompt: "Ship behind a flag?", options: []},
-      %Question{id: "qst_3", prompt: "Who reviews it?", options: []}
-    ]
-
+  test "an open question holding its likely answer keeps Send answers away though every other is answered", %{
+    round: [by_rail, open, answered, _dismissed],
+    suggestions: suggestions
+  } do
     html =
       render_component(&AnswerField.answer_field/1,
-        question: Enum.at(questions, 1),
-        questions: questions,
-        answer_text: "",
-        role_name: "Product"
+        question: open,
+        questions: [by_rail, open, answered],
+        suggestions: suggestions,
+        answer_text: "Yes, behind a flag."
       )
 
-    assert html =~ ~s(data-qa="question-tabs")
-    assert html =~ ~s(data-qa="question-tab-0")
-    assert html =~ ~s(data-qa="question-tab-2")
-    assert html =~ "3 still to answer"
-
-    # The card body shows the selected tab's question, not the first.
-    assert html =~ "Ship behind a flag?"
-    assert html =~ ~s(phx-value-question_id="qst_2")
-
-    [_before, from_selected_tab] = String.split(html, ~s(data-qa="question-tab-1"), parts: 2)
-    assert from_selected_tab =~ ~s(aria-selected="true")
+    assert html =~ "Likely answer"
+    assert html =~ "Yes, behind a flag."
+    refute html =~ ~s(id="send-answers-button")
+    assert html =~ ~s(id="dismiss-question-button")
   end
 
-  test "a lone question renders no tab strip" do
-    question = %Question{id: "qst_1", prompt: "Which database?", options: []}
+  test "only a question's first option is marked Recommended, and one without options has none", %{round: round} do
+    html = render_component(&AnswerField.answer_field/1, question: hd(round), questions: round, answer_text: "Postgres")
+    options = Floki.parse_fragment!(html)
 
-    html = render_component(&AnswerField.answer_field/1, question: question, answer_text: "", role_name: "Product")
+    assert options |> Floki.find("#question-option-0 [data-qa='recommended']") |> Floki.text() =~ "Recommended"
+    assert Floki.find(options, "#question-option-1 [data-qa='recommended']") == []
+    assert Floki.find(options, "#question-option-0.bg-blue-100") != []
 
-    refute html =~ ~s(data-qa="question-tabs")
+    bare = render_component(&AnswerField.answer_field/1, question: Enum.at(round, 1), questions: round)
+    refute bare =~ ~s(data-qa="recommended")
+    refute bare =~ ~s(id="question-options")
   end
 
-  describe "a round with saved answers" do
-    setup do
-      questions = [
-        %Question{id: "qst_1", prompt: "Which database?", status: :answered, answer: "Postgres", options: []},
-        %Question{id: "qst_2", prompt: "Ship behind a flag?", status: :pending, options: []},
-        %Question{id: "qst_3", prompt: "Who reviews it?", status: :pending, options: []}
-      ]
-
-      %{questions: questions}
+  test "Send answers shows only once nothing is open and the box holds nothing unsaved", %{
+    round: [by_rail, open, answered, dismissed]
+  } do
+    render = fn question, questions, text ->
+      render_component(&AnswerField.answer_field/1, question: question, questions: questions, answer_text: text)
     end
 
-    test "each tab says where its question stands, and the footer counts what is open", %{questions: questions} do
-      html =
-        render_component(&AnswerField.answer_field/1,
-          question: Enum.at(questions, 1),
-          questions: questions,
-          role_name: "Product"
-        )
+    with_open = render.(open, [by_rail, open, answered], "")
+    assert with_open =~ ~s(id="dismiss-question-button")
+    refute with_open =~ ~s(id="send-answers-button")
 
-      assert html =~ ~s(aria-label="Question 1, answered")
-      assert html =~ ~s(aria-label="Question 2, not answered yet")
-      assert html =~ ~s(aria-label="Question 3, not answered yet")
-      assert html =~ "Not answered yet"
-      assert html =~ "2 still to answer"
-      refute html =~ "unanswered"
-    end
+    settled = render.(answered, [by_rail, answered, dismissed], "Sam")
+    assert settled =~ ~s(id="dismiss-question-button")
+    assert settled =~ ~s(id="send-answers-button")
+    refute settled =~ ~s(id="dismiss-questions-button")
 
-    test "an answered question shows its saved answer and offers to change it", %{questions: questions} do
-      html =
-        render_component(&AnswerField.answer_field/1,
-          question: Enum.at(questions, 0),
-          questions: questions,
-          role_name: "Product"
-        )
-
-      assert html =~ "Answered · not sent yet"
-      assert html =~ ~s(data-qa="saved-answer")
-      assert html =~ "Postgres"
-      assert html =~ ~s(id="change-answer-button")
-      assert html =~ ~s(id="dismiss-question-button")
-      refute html =~ ~s(id="answer-textarea")
-    end
-
-    test "changing an answer opens the form filled with it, with Cancel instead of Dismiss", %{
-      questions: questions
-    } do
-      html =
-        render_component(&AnswerField.answer_field/1,
-          question: Enum.at(questions, 0),
-          questions: questions,
-          answer_text: "Postgres",
-          changing_answer: true,
-          role_name: "Product"
-        )
-
-      assert html =~ "Answered · changing your answer"
-      assert html =~ ~r/<textarea[^>]*id="answer-textarea"[^>]*>Postgres<\/textarea>/
-      assert html =~ ~s(id="cancel-answer-button")
-      refute html =~ ~s(id="dismiss-question-button")
-      refute html =~ ~s(data-qa="saved-answer")
-    end
+    refute render.(answered, [by_rail, answered, dismissed], "Dana") =~ ~s(id="send-answers-button")
   end
 
-  test "a dismissed question in a mixed round says the agent carries on, and can be answered instead" do
-    questions = [
-      %Question{id: "qst_1", prompt: "Which database?", status: :answered, answer: "Postgres", options: []},
-      %Question{id: "qst_2", prompt: "Ship behind a flag?", status: :dismissed, options: []}
-    ]
-
-    html =
-      render_component(&AnswerField.answer_field/1,
-        question: Enum.at(questions, 1),
-        questions: questions,
-        role_name: "Product"
-      )
-
-    assert html =~ ~s(aria-label="Question 2, dismissed")
-    assert html =~ "Dismissed · not sent yet"
-    assert html =~ ~s(data-qa="dismissed-note")
-    assert html =~ "Product will carry on without an answer to this."
-    assert html =~ ~s(id="answer-instead-button")
-    refute html =~ ~s(id="answer-textarea")
-    refute html =~ "still to answer"
-    refute html =~ ~r/id="send-answers-button"[^>]*\sdisabled[\s>]/
-  end
-
-  test "a round with nothing open can be sent" do
-    questions = [
-      %Question{id: "qst_1", prompt: "Which database?", status: :answered, answer: "Postgres", options: []},
-      %Question{id: "qst_2", prompt: "Ship behind a flag?", status: :answered, answer: "Yes", options: []}
-    ]
-
-    html =
-      render_component(&AnswerField.answer_field/1, question: hd(questions), questions: questions, role_name: "Product")
-
-    refute html =~ ~r/id="send-answers-button"[^>]*\sdisabled[\s>]/
-    refute html =~ ~s(id="dismiss-questions-button")
-  end
-
-  test "a round still open cannot be sent" do
-    question = %Question{id: "qst_1", prompt: "Which database?", status: :pending, options: []}
-
-    html = render_component(&AnswerField.answer_field/1, question: question, questions: [question], role_name: "Product")
-
-    assert html =~ ~r/id="send-answers-button"[^>]*\sdisabled[\s>]/
-  end
-
-  test "a round dismissed in full offers Dismiss questions instead of Send answers" do
-    questions = [
-      %Question{id: "qst_1", prompt: "Which database?", status: :dismissed, options: []},
-      %Question{id: "qst_2", prompt: "Ship behind a flag?", status: :dismissed, options: []}
-    ]
-
-    html =
-      render_component(&AnswerField.answer_field/1, question: hd(questions), questions: questions, role_name: "Product")
+  test "a round dismissed in full offers Dismiss questions in Send's place, held back by an unsaved edit", %{
+    round: [_by_rail, _open, _answered, dismissed]
+  } do
+    other = %{dismissed | id: "qst_5", prompt: "Which team?"}
+    html = render_component(&AnswerField.answer_field/1, question: dismissed, questions: [dismissed, other])
 
     assert html =~ ~s(id="dismiss-questions-button")
     refute html =~ ~s(id="send-answers-button")
-    assert html =~ "Every question in this round is dismissed, so Product won&#39;t get a message about it."
-    refute html =~ "not sent yet"
+    refute html =~ ~s(id="dismiss-question-button")
+
+    typed =
+      render_component(&AnswerField.answer_field/1, question: dismissed, questions: [dismissed, other], answer_text: "eu")
+
+    refute typed =~ ~s(id="dismiss-questions-button")
   end
 
-  test "answering a dismissed question instead opens the form with Cancel" do
-    questions = [
-      %Question{id: "qst_1", prompt: "Which database?", status: :answered, answer: "Postgres", options: []},
-      %Question{id: "qst_2", prompt: "Ship behind a flag?", status: :dismissed, options: []}
-    ]
+  test "the card has one box and none of the old answer cards, notes or buttons", %{
+    round: round,
+    suggestions: suggestions
+  } do
+    for question <- round do
+      html =
+        render_component(&AnswerField.answer_field/1, question: question, questions: round, suggestions: suggestions)
+
+      assert html =~ ~s(id="answer-textarea")
+      assert html =~ ~s(id="save-answer-button")
+
+      for gone <- [
+            "question-context-summary",
+            "rail-answer",
+            "likely-answer",
+            "use-likely-answer",
+            "answer-myself",
+            "change-answer-button",
+            "cancel-answer-button",
+            "answer-instead-button",
+            "questions-pending-note",
+            "Asked during"
+          ] do
+        refute html =~ gone
+      end
+    end
+  end
+
+  test "a lone question still has its chip, which holds Dismiss and Send answers beside it" do
+    question = %Question{id: "qst_lone", prompt: "Which database?", status: :answered, answer: "Postgres"}
 
     html =
-      render_component(&AnswerField.answer_field/1,
-        question: Enum.at(questions, 1),
-        questions: questions,
-        changing_answer: true,
-        role_name: "Product"
-      )
+      render_component(&AnswerField.answer_field/1, question: question, questions: [question], answer_text: "Postgres")
 
-    assert html =~ ~s(id="answer-textarea")
-    assert html =~ ~s(id="cancel-answer-button")
-    refute html =~ ~s(data-qa="dismissed-note")
-    assert html =~ "Dismissed · answering instead"
-    refute html =~ "Dismissed · not sent yet"
+    assert [_one] = html |> Floki.parse_fragment!() |> Floki.find("#question-tabs [role='tab']")
+    assert html =~ ~s(id="send-answers-button")
   end
 
-  test "a change on screen holds back Send answers until it is saved or cancelled" do
-    questions = [
-      %Question{id: "qst_1", prompt: "Which database?", status: :answered, answer: "Postgres", options: []},
-      %Question{id: "qst_2", prompt: "Ship behind a flag?", status: :answered, answer: "Yes", options: []}
-    ]
+  test "renders through CoreComponents from a bare map that has no status yet" do
+    question = %{id: "qst_map_1", prompt: "Map prompt text", options: ["Option A"]}
 
-    html =
-      render_component(&AnswerField.answer_field/1,
-        question: hd(questions),
-        questions: questions,
-        changing_answer: true,
-        role_name: "Product"
-      )
+    html = render_component(&CoreComponents.answer_field/1, question: question, answer_text: "Option A")
 
-    assert html =~ ~r/id="send-answers-button"[^>]*\sdisabled[\s>]/
-    assert html =~ "Save or cancel your change first"
-    refute html =~ "still to answer"
+    assert html =~ "Map prompt text"
+    assert html =~ "Option A"
+    assert html =~ ~s(aria-label="Question 1, not answered yet")
+
+    assert render_component(&AnswerField.answer_field/1, question: nil) =~ ~s(id="answer-textarea")
   end
 
-  test "a change on screen holds back Dismiss questions too" do
-    questions = [
-      %Question{id: "qst_1", prompt: "Which database?", status: :dismissed, options: []},
-      %Question{id: "qst_2", prompt: "Ship behind a flag?", status: :dismissed, options: []}
-    ]
-
-    html =
-      render_component(&AnswerField.answer_field/1,
-        question: hd(questions),
-        questions: questions,
-        changing_answer: true,
-        role_name: "Product"
-      )
-
-    assert html =~ ~r/id="dismiss-questions-button"[^>]*\sdisabled[\s>]/
-    assert html =~ "Save or cancel your change first"
-  end
-
-  test "every tab, chip, button and the form send to the target they are given, and to the page without one" do
-    open = %Question{id: "qst_1", prompt: "Which database?", status: :pending, options: ["Postgres", "MySQL"]}
-    answered = %Question{id: "qst_2", prompt: "Ship behind a flag?", status: :answered, answer: "Yes", options: []}
-    dismissed = %Question{id: "qst_3", prompt: "Who reviews it?", status: :dismissed, options: []}
-
+  test "every chip, button and the form send to the target they are given, and to the page without one", %{
+    round: [by_rail, open, answered, dismissed]
+  } do
     rounds = [
-      [question: open, questions: [open, answered]],
-      [question: answered, questions: [open, answered]],
-      [question: answered, questions: [open, answered], changing_answer: true],
+      [question: open, questions: [by_rail, open]],
+      [question: answered, questions: [by_rail, answered], answer_text: "Sam"],
       [question: dismissed, questions: [dismissed]]
     ]
 
     targeted =
       Enum.flat_map(rounds, fn round ->
         (&AnswerField.answer_field/1)
-        |> render_component([role_name: "Product", target: "#question-card"] ++ round)
+        |> render_component([target: "#question-card"] ++ round)
         |> Floki.parse_fragment!()
         |> Floki.find("[phx-click], [phx-submit]")
       end)
@@ -338,8 +215,6 @@ defmodule RailWeb.Components.AnswerFieldTest do
            |> Enum.sort() ==
              [
                "answer_question",
-               "cancel_answer",
-               "change_answer",
                "dismiss_question",
                "dismiss_round",
                "select_option",
@@ -348,18 +223,12 @@ defmodule RailWeb.Components.AnswerFieldTest do
              ]
 
     for round <- rounds do
-      refute render_component(&AnswerField.answer_field/1, [role_name: "Product"] ++ round) =~ "phx-target"
+      refute render_component(&AnswerField.answer_field/1, round) =~ "phx-target"
     end
   end
 
-  test "the tab strip scrolls sideways only, and keeps the selected tab in view" do
-    questions = [
-      %Question{id: "qst_1", prompt: "Which database?", options: []},
-      %Question{id: "qst_2", prompt: "Ship behind a flag?", options: []}
-    ]
-
-    html =
-      render_component(&AnswerField.answer_field/1, question: hd(questions), questions: questions, role_name: "Product")
+  test "the chip strip scrolls sideways only, and keeps the selected chip in view", %{round: round} do
+    html = render_component(&AnswerField.answer_field/1, question: hd(round), questions: round)
 
     assert html =~ ~r/id="question-tabs"[^>]*phx-hook="ScrollSelectedTab"/
     assert html =~ ~r/id="question-tabs"[^>]*class="[^"]*overflow-x-auto overflow-y-hidden/
