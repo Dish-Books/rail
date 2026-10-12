@@ -21,18 +21,22 @@ defmodule Rail.Users.Actions.CreateSigningKey do
   @doc """
   Generates a signing key for the scope's user and registers it with GitHub.
   """
-  def create_signing_key(%Scope{user: %User{github_token: token} = user} = scope) when is_binary(token) do
-    with :ok <- Users.delete_signing_key(scope),
+  def create_signing_key(%Scope{user: %User{} = user} = scope) do
+    with {:ok, token} <- Users.github_token(scope),
+         :ok <- Users.delete_signing_key(scope),
          {:ok, private, public} <- generate(user),
          {:ok, key_id} <- GitHub.create_signing_key(token, "Rail (#{user.login})", public) do
       user
       |> Repo.reload!()
       |> User.changeset(%{signing_key: private, signing_public_key: public, signing_key_github_id: key_id})
       |> Repo.update()
+    else
+      # A token Rail believed good and GitHub does not: they sign in again, like someone with none.
+      {:error, {:github_api_error, 401, _body}} -> {:error, :no_github_token}
+      error -> error
     end
   end
 
-  def create_signing_key(%Scope{user: %User{}}), do: {:error, :no_github_token}
   def create_signing_key(_scope), do: {:error, :not_authenticated}
 
   # OTP's ssh_file encodes ed25519 as an ECPrivateKey on the Ed25519 curve. Its

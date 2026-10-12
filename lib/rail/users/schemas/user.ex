@@ -16,6 +16,8 @@ defmodule Rail.Users.Schemas.User do
     field :tech_lead, :boolean, default: false
     field :project_ids, {:array, :string}, default: []
     field :github_token, EncryptedBinary, redact: true
+    field :github_refresh_token, EncryptedBinary, redact: true
+    field :github_token_expires_at, :utc_datetime_usec
     field :linear_user_id, :string
     field :linear_name, :string
     field :linear_access_token, EncryptedBinary, redact: true
@@ -44,6 +46,8 @@ defmodule Rail.Users.Schemas.User do
     :tech_lead,
     :project_ids,
     :github_token,
+    :github_refresh_token,
+    :github_token_expires_at,
     :linear_user_id,
     :linear_name,
     :linear_access_token,

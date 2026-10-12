@@ -11,7 +11,8 @@ defmodule Rail.Users.Actions.CreateSigningKeyTest do
         github_id: "gh_signing_1",
         login: "ada",
         email: "ada@example.com",
-        github_token: "gho_user_token"
+        github_token: "gho_user_token",
+        github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
       })
 
     %{scope: user_scope(user: user)}
@@ -73,6 +74,12 @@ defmodule Rail.Users.Actions.CreateSigningKeyTest do
     end)
 
     assert {:error, :missing_scope} = Users.create_signing_key(scope)
+  end
+
+  test "a token GitHub no longer takes is someone who signs in again, not GitHub's own words", %{scope: scope} do
+    Req.Test.expect(Client, &(&1 |> Plug.Conn.put_status(401) |> Req.Test.json(%{"message" => "Bad credentials"})))
+
+    assert {:error, :no_github_token} = Users.create_signing_key(scope)
   end
 
   test "says so when the user has no GitHub token" do

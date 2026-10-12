@@ -267,7 +267,11 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
     end
 
     test "generates a key, registers it with GitHub and shows its fingerprint", %{authed_conn: conn, user: user} do
-      {:ok, _tokened} = Users.update_user(system_scope(), user, %{github_token: "gho_user_token"})
+      {:ok, _tokened} =
+        Users.update_user(system_scope(), user, %{
+          github_token: "gho_user_token",
+          github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
+        })
 
       Req.Test.expect(Client, fn req_conn ->
         req_conn |> Plug.Conn.put_status(201) |> Req.Test.json(%{"id" => 4711})
@@ -282,7 +286,11 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
     end
 
     test "says to sign in again when GitHub has not granted the scope", %{authed_conn: conn, user: user} do
-      {:ok, _tokened} = Users.update_user(system_scope(), user, %{github_token: "gho_user_token"})
+      {:ok, _tokened} =
+        Users.update_user(system_scope(), user, %{
+          github_token: "gho_user_token",
+          github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
+        })
 
       Req.Test.expect(Client, fn req_conn ->
         req_conn |> Plug.Conn.put_status(403) |> Req.Test.json(%{"message" => "Resource not accessible"})
@@ -304,7 +312,11 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
     end
 
     test "says what came back when GitHub refused the key outright", %{authed_conn: conn, user: user} do
-      {:ok, _tokened} = Users.update_user(system_scope(), user, %{github_token: "gho_user_token"})
+      {:ok, _tokened} =
+        Users.update_user(system_scope(), user, %{
+          github_token: "gho_user_token",
+          github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
+        })
 
       Req.Test.expect(Client, fn req_conn ->
         req_conn |> Plug.Conn.put_status(422) |> Req.Test.json(%{"message" => "key is already in use"})
@@ -318,7 +330,11 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
     end
 
     test "removing the key takes it off GitHub and forgets it", %{authed_conn: conn, user: user} do
-      {:ok, _tokened} = Users.update_user(system_scope(), user, %{github_token: "gho_user_token"})
+      {:ok, _tokened} =
+        Users.update_user(system_scope(), user, %{
+          github_token: "gho_user_token",
+          github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
+        })
 
       Req.Test.expect(Client, fn req_conn ->
         req_conn |> Plug.Conn.put_status(201) |> Req.Test.json(%{"id" => 4711})
@@ -333,6 +349,34 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
 
       assert has_element?(view, "#commit-signing-message", "Not set up")
       assert %User{signing_key: nil} = Repo.reload!(user)
+    end
+
+    test "removing a key GitHub will not take the token for says to sign in again, and keeps the key", %{
+      authed_conn: conn,
+      user: user
+    } do
+      {:ok, _tokened} =
+        Users.update_user(system_scope(), user, %{
+          github_token: "gho_user_token",
+          github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
+        })
+
+      Req.Test.expect(Client, fn req_conn ->
+        req_conn |> Plug.Conn.put_status(201) |> Req.Test.json(%{"id" => 4711})
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+      view |> element("#set-up-signing-button") |> render_click()
+
+      Req.Test.expect(Client, fn req_conn ->
+        req_conn |> Plug.Conn.put_status(401) |> Req.Test.json(%{"message" => "Bad credentials"})
+      end)
+
+      view |> element("#remove-signing-button") |> render_click()
+
+      assert has_element?(view, "[data-qa='commit_signing_error']", "Sign in with GitHub again")
+      assert has_element?(view, "#remove-signing-button")
+      assert %User{signing_key_github_id: 4711} = Repo.reload!(user)
     end
   end
 

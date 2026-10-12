@@ -37,6 +37,11 @@ defmodule Rail.Pipeline.Actions.MergeTask do
         {:ok, sha} ->
           merged(task, %{merged_at: DateTime.utc_now(), merged_by_id: scope.user && scope.user.id, merge_sha: sha})
 
+        # Nothing was asked of GitHub as anyone, so there is no refusal to keep: the claim is let go and the lead told.
+        {:error, :no_github_token} ->
+          task |> Task.changeset(%{merge_started_at: nil}) |> Repo.update!() |> broadcast_pipeline_changed()
+          {:error, :no_github_token}
+
         {:error, reason} ->
           merged_elsewhere(task, reason)
       end
@@ -74,12 +79,15 @@ defmodule Rail.Pipeline.Actions.MergeTask do
     end
   end
 
-  # As the tech lead, like the pull request was opened as its owner, and as the app when they cannot.
-  defp merge(%Scope{user: %User{github_token: token}}, %Task{project: %Project{} = project} = task)
-       when is_binary(token) do
-    case GitHub.merge_pull_request(token, project.github_repo, task.pr_number) do
-      {:error, {:github_api_error, status, _body}} when status in [401, 403, 404] -> merge_as_app(task)
-      result -> result
+  # As the tech lead, like the pull request was opened as its owner, and as the app when GitHub will not let them.
+  # A lead GitHub does not know by their token signs in again rather than merging as the app.
+  defp merge(%Scope{user: %User{}} = scope, %Task{project: %Project{} = project} = task) do
+    with {:ok, token} <- Users.github_token(scope) do
+      case GitHub.merge_pull_request(token, project.github_repo, task.pr_number) do
+        {:error, {:github_api_error, 401, _body}} -> {:error, :no_github_token}
+        {:error, {:github_api_error, status, _body}} when status in [403, 404] -> merge_as_app(task)
+        result -> result
+      end
     end
   end
 

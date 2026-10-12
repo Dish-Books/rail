@@ -36,7 +36,8 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
         name: "Priya Raman",
         tech_lead: true,
         project_ids: [project.id],
-        github_token: "gho_priya"
+        github_token: "gho_priya",
+        github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
       })
 
     %{task: task, lead: priya, scope: Scope.for_user(priya)}
@@ -68,9 +69,25 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     refute_enqueued(worker: AdvanceSplit)
   end
 
-  test "a lead with no GitHub token of their own merges as the app", %{project: project, task: task, lead: lead} do
-    {:ok, tokenless} = Users.update_user(system_scope(), lead, %{github_token: nil})
+  test "a lead with no GitHub token, or one GitHub no longer takes, signs in again and the claim is let go", %{
+    task: %Task{id: task_id} = task,
+    lead: lead,
+    scope: scope
+  } do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
 
+    Req.Test.expect(Client, &(&1 |> Plug.Conn.put_status(401) |> Req.Test.json(%{"message" => "Bad credentials"})))
+    assert {:error, :no_github_token} = Pipeline.merge_task(scope, task)
+    assert %Task{stage: :finalize, merged_at: nil, merge_started_at: nil, merge_error: nil} = Repo.reload!(task)
+    assert_received {:pipeline_changed, ^task_id}
+    assert_received {:pipeline_changed, ^task_id}
+
+    {:ok, tokenless} = Users.update_user(system_scope(), lead, %{github_token: nil})
+    assert {:error, :no_github_token} = Pipeline.merge_task(Scope.for_user(tokenless), task)
+    assert %Task{stage: :finalize, merged_at: nil, merge_started_at: nil, merge_error: nil} = Repo.reload!(task)
+  end
+
+  test "the system, which is nobody on GitHub, merges as the app", %{project: project, task: task} do
     Req.Test.expect(Client, 2, fn conn ->
       case {conn.method, conn.request_path} do
         {"POST", "/app/installations/1/access_tokens"} ->
@@ -82,7 +99,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       end
     end)
 
-    assert {:ok, %Task{stage: :merged, merge_sha: "abc1234"}} = Pipeline.merge_task(Scope.for_user(tokenless), task)
+    assert {:ok, %Task{stage: :merged, merge_sha: "abc1234"}} = Pipeline.merge_task(system_scope(), task)
     assert project.github_installation_id == 1
   end
 
@@ -275,9 +292,6 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     Req.Test.expect(Client, 2, &Req.Test.transport_error(&1, :econnrefused))
     assert {:error, {:merge_refused, "connection refused"}} = Pipeline.merge_task(scope, task)
 
-    {:ok, tokenless} = Users.update_user(system_scope(), scope.user, %{github_token: nil})
-    Req.Test.expect(Client, 2, &(&1 |> Plug.Conn.put_status(401) |> Req.Test.json(%{"message" => "Bad credentials"})))
-    assert {:error, {:merge_refused, "Bad credentials"}} = Pipeline.merge_task(Scope.for_user(tokenless), task)
     assert %Task{stage: :finalize, merged_at: nil} = Repo.reload!(task)
   end
 

@@ -35,6 +35,8 @@ defmodule Rail.Users do
   defdelegate create_signing_key(scope), to: Actions.CreateSigningKey
   defdelegate delete_signing_key(scope), to: Actions.DeleteSigningKey
 
+  defdelegate github_token(scope), to: Actions.GitHubToken
+
   defdelegate linear_token(scope), to: Actions.LinearToken
   defdelegate link_linear(scope, code), to: Actions.LinkLinear
   defdelegate unlink_linear(scope), to: Actions.UnlinkLinear
