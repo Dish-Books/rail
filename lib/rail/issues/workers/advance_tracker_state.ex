@@ -17,6 +17,8 @@ defmodule Rail.Issues.Workers.AdvanceTrackerState do
     max_attempts: 5,
     unique: [keys: [:issue_id], states: :incomplete, period: :infinity]
 
+  import Ecto.Query
+
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Tracker
   alias Rail.Pipeline.Schemas.Task
@@ -25,7 +27,7 @@ defmodule Rail.Issues.Workers.AdvanceTrackerState do
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"issue_id" => issue_id}}) do
     case Repo.get(Issue, issue_id) do
-      %Issue{} = issue -> issue |> Repo.preload([:project, :task]) |> advance()
+      %Issue{} = issue -> advance(%{Repo.preload(issue, :project) | task: task(issue)})
       nil -> :ok
     end
   end
@@ -54,4 +56,16 @@ defmodule Rail.Issues.Workers.AdvanceTrackerState do
   end
 
   defp advance(%Issue{}), do: :ok
+
+  # Not the issue's `has_one`, which hides cleaned-up tasks: a merged task is cleaned up as soon as it can be,
+  # which may be before this runs. One cleaned up short of Merged moves nothing.
+  defp task(%Issue{id: issue_id}) do
+    Repo.one(
+      from(t in Task,
+        where: t.issue_id == ^issue_id and (is_nil(t.cleaned_up_at) or t.stage == :merged),
+        order_by: [desc: t.inserted_at, desc: t.id],
+        limit: 1
+      )
+    )
+  end
 end

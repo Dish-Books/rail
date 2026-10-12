@@ -1,7 +1,8 @@
 defmodule Rail.Pipeline.Workers.AdvanceSplit do
   @moduledoc """
   Starts each child with no run once every child it builds on has merged, and moves the parent to Merged
-  once every child has merged or been canceled. One job per parent, retried if it dies, run again on a merge.
+  once every child has merged or been canceled, queuing its cleanup there. One job per parent, retried if it
+  dies, run again on a merge.
   """
   use Oban.Worker,
     queue: :issues,
@@ -10,6 +11,7 @@ defmodule Rail.Pipeline.Workers.AdvanceSplit do
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Workers.CleanupMergedTask
   alias Rail.Repo
 
   @impl Oban.Worker
@@ -33,6 +35,11 @@ defmodule Rail.Pipeline.Workers.AdvanceSplit do
 
     if parent.stage == :split and MapSet.size(settled) == length(children) do
       {:ok, _parent} = Pipeline.enter_stage(parent, :merged, start: false)
+    end
+
+    # Again on every run at Merged, so a job that died after the move still queues it.
+    if parent.stage in [:split, :merged] and MapSet.size(settled) == length(children) do
+      {:ok, _job} = %{task_id: parent.id} |> CleanupMergedTask.new() |> Oban.insert()
     end
 
     if settled(children(parent)) == settled, do: :ok, else: {:snooze, 1}
