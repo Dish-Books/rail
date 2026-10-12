@@ -416,6 +416,13 @@ defmodule Rail.Issues.Workers.AdvanceTrackerStateTest do
       assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
     end
 
+    test "an issue claimed before any task started leaves Linear untouched", %{issue: issue, task: task} do
+      Repo.delete!(task)
+
+      # No Linear mock is queued, so a request would raise.
+      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
+    end
+
     test "a split parent at Merged moves its ticket to the first completed state", %{
       issue: issue,
       task: task,
@@ -447,9 +454,82 @@ defmodule Rail.Issues.Workers.AdvanceTrackerStateTest do
       assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
     end
 
-    test "an issue whose task was cleaned up leaves Linear untouched", %{issue: issue, task: task} do
-      {:ok, _task} = Pipeline.update_task(task, %{stage: :review, cleaned_up_at: DateTime.utc_now()})
+    test "an issue whose task was cleaned up short of Merged leaves Linear untouched", %{issue: issue, task: task} do
+      for stage <- [:engineer, :review] do
+        {:ok, _task} = Pipeline.update_task(task, %{stage: stage, cleaned_up_at: DateTime.utc_now()})
 
+        # No Linear mock is queued, so a request would raise.
+        assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
+      end
+    end
+
+    # The merge queues its cleanup too, and that job can finish first.
+    test "a merged task cleaned up before this runs still moves its ticket to Done", %{
+      issue: issue,
+      task: task,
+      nodes: nodes,
+      states: states
+    } do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
+      {:ok, _cleaned} = Pipeline.cleanup_task(task)
+
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{"issue" => %{"state" => states["st_in_review"], "team" => %{"states" => %{"nodes" => nodes}}}}
+        })
+      end)
+
+      Req.Test.expect(Rail.Linear, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        assert %{"input" => %{"stateId" => "st_done"}} = Jason.decode!(body)["variables"]
+        Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
+      end)
+
+      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
+    end
+
+    # A ticket started again after a cleanup follows its new task, not the one before it.
+    test "an issue started again after a merged task was cleaned up follows the new task", %{
+      issue: issue,
+      task: task,
+      nodes: nodes,
+      states: states
+    } do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
+      {:ok, _cleaned} = Pipeline.cleanup_task(task)
+      {:ok, _again} = Pipeline.create_task(issue, :plan)
+
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{"issue" => %{"state" => states["st_todo"], "team" => %{"states" => %{"nodes" => nodes}}}}
+        })
+      end)
+
+      Req.Test.expect(Rail.Linear, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        assert %{"input" => %{"stateId" => "st_in_progress"}} = Jason.decode!(body)["variables"]
+        Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
+      end)
+
+      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
+    end
+
+    test "an issue reopened after a merge, whose new task was cleaned up short of Merged, leaves Linear untouched", %{
+      issue: issue,
+      task: task
+    } do
+      {:ok, merged} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
+
+      # Backdated so the abandoned task is the newer one whatever the clock does between inserts.
+      merged =
+        merged |> Ecto.Changeset.change(inserted_at: DateTime.shift(merged.inserted_at, hour: -1)) |> Repo.update!()
+
+      {:ok, _cleaned} = Pipeline.cleanup_task(merged)
+      {:ok, abandoned} = Pipeline.create_task(issue, :plan)
+      {:ok, abandoned} = Pipeline.update_task(abandoned, %{stage: :engineer})
+      {:ok, _cleaned} = Pipeline.cleanup_task(abandoned)
+
+      # No Linear mock is queued, so a request would raise.
       assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
     end
 

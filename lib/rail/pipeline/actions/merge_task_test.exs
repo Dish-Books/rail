@@ -8,6 +8,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.AdvanceSplit
+  alias Rail.Pipeline.Workers.CleanupMergedTask
   alias Rail.Scope
   alias Rail.Users
 
@@ -67,6 +68,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert %Task{stage: :merged, merge_started_at: nil} = Repo.reload!(task)
     assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: task.issue_id})
     refute_enqueued(worker: AdvanceSplit)
+    assert [%Oban.Job{args: %{"task_id" => ^task_id}}] = all_enqueued(worker: CleanupMergedTask)
   end
 
   test "a lead with no GitHub token, or one GitHub no longer takes, signs in again and the claim is let go", %{
@@ -85,6 +87,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, tokenless} = Users.update_user(system_scope(), lead, %{github_token: nil})
     assert {:error, :no_github_token} = Pipeline.merge_task(Scope.for_user(tokenless), task)
     assert %Task{stage: :finalize, merged_at: nil, merge_started_at: nil, merge_error: nil} = Repo.reload!(task)
+    refute_enqueued(worker: CleanupMergedTask)
   end
 
   test "the system, which is nobody on GitHub, merges as the app", %{project: project, task: task} do
@@ -125,7 +128,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, parent} = Pipeline.create_task(parent_issue, :split)
     {:ok, child_issue} = Issues.create_issue(system_scope(), project, %{title: "Child", parent: parent_issue})
 
-    {:ok, child} =
+    {:ok, %Task{id: child_id} = child} =
       Pipeline.create_child_task(Repo.preload(parent, [:issue, :project]), child_issue, %{
         number: 1,
         builds_on: [],
@@ -140,6 +143,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     assert {:ok, %Task{stage: :merged}} = Pipeline.merge_task(scope, child)
     assert_enqueued(worker: AdvanceSplit, args: %{parent_task_id: parent.id})
+    assert [%Oban.Job{args: %{"task_id" => ^child_id}}] = all_enqueued(worker: CleanupMergedTask)
   end
 
   test "a refusal keeps GitHub's message and leaves the task ready and unmerged", %{
@@ -177,6 +181,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert Task.finalize_state(refused) == :refused
     assert_received {:pipeline_changed, ^task_id}
     assert_received {:pipeline_changed, ^task_id}
+    refute_enqueued(worker: CleanupMergedTask)
 
     # Merge stays there to try again, and a merge that goes clears the reason.
     Req.Test.expect(Client, &Req.Test.json(&1, %{"merged" => true, "sha" => "4b7d0e2"}))
@@ -228,6 +233,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     assert %Task{stage: :merged, merge_started_at: nil} = Repo.reload!(task)
     assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: task.issue_id})
+    assert_enqueued(worker: CleanupMergedTask, args: %{task_id: task.id})
 
     # Merged by someone Rail does not know, it names nobody rather than whoever clicked.
     for merged_by <- [%{"login" => "stranger"}, nil] do
@@ -272,6 +278,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     assert {:error, {:merge_refused, "Not mergeable"}} = Pipeline.merge_task(scope, task)
     assert %Task{stage: :finalize, merged_at: nil} = Repo.reload!(task)
+    refute_enqueued(worker: CleanupMergedTask)
   end
 
   test "a refusal GitHub gives no message for, or that never reached GitHub, still says why", %{

@@ -9,6 +9,7 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.AdvanceSplit
+  alias Rail.Pipeline.Workers.CleanupMergedTask
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
@@ -122,11 +123,39 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
     Enum.each(rest, merge)
     assert :ok = perform_job(AdvanceSplit, %{parent_task_id: parent.id})
     assert %Task{stage: :split} = Repo.reload!(parent)
+    refute_enqueued(worker: CleanupMergedTask)
 
     merge.(last)
     assert :ok = perform_job(AdvanceSplit, %{parent_task_id: parent.id})
     assert %Task{stage: :merged} = Repo.reload!(parent)
     assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: parent.issue_id})
+  end
+
+  # Linear completed every child with no merge recorded in Rail, so only the parent's cleanup takes them.
+  test "the parent at Merged queues its own cleanup, once however often it runs, and none for its children", %{
+    parent: %Task{id: parent_id} = parent,
+    children: children,
+    merge: merge
+  } do
+    Enum.each(children, merge)
+    assert :ok = perform_job(AdvanceSplit, %{parent_task_id: parent.id})
+    assert [%Oban.Job{args: %{"task_id" => ^parent_id}}] = all_enqueued(worker: CleanupMergedTask)
+
+    assert :ok = perform_job(AdvanceSplit, %{parent_task_id: parent.id})
+    assert [%Oban.Job{args: %{"task_id" => ^parent_id}}] = all_enqueued(worker: CleanupMergedTask)
+  end
+
+  # The job that moved it died before queueing the cleanup.
+  test "a parent already at Merged with no cleanup queued gets one", %{
+    parent: %Task{id: parent_id} = parent,
+    children: children,
+    merge: merge
+  } do
+    Enum.each(children, merge)
+    {:ok, _merged} = Pipeline.update_task(parent, %{stage: :merged})
+
+    assert :ok = perform_job(AdvanceSplit, %{parent_task_id: parent.id})
+    assert [%Oban.Job{args: %{"task_id" => ^parent_id}}] = all_enqueued(worker: CleanupMergedTask)
   end
 
   # Finalize records the merge on the task before Linear's webhook completes the issue.

@@ -1,5 +1,6 @@
 defmodule RailWeb.TaskLiveTest do
   use RailWeb.ConnCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
   import Ecto.Query
   import Mimic
@@ -18,6 +19,7 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.RunEvent
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Workers.CleanupMergedTask
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
@@ -5101,6 +5103,31 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, _merged} = Pipeline.update_task(finalizing, %{stage: :merged, merged_at: DateTime.utc_now()})
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
       refute has_element?(view, "#finish-review")
+    end
+
+    # The merge queues the cleanup, and a page left open on the task hears it run.
+    test "a page open on a merged task drops Clean up and its comment tray once the cleanup job runs", %{
+      conn: conn,
+      scope: scope,
+      task: task,
+      role: role
+    } do
+      {:ok, _pass} = Pipeline.save_review(task)
+      {:ok, task} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now(), pr_number: 151})
+      diff = %{path: "lib/a.ex", line_kind: :added, line: 3, line_text: "x = 1", filter: :branch, body: "Name it."}
+      {:ok, _unsent} = Pipeline.create_diff_comment(scope, task, diff)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
+      assert has_element?(view, "#cleanup-task")
+      assert has_element?(view, "#send-review-tray", "Send 1")
+
+      assert :ok = perform_job(CleanupMergedTask, %{task_id: task.id})
+
+      eventually(fn ->
+        refute has_element?(view, "#cleanup-task")
+        refute has_element?(view, "#review-send-tray")
+        assert has_element?(view, "[data-qa='task_detail_title']", "Task Live Issue")
+      end)
     end
 
     test "clicking Finish review lands the page on the Finalize tab, with the Review conversation beside it", %{
