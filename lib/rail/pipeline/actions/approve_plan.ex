@@ -2,7 +2,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
   @moduledoc """
   Approves the Plan step in one go: the ticket, with its priority and estimate, and the picked design are
   published to the issue, the plan is recorded as the one the engineer builds from, and the task moves to
-  Engineer. With a split saved, each child becomes a Linear sub-issue with a task of its own instead, the parent
+  Engineer, where a `StartEngineer` job committed with the move starts the engineer. With a split saved, each child becomes a Linear sub-issue with a task of its own instead, the parent
   moves to Split, and an `AdvanceSplit` job committed with them starts the children, so they start even if the
   caller dies. Unsent plan comments are deleted, since the conversation they would go to closes.
 
@@ -23,12 +23,13 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.AdvanceSplit
+  alias Rail.Pipeline.Workers.StartEngineer
   alias Rail.Repo
   alias Rail.Scope
 
   @doc """
-  Approves what the Plan `run` saved and enters Engineer, or with a split, queues the start of each
-  child that builds on no other.
+  Approves what the Plan `run` saved and enters Engineer with its start queued, or with a split, queues the
+  start of each child that builds on no other.
 
   Returns `{:ok, run}`, the run latched done.
   """
@@ -49,7 +50,13 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
           authors = delete_unsent_comments(task)
           {:ok, run} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
           {:ok, task} = Pipeline.enter_stage(task, if(children == [], do: :engineer, else: :split), start: false)
-          if children != [], do: {:ok, _job} = %{parent_task_id: task.id} |> AdvanceSplit.new() |> Oban.insert()
+          # Committed with the move, so the start does not depend on the caller outliving it.
+          job =
+            if children == [],
+              do: StartEngineer.new(%{task_id: task.id}),
+              else: AdvanceSplit.new(%{parent_task_id: task.id})
+
+          {:ok, _job} = Oban.insert(job)
           {run, task, children, authors}
         else
           {:error, reason} -> Repo.rollback(reason)
@@ -60,10 +67,9 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
       for user_id <- authors, do: broadcast_plan_comments(task.id, user_id)
     end
 
-    # Started only once the move is committed, so the engineer's spawn reads the task at Engineer.
     case result do
-      {:ok, {run, task, [], _authors}} ->
-        with {:ok, _started} <- Pipeline.enter_stage(task, :engineer), do: {:ok, run}
+      {:ok, {run, _task, [], _authors}} ->
+        {:ok, run}
 
       # The move to Split was broadcast inside the transaction, so a page that read it then missed the children.
       {:ok, {run, task, children, _authors}} ->

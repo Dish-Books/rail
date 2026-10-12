@@ -10,6 +10,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.AdvanceSplit
+  alias Rail.Pipeline.Workers.StartEngineer
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
@@ -139,13 +140,18 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   end
 
   test "with no options it publishes the ticket alone, records the plan and moves the task to Engineer", %{
-    task: task,
+    task: %{id: task_id} = task,
     roles: roles,
     run: run
   } do
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(system_scope(), run)
 
+    # The engineer is started by the job committed with the move, not by whoever approved.
     assert %Task{stage: :engineer} = Repo.reload!(task)
+    refute Repo.get_by(Run, task_id: task.id, role_id: roles[:engineer].id)
+    assert_enqueued(worker: StartEngineer, args: %{task_id: task_id})
+    assert :ok = perform_job(StartEngineer, %{task_id: task_id})
+
     assert %Run{status: :running} = Repo.get_by(Run, task_id: task.id, role_id: roles[:engineer].id)
     assert %Issue{title: "Approved title", description: "The approved ticket body."} = Repo.get!(Issue, task.issue_id)
 
