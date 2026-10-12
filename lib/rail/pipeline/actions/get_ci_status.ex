@@ -15,7 +15,7 @@ defmodule Rail.Pipeline.Actions.GetCiStatus do
   `state`, the latest CI `os_process`, if any, and its `failures` in a row.
 
   `:pending` is a commit CI has not passed yet, including one that moved on from
-  an earlier pass.
+  an earlier pass. `:running` includes CI still in line for its CPUs.
   """
   def get_ci_status(%Run{} = run) do
     %Run{task: %Task{project: %Project{ci_command: command}} = task} = Repo.preload(run, task: :project)
@@ -29,7 +29,7 @@ defmodule Rail.Pipeline.Actions.GetCiStatus do
   end
 
   defp state(nil, _task), do: :pending
-  defp state(%OsProcess{status: status}, _task) when status in [:starting, :running], do: :running
+  defp state(%OsProcess{status: status}, _task) when status in [:waiting_for_resources, :starting, :running], do: :running
 
   defp state(%OsProcess{exit_code: 0}, %Task{} = task) do
     if ci_passed?(task), do: :passed, else: :pending

@@ -111,6 +111,12 @@ defmodule Rail.Pipeline.Actions.GetCiStatusTest do
     assert %{state: :passed, os_process: %OsProcess{exit_code: 0}} = Pipeline.get_ci_status(run)
   end
 
+  test "CI still in line for its CPUs reads as running, not failed", %{run: run, ci: ci} do
+    ci.(%{status: :waiting_for_resources, reserved_cpus: 8, queued_at: DateTime.utc_now()})
+
+    assert %{state: :running, os_process: %OsProcess{status: :waiting_for_resources}} = Pipeline.get_ci_status(run)
+  end
+
   test "a pass for a commit the branch has moved on from is pending again", %{run: run, ci: ci} do
     ci.(%{exit_code: 0, head_sha: "0000000000000000000000000000000000000000"})
 
