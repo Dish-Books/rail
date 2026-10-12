@@ -104,8 +104,8 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
     end
   end
 
-  # Possible only when headroom was raised after the role was saved, and a
-  # reservation that can never fit would otherwise hold the line forever.
+  # Possible only when headroom was raised after the role or the project was saved,
+  # and a reservation that can never fit would otherwise hold the line forever.
   defp refuse(%OsProcess{} = os_process, capacity, own) do
     error =
       "It needs #{os_process.reserved_cpus} CPUs, and this machine has #{capacity.cpus} CPUs to reserve, " <>

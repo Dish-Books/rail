@@ -7,6 +7,7 @@ defmodule Rail.Tools.Actions.StartCommandProcess do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
+  alias Rail.Roles.Schemas.Role
   alias Rail.Tools.Schemas.OsProcess
 
   @exit_var "__RAIL_EXIT_PATH"
@@ -14,16 +15,16 @@ defmodule Rail.Tools.Actions.StartCommandProcess do
 
   @doc """
   Runs `command` through `/bin/sh` in `run`'s worktree as an OS process of `kind`,
-  in a sandbox holding what the run's role reserves, followed like an agent's and
-  settled by `run_finished/3` when it exits.
+  followed like an agent's and settled by `run_finished/3` when it exits.
 
   Takes `:timeout_ms`, after which it is stopped, counted from when it starts
-  rather than from when it joined the line, `:env`, and `:head_sha`, the commit it
-  is being run against. Returns `{:ok, os_process}` with `:run` and `:task`
-  loaded, running or waiting, or `{:error, reason}`.
+  rather than from when it joined the line, `:env`, `:head_sha`, the commit it is
+  being run against, and `:reserved_cpus`, which defaults to what the run's role
+  reserves, as worktree setup holds. Returns `{:ok, os_process}` with `:run` and
+  `:task` loaded, running or waiting, or `{:error, reason}`.
   """
   def start_command_process(%Run{} = run, kind, command, opts \\ []) when is_binary(command) do
-    %Run{task: %Task{} = task} = run = Repo.preload(run, [:task, :role])
+    %Run{task: %Task{} = task, role: %Role{} = role} = run = Repo.preload(run, [:task, :role])
     os_process = insert_os_process(run, kind, command, opts)
 
     env =
@@ -42,7 +43,7 @@ defmodule Rail.Tools.Actions.StartCommandProcess do
       "timeout_ms" => Keyword.get(opts, :timeout_ms, @default_timeout_ms)
     }
 
-    case enqueue_sandbox(os_process, run, spec) do
+    case enqueue_sandbox(os_process, run, spec, Keyword.get(opts, :reserved_cpus, role.reserved_cpus)) do
       {:ok, os_process} -> {:ok, %{os_process | run: run, task: task}}
       {:waiting, os_process} -> {:ok, %{os_process | run: %{run | status: :waiting_for_resources}, task: task}}
       {:error, reason} -> {:error, reason}

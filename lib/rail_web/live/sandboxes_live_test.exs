@@ -202,8 +202,52 @@ defmodule RailWeb.SandboxesLiveTest do
     assert has_element?(
              view,
              "#sandboxes-intro",
-             "Every agent turn, worktree setup and CI command runs in its own sandbox on this machine, holding what its role reserves."
+             "Every agent turn, worktree setup and CI command runs in its own sandbox on this machine."
            )
+
+    refute has_element?(view, "#sandboxes-intro", "reserves")
+  end
+
+  # The engineer role holds 1 CPU and the project's CI 4: each row shows what it was queued with.
+  test "a CI shows the CPUs it holds, not its role's, running and waiting", %{
+    conn: conn,
+    run_on: run_on,
+    sandbox: sandbox
+  } do
+    stub(Rail, :local_cpus, fn -> 10 end)
+
+    {ci_run, _issue} = run_on.("Comments left on diff lines go to the engineer as one round")
+    {turn_run, _issue} = run_on.("Sandboxes page shows what each waiting run is short of")
+    {waiting_ci_run, _issue} = run_on.("A waiting CI run can be stopped from its task")
+
+    running_ci = sandbox.(ci_run, %{kind: :ci, runtime: :docker, container_id: "c-ci", reserved_cpus: 4})
+    turn = sandbox.(turn_run, %{runtime: :docker, container_id: "c-turn", reserved_cpus: 1})
+
+    waiting_ci =
+      sandbox.(waiting_ci_run, %{
+        kind: :ci,
+        status: :waiting_for_resources,
+        reserved_cpus: 4,
+        queued_at: DateTime.utc_now()
+      })
+
+    Req.Test.stub(Docker, fn conn ->
+      Req.Test.json(conn, %{
+        "cpu_stats" => %{"cpu_usage" => %{"total_usage" => 100}, "system_cpu_usage" => 16_000, "online_cpus" => 16},
+        "precpu_stats" => %{"cpu_usage" => %{"total_usage" => 0}, "system_cpu_usage" => 0},
+        "memory_stats" => %{"usage" => 1024 ** 3, "stats" => %{}}
+      })
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/sandboxes")
+    render_async(view)
+
+    assert has_element?(view, "#running-#{running_ci.id} [data-qa='cpu-in-use']", "of 4 CPU")
+    assert has_element?(view, "#running-#{turn.id} [data-qa='cpu-in-use']", "of 1 CPU")
+
+    # 10 CPUs less the 8 the running sandboxes hold leaves 2 free.
+    assert has_element?(view, "#waiting-#{waiting_ci.id} [data-qa='needs']", "4 CPUs")
+    assert has_element?(view, "#waiting-#{waiting_ci.id} [data-qa='short-of']", "2 CPUs")
   end
 
   test "says how much of the machine is reserved, what runs, and what waits for what", %{conn: conn} do

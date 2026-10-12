@@ -42,6 +42,13 @@ defmodule Rail.Projects.Schemas.ProjectTest do
     assert changeset.valid?
     assert get_field(changeset, :default_branch) == "main"
     assert get_field(changeset, :active) == true
+    assert get_field(changeset, :ci_reserved_cpus) == 1
+  end
+
+  test "CI reserves at least one CPU" do
+    changeset = Project.changeset(%Project{}, %{ci_reserved_cpus: 0})
+
+    assert %{ci_reserved_cpus: ["must be at least 1 CPU"]} = errors_on(changeset)
   end
 
   test "a GitHub project needs no Linear team, and is keyed by its repo's name unless given one" do

@@ -24,7 +24,8 @@ defmodule Rail.Pipeline.Utils.StartCi do
 
     opts = [
       timeout_ms: to_timeout(minute: project.ci_timeout_minutes),
-      head_sha: Git.branch_fingerprint(task.worktree_path)[:head_sha]
+      head_sha: Git.branch_fingerprint(task.worktree_path)[:head_sha],
+      reserved_cpus: project.ci_reserved_cpus
     ]
 
     with {:ok, env} <- Git.ci_env(project, task),

@@ -587,16 +587,24 @@ defmodule RailWeb.Settings.RolesLive do
                     </h3>
 
                     <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                      <.input
-                        type="number"
-                        label="CPUs"
-                        min="1"
-                        name="role[reserved_cpus]"
-                        id="role-cpus-input"
-                        value={@modal_form["reserved_cpus"]}
-                        suffix="CPUs"
-                        errors={List.wrap(@modal_errors[:reserved_cpus])}
-                      />
+                      <div>
+                        <.input
+                          type="number"
+                          label="CPUs"
+                          min="1"
+                          name="role[reserved_cpus]"
+                          id="role-cpus-input"
+                          value={@modal_form["reserved_cpus"]}
+                          suffix="CPUs"
+                          errors={List.wrap(@modal_errors[:reserved_cpus])}
+                        />
+                        <p
+                          id="role-cpus-help"
+                          class="mt-1.5 text-xs text-slate-500 dark:text-slate-400"
+                        >
+                          Each of this role's agent turns and worktree setups holds this many.
+                        </p>
+                      </div>
                     </div>
 
                     <.sandbox_fit
@@ -1499,7 +1507,7 @@ defmodule RailWeb.Settings.RolesLive do
         />
       </div>
       <p class="text-[11px] text-slate-500 dark:text-slate-400">
-        Each sandbox, and the setup and CI it runs, gets this share of the machine's CPUs when they are all busy. Its memory is not limited.
+        Each sandbox gets this share of the machine's CPUs when they are all busy. Its memory is not limited.
       </p>
     </div>
     """

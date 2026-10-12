@@ -276,6 +276,7 @@ defmodule RailWeb.Live.EngineerStage do
   defp ci_passed?(nil), do: true
   defp ci_passed?(%{state: state}), do: state == :passed
 
+  defp ci_label(%{state: :running, os_process: %{status: :waiting_for_resources}}), do: "CI in line"
   defp ci_label(%{state: :running}), do: "CI running"
   defp ci_label(%{state: :passed}), do: "CI passed"
   defp ci_label(%{state: :failed, failures: failures}) when failures > 0, do: "CI failed · #{failures} of 3"
