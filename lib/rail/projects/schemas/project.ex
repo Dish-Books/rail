@@ -8,6 +8,7 @@ defmodule Rail.Projects.Schemas.Project do
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.SlackChannel
   alias Rail.Projects.Schemas.SlackWorkspace
+  alias Rail.Tools
   alias Rail.Users.Schemas.User
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "prj"}
@@ -31,6 +32,8 @@ defmodule Rail.Projects.Schemas.Project do
     # Run on every commit the engineer finishes, before it is pushed or reviewed.
     field :ci_command, :string
     field :ci_timeout_minutes, :integer, default: 30
+    # What each CI run's sandbox holds, whatever the role whose run started it reserves.
+    field :ci_reserved_cpus, :integer, default: 1
     # Run from the worktree root in each agent's sandbox that opens a browser; prints a magic link and an email.
     field :account_seed_command, :string
 
@@ -64,6 +67,7 @@ defmodule Rail.Projects.Schemas.Project do
     :toolchain_command,
     :ci_command,
     :ci_timeout_minutes,
+    :ci_reserved_cpus,
     :account_seed_command,
     :triage_user_id,
     :learnings_slack_workspace_id,
@@ -76,7 +80,8 @@ defmodule Rail.Projects.Schemas.Project do
     :github_installation_id,
     :key,
     :default_branch,
-    :clone_path
+    :clone_path,
+    :ci_reserved_cpus
   ]
 
   def changeset(project, attrs) do
@@ -91,6 +96,8 @@ defmodule Rail.Projects.Schemas.Project do
     |> validate_change(:clone_path, &validate_clone_path/2)
     |> validate_change(:worktree_setup_script, &validate_worktree_setup_script/2)
     |> validate_number(:ci_timeout_minutes, greater_than: 0, message: "must be at least a minute")
+    |> validate_number(:ci_reserved_cpus, greater_than: 0, message: "must be at least 1 CPU")
+    |> validate_ci_capacity()
     |> foreign_key_constraint(:linear_workspace_id)
     |> foreign_key_constraint(:triage_user_id)
     |> validate_learnings_channel()
@@ -99,6 +106,26 @@ defmodule Rail.Projects.Schemas.Project do
     |> cast_assoc(:slack_channels)
     |> put_linear_team_id()
   end
+
+  # As a role's is: the machine is only asked when the number changes, and one it
+  # cannot be asked about is left to the line, which refuses what never fits.
+  defp validate_ci_capacity(%Ecto.Changeset{valid?: true} = changeset) do
+    with true <- changed?(changeset, :ci_reserved_cpus),
+         {:ok, %{cpus: cpus}} <- Tools.get_sandbox_capacity(),
+         needs_cpus when needs_cpus > cpus <- get_field(changeset, :ci_reserved_cpus) do
+      machine_cpus = if cpus == 1, do: "1 CPU", else: "#{cpus} CPUs"
+
+      add_error(
+        changeset,
+        :ci_reserved_cpus,
+        "This machine has #{machine_cpus} to reserve, so CI that needs #{needs_cpus} could never start."
+      )
+    else
+      _unchanged_unknown_or_fits -> changeset
+    end
+  end
+
+  defp validate_ci_capacity(changeset), do: changeset
 
   # A GitHub project needs a key; the repo's name is the one people would pick anyway.
   defp put_default_key(changeset) do

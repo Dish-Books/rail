@@ -197,6 +197,31 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
     end
   end
 
+  # Capacity in test is 4 CPUs (config/test.exs), so 16 CPUs could never start.
+  test "refuses CI CPUs larger than the machine can ever free", %{project: project} do
+    assert {:error, changeset} = Projects.update_project(system_scope(), project, %{ci_reserved_cpus: 16})
+
+    assert %{ci_reserved_cpus: ["This machine has 4 CPUs to reserve, so CI that needs 16 could never start."]} =
+             errors_on(changeset)
+  end
+
+  test "saves CI CPUs the machine can hold", %{project: project} do
+    assert {:ok, %Project{ci_reserved_cpus: 2}} = Projects.update_project(system_scope(), project, %{ci_reserved_cpus: 2})
+  end
+
+  test "saves any CI CPUs while Docker cannot say what the machine has", %{project: project} do
+    expect(Rail.Tools, :get_sandbox_capacity, fn -> {:error, :econnrefused} end)
+
+    assert {:ok, %Project{ci_reserved_cpus: 16}} =
+             Projects.update_project(system_scope(), project, %{ci_reserved_cpus: 16})
+  end
+
+  test "an unrelated save does not ask the machine about the CI CPUs", %{project: project} do
+    reject(Rail.Tools, :get_sandbox_capacity, 0)
+
+    assert {:ok, %Project{name: "Renamed"}} = Projects.update_project(system_scope(), project, %{name: "Renamed"})
+  end
+
   test "names the user whose MCP connections triage uses", %{project: project} do
     unique = System.unique_integer([:positive])
 
