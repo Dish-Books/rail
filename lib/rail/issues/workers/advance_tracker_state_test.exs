@@ -416,6 +416,13 @@ defmodule Rail.Issues.Workers.AdvanceTrackerStateTest do
       assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
     end
 
+    test "an issue claimed before any task started leaves Linear untouched", %{issue: issue, task: task} do
+      Repo.delete!(task)
+
+      # No Linear mock is queued, so a request would raise.
+      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
+    end
+
     test "a split parent at Merged moves its ticket to the first completed state", %{
       issue: issue,
       task: task,
@@ -504,6 +511,25 @@ defmodule Rail.Issues.Workers.AdvanceTrackerStateTest do
         Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
       end)
 
+      assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
+    end
+
+    test "an issue reopened after a merge, whose new task was cleaned up short of Merged, leaves Linear untouched", %{
+      issue: issue,
+      task: task
+    } do
+      {:ok, merged} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
+
+      # Backdated so the abandoned task is the newer one whatever the clock does between inserts.
+      merged =
+        merged |> Ecto.Changeset.change(inserted_at: DateTime.shift(merged.inserted_at, hour: -1)) |> Repo.update!()
+
+      {:ok, _cleaned} = Pipeline.cleanup_task(merged)
+      {:ok, abandoned} = Pipeline.create_task(issue, :plan)
+      {:ok, abandoned} = Pipeline.update_task(abandoned, %{stage: :engineer})
+      {:ok, _cleaned} = Pipeline.cleanup_task(abandoned)
+
+      # No Linear mock is queued, so a request would raise.
       assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
     end
 

@@ -57,15 +57,14 @@ defmodule Rail.Issues.Workers.AdvanceTrackerState do
 
   defp advance(%Issue{}), do: :ok
 
-  # Not the issue's `has_one`, which hides cleaned-up tasks: a merged task is cleaned up as soon as it can be,
-  # which may be before this runs. One cleaned up short of Merged moves nothing.
+  # The issue's newest task whatever its cleanup, since a merged one may be cleaned up before this runs.
+  # When that newest task was cleaned up short of Merged, there is none, so an older merge moves nothing.
   defp task(%Issue{id: issue_id}) do
-    Repo.one(
-      from(t in Task,
-        where: t.issue_id == ^issue_id and (is_nil(t.cleaned_up_at) or t.stage == :merged),
-        order_by: [desc: t.inserted_at, desc: t.id],
-        limit: 1
-      )
-    )
+    case Repo.one(from(t in Task, where: t.issue_id == ^issue_id, order_by: [desc: t.inserted_at, desc: t.id], limit: 1)) do
+      %Task{cleaned_up_at: nil} = task -> task
+      %Task{stage: :merged} = task -> task
+      %Task{} -> nil
+      nil -> nil
+    end
   end
 end
