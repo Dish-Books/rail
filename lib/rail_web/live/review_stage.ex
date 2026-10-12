@@ -1,8 +1,9 @@
 defmodule RailWeb.Live.ReviewStage do
   @moduledoc """
-  Review, read the way Plan lists its own items: a slim rail of Findings, Diff, Screens, Demo and Browser
-  beside the picked item's pane. Findings is the list beside one finding, with what the run is doing above
-  them while it works or waits; ruling moves on to the next finding. What Send would send and whether it
+  Review, read the way Plan lists its own items: a slim rail of Findings, a fix round's Fix plan, Diff, Screens,
+  Demo and Browser beside the picked item's pane. Findings is the list beside one finding, with what the run is
+  doing above them while it works or waits; ruling moves on to the next finding. Fix plan is the round's plan,
+  which the header's Approve starts, and a ruling changed since it was saved is marked where it shows. What Send would send and whether it
   can is handed to the page for the conversation's tray. Diff is the branch, or one commit of it, which a
   finding's commits open. Screens is each screen state's one shot, opened over the page to step through and
   comment on, Demo plays the latest recording with its walkthrough and says when the branch has moved past
@@ -17,6 +18,7 @@ defmodule RailWeb.Live.ReviewStage do
   alias Rail.Pipeline.Schemas.FindingComment
   alias Rail.Pipeline.Schemas.FindingEvidence
   alias Rail.Pipeline.Schemas.FindingPlace
+  alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
@@ -75,11 +77,44 @@ defmodule RailWeb.Live.ReviewStage do
       >
         <:breadcrumb :if={@breadcrumb != []}>{render_slot(@breadcrumb)}</:breadcrumb>
         <:tabs>{render_slot(@tabs)}</:tabs>
-        <:actions>{render_slot(@actions)}</:actions>
+        <:actions>
+          {render_slot(@actions)}
+
+          <span
+            :if={@plan_state == :approved}
+            id="fix-plan-approved-header"
+            data-qa="fix_plan_approved"
+            class="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400"
+          >
+            <.icon name="pi-check-circle" class="size-4" /> Approved by {@fix_plan.approved_by} ·
+            <.local_time id="fix-plan-approved-at" at={@fix_plan.approved_at} />
+          </span>
+
+          <button
+            :if={@show_approve}
+            type="button"
+            id="approve-fix-plan"
+            data-qa="approve_fix_plan"
+            phx-click="approve_fix_plan"
+            phx-value-version={@fix_plan.version}
+            phx-target={@myself}
+            phx-disable-with="Approving…"
+            class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+          >
+            <.icon name="pi-check-bold" class="size-4" /> Approve
+          </button>
+        </:actions>
 
         <:alerts :if={@error}>
           <p id="review-error" data-qa="review_error" class="text-xs text-red-600 dark:text-red-500">
-            {@error}
+            <span :if={is_binary(@error)}>{@error}</span>
+            <span :if={match?({:replaced, _at}, @error)}>
+              That fix plan was replaced at
+              <.local_time
+                id="review-error-replaced-at"
+                at={elem(@error, 1)}
+              />. Nothing started. Read the plan on screen, then approve it.
+            </span>
           </p>
         </:alerts>
 
@@ -91,10 +126,21 @@ defmodule RailWeb.Live.ReviewStage do
               <.review_status
                 :if={
                   @item == :findings and
-                    @phase in [:round, :fixing, :ci, :ci_failed, :finished]
+                    @phase in [
+                      :round,
+                      :planning,
+                      :waiting,
+                      :outdated,
+                      :fixing,
+                      :ci,
+                      :ci_failed,
+                      :finished
+                    ]
                 }
                 phase={@phase}
                 round={@round}
+                revising={@revising}
+                target={@myself}
                 sha={@sha}
                 counts={@counts}
                 agents={@agents}
@@ -108,6 +154,7 @@ defmodule RailWeb.Live.ReviewStage do
                     selected_key={@selected_key}
                     running={@phase == :round}
                     tally={@tally}
+                    changed={Map.new(@ruling_changes.since_plan, &{&1.key, &1.now})}
                     target={@myself}
                   />
                   <.finding_detail
@@ -115,7 +162,15 @@ defmodule RailWeb.Live.ReviewStage do
                     finding={@selected}
                     position={@position}
                     count={length(@findings)}
-                    decidable={@approvable and @phase not in [:round, :fixing, :ci, :finished]}
+                    decidable={
+                      @approvable and @phase not in [:round, :planning, :fixing, :ci, :finished]
+                    }
+                    ruling_was={
+                      Enum.find_value(
+                        @ruling_changes.since_plan,
+                        &(&1.key == @selected.key && &1.was)
+                      )
+                    }
                     running={@phase == :round}
                     where_code={@code.where}
                     place_codes={@code.places}
@@ -143,6 +198,88 @@ defmodule RailWeb.Live.ReviewStage do
                       do: "Findings appear here as the round saves them.",
                       else: "No findings."}
                   </p>
+                </div>
+              </div>
+
+              <div
+                :if={@item == :fix_plan}
+                id="fix-plan-pane"
+                class="flex-1 min-w-0 min-h-0 overflow-y-auto px-5 py-5 @3xl:px-8 @3xl:py-6"
+              >
+                <div
+                  :if={@fix_plan.plan == nil}
+                  id="fix-plan-empty"
+                  class="flex flex-col items-center text-center max-w-md mx-auto py-14"
+                >
+                  <div class="relative flex items-center justify-center size-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 ring-1 ring-slate-200 dark:ring-slate-700">
+                    <.icon name="pi-clipboard-text" class="size-7" />
+                    <span
+                      :if={Run.running?(@run)}
+                      class="absolute -bottom-1 -right-1 size-4 rounded-full border-2 border-slate-300 dark:border-slate-600 border-t-blue-500 motion-safe:animate-spin bg-white dark:bg-slate-900"
+                    />
+                  </div>
+                  <h2 class="mt-5 text-base font-semibold text-slate-900 dark:text-slate-100">
+                    {if Run.running?(@run), do: "Writing the fix plan", else: "No fix plan"}
+                  </h2>
+                  <p class="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+                    {if Run.running?(@run),
+                      do:
+                        "On #{asked(@fix_plan)}. Approve appears in the header once the plan is saved.",
+                      else:
+                        "The lead stopped before it saved one, and nothing changed in the worktree. Message the lead to write it."}
+                  </p>
+                </div>
+
+                <div :if={@fix_plan.plan}>
+                  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-5">
+                    <h2 class="text-xl font-bold text-slate-900 dark:text-slate-100">Fix plan</h2>
+                    <span class="text-sm text-slate-500 dark:text-slate-400">
+                      Fix round {@fix_plan.round} · saved
+                      <.local_time id="fix-plan-saved-at" at={@fix_plan.saved_at} />
+                    </span>
+                  </div>
+
+                  <div
+                    :if={@revising}
+                    id="fix-plan-revising"
+                    class="mb-5 flex items-center gap-2.5 rounded-lg border border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/40 px-4 py-2.5 text-[13px] text-blue-800 dark:text-blue-200"
+                  >
+                    <span
+                      :if={Run.running?(@run)}
+                      class="size-3 shrink-0 rounded-full border-2 border-slate-300 dark:border-slate-600 border-t-blue-500 motion-safe:animate-spin"
+                    />
+                    <span class="min-w-0">
+                      {if Run.running?(@run),
+                        do:
+                          "Revising on #{@revising}. This plan is replaced when the lead saves the new one, and Approve comes back then.",
+                        else:
+                          "The lead stopped before it saved the revised plan, so there is nothing to approve. Message the lead to save it."}
+                    </span>
+                  </div>
+
+                  <div
+                    :if={@plan_state == :outdated and not Run.running?(@run)}
+                    id="fix-plan-outdated"
+                    class="mb-5 flex items-start gap-2.5 rounded-lg border border-amber-300 dark:border-amber-800/70 bg-amber-50 dark:bg-amber-950/30 px-4 py-2.5 text-[13px] text-amber-900 dark:text-amber-200"
+                  >
+                    <.icon name="pi-swap" class="size-4 mt-0.5 shrink-0" />
+                    <span class="min-w-0 wrap-anywhere">
+                      <span class="font-semibold">Out of date.</span>
+                      <span :for={{change, index} <- Enum.with_index(@ruling_changes.since_plan)}>{separator(
+                        index,
+                        length(@ruling_changes.since_plan)
+                      )}<code class="font-mono text-[12px]">{change.key}</code>
+                      changed from {ruling(change.was)} to {ruling(change.now)}</span>
+                      after this plan was saved. Send the change from the tray for a revised plan, or change it back to approve this one.
+                    </span>
+                  </div>
+
+                  <div class={[@plan_state not in [:waiting, :approved] && "opacity-70"]}>
+                    <.fix_plan_sheet
+                      sheet={FixPlan.build_sheet(@fix_plan)}
+                      changed={Map.new(@ruling_changes.since_plan, &{&1.key, &1.now})}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -420,6 +557,25 @@ defmodule RailWeb.Live.ReviewStage do
     {:noreply, socket}
   end
 
+  def handle_event("approve_fix_plan", %{"version" => version}, socket) do
+    %{current_scope: scope, run: run} = socket.assigns
+
+    socket =
+      case Pipeline.approve_fix_plan(scope, run, String.to_integer(version)) do
+        {:ok, _run} ->
+          send(self(), :task_changed)
+          assign(socket, :error, nil)
+
+        {:error, {:fix_plan_replaced, saved_at}} ->
+          assign(socket, :error, {:replaced, saved_at})
+
+        {:error, reason} ->
+          assign(socket, :error, message_for(reason))
+      end
+
+    {:noreply, load(socket)}
+  end
+
   # The URL's item opens a task the stage starts showing, a child switched to included; after that the stage
   # keeps its own, so the page's patches never send it back to an item it has left.
   defp open_url_item(%{assigns: %{task: %Task{id: id}}} = socket, %{task: %Task{id: id}}), do: socket
@@ -438,7 +594,9 @@ defmodule RailWeb.Live.ReviewStage do
     findings = Pipeline.list_findings(task)
     passes = Pipeline.read_review(task)
     ci = Pipeline.get_ci_status(run)
-    phase = phase(run, task, passes, ci)
+    fix_plan = Pipeline.read_fix_plan(task)
+    plan_state = fix_plan && FixPlan.state(fix_plan, task, findings)
+    phase = phase(run, task, passes, ci, plan_state)
     counts = counts(findings)
     beats = Pipeline.list_demo_beats(task)
     recording = Tools.get_browser_recording(task) != nil
@@ -447,14 +605,15 @@ defmodule RailWeb.Live.ReviewStage do
     selected = Enum.find(findings, List.first(findings), &(&1.key == socket.assigns.selected_key))
 
     socket
+    |> assign_fix_plan(fix_plan, plan_state, findings)
     |> assign(:findings, findings)
     |> assign(:phase, phase)
-    |> assign(:round, round(phase, passes))
+    |> assign(:round, if(phase in [:planning, :waiting, :outdated], do: fix_plan.round, else: round(phase, passes)))
     |> assign(:sha, ci_sha(ci))
     |> assign(:counts, counts)
     |> assign(
       :agents,
-      if(socket.assigns.item == :findings and phase in [:round, :fixing], do: agents(run), else: [])
+      if(socket.assigns.item == :findings and phase in [:round, :planning, :fixing], do: agents(run), else: [])
     )
     |> assign(:tally, tally(phase, counts, findings, passes))
     |> assign_branch(passes)
@@ -473,25 +632,48 @@ defmodule RailWeb.Live.ReviewStage do
     |> tray(findings, passes, phase, counts)
   end
 
+  # The round's plan, what changed in its rulings and whether it can be approved. Its item opens only while there is one.
+  defp assign_fix_plan(socket, fix_plan, plan_state, findings) do
+    %{task: task, run: run, current_scope: scope} = socket.assigns
+
+    ruling_changes =
+      if fix_plan, do: FixPlan.calculate_ruling_changes(fix_plan, task, findings), else: %{unsent: [], since_plan: []}
+
+    socket = if socket.assigns.item == :fix_plan and fix_plan == nil, do: pick(socket, :findings), else: socket
+
+    socket
+    |> assign(:fix_plan, fix_plan)
+    |> assign(:plan_state, plan_state)
+    |> assign(:ruling_changes, ruling_changes)
+    |> assign(:revising, revising(fix_plan, plan_state, run, ruling_changes))
+    |> assign(:show_approve, approve?(task, run, plan_state, scope))
+  end
+
   # The conversation's tray shows what Send sends and whether it can; the page holds both and hands them on.
   defp tray(socket, findings, passes, phase, counts) do
     %{stage: stage, cleaned_up_at: cleaned_up_at} = socket.assigns.task
+    # While a round's plan waits on approval, Send carries only what changed since the last Send.
+    plan = socket.assigns.plan_state in [:writing, :revising, :waiting, :outdated]
 
     # Past Review the review is over and nobody rules, so only the reader's comments go, with no Finish review.
     gate = %{
-      working: phase in [:round, :fixing, :ci],
+      working: phase in [:round, :planning, :fixing, :ci],
       undecided: if(stage == :review, do: counts.undecided, else: 0),
       finished: stage != :review or (passes != [] and List.last(passes).finished_at != nil),
       ci_failed: phase == :ci_failed,
-      saved: passes != []
+      saved: passes != [],
+      plan: plan
     }
 
     # The Fix findings went out with the Send, so they come back only if the round ends with them still outstanding.
     # A fix commit moves HEAD past the pass, and the gate then reads :round, so every working phase hides them.
-    fix = if gate.working or stage != :review, do: [], else: Enum.filter(findings, &Finding.outstanding?/1)
+    fix = if gate.working or plan or stage != :review, do: [], else: Enum.filter(findings, &Finding.outstanding?/1)
 
     # Comments are taken until cleanup, so a cleaned-up task, or one not yet at Review, sends nothing from it.
-    tray = if stage in [:review, :finalize, :merged] and is_nil(cleaned_up_at), do: %{fix: fix, gate: gate}
+    tray =
+      if stage in [:review, :finalize, :merged] and is_nil(cleaned_up_at),
+        do: %{fix: fix, rulings: if(gate.working, do: [], else: socket.assigns.ruling_changes.unsent), gate: gate}
+
     send(self(), {:review_tray, tray})
     socket
   end
@@ -670,14 +852,90 @@ defmodule RailWeb.Live.ReviewStage do
       mark: nil
     }
 
-    assign(socket, :items, [findings, diff, screens, demo, browser])
+    items = [findings, fix_plan_item(socket.assigns), diff, screens, demo, browser]
+    assign(socket, :items, Enum.reject(items, &is_nil/1))
   end
 
-  # What the run is doing, read off the run, its CI and the passes it saved. A run working on the commit the
-  # last pass read is fixing, since a Send of comments alone is a fix round too; any other working run is a round.
-  defp phase(%Run{} = run, %Task{} = task, passes, ci) do
+  defp fix_plan_item(%{fix_plan: nil}), do: nil
+
+  defp fix_plan_item(%{fix_plan: fix_plan, plan_state: plan_state, run: run}) do
+    {state, dot, mark} =
+      case {Run.running?(run), plan_state} do
+        {_running, :approved} -> {"Approved by #{fix_plan.approved_by}", nil, :done}
+        {true, :writing} -> {"Writing the plan", :running, nil}
+        {true, _revising} -> {"Revising", :running, nil}
+        {false, :waiting} -> {"Waiting on your approval", nil, :waiting}
+        {false, :outdated} -> {"Out of date", nil, :waiting}
+        {false, :writing} -> {"No plan", nil, :stopped}
+        {false, :revising} -> {"Revision stopped", nil, :stopped}
+      end
+
+    %{
+      key: :fix_plan,
+      label: "Fix plan",
+      icon: "pi-clipboard-text",
+      picked_icon: "pi-clipboard-text-fill",
+      state: state,
+      badge: nil,
+      dot: dot,
+      mark: mark
+    }
+  end
+
+  # What a plan being revised is revised on: the rulings changed since it was saved, the comments it does not cover,
+  # or else a message, which revises it too.
+  defp revising(%FixPlan{plan: plan} = fix_plan, plan_state, %Run{} = run, ruling_changes) when is_binary(plan) do
+    revising? = plan_state == :revising or (Run.running?(run) and plan_state in [:waiting, :outdated])
+
+    if revising? do
+      rulings = length(ruling_changes.since_plan)
+      comments = for %{number: number} <- fix_plan.comments, number > fix_plan.covered_comments, do: number
+
+      case Enum.reject([rulings > 0 && plural(rulings, "changed ruling"), numbers(comments)], &(&1 in [false, nil])) do
+        [] -> "your message"
+        said -> Enum.join(said, " and ")
+      end
+    end
+  end
+
+  defp revising(_fix_plan, _plan_state, _run, _ruling_changes), do: nil
+
+  defp numbers([]), do: nil
+  defp numbers([one]), do: "comment #{one}"
+  defp numbers(many), do: "comments #{Enum.join(Enum.drop(many, -1), ", ")} and #{List.last(many)}"
+
+  # What the lead was sent to plan on, while it writes the first plan.
+  defp asked(%FixPlan{findings: findings, comments: comments}) do
+    findings = if findings != [], do: "the #{plural(length(findings), "finding")} ruled Fix"
+
+    [findings, numbers(Enum.map(comments, & &1.number))]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(" and ")
+  end
+
+  # What goes before the change at `index` of `count`, so the banner reads as one sentence.
+  defp separator(0, _count), do: ""
+  defp separator(index, count), do: if(index == count - 1, do: " and ", else: ", ")
+
+  defp ruling(:fix), do: "Fix"
+  defp ruling(:skip), do: "Don't fix"
+
+  # Approve starts the engineer, so it is offered only on the latest plan while it waits and the lead is idle.
+  defp approve?(%Task{} = task, %Run{} = run, :waiting, scope) do
+    task.stage in [:review, :finalize, :merged] and is_nil(task.cleaned_up_at) and not Run.running?(run) and
+      match?(%{user: %{}}, scope)
+  end
+
+  defp approve?(%Task{}, %Run{}, _plan_state, _scope), do: false
+
+  # What the run is doing, read off the run, its CI, the passes it saved and its fix round's plan. A run working on
+  # the commit the last pass read is fixing, since a Send of comments alone is a fix round too; any other working run
+  # is a round. Until its plan is approved, a fix round only plans.
+  defp phase(%Run{} = run, %Task{} = task, passes, ci, plan_state) do
     cond do
       match?(%{state: :running}, ci) -> :ci
+      Run.running?(run) and plan_state in [:writing, :revising, :waiting, :outdated] -> :planning
+      plan_state in [:waiting, :outdated] -> plan_state
       Run.running?(run) and fixing?(task, passes) -> :fixing
       Run.running?(run) -> :round
       passes != [] and List.last(passes).finished_at != nil -> :finished
@@ -732,6 +990,10 @@ defmodule RailWeb.Live.ReviewStage do
   defp findings_state(:ci, _counts, %{sha: sha}), do: "CI running" <> if(sha, do: " on #{sha}", else: "")
   defp findings_state(:ci_failed, _counts, %{sha: sha}), do: "CI failed" <> if(sha, do: " on #{sha}", else: "")
   defp findings_state(:finished, _counts, _assigns), do: "Nothing left to rule"
+  defp findings_state(:planning, _counts, assigns), do: "Fix round #{assigns.round} · writing the fix plan"
+
+  defp findings_state(phase, counts, assigns) when phase in [:waiting, :outdated],
+    do: findings_state(:ruling, counts, assigns)
 
   defp findings_state(:ruling, counts, _assigns) do
     case said([{counts.undecided, "to rule"}, {counts.fix, "to fix"}]) do
@@ -942,6 +1204,7 @@ defmodule RailWeb.Live.ReviewStage do
   defp double_click?({key, at}, key), do: System.monotonic_time(:millisecond) - at < @double_click_ms
   defp double_click?(_advanced_to, _key), do: false
 
+  defp item("fix_plan"), do: :fix_plan
   defp item("diff"), do: :diff
   defp item("screens"), do: :screens
   defp item("demo"), do: :demo
@@ -958,4 +1221,8 @@ defmodule RailWeb.Live.ReviewStage do
   defp message_for(:review_finished), do: "The review is finished, so its rulings are settled."
   defp message_for(:cleaned_up), do: "This task is cleaned up, so it takes no more comments."
   defp message_for(:not_found), do: "That screen is gone: a retake or a cleanup removed it."
+  defp message_for(:no_fix_plan), do: "There is no fix plan to approve."
+  defp message_for({:fix_plan_not_waiting, :outdated}), do: "A ruling changed since that plan was saved. Nothing started."
+  defp message_for({:fix_plan_not_waiting, :approved}), do: "That fix plan is already approved."
+  defp message_for({:fix_plan_not_waiting, _writing}), do: "The lead is revising that fix plan. Nothing started."
 end

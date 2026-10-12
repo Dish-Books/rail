@@ -57,4 +57,29 @@ defmodule RailWeb.Components.FindingListTest do
     assert doc |> Floki.find("#review-finding-footer") |> Floki.text() =~ "1 to fix · 2 not fixing"
     assert [] = Floki.find(doc, "#review-finding-footer button")
   end
+
+  test "a finding whose ruling changed since the fix plan says so in its row" do
+    findings = [
+      %Finding{key: "count", kind: :screen, round: 1, title: "Count", screen: "Tray", severity: :minor, decision: :skip},
+      %Finding{key: "send", kind: :screen, round: 1, title: "Send", screen: "Tray", severity: :major, decision: :fix}
+    ]
+
+    doc =
+      (&FindingList.finding_list/1)
+      |> render_component(findings: findings, running: false, tally: "", changed: %{"count" => :skip}, target: nil)
+      |> Floki.parse_fragment!()
+
+    assert doc |> Floki.find("#finding-count [data-qa=review_finding_state]") |> Floki.text() =~
+             "Don't fix · changed since the plan"
+
+    assert doc |> Floki.find("#finding-send [data-qa=review_finding_state]") |> Floki.text() |> String.trim() == "Fix"
+
+    doc =
+      (&FindingList.finding_list/1)
+      |> render_component(findings: findings, running: false, tally: "", changed: %{"send" => :fix}, target: nil)
+      |> Floki.parse_fragment!()
+
+    assert doc |> Floki.find("#finding-send [data-qa=review_finding_state]") |> Floki.text() =~
+             "Fix · changed since the plan"
+  end
 end

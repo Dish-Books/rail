@@ -51,6 +51,62 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlanTest do
     end
   end
 
+  describe "validate_file_changes/2 and build_file_changes/1" do
+    test "check and number the File-level changes of a fix plan as of an architect plan" do
+      fix_plan = """
+      Two changes.
+
+      ### What changes
+
+      #### `nil-crash`
+
+      Guard it.
+
+      ### File-level changes
+
+      - `lib/a.ex`: guards nil. For `nil-crash`.
+      - `lib/a_test.exs`
+      """
+
+      changeset =
+        {%{}, %{plan: :string}} |> cast(%{plan: fix_plan}, [:plan]) |> ImplementationPlan.validate_file_changes(:plan)
+
+      assert changeset.valid?
+
+      assert [
+               %{number: 1, path: "lib/a.ex", description: "guards nil. For `nil-crash`."},
+               %{number: 2, path: "lib/a_test.exs"}
+             ] =
+               ImplementationPlan.build_file_changes(fix_plan)
+    end
+
+    test "refuse a list that does not lay out, and take markdown with no such section as it is" do
+      bad = "### File-level changes\n\n- `lib/a.ex`: guards it.\n\n```elixir\n:ok\n```\n"
+
+      changeset =
+        {%{}, %{plan: :string}} |> cast(%{plan: bad}, [:plan]) |> ImplementationPlan.validate_file_changes(:plan)
+
+      assert %{plan: ["does not lay out its `### File-level changes`" <> _how]} = errors_on(changeset)
+      assert ImplementationPlan.build_file_changes(bad) == nil
+
+      sub = "### File-level changes\n\n- `lib/a.ex`: guards it.\n  - and more\n"
+
+      changeset =
+        {%{}, %{plan: :string}} |> cast(%{plan: sub}, [:plan]) |> ImplementationPlan.validate_file_changes(:plan)
+
+      assert %{plan: ["has sub-bullets" <> _rest]} = errors_on(changeset)
+
+      none = "### What changes\n\nNothing."
+
+      assert {%{}, %{plan: :string}}
+             |> cast(%{plan: none}, [:plan])
+             |> ImplementationPlan.validate_file_changes(:plan)
+             |> Map.get(:valid?)
+
+      assert ImplementationPlan.build_file_changes(none) == nil
+    end
+  end
+
   test "a full plan yields both diagrams with their source exactly as fenced" do
     change = """
     flowchart LR

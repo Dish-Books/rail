@@ -93,4 +93,29 @@ defmodule RailWeb.Components.ReviewStatusTest do
 
     assert [] = Floki.find(doc, "[data-qa=review_status_log]")
   end
+
+  test "a fix round's plan being written, revised, waiting or out of date names the round" do
+    headline = fn attrs ->
+      html = render_component(&ReviewStatus.review_status/1, [counts: @counts] ++ attrs)
+      doc = Floki.parse_fragment!(html)
+
+      {doc |> Floki.find("[data-qa=review_status_headline]") |> Floki.text(),
+       doc |> Floki.find("[data-qa=review_status_body]") |> Floki.text() |> String.trim(),
+       Floki.find(doc, "#review-status-open-fix-plan") != []}
+    end
+
+    assert {"Fix round 1 · Review lead writing the fix plan", "Nothing changes until you approve it." <> _rest, false} =
+             headline.(phase: :planning, round: 1)
+
+    assert {"Fix round 2 · Review lead writing the fix plan",
+            "On 1 changed ruling. Approve comes back when the revised plan is saved.", false} =
+             headline.(phase: :planning, round: 2, revising: "1 changed ruling")
+
+    assert {"Fix round 1 · Fix plan waiting on your approval", "Nothing changes until you approve." <> _rest, true} =
+             headline.(phase: :waiting, round: 1)
+
+    assert {"Fix round 1 · Fix plan out of date",
+            "A ruling changed since the plan was saved. Send the change from the tray for a revised plan, or change it back to approve this one.",
+            true} = headline.(phase: :outdated, round: 1)
+  end
 end

@@ -1,5 +1,5 @@
 defmodule RailWeb.Utils.StageLabelTest do
-  use ExUnit.Case, async: true
+  use Rail.DataCase, async: true
 
   import RailWeb.Utils.StageLabel
 
@@ -183,5 +183,49 @@ defmodule RailWeb.Utils.StageLabelTest do
     child = %Task{stage: :engineer, runs: [], builds_on: [1], parent_task: %Task{children: siblings}}
 
     assert stage_label(child, nil) == "Queued for Implement"
+  end
+
+  describe "fix_plan_waiting?/1" do
+    setup do
+      scratch = Path.join(System.tmp_dir!(), "stage_label_fix_plan_#{System.unique_integer([:positive])}")
+      on_exit(fn -> File.rm_rf(scratch) end)
+      File.mkdir_p!(Path.join(scratch, "fix_plans"))
+      task = %Task{id: "tsk_stage_label_plan", stage: :review, scratch_path: scratch, issue: %Issue{identifier: "SLP-1"}}
+      %{task: task, path: Path.join(scratch, "fix_plans/SLP-1.json")}
+    end
+
+    test "is true for a saved plan waiting on the person, approvable or out of date", %{task: task, path: path} do
+      sent = %{round: 1, findings: [], comments: [%{number: 1, kind: "diff", text: "Why?"}]}
+      File.write!(path, Jason.encode!(Map.merge(sent, %{plan: "### What changes", covered_comments: 1, version: 1})))
+      assert fix_plan_waiting?(task)
+
+      # A finding the round sent is no longer ruled Fix, since it is not on the task.
+      out_of_date = Map.merge(sent, %{plan: "p", covered_comments: 1, covered_keys: ["gone"], findings: [%{key: "gone"}]})
+      File.write!(path, Jason.encode!(out_of_date))
+      assert fix_plan_waiting?(task)
+
+      # The header still names the stage.
+      assert approval_label(task) == "Review"
+    end
+
+    test "is false while the plan is written, revised or approved, and with none", %{task: task, path: path} do
+      sent = %{round: 1, findings: [], comments: [%{number: 1, kind: "diff", text: "Why?"}]}
+      File.write!(path, Jason.encode!(sent))
+      refute fix_plan_waiting?(task)
+
+      File.write!(path, Jason.encode!(Map.merge(sent, %{plan: "p", covered_comments: 0})))
+      refute fix_plan_waiting?(task)
+
+      File.write!(
+        path,
+        Jason.encode!(Map.merge(sent, %{plan: "p", covered_comments: 1, approved_at: "2026-10-12T16:58:00Z"}))
+      )
+
+      refute fix_plan_waiting?(task)
+
+      File.rm!(path)
+      refute fix_plan_waiting?(task)
+      refute fix_plan_waiting?(%Task{stage: :review})
+    end
   end
 end

@@ -532,6 +532,22 @@ defmodule Rail.Mcp.Utils.McpTools do
       }
     },
     %{
+      "name" => "save_fix_plan",
+      "description" =>
+        "Save the plan for the fix round a Send started, before anything changes; each save replaces the last, and " <>
+          "the human approves it in Rail. Markdown: a short summary, then `### What changes` with a `#### `key`` for " <>
+          "each finding the round sent, by its key in backticks, and a `#### Comment N` for each comment, by its " <>
+          "number, each saying what will change or why nothing will. Then `### File-level changes`, one bullet per " <>
+          "file starting with its path in backticks, as in the implementation plan, each ending with the item it is " <>
+          "for: the finding's key in backticks or `comment N`. Then `### Verification`. Leave out the last two when " <>
+          "nothing will change. A plan that leaves out an item the round sent is refused with what to fix.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{"plan" => %{"type" => "string", "description" => "The whole fix plan, in markdown."}},
+        "required" => ["plan"]
+      }
+    },
+    %{
       "name" => "save_review",
       "description" =>
         "Say the round is finished, once every finding is saved and every check settled. Call it last, and " <>

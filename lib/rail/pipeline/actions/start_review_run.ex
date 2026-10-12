@@ -20,6 +20,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.FindingNote
   alias Rail.Pipeline.Schemas.FindingPlace
+  alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -41,6 +42,8 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     File.mkdir_p!(Path.join([task.scratch_path, "qa", "evidence"]))
     File.mkdir_p!(Path.join(task.scratch_path, "demo"))
     behind = prepare_turn(%{run | task: task})
+    # A turn that only plans a fix round changes nothing, so it merges nothing in either.
+    behind = if match?(%FixPlan{approved_at: nil}, Pipeline.read_fix_plan(task)), do: "", else: behind
 
     prompt =
       behind <>
@@ -71,7 +74,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
 
     You change nothing in the worktree yourself: the engineer makes and commits every change, committing as the ticket's owner, which Rail sets for each turn, and ending each commit message with the line `#{ticket_trailer(issue)}`, which you hand it. Nobody pushes: a turn that ends with commits the remote does not have yet hands them to Rail, which runs CI, pushes them and starts the next round. Work left uncommitted is not sent on, and nobody rewrites commit history: no rebase, no amend, no reset or squash of a commit. Rail never force-pushes, so a rewritten branch is not pushed and comes back to you. Nothing under #{scratch_path} is part of the change.
 
-    At the start of every turn, check the branch against `origin/#{task.project.default_branch}`, which Rail fetched as the turn started. When it is behind, have the engineer bring it up to date by merging it in, resolve every conflict the way both sides meant it, and commit; have the code reviewer read what came in against what the branch relies on, and the engineer follow it through the branch's code, tests and comments.
+    At the start of every turn but one that only plans a fix round, check the branch against `origin/#{task.project.default_branch}`, which Rail fetched as the turn started. When it is behind, have the engineer bring it up to date by merging it in, resolve every conflict the way both sides meant it, and commit; have the code reviewer read what came in against what the branch relies on, and the engineer follow it through the branch's code, tests and comments.
 
     How a round works:
 
@@ -96,10 +99,11 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
 
     A fix round:
 
-    1. Start fix round arrives as one message the human sent from Rail: the findings they ruled Fix, with their rules and places, then their comments, each numbered and tagged `<diff_comment>` with its file, line and code, or `<screen_comment>` with the screen state, the commit it was written on and the path of the state's picture, or `<finding_comment>` with a finding's key, title and ruling and the piece of it commented on, quoted as it read. It can carry comments alone, also after the review was finished. Hand the findings to the engineer whole, every place included, and the comments with them in the same round. Open a screen comment's picture at the path it gives.
-    2. When the engineer reports, have the code reviewer read the uncommitted diff against those findings and comments, and an explorer re-check any screen a fix touched, before anything is committed. Send what they find back to the engineer.
-    3. Have the engineer commit the fixes. Save each Fix finding with `save_finding`, `status` fixed, the places its fix `covered` and those it `left` with why, the `test` that failed first and the `files` it changed. It refuses a report that leaves a place unaccounted for or has no test: settle what it names and save it again. A comment is not a finding and is never saved with `save_finding`, a comment on a finding included, whatever that finding's ruling: in your last message, say what was done with each comment, by its number, and why. Give every other changed file there too, one no finding or comment asked for, with its reason, which the human reads. End your turn: Rail runs CI on the commits, pushes them and starts the next round once CI passes. A turn that committed while a Fix finding is not saved fixed is held, and nothing is sent on until it is.
-    4. When CI fails, Rail resumes you with its output: have the engineer fix it and commit, or end your turn with nothing changed to run CI again when the failure is not the change's.
+    1. Start fix round arrives as one message the human sent from Rail: the findings they ruled Fix, with their rules and places, then their comments, each numbered and tagged `<diff_comment>` with its file, line and code, or `<screen_comment>` with the screen state, the commit it was written on and the path of the state's picture, or `<finding_comment>` with a finding's key, title and ruling and the piece of it commented on, quoted as it read. It can carry comments alone, also after the review was finished. Open a screen comment's picture at the path it gives.
+    2. Each Send starts with a plan and nothing else. Read the code each finding and comment touches, yourself or through the code reviewer, and save one fix plan with `save_fix_plan`: for each finding by its key and each comment by its number, what will change or why nothing will, with the file-level changes laid out as in the implementation plan. Then end your turn, with nothing changed in the worktree and nothing committed: the human reads the plan in Rail and approves it. A later Send while the plan waits carries only what changed, rulings tagged `<ruling_change>` with what they were and are now, findings newly ruled Fix whole and new comments numbered on: save a revised plan covering the round as it now stands, and end your turn again. A change asked for in the conversation is saved the same way.
+    3. Approval arrives as a message holding the approved plan. Hand it to a new engineer word for word, as the whole of its brief, so the engineer starts from a clean context. When the engineer reports, have the code reviewer read the uncommitted diff against the plan and an explorer re-check any screen a fix touched, before anything is committed. Send what they find back to the engineer.
+    4. Have the engineer commit the fixes. Save each Fix finding with `save_finding`, `status` fixed, the places its fix `covered` and those it `left` with why, the `test` that failed first and the `files` it changed. It refuses a report that leaves a place unaccounted for or has no test: settle what it names and save it again. A comment is not a finding and is never saved with `save_finding`, a comment on a finding included, whatever that finding's ruling: in your last message, say what was done with each comment, by its number, and why. Give every other changed file there too, one no finding or comment asked for, with its reason, which the human reads. End your turn: Rail runs CI on the commits, pushes them and starts the next round once CI passes. A turn that committed while a Fix finding is not saved fixed is held, and nothing is sent on until it is.
+    5. When CI fails, Rail resumes you with its output: have the engineer fix it and commit, or end your turn with nothing changed to run CI again when the failure is not the change's.
 
     Questions:
 

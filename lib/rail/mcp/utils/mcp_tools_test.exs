@@ -67,11 +67,16 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
              "demo_start",
              "demo_say",
              "save_finding",
+             "save_fix_plan",
              "save_review",
              "save_demo",
              "ask_questions",
              "knowledge_search"
            ]
+  end
+
+  test "only the Review lead is offered save_fix_plan", %{names: names} do
+    assert for({stage, tools} <- names, "save_fix_plan" in tools, do: stage) == [:review_lead]
   end
 
   # One save_finding holds both kinds and a fix round's report, so it takes a code range, evidence and a fix alike.

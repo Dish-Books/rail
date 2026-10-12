@@ -40,6 +40,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   import Rail.Mcp.Utils.RunToolSaveDemo
   import Rail.Mcp.Utils.RunToolSaveDesignOption
   import Rail.Mcp.Utils.RunToolSaveFinding
+  import Rail.Mcp.Utils.RunToolSaveFixPlan
   import Rail.Mcp.Utils.RunToolSavePlan
   import Rail.Mcp.Utils.RunToolSaveReview
   import Rail.Mcp.Utils.RunToolSaveScreen
@@ -63,6 +64,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
     "save_split",
     "save_finding",
     "save_review",
+    "save_fix_plan",
     "save_demo",
     "save_screen"
   ]
@@ -231,6 +233,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp run("save_split", task, arguments, opts), do: run_tool_save_split(task, arguments, opts)
   defp run("save_finding", task, arguments, opts), do: run_tool_save_finding(task, arguments, opts)
   defp run("save_review", task, arguments, opts), do: run_tool_save_review(task, arguments, opts)
+  defp run("save_fix_plan", task, arguments, opts), do: run_tool_save_fix_plan(task, arguments, opts)
 
   defp run("save_demo", task, arguments, opts), do: run_tool_save_demo(task, arguments, opts)
   defp run("ask_questions", task, arguments, opts), do: run_tool_ask_questions(task, arguments, opts)

@@ -34,6 +34,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate finding_code(assigns), to: Components.FindingCode
   defdelegate finding_detail(assigns), to: Components.FindingDetail
   defdelegate finding_list(assigns), to: Components.FindingList
+  defdelegate fix_plan_sheet(assigns), to: Components.FixPlanSheet
   defdelegate icon(assigns), to: Components.Icon
   defdelegate in_progress_tasks(assigns), to: Components.InProgressTasks
   defdelegate input(assigns), to: Components.Input
@@ -58,6 +59,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate review_comment_tray(assigns), to: Components.ReviewCommentTray
   defdelegate review_items(assigns), to: Components.ReviewItems
   defdelegate review_queue(assigns), to: Components.ReviewQueue
+  defdelegate review_send_card(assigns), to: Components.ReviewSendCard
   defdelegate review_status(assigns), to: Components.ReviewStatus
 
   defdelegate sandbox_meters(assigns), to: Components.SandboxMeters
