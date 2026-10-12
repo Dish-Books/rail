@@ -61,7 +61,6 @@ defmodule RailWeb.Live.ReviewStage do
       |> assign_new(:screen_draft, fn -> nil end)
       |> assign_new(:finding_draft, fn -> nil end)
       |> assign_new(:code_cache, fn -> %{fingerprint: :unread, by_key: %{}} end)
-      |> assign_new(:child_of, fn -> nil end)
       |> assign_new(:diagram_views, fn -> %{change: :diagram, call_flow: :diagram} end)
       |> load()
 

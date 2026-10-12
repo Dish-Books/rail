@@ -342,4 +342,22 @@ defmodule RailWeb.Live.PlanStageTest do
     assert has_element?(view, "#child-plan-approved", "Approved in PST-10 · part 3 of 3")
     assert has_element?(view, "#child-plan #plan-sheet")
   end
+
+  test "an approved plan that does not lay out reads as its lines, code and tables drawn as such", %{
+    conn: conn,
+    task: task
+  } do
+    content = "## Implementation plan\n\nAs approved.\n\n```elixir\nx = 1\n```\n\n| A | B |\n|---|---|\n| 1 | 2 |\n"
+    Repo.insert!(%ImplementationPlan{task_id: task.id, content: content, captured_at: DateTime.utc_now()})
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
+    {:ok, plan_role} = Roles.get_role(project_id: task.project_id, stage: :plan)
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{plan_role.id}")
+    view |> element("#plan-item-plan") |> render_click()
+
+    refute has_element?(view, "#plan-plan #plan-sheet")
+    assert has_element?(view, "#plan-plan [data-qa='commentable_line']", "As approved.")
+    assert has_element?(view, "#plan-plan [data-qa='commentable_line'] [data-qa='line_number']")
+    assert has_element?(view, "#plan-plan [data-qa='commentable_line'][data-kind='table_row']", "2")
+  end
 end
