@@ -10,6 +10,7 @@ defmodule Rail.Pipeline.Schemas.Task do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects.Schemas.Project
   alias Rail.Users.Schemas.User
@@ -66,6 +67,7 @@ defmodule Rail.Pipeline.Schemas.Task do
     has_one :implementation_plan, ImplementationPlan
 
     has_many :questions, Question
+    has_many :rounds, Round, preload_order: [asc: :number]
     has_many :runs, Run
 
     timestamps()
