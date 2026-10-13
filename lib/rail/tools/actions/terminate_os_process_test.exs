@@ -29,9 +29,7 @@ defmodule Rail.Tools.Actions.TerminateOsProcessTest do
     {:os_pid, pid} = Port.info(port, :os_pid)
     assert_receive {^port, {:data, "trapped\n"}}
 
-    # Long enough that the first look, which is a `kill -0` of its own, lands inside it on a busy
-    # machine; at 40ms it sometimes did not, and the wait went straight to the KILL.
-    assert Tools.terminate_os_process(pid, grace_period: 500) == :ok
+    assert Tools.terminate_os_process(pid, grace_period: 40) == :ok
     refute Tools.os_process_alive?(pid)
   end
 

@@ -40,21 +40,18 @@ defmodule Rail.Tools.Actions.TerminateOsProcess do
       # coveralls-ignore-stop
   end
 
-  defp wait_until_dead(pid, timeout_ms) do
-    wait_until(pid, System.monotonic_time(:millisecond) + timeout_ms)
-  end
-
-  defp wait_until(pid, deadline) do
+  # The grace is counted in time slept, so a slow `kill -0` on a busy machine does not use it up before the first poll.
+  defp wait_until_dead(pid, remaining_ms) do
     cond do
       not Tools.os_process_alive?(pid) ->
         true
 
-      System.monotonic_time(:millisecond) >= deadline ->
+      remaining_ms <= 0 ->
         false
 
       true ->
         Process.sleep(@poll_interval_ms)
-        wait_until(pid, deadline)
+        wait_until_dead(pid, remaining_ms - @poll_interval_ms)
     end
   end
 end
