@@ -26,7 +26,11 @@ defmodule Rail.Issues.Actions.CommentTest do
 
   test "comment/3 posts as the scope's user and keeps the comment", %{issue: %{id: issue_id} = issue} do
     {:ok, %{id: user_id} = user} =
-      Users.register_oauth_user(%{github_id: "gh_comment_owner", login: "comment_owner", email: "owner@example.com"})
+      Users.register_oauth_user(%{
+        github_id: "gh_comment_owner",
+        login: "comment_owner",
+        email: "owner-comment@example.com"
+      })
 
     {:ok, user} =
       Users.update_user(Scope.for_system(), user, %{
@@ -147,7 +151,7 @@ defmodule Rail.Issues.Actions.CommentTest do
   describe "a GitHub issue" do
     test "comments as the App and keeps the comment, its author matched by GitHub id", %{github_project: project} do
       {:ok, %{id: author_id}} =
-        Users.register_oauth_user(%{github_id: "9001", login: "octocat", email: "octo@example.com"})
+        Users.register_oauth_user(%{github_id: "9001", login: "octocat-comment", email: "octo@example.com"})
 
       %Issue{id: issue_id} = issue = github_issue(project, %{number: 11})
       posted = github_comment_json(%{"body" => "On it"})

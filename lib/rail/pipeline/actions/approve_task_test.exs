@@ -27,7 +27,12 @@ defmodule Rail.Pipeline.Actions.ApproveTaskTest do
     {:ok, task} = Pipeline.create_task(issue, :finalize)
     {:ok, task} = Pipeline.update_task(task, %{pr_number: 151, marked_ready_at: DateTime.utc_now()})
 
-    {:ok, priya} = Users.register_oauth_user(%{github_id: "gh_at_priya", login: "priya", email: "priya@example.com"})
+    {:ok, priya} =
+      Users.register_oauth_user(%{
+        github_id: "gh_at_priya",
+        login: "priya-approve-task",
+        email: "priya-approve-task@example.com"
+      })
 
     {:ok, priya} =
       Users.update_user(system_scope(), priya, %{
@@ -54,7 +59,7 @@ defmodule Rail.Pipeline.Actions.ApproveTaskTest do
         {"POST", "/repos/example/test-seed/pulls/151/reviews"} ->
           assert ["Bearer gho_priya"] = Plug.Conn.get_req_header(conn, "authorization")
           send(test_pid, {:posting, self()})
-          review = %{"id" => 80, "user" => %{"login" => "priya"}, "state" => "APPROVED"}
+          review = %{"id" => 80, "user" => %{"login" => "priya-approve-task"}, "state" => "APPROVED"}
           Agent.update(reviews, &[Map.put(review, "submitted_at", "2026-10-11T14:40:00Z") | &1])
           Req.Test.json(conn, review)
       end
@@ -72,7 +77,7 @@ defmodule Rail.Pipeline.Actions.ApproveTaskTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task_id}")
     Req.Test.stub(Client, github)
 
-    assert {:ok, [%{login: "priya", user: %User{id: ^lead_id}, approved_at: ~U[2026-10-11 14:40:00Z]}]} =
+    assert {:ok, [%{login: "priya-approve-task", user: %User{id: ^lead_id}, approved_at: ~U[2026-10-11 14:40:00Z]}]} =
              Pipeline.approve_task(scope, task)
 
     assert_received {:posting, _github}
@@ -208,7 +213,12 @@ defmodule Rail.Pipeline.Actions.ApproveTaskTest do
   end
 
   test "a teammate without the setting is refused, admins included", %{project: project, task: task} do
-    {:ok, admin} = Users.register_oauth_user(%{github_id: "gh_at_admin", login: "admin", email: "a@example.com"})
+    {:ok, admin} =
+      Users.register_oauth_user(%{
+        github_id: "gh_at_admin",
+        login: "admin-approve-task",
+        email: "a-approve-task@example.com"
+      })
 
     {:ok, admin} =
       Users.update_user(system_scope(), admin, %{
@@ -217,7 +227,12 @@ defmodule Rail.Pipeline.Actions.ApproveTaskTest do
         github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
       })
 
-    {:ok, dan} = Users.register_oauth_user(%{github_id: "gh_at_dan", login: "dano", email: "d@example.com"})
+    {:ok, dan} =
+      Users.register_oauth_user(%{
+        github_id: "gh_at_dan",
+        login: "dano-approve-task",
+        email: "d-approve-task@example.com"
+      })
 
     {:ok, dan} =
       Users.update_user(system_scope(), dan, %{
@@ -259,10 +274,10 @@ defmodule Rail.Pipeline.Actions.ApproveTaskTest do
     github: github
   } do
     Req.Test.stub(Client, github)
-    assert {:ok, [%{login: "priya"}]} = Pipeline.approve_task(scope, task)
+    assert {:ok, [%{login: "priya-approve-task"}]} = Pipeline.approve_task(scope, task)
     assert_received {:posting, _github}
 
-    assert {:ok, [%{login: "priya"}]} = Pipeline.approve_task(scope, task)
+    assert {:ok, [%{login: "priya-approve-task"}]} = Pipeline.approve_task(scope, task)
     refute_received {:posting, _github}
   end
 
@@ -286,8 +301,8 @@ defmodule Rail.Pipeline.Actions.ApproveTaskTest do
     refute_receive {:held, _other}, 200
     send(held, :answer)
 
-    assert {:ok, [%{login: "priya"}]} = Elixir.Task.await(first)
-    assert {:ok, [%{login: "priya"}]} = Elixir.Task.await(second)
+    assert {:ok, [%{login: "priya-approve-task"}]} = Elixir.Task.await(first)
+    assert {:ok, [%{login: "priya-approve-task"}]} = Elixir.Task.await(second)
     assert_received {:posting, _github}
     refute_received {:posting, _github}
   end

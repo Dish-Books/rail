@@ -16,7 +16,11 @@ defmodule Rail.Pipeline.Actions.CreateScreenCommentTest do
     {:ok, _shot} = Pipeline.save_screen(task, %{key: "file-list", label: "File list", file: "screens/file-list/1.jpg"})
 
     {:ok, %{id: user_id} = ada} =
-      Users.register_oauth_user(%{github_id: "gh_csc_ada", login: "ada", email: "ada@example.com"})
+      Users.register_oauth_user(%{
+        github_id: "gh_csc_ada",
+        login: "ada-create-screen-comment",
+        email: "ada-create-screen-comment@example.com"
+      })
 
     %{task: task, ada: user_scope(user: ada), user_id: user_id}
   end

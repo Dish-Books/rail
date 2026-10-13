@@ -283,8 +283,20 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
 
   describe "the reader's comments" do
     setup %{task: task} do
-      {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_sfr_ada", login: "ada", email: "ada@example.com"})
-      {:ok, grace} = Users.register_oauth_user(%{github_id: "gh_sfr_grace", login: "grace", email: "grace@example.com"})
+      {:ok, ada} =
+        Users.register_oauth_user(%{
+          github_id: "gh_sfr_ada",
+          login: "ada-start-fix-round",
+          email: "ada-start-fix-round@example.com"
+        })
+
+      {:ok, grace} =
+        Users.register_oauth_user(%{
+          github_id: "gh_sfr_grace",
+          login: "grace-start-fix-round",
+          email: "grace-start-fix-round@example.com"
+        })
+
       folder = Path.join([task.scratch_path, "qa", "screens", "file-list"])
       File.mkdir_p!(folder)
       File.write!(Path.join(folder, "1.jpg"), "jpeg")
@@ -337,7 +349,7 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
       assert [%DiffComment{id: ^diff_id, status: :sent}, %DiffComment{id: ^graces_id, status: :unsent}] =
                Pipeline.list_diff_comments(grace, task)
 
-      assert [%DiffComment{id: ^diff_id, status: :sent, user: %{login: "ada"}}] =
+      assert [%DiffComment{id: ^diff_id, status: :sent, user: %{login: "ada-start-fix-round"}}] =
                Pipeline.list_diff_comments(system_scope(), task)
 
       assert %ScreenComment{status: :sent} = Repo.get!(ScreenComment, screen_id)
@@ -768,7 +780,12 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
 
   describe "the fix plan" do
     setup %{task: task} do
-      {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_sfr_plan", login: "ada", email: "ada-plan@example.com"})
+      {:ok, ada} =
+        Users.register_oauth_user(%{
+          github_id: "gh_sfr_plan",
+          login: "ada-start-fix-round",
+          email: "ada-plan@example.com"
+        })
 
       %{
         ada: user_scope(user: ada),

@@ -39,8 +39,19 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_dcs_ada", login: "ada", email: "ada@example.com"})
-    {:ok, grace} = Users.register_oauth_user(%{github_id: "gh_dcs_grace", login: "grace", email: "grace@example.com"})
+    {:ok, ada} =
+      Users.register_oauth_user(%{
+        github_id: "gh_dcs_ada",
+        login: "ada-send-diff-comments",
+        email: "ada-send-diff-comments@example.com"
+      })
+
+    {:ok, grace} =
+      Users.register_oauth_user(%{
+        github_id: "gh_dcs_grace",
+        login: "grace-send-diff-comments",
+        email: "grace-send-diff-comments@example.com"
+      })
 
     %{task: task, role: role, run: run, ada: user_scope(user: ada), grace: user_scope(user: grace)}
   end

@@ -71,7 +71,12 @@ defmodule Rail.Pipeline.Workers.StartApprovedFixPlanTest do
     {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => @plan})
     {:ok, run} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
 
-    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_safp_ada", login: "ada", email: "ada-safp@example.com"})
+    {:ok, ada} =
+      Users.register_oauth_user(%{
+        github_id: "gh_safp_ada",
+        login: "ada-start-approved-fix-plan",
+        email: "ada-safp@example.com"
+      })
 
     {:ok, %Run{status: :running}} =
       Pipeline.approve_fix_plan(user_scope(user: %{ada | project_ids: [project.id]}), run, 1)
@@ -108,16 +113,17 @@ defmodule Rail.Pipeline.Workers.StartApprovedFixPlanTest do
 
     expect(Tools, :start_os_process, fn %Run{id: ^run_id, status: :running} = spawned, ["-p", prompt | _rest] ->
       # The approval is on disk before the turn can end, or its end would read as a planning turn's.
-      assert %FixPlan{approved_by: "ada"} = Pipeline.read_fix_plan(task)
+      assert %FixPlan{approved_by: "ada-start-approved-fix-plan"} = Pipeline.read_fix_plan(task)
       assert prompt =~ "<fix_plan>\n#{@plan}\n</fix_plan>"
       {:ok, %OsProcess{run: spawned}}
     end)
 
     assert :ok = perform_job(StartApprovedFixPlan, args)
 
-    assert %FixPlan{approved_by: "ada", approved_at: %DateTime{}, version: 1} = Pipeline.read_fix_plan(task)
+    assert %FixPlan{approved_by: "ada-start-approved-fix-plan", approved_at: %DateTime{}, version: 1} =
+             Pipeline.read_fix_plan(task)
 
-    assert ["[human] ada approved the fix plan."] =
+    assert ["[human] ada-start-approved-fix-plan approved the fix plan."] =
              for(%{line: line} <- Pipeline.list_run_events(run), line =~ "approved", do: line)
 
     assert_received {:pipeline_changed, ^task_id}

@@ -107,7 +107,13 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
       parent: parent,
       children: [first, _second]
     } do
-      {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_clt_ada", login: "ada", email: "ada@example.com"})
+      {:ok, ada} =
+        Users.register_oauth_user(%{
+          github_id: "gh_clt_ada",
+          login: "ada-cleanup-task",
+          email: "ada-cleanup-task@example.com"
+        })
+
       ada = user_scope(user: ada)
       {:ok, %{id: first_id} = first} = Pipeline.update_task(first, %{stage: :review})
       File.mkdir_p!(Path.join([first.scratch_path, "qa", "screens", "toolbar"]))

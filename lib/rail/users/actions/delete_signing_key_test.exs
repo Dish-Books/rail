@@ -9,8 +9,8 @@ defmodule Rail.Users.Actions.DeleteSigningKeyTest do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_delete_signing_1",
-        login: "ada",
-        email: "ada@example.com",
+        login: "ada-delete-signing-key",
+        email: "ada-delete-signing-key@example.com",
         github_token: "gho_user_token",
         github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
       })

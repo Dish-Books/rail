@@ -69,8 +69,19 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_pclist_ada", login: "ada", email: "ada@example.com"})
-    {:ok, grace} = Users.register_oauth_user(%{github_id: "gh_pclist_grace", login: "grace", email: "grace@example.com"})
+    {:ok, ada} =
+      Users.register_oauth_user(%{
+        github_id: "gh_pclist_ada",
+        login: "ada-send-plan-comments",
+        email: "ada-send-plan-comments@example.com"
+      })
+
+    {:ok, grace} =
+      Users.register_oauth_user(%{
+        github_id: "gh_pclist_grace",
+        login: "grace-send-plan-comments",
+        email: "grace-send-plan-comments@example.com"
+      })
 
     attrs = %{
       target: :design,

@@ -91,7 +91,11 @@ defmodule RailWeb.DesignControllerTest do
 
   test "an option of a task in a project the user cannot access is not found", %{conn: conn, task: task} do
     {:ok, outsider} =
-      Users.register_oauth_user(%{github_id: "gh_outsider", login: "outsider", email: "outsider@example.com"})
+      Users.register_oauth_user(%{
+        github_id: "gh_outsider",
+        login: "outsider-design-controller",
+        email: "outsider-design-controller@example.com"
+      })
 
     {:ok, outsider} = Users.update_user(system_scope(), outsider, %{project_ids: ["prj_other"]})
     conn = log_in_user(conn, outsider)

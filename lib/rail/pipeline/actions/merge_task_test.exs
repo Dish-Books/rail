@@ -30,7 +30,12 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, task} = Pipeline.create_task(issue, :finalize)
     {:ok, task} = Pipeline.update_task(task, %{pr_number: 151, marked_ready_at: DateTime.utc_now()})
 
-    {:ok, priya} = Users.register_oauth_user(%{github_id: "gh_mt_priya", login: "priya", email: "priya@example.com"})
+    {:ok, priya} =
+      Users.register_oauth_user(%{
+        github_id: "gh_mt_priya",
+        login: "priya-merge-task",
+        email: "priya-merge-task@example.com"
+      })
 
     {:ok, priya} =
       Users.update_user(system_scope(), priya, %{
@@ -195,7 +200,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     scope: scope
   } do
     {:ok, %{id: dan_id} = dan} =
-      Users.register_oauth_user(%{github_id: "gh_mt_dan_gh", login: "dan-gh", email: "dan@example.com"})
+      Users.register_oauth_user(%{github_id: "gh_mt_dan_gh", login: "dan-gh", email: "dan-merge-task@example.com"})
 
     {:ok, _dan} = Users.update_user(system_scope(), dan, %{project_ids: [project.id]})
 
@@ -306,9 +311,14 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     project: project,
     task: task
   } do
-    {:ok, admin} = Users.register_oauth_user(%{github_id: "gh_mt_admin", login: "admin", email: "a@example.com"})
+    {:ok, admin} =
+      Users.register_oauth_user(%{github_id: "gh_mt_admin", login: "admin-merge-task", email: "a-merge-task@example.com"})
+
     {:ok, admin} = Users.update_user(system_scope(), admin, %{admin: true})
-    {:ok, dan} = Users.register_oauth_user(%{github_id: "gh_mt_dan", login: "dano", email: "d@example.com"})
+
+    {:ok, dan} =
+      Users.register_oauth_user(%{github_id: "gh_mt_dan", login: "dano-merge-task", email: "d-merge-task@example.com"})
+
     {:ok, dan} = Users.update_user(system_scope(), dan, %{project_ids: [project.id]})
 
     assert {:error, :not_authorized} = Pipeline.merge_task(Scope.for_user(admin), task)

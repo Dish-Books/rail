@@ -29,8 +29,19 @@ defmodule Rail.Pipeline.Actions.ListDiffCommentsTest do
     {:ok, other_task} = Pipeline.create_task(other_issue, :engineer)
     on_exit(fn -> Enum.each([task, other_task], &File.rm_rf(&1.scratch_path)) end)
 
-    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_dcl_ada", login: "ada", email: "ada@example.com"})
-    {:ok, grace} = Users.register_oauth_user(%{github_id: "gh_dcl_grace", login: "grace", email: "grace@example.com"})
+    {:ok, ada} =
+      Users.register_oauth_user(%{
+        github_id: "gh_dcl_ada",
+        login: "ada-list-diff-comments",
+        email: "ada-list-diff-comments@example.com"
+      })
+
+    {:ok, grace} =
+      Users.register_oauth_user(%{
+        github_id: "gh_dcl_grace",
+        login: "grace-list-diff-comments",
+        email: "grace-list-diff-comments@example.com"
+      })
 
     %{task: task, other_task: other_task, ada: user_scope(user: ada), grace: user_scope(user: grace)}
   end
@@ -126,8 +137,8 @@ defmodule Rail.Pipeline.Actions.ListDiffCommentsTest do
 
     for reader <- [grace, system_scope()] do
       assert [
-               %DiffComment{id: ^resolved_id, status: :resolved, user: %{login: "ada"}},
-               %DiffComment{id: ^sent_id, status: :sent, user: %{login: "ada"}}
+               %DiffComment{id: ^resolved_id, status: :resolved, user: %{login: "ada-list-diff-comments"}},
+               %DiffComment{id: ^sent_id, status: :sent, user: %{login: "ada-list-diff-comments"}}
              ] = Pipeline.list_diff_comments(reader, task)
     end
   end
@@ -157,7 +168,9 @@ defmodule Rail.Pipeline.Actions.ListDiffCommentsTest do
     {:ok, %{id: unsent_id}} = Pipeline.create_diff_comment(ada, task, Map.put(comment, :body, "Unsent."))
     {:ok, _theirs} = Pipeline.create_diff_comment(grace, task, Map.put(comment, :body, "Grace's."))
 
-    assert [%DiffComment{id: ^unsent_id, user: %{login: "ada"}}] = Pipeline.list_diff_comments(ada, task, unsent: true)
+    assert [%DiffComment{id: ^unsent_id, user: %{login: "ada-list-diff-comments"}}] =
+             Pipeline.list_diff_comments(ada, task, unsent: true)
+
     assert [%DiffComment{body: "Grace's."}] = Pipeline.list_diff_comments(grace, task, unsent: true)
     assert [%DiffComment{body: "Sent."}, %DiffComment{body: "Unsent."}] = Pipeline.list_diff_comments(ada, task)
   end

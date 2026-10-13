@@ -193,7 +193,11 @@ defmodule Rail.Linear.ClientTest do
 
     test "a call made as a linked user goes out with their token", %{project: project} do
       {:ok, user} =
-        Users.register_oauth_user(%{github_id: "gh_client_linked", login: "client_linked", email: "linked@example.com"})
+        Users.register_oauth_user(%{
+          github_id: "gh_client_linked",
+          login: "client_linked",
+          email: "linked-client@example.com"
+        })
 
       {:ok, user} =
         Users.update_user(Scope.for_system(), user, %{

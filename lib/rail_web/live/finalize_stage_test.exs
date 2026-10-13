@@ -270,7 +270,11 @@ defmodule RailWeb.Live.FinalizeStageTest do
     {:ok, reviews} =
       Agent.start_link(fn ->
         [
-          %{"user" => %{"login" => "jkowalski-dev"}, "state" => "APPROVED", "submitted_at" => "2026-10-10T16:02:00Z"},
+          %{
+            "user" => %{"login" => "jkowalski-dev-finalize-stage"},
+            "state" => "APPROVED",
+            "submitted_at" => "2026-10-10T16:02:00Z"
+          },
           %{"user" => %{"login" => dan.login}, "state" => "APPROVED", "submitted_at" => "2026-10-11T14:31:00Z"}
         ]
       end)
@@ -294,7 +298,12 @@ defmodule RailWeb.Live.FinalizeStageTest do
     assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
     render_async(view)
 
-    assert has_element?(view, "#finalize-approvals #finalize-approval-jkowalski-dev .font-mono", "jkowalski-dev")
+    assert has_element?(
+             view,
+             "#finalize-approvals #finalize-approval-jkowalski-dev-finalize-stage .font-mono",
+             "jkowalski-dev-finalize-stage"
+           )
+
     assert has_element?(view, "#finalize-approval-#{dan.login}", "Dan Okafor")
     assert has_element?(view, "#finalize-approval-#{dan.login} time[datetime]")
     assert has_element?(view, "#finalize-actions.flex-wrap > #finalize-approve:not([disabled])", "Approve")
@@ -456,7 +465,7 @@ defmodule RailWeb.Live.FinalizeStageTest do
     {:ok, _marked} = Pipeline.mark_ready(Rail.Scope.for_user(dan), task)
 
     stub(Pipeline, :list_approvals, fn _task ->
-      {:ok, [%{login: "jkowalski-dev", user: nil, approved_at: ~U[2026-10-10 16:02:00Z]}]}
+      {:ok, [%{login: "jkowalski-dev-finalize-stage", user: nil, approved_at: ~U[2026-10-10 16:02:00Z]}]}
     end)
 
     {:ok, admin} =
@@ -473,7 +482,7 @@ defmodule RailWeb.Live.FinalizeStageTest do
       assert {:ok, view, _html} = live(log_in_user(conn, viewer), ~p"/tasks/#{task.id}")
       render_async(view)
 
-      assert has_element?(view, "#finalize-approval-jkowalski-dev", "jkowalski-dev")
+      assert has_element?(view, "#finalize-approval-jkowalski-dev-finalize-stage", "jkowalski-dev-finalize-stage")
       assert has_element?(view, "#finalize-waiting", "Waiting for a tech lead")
       refute has_element?(view, "#finalize-approve")
       refute has_element?(view, "#finalize-actions")
@@ -486,7 +495,7 @@ defmodule RailWeb.Live.FinalizeStageTest do
     priya: priya
   } do
     stub(Pipeline, :list_approvals, fn _task ->
-      {:ok, [%{login: "jkowalski-dev", user: nil, approved_at: ~U[2026-10-10 16:02:00Z]}]}
+      {:ok, [%{login: "jkowalski-dev-finalize-stage", user: nil, approved_at: ~U[2026-10-10 16:02:00Z]}]}
     end)
 
     assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
@@ -508,7 +517,7 @@ defmodule RailWeb.Live.FinalizeStageTest do
     render_async(view)
 
     assert has_element?(view, "#finalize-merged")
-    assert has_element?(view, "#finalize-approval-jkowalski-dev")
+    assert has_element?(view, "#finalize-approval-jkowalski-dev-finalize-stage")
     refute has_element?(view, "#finalize-approve")
     refute has_element?(view, "#finalize-approved")
   end
@@ -542,7 +551,7 @@ defmodule RailWeb.Live.FinalizeStageTest do
     stub(Pipeline, :list_approvals, fn _task ->
       send(test_pid, {:reading, self()})
       assert_receive :answer, 2_000
-      {:ok, [%{login: "jkowalski-dev", user: nil, approved_at: ~U[2026-10-10 16:02:00Z]}]}
+      {:ok, [%{login: "jkowalski-dev-finalize-stage", user: nil, approved_at: ~U[2026-10-10 16:02:00Z]}]}
     end)
 
     assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
@@ -553,7 +562,7 @@ defmodule RailWeb.Live.FinalizeStageTest do
     refute has_element?(view, "#finalize-approvals")
 
     send(github, :answer)
-    eventually(fn -> assert has_element?(view, "#finalize-approval-jkowalski-dev") end)
+    eventually(fn -> assert has_element?(view, "#finalize-approval-jkowalski-dev-finalize-stage") end)
   end
 
   # A second click while the first approval waits on GitHub sends nothing, and Merge stays to click meanwhile.

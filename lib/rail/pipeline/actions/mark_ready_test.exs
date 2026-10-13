@@ -24,7 +24,8 @@ defmodule Rail.Pipeline.Actions.MarkReadyTest do
     {:ok, task} = Pipeline.create_task(issue, :finalize)
     {:ok, task} = Pipeline.update_task(task, %{pr_number: 151})
 
-    {:ok, dan} = Users.register_oauth_user(%{github_id: "gh_mr_dan", login: "dano", email: "dan@example.com"})
+    {:ok, dan} =
+      Users.register_oauth_user(%{github_id: "gh_mr_dan", login: "dano-mark-ready", email: "dan-mark-ready@example.com"})
 
     {:ok, %User{id: dan_id} = dan} =
       Users.update_user(system_scope(), dan, %{name: "Dan Okafor", project_ids: [project.id]})

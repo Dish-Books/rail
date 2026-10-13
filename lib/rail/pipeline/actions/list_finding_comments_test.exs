@@ -29,8 +29,20 @@ defmodule Rail.Pipeline.Actions.ListFindingCommentsTest do
 
     {:ok, finding} = Pipeline.save_finding(task, attrs)
     {:ok, elsewhere} = Pipeline.save_finding(other, attrs)
-    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_lfc_ada", login: "ada", email: "ada@example.com"})
-    {:ok, grace} = Users.register_oauth_user(%{github_id: "gh_lfc_grace", login: "grace", email: "grace@example.com"})
+
+    {:ok, ada} =
+      Users.register_oauth_user(%{
+        github_id: "gh_lfc_ada",
+        login: "ada-list-finding-comments",
+        email: "ada-list-finding-comments@example.com"
+      })
+
+    {:ok, grace} =
+      Users.register_oauth_user(%{
+        github_id: "gh_lfc_grace",
+        login: "grace-list-finding-comments",
+        email: "grace-list-finding-comments@example.com"
+      })
 
     %{
       task: task,

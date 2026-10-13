@@ -311,7 +311,11 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
       [before, later] =
         Enum.map(["gh-before", "gh-later"], fn login ->
           {:ok, user} =
-            Users.register_oauth_user(%{github_id: "gh_#{login}", login: login, email: "#{login}@example.com"})
+            Users.register_oauth_user(%{
+              github_id: "gh_#{login}_sync-issue",
+              login: "#{login}-sync-issue",
+              email: "#{login}-sync-issue@example.com"
+            })
 
           user
         end)
@@ -327,11 +331,11 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
             Req.Test.json(conn, %{"token" => "ghs_token"})
 
           {"DELETE", "/repos/example/test-gh/issues/7/assignees"} ->
-            assert %{"assignees" => ["gh-before"]} == Jason.decode!(body)
+            assert %{"assignees" => ["gh-before-sync-issue"]} == Jason.decode!(body)
             Req.Test.json(conn, %{})
 
           {"POST", "/repos/example/test-gh/issues/7/assignees"} ->
-            assert %{"assignees" => ["gh-later"]} == Jason.decode!(body)
+            assert %{"assignees" => ["gh-later-sync-issue"]} == Jason.decode!(body)
             conn |> Plug.Conn.put_status(201) |> Req.Test.json(%{})
         end
       end)

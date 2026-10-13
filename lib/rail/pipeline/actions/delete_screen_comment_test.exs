@@ -12,8 +12,20 @@ defmodule Rail.Pipeline.Actions.DeleteScreenCommentTest do
     File.write!(Path.join([task.scratch_path, "qa", "screens", "toolbar", "1.jpg"]), "jpeg")
     {:ok, _shot} = Pipeline.save_screen(task, %{key: "toolbar", label: "Toolbar", file: "screens/toolbar/1.jpg"})
 
-    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_dsc_ada", login: "ada", email: "ada@example.com"})
-    {:ok, grace} = Users.register_oauth_user(%{github_id: "gh_dsc_grace", login: "grace", email: "grace@example.com"})
+    {:ok, ada} =
+      Users.register_oauth_user(%{
+        github_id: "gh_dsc_ada",
+        login: "ada-delete-screen-comment",
+        email: "ada-delete-screen-comment@example.com"
+      })
+
+    {:ok, grace} =
+      Users.register_oauth_user(%{
+        github_id: "gh_dsc_grace",
+        login: "grace-delete-screen-comment",
+        email: "grace-delete-screen-comment@example.com"
+      })
+
     {:ok, comment} = Pipeline.create_screen_comment(user_scope(user: ada), task, %{"key" => "toolbar", "body" => "Hi."})
 
     %{task: task, comment: comment, ada: user_scope(user: ada), grace: user_scope(user: grace)}

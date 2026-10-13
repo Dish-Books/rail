@@ -63,8 +63,19 @@ defmodule Rail.Pipeline.Actions.CreatePlanCommentTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_pcc_ada", login: "ada", email: "ada@example.com"})
-    {:ok, grace} = Users.register_oauth_user(%{github_id: "gh_pcc_grace", login: "grace", email: "grace@example.com"})
+    {:ok, ada} =
+      Users.register_oauth_user(%{
+        github_id: "gh_pcc_ada",
+        login: "ada-create-plan-comment",
+        email: "ada-create-plan-comment@example.com"
+      })
+
+    {:ok, grace} =
+      Users.register_oauth_user(%{
+        github_id: "gh_pcc_grace",
+        login: "grace-create-plan-comment",
+        email: "grace-create-plan-comment@example.com"
+      })
 
     attrs = %{
       target: :design,

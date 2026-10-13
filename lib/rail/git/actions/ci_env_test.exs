@@ -31,14 +31,19 @@ defmodule Rail.Git.Actions.CiEnvTest do
   test "git acts as the ticket owner's GitHub name and email", %{project: project, issue: issue, task: task, repo: repo} do
     {:ok, user} =
       %User{}
-      |> User.changeset(%{github_id: "gh_cie", login: "ada", name: "Ada Lovelace", email: "ada@example.com"})
+      |> User.changeset(%{
+        github_id: "gh_cie",
+        login: "ada-ci-env",
+        name: "Ada Lovelace",
+        email: "ada-ci-env@example.com"
+      })
       |> Repo.insert()
 
     {:ok, _assigned} = Issues.update_issue(issue, %{owner_user_id: user.id})
 
     assert {:ok, env} = Git.ci_env(project, task)
     assert {config, 0} = System.cmd("git", ["config", "--list"], cd: repo, env: Enum.to_list(env))
-    assert config =~ "user.name=Ada Lovelace\nuser.email=ada@example.com\n"
+    assert config =~ "user.name=Ada Lovelace\nuser.email=ada-ci-env@example.com\n"
     assert config =~ "credential.helper="
     assert env["RAIL_GIT_TOKEN"] == "ghs_ci_token"
   end

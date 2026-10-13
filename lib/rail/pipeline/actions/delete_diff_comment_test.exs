@@ -25,8 +25,20 @@ defmodule Rail.Pipeline.Actions.DeleteDiffCommentTest do
     {:ok, task} = Pipeline.create_task(issue, :engineer)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
-    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_dcd_ada", login: "ada", email: "ada@example.com"})
-    {:ok, grace} = Users.register_oauth_user(%{github_id: "gh_dcd_grace", login: "grace", email: "grace@example.com"})
+    {:ok, ada} =
+      Users.register_oauth_user(%{
+        github_id: "gh_dcd_ada",
+        login: "ada-delete-diff-comment",
+        email: "ada-delete-diff-comment@example.com"
+      })
+
+    {:ok, grace} =
+      Users.register_oauth_user(%{
+        github_id: "gh_dcd_grace",
+        login: "grace-delete-diff-comment",
+        email: "grace-delete-diff-comment@example.com"
+      })
+
     ada = user_scope(user: ada)
 
     {:ok, comment} =

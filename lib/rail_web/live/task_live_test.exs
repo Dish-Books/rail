@@ -1121,7 +1121,11 @@ defmodule RailWeb.TaskLiveTest do
     %Question{} = Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which database?"})
 
     {:ok, outsider} =
-      Users.register_oauth_user(%{github_id: "gh_task_outsider", login: "task_outsider", email: "outsider@example.com"})
+      Users.register_oauth_user(%{
+        github_id: "gh_task_outsider",
+        login: "task_outsider",
+        email: "outsider-task-live@example.com"
+      })
 
     {:ok, outsider} = Users.update_user(system_scope(), outsider, %{project_ids: ["prj_other"]})
     conn = log_in_user(conn, outsider)
@@ -1144,7 +1148,12 @@ defmodule RailWeb.TaskLiveTest do
   } do
     linked = fn login, attrs ->
       {:ok, user} =
-        Users.register_oauth_user(%{github_id: "gh_#{login}", login: login, name: login, email: "#{login}@example.com"})
+        Users.register_oauth_user(%{
+          github_id: "gh_#{login}_task-live",
+          login: "#{login}-task-live",
+          name: login,
+          email: "#{login}-task-live@example.com"
+        })
 
       user |> Ecto.Changeset.change(Map.put(attrs, :linear_user_id, "lin_#{login}")) |> Repo.update!()
     end
