@@ -125,7 +125,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     %{project: project, roles: roles, issue: issue}
   end
 
-  test "creates the task at Plan, queues the Linear advance and spawns one process with the three subagents", %{
+  test "creates the task at Plan, queues the Linear advance and spawns one process with no subagents", %{
     roles: %{plan: %Role{id: role_id}},
     issue: %Issue{id: issue_id} = issue
   } do
@@ -140,28 +140,23 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
 
     expect(Tools, :start_os_process, fn %Run{role_id: ^role_id, status: :running} = run, argv ->
       assert ["-p", prompt, "--model", "claude-opus-5-5", "--effort", "high" | _flags] = argv
-      assert prompt =~ "You lead Rail's Plan step"
-      assert prompt =~ "Product, Designer and Architect are your subagents"
-      assert prompt =~ "1. Product first."
-      assert prompt =~ "hand it to Designer and Architect at once rather than one after the other"
-      assert prompt =~ "Architect does not wait for the design"
-      assert prompt =~ "include every rule from the rules section of this brief that bears on its output, word for word"
-      assert prompt =~ "skip Designer and say so in one line"
+      assert prompt =~ "You run Rail's Plan step"
+      assert prompt =~ "You write all three yourself, and save them with Rail's tools."
+      assert prompt =~ "1. The ticket first. Save it with `save_plan`"
+      assert prompt =~ "three options, each saved with `save_design_option`"
+      assert prompt =~ "skip them and say so in one line"
+      assert prompt =~ "Never plan for all three."
       assert prompt =~ "which one you recommend and why"
-      assert prompt =~ "then to each other subagent whose output it affects"
+      assert prompt =~ "A part you leave out of a save stays as the last save left it"
+      assert prompt =~ "carry it everywhere it reaches before your turn ends"
       assert prompt =~ ~s(A pick arrives as a message that says only "I picked <title> \(<key>\).")
       assert prompt =~ "One round per turn."
       assert prompt =~ "Nothing is saved yet."
       assert prompt =~ "title: Attachments follow their source document"
       assert prompt =~ ~s(<comment author="Ana")
 
-      [json] = for ["--agents", json] <- Enum.chunk_every(argv, 2, 1), do: json
-
-      assert %{
-               "product" => %{"model" => "claude-sonnet-5-5", "prompt" => "You are the product agent." <> _product},
-               "designer" => %{"model" => "claude-opus-5-5", "prompt" => "You are the design agent." <> _design},
-               "architect" => %{"model" => "claude-fable-5-1", "prompt" => "You are the architect agent." <> _architect}
-             } = Jason.decode!(json)
+      refute "--agents" in argv
+      refute prompt =~ "subagent"
 
       {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
     end)
@@ -205,7 +200,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
-    {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Attachments follow", description: "Body."})
+    {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Attachments follow", description: "Body."})
     design = Path.join(task.scratch_path, "design")
     File.mkdir_p!(design)
 
@@ -234,8 +229,8 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
       assert prompt =~ "- The human picked rows."
       assert prompt =~ "- The plan, written for rows."
       assert prompt =~ "- A split into 2: 1. Deploys; 2. QA on them."
-      assert prompt =~ "have Architect decide where it splits and save it with `save_split`"
-      assert "--agents" in argv
+      assert prompt =~ "decide where it splits from the code and save it with `save_split`"
+      refute "--agents" in argv
       {:ok, %OsProcess{run: spawned}}
     end)
 

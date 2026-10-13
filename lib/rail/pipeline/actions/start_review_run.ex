@@ -21,7 +21,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
   alias Rail.Pipeline.Schemas.FindingNote
   alias Rail.Pipeline.Schemas.FindingPlace
   alias Rail.Pipeline.Schemas.FixPlan
-  alias Rail.Pipeline.Schemas.ImplementationPlan
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
@@ -196,11 +196,11 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
 
   # A task without a plan is read against its ticket alone.
   defp plan(%Task{} = task) do
-    case Pipeline.get_implementation_plan(task) do
-      {:ok, %ImplementationPlan{content: content}} ->
+    case Pipeline.read_plan(task) do
+      %Round{plan: content, approved_at: %DateTime{}} when is_binary(content) ->
         "The approved implementation plan the change was built from. It is the specification: where it named a file and what changed in it, that is what should have changed, and a change that did something else instead, or stopped short of it, is a finding however good the code is. Work beyond the plan is judged on whether it is right.\n\n#{String.trim(content)}\n"
 
-      {:error, :not_found} ->
+      _unapproved ->
         "There is no implementation plan for this ticket, so the ticket below is the whole specification.\n"
     end
   end

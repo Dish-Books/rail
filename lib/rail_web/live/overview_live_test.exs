@@ -7,8 +7,8 @@ defmodule RailWeb.OverviewLiveTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
@@ -572,6 +572,9 @@ defmodule RailWeb.OverviewLiveTest do
 
           part = %{
             number: number,
+            title: "A part",
+            ticket: "Its criteria.",
+            estimate: 1,
             builds_on: builds_on,
             builds_screen: false,
             plan: "## Implementation plan\n\nPart #{number}."
@@ -628,6 +631,9 @@ defmodule RailWeb.OverviewLiveTest do
 
           part = %{
             number: number,
+            title: "A part",
+            ticket: "Its criteria.",
+            estimate: 1,
             builds_on: builds_on,
             builds_screen: false,
             plan: "## Implementation plan\n\nPart #{number}."
@@ -689,6 +695,9 @@ defmodule RailWeb.OverviewLiveTest do
 
           part = %{
             number: number,
+            title: "A part",
+            ticket: "Its criteria.",
+            estimate: 1,
             builds_on: builds_on,
             builds_screen: false,
             plan: "## Implementation plan\n\nPart #{number}."
@@ -745,6 +754,9 @@ defmodule RailWeb.OverviewLiveTest do
 
           part = %{
             number: number,
+            title: "A part",
+            ticket: "Its criteria.",
+            estimate: 1,
             builds_on: builds_on,
             builds_screen: false,
             plan: "## Implementation plan\n\nPart #{number}."
@@ -754,7 +766,7 @@ defmodule RailWeb.OverviewLiveTest do
           Repo.preload(child, [:issue, :project])
         end
 
-      Repo.insert!(%ImplementationPlan{task_id: parent.id, content: "## Implementation plan", captured_at: now})
+      Repo.insert!(%Round{task_id: parent.id, number: 1, plan: "## Implementation plan", approved_at: now})
 
       {:ok, _done} =
         Pipeline.create_run(%{

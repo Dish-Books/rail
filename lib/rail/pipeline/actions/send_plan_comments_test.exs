@@ -334,7 +334,7 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
     ada: ada,
     attrs: attrs
   } do
-    {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Lanes", description: "- Group by project."})
+    {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Lanes", description: "- Group by project."})
     {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan})
     {:ok, %{id: design_id}} = Pipeline.create_plan_comment(ada, run, attrs)
     {:ok, %{id: plan_id}} = Pipeline.create_plan_comment(ada, run, Map.merge(@line, %{target: :plan, body: "Why?"}))
@@ -398,7 +398,7 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
     ada: ada,
     attrs: attrs
   } do
-    {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Lanes", description: "- Group by project."})
+    {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Lanes", description: "- Group by project."})
     {:ok, _design} = Pipeline.create_plan_comment(ada, run, attrs)
     {:ok, _ticket} = Pipeline.create_plan_comment(ada, run, Map.merge(@line, %{target: :ticket, body: "Who?"}))
     {:ok, running} = Pipeline.update_run(run, %{status: :running})

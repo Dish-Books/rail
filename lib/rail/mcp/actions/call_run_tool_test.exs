@@ -295,10 +295,16 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
         %RunContext{os_process: %OsProcess{task_id: task.id}, role: role, user: nil}
       end
 
-      assert {:ok, %{"content" => [%{"text" => "Ticket saved: One round." <> _rest}]}} =
-               Mcp.call_run_tool(context.(:plan), "save_ticket", %{"title" => "One round", "description" => "Body."})
+      assert {:ok,
+              %{"content" => [%{"text" => "Ticket saved: One round. No implementation plan is saved yet." <> _rest}]}} =
+               Mcp.call_run_tool(context.(:plan), "save_plan", %{"title" => "One round", "description" => "Body."})
 
-      assert {:ok, %{"content" => [%{"text" => "Plan saved, written for no design option yet." <> _rest}]}} =
+      assert {:ok,
+              %{
+                "content" => [
+                  %{"text" => "Ticket saved: One round. Plan saved, written for no design option yet." <> _rest}
+                ]
+              }} =
                Mcp.call_run_tool(context.(:plan), "save_plan", %{"plan" => @plan})
 
       children = [
@@ -330,7 +336,6 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
       test_pid = self()
 
       saves = [
-        {:plan, "save_ticket", :save_ticket},
         {:plan, "save_design_option", :save_design_option},
         {:plan, "save_plan", :save_plan},
         {:plan, "save_split", :save_split},

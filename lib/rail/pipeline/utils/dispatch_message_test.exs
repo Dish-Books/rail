@@ -107,16 +107,9 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
   end
 
-  test "a message to a Plan run spawns with Product, Designer and Architect as subagents", %{run: run} do
+  test "a message to a Plan run spawns the one agent, with no subagents", %{run: run} do
     expect(Tools, :start_os_process, fn spawned, argv ->
-      [json] = for ["--agents", json] <- Enum.chunk_every(argv, 2, 1), do: json
-
-      assert %{
-               "product" => %{"prompt" => "You are the product agent." <> _product_rules},
-               "designer" => %{"prompt" => "You are the design agent." <> _design_rules},
-               "architect" => %{"prompt" => "You are the architect agent." <> _architect_rules}
-             } = Jason.decode!(json)
-
+      refute "--agents" in argv
       {:ok, %OsProcess{run: spawned}}
     end)
 

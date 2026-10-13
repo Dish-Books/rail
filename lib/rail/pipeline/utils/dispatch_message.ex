@@ -13,7 +13,6 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   """
 
   import Rail.Pipeline.Utils.DeliverPlanComments
-  import Rail.Pipeline.Utils.PlanSubagents
   import Rail.Pipeline.Utils.PrepareTurn
   import Rail.Pipeline.Utils.PrepareWorktree
   import Rail.Pipeline.Utils.ReviewSubagents
@@ -159,7 +158,6 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
     end
   end
 
-  defp subagents(%Role{stage: :plan}, %Task{} = task), do: plan_subagents(task)
   defp subagents(%Role{stage: :review_lead}, %Task{} = task), do: review_subagents(task)
   defp subagents(%Role{}, %Task{}), do: []
 

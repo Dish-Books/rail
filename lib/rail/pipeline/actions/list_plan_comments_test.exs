@@ -111,7 +111,7 @@ defmodule Rail.Pipeline.Actions.ListPlanCommentsTest do
   test "a design comment and then a ticket comment come back as 1 and 2 to their author alone, and a later design
         comment moves ahead of the ticket's",
        %{task: task, run: run, ada: ada, grace: grace, attrs: attrs} do
-    {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Lanes", description: "- Group by project."})
+    {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Lanes", description: "- Group by project."})
     {:ok, %{id: first_design}} = Pipeline.create_plan_comment(ada, run, attrs)
 
     {:ok, %{id: ticket_id}} =

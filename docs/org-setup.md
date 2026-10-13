@@ -108,7 +108,7 @@ Check, for a GitHub-tracked project: the repository has the nine `rail:` labels 
 
 Every stage runs as a role of the project: its agent CLI, model and prompt. A project without a role for a stage cannot start that stage. In Settings > Roles, either copy the roles of a project that has them (Copy roles) or create one per stage. The model each role names must be listed on a signed-in backend (`docs/machine-setup.md`, step 9).
 
-Check: Settings > Roles lists a role for each of plan (with product, design and architect, which it runs as subagents), engineer, review, QA and demo for the project, and every model they name appears on a ready backend.
+Check: Settings > Roles lists a role for each of plan, engineer, review, QA and demo for the project, and every model they name appears on a ready backend.
 
 ## 8. First task
 

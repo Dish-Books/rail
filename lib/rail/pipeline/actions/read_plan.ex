@@ -1,40 +1,20 @@
 defmodule Rail.Pipeline.Actions.ReadPlan do
   @moduledoc """
-  Reads the implementation plan saved into a task's scratch directory, at
-  `<scratch>/plans/<identifier>.md`, with the design option `save_plan` recorded beside it.
+  Reads a task's plan: its first round, which holds the ticket, the implementation plan, the design option the plan
+  is written for and, once a person approved it, when.
   """
 
-  alias Rail.Issues.Schemas.Issue
+  import Ecto.Query
+
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Repo
 
   @doc """
-  Returns `task`'s plan as `%{content: markdown, saved_at: time, design: %{key:, title:} | nil}`, or
-  `nil` when there is none yet. A blank file is no plan. Requires `issue` to be preloaded.
+  Returns `task`'s first round, or `nil` when nothing of its plan is saved yet. Its `plan` is `nil` while only the
+  ticket is saved, and its `approved_at` is `nil` until it is approved.
   """
-  def read_plan(%Task{scratch_path: scratch_path, issue: %Issue{identifier: identifier}}) do
-    dir = Path.join(scratch_path, "plans")
-    path = Path.join(dir, "#{identifier}.md")
-
-    with {:ok, content} <- File.read(path),
-         false <- String.trim(content) == "",
-         {:ok, %File.Stat{mtime: mtime}} <- File.stat(path, time: :posix) do
-      %{
-        content: content,
-        saved_at: DateTime.from_unix!(mtime),
-        design: design(Path.join(dir, "#{identifier}.design.json"))
-      }
-    else
-      _no_plan -> nil
-    end
-  end
-
-  # Rail writes this file, but a hand-edited one names no option rather than crashing the page.
-  defp design(path) do
-    with {:ok, content} <- File.read(path),
-         {:ok, %{"key" => key, "title" => title}} when is_binary(key) and is_binary(title) <- Jason.decode(content) do
-      %{key: key, title: title}
-    else
-      _none -> nil
-    end
+  def read_plan(%Task{id: task_id}) do
+    Repo.one(from r in Round, where: r.task_id == ^task_id and r.number == 1)
   end
 end

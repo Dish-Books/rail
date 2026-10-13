@@ -4,32 +4,13 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
   alias Rail.Issues
   alias Rail.Learnings.Schemas.LearningRetrieval
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.ImplementationPlan
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
-
-  # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
-  @plan """
-  ## Implementation plan
-
-  ### Approach
-
-  Extend the module.
-
-  No diagrams: one module changes.
-
-  ### File-level changes
-
-  - `lib/rail.ex`: extends the module.
-
-  ### Verification
-
-  - `lib/rail_test.exs`: covers the extension.
-  """
 
   setup %{project: project} do
     scope = system_scope()
@@ -67,14 +48,13 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     task: %Task{worktree_path: worktree_path} = task,
     run: run
   } do
-    %ImplementationPlan{}
-    |> ImplementationPlan.changeset(%{
+    Repo.insert!(%Round{
       task_id: task.id,
-      content:
+      number: 1,
+      plan:
         ~s{### Approach\nExtend the invoices module.\n\n```mermaid\nflowchart LR\n  A["InvoicesLive"] --> B["Invoices"]\n```\n\n```elixir\ndef list_invoices(scope, filters)\n```},
-      captured_at: DateTime.utc_now()
+      approved_at: DateTime.utc_now()
     })
-    |> Repo.insert!()
 
     commits_dir = Path.join(task.scratch_path, "commits")
     test_pid = self()
@@ -242,14 +222,15 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_engineer_run(run)
   end
 
-  test "a plan and a picked option revised after approval are what the next Engineer brief carries", %{
+  test "a picked option revised after approval is what the next Engineer brief carries, with the plan as approved", %{
     task: task,
     run: run
   } do
-    Repo.insert!(%ImplementationPlan{
+    Repo.insert!(%Round{
       task_id: task.id,
-      content: "## Implementation plan\n\nAs approved.",
-      captured_at: DateTime.utc_now()
+      number: 1,
+      plan: "## Implementation plan\n\nAs approved.",
+      approved_at: DateTime.utc_now()
     })
 
     design_dir = Path.join(task.scratch_path, "design")
@@ -258,16 +239,13 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     File.write!(Path.join(design_dir, "cards.html"), "<h1>As approved</h1>")
     File.write!(Path.join(design_dir, "picked"), "cards")
 
-    {:ok, _plan} =
-      Pipeline.save_plan(task, %{plan: String.replace(@plan, "Extend the module.", "Revised for the comments.")})
-
     File.write!(Path.join(design_dir, "cards.html"), "<h1>Revised for the comments</h1>")
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
       assert ["-p", prompt | _rest] = argv
-      assert prompt =~ "Revised for the comments."
+      assert prompt =~ "As approved."
       assert prompt =~ "<h1>Revised for the comments</h1>"
-      refute prompt =~ "As approved"
+      refute prompt =~ "<h1>As approved</h1>"
 
       {:ok, %OsProcess{run: spawned}}
     end)
@@ -373,13 +351,12 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     } do
       stub_vertex(%{"Filter invoices" => vector([1.0])})
 
-      %ImplementationPlan{}
-      |> ImplementationPlan.changeset(%{
+      Repo.insert!(%Round{
         task_id: task.id,
-        content: "Extend the invoices module.",
-        captured_at: DateTime.utc_now()
+        number: 1,
+        plan: "Extend the invoices module.",
+        approved_at: DateTime.utc_now()
       })
-      |> Repo.insert!()
 
       rule =
         learning(project, %{rule: "Filters live in the URL", why: "So a view can be linked", kind: :convention},

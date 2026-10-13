@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.ApprovePlan do
   @moduledoc """
   Approves the Plan step in one go: the ticket, with its priority and estimate, and the picked design are
-  published to the issue, the plan is recorded as the one the engineer builds from, and the task moves to
+  published to the issue, the task's round is marked approved by whoever approved it, and the task moves to
   Engineer, where a `StartEngineer` job committed with the move starts the engineer. With a split saved, each child becomes a Linear sub-issue with a task of its own instead, the parent
   moves to Split, and an `AdvanceSplit` job committed with them starts the children, so they start even if the
   caller dies. Unsent plan comments are deleted, since the conversation they would go to closes.
@@ -14,12 +14,12 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
   import Ecto.Query
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.BroadcastPlanComments
-  import Rail.Pipeline.Utils.RecordImplementationPlan
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.PlanComment
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.AdvanceSplit
@@ -41,12 +41,11 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
 
         with true <- Scope.can_access_project?(scope, task.project_id) || {:error, :not_found},
              :ok <- approvable(task),
-             {:ok, ticket} <- ticket(task),
-             {:ok, plan} <- plan(task),
-             {:ok, design} <- design(task, plan),
+             {:ok, %Round{ticket: ticket} = round} <- plan(task),
+             {:ok, design} <- design(task, round),
              :ok <- publish(task, ticket, design),
              {:ok, children} <- create_children(scope, task, Pipeline.read_split(task)) do
-          record_implementation_plan(task, plan.content)
+          {:ok, _approved} = round |> Round.approve_changeset(scope.user && scope.user.id) |> Repo.update()
           authors = delete_unsent_comments(task)
           {:ok, run} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
           {:ok, task} = Pipeline.enter_stage(task, if(children == [], do: :engineer, else: :split), start: false)
@@ -103,23 +102,17 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
     if Task.running?(task), do: {:error, :stage_running}, else: :ok
   end
 
-  defp ticket(%Task{} = task) do
-    case Pipeline.read_ticket(task) do
-      %{} = ticket -> {:ok, ticket}
+  defp plan(%Task{} = task) do
+    case Pipeline.read_plan(task) do
+      %Round{plan: plan} = round when is_binary(plan) -> {:ok, round}
+      %Round{} -> {:error, :no_plan}
       nil -> {:error, :no_ticket}
     end
   end
 
-  defp plan(%Task{} = task) do
-    case Pipeline.read_plan(task) do
-      %{} = plan -> {:ok, plan}
-      nil -> {:error, :no_plan}
-    end
-  end
-
   # With no options there is no screen, and the ticket goes out alone.
-  defp design(%Task{} = task, plan) do
-    written_for = plan.design && plan.design.key
+  defp design(%Task{} = task, %Round{design: design}) do
+    written_for = design && design.key
 
     case Pipeline.read_design(task, pages: false) do
       %{options: []} -> {:ok, nil}

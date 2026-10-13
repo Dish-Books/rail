@@ -88,15 +88,15 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     refute_enqueued(worker: AdvanceTrackerState)
   end
 
-  test "Plan is spawned with its own brief and its subagents, so Retry restarts it on that brief", %{
+  test "Plan is spawned with its own brief and no subagents, so Retry restarts it on that brief", %{
     task: task,
     roles: roles
   } do
     %{id: plan_role_id} = roles[:plan]
 
     expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] = argv ->
-      assert prompt =~ "You lead Rail's Plan step"
-      assert "--agents" in argv
+      assert prompt =~ "You run Rail's Plan step"
+      refute "--agents" in argv
       {:ok, %OsProcess{run: spawned, task: task}}
     end)
 

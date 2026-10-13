@@ -6,7 +6,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.ImplementationPlan
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.AdvanceSplit
@@ -77,7 +77,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
-    {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Approved title", description: "The approved ticket body."})
+    {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Approved title", description: "The approved ticket body."})
     {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan})
 
     {:ok, run} =
@@ -155,32 +155,9 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
     assert %Run{status: :running} = Repo.get_by(Run, task_id: task.id, role_id: roles[:engineer].id)
     assert %Issue{title: "Approved title", description: "The approved ticket body."} = Repo.get!(Issue, task.issue_id)
 
-    assert %ImplementationPlan{content: @plan} =
-             Repo.get_by(ImplementationPlan, task_id: task.id)
-  end
+    plan = String.trim(@plan)
 
-  test "approving again after a return to Plan replaces the plan Engineer builds from", %{
-    task: task,
-    roles: roles,
-    run: run
-  } do
-    {:ok, _run} = Pipeline.approve_plan(system_scope(), run)
-    Repo.update_all(from(r in Run, where: r.role_id == ^roles[:engineer].id), set: [status: :finished])
-    %ImplementationPlan{id: id, captured_at: first_at} = Repo.get_by(ImplementationPlan, task_id: task.id)
-    {:ok, task} = Pipeline.update_task(Repo.reload!(task), %{stage: :plan})
-    second = String.replace(@plan, "Extend the module.", "The second agreement.")
-    {:ok, _plan} = Pipeline.save_plan(task, %{plan: second})
-
-    assert {:ok, %Run{}} = Pipeline.approve_plan(system_scope(), run)
-
-    assert %ImplementationPlan{
-             id: ^id,
-             content: ^second,
-             captured_at: second_at
-           } =
-             Repo.get_by(ImplementationPlan, task_id: task.id)
-
-    assert DateTime.after?(second_at, first_at)
+    assert %Round{number: 1, plan: ^plan, approved_at: %DateTime{}, approved_by_id: nil} = Pipeline.read_plan(task)
   end
 
   test "with a pick it adds the picked design's section and screenshot to the ticket in one write", %{
@@ -226,10 +203,10 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   end
 
   test "is refused without a ticket, or without a plan", %{task: task, run: run} do
-    File.rm!(Path.join([task.scratch_path, "plans", "APP-1.md"]))
+    Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [plan: nil])
     assert {:error, :no_plan} = Pipeline.approve_plan(system_scope(), run)
 
-    File.rm!(Path.join([task.scratch_path, "tickets", "APP-1.md"]))
+    Repo.delete_all(from(r in Round, where: r.task_id == ^task.id))
     assert {:error, :no_ticket} = Pipeline.approve_plan(system_scope(), run)
 
     assert %Task{stage: :plan} = Repo.reload!(task)
@@ -247,7 +224,10 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
     picked.()
     assert {:error, :plan_not_for_pick} = Pipeline.approve_plan(system_scope(), run)
 
-    File.write!(Path.join([task.scratch_path, "plans", "APP-1.design.json"]), ~s({"key": "cards", "title": "Cards"}))
+    Repo.update_all(from(r in Round, where: r.task_id == ^task.id),
+      set: [design: %Round.Design{key: "cards", title: "Cards"}]
+    )
+
     assert {:error, :plan_not_for_pick} = Pipeline.approve_plan(system_scope(), run)
   end
 
@@ -271,7 +251,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
 
     assert {:error, _reason} = Pipeline.approve_plan(system_scope(), run)
     assert %Task{stage: :plan} = Repo.reload!(task)
-    refute Repo.get_by(ImplementationPlan, task_id: task.id)
+    assert %Round{approved_at: nil} = Pipeline.read_plan(task)
     assert %Run{stage_outcome: :done} = Repo.reload!(run)
   end
 
@@ -286,7 +266,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
 
     assert {:error, :linear_down} = Pipeline.approve_plan(system_scope(), run)
     assert %Task{stage: :plan} = Repo.reload!(task)
-    refute Repo.get_by(ImplementationPlan, task_id: task.id)
+    assert %Round{approved_at: nil} = Pipeline.read_plan(task)
   end
 
   test "nothing is approved while Plan is still working", %{run: run} do
@@ -302,7 +282,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
 
   test "the ticket's priority and estimate go to the issue with its title and description", %{task: task, run: run} do
     {:ok, _ticket} =
-      Pipeline.save_ticket(task, %{
+      Pipeline.save_plan(task, %{
         title: "Approved title",
         description: "The approved ticket body.",
         priority: :high,
@@ -370,7 +350,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
         body: "Why?"
       })
 
-    File.rm!(Path.join([task.scratch_path, "tickets", "APP-1.md"]))
+    Repo.delete_all(from(r in Round, where: r.task_id == ^task.id))
 
     assert {:error, :no_ticket} = Pipeline.approve_plan(system_scope(), run)
     assert [%{id: ^id}] = Pipeline.list_plan_comments(ada, task)
@@ -464,11 +444,11 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
                  builds_on: [],
                  issue: %Issue{identifier: "APP-2", state: :todo},
                  runs: [%Run{role_id: ^engineer_id}],
-                 implementation_plan: %ImplementationPlan{content: @part}
+                 rounds: [%Round{number: 1, plan: @part, approved_at: %DateTime{}, ticket: %{title: _first}}]
                },
                %Task{stage: :engineer, split_position: 2, builds_on: [1], runs: []},
                %Task{stage: :engineer, split_position: 3, runs: [%Run{role_id: ^engineer_id}]}
-             ] = Pipeline.list_tasks(parent_task_id: task.id, preload: [:issue, :runs, :implementation_plan])
+             ] = Pipeline.list_tasks(parent_task_id: task.id, preload: [:issue, :runs, :rounds])
 
       for %Task{issue_id: child_issue_id} <- Pipeline.list_tasks(parent_task_id: task.id) do
         assert_received {:issue_changed, ^child_issue_id}
@@ -541,7 +521,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
       assert {:error, {:linear_mutation_failed, "issueCreate"}} = Pipeline.approve_plan(system_scope(), run)
       assert %Task{stage: :plan} = Repo.reload!(task)
       assert Pipeline.list_tasks(parent_task_id: task.id) == []
-      refute Repo.get_by(ImplementationPlan, task_id: task.id)
+      assert %Round{approved_at: nil} = Pipeline.read_plan(task)
     end
   end
 end

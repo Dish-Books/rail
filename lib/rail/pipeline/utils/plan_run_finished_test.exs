@@ -66,14 +66,13 @@ defmodule Rail.Pipeline.Utils.PlanRunFinishedTest do
       end
     end
 
-    ticket = fn -> {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Plan Finished", description: "Body."}) end
+    ticket = fn -> {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Plan Finished", description: "Body."}) end
     plan = fn -> {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan}) end
 
     %{run: Repo.preload(run, [:task, :role]), options: options, ticket: ticket, plan: plan, design_dir: design_dir}
   end
 
-  test "a turn that saved no ticket records that first", %{run: run, plan: plan} do
-    plan.()
+  test "a turn that saved nothing records the missing ticket first", %{run: run} do
     assert %Run{error: "The Plan agent did not save a ticket."} = plan_run_finished(run, [])
   end
 

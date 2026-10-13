@@ -17,7 +17,6 @@ defmodule RailWeb.Live.PlanStage do
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -1141,9 +1140,11 @@ defmodule RailWeb.Live.PlanStage do
 
   defp load(socket) do
     %{task: task, run: run} = socket.assigns
-    ticket = Pipeline.read_ticket(task)
+    round = Pipeline.read_plan(task)
+    ticket = round && round.ticket && Map.put(Map.from_struct(round.ticket), :saved_at, round.plan_saved_at)
     design = Pipeline.read_design(task)
-    {plan, approved} = plan(task)
+    plan = if round && round.plan, do: %{content: round.plan, saved_at: round.plan_saved_at, design: round.design}
+    approved = plan != nil and round.approved_at != nil
     split = Pipeline.read_split(task)
     running = Run.running?(run)
     can_chat = Run.can_chat?(run)
@@ -1334,22 +1335,6 @@ defmodule RailWeb.Live.PlanStage do
 
   # Clamped, so an element scrolled partly out of the frame cannot push the box out of it.
   defp percent(value, whole), do: (value / whole * 100) |> max(0.0) |> min(100.0) |> Float.round(3)
-
-  # Once the task has left Plan the page shows what the later stages were given.
-  defp plan(%Task{stage: :plan} = task), do: {Pipeline.read_plan(task), false}
-
-  defp plan(%Task{} = task) do
-    case Pipeline.get_implementation_plan(task) do
-      {:ok, %ImplementationPlan{content: content, captured_at: captured_at}} ->
-        scratch = Pipeline.read_plan(task)
-
-        {%{content: content, saved_at: (scratch && scratch.saved_at) || captured_at, design: scratch && scratch.design},
-         true}
-
-      {:error, :not_found} ->
-        {Pipeline.read_plan(task), false}
-    end
-  end
 
   defp approvable?(%{approvable: approvable}, ticket, design, plan) do
     approvable and ticket != nil and plan != nil and

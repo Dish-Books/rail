@@ -9,8 +9,8 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
   alias Rail.Learnings.Schemas.ProcessedPullRequest
   alias Rail.Learnings.Workers.CollectPullRequest
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles
   alias Rail.Tools
@@ -98,13 +98,12 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
 
     Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Behind a flag?"})
 
-    %ImplementationPlan{}
-    |> ImplementationPlan.changeset(%{
+    Repo.insert!(%Round{
       task_id: task.id,
-      content: "Extend the invoices module.",
-      captured_at: DateTime.utc_now()
+      number: 1,
+      plan: "Extend the invoices module.",
+      approved_at: DateTime.utc_now()
     })
-    |> Repo.insert!()
 
     Req.Test.stub(Client, fn conn ->
       case conn.request_path do

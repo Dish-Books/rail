@@ -281,30 +281,6 @@ defmodule Rail.Mcp.Utils.McpTools do
 
   @plan_tools [
     %{
-      "name" => "save_ticket",
-      "description" =>
-        "Save the ticket. The panel shows it to the human as soon as it is saved, so save a first draft as " <>
-          "soon as you have one and save again after every change: each save replaces the ticket in full. " <>
-          "A save in the wrong shape is refused naming each field, and the last good save stays.",
-      "inputSchema" => %{
-        "type" => "object",
-        "properties" => %{
-          "title" => %{"type" => "string", "description" => "The ticket title, one line."},
-          "description" => %{"type" => "string", "description" => "The ticket body, in markdown, verbatim."},
-          "priority" => %{
-            "type" => "string",
-            "enum" => ["urgent", "high", "medium", "low"],
-            "description" => "Left out, the issue's own priority stays."
-          },
-          "estimate" => %{
-            "type" => "integer",
-            "description" => "Points, zero or more. Left out, the issue's own estimate stays."
-          }
-        },
-        "required" => ["title", "description"]
-      }
-    },
-    %{
       "name" => "save_design_option",
       "description" =>
         "Save one design option once its page `<key>.html` and screenshot `<key>.png` exist in the design " <>
@@ -332,23 +308,35 @@ defmodule Rail.Mcp.Utils.McpTools do
     %{
       "name" => "save_plan",
       "description" =>
-        "Save the implementation plan. The panel shows it as soon as it is saved, so save from the first " <>
-          "draft and again after every review comment: each save replaces the plan in full. It must open with " <>
-          "the `## Implementation plan` heading and hold the `###` sections your brief lists, in order; a save " <>
-          "whose sections are off is refused with what to fix. Name the design option it is written for; approval needs " <>
-          "the plan saved for the option the human picked.",
+        "Save the plan: the ticket and the implementation plan, with the design option the plan is written for. " <>
+          "The panel shows each save at once, so save the ticket as soon as you have a draft, before the " <>
+          "implementation plan exists, and save again after every change. A part you leave out stays as the last " <>
+          "save left it, and a part you give replaces it in full. `plan` must open with the `## Implementation " <>
+          "plan` heading and hold the `###` sections your brief lists, in order. A save in the wrong shape is " <>
+          "refused naming what to fix, and the last good save stays. Approval needs the plan saved for the option " <>
+          "the human picked.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{
-          "plan" => %{"type" => "string", "description" => "The whole plan, in markdown."},
+          "title" => %{"type" => "string", "description" => "The ticket title, one line."},
+          "description" => %{"type" => "string", "description" => "The ticket body, in markdown, verbatim."},
+          "priority" => %{
+            "type" => "string",
+            "enum" => ["urgent", "high", "medium", "low"],
+            "description" => "Never saved, the issue's own priority stays."
+          },
+          "estimate" => %{
+            "type" => "integer",
+            "description" => "Points, zero or more. Never saved, the issue's own estimate stays."
+          },
+          "plan" => %{"type" => "string", "description" => "The whole implementation plan, in markdown."},
           "design" => %{
             "type" => "string",
             "description" =>
-              "The key of the saved design option this plan is written for. Leave it out when there are no " <>
-                "options, or while the plan leaves the screen open before the pick."
+              "The key of the saved design option the implementation plan is written for. Leave it out when " <>
+                "there are no options, or while the plan leaves the screen open before the pick."
           }
-        },
-        "required" => ["plan"]
+        }
       }
     },
     %{

@@ -17,8 +17,8 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearnings do
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
-  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
@@ -88,9 +88,12 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearnings do
   defp write_files(%Task{issue: %Issue{} = issue} = task, dir) do
     File.write!(Path.join(dir, "ticket.md"), "# #{issue.identifier} #{issue.title}\n\n#{issue.description}\n")
 
-    case Pipeline.get_implementation_plan(task) do
-      {:ok, %ImplementationPlan{content: content}} -> File.write!(Path.join(dir, "plan.md"), content)
-      {:error, :not_found} -> :ok
+    case Pipeline.read_plan(task) do
+      %Round{plan: content, approved_at: %DateTime{}} when is_binary(content) ->
+        File.write!(Path.join(dir, "plan.md"), content)
+
+      _unapproved ->
+        :ok
     end
 
     File.write!(Path.join(dir, "findings.md"), findings_file(task))

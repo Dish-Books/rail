@@ -1,10 +1,13 @@
 defmodule Rail.Pipeline.Schemas.Round do
   @moduledoc """
   One pass of a task from a plan through the engineer to its review, numbered from 1. Round 1's plan is the task's
-  initial plan, and each later round's is the one the review before it wrote.
+  initial plan, with the ticket and the design option it is written for, and each later round's is the one the
+  review before it wrote.
   """
   use Rail.Schema
 
+  alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Users.Schemas.User
 
@@ -23,6 +26,19 @@ defmodule Rail.Pipeline.Schemas.Round do
     field :reviewed_at, :utc_datetime_usec
     field :finished_at, :utc_datetime_usec
 
+    embeds_one :ticket, Ticket, primary_key: false, on_replace: :update do
+      field :title, :string
+      field :description, :string
+      field :priority, Ecto.Enum, values: Issue.priorities()
+      field :estimate, :integer
+    end
+
+    # The design option the plan is written for, kept by name since the pick deletes the others.
+    embeds_one :design, Design, primary_key: false, on_replace: :delete do
+      field :key, :string
+      field :title, :string
+    end
+
     belongs_to :task, Task
     belongs_to :approved_by, User
 
@@ -40,14 +56,41 @@ defmodule Rail.Pipeline.Schemas.Round do
   end
 
   @doc """
-  Takes the round's next plan from `attrs`, with whether it asks for a demo, as its next version.
+  Builds a changeset for the first round of a split's `child` task: its ticket and its part of the parent's plan,
+  approved with the parent's.
   """
-  def plan_changeset(%__MODULE__{} = round, attrs) do
+  def child_changeset(%Task{} = task, child) do
+    now = DateTime.utc_now()
+
+    task
+    |> changeset(1)
+    |> change(plan: child.plan, plan_version: 1, plan_saved_at: now, approved_at: now)
+    |> put_embed(:ticket, %__MODULE__.Ticket{title: child.title, description: child.ticket, estimate: child.estimate})
+  end
+
+  @doc """
+  Takes the round's next save from `attrs` as its next version: the `plan`, the `ticket`, the `design` option the
+  plan is written for and whether it asks for a demo. A ticket field left out keeps what the last save set. Round 1
+  needs its ticket and takes its plan when there is one, in the sections Rail lays a plan out by; a later round
+  needs its plan.
+  """
+  def plan_changeset(%__MODULE__{number: number} = round, attrs) do
     round
     |> cast(attrs, [:plan, :record_demo])
-    |> update_change(:plan, &String.trim/1)
-    |> validate_required([:plan])
+    |> update_change(:plan, &trim/1)
+    |> validate_plan_given()
+    |> cast_embed(:ticket, with: &ticket_changeset/2, required: number == 1)
+    |> cast_embed(:design, with: &cast(&1, &2, [:key, :title]))
+    |> validate_plan(number)
     |> change(plan_version: round.plan_version + 1, plan_saved_at: DateTime.utc_now())
+    |> unique_constraint([:task_id, :number])
+  end
+
+  @doc """
+  Builds a changeset marking the round approved by `user_id`, which is nil when Rail approved it.
+  """
+  def approve_changeset(%__MODULE__{} = round, user_id) do
+    change(round, approved_at: DateTime.utc_now(), approved_by_id: user_id)
   end
 
   @doc """
@@ -59,4 +102,35 @@ defmodule Rail.Pipeline.Schemas.Round do
   def state(%__MODULE__{approved_at: %DateTime{}}), do: :working
   def state(%__MODULE__{plan: plan}) when is_binary(plan), do: :waiting
   def state(%__MODULE__{}), do: :planning
+
+  defp ticket_changeset(ticket, attrs) do
+    ticket
+    |> cast(attrs, [:title, :description, :priority, :estimate])
+    |> update_change(:title, &trim/1)
+    |> update_change(:description, &trim/1)
+    |> validate_required([:title, :description])
+    |> validate_format(:title, ~r/\A[^\n]*\z/, message: "must be one line")
+    |> validate_number(:estimate, greater_than_or_equal_to: 0, message: "must be zero or more")
+  end
+
+  # A blank casts to nil, which would otherwise clear a saved plan rather than be refused.
+  defp validate_plan_given(changeset) do
+    case fetch_change(changeset, :plan) do
+      {:ok, nil} -> add_error(changeset, :plan, "can't be blank")
+      _given_or_left_out -> changeset
+    end
+  end
+
+  defp trim(nil), do: nil
+  defp trim(text), do: String.trim(text)
+
+  defp validate_plan(changeset, 1) do
+    changeset
+    |> validate_format(:plan, ~r/\A## Implementation plan\s*(\n|\z)/,
+      message: "must open with the `## Implementation plan` heading"
+    )
+    |> ImplementationPlan.validate_structure(:plan)
+  end
+
+  defp validate_plan(changeset, _later), do: validate_required(changeset, [:plan])
 end

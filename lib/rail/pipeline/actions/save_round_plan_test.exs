@@ -25,8 +25,9 @@ defmodule Rail.Pipeline.Actions.SaveRoundPlanTest do
     %{task: task}
   end
 
-  test "a plan saves as the next version, and a second save replaces it, each broadcast",
+  test "a later round's plan saves as the next version, and a second save replaces it, each broadcast",
        %{task: %Task{id: task_id} = task} do
+    {:ok, _first} = Pipeline.create_round(task)
     {:ok, round} = Pipeline.create_round(task)
     Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task_id}")
 
@@ -42,6 +43,7 @@ defmodule Rail.Pipeline.Actions.SaveRoundPlanTest do
   end
 
   test "an empty plan is refused and nothing is saved", %{task: task} do
+    {:ok, _first} = Pipeline.create_round(task)
     {:ok, round} = Pipeline.create_round(task)
 
     assert {:error, changeset} = Pipeline.save_round_plan(round, %{"plan" => "  "})
@@ -50,6 +52,7 @@ defmodule Rail.Pipeline.Actions.SaveRoundPlanTest do
   end
 
   test "an approved round's plan no longer changes", %{task: task} do
+    {:ok, _first} = Pipeline.create_round(task)
     {:ok, round} = Pipeline.create_round(task)
     {:ok, saved} = Pipeline.save_round_plan(round, %{"plan" => "Guard nil."})
     saved |> Ecto.Changeset.change(approved_at: DateTime.utc_now()) |> Repo.update!()

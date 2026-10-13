@@ -15,7 +15,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.ImplementationPlan
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
@@ -152,20 +152,20 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
   defp leave_out_data_uri(uri, _media_type), do: uri
 
   defp plan_text(%Task{} = task) do
-    case Pipeline.get_implementation_plan(task) do
-      {:ok, %ImplementationPlan{content: content}} -> [content]
-      {:error, :not_found} -> []
+    case Pipeline.read_plan(task) do
+      %Round{plan: content, approved_at: %DateTime{}} when is_binary(content) -> [content]
+      _unapproved -> []
     end
   end
 
   # A task that skipped architect has no plan, and the ticket is then the whole
   # of the specification rather than a summary of one.
   defp plan(%Task{} = task) do
-    case Pipeline.get_implementation_plan(task) do
-      {:ok, %ImplementationPlan{content: content}} ->
+    case Pipeline.read_plan(task) do
+      %Round{plan: content, approved_at: %DateTime{}} when is_binary(content) ->
         "The approved implementation plan, which is the specification:\n\n#{String.trim(content)}"
 
-      {:error, :not_found} ->
+      _unapproved ->
         "There is no implementation plan for this ticket, so the ticket below is the whole specification. Decide the approach yourself, following the patterns already in the code."
     end
   end

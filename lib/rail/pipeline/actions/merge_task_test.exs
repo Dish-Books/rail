@@ -136,6 +136,9 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, %Task{id: child_id} = child} =
       Pipeline.create_child_task(Repo.preload(parent, [:issue, :project]), child_issue, %{
         number: 1,
+        title: "A part",
+        ticket: "Its criteria.",
+        estimate: 1,
         builds_on: [],
         builds_screen: false,
         plan: "## Implementation plan\n\nPart 1."

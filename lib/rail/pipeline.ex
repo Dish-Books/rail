@@ -2,10 +2,10 @@ defmodule Rail.Pipeline do
   @moduledoc """
   Context boundary for the Rail development pipeline.
 
-  A task is created at `:plan`, where one run leads Product, Designer and
-  Architect as subagents to a ticket, three design options when the change has a
-  screen, and one implementation plan. The human picks an option, and one approval
-  publishes the ticket and the picked design and records the plan. Engineer
+  A task is created at `:plan`, where one agent writes the plan on the task's first
+  round: a ticket, three design options when the change has a screen, and one
+  implementation plan. The human picks an option, and one approval publishes the
+  ticket and the picked design and marks the round approved. Engineer
   builds it and commits it, keeping the branch up to date with the default branch
   itself; Rail pushes the commits a turn leaves and, once CI passes, sends them to Review.
 
@@ -36,14 +36,11 @@ defmodule Rail.Pipeline do
 
   defdelegate start_plan_run(issue_or_run), to: Actions.StartPlanRun
   defdelegate approve_plan(scope, run), to: Actions.ApprovePlan
-  defdelegate read_ticket(task), to: Actions.ReadTicket
-  defdelegate save_ticket(task, attrs), to: Actions.SaveTicket
   defdelegate read_design(task, opts \\ []), to: Actions.ReadDesign
   defdelegate save_design_option(task, attrs), to: Actions.SaveDesignOption
   defdelegate pick_design_option(scope, run, key), to: Actions.PickDesignOption
   defdelegate read_plan(task), to: Actions.ReadPlan
   defdelegate save_plan(task, attrs), to: Actions.SavePlan
-  defdelegate get_implementation_plan(task), to: Actions.GetImplementationPlan
   defdelegate read_split(task), to: Actions.ReadSplit
   defdelegate save_split(task, attrs), to: Actions.SaveSplit
   defdelegate create_child_task(parent, issue, child), to: Actions.CreateChildTask

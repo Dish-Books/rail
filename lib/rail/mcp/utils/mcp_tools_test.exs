@@ -13,7 +13,6 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
   # The engineer commits with git itself, and its turn ending is what hands the commits over.
   test "each stage that writes something is offered exactly its own save tool", %{names: names} do
     assert names[:plan] == [
-             "save_ticket",
              "save_design_option",
              "save_plan",
              "save_split",
@@ -144,9 +143,19 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
     assert names[:architect] == ["knowledge_search"]
   end
 
-  test "save_plan takes the plan and, optionally, the design option it was written for" do
-    assert %{"properties" => %{"plan" => _plan, "design" => %{"type" => "string"}}, "required" => ["plan"]} =
-             %Role{stage: :plan} |> mcp_tools() |> Enum.find(&(&1["name"] == "save_plan")) |> Map.fetch!("inputSchema")
+  test "save_plan takes the ticket, the plan and the design option it is written for, none of them required" do
+    schema = %Role{stage: :plan} |> mcp_tools() |> Enum.find(&(&1["name"] == "save_plan")) |> Map.fetch!("inputSchema")
+
+    assert %{
+             "title" => _title,
+             "description" => _description,
+             "priority" => %{"enum" => ["urgent", "high", "medium", "low"]},
+             "estimate" => %{"type" => "integer"},
+             "plan" => _plan,
+             "design" => %{"type" => "string"}
+           } = schema["properties"]
+
+    refute Map.has_key?(schema, "required")
   end
 
   test "every role stage is offered knowledge_search" do

@@ -8,7 +8,6 @@ defmodule Rail.Pipeline.Schemas.Task do
   use Rail.Schema
 
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
@@ -63,8 +62,6 @@ defmodule Rail.Pipeline.Schemas.Task do
     belongs_to :parent_task, __MODULE__
 
     has_many :children, __MODULE__, foreign_key: :parent_task_id, preload_order: [asc: :split_position]
-
-    has_one :implementation_plan, ImplementationPlan
 
     has_many :questions, Question
     has_many :rounds, Round, preload_order: [asc: :number]
