@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.PickDesignOption do
   @moduledoc """
-  Records which of the design options the human chose, and tells the Plan agent.
+  Records which of the design options the human chose, and tells the Plan agent, at once when it is idle and with
+  the next message sent when it is working.
 
   The pick is Rail's, not the agent's: it is written to `<scratch>/design/picked`,
   a file the brief tells the agents never to write. Everything after it is a
@@ -20,7 +21,7 @@ defmodule Rail.Pipeline.Actions.PickDesignOption do
   @doc """
   Picks the option `key` from the design `run` produced, telling Plan as the scope's user.
 
-  Returns `{:ok, run}` once Plan has been told, the message sent or queued.
+  Returns `{:ok, run}` once the pick is recorded: Plan told, or still working, where the next message carries it.
   """
   def pick_design_option(%Scope{} = scope, %Run{} = run, key) when is_binary(key) do
     run = Repo.preload(run, [task: :runs], force: true)
@@ -28,7 +29,7 @@ defmodule Rail.Pipeline.Actions.PickDesignOption do
 
     with :ok <- pickable(run.task),
          {:ok, option, others} <- option(run.task, key),
-         {:ok, _delivery, sent} <- Pipeline.send_message(scope, run, message(option)) do
+         {:ok, told} <- tell(scope, run, option) do
       manifest = Path.join(dir, "manifest.json")
       %{"options" => entries} = manifest |> File.read!() |> Jason.decode!()
       entry = Enum.find(entries, &match?(%{"key" => ^key}, &1))
@@ -43,14 +44,21 @@ defmodule Rail.Pipeline.Actions.PickDesignOption do
       end
 
       write_scratch_file(Path.join(dir, "picked"), option.key)
-      {:ok, sent}
+      {:ok, told}
     end
   end
 
   defp pickable(%Task{stage: stage}) when stage != :plan, do: {:error, {:invalid_stage, stage}}
+  defp pickable(%Task{}), do: :ok
 
-  defp pickable(%Task{} = task) do
-    if Task.running?(task), do: {:error, :stage_running}, else: :ok
+  # A turn in flight is left alone: the pick goes out with whatever the human sends next.
+  defp tell(%Scope{} = scope, %Run{} = run, option) do
+    if Task.running?(run.task) do
+      {:ok, run}
+    else
+      with {:ok, _delivery, sent} <- Pipeline.send_message(scope, run, "I picked #{option.title} (#{option.key})."),
+           do: {:ok, sent}
+    end
   end
 
   defp option(%Task{} = task, key) do
@@ -63,6 +71,4 @@ defmodule Rail.Pipeline.Actions.PickDesignOption do
 
   defp found({[], _others}), do: {:error, :option_not_found}
   defp found({[option | _duplicates], others}), do: {:ok, option, others}
-
-  defp message(option), do: "I picked #{option.title} (#{option.key})."
 end

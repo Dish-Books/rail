@@ -26,7 +26,7 @@ defmodule Rail.Pipeline.Actions.ReadPlanTest do
     %{task: task}
   end
 
-  test "returns the first round with the ticket, the plan, the option it is written for and when it was saved",
+  test "returns the round with the ticket, the plan, the option it is written for and when it was saved",
        %{task: task} do
     File.mkdir_p!(Path.join(task.scratch_path, "design"))
 
@@ -54,12 +54,19 @@ defmodule Rail.Pipeline.Actions.ReadPlanTest do
     assert %Round{plan: @plan, approved_at: %DateTime{}} = Pipeline.read_plan(task)
   end
 
-  test "a later round is not the task's plan", %{task: task} do
+  test "the latest round is the task's plan, with the ticket as the round before left it", %{task: task} do
     {:ok, _saved} = Pipeline.save_plan(task, %{title: "A ticket", description: "The body.", plan: @plan})
     {:ok, second} = Pipeline.create_round(task)
-    {:ok, _planned} = Pipeline.save_round_plan(second, %{plan: "Fix the finding."})
 
-    assert %Round{number: 1, plan: @plan} = Pipeline.read_plan(task)
+    assert %Round{number: 2, plan: nil, ticket: %{title: "A ticket"}} = Pipeline.read_plan(task)
+
+    {:ok, _planned} =
+      Pipeline.save_round_plan(second, %{plan: "Fix the finding.", ticket: %{title: "A renamed ticket"}})
+
+    assert %Round{number: 2, plan: "Fix the finding.", ticket: %{title: "A renamed ticket", description: "The body."}} =
+             Pipeline.read_plan(task)
+
+    assert [%Round{number: 1, plan: @plan, ticket: %{title: "A ticket"}}, %Round{number: 2}] = Pipeline.list_rounds(task)
   end
 
   test "a ticket saved before its plan has no plan yet, and nothing saved is no plan at all", %{task: task} do

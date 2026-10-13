@@ -739,8 +739,6 @@ defmodule RailWeb.Live.PlanStage do
             phx-click="pick"
             phx-value-key={@option.key}
             phx-target={@target}
-            disabled={@running}
-            title={if @running, do: "Plan is working. Pick once its turn ends."}
             class="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Use this design

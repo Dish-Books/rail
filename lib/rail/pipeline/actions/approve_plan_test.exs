@@ -424,11 +424,16 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
       created.([{"Second", 3}, {"Third", 4}])
       Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
       Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+      {:ok, _estimated} = Pipeline.save_plan(task, %{estimate: 8})
 
       assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(system_scope(), run)
 
       assert %Task{stage: :split} = Repo.reload!(task)
-      assert %Issue{title: "Approved title"} = Repo.get!(Issue, task.issue_id)
+      # The parent's points are its children's.
+      assert %Issue{title: "Approved title", estimate: nil} = Repo.get!(Issue, task.issue_id)
+
+      assert %Round{approved_at: %DateTime{}, ticket: %{title: "Approved title", estimate: nil}} =
+               Pipeline.read_plan(task)
 
       # Nothing starts in the caller: the job committed with the children does.
       assert [%Task{runs: []}, %Task{runs: []}, %Task{runs: []}] =

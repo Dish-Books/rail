@@ -5,9 +5,31 @@ defmodule Rail.Pipeline.Schemas.RoundTest do
   alias Rail.Pipeline.Schemas.Task
 
   describe "changeset/2" do
-    test "builds the task's round by its number" do
-      assert %Ecto.Changeset{valid?: true, data: %Round{task_id: "tsk_round", number: 2}} =
-               Round.changeset(%Task{id: "tsk_round"}, 2)
+    test "a task's first round is round 1, with nothing on it" do
+      assert %Ecto.Changeset{valid?: true, data: %Round{task_id: "tsk_round", number: 1, ticket: nil, design: nil}} =
+               Round.changeset(%Task{id: "tsk_round"}, nil)
+    end
+
+    test "a later round is numbered one past the last and starts from its ticket and design, not its plan" do
+      previous = %Round{
+        number: 2,
+        plan: "Guard nil.",
+        approved_at: DateTime.utc_now(),
+        ticket: %Round.Ticket{title: "A ticket", description: "The body."},
+        design: %Round.Design{key: "rows", title: "Charts in the row"}
+      }
+
+      assert %Ecto.Changeset{
+               valid?: true,
+               data: %Round{
+                 task_id: "tsk_round",
+                 number: 3,
+                 plan: nil,
+                 approved_at: nil,
+                 ticket: %Round.Ticket{title: "A ticket"},
+                 design: %Round.Design{key: "rows"}
+               }
+             } = Round.changeset(%Task{id: "tsk_round"}, previous)
     end
   end
 

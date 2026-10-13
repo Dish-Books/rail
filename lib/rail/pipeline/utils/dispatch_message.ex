@@ -20,6 +20,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
 
   alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
@@ -130,10 +131,11 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
     {:ok, task} = task |> Task.changeset(%{worktree_path: worktree_path}) |> Repo.update()
     # The agents that commit to the branch start every turn on a fresh default branch, as themselves.
     behind = if role.stage in [:engineer, :review_lead], do: prepare_turn(%{run | task: task}), else: ""
+    pick = if role.stage == :plan, do: unheard_pick(run, task, message), else: ""
 
     argv =
       Tools.build_args(
-        prompt: behind <> message,
+        prompt: behind <> pick <> message,
         model: role.model,
         reasoning_effort: role.reasoning_effort || "high",
         read_only: false,
@@ -155,6 +157,20 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
       {:error, :dispatch_disabled} ->
         requeue(run, message)
         {:error, :dispatch_disabled}
+    end
+  end
+
+  # A design picked while Plan was working was recorded without a message, so the next one carries it. Plan has
+  # heard a pick once its plan is saved for it.
+  defp unheard_pick(%Run{} = run, %Task{} = task, message) do
+    with %{picked: key, options: options} when is_binary(key) <- Pipeline.read_design(task, pages: false),
+         %{title: title} <- Enum.find(options, &(&1.key == key)),
+         false <- match?(%Round{design: %{key: ^key}}, Pipeline.read_plan(task)),
+         false <- String.contains?(message, "(#{key}).") do
+      Pipeline.append_run_events(run.id, nil, ["[rail] Sent with the pick: #{title} (#{key})."])
+      "I picked #{title} (#{key}).\n\n"
+    else
+      _no_pick_or_heard -> ""
     end
   end
 

@@ -66,7 +66,6 @@ defmodule Rail.Pipeline do
 
   defdelegate create_round(task), to: Actions.CreateRound
   defdelegate list_rounds(task), to: Actions.ListRounds
-  defdelegate get_current_round(task), to: Actions.GetCurrentRound
   defdelegate save_round_plan(round, attrs), to: Actions.SaveRoundPlan
 
   defdelegate mark_ready(scope, task), to: Actions.MarkReady

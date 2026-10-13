@@ -136,15 +136,20 @@ defmodule Rail.Pipeline.Actions.PickDesignOptionTest do
     assert {:error, :design_not_found} = Pipeline.pick_design_option(system_scope(), run, "cards")
   end
 
-  test "nothing is picked while the designer is still working", %{run: run, design_dir: dir, manifest: manifest} do
+  test "a pick while Plan is working is recorded without a message, for the next one sent to carry", %{
+    task: task,
+    run: run,
+    design_dir: dir
+  } do
     {:ok, working} = Pipeline.update_run(run, %{status: :running})
+    reject(&Tools.start_os_process/2)
 
-    assert {:error, :stage_running} = Pipeline.pick_design_option(system_scope(), working, "cards")
+    assert {:ok, %Run{status: :running, pending_chat: nil}} =
+             Pipeline.pick_design_option(system_scope(), working, "cards")
 
-    assert Enum.sort(File.ls!(dir)) ==
-             ["cards.html", "cards.png", "manifest.json", "table.html", "table.png", "timeline.html", "timeline.png"]
-
-    assert File.read!(Path.join(dir, "manifest.json")) == manifest
+    assert Enum.sort(File.ls!(dir)) == ["cards.html", "cards.png", "manifest.json", "picked"]
+    assert File.read!(Path.join(dir, "picked")) == "cards"
+    assert %{picked: "cards", options: [%{key: "cards"}]} = Pipeline.read_design(task)
   end
 
   test "a task at Engineer has nothing left to pick", %{task: task, run: run, design_dir: dir, manifest: manifest} do

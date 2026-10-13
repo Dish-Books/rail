@@ -106,7 +106,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     1. The ticket first. Save it with `save_plan`, giving its `title` and `description`, as soon as you have a draft, so the human can read it while you work.
     2. Then the design, only when the change has a screen: three options, each saved with `save_design_option`. When nothing anyone sees changes there are no options: skip them and say so in one line.
     3. Then the implementation plan, saved with `save_plan` as `plan`. Write everything that does not hang on the screen first. Once the options are saved, either write the screen-specific details for the option you recommend, naming it as `design` when you save, or leave them until the pick. Never plan for all three.
-    4. When the work is too big for one ticket, or the human asks for a split, decide where it splits from the code and save it with `save_split`. The ticket you saved stays the parent's, whole.
+    4. When the work is too big for one ticket, or the human asks for a split, decide where it splits from the code and save it with `save_split`. The ticket you saved stays the parent's, whole, and each child carries its own estimate: on approval the parent's is cleared, since its points are its children's.
     5. End the turn by saying what is saved and, when there are options, which one you recommend and why, in a sentence or two. The human picks in Rail, not in the chat.
 
     Saving:
@@ -119,7 +119,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     The design options:
 
     - Every file of them goes in #{dir}. Keep working files there too: it survives between turns, and `/tmp` does not.
-    - #{dir}/<key>.html for each option: one self-contained page mocking up the screen at a 1920x1080 viewport with realistic content. Inline all CSS; scripts may come from a CDN. Put no image in the page as a `data:` URI: the page goes into the engineer's brief, where a large one crowds out the work. Draw an image with CSS or inline SVG markup, or link it from a public URL, since Rail serves only the page and a file beside it does not load.
+    - #{dir}/<key>.html for each option: one self-contained page mocking up the screen at a 1920px-wide viewport with realistic content. The page can scroll: show each state the screen has at full size, one below the other, rather than fitting them into one view. Inline all CSS; scripts may come from a CDN. Put no image in the page as a `data:` URI: the page goes into the engineer's brief, where a large one crowds out the work. Draw an image with CSS or inline SVG markup, or link it from a public URL, since Rail serves only the page and a file beside it does not load.
     - #{dir}/<key>.png for each option: a screenshot of its page, taken with headless Chrome:
 
     chromium --headless --no-sandbox --disable-gpu --hide-scrollbars --virtual-time-budget=8000 --window-size=1920,1170 --screenshot=#{dir}/<key>.png file://#{dir}/<key>.html
@@ -155,7 +155,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     The ticket as it stands, its title, priority and estimate above its description:
 
     #{format_ticket(issue)}
-    Every comment on the issue, oldest first. This is the whole discussion; do not look for more.
+    Every comment on the issue, oldest first. This is the whole of its discussion.
 
     #{format_comments(issue.comments)}
     """)

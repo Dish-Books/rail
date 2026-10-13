@@ -48,7 +48,7 @@ defmodule Rail.Pipeline.Actions.SaveRoundPlanTest do
 
     assert {:error, changeset} = Pipeline.save_round_plan(round, %{"plan" => "  "})
     assert %{plan: ["can't be blank"]} = errors_on(changeset)
-    assert {:ok, %Round{plan: nil, plan_version: 0}} = Pipeline.get_current_round(task)
+    assert %Round{plan: nil, plan_version: 0} = Pipeline.read_plan(task)
   end
 
   test "an approved round's plan no longer changes", %{task: task} do
@@ -58,6 +58,6 @@ defmodule Rail.Pipeline.Actions.SaveRoundPlanTest do
     saved |> Ecto.Changeset.change(approved_at: DateTime.utc_now()) |> Repo.update!()
 
     assert {:error, :round_approved} = Pipeline.save_round_plan(round, %{"plan" => "Something else."})
-    assert {:ok, %Round{plan: "Guard nil.", plan_version: 1}} = Pipeline.get_current_round(task)
+    assert %Round{plan: "Guard nil.", plan_version: 1} = Pipeline.read_plan(task)
   end
 end

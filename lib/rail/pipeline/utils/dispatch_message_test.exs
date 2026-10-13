@@ -107,6 +107,58 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
   end
 
+  describe "a design picked while Plan was working" do
+    setup %{task: task} do
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+      dir = Path.join(task.scratch_path, "design")
+      File.mkdir_p!(dir)
+      File.write!(Path.join(dir, "manifest.json"), ~s({"options": [{"key": "table", "title": "Table"}]}))
+      File.write!(Path.join(dir, "picked"), "table")
+      :ok
+    end
+
+    test "goes out ahead of the next message, and the conversation says so", %{run: run, run_id: run_id} do
+      expect(Tools, :start_os_process, fn spawned, argv ->
+        assert "I picked Table (table).\n\nPlease also add a test" in argv
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
+
+      assert Repo.exists?(
+               from e in RunEvent, where: e.run_id == ^run_id and e.line == "[rail] Sent with the pick: Table (table)."
+             )
+    end
+
+    test "is not repeated once the plan is saved for it, or when the message is the pick itself", %{
+      task: task,
+      run: run
+    } do
+      {:ok, _picked} = Pipeline.update_run(run, %{pending_chat: "I picked Table (table)."})
+
+      expect(Tools, :start_os_process, fn spawned, argv ->
+        assert "I picked Table (table)." in argv
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
+
+      plan =
+        "## Implementation plan\n\n### Approach\n\nExtend it.\n\nNo diagrams: one module changes.\n\n" <>
+          "### File-level changes\n\n- `lib/rail.ex`: extends it.\n\n### Verification\n\n- `lib/rail_test.exs`: covers it."
+
+      {:ok, _saved} = Pipeline.save_plan(task, %{title: "A ticket", description: "Body.", plan: plan, design: "table"})
+      {:ok, _queued} = Pipeline.update_run(Repo.reload!(run), %{status: :finished, pending_chat: "And a migration"})
+
+      expect(Tools, :start_os_process, fn spawned, argv ->
+        assert "And a migration" in argv
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
+    end
+  end
+
   test "a message to a Plan run spawns the one agent, with no subagents", %{run: run} do
     expect(Tools, :start_os_process, fn spawned, argv ->
       refute "--agents" in argv

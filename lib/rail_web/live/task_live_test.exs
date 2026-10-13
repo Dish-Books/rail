@@ -1537,7 +1537,7 @@ defmodule RailWeb.TaskLiveTest do
       two |> element("#plan-item-design") |> render_click()
       assert has_element?(two, "#design-tab-cards", "Cards")
       assert has_element?(two, "#design-tab-building-2", "Being built")
-      assert has_element?(two, "#pick-design-cards[disabled]")
+      assert has_element?(two, "#pick-design-cards:not([disabled])")
 
       save_plan.(nil)
 

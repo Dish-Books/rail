@@ -46,13 +46,13 @@ defmodule Rail.Pipeline.Schemas.Round do
   end
 
   @doc """
-  Builds a changeset for `task`'s round `number`, which only Rail sets.
+  Builds a changeset for `task`'s round after `previous`, carrying its ticket and design forward, or its first
+  round when `previous` is nil.
   """
-  def changeset(%Task{id: task_id}, number) when is_integer(number) and number > 0 do
-    %__MODULE__{task_id: task_id, number: number}
-    |> change()
-    |> foreign_key_constraint(:task_id)
-    |> unique_constraint([:task_id, :number])
+  def changeset(%Task{id: task_id}, nil), do: build(%__MODULE__{task_id: task_id, number: 1})
+
+  def changeset(%Task{id: task_id}, %__MODULE__{} = previous) do
+    build(%__MODULE__{task_id: task_id, number: previous.number + 1, ticket: previous.ticket, design: previous.design})
   end
 
   @doc """
@@ -63,7 +63,7 @@ defmodule Rail.Pipeline.Schemas.Round do
     now = DateTime.utc_now()
 
     task
-    |> changeset(1)
+    |> changeset(nil)
     |> change(plan: child.plan, plan_version: 1, plan_saved_at: now, approved_at: now)
     |> put_embed(:ticket, %__MODULE__.Ticket{title: child.title, description: child.ticket, estimate: child.estimate})
   end
@@ -102,6 +102,13 @@ defmodule Rail.Pipeline.Schemas.Round do
   def state(%__MODULE__{approved_at: %DateTime{}}), do: :working
   def state(%__MODULE__{plan: plan}) when is_binary(plan), do: :waiting
   def state(%__MODULE__{}), do: :planning
+
+  defp build(%__MODULE__{} = round) do
+    round
+    |> change()
+    |> foreign_key_constraint(:task_id)
+    |> unique_constraint([:task_id, :number])
+  end
 
   defp ticket_changeset(ticket, attrs) do
     ticket
