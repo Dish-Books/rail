@@ -195,6 +195,11 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
     %{kind: :convention, roles: [:plan], rule: clip(comment.body), why: line_why("a plan", comment)}
   end
 
+  # The review agent writes the next round's plan, so a comment on one teaches it.
+  defp rule(%PlanComment{target: :fix_plan} = comment, _observation) do
+    %{kind: :convention, roles: [:review_lead], rule: clip(comment.body), why: line_why("a fix round's plan", comment)}
+  end
+
   defp rule(%Finding{kind: :screen} = finding, _observation) do
     Map.merge(%{kind: :convention, roles: [:engineer, :qa]}, finding_rule(finding, "Raised by QA"))
   end

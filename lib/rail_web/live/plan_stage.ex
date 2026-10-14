@@ -1,7 +1,8 @@
 defmodule RailWeb.Live.PlanStage do
   @moduledoc """
-  The Plan step: the ticket, the design options, the plan and the split, a list of four with the selected
-  one beside it, and the one Approve in the header. A child of a split shows only its approved part.
+  The Plan step: the ticket, the design options, the plan and, once there is one, the split, one under another on
+  one page, each under a heading saying where it stands, and the one Approve in the header. A child of a split shows
+  only its approved part.
 
   Everything here is read off scratch and the runs whenever the page reloads it, so a save shows
   the moment it lands. What waits on the human opens when the step opens, and only a click changes it after.
@@ -66,61 +67,14 @@ defmodule RailWeb.Live.PlanStage do
         target={@myself}
       />
 
-      <div :if={!@child_of} class="@container h-full">
-        <div class="h-full flex flex-col @5xl:flex-row">
-          <nav
-            id="plan-items"
-            aria-label="Plan outputs"
-            class="shrink-0 flex @5xl:flex-col gap-2 @5xl:gap-1 p-2 @5xl:w-[280px] border-b @5xl:border-b-0 @5xl:border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/30"
-          >
-            <button
-              :for={item <- @items}
-              type="button"
-              id={"plan-item-#{item.id}"}
-              data-qa="plan_item"
-              aria-current={to_string(item.id == @selected_item)}
-              phx-click="select_item"
-              phx-value-item={item.id}
-              phx-target={@myself}
-              class={[
-                "flex-1 @5xl:flex-none @5xl:w-full min-w-0 flex gap-2.5 px-3 py-2.5 rounded-lg text-left cursor-pointer",
-                item.id == @selected_item &&
-                  "bg-blue-50 dark:bg-blue-950/40 ring-1 ring-blue-200 dark:ring-blue-800",
-                item.id != @selected_item && "hover:bg-slate-100 dark:hover:bg-slate-800/60"
-              ]}
-            >
-              <.icon name={item.icon} class="size-[17px] mt-0.5 text-slate-500 dark:text-slate-300" />
-              <span class="min-w-0 flex-1">
-                <span class={[
-                  "block text-[13.5px] font-semibold",
-                  item.tone == :skipped && "text-slate-500 dark:text-slate-400",
-                  item.tone != :skipped && "text-slate-900 dark:text-slate-100"
-                ]}>
-                  {item.label}
-                </span>
-                <span
-                  id={"plan-item-#{item.id}-status"}
-                  class={["block text-[11.5px] truncate", status_class(item.tone)]}
-                >
-                  {item.line}<span :if={item.line && item.saved_at}> · </span><span :if={
-                    item.saved_at
-                  }>saved
-                  <.local_time
-                    id={"plan-item-#{item.id}-saved"}
-                    at={item.saved_at}
-                  /></span>
-                </span>
-              </span>
-              <.item_mark tone={item.tone} />
-            </button>
-          </nav>
-
-          <div
-            id="plan-pane"
-            class="flex-1 min-w-0 min-h-0 overflow-y-auto px-6 @5xl:px-8 py-5 @5xl:py-6"
-          >
+      <div
+        :if={!@child_of}
+        id="plan-pane"
+        class="@container h-full overflow-y-auto px-6 @5xl:px-8 py-5 @5xl:py-6"
+      >
+        <div class="flex flex-col gap-10">
+          <.plan_section item={@items_by_id["ticket"]}>
             <.ticket_pane
-              :if={@selected_item == "ticket"}
               ticket={@ticket}
               lines={@ticket_lines}
               running={@running}
@@ -131,9 +85,10 @@ defmodule RailWeb.Live.PlanStage do
               offered={@ticket_offered}
               target={@myself}
             />
+          </.plan_section>
 
+          <.plan_section item={@items_by_id["design"]}>
             <.design_pane
-              :if={@selected_item == "design"}
               task={@task}
               design={@design}
               option={@option}
@@ -148,9 +103,10 @@ defmodule RailWeb.Live.PlanStage do
               user_id={@current_scope.user.id}
               target={@myself}
             />
+          </.plan_section>
 
+          <.plan_section item={@items_by_id["plan"]}>
             <.plan_pane
-              :if={@selected_item == "plan"}
               plan={@plan}
               sheet={@sheet}
               banner={@banner}
@@ -165,15 +121,16 @@ defmodule RailWeb.Live.PlanStage do
               offered={@plan_offered}
               target={@myself}
             />
+          </.plan_section>
 
+          <.plan_section :if={@split} item={@items_by_id["split"]}>
             <.split_pane
-              :if={@selected_item == "split"}
               split={@split}
               open_child={@open_child}
               diagram_views={@diagram_views}
               target={@myself}
             />
-          </div>
+          </.plan_section>
         </div>
       </div>
     </div>
@@ -181,10 +138,6 @@ defmodule RailWeb.Live.PlanStage do
   end
 
   @impl true
-  def handle_event("select_item", %{"item" => item}, socket) when item in ["ticket", "design", "plan", "split"] do
-    {:noreply, assign(socket, :selected_item, item)}
-  end
-
   def handle_event("select_option", %{"key" => key}, socket) do
     socket =
       socket
@@ -966,6 +919,7 @@ defmodule RailWeb.Live.PlanStage do
             diagram_views={@diagram_views}
             event="diagram_view"
             target={@target}
+            doc={:split_part}
           />
         </div>
       </section>
@@ -1049,6 +1003,40 @@ defmodule RailWeb.Live.PlanStage do
     """
   end
 
+  attr :item, :map, required: true
+  slot :inner_block, required: true
+
+  # One output of the step under its heading, saying where it stands, so the whole step reads top to bottom.
+  defp plan_section(assigns) do
+    ~H"""
+    <section id={"plan-section-#{@item.id}"} data-qa="plan_section" class="min-w-0">
+      <div class="flex items-center gap-2 pb-2 mb-5 border-b border-slate-200 dark:border-slate-700">
+        <.icon name={@item.icon} class="size-[17px] text-slate-500 dark:text-slate-300" />
+        <h2 class={[
+          "text-[11px] font-bold uppercase tracking-[0.12em]",
+          @item.tone == :skipped && "text-slate-500 dark:text-slate-400",
+          @item.tone != :skipped && "text-slate-700 dark:text-slate-200"
+        ]}>
+          {@item.label}
+        </h2>
+        <span
+          id={"plan-section-#{@item.id}-status"}
+          class={["min-w-0 text-[11.5px] truncate", status_class(@item.tone)]}
+        >
+          {@item.line}<span :if={@item.line && @item.saved_at}> · </span><span :if={@item.saved_at}>saved
+          <.local_time
+            id={"plan-section-#{@item.id}-saved"}
+            at={@item.saved_at}
+          /></span>
+        </span>
+        <span class="ml-auto" />
+        <.item_mark tone={@item.tone} />
+      </div>
+      {render_slot(@inner_block)}
+    </section>
+    """
+  end
+
   attr :tone, :atom, required: true
 
   defp item_mark(%{tone: :working} = assigns) do
@@ -1128,8 +1116,7 @@ defmodule RailWeb.Live.PlanStage do
     |> assign_offered(ticket, plan, (can_chat and not approved) or amending)
     |> assign(:selected_key, selected_key)
     |> assign(:option, shown_option(design, selected_key))
-    |> assign(:items, items)
-    |> assign_new(:selected_item, fn -> default_item(items, ticket, plan, split) end)
+    |> assign(:items_by_id, Map.new(items, &{&1.id, &1}))
     |> assign(:banner, banner(plan, picked, running))
     |> assign(:pick_up, pick_up(run))
     |> assign(:pending_text, pending_text(running, pick_up(run)))
@@ -1415,21 +1402,6 @@ defmodule RailWeb.Live.PlanStage do
     |> Enum.drop(1)
     |> Enum.take_while(&(not String.starts_with?(&1, "#")))
     |> Enum.count(&Regex.match?(~r/^\s?([-*+]|\d+\.)\s+\S/, &1))
-  end
-
-  # What waits on the human opens first: a pick, then whatever Plan is working on or stopped short of.
-  defp default_item(items, ticket, plan, split) do
-    by_id = Map.new(items, &{&1.id, &1})
-
-    cond do
-      by_id["design"].tone in [:pick, :failed] -> "design"
-      by_id["plan"].tone in [:working, :stale] -> "plan"
-      ticket == nil -> "ticket"
-      by_id["design"].tone == :working -> "design"
-      split != nil -> "split"
-      plan != nil and by_id["design"].tone == :skipped -> "ticket"
-      true -> "plan"
-    end
   end
 
   defp banner(nil, _picked, _running), do: nil

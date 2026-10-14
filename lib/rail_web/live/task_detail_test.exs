@@ -128,7 +128,7 @@ defmodule RailWeb.Live.TaskDetailTest do
     assert has_element?(view, "#review-item-demo[title='Demo: None recorded']")
     assert has_element?(view, "#review-item-browser[title='Browser: No browsers open']")
 
-    assert ["issue", "plan", "conversation", "findings", "diff", "screens", "demo", "browser"] =
+    assert ["issue", "plan", "findings", "diff", "screens", "demo", "browser"] =
              view
              |> render()
              |> Floki.parse_document!()
@@ -206,6 +206,7 @@ defmodule RailWeb.Live.TaskDetailTest do
     stub(@clock, :monotonic_ms, fn -> 1_000 end)
     view |> element("#decide-skip-send-twice") |> render_click()
     assert has_element?(view, "#review-finding-footer", "1 to fix · 1 not fixing")
+    view |> element("#review-send-tray-fold") |> render_click()
     assert has_element?(view, "#review-tray-finding-view-only-send", "A view-only member can send diff comments")
     refute has_element?(view, "#review-tray-finding-send-twice")
 
@@ -360,6 +361,7 @@ defmodule RailWeb.Live.TaskDetailTest do
              "It is the caller too."
            )
 
+    view |> element("#review-send-tray-fold") |> render_click()
     assert has_element?(view, "#review-send-tray [data-kind=finding]", "Place 2, send_diff_comments/2")
     assert has_element?(view, "#review-send-tray [data-kind=finding]", "It is the caller too.")
     assert has_element?(view, "#send-review-tray", "Send 1")
@@ -692,6 +694,7 @@ defmodule RailWeb.Live.TaskDetailTest do
       stub(Pipeline, :get_ci_status, fn _run -> ci end)
       {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=findings")
 
+      refute has_element?(view, "#review-send-tray-count")
       refute has_element?(view, "#review-tray-finding-view-only-send")
       refute has_element?(view, "#send-review-tray")
       refute has_element?(view, "#finish-review")
@@ -703,6 +706,8 @@ defmodule RailWeb.Live.TaskDetailTest do
     {:ok, _reviewing} = Pipeline.update_task(fixing, %{stage: :review})
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
+    assert has_element?(view, "#review-send-tray-count", "1")
+    view |> element("#review-send-tray-fold") |> render_click()
     assert has_element?(view, "#review-tray-finding-view-only-send")
     assert has_element?(view, "#send-review-tray:not([disabled])", "Send 1")
   end
@@ -1302,6 +1307,7 @@ defmodule RailWeb.Live.TaskDetailTest do
       refute has_element?(view, "#screen-comment-form")
       assert has_element?(view, "#screen-view [data-qa=screen_comment]", "The count wraps.")
       assert has_element?(view, "#screen-toolbar [data-qa=screen_card_unsent]", "1 not sent")
+      view |> element("#review-send-tray-fold") |> render_click()
       assert has_element?(view, "#review-send-tray [data-kind=screen]", "The count wraps.")
 
       assert has_element?(
@@ -1687,6 +1693,50 @@ defmodule RailWeb.Live.TaskDetailTest do
       assert_patch(view, ~p"/tasks/#{task.id}?item=fix_plan")
     end
 
+    test "a line of the waiting plan takes a comment for the review agent, shown under it and in the tray, until removed",
+         %{conn: conn, task: task, run: run, plan: plan, user: user} do
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=fix_plan")
+      key = "paragraph-#{:erlang.phash2({"Check the role.", 1})}"
+
+      assert has_element?(view, "#plan-chat #conversation-tab-root")
+      view |> element("#line-fix_plan-#{key} [data-qa=line_comment_add]") |> render_click()
+
+      assert has_element?(
+               view,
+               "#document-comment-form-#{key} [aria-label='Comment on Fix finding view-only-send, paragraph 1']"
+             )
+
+      view |> form("#document-comment-form-#{key}", %{"body" => ""}) |> render_submit()
+      assert has_element?(view, "#document-comment-form-#{key}")
+
+      view |> form("#document-comment-form-#{key}", %{"body" => "Say which role."}) |> render_submit()
+      refute has_element?(view, "#document-comment-form-#{key}")
+      assert has_element?(view, "#line-fix_plan-#{key} + [data-qa=line_comments]", "Say which role.")
+      assert has_element?(view, "#plan-comment-tray-count", "1")
+
+      view |> element("#plan-comment-tray-fold") |> render_click()
+      assert has_element?(view, "#plan-comment-tray", "Next round's plan")
+
+      [comment] = Pipeline.list_plan_comments(user_scope(user: user), task)
+      assert %{target: :fix_plan, element_text: "Check the role.", element_occurrence: 1} = comment
+
+      view |> element("#line-fix_plan-#{key} + [data-qa=line_comments] [phx-click=remove_plan_comment]") |> render_click()
+      refute has_element?(view, "[data-qa=line_comments]", "Say which role.")
+    end
+
+    test "an approved plan takes no comments on its lines", %{conn: conn, task: task, run: run, plan: plan} do
+      {:ok, saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=fix_plan")
+      assert has_element?(view, "#fix-plan-sheet [data-qa=line_comment_add]")
+
+      {:ok, _approved} = Pipeline.approve_fix_plan(system_scope(), run, saved.version)
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=fix_plan")
+      refute has_element?(view, "[data-qa=line_comment_add]")
+    end
+
     test "the fix_plan item in the URL opens the plan on load", %{conn: conn, task: task, run: run, plan: plan} do
       {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
       {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
@@ -1713,6 +1763,7 @@ defmodule RailWeb.Live.TaskDetailTest do
       assert has_element?(view, "#review-status[data-phase=outdated]", "Fix round 1 · Fix plan out of date")
       assert has_element?(view, "#finding-view-only-send", "Don't fix · changed since the plan")
       assert has_element?(view, "#finding-ruling-changed", "Ruling changed since the fix plan · was Fix")
+      view |> element("#review-send-tray-fold") |> render_click()
       assert has_element?(view, "#review-tray-ruling-view-only-send", "Don't fix, was Fix")
       assert has_element?(view, "#review-send-tray-hint", "The fix plan is out of date. Send asks the lead to revise it.")
 
@@ -1729,6 +1780,7 @@ defmodule RailWeb.Live.TaskDetailTest do
       _settled = render(view)
 
       assert has_element?(view, "#approve-fix-plan")
+      refute has_element?(view, "#review-send-tray-count")
       refute has_element?(view, "#review-tray-ruling-view-only-send")
       refute has_element?(view, "#finding-ruling-changed")
       assert has_element?(view, "#review-item-plan[title='Plan: Waiting on your approval']")
@@ -1843,7 +1895,7 @@ defmodule RailWeb.Live.TaskDetailTest do
             {{:fix_plan_not_waiting, :outdated}, "A ruling changed since that plan was saved. Nothing started."},
             {{:fix_plan_not_waiting, :approved}, "That fix plan is already approved."},
             {{:fix_plan_not_waiting, :revising}, "The lead is revising that fix plan. Nothing started."},
-            {:no_fix_plan, "There is no fix plan to approve."},
+            {:no_fix_plan, "There is no fix plan waiting on approval."},
             {:stage_running, "Something is still running on this task."}
           ] do
         expect(Pipeline, :approve_fix_plan, fn _scope, _run, 1 -> {:error, reason} end)

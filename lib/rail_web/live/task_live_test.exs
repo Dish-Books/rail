@@ -254,7 +254,7 @@ defmodule RailWeb.TaskLiveTest do
 
     assert {:ok, %OsProcess{status: :waiting_for_usage}} = Tools.start_os_process(run, ["2"])
 
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
     assert has_element?(view, "[data-qa='task_status_chip']", "waiting for usage")
 
     view |> element("#usage-banner [data-qa='stop-run']") |> render_click()
@@ -342,7 +342,7 @@ defmodule RailWeb.TaskLiveTest do
 
     Pipeline.append_run_events(run.id, waiting.id, ["[rail] This conversation lives on Claude Code · work."])
 
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation&agent=engineer")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan&agent=engineer")
     assert has_element?(view, "#usage-wait-card", "This conversation lives on the work account")
 
     view |> element("#usage-wait-stop") |> render_click()
@@ -410,15 +410,19 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "[data-qa='task_error_card']", "The agent gave up.")
   end
 
-  test "the Chat item hosts the conversation of the run taking messages", %{conn: conn, task: task, role: role} do
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+  test "the Plan item hosts the conversation of the run taking messages beside it", %{
+    conn: conn,
+    task: task,
+    role: role
+  } do
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
-    assert has_element?(view, "[data-qa='conversation-tab']")
-    assert has_element?(view, "#conversation-role-#{role.id}")
+    assert has_element?(view, "#plan-chat [data-qa='conversation-tab']")
+    assert has_element?(view, "#plan-chat #conversation-role-#{role.id}")
   end
 
   test "a run with no conversation refuses a message", %{conn: conn, task: task, run: run} do
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
     view |> element("#chat-composer-form") |> render_submit(%{"message" => "Hello?"})
 
@@ -444,7 +448,7 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, %OsProcess{run: spawned}}
     end)
 
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
     view |> element("#retry-run") |> render_click()
 
@@ -465,7 +469,7 @@ defmodule RailWeb.TaskLiveTest do
 
     Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which region?"})
 
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
     view |> element("#question-option-1") |> render_click()
     assert has_element?(view, "#answer-textarea", "MySQL")
@@ -490,7 +494,7 @@ defmodule RailWeb.TaskLiveTest do
 
     Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which region?"})
 
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
     reject(&Pipeline.read_plan/1)
 
     for typed <- ["P", "Po", "Postgres", "Postgres, on the managed plan"] do
@@ -515,7 +519,7 @@ defmodule RailWeb.TaskLiveTest do
 
     question = Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which database?"})
 
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
     view |> form("#answer-question-form", %{"answer" => "Post"}) |> render_change()
     view |> form("#answer-question-form", %{"answer" => "Postgres 1"}) |> render_change()
@@ -535,7 +539,7 @@ defmodule RailWeb.TaskLiveTest do
       options: ["Postgres", "MySQL"]
     })
 
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
     view |> element("#question-option-0") |> render_click()
     assert has_element?(view, "#question-option-0.bg-blue-100")
@@ -559,7 +563,7 @@ defmodule RailWeb.TaskLiveTest do
     Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which database?"})
     Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which region?"})
 
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
     assert has_element?(view, "[data-qa='question-card']", "Which database?")
 
     view |> form("#answer-question-form", %{"answer" => "Postgres"}) |> render_submit()
@@ -581,7 +585,7 @@ defmodule RailWeb.TaskLiveTest do
     # Updating the branch resumes the run without anyone answering what it asked.
     {:ok, _resumed} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished})
 
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
     assert has_element?(view, "[data-qa='question-card']", "Rebase onto main?")
 
     view |> form("#answer-question-form", %{"answer" => "Yes"}) |> render_submit()
@@ -596,7 +600,7 @@ defmodule RailWeb.TaskLiveTest do
 
     question = Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which database?"})
 
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
     view |> element("#dismiss-question-button") |> render_click()
 
@@ -609,7 +613,7 @@ defmodule RailWeb.TaskLiveTest do
 
     question = Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which database?"})
 
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
     view |> form("#answer-question-form", %{"answer" => "   "}) |> render_submit()
 
@@ -623,7 +627,7 @@ defmodule RailWeb.TaskLiveTest do
 
     question = Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which database?"})
 
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
     view
     |> element("#answer-question-form")
@@ -643,7 +647,7 @@ defmodule RailWeb.TaskLiveTest do
 
     {:ok, _answered} = Pipeline.answer_question(system_scope(), question, "Postgres")
 
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
     view |> form("#answer-question-form", %{"answer" => "Sqlite"}) |> render_change()
 
     # A run with no conversation to resume takes the round without a word on its topic.
@@ -681,7 +685,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "a saved answer keeps its tab, marked answered, and the card moves on", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> form("#answer-question-form", %{"answer" => "Postgres"}) |> render_submit()
 
@@ -704,7 +708,7 @@ defmodule RailWeb.TaskLiveTest do
         {:ok, %OsProcess{run: spawned}}
       end)
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> form("#answer-question-form", %{"answer" => "Postgres"}) |> render_submit()
       view |> form("#answer-question-form", %{"answer" => "eu-west-1"}) |> render_submit()
@@ -732,7 +736,7 @@ defmodule RailWeb.TaskLiveTest do
     } do
       {:ok, _answered} = Pipeline.answer_question(system_scope(), first, "Postgres")
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       assert has_element?(view, "#question-tab-1[aria-selected='true']")
       assert has_element?(view, "#question-prompt", "Which region?")
@@ -752,7 +756,7 @@ defmodule RailWeb.TaskLiveTest do
       for {question, answer} <- Enum.zip(questions, ["Postgres", "eu-west-1", "Sam"]),
           do: {:ok, _answered} = Pipeline.answer_question(system_scope(), question, answer)
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       assert has_element?(view, "#question-tab-0[aria-selected='true']")
       assert has_element?(view, "#answer-textarea", "Postgres")
@@ -763,7 +767,7 @@ defmodule RailWeb.TaskLiveTest do
       task: task,
       run: run
     } do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> form("#answer-question-form", %{"answer" => "Postgres"}) |> render_submit()
       view |> form("#answer-question-form", %{"answer" => "eu-west-1"}) |> render_submit()
@@ -785,7 +789,7 @@ defmodule RailWeb.TaskLiveTest do
       task: task,
       questions: [first | _rest]
     } do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> element("#dismiss-question-button") |> render_click()
 
@@ -809,7 +813,7 @@ defmodule RailWeb.TaskLiveTest do
         {:ok, %OsProcess{run: spawned}}
       end)
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> form("#answer-question-form", %{"answer" => "Postgres"}) |> render_submit()
       view |> form("#answer-question-form", %{"answer" => "eu-west-1"}) |> render_submit()
@@ -828,7 +832,7 @@ defmodule RailWeb.TaskLiveTest do
     test "dismissing every question closes the round without a message", %{conn: conn, task: task, run: run} do
       reject(&Tools.start_os_process/2)
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> element("#dismiss-question-button") |> render_click()
       view |> element("#dismiss-question-button") |> render_click()
@@ -849,7 +853,7 @@ defmodule RailWeb.TaskLiveTest do
       task: task,
       questions: [first | _rest]
     } do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> form("#answer-question-form", %{"answer" => "Postgres"}) |> render_submit()
       view |> element("#question-tab-0") |> render_click()
@@ -862,7 +866,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "an edit left unsaved in the box holds the round back until it is saved", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> form("#answer-question-form", %{"answer" => "Postgres"}) |> render_submit()
       view |> form("#answer-question-form", %{"answer" => "eu-west-1"}) |> render_submit()
@@ -879,7 +883,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "a round dismissed from another tab leaves this one", %{conn: conn, task: task, run: run} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> element("#dismiss-question-button") |> render_click()
       view |> element("#dismiss-question-button") |> render_click()
@@ -901,7 +905,7 @@ defmodule RailWeb.TaskLiveTest do
         "The schema needs a new column."
       ])
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
       conversation = view |> element("#chat-messages") |> render()
       assert conversation =~ "The schema needs a new column."
 
@@ -928,7 +932,7 @@ defmodule RailWeb.TaskLiveTest do
     } do
       Pipeline.append_run_events(run.id, nil, ["The schema needs a new column."])
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
       view |> form("#answer-question-form", %{"answer" => "Half typed"}) |> render_change()
       view |> element("#toggle-raw-log") |> render_click()
 
@@ -954,7 +958,7 @@ defmodule RailWeb.TaskLiveTest do
         "The schema needs a new column."
       ])
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       earlier =
         view |> render() |> Floki.parse_fragment!() |> Floki.find("#chat-messages > *") |> Enum.map(&Floki.raw_html/1)
@@ -982,8 +986,8 @@ defmodule RailWeb.TaskLiveTest do
     test "answers sent from one view show as an answers card in another without a reload", %{conn: conn, task: task} do
       stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
-      assert {:ok, sender, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
-      assert {:ok, other, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, sender, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+      assert {:ok, other, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       sender |> form("#answer-question-form", %{"answer" => "Postgres"}) |> render_submit()
       sender |> form("#answer-question-form", %{"answer" => "eu-west-1"}) |> render_submit()
@@ -997,7 +1001,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "saving an answer the round already sent says so", %{conn: conn, task: task, questions: [first | _rest]} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> form("#answer-question-form", %{"answer" => "Postgres"}) |> render_submit()
       view |> element("#question-tab-0") |> render_click()
@@ -1233,7 +1237,7 @@ defmodule RailWeb.TaskLiveTest do
     %Question{id: question_id} =
       Repo.insert!(%Question{task_id: other_run.task_id, run_id: other_run.id, prompt: "Which database?"})
 
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
     card = with_target(view, "#question-card-#{run.id}")
 
     render_submit(card, "answer_question", %{"question_id" => question_id, "answer" => "Postgres"})
@@ -1250,10 +1254,54 @@ defmodule RailWeb.TaskLiveTest do
       ids =
         html |> Floki.parse_document!() |> Floki.find("#review-items [data-qa='review_item']") |> Floki.attribute("id")
 
-      assert ids == ["review-item-issue", "review-item-plan", "review-item-conversation"]
+      assert ids == ["review-item-issue", "review-item-plan"]
       assert has_element?(view, "#review-item-issue[title='Issue: TLV-1']")
       assert has_element?(view, "#review-item-plan[aria-current='true']")
       assert has_element?(view, "[data-qa='plan-stage']")
+    end
+
+    test "the Plan item has the conversation beside it, and every other item only its trays under it", %{
+      conn: conn,
+      task: task,
+      project: project
+    } do
+      {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
+
+      {:ok, _built} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: engineer.id,
+          status: :finished,
+          started_at: DateTime.utc_now()
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+      assert has_element?(view, "#plan-chat #conversation-tab-root")
+      assert has_element?(view, "#plan-chat #conversation-agents")
+      assert has_element?(view, "#plan-chat #chat-input")
+      refute has_element?(view, "#conversation-tray")
+
+      view |> element("#review-item-issue") |> render_click()
+
+      assert has_element?(view, "#conversation-tray")
+      refute has_element?(view, "#plan-chat")
+      refute has_element?(view, "#conversation-tab-root")
+      refute has_element?(view, "#conversation-agents")
+    end
+
+    test "a link to the old Chat item opens the Plan item with the conversation beside it", %{
+      conn: conn,
+      task: task,
+      role: role
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+
+      assert has_element?(view, "#review-pane[data-item=plan]")
+      assert has_element?(view, "#review-item-plan[aria-current='true']")
+      assert has_element?(view, "[data-qa='plan-stage']")
+      assert has_element?(view, "#plan-chat #conversation-role-#{role.id}")
+      refute has_element?(view, "#review-item-conversation")
     end
 
     test "the issue item reads the ticket Linear has", %{conn: conn, task: task, issue: issue} do
@@ -1302,14 +1350,13 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       view |> element("#review-item-plan") |> render_click()
-      view |> element("#plan-item-ticket") |> render_click()
 
       assert has_element?(view, "[data-qa='plan_ticket']", "The ticket as approved.")
       refute has_element?(view, "#task-approve-plan")
     end
 
     # Only Plan, and then the review agent, take messages; any other agent's run is its record.
-    test "an agent with no stage of its own is read in Chat as a record", %{
+    test "an agent with no stage of its own is read beside the plan as a record", %{
       conn: conn,
       task: task,
       project: project
@@ -1324,36 +1371,36 @@ defmodule RailWeb.TaskLiveTest do
           started_at: DateTime.utc_now()
         })
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation&agent=debugger")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan&agent=debugger")
 
       assert has_element?(view, "#conversation-role-#{debugger.id}")
       assert has_element?(view, "#conversation-closed", "This is a record of what this agent did.")
       refute has_element?(view, "#composer-root")
     end
 
-    test "an agent that has not run is not offered in Chat", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+    test "an agent that has not run is not offered beside the plan", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       refute has_element?(view, "#conversation-agent-engineer")
     end
 
-    test "the Chat item counts the questions its run is waiting on", %{conn: conn, task: task, run: run} do
+    test "the Plan item counts the questions its conversation's run is waiting on", %{conn: conn, task: task, run: run} do
       {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
       blocked = Repo.preload(blocked, task: :issue)
 
       Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which flow?"})
       Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "How many?"})
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
-      assert has_element?(view, "#review-item-conversation [data-qa='review_item_badge']", "2")
+      assert has_element?(view, "#review-item-plan [data-qa='review_item_badge']", "2")
 
       # An answer saved but not yet sent is not something the run is still waiting on.
       view |> form("#answer-question-form", %{"answer" => "Checkout"}) |> render_submit()
-      assert has_element?(view, "#review-item-conversation [data-qa='review_item_badge']", "1")
+      assert has_element?(view, "#review-item-plan [data-qa='review_item_badge']", "1")
 
       view |> form("#answer-question-form", %{"answer" => "Three"}) |> render_submit()
-      refute has_element?(view, "#review-item-conversation [data-qa='review_item_badge']")
+      refute has_element?(view, "#review-item-plan [data-qa='review_item_badge']")
     end
 
     test "the item the URL names is the one that opens, and stays open as the task moves on", %{
@@ -1455,45 +1502,40 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(one, "#plan-item-ticket-status", "Being written")
+      assert has_element?(one, "#plan-section-ticket-status", "Being written")
       assert has_element?(one, "#plan-ticket-pending", "Writing the ticket")
 
       save_ticket.()
 
       for view <- [one, two] do
         _settled = render(view)
-        assert has_element?(view, "#plan-item-ticket-status", "4 criteria · saved")
-        assert has_element?(view, "#plan-item-ticket-saved[phx-hook='LocalTime']")
-        assert has_element?(view, "#plan-item-ticket[aria-current='true']")
+        assert has_element?(view, "#plan-section-ticket-status", "4 criteria · saved")
+        assert has_element?(view, "#plan-section-ticket-saved[phx-hook='LocalTime']")
+        assert has_element?(view, "#plan-section-ticket [data-qa='plan_ticket']", "Slow.")
       end
 
       save_options.(["cards"])
 
       for view <- [one, two] do
         _settled = render(view)
-        assert has_element?(view, "#plan-item-design-status", "1 of 3 saved")
-        assert has_element?(view, "#plan-item-ticket[aria-current='true']")
-        assert has_element?(view, "[data-qa='plan_ticket']", "Slow.")
+        assert has_element?(view, "#plan-section-design-status", "1 of 3 saved")
+        assert has_element?(view, "#plan-section-ticket [data-qa='plan_ticket']", "Slow.")
+        assert has_element?(view, "#plan-section-design #design-tab-cards", "Cards")
+        assert has_element?(view, "#plan-section-design #design-tab-building-2", "Being built")
+        assert has_element?(view, "#plan-section-design #pick-design-cards:not([disabled])")
       end
-
-      two |> element("#plan-item-design") |> render_click()
-      assert has_element?(two, "#design-tab-cards", "Cards")
-      assert has_element?(two, "#design-tab-building-2", "Being built")
-      assert has_element?(two, "#pick-design-cards:not([disabled])")
 
       save_plan.(nil)
 
       for view <- [one, two] do
         _settled = render(view)
-        assert has_element?(view, "#plan-item-plan-status", "saved")
+        assert has_element?(view, "#plan-section-plan-status", "saved")
+        assert has_element?(view, "#plan-section-plan [data-qa='plan_plan']")
         refute has_element?(view, "#task-approve-plan")
       end
-
-      assert has_element?(one, "#plan-item-ticket[aria-current='true']")
-      assert has_element?(two, "#plan-item-design[aria-current='true']")
     end
 
-    test "a run starting, stopping or failing leaves the open item where it was", %{
+    test "a run starting, stopping or failing keeps the ticket, the design and the plan on the page", %{
       conn: conn,
       task: task,
       run: run,
@@ -1502,31 +1544,28 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, working} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "#plan-item-ticket[aria-current='true']")
+      assert has_element?(view, "#plan-section-ticket #plan-ticket-pending")
 
       save_ticket.()
       _settled = render(view)
-      assert has_element?(view, "#plan-item-design-status", "Not saved yet")
-      assert has_element?(view, "#plan-item-ticket[aria-current='true']")
+      assert has_element?(view, "#plan-section-design-status", "Not saved yet")
+      assert has_element?(view, "#plan-section-ticket [data-qa='plan_ticket']", "Slow.")
 
       {:ok, stopped} = Pipeline.update_run(working, %{status: :finished})
       send(view.pid, {:run_changed, run.id})
 
-      assert has_element?(view, "#plan-item-ticket[aria-current='true']")
-      refute has_element?(view, "#plan-item-plan[aria-current='true']")
+      for section <- ["ticket", "design", "plan"], do: assert(has_element?(view, "#plan-section-#{section}"))
 
       {:ok, restarted} = Pipeline.update_run(stopped, %{status: :running})
       send(view.pid, {:run_changed, run.id})
 
-      assert has_element?(view, "#plan-item-ticket[aria-current='true']")
-      refute has_element?(view, "#plan-item-design[aria-current='true']")
+      for section <- ["ticket", "design", "plan"], do: assert(has_element?(view, "#plan-section-#{section}"))
 
       {:ok, _failed} = Pipeline.update_run(restarted, %{status: :finished, error: "Plan ran out of turns."})
       send(view.pid, {:run_changed, run.id})
 
       assert has_element?(view, "[data-qa='task_status_chip']", "Plan failed")
-      assert has_element?(view, "#plan-item-ticket[aria-current='true']")
-      assert has_element?(view, "[data-qa='plan_ticket']", "Slow.")
+      assert has_element?(view, "#plan-section-ticket [data-qa='plan_ticket']", "Slow.")
     end
 
     test "Use this design picks at Plan, and the message says only what was picked", %{
@@ -1543,8 +1582,7 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(view, "[data-qa='task_status_chip']", "Pick a design")
-      assert has_element?(view, "#plan-item-design[aria-current='true']")
-      assert has_element?(view, "#plan-item-design-status", "Pick one of 3")
+      assert has_element?(view, "#plan-section-design-status", "Pick one of 3")
       refute has_element?(view, "#task-approve-plan")
 
       view |> element("#design-tab-table") |> render_click()
@@ -1554,15 +1592,14 @@ defmodule RailWeb.TaskLiveTest do
 
       assert File.read!(Path.join(dir, "picked")) == "table"
       assert Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ ~r/^\[human:[^\]]+\] I picked Table \(table\)\.$/))
-      assert has_element?(view, "#plan-item-design-status", "Picked: Table")
-      assert has_element?(view, "#plan-item-design[aria-current='true']")
-      assert has_element?(view, "#design-option-table", "Picked")
+      assert has_element?(view, "#plan-section-design-status", "Picked: Table")
+      assert has_element?(view, "#plan-section-design #design-option-table", "Picked")
       assert has_element?(view, "#design-costs", "Busy at 1280px")
       assert has_element?(view, "#design-assumptions", "Ten per page.")
       refute has_element?(view, "[role='tablist'][aria-label='Design options']")
     end
 
-    test "a pick of another option than the plan's keeps Design open while Plan revises", %{
+    test "a pick of another option than the plan's shows the pick while the plan says it is revising", %{
       conn: conn,
       task: task,
       save_ticket: save_ticket,
@@ -1574,47 +1611,44 @@ defmodule RailWeb.TaskLiveTest do
       save_plan.("cards")
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "#plan-item-design[aria-current='true']")
 
       view |> element("#design-tab-table") |> render_click()
       view |> element("#pick-design-table") |> render_click()
 
-      assert has_element?(view, "#plan-item-design[aria-current='true']")
-      assert has_element?(view, "#design-option-table", "Picked")
-      assert has_element?(view, "#plan-item-plan-status", "Revising for the pick")
-      refute has_element?(view, "#plan-item-plan[aria-current='true']")
+      assert has_element?(view, "#plan-section-design #design-option-table", "Picked")
+      assert has_element?(view, "#plan-section-plan-status", "Revising for the pick")
     end
 
-    test "each click opens its item, and coming back to the Plan item opens what waits on the human", %{
-      conn: conn,
-      task: task,
-      save_ticket: save_ticket,
-      save_options: save_options
-    } do
+    test "the ticket, the design and the plan read one under another, and coming back to the Plan item shows them again",
+         %{
+           conn: conn,
+           task: task,
+           save_ticket: save_ticket,
+           save_options: save_options
+         } do
       save_ticket.()
       save_options.(["cards", "table", "timeline"])
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "#plan-item-design[aria-current='true']")
+      refute has_element?(view, "#plan-items")
 
-      view |> element("#plan-item-ticket") |> render_click()
-      assert has_element?(view, "#plan-item-ticket[aria-current='true']")
-      assert has_element?(view, "[data-qa='plan_ticket']", "Slow.")
+      assert ["plan-section-ticket", "plan-section-design", "plan-section-plan"] =
+               view
+               |> render()
+               |> Floki.parse_document!()
+               |> Floki.find("#plan-pane [data-qa='plan_section']")
+               |> Floki.attribute("id")
 
-      view |> element("#plan-item-design") |> render_click()
-      assert has_element?(view, "#plan-item-design[aria-current='true']")
-      assert has_element?(view, "#design-tab-cards", "Cards")
-
-      view |> element("#plan-item-plan") |> render_click()
-      assert has_element?(view, "#plan-item-plan[aria-current='true']")
-      assert has_element?(view, "#plan-plan-pending")
+      assert has_element?(view, "#plan-section-ticket [data-qa='plan_ticket']", "Slow.")
+      assert has_element?(view, "#plan-section-design #design-tab-cards", "Cards")
+      assert has_element?(view, "#plan-section-plan #plan-plan-pending")
 
       view |> element("#review-item-issue") |> render_click()
       refute has_element?(view, "[data-qa='plan-stage']")
 
       view |> element("#review-item-plan") |> render_click()
-      assert has_element?(view, "#plan-item-design[aria-current='true']")
-      assert has_element?(view, "#plan-item-design-status", "Pick one of 3")
+      assert has_element?(view, "#plan-section-ticket [data-qa='plan_ticket']", "Slow.")
+      assert has_element?(view, "#plan-section-design-status", "Pick one of 3")
     end
 
     test "a pick of another option than the plan's says it is being revised, and offers no Approve", %{
@@ -1634,15 +1668,20 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      assert has_element?(view, "#plan-item-plan[aria-current='true']")
-      assert has_element?(view, "#plan-item-plan-status", "Revising for the pick")
-      assert has_element?(view, "#plan-revising", "Being revised for Table. Below is the plan written for Cards.")
+      assert has_element?(view, "#plan-section-plan-status", "Revising for the pick")
+
+      assert has_element?(
+               view,
+               "#plan-section-plan #plan-revising",
+               "Being revised for Table. Below is the plan written for Cards."
+             )
+
       refute has_element?(view, "#task-approve-plan")
 
       {:ok, _stopped} = Pipeline.update_run(working, %{status: :finished})
       send(view.pid, :task_changed)
 
-      assert has_element?(view, "#plan-item-plan-status", "Written for Cards, not Table")
+      assert has_element?(view, "#plan-section-plan-status", "Written for Cards, not Table")
       assert has_element?(view, "#plan-revising", "Not yet revised for Table. Below is the plan written for Cards.")
 
       # The header's Approve is offered on any saved plan, and says why this one cannot be approved.
@@ -1751,7 +1790,6 @@ defmodule RailWeb.TaskLiveTest do
       save_options.(["cards", "table", "timeline"])
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#plan-item-design") |> render_click()
       {:ok, _moved} = Pipeline.update_task(task, %{stage: :engineer})
 
       view |> element("#pick-design-cards") |> render_click()
@@ -1809,12 +1847,11 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "[data-qa='task_status_chip']", "Plan failed")
       assert has_element?(view, "[data-qa='task_error_card']", error)
-      assert has_element?(view, "#plan-item-design[aria-current='true']")
-      assert has_element?(view, "#plan-item-design-status", "2 of 3 saved: needs 3")
-      assert has_element?(view, "#design-tab-missing-3", "Not saved")
+      assert has_element?(view, "#plan-section-design-status", "2 of 3 saved: needs 3")
+      assert has_element?(view, "#plan-section-design #design-tab-missing-3", "Not saved")
       assert has_element?(view, "#pick-in-conversation", "Pick in the conversation.")
       refute has_element?(view, "#pick-design-cards")
-      assert has_element?(view, "#plan-item-plan-status", "Not saved yet")
+      assert has_element?(view, "#plan-section-plan-status", "Not saved yet")
     end
 
     test "a stopped Plan run says how to pick it up: a message when it has a conversation, Retry when it has none", %{
@@ -1830,21 +1867,16 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, _moved} = Pipeline.update_run(Repo.reload!(run), %{conversation_id: nil})
       send(view.pid, :task_changed)
 
-      view |> element("#plan-item-ticket") |> render_click()
-
       assert has_element?(
                view,
                "#plan-ticket-pending",
                "Retry it from the conversation to start it again from its brief."
              )
 
-      view |> element("#plan-item-design") |> render_click()
       assert has_element?(view, "#plan-design-pending", "Retry it from the conversation")
-      view |> element("#plan-item-plan") |> render_click()
       assert has_element?(view, "#plan-plan-pending", "Retry it from the conversation")
 
-      view |> element("#review-item-conversation") |> render_click()
-      assert has_element?(view, "#retry-run")
+      assert has_element?(view, "#plan-chat #retry-run")
     end
 
     test "a change with no screen says so, and Approve needs only the ticket and the plan", %{
@@ -1859,16 +1891,11 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(view, "[data-qa='task_status_chip']", "Review the plan")
-      assert has_element?(view, "#plan-item-ticket[aria-current='true']")
-      assert has_element?(view, "[data-qa='plan_ticket']", "Slow.")
-      assert has_element?(view, "#plan-item-design-status", "No screen in this change")
+      assert has_element?(view, "#plan-section-ticket [data-qa='plan_ticket']", "Slow.")
+      assert has_element?(view, "#plan-section-design-status", "No screen in this change")
       assert has_element?(view, "#task-approve-plan")
-
-      view |> element("#plan-item-design") |> render_click()
-      assert has_element?(view, "#plan-design-none", "No screen in this change")
-
-      view |> element("#plan-item-plan") |> render_click()
-      assert has_element?(view, "[data-qa='plan_plan']", "For nobody.")
+      assert has_element?(view, "#plan-section-design #plan-design-none", "No screen in this change")
+      assert has_element?(view, "#plan-section-plan [data-qa='plan_plan']", "For nobody.")
     end
 
     test "a subagent line opens on its own transcript, a refused save with its reason", %{
@@ -1884,7 +1911,7 @@ defmodule RailWeb.TaskLiveTest do
         "[subagent end toolu_ar]"
       ])
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
       refute has_element?(view, "[data-qa='subagent-transcript']")
 
       view |> element("[data-qa='subagent-block'][data-status='done'] button") |> render_click()
@@ -1906,9 +1933,8 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, _plan} = Pipeline.save_plan(task, %{plan: sheet_plan()})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#plan-item-plan") |> render_click()
 
-      assert has_element?(view, "#plan-item-plan-status", "files · saved")
+      assert has_element?(view, "#plan-section-plan-status", "files · saved")
       assert has_element?(view, "#plan-plan #plan-sheet")
       refute has_element?(view, "figure [data-qa='plan_diagram_source']:not(.hidden)")
 
@@ -1939,7 +1965,6 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, _moved} = Pipeline.update_task(task, %{stage: :engineer})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
-      view |> element("#plan-item-plan") |> render_click()
 
       assert has_element?(view, "#review-item-plan[title='Plan: Approved']")
       assert has_element?(view, "[data-qa='plan_plan']", "As approved.")
@@ -2007,7 +2032,7 @@ defmodule RailWeb.TaskLiveTest do
       Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which layout?", options: ["A", "B"]})
       Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "How many per page?"})
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
       reject(&Pipeline.read_design/2)
       reject(&Pipeline.read_plan/1)
 
@@ -2069,7 +2094,6 @@ defmodule RailWeb.TaskLiveTest do
       for picked? <- [false, true] do
         if picked?, do: pick.()
         assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-        view |> element("#plan-item-design") |> render_click()
 
         assert has_element?(view, "#design-comment-toggle")
         refute has_element?(view, "[id^='design-frame-'] #design-comment-control")
@@ -2086,7 +2110,6 @@ defmodule RailWeb.TaskLiveTest do
       element: element
     } do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#plan-item-design") |> render_click()
 
       assert has_element?(view, "#design-comment-toggle[disabled]")
       assert has_element?(view, "#design-comment-hint", "Pick a design to comment on it.")
@@ -2108,7 +2131,6 @@ defmodule RailWeb.TaskLiveTest do
     } do
       pick.()
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#plan-item-design") |> render_click()
 
       assert has_element?(view, ~s(iframe[src*="comments=1"]))
       refute has_element?(view, ~s(#open-design-waiting-lanes[href*="comments=1"]))
@@ -2139,6 +2161,7 @@ defmodule RailWeb.TaskLiveTest do
       assert [[%{"number" => 1, "selector" => "#group-by-project", "id" => "pcm_" <> _rest}]] =
                frame |> Floki.attribute("data-markers") |> Enum.map(&Jason.decode!/1)
 
+      view |> element("#plan-comment-tray-fold") |> render_click()
       assert has_element?(view, "#plan-comment-tray [data-qa='plan_comment_row']", "Turn this on by default.")
       assert has_element?(view, "#send-plan-comments", "Send 1")
 
@@ -2156,14 +2179,12 @@ defmodule RailWeb.TaskLiveTest do
       kept = %{"commenting" => true, "draft" => Map.merge(element, %{"option_key" => "waiting-lanes", "body" => "Half"})}
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#plan-item-design") |> render_click()
       view |> with_target("#plan-stage") |> render_hook("restore_commenting", kept)
       refute has_element?(view, "[data-qa='plan_comment_form']")
       assert has_element?(view, "#design-frame-waiting-lanes[data-commenting='false']")
 
       pick.()
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#plan-item-design") |> render_click()
       other = put_in(kept, ["draft", "option_key"], "one-queue")
       view |> with_target("#plan-stage") |> render_hook("restore_commenting", other)
       assert has_element?(view, "#design-frame-waiting-lanes[data-commenting='false']")
@@ -2174,7 +2195,6 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='plan_comment_form']", "Group by project")
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#plan-item-design") |> render_click()
 
       view
       |> with_target("#plan-stage")
@@ -2184,7 +2204,6 @@ defmodule RailWeb.TaskLiveTest do
 
       Repo.update_all(from(r in Run, where: r.id == ^run.id), set: [conversation_id: nil])
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#plan-item-design") |> render_click()
       view |> with_target("#plan-stage") |> render_hook("restore_commenting", kept)
       assert has_element?(view, "#design-frame-waiting-lanes[data-commenting='false']")
       assert has_element?(view, "#design-comment-toggle[disabled]")
@@ -2213,7 +2232,8 @@ defmodule RailWeb.TaskLiveTest do
         })
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#plan-item-design") |> render_click()
+      assert has_element?(view, "#plan-comment-tray-count", "1")
+      view |> element("#plan-comment-tray-fold") |> render_click()
       assert has_element?(view, "#plan-comment-#{id}")
       assert render(view) =~ id
 
@@ -2222,7 +2242,6 @@ defmodule RailWeb.TaskLiveTest do
 
       {:ok, someone} = Users.update_user(system_scope(), someone, %{project_ids: [task.project_id]})
       assert {:ok, theirs, _html} = live(log_in_user(build_conn(), someone), ~p"/tasks/#{task.id}")
-      theirs |> element("#plan-item-design") |> render_click()
       refute has_element?(theirs, "#plan-comment-tray")
       refute render(theirs) =~ id
 
@@ -2257,9 +2276,9 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}")
-      for view <- [one, two], do: view |> element("#plan-item-design") |> render_click()
 
-      one |> with_target("#conversation-tray") |> render_hook("plan_comment_anchors", %{"missing" => [gone_id]})
+      for view <- [one, two], do: view |> element("#plan-comment-tray-fold") |> render_click()
+      one |> with_target("#conversation-tab-root") |> render_hook("plan_comment_anchors", %{"missing" => [gone_id]})
       assert has_element?(one, "#plan-comment-#{gone_id}[data-found='false']", "No longer found")
       assert has_element?(two, "#plan-comment-#{gone_id}[data-found='true']")
 
@@ -2272,9 +2291,8 @@ defmodule RailWeb.TaskLiveTest do
         assert Floki.attribute(frame, "data-markers") == ["[]"]
       end
 
-      two |> with_target("#conversation-tray") |> render_click("send_plan_comments", %{})
+      two |> with_target("#conversation-tab-root") |> render_click("send_plan_comments", %{})
 
-      one |> element("#review-item-conversation") |> render_click()
       assert has_element?(one, "[data-qa='plan_comment_card']", "2 comments on the design")
       assert has_element?(one, "[data-qa='plan_comment_card']", "This went.")
       assert Enum.count(Pipeline.list_run_events(run), &(&1.line =~ "comments on the design")) == 1
@@ -2301,9 +2319,10 @@ defmodule RailWeb.TaskLiveTest do
           body: "Turn this on by default."
         })
 
-      # The queued round waits in the composer, which only the Chat item has.
+      # The queued round waits in the composer, which only the conversation beside the plan has.
       {:ok, _running} = Pipeline.update_run(run, %{status: :running})
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+      view |> element("#plan-comment-tray-fold") |> render_click()
       assert has_element?(view, "#plan-comment-tray-hint", "Plan is working.")
 
       view |> element("#send-plan-comments") |> render_click()
@@ -2318,7 +2337,7 @@ defmodule RailWeb.TaskLiveTest do
       assert [] = Repo.all(from o in Rail.Learnings.Schemas.Observation, where: o.task_id == ^task.id)
     end
 
-    test "Remove takes a row and its marker away, also once the element is no longer found", %{
+    test "the tray opens folded, and Remove takes a row and its marker away, also once the element is no longer found", %{
       conn: conn,
       task: task,
       scope: scope,
@@ -2339,9 +2358,17 @@ defmodule RailWeb.TaskLiveTest do
         })
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#plan-item-design") |> render_click()
-      view |> with_target("#conversation-tray") |> render_hook("plan_comment_anchors", %{"missing" => [id]})
-      view |> with_target("#conversation-tray") |> render_hook("plan_comment_anchors", %{"missing" => "nonsense"})
+      view |> with_target("#conversation-tab-root") |> render_hook("plan_comment_anchors", %{"missing" => [id]})
+      view |> with_target("#conversation-tab-root") |> render_hook("plan_comment_anchors", %{"missing" => "nonsense"})
+
+      # Folded, the tray is its count and Send; the fold opens it to the rows and closes it again.
+      assert has_element?(view, "#plan-comment-tray-fold[aria-expanded='false']")
+      assert has_element?(view, "#plan-comment-tray-count", "1")
+      assert has_element?(view, "#send-plan-comments", "Send 1")
+      refute has_element?(view, "#plan-comment-#{id}")
+
+      view |> element("#plan-comment-tray-fold") |> render_click()
+      assert has_element?(view, "#plan-comment-tray-fold[aria-expanded='true']")
       assert has_element?(view, "#plan-comment-#{id}", "No longer found")
 
       view |> element("#plan-comment-tray-fold") |> render_click()
@@ -2351,7 +2378,7 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("#remove-plan-comment-#{id}") |> render_click()
       refute has_element?(view, "#plan-comment-tray")
       assert Pipeline.list_plan_comments(scope, task) == []
-      view |> with_target("#conversation-tray") |> render_click("remove_plan_comment", %{"id" => id})
+      view |> with_target("#conversation-tab-root") |> render_click("remove_plan_comment", %{"id" => id})
     end
 
     # The approved plan is what Engineer builds from, so there is no conversation left to comment through.
@@ -2369,7 +2396,6 @@ defmodule RailWeb.TaskLiveTest do
       Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [approved_at: DateTime.utc_now()])
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
-      view |> element("#plan-item-design") |> render_click()
 
       refute has_element?(view, "#send-plan-comments")
       assert has_element?(view, "#design-comment-toggle[disabled]")
@@ -2380,7 +2406,7 @@ defmodule RailWeb.TaskLiveTest do
                "The plan is approved, so the design takes comments again once the round is under review."
              )
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation&agent=plan")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan&agent=plan")
       assert has_element?(view, "#conversation-closed", "Only Plan, and then the review agent, take messages.")
       refute has_element?(view, "#chat-input")
     end
@@ -2413,7 +2439,6 @@ defmodule RailWeb.TaskLiveTest do
         })
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
-      view |> element("#plan-item-design") |> render_click()
       refute has_element?(view, "#design-comment-toggle[disabled]")
 
       {:ok, _comment} =
@@ -2447,7 +2472,6 @@ defmodule RailWeb.TaskLiveTest do
     } do
       pick.()
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#plan-item-design") |> render_click()
       view |> element("#design-comment-toggle") |> render_click()
       view |> with_target("#plan-stage") |> render_hook("select_element", element)
       view |> with_target("#plan-stage") |> render_hook("select_element", %{"selector" => 7})
@@ -2491,7 +2515,6 @@ defmodule RailWeb.TaskLiveTest do
       # A page opened once the pick is back can comment again.
       File.write!(Path.join(dir, "picked"), "waiting-lanes")
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#plan-item-design") |> render_click()
       view |> element("#design-comment-toggle") |> render_click()
       view |> with_target("#plan-stage") |> render_hook("select_element", element)
       Repo.update_all(from(r in Run, where: r.id == ^run.id), set: [conversation_id: nil])
@@ -2557,10 +2580,9 @@ defmodule RailWeb.TaskLiveTest do
       %{task: task, run: run, design: design, description: description, key: key}
     end
 
-    test "the title, priority, estimate and every description line draw a +, and neither document has a Comment control",
+    test "the title, priority, estimate and every description line draw a +, and only the design has a Comment control",
          %{conn: conn, task: task} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#plan-item-ticket") |> render_click()
 
       labels =
         view
@@ -2583,12 +2605,12 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "#plan-ticket-priority", "Medium")
       assert has_element?(view, "#plan-ticket-estimate", "3 Points")
-      refute has_element?(view, "#design-comment-toggle")
+      refute has_element?(view, "#plan-section-ticket #design-comment-toggle")
 
-      view |> element("#plan-item-plan") |> render_click()
       assert has_element?(view, "#plan-sheet button[aria-label='Comment on Approach']")
       assert has_element?(view, "#plan-sheet button[aria-label='Comment on File 1']")
-      refute has_element?(view, "#design-comment-toggle")
+      refute has_element?(view, "#plan-section-plan #design-comment-toggle")
+      assert has_element?(view, "#plan-section-design #design-comment-toggle")
     end
 
     test "after a design comment, a comment on a criterion is card 2 under it and 2 in the tray, a second stacks as 3,
@@ -2598,7 +2620,6 @@ defmodule RailWeb.TaskLiveTest do
       criterion = key.("Criterion 2")
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#plan-item-ticket") |> render_click()
       view |> element("#line-ticket-#{criterion} [data-qa='line_comment_add']") |> render_click()
 
       assert has_element?(
@@ -2614,13 +2635,13 @@ defmodule RailWeb.TaskLiveTest do
 
       under = "#line-ticket-#{criterion} + [data-qa='line_comments']"
       assert has_element?(view, "#{under} [data-qa='document_comment_number'][aria-label='Comment 2']")
+      view |> element("#plan-comment-tray-fold") |> render_click()
       assert has_element?(view, "#plan-comment-tray [data-qa='plan_comment_row']:nth-child(2)", "Criterion 2")
 
       view |> element("#line-ticket-#{criterion} [data-qa='line_comment_add']") |> render_click()
       view |> form("[data-qa='document_comment_form']", %{"body" => "And say so."}) |> render_submit()
       assert has_element?(view, "#{under} [data-qa='document_comment']:nth-child(2) [aria-label='Comment 3']")
 
-      view |> element("#plan-item-design") |> render_click()
       assert has_element?(view, "#design-comment-toggle")
 
       {:ok, someone} =
@@ -2628,7 +2649,6 @@ defmodule RailWeb.TaskLiveTest do
 
       {:ok, someone} = Users.update_user(system_scope(), someone, %{project_ids: [task.project_id]})
       assert {:ok, theirs, _html} = live(log_in_user(build_conn(), someone), ~p"/tasks/#{task.id}")
-      theirs |> element("#plan-item-ticket") |> render_click()
       assert has_element?(theirs, "#line-ticket-#{criterion} [data-qa='line_comment_add']")
       refute has_element?(theirs, "[data-qa='document_comment']")
       refute has_element?(theirs, "#plan-comment-tray")
@@ -2646,14 +2666,11 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}")
-      one |> element("#plan-item-ticket") |> render_click()
       one |> element("#line-ticket-#{key.("Criterion 1")} [data-qa='line_comment_add']") |> render_click()
       one |> form("[data-qa='document_comment_form']", %{"body" => "Which page?"}) |> render_submit()
-      one |> element("#plan-item-plan") |> render_click()
       one |> element("#plan-sheet button[aria-label='Comment on File 1']") |> render_click()
       one |> form("[data-qa='document_comment_form']", %{"body" => "Wait on page-loading-stop."}) |> render_submit()
 
-      two |> element("#plan-item-plan") |> render_click()
       _settled = render(two)
       assert has_element?(two, "#plan-sheet [data-qa='document_comment']", "Wait on page-loading-stop.")
 
@@ -2665,7 +2682,6 @@ defmodule RailWeb.TaskLiveTest do
         refute has_element?(view, "[data-qa='document_comment']")
       end
 
-      one |> element("#review-item-conversation") |> render_click()
       assert has_element?(one, "[data-qa='plan_comment_card']", "3 comments on the design, the ticket and the plan")
       assert has_element?(one, "[data-qa='plan_comment_card']", "Which page?")
     end
@@ -2673,7 +2689,6 @@ defmodule RailWeb.TaskLiveTest do
     test "a resave that changes a commented paragraph moves its comment to the top, changed, and leaves the others",
          %{conn: conn, task: task, key: key, description: description} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#plan-item-ticket") |> render_click()
       view |> element("#line-ticket-#{key.("Paragraph 1")} [data-qa='line_comment_add']") |> render_click()
       view |> form("[data-qa='document_comment_form']", %{"body" => "Say which pages."}) |> render_submit()
       view |> element("#line-ticket-#{key.("Criterion 1")} [data-qa='line_comment_add']") |> render_click()
@@ -2691,6 +2706,7 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#ticket-changed-comments [data-lifted='true']", "Say which pages.")
       assert has_element?(view, "#ticket-changed-comments [data-qa='document_comment_quote']", "at first paint")
       assert has_element?(view, "#line-ticket-#{key.("Criterion 1")} + [data-qa='line_comments']", "Kept.")
+      view |> element("#plan-comment-tray-fold") |> render_click()
       assert has_element?(view, "#plan-comment-tray [data-qa='plan_comment_changed']")
       assert has_element?(view, "#plan-comment-tray [data-qa='plan_comment_row'][data-found='false']", "Paragraph 1")
     end
@@ -2702,7 +2718,6 @@ defmodule RailWeb.TaskLiveTest do
       key: key
     } do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#plan-item-ticket") |> render_click()
       view |> element("#line-ticket-#{key.("Criterion 1")} [data-qa='line_comment_add']") |> render_click()
       view |> form("[data-qa='document_comment_form']", %{"body" => "Half a"}) |> render_change()
       assert has_element?(view, "[data-qa='document_comment_body']", "Half a")
@@ -2715,11 +2730,10 @@ defmodule RailWeb.TaskLiveTest do
       view |> with_target("#plan-stage") |> render_click("remove_plan_comment", %{"id" => "pcm_already_gone"})
       refute has_element?(view, "[data-qa='document_comment']")
 
-      for {item, add} <- [
-            {"#plan-item-ticket", "#line-ticket-#{key.("Criterion 1")} [data-qa='line_comment_add']"},
-            {"#plan-item-plan", "#plan-sheet button[aria-label='Comment on Approach']"}
+      for add <- [
+            "#line-ticket-#{key.("Criterion 1")} [data-qa='line_comment_add']",
+            "#plan-sheet button[aria-label='Comment on Approach']"
           ] do
-        view |> element(item) |> render_click()
         view |> element(add) |> render_click()
         assert has_element?(view, "[data-qa='document_comment_form']")
 
@@ -2733,7 +2747,6 @@ defmodule RailWeb.TaskLiveTest do
 
     test "a comment Plan can no longer take when it is saved says why", %{conn: conn, task: task, run: run, key: key} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#plan-item-ticket") |> render_click()
       view |> element("#line-ticket-#{key.("Criterion 1")} [data-qa='line_comment_add']") |> render_click()
       Repo.update_all(from(r in Run, where: r.id == ^run.id), set: [conversation_id: nil])
 
@@ -2755,7 +2768,6 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Recordings settle", description: "Short.", estimate: 1})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#plan-item-ticket") |> render_click()
 
       assert has_element?(view, "#plan-ticket-estimate", "1 Point")
       refute has_element?(view, "[data-qa='line_comment_add']")
@@ -2778,9 +2790,7 @@ defmodule RailWeb.TaskLiveTest do
       Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [approved_at: DateTime.utc_now()])
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
-      view |> element("#plan-item-ticket") |> render_click()
       refute has_element?(view, "[data-qa='line_comment_add']")
-      view |> element("#plan-item-plan") |> render_click()
       refute has_element?(view, "[data-qa='line_comment_add']")
       refute has_element?(view, "#plan-comment-tray")
 
@@ -2838,7 +2848,7 @@ defmodule RailWeb.TaskLiveTest do
       %{task: task, role: role, engineer_run: engineer_run, repo: repo}
     end
 
-    # The engineer takes no messages, but a round it asks is answered on its record in Chat.
+    # The engineer takes no messages, but a round it asks is answered on its record beside the plan.
     test "a round asked through the tool shows no card while the turn runs, then takes the closed note's place", %{
       conn: conn,
       task: task,
@@ -2863,7 +2873,7 @@ defmodule RailWeb.TaskLiveTest do
           %{"prompt" => "Behind a flag?"}
         ])
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation&agent=engineer")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan&agent=engineer")
       assert has_element?(view, "#conversation-closed")
       refute has_element?(view, "[data-qa='question-card']")
 
@@ -2909,7 +2919,7 @@ defmodule RailWeb.TaskLiveTest do
 
       Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which region?"})
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation&agent=engineer")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan&agent=engineer")
       reject(&Git.load_diff/3)
       reject(&Git.load_diff/4)
       reject(&Git.worktree_dirty?/1)
@@ -2944,7 +2954,7 @@ defmodule RailWeb.TaskLiveTest do
       blocked = Repo.preload(blocked, task: :issue)
       Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which database?"})
 
-      assert {:ok, typing, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation&agent=engineer")
+      assert {:ok, typing, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan&agent=engineer")
       assert {:ok, idle, _html} = live(conn, ~p"/tasks/#{task.id}")
       typing |> form("#answer-question-form", %{"answer" => "Half typed"}) |> render_change()
 
@@ -2989,7 +2999,7 @@ defmodule RailWeb.TaskLiveTest do
 
       Pipeline.append_run_events(run.id, setup.id, ["deps fetched", "all set"])
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation&agent=engineer")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan&agent=engineer")
       refute has_element?(view, "[data-qa=command-output]")
 
       view |> element("[data-qa=command-block] button", "./bin/setup") |> render_click()
@@ -3007,14 +3017,14 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     # Only Plan, and then the review agent, take messages, so the engineer's run is read as its record.
-    test "the engineer's run is read in Chat with no composer, and a message sent anyway is dropped", %{
+    test "the engineer's run is read beside the plan with no composer, and a message sent anyway is dropped", %{
       conn: conn,
       task: task,
       engineer_run: run
     } do
       {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation&agent=engineer")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan&agent=engineer")
 
       refute has_element?(view, "#chat-composer-form")
 
@@ -3942,10 +3952,10 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "switches to another agent on request, and stays there while the stage does", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> element("#conversation-agent-engineer") |> render_click()
-      assert_patch(view, ~p"/tasks/#{task.id}?item=conversation&agent=engineer")
+      assert_patch(view, ~p"/tasks/#{task.id}?item=plan&agent=engineer")
       assert has_element?(view, "#metadata-run-conversation-id", "sess_engineer")
 
       send(view.pid, :task_changed)
@@ -3959,7 +3969,7 @@ defmodule RailWeb.TaskLiveTest do
       run: run,
       other_run: other_run
     } do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
       assert has_element?(view, "#chat-messages[data-run-id='#{run.id}']")
 
       view |> element("#conversation-agent-engineer") |> render_click()
@@ -3977,7 +3987,7 @@ defmodule RailWeb.TaskLiveTest do
     } do
       {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
       assert has_element?(view, "#metadata-run-conversation-id", "sess_product")
 
       {:ok, _reviewing} =
@@ -4001,7 +4011,7 @@ defmodule RailWeb.TaskLiveTest do
       task: task,
       other_run: other_run
     } do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       send(view.pid, {:run_events, other_run.id, [%{id: "evt_designer", line: "The designer's line"}]})
 
@@ -4011,7 +4021,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "stopping with nothing queued leaves the composer as it was", %{conn: conn, task: task, run: run} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> element("#stop-run") |> render_click()
 
@@ -4023,7 +4033,7 @@ defmodule RailWeb.TaskLiveTest do
     test "stopping puts the undelivered message ahead of the draft", %{conn: conn, task: task, run: run} do
       {:ok, _queued} = Pipeline.update_run(run, %{pending_chat: "Please add a test"})
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> element("#chat-composer-form") |> render_change(%{"message" => "Also this"})
       view |> element("#cancel-queued-message") |> render_click()
@@ -4045,7 +4055,7 @@ defmodule RailWeb.TaskLiveTest do
         "[tool error] It broke"
       ])
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> element("[data-qa='activity-tile'] button") |> render_click()
 
@@ -4076,7 +4086,7 @@ defmodule RailWeb.TaskLiveTest do
     } do
       entries = Pipeline.append_run_events(run.id, nil, ["[human] it is connected now"])
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
       send(view.pid, {:run_events, run.id, entries})
 
       bubble = view |> element("[data-qa='human-bubble']") |> render()
@@ -4086,7 +4096,7 @@ defmodule RailWeb.TaskLiveTest do
     test "the raw log colors each line by its source", %{conn: conn, task: task, run: run} do
       Pipeline.append_run_events(run.id, nil, ["[error] bad", "[human] hi", "[rail] note", "plain words"])
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> element("#toggle-raw-log") |> render_click()
 
@@ -4098,7 +4108,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "the raw log takes whatever height its column leaves", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> element("#toggle-raw-log") |> render_click()
 
@@ -4114,7 +4124,7 @@ defmodule RailWeb.TaskLiveTest do
         ~s({"type":"assistant","message":{"content":[{"type":"text","text":"#{String.duplicate("x", 400)}"}]}})
       ])
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> element("#toggle-raw-log") |> render_click()
 
@@ -4129,7 +4139,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "shows the raw log on request, and the chat again after", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> element("#toggle-raw-log") |> render_click()
       assert has_element?(view, "[data-qa='raw-log-line']")
@@ -4139,7 +4149,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "opens and closes the tool activity behind a turn", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       assert has_element?(view, "[data-qa='activity-tile']")
       refute has_element?(view, "[data-qa='activity-content']")
@@ -4161,7 +4171,7 @@ defmodule RailWeb.TaskLiveTest do
       sentence = ~s(Refused, nothing saved. line: must be a whole number, got "88-94".)
       _logged = Pipeline.append_run_events(run.id, nil, ["[tool error mcp__rail__save_finding] #{sentence}"])
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
       view |> element("[data-qa='activity-tile']:last-of-type button") |> render_click()
 
       assert has_element?(view, "[data-qa='activity-step'].border-l-red-500 .font-medium", "save_finding")
@@ -4178,7 +4188,7 @@ defmodule RailWeb.TaskLiveTest do
           Jason.encode!(%{"type" => "assistant", "message" => %{"content" => [call]}})
         ])
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       _logged =
         Pipeline.append_run_events(run.id, nil, [
@@ -4196,7 +4206,7 @@ defmodule RailWeb.TaskLiveTest do
     test "a turn whose lines are no longer the ones read is read afresh", %{conn: conn, task: task, run: run} do
       [_kept, gone] = Pipeline.append_run_events(run.id, nil, ["Reading the schema.", "It needs a new column."])
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
       assert has_element?(view, "[data-qa='role-bubble']", "It needs a new column.")
 
       Repo.delete_all(from(event in RunEvent, where: event.id == ^gone.id))
@@ -4207,7 +4217,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "lines that arrive faster than the page reads them are read together", %{conn: conn, task: task, run: run} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       :ok = :sys.suspend(view.pid)
       _logged = Pipeline.append_run_events(run.id, nil, ["Reading the schema."])
@@ -4222,7 +4232,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "a message typed while the agent works waits on its run", %{conn: conn, task: task, run: run} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> element("#chat-composer-form") |> render_change(%{"message" => "Please add a test"})
       view |> element("#chat-composer-form") |> render_submit(%{"message" => "Please add a test"})
@@ -4234,7 +4244,7 @@ defmodule RailWeb.TaskLiveTest do
     test "stopping hands the undelivered message back to the composer", %{conn: conn, task: task, run: run} do
       {:ok, _queued} = Pipeline.update_run(run, %{pending_chat: "Please add a test"})
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> element("#cancel-queued-message") |> render_click()
 
@@ -4247,7 +4257,7 @@ defmodule RailWeb.TaskLiveTest do
 
       stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> element("#send-queued-now") |> render_click()
 
@@ -4255,7 +4265,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "an empty message is not a message", %{conn: conn, task: task, run: run} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> element("#chat-composer-form") |> render_submit(%{"message" => "   "})
 
@@ -4263,7 +4273,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "new log lines reach the conversation while it is open", %{conn: conn, task: task, run: run} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       send(view.pid, {:run_events, run.id, [%{id: UXID.generate!(), line: "A fresh line of output"}]})
 
@@ -4287,7 +4297,7 @@ defmodule RailWeb.TaskLiveTest do
         })
         |> Repo.insert!()
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       for line <- ["the first thing it said", "the second thing it said"] do
         Pipeline.append_run_events(run.id, os_process.id, [line])
@@ -4298,7 +4308,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "log lines for a run the page is not following are ignored", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       send(view.pid, {:run_events, "run_somebody_else", [%{line: "Not for this page"}]})
 
@@ -4307,7 +4317,7 @@ defmodule RailWeb.TaskLiveTest do
 
     test "a queued message going out shows the run working", %{conn: conn, task: task, run: run} do
       {:ok, queued} = Pipeline.update_run(run, %{status: :finished, pending_chat: "One more thing"})
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
       assert has_element?(view, "#queued-banner")
 
       {:ok, _running} = Pipeline.update_run(queued, %{status: :running, pending_chat: nil})
@@ -4318,7 +4328,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "an OS process finishing refreshes the page", %{conn: conn, task: task, run: run} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
       {:ok, _failed} = Pipeline.update_run(run, %{status: :finished, error: "It fell over."})
       send(view.pid, {:os_process_finished, run, %{}})
@@ -4342,7 +4352,6 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, _first} = Pipeline.save_plan(task, %{title: "A ticket", description: "The first draft."})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#plan-item-ticket") |> render_click()
       assert has_element?(view, "[data-qa='plan_ticket']", "The first draft.")
 
       {:ok, _revised} = Pipeline.save_plan(task, %{description: "The revised draft."})
@@ -4401,7 +4410,7 @@ defmodule RailWeb.TaskLiveTest do
       %{task: task, role: role, engineer_role: engineer_role, review_run: review_run, code: code}
     end
 
-    test "Findings counts the findings to rule and Chat the review agent's questions, and Findings none while it runs", %{
+    test "Findings counts the findings to rule and Plan the review agent's questions, and Findings none while it runs", %{
       conn: conn,
       task: task,
       review_run: run,
@@ -4418,7 +4427,6 @@ defmodule RailWeb.TaskLiveTest do
       assert [
                "review-item-issue",
                "review-item-plan",
-               "review-item-conversation",
                "review-item-findings",
                "review-item-diff",
                "review-item-screens",
@@ -4432,13 +4440,13 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "#review-item-findings[aria-current='true']")
       assert has_element?(view, "#review-item-findings [data-qa='review_item_badge']", "2")
-      assert has_element?(view, "#review-item-conversation [data-qa='review_item_badge']", "1")
+      assert has_element?(view, "#review-item-plan [data-qa='review_item_badge']", "1")
 
       {:ok, _running} = Pipeline.update_run(blocked, %{status: :running})
       send(view.pid, :task_changed)
 
       refute has_element?(view, "#review-item-findings [data-qa='review_item_badge']")
-      assert has_element?(view, "#review-item-conversation [data-qa='review_item_badge']", "1")
+      assert has_element?(view, "#review-item-plan [data-qa='review_item_badge']", "1")
     end
 
     # The server refuses rulings, Finish review and fix rounds past Review, so the page offers none of them.
@@ -4493,10 +4501,11 @@ defmodule RailWeb.TaskLiveTest do
       end)
     end
 
-    test "clicking Finish review moves the task to Finalize, offers Ready for review, and Chat stays the review agent's",
+    test "clicking Finish review moves the task to Finalize, offers Ready for review, and the conversation stays the review agent's",
          %{
            conn: conn,
-           task: task
+           task: task,
+           role: role
          } do
       {:ok, _task} = Pipeline.update_task(task, %{pr_number: 151, pr_is_draft: false})
       {:ok, _pass} = Pipeline.save_review(task)
@@ -4507,8 +4516,11 @@ defmodule RailWeb.TaskLiveTest do
       assert %Task{stage: :finalize} = Repo.reload!(task)
       assert has_element?(view, "#task-ready-for-review", "Ready for review")
       assert has_element?(view, "#review-item-findings[aria-current='true']")
-      assert has_element?(view, "#review-item-conversation[title='Chat: Talk to the review agent']")
       assert has_element?(view, "[data-qa='task_status_chip']", "Ready to finalize")
+
+      view |> element("#review-item-plan") |> render_click()
+      assert has_element?(view, "#plan-chat #conversation-role-#{role.id}")
+      assert has_element?(view, "#plan-chat #chat-input")
     end
 
     # Merging is claimed and heard before GitHub answers, so a second page holds Merge too.
@@ -4549,7 +4561,7 @@ defmodule RailWeb.TaskLiveTest do
       end)
 
       assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
       assert has_element?(two, "#task-merge:not([disabled])", "Merge")
 
       one |> element("#task-merge") |> render_click()
@@ -4730,7 +4742,7 @@ defmodule RailWeb.TaskLiveTest do
 
       Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Who owns it?"})
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
       reject(&Pipeline.list_findings/1)
 
       for typed <- ["Y", "Ye", "Yes", "Yes, in this branch"] do
@@ -4944,6 +4956,7 @@ defmodule RailWeb.TaskLiveTest do
 
       _settled = render(view)
 
+      view |> element("#review-send-tray-fold") |> render_click()
       assert has_element?(view, "#review-send-tray [data-kind=screen]", "From the other tab.")
       assert has_element?(view, "#screen-view [data-qa=screen_comment]", "From the other tab.")
     end
@@ -4978,6 +4991,7 @@ defmodule RailWeb.TaskLiveTest do
       _settled = render(other_view)
 
       # The task is at Finalize now, and the other reader's tray still holds their comment.
+      other_view |> element("#review-send-tray-fold") |> render_click()
       assert has_element?(other_view, "#review-send-tray [data-kind=diff]", "Theirs.")
       assert has_element?(other_view, "#review-send-tray-hint", "The review is finished. Send reopens it")
     end
@@ -5559,7 +5573,7 @@ defmodule RailWeb.TaskLiveTest do
 
     test "a question Rail answered opens with its answer in the box and whose it was, and stays Rail's until changed",
          %{conn: conn, task: task, questions: [first, _second]} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
       view |> element("#question-tab-0") |> render_click()
 
       assert has_element?(view, "#question-tab-0[aria-label='Question 1, answered by Rail']")
@@ -5583,7 +5597,7 @@ defmodule RailWeb.TaskLiveTest do
       task: task,
       questions: [_first, second]
     } do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
       view |> element("#question-tab-1") |> render_click()
 
       assert has_element?(view, "#answer-textarea", "Blue, to match the review tab.")
@@ -5607,7 +5621,7 @@ defmodule RailWeb.TaskLiveTest do
     test "a rule a person reworded is offered as it reads now", %{conn: conn, task: task, rule: rule} do
       {:ok, _edited} = Rail.Learnings.update_learning(system_scope(), rule, %{rule: "Blue, as the review tab is."})
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
       view |> element("#question-tab-1") |> render_click()
 
       assert has_element?(view, "#answer-textarea", "Blue, as the review tab is.")
@@ -5688,11 +5702,11 @@ defmodule RailWeb.TaskLiveTest do
       %{parent: parent, first: first, second: second, third: third, roles: roles, first_run: first_run}
     end
 
-    test "the parent opens on its Children item, right after Chat, and says how many children need attention",
+    test "the parent opens on its Children item, right after Plan, and says how many children need attention",
          %{conn: conn, parent: parent, scope: scope} do
       assert {:ok, view, html} = live(conn, ~p"/tasks/#{parent.id}")
 
-      assert ["review-item-issue", "review-item-plan", "review-item-conversation", "review-item-children" | _rest] =
+      assert ["review-item-issue", "review-item-plan", "review-item-children" | _rest] =
                html
                |> Floki.parse_document!()
                |> Floki.find("#review-items [data-qa='review_item']")
@@ -5812,7 +5826,7 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#review-pane[data-item=findings]")
     end
 
-    test "a waiting child's Plan item shows its approved part, with no conversation and no branch", %{
+    test "a waiting child's Plan item shows its approved part with no conversation and no branch", %{
       conn: conn,
       parent: parent
     } do
@@ -5822,7 +5836,8 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#review-item-plan[aria-current='true']")
       assert has_element?(view, "[data-qa='task_status_chip']", "Waiting on TLV-11")
       refute has_element?(view, "[data-qa='task_branch_name']")
-      refute has_element?(view, "[data-qa='conversation-tab']")
+      refute has_element?(view, "#plan-chat")
+      refute has_element?(view, "#chat-input")
       assert has_element?(view, "#child-plan-approved", "Approved in TLV-10 · part 2 of 3")
       assert has_element?(view, "#child-plan-waiting", "Starts when TLV-11 merges.")
       assert has_element?(view, "#child-plan", "Part 2.")
@@ -6131,7 +6146,7 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='task_status_chip']", "Merged")
     end
 
-    test "the switcher sits above a child's title whichever agent Chat reads", %{
+    test "the switcher sits above a child's title whichever agent the conversation reads", %{
       conn: conn,
       parent: parent,
       first: first,
@@ -6143,7 +6158,7 @@ defmodule RailWeb.TaskLiveTest do
         {:ok, _run} =
           Pipeline.create_run(%{task_id: first.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
 
-        assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-11&item=conversation&agent=#{stage}")
+        assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-11&item=plan&agent=#{stage}")
         assert has_element?(view, "#conversation-role-#{role.id}")
         assert has_element?(view, "#child-switcher", "1 of 3")
       end

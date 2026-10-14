@@ -1,8 +1,8 @@
 defmodule RailWeb.TaskLive do
   @moduledoc """
   One task on one page: a header with every decision a person makes on it, a rail of the task's items, and the
-  item picked beside it. The items are the issue, the plan, the conversation and, once there is something of each
-  to read, the findings, the next round's plan, the diff, the screens, the demo and the browser; a split adds its
+  item picked beside it. The items are the issue, the plan with the conversation beside it and, once there is
+  something of each to read, the findings, the next round's plan, the diff, the screens, the demo and the browser; a split adds its
   children. The item, the agent the conversation reads and a split's child are in the URL, so a refresh comes
   back to them.
 
@@ -46,7 +46,7 @@ defmodule RailWeb.TaskLive do
   @frame_interval_ms 250
 
   # The items the URL can name; any other opens what the task is waiting on.
-  @items ["issue", "plan", "conversation", "children", "findings", "fix_plan", "diff", "screens", "demo", "browser"]
+  @items ["issue", "plan", "children", "findings", "fix_plan", "diff", "screens", "demo", "browser"]
 
   # The agents whose runs the conversation reads, in the order a task meets them.
   @agents [:plan, :engineer, :qa, :review, :screens, :demo, :review_lead]
@@ -175,7 +175,6 @@ defmodule RailWeb.TaskLive do
           id="task-detail"
           task={@task}
           run={@review_run}
-          chat_run={@chat_run}
           stage_run={@stage_run}
           line={@line}
           status={@header_status}
@@ -242,13 +241,13 @@ defmodule RailWeb.TaskLive do
           </:plan>
           <:conversation>
             <.agent_picker
-              :if={@open_item == :conversation}
+              :if={@open_item in [:plan, :fix_plan]}
               agents={@agents}
               picked={@conversation_run}
               chat_run={@chat_run}
             />
             <.conversation_sidebar
-              compact={@open_item != :conversation}
+              compact={@open_item not in [:plan, :fix_plan]}
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
@@ -256,17 +255,17 @@ defmodule RailWeb.TaskLive do
               round_questions={@round_questions}
               suggestions={@suggestions}
               conversation_run={
-                if @open_item == :conversation, do: @conversation_run, else: @chat_run
+                if @open_item in [:plan, :fix_plan], do: @conversation_run, else: @chat_run
               }
               closed={
-                @open_item == :conversation and @conversation_run != nil and
+                @open_item in [:plan, :fix_plan] and @conversation_run != nil and
                   @conversation_run != @chat_run
               }
               closed_reason="Only Plan, and then the review agent, take messages. This is a record of what this agent did."
               review_pane={
                 match?(
                   %Run{role: %Role{stage: :review_lead}},
-                  if(@open_item == :conversation, do: @conversation_run, else: @chat_run)
+                  if(@open_item in [:plan, :fix_plan], do: @conversation_run, else: @chat_run)
                 )
               }
             />
@@ -284,9 +283,9 @@ defmodule RailWeb.TaskLive do
     {:noreply, handle_issue_event(event, params, socket, &refresh_task/1)}
   end
 
-  # The Chat item reads any agent's run; only the one taking messages has a composer.
+  # The Plan item's conversation reads any agent's run; only the one taking messages has a composer.
   def handle_event("pick_agent", %{"stage" => stage}, socket) do
-    {:noreply, push_patch(socket, to: task_path(socket, item: "conversation", agent: stage))}
+    {:noreply, push_patch(socket, to: task_path(socket, item: "plan", agent: stage))}
   end
 
   def handle_event("cleanup", _params, socket) do
@@ -382,12 +381,13 @@ defmodule RailWeb.TaskLive do
     {:noreply, socket}
   end
 
-  # The reader's unsent plan comments moved, in another tab or this one: the Plan stage
+  # The reader's unsent plan comments moved, in another tab or this one: the Plan stage, or the next round's plan,
   # draws their markers and the conversation their tray, and each reads its own.
   def handle_info({:plan_comments_changed, task_id}, socket) do
     # The conversation is drawn under every item, as its trays at least, so it always reads them.
     with %{task_id: ^task_id, open_item: item} <- socket.assigns do
       if item == :plan, do: send_update(PlanStage, id: "plan-stage", reload_comments: true)
+      if item == :fix_plan, do: send_update(TaskDetail, id: "task-detail", reload: true)
       send_update(RunConversation, id: "run-conversation", reload_plan_comments: true)
     end
 
@@ -400,14 +400,17 @@ defmodule RailWeb.TaskLive do
     {:noreply, socket}
   end
 
-  # The Plan item opened another round, which the URL names in place for a reload.
+  # The Plan item opened another round, which the URL names in place for a reload, beside the same agent's run.
   def handle_info({:plan_round, round}, socket) do
-    {:noreply, push_patch(socket, to: task_path(socket, item: "plan", round: round), replace: true)}
+    path = task_path(socket, item: "plan", round: round, agent: socket.assigns.agent)
+    {:noreply, push_patch(socket, to: path, replace: true)}
   end
 
-  # The stage opened another item, which the URL names in place for a reload.
+  # The stage opened another item, which the URL names in place for a reload; the Plan item keeps the agent its
+  # conversation reads.
   def handle_info({:review_item, item}, socket) do
-    {:noreply, push_patch(socket, to: task_path(socket, item: Atom.to_string(item)), replace: true)}
+    agent = if item in [:plan, :fix_plan], do: socket.assigns.agent
+    {:noreply, push_patch(socket, to: task_path(socket, item: Atom.to_string(item), agent: agent), replace: true)}
   end
 
   # The Browser item is open on this browser, or on none; only the subscription moves.
@@ -854,6 +857,8 @@ defmodule RailWeb.TaskLive do
   defp open_item(nil, %Task{stage: :plan}, _parent), do: :plan
   defp open_item(nil, %Task{stage: :engineer}, _parent), do: :diff
   defp open_item(nil, %Task{}, _parent), do: :findings
+  # The conversation was an item of its own; it is the Plan item's sidebar now.
+  defp open_item("conversation", %Task{}, _parent), do: :plan
   defp open_item(item, %Task{}, _parent) when item in @items, do: String.to_existing_atom(item)
   defp open_item(_unknown, %Task{} = task, parent), do: open_item(nil, task, parent)
 

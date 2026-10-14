@@ -1550,9 +1550,25 @@ defmodule RailWeb.Live.RunConversationTest do
 
       doc = Floki.parse_fragment!(html)
 
-      assert doc |> Floki.find("#plan-comment-tray") |> Floki.text() =~ "Turn this on by default."
+      # The tray opens folded: its count and Send show, and its rows wait for the fold.
+      assert doc |> Floki.find("#plan-comment-tray-fold[aria-expanded='false']") |> length() == 1
+      assert doc |> Floki.find("#plan-comment-tray-count") |> Floki.text() == "1"
       assert doc |> Floki.find("#send-plan-comments") |> Floki.text() =~ "Send 1"
+      assert Floki.find(doc, "[data-qa='plan_comment_row']") == []
       assert :binary.match(html, "plan-comment-tray") < :binary.match(html, "composer-root")
+
+      html =
+        render_component(RunConversation,
+          id: "conv",
+          task: task,
+          runs: [plan],
+          roles_map: roles_map,
+          current_scope: scope,
+          tray_open: true
+        )
+
+      assert html |> Floki.parse_fragment!() |> Floki.find("#plan-comment-tray") |> Floki.text() =~
+               "Turn this on by default."
 
       {:ok, engineer} =
         Pipeline.create_run(%{
@@ -1626,7 +1642,8 @@ defmodule RailWeb.Live.RunConversationTest do
           task: task,
           runs: [plan],
           roles_map: roles_map,
-          current_scope: scope
+          current_scope: scope,
+          tray_open: true
         )
 
       assert html =~ "Turn this on by default."
@@ -1716,6 +1733,7 @@ defmodule RailWeb.Live.RunConversationTest do
       {:ok, grace_view, _html} = live(grace_conn, ~p"/tasks/#{task.id}")
 
       for view <- [ada_view, grace_view] do
+        view |> element("#review-send-tray-fold") |> render_click()
         assert has_element?(view, "#review-tray-finding-nil-crash", "Nil crashes the page")
         refute has_element?(view, "#review-tray-finding-a-nit")
       end
@@ -1757,6 +1775,7 @@ defmodule RailWeb.Live.RunConversationTest do
       _settled = render(grace_view)
       _settled = render(grace_view)
 
+      grace_view |> element("#review-send-tray-fold") |> render_click()
       assert has_element?(grace_view, "#review-tray-finding-a-nit")
     end
 
@@ -1768,6 +1787,7 @@ defmodule RailWeb.Live.RunConversationTest do
       {:ok, _mine} = Pipeline.create_screen_comment(ada, task, %{"key" => "toolbar", "body" => "Fold it."})
       {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
       view |> element("#review-item-screens") |> render_click()
+      view |> element("#review-send-tray-fold") |> render_click()
 
       view |> element("#review-tray-finding-nil-crash") |> render_click()
       _settled = render(view)
@@ -1794,6 +1814,7 @@ defmodule RailWeb.Live.RunConversationTest do
       {:ok, comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "From another tab."))
       _settled = render(view)
 
+      view |> element("#review-send-tray-fold") |> render_click()
       assert has_element?(view, "#review-tray-diff-#{comment.id}", "From another tab.")
 
       {:ok, screen} = Pipeline.create_screen_comment(ada, task, %{"key" => "toolbar", "body" => "Fold it."})
@@ -1827,6 +1848,7 @@ defmodule RailWeb.Live.RunConversationTest do
 
       _settled = render(view)
 
+      view |> element("#review-send-tray-fold") |> render_click()
       assert has_element?(view, "#review-tray-finding-#{comment_id}", "A nit")
       assert has_element?(view, "#review-tray-finding-#{comment_id}", "Rule")
       refute has_element?(view, "#review-send-tray", "Grace's.")
@@ -1846,13 +1868,22 @@ defmodule RailWeb.Live.RunConversationTest do
       assert Pipeline.list_finding_comments(ada, task) == []
     end
 
-    test "the tray folds, and a Send refused says why in its hint", %{task: task, ada_conn: ada_conn} do
+    test "the tray opens folded and unfolds and folds again, and a Send refused says why in its hint", %{
+      task: task,
+      ada_conn: ada_conn
+    } do
       {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
 
+      assert has_element?(view, "#review-send-tray-fold[aria-expanded='false']")
+      assert has_element?(view, "#review-send-tray-count", "1")
+      assert has_element?(view, "#send-review-tray")
+      refute has_element?(view, "#review-tray-finding-nil-crash")
+
+      view |> element("#review-send-tray-fold") |> render_click()
+      assert has_element?(view, "#review-send-tray-fold[aria-expanded='true']")
+      assert has_element?(view, "#review-tray-finding-nil-crash")
       view |> element("#review-send-tray-fold") |> render_click()
       refute has_element?(view, "#review-tray-finding-nil-crash")
-      view |> element("#review-send-tray-fold") |> render_click()
-      assert has_element?(view, "#review-tray-finding-nil-crash")
 
       expect(Tools, :start_os_process, fn _spawned, _argv -> {:error, :dispatch_disabled} end)
       view |> element("#send-review-tray") |> render_click()
@@ -1915,7 +1946,7 @@ defmodule RailWeb.Live.RunConversationTest do
       diff: diff
     } do
       Repo.update_all(from(f in Finding, where: f.task_id == ^task.id), set: [decision: :skip])
-      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}?item=conversation")
+      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> element("#finish-review") |> render_click()
       _settled = render(view)
@@ -1923,7 +1954,7 @@ defmodule RailWeb.Live.RunConversationTest do
       refute has_element?(view, "#review-send-tray")
       assert has_element?(view, "#composer-root")
 
-      # At Finalize the Chat still talks to the review agent, whose tray is where comments are sent from.
+      # At Finalize the conversation still talks to the review agent, whose tray is where comments are sent from.
       {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "One more thing."))
       _settled = render(view)
 
@@ -1946,8 +1977,8 @@ defmodule RailWeb.Live.RunConversationTest do
       diff: diff
     } do
       {:ok, _mine} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "Name it."))
-      # The card is a message in the conversation, which only the Chat item shows in full.
-      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}?item=conversation")
+      # The card is a message in the conversation, which only the Plan item shows in full, beside it.
+      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}?item=plan")
 
       expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: %{spawned | status: :running}}} end)
       view |> element("#send-review-tray", "Send 2") |> render_click()
@@ -1960,7 +1991,7 @@ defmodule RailWeb.Live.RunConversationTest do
 
       {:ok, _again} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "And this."))
       {:ok, _idle} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
-      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}?item=conversation")
+      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}?item=plan")
 
       expect(Pipeline, :start_fix_round, fn _scope, _run -> {:error, :fix_plan_waiting} end)
       view |> element("#send-review-tray", "Send 1") |> render_click()

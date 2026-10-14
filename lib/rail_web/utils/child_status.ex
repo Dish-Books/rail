@@ -231,8 +231,8 @@ defmodule RailWeb.Utils.ChildStatus do
     }
   end
 
-  # A question is answered in the conversation; anything else needing the reader is the stage's own item.
-  defp action_item(:blocked, %Task{}), do: "conversation"
+  # A question is answered in the conversation, beside the plan; anything else needing the reader is the stage's own item.
+  defp action_item(:blocked, %Task{}), do: "plan"
   defp action_item(_state, %Task{stage: :engineer}), do: "diff"
   defp action_item(_state, %Task{}), do: "findings"
 

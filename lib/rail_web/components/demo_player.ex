@@ -1,7 +1,7 @@
 defmodule RailWeb.Components.DemoPlayer do
   @moduledoc """
   Review's Demo item: a header row saying what the demo was recorded on, then the video with its caption
-  bar beneath it, never over it, and the walkthrough beside it, scrolling on its own and following playback so
+  bar beneath it, never over it, and the walkthrough to its left, scrolling on its own and following playback so
   the video stays in view. Each beat seeks the player to the moment
   it was said, and one that proves an acceptance criterion quotes it. A demo the branch has moved past
   says so in slate above the video, with Re-record.
@@ -50,7 +50,7 @@ defmodule RailWeb.Components.DemoPlayer do
 
       <%!-- The walkthrough scrolls on its own, so the video stays in view while it is read. --%>
       <div :if={@recorded or @recording} class="flex-1 min-h-0 p-5">
-        <div class="h-full flex flex-col @4xl:flex-row gap-4 min-h-0">
+        <div class="h-full flex flex-col @4xl:flex-row-reverse gap-4 min-h-0">
           <div
             :if={@recorded}
             id="demo-player"

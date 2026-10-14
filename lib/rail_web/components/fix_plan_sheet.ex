@@ -2,19 +2,28 @@ defmodule RailWeb.Components.FixPlanSheet do
   @moduledoc """
   A fix round's plan laid out for approval: the changes to the ticket or the design a person asked for, called out
   first, its summary, What changes with an item per finding and comment the plan
-  covers, In this plan beside it, then File-level changes numbered as on the Plan tab, and Verification. Nothing in it
-  takes a comment.
+  covers, In this plan beside it, then File-level changes numbered as on the Plan tab, and Verification. While it
+  waits on approval, any line of its text takes a comment through the + beside it, as the plan's do.
   """
   use RailWeb, :html
 
+  import RailWeb.Utils.BuildFixPlanLines
+
   attr :sheet, :map, required: true, doc: "what `FixPlan.build_sheet/1` made of the plan"
   attr :changed, :map, default: %{}, doc: "the ruling now of each covered finding whose ruling changed since the plan"
+  attr :placed, :map, default: %{}, doc: "the reader's comments on each line with their tray numbers, by its key"
+  attr :lifted, :list, default: [], doc: "the reader's comments whose line no longer reads as it did"
+  attr :draft, :map, default: nil, doc: "the line the comment box is open under, with what is typed so far"
+  attr :offered, :boolean, default: false, doc: "the reader can comment now"
+  attr :target, :any, default: nil
 
   def fix_plan_sheet(assigns) do
     %{counts: counts} = assigns.sheet
 
     assigns =
       assigns
+      |> assign(:sheet, build_fix_plan_lines(assigns.sheet))
+      |> assign(:comment_attrs, Map.take(assigns, [:placed, :draft, :offered, :target]))
       |> assign(:covered, covered(counts, assigns.sheet.items))
       |> assign(:all_named, assigns.sheet.files != [])
 
@@ -24,6 +33,8 @@ defmodule RailWeb.Components.FixPlanSheet do
       data-qa="fix_plan_sheet"
       class="@container flex flex-col gap-7 wrap-anywhere"
     >
+      <.changed_comments id="fix-plan-changed-comments" comments={@lifted} target={@target} />
+
       <div class="grid gap-6 items-start @min-[900px]:grid-cols-[minmax(0,1fr)_280px] @min-[1300px]:grid-cols-[minmax(0,1fr)_320px] @min-[1300px]:gap-8">
         <section class="min-w-0 max-w-[900px]">
           <aside
@@ -35,13 +46,9 @@ defmodule RailWeb.Components.FixPlanSheet do
             <h3 class="flex items-center gap-1.5 text-sm font-semibold text-amber-900 dark:text-amber-200">
               <.icon name="pi-pencil-simple-line" class="size-4" /> Changes to the plan
             </h3>
-            <.markdown content={@sheet.changes} class="mt-2" />
+            <.lines lines={@sheet.changes_lines} {@comment_attrs} class="mt-2" />
           </aside>
-          <.markdown
-            :if={@sheet.summary != ""}
-            content={@sheet.summary}
-            class="text-[15px] text-slate-800 dark:text-slate-200"
-          />
+          <.lines lines={@sheet.summary_lines} {@comment_attrs} />
           <div class="mt-5 mb-1">
             <.sheet_heading count={length(@sheet.items)} one="item" many="items">
               What changes
@@ -97,11 +104,7 @@ defmodule RailWeb.Components.FixPlanSheet do
                 >
                   {item.text}
                 </p>
-                <.markdown
-                  :if={item.body != ""}
-                  content={item.body}
-                  class="mt-1.5 text-[14px] text-slate-800 dark:text-slate-200 prose-p:my-1"
-                />
+                <.lines lines={item.body_lines} {@comment_attrs} class="mt-1.5" />
                 <p
                   :if={item.files != []}
                   class="mt-1 text-[11.5px] text-slate-500 dark:text-slate-400"
@@ -170,14 +173,12 @@ defmodule RailWeb.Components.FixPlanSheet do
                 {file.number}
               </span>
               <div class="min-w-0">
-                <code class="font-mono text-[13px] font-semibold break-all text-slate-900 dark:text-slate-100">
-                  {file.path}
-                </code>
-                <.markdown
-                  :if={file.description != ""}
-                  content={file.description}
-                  class="mt-0.5 prose-p:my-0 prose-ul:my-1 text-slate-500 dark:text-slate-400"
-                />
+                <.commentable_line line={file.path_line} doc={:fix_plan} {@comment_attrs}>
+                  <code class="font-mono text-[13px] font-semibold break-all text-slate-900 dark:text-slate-100">
+                    {file.path}
+                  </code>
+                </.commentable_line>
+                <.lines lines={file.description_lines} {@comment_attrs} class="mt-0.5" />
               </div>
             </div>
           </li>
@@ -188,11 +189,39 @@ defmodule RailWeb.Components.FixPlanSheet do
         <div class="mb-2">
           <.sheet_heading>Verification</.sheet_heading>
         </div>
-        <.markdown content={@sheet.verification} class="text-slate-700 dark:text-slate-300" />
+        <.lines lines={@sheet.verification_lines} {@comment_attrs} />
       </section>
     </div>
     """
   end
+
+  attr :lines, :list, required: true
+  attr :placed, :map, required: true
+  attr :draft, :map, default: nil
+  attr :offered, :boolean, required: true
+  attr :target, :any, required: true
+  attr :class, :any, default: nil
+
+  defp lines(assigns) do
+    ~H"""
+    <div :if={@lines != []} class={@class}>
+      <.commentable_line
+        :for={line <- @lines}
+        line={line}
+        layout={layout(line)}
+        doc={:fix_plan}
+        placed={@placed}
+        draft={@draft}
+        offered={@offered}
+        target={@target}
+      />
+    </div>
+    """
+  end
+
+  defp layout(%{kind: :code}), do: :code
+  defp layout(%{kind: :table_row}), do: :table_row
+  defp layout(_line), do: :text
 
   attr :count, :integer, default: nil
   attr :one, :string, default: nil

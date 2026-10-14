@@ -118,30 +118,33 @@ defmodule RailWeb.Live.PlanStageTest do
     Pipeline.append_run_events(run.id, nil, ["[human:#{user.id}] Split the export from the import."])
 
     {:ok, _split} = Pipeline.save_split(task, %{"children" => [child.(1, "One", 1, []), child.(2, "Two", 1, [1])]})
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
-    assert has_element?(view, "#task-item-conversation textarea")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+    assert has_element?(view, "#plan-chat textarea")
 
     {:ok, task} = Pipeline.update_task(task, %{stage: :split})
     Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [approved_at: DateTime.utc_now()])
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation&agent=plan")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan&agent=plan")
     assert has_element?(view, "#review-item-plan[title='Plan: Approved']")
-    assert has_element?(view, "#task-item-conversation #conversation-closed", "take messages")
-    assert has_element?(view, "#task-item-conversation", "Split the export from the import.")
-    refute has_element?(view, "#task-item-conversation textarea")
+    assert has_element?(view, "#plan-chat #conversation-closed", "take messages")
+    assert has_element?(view, "#plan-chat", "Split the export from the import.")
+    refute has_element?(view, "#plan-chat textarea")
 
     # A page drawn before approval can still send, and the closed conversation takes nothing.
     view |> with_target("#conversation-tab-root") |> render_hook("send_chat", %{"message" => "Use semicolons."})
     refute Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "Use semicolons."))
   end
 
-  test "with no split the Split item reads Not split", %{conn: conn, task: task} do
+  test "with no split the page has no Split section, only the ticket, the design and the plan", %{
+    conn: conn,
+    task: task
+  } do
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-    assert has_element?(view, "#plan-item-split-status", "Not split: one task")
-
-    view |> element("#plan-item-split") |> render_click()
-    assert has_element?(view, "#plan-split-none", "Not split")
-    assert has_element?(view, "#plan-split-none", "Approve makes one task, which moves to Implement.")
+    assert has_element?(view, "#plan-section-ticket")
+    assert has_element?(view, "#plan-section-design")
+    assert has_element?(view, "#plan-section-plan #plan-plan")
+    refute has_element?(view, "#plan-section-split")
+    refute has_element?(view, "#plan-split-none")
   end
 
   test "a saved split lays its children out in the rounds they start in", %{
@@ -161,8 +164,8 @@ defmodule RailWeb.Live.PlanStageTest do
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-    assert has_element?(view, "#plan-item-split[aria-current='true']")
-    assert has_element?(view, "#plan-item-split-status", "4 children · 8 points")
+    assert has_element?(view, "#plan-section-split #plan-split")
+    assert has_element?(view, "#plan-section-split-status", "4 children · 8 points")
     assert has_element?(view, "#plan-split", "Split into 4 children")
     assert has_element?(view, "#plan-split", "8 points · 3 rounds")
 
@@ -196,7 +199,7 @@ defmodule RailWeb.Live.PlanStageTest do
     assert has_element?(view, "#plan-split-child-detail", "Two for each branch.")
     assert has_element?(view, "#plan-split-child-detail", "More detail.")
     assert has_element?(view, "#plan-split-child-detail li", "Second")
-    assert has_element?(view, "#plan-split-child-detail #plan-sheet", "lib/rail/part_2_more.ex")
+    assert has_element?(view, "#plan-split-child-detail #split-part-sheet", "lib/rail/part_2_more.ex")
 
     view |> element("#plan-split-child-2-open") |> render_click()
     refute has_element?(view, "#plan-split-child-detail")
@@ -236,7 +239,7 @@ defmodule RailWeb.Live.PlanStageTest do
     assert has_element?(view, "#plan-split-child-2", ".rail/prompts/architect.md")
 
     view |> element("#plan-split-child-2-open") |> render_click()
-    assert has_element?(view, "#plan-split-child-detail #plan-sheet", ".rail/prompts/architect.md")
+    assert has_element?(view, "#plan-split-child-detail #split-part-sheet", ".rail/prompts/architect.md")
   end
 
   test "each card says what its own child builds on, which its lane alone would not", %{
@@ -281,7 +284,7 @@ defmodule RailWeb.Live.PlanStageTest do
     assert has_element?(view, "#plan-split", "Split into 3 children")
     assert has_element?(view, "#plan-split", "2 rounds")
     assert has_element?(view, "#plan-split-child-3", "Three")
-    assert has_element?(view, "#plan-item-split-status", "3 children · 2 points")
+    assert has_element?(view, "#plan-section-split-status", "3 children · 2 points")
 
     view |> element("#plan-split-child-3-open") |> render_click()
     assert has_element?(view, "#plan-split-child-detail", "lib/rail/part_3_more.ex")

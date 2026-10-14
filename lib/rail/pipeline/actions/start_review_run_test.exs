@@ -147,6 +147,11 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
       assert prompt =~ "Pass `retake_screens: true` when what the plan changes shows on screen"
       assert prompt =~ "`record_demo: true` when it would leave the saved demo wrong"
       assert prompt =~ "Only then, say so at the top of the plan under `### Changes to the plan`"
+      assert prompt =~ "A comment on the ticket, the design, the first plan or the next round's plan arrives as a message"
+
+      assert prompt =~
+               "One on the next round's plan asks for an adjustment to it: save the revised plan with `save_fix_plan`"
+
       refute prompt =~ "subagent"
       refute prompt =~ "request_merge"
 

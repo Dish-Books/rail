@@ -5,6 +5,7 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.FixPlan
+  alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -273,6 +274,71 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
 
     File.rm!(path)
     assert {:error, :no_fix_plan} = Pipeline.approve_fix_plan(ada, idle, 0)
+  end
+
+  # A comment left unsent on the plan asked for a change approving it passed over; one already sent is history.
+  test "approving drops every reader's unsent comments on the plan, keeps the sent and the other documents' and tells their authors",
+       %{task: %{id: task_id} = task, run: run, ada: ada, ada_id: ada_id} do
+    {:ok, %{id: grace_id}} =
+      Users.register_oauth_user(%{
+        github_id: "gh_afp_grace",
+        login: "grace-approve-fix-plan",
+        email: "grace-afp@example.com"
+      })
+
+    line = %PlanComment{
+      task_id: task_id,
+      element_kind: :paragraph,
+      element_label: "Fix finding nil-crash, paragraph 1",
+      element_occurrence: 1,
+      element_text: "Guard it at the caller.",
+      body: "Hm."
+    }
+
+    Repo.insert!(%{line | user_id: ada_id, target: :fix_plan, body: "Ada's unsent."})
+    Repo.insert!(%{line | user_id: grace_id, target: :fix_plan, body: "Grace's unsent."})
+    %{id: sent_id} = Repo.insert!(%{line | user_id: ada_id, target: :fix_plan, status: :sent, body: "Sent."})
+    %{id: queued_id} = Repo.insert!(%{line | user_id: grace_id, target: :fix_plan, status: :queued, body: "Queued."})
+    %{id: plan_id} = Repo.insert!(%{line | user_id: ada_id, target: :plan, body: "On the first plan."})
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "plan_comments:#{task_id}:#{ada_id}")
+    Phoenix.PubSub.subscribe(Rail.PubSub, "plan_comments:#{task_id}:#{grace_id}")
+    reject(Tools, :start_os_process, 2)
+
+    assert {:ok, %Run{}} = Pipeline.approve_fix_plan(ada, run, 1)
+
+    assert [^plan_id, ^queued_id, ^sent_id] =
+             Repo.all(from c in PlanComment, where: c.task_id == ^task_id, order_by: c.body, select: c.id)
+
+    assert_received {:plan_comments_changed, ^task_id}
+    assert_received {:plan_comments_changed, ^task_id}
+    refute_received {:plan_comments_changed, ^task_id}
+    assert %FixPlan{approved_at: %DateTime{}} = Pipeline.read_fix_plan(task)
+  end
+
+  test "a refused Approve leaves the unsent comments on the plan", %{
+    task: %{id: task_id},
+    run: run,
+    ada: ada,
+    ada_id: ada_id
+  } do
+    Repo.insert!(%PlanComment{
+      task_id: task_id,
+      user_id: ada_id,
+      target: :fix_plan,
+      element_kind: :file,
+      element_label: "File 1",
+      element_occurrence: 1,
+      element_text: "lib/a.ex",
+      body: "Not this file."
+    })
+
+    reject(Tools, :start_os_process, 2)
+
+    assert {:error, {:fix_plan_replaced, _saved_at}} = Pipeline.approve_fix_plan(ada, run, 0)
+
+    assert [%PlanComment{status: :unsent, body: "Not this file."}] =
+             Repo.all(from c in PlanComment, where: c.task_id == ^task_id)
   end
 
   test "a scope outside the task's project reads it as not found", %{run: run} do

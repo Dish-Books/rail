@@ -2,7 +2,8 @@ defmodule Rail.Pipeline.Schemas.PlanComment do
   @moduledoc """
   One person's comment on one part of the Plan step's output, for Plan: unsent and theirs alone, then sent, after
   which it lives only as the message it went out in. Its target is the design, by an element of its picked option,
-  or the ticket or the plan, by one line, which it finds again by the line's text and its occurrence among the same.
+  or the ticket, the plan or the next round's plan waiting on approval, by one line, which it finds again by the
+  line's text and its occurrence among the same.
 
   The message a round is sent as is written and read back here, so the conversation's card cannot drift from it.
   """
@@ -17,7 +18,7 @@ defmodule Rail.Pipeline.Schemas.PlanComment do
   @text_max 200
   @tag_max 64
 
-  @targets [:design, :ticket, :plan]
+  @targets [:design, :ticket, :plan, :fix_plan]
   @element_kinds [
     :title,
     :priority,
@@ -36,7 +37,8 @@ defmodule Rail.Pipeline.Schemas.PlanComment do
     :source,
     :node
   ]
-  @groups %{design: "the design", ticket: "the ticket", plan: "the plan"}
+  @groups %{design: "the design", ticket: "the ticket", plan: "the plan", fix_plan: "the next round's plan"}
+  @titles %{ticket: "Ticket", plan: "Plan", fix_plan: "Next round's plan"}
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "pcm"}
   schema "plan_comments" do
@@ -77,8 +79,8 @@ defmodule Rail.Pipeline.Schemas.PlanComment do
   end
 
   @doc """
-  Puts one person's comments in the order a round is numbered in: the design's, then the ticket's, then the plan's,
-  each oldest first.
+  Puts one person's comments in the order a round is numbered in: the design's, the ticket's, the plan's, then the
+  next round's plan's, each oldest first.
   """
   def calculate_round(comments) do
     Enum.sort_by(comments, &{Enum.find_index(@targets, fn target -> target == &1.target end), sort_time(&1), &1.id})
@@ -138,7 +140,7 @@ defmodule Rail.Pipeline.Schemas.PlanComment do
         |> validate_format(:element_tag, ~r/\A[A-Za-z][A-Za-z0-9-]*\z/)
         |> cast_embed(:capture, required: true, with: &PlanCommentCapture.changeset/2)
 
-      target when target in [:ticket, :plan] ->
+      target when target in [:ticket, :plan, :fix_plan] ->
         changeset
         |> cast(attrs, [:element_kind, :element_label, :element_occurrence, :element_text])
         |> validate_required([:element_kind, :element_label, :element_occurrence, :element_text])
@@ -150,8 +152,11 @@ defmodule Rail.Pipeline.Schemas.PlanComment do
   end
 
   defp groups([one]), do: @groups[one]
-  defp groups([first, second]), do: "#{@groups[first]} and #{@groups[second]}"
-  defp groups([first, second, third]), do: "#{@groups[first]}, #{@groups[second]} and #{@groups[third]}"
+
+  defp groups(many) do
+    named = Enum.map(many, &@groups[&1])
+    Enum.join(Enum.drop(named, -1), ", ") <> " and " <> List.last(named)
+  end
 
   defp sort_time(%__MODULE__{inserted_at: %DateTime{} = at}), do: DateTime.to_unix(at, :microsecond)
 
@@ -184,16 +189,21 @@ defmodule Rail.Pipeline.Schemas.PlanComment do
 
   defp parse_sections([], sections) when sections != [], do: {:ok, Enum.reverse(sections)}
 
-  defp parse_sections(["", "On the " <> group | rest], sections) when group in ["ticket:", "plan:"] do
-    target = if group == "ticket:", do: :ticket, else: :plan
-    title = if target == :ticket, do: "Ticket", else: "Plan"
+  defp parse_sections(["", "On " <> group | rest] = lines, sections) do
+    case Enum.find(Map.keys(@titles), &(group == @groups[&1] <> ":")) do
+      target when is_atom(target) and target != nil ->
+        with {:ok, comments, rest} <- parse_comments(rest, target, []) do
+          parse_sections(rest, [%{target: target, title: @titles[target], key: nil, comments: comments} | sections])
+        end
 
-    with {:ok, comments, rest} <- parse_comments(rest, target, []) do
-      parse_sections(rest, [%{target: target, title: title, key: nil, comments: comments} | sections])
+      nil ->
+        parse_design_section(lines, sections)
     end
   end
 
-  defp parse_sections(["", section_line | rest], sections) do
+  defp parse_sections(_other, _sections), do: :error
+
+  defp parse_design_section(["", section_line | rest], sections) do
     with [_all, title, key] <- Regex.run(~r/\AOn (.+) \(([a-z0-9-]+)\):\z/, section_line),
          {:ok, comments, rest} <- parse_comments(rest, :design, []) do
       parse_sections(rest, [%{target: :design, title: title, key: key, comments: comments} | sections])
@@ -201,8 +211,6 @@ defmodule Rail.Pipeline.Schemas.PlanComment do
       _other -> :error
     end
   end
-
-  defp parse_sections(_other, _sections), do: :error
 
   defp parse_comments(["", header | rest] = lines, :design, comments) do
     case Regex.run(~r/\A(\d+)\. `([^`]+)` (?:"(.*)"|<([A-Za-z][A-Za-z0-9-]*)>)\z/, header) do

@@ -1,8 +1,8 @@
 defmodule RailWeb.Live.TaskDetail do
   @moduledoc """
   A task's page body: the header with every decision on it, and a slim rail of the task's items beside the picked
-  one. Issue, Plan and Chat are the page's own, handed in as slots; Plan reads every round, with the next one's plan
-  and its Approve while it waits. Findings is the list beside one finding, with what the round's agents are doing
+  one. Issue and Plan are the page's own, handed in as slots, and the conversation is too: Plan reads every round
+  beside it, with the next one's plan and its Approve while it waits, and every other item has its trays under it. Findings is the list beside one finding, with what the round's agents are doing
   above them; ruling moves on to the next finding. What Send would send and whether it can is handed to the page
   for the conversation's tray. Diff is the branch, or one commit of it, which a finding's commits open. Screens is
   each screen state's one shot, opened over the page to step through and comment on, Demo plays the latest
@@ -10,6 +10,8 @@ defmodule RailWeb.Live.TaskDetail do
   """
   use RailWeb, :live_component
 
+  import RailWeb.Utils.BuildFixPlanLines
+  import RailWeb.Utils.CalculateDocumentComments
   import RailWeb.Utils.MonotonicMs
 
   alias Rail.Git
@@ -20,6 +22,7 @@ defmodule RailWeb.Live.TaskDetail do
   alias Rail.Pipeline.Schemas.FindingEvidence
   alias Rail.Pipeline.Schemas.FindingPlace
   alias Rail.Pipeline.Schemas.FixPlan
+  alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.ScreenComment
@@ -64,6 +67,8 @@ defmodule RailWeb.Live.TaskDetail do
       |> assign_new(:screen_open, fn -> nil end)
       |> assign_new(:screen_draft, fn -> nil end)
       |> assign_new(:finding_draft, fn -> nil end)
+      |> assign_new(:fix_plan_draft, fn -> nil end)
+      |> assign_new(:reported_lifted, fn -> nil end)
       |> assign_new(:code_cache, fn -> %{fingerprint: :unread, by_key: %{}} end)
       |> load()
 
@@ -133,266 +138,295 @@ defmodule RailWeb.Live.TaskDetail do
               target={@myself}
             />
 
-            <div id="review-pane" data-item={@item} class="flex-1 min-w-0 min-h-0 flex flex-col">
-              <form
-                :if={@item in [:plan, :fix_plan] and length(@round_options) > 1}
-                id="plan-rounds"
-                phx-change="pick_round"
-                phx-target={@myself}
-                class="shrink-0 flex items-center gap-2 px-5 py-2 border-b border-slate-200 dark:border-slate-700"
-              >
-                <label
-                  for="plan-round-select"
-                  class="text-xs font-semibold text-slate-500 dark:text-slate-400"
-                >
-                  Round
-                </label>
-                <select
-                  id="plan-round-select"
-                  name="round"
-                  class="rounded-md border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 py-1 pl-2 pr-8 text-xs font-semibold text-slate-800 dark:text-slate-100"
-                >
-                  <option
-                    :for={{value, label} <- @round_options}
-                    value={value}
-                    selected={value == @round_pick}
-                  >
-                    {label}
-                  </option>
-                </select>
-              </form>
-              <div
-                :if={@item == :issue}
-                id="task-item-issue"
-                class="flex-1 min-h-0 overflow-y-auto px-6 py-8"
-              >
-                {render_slot(@issue)}
-              </div>
-              <div
-                :if={@item == :plan and @round_pick == "1"}
-                id="task-item-plan"
-                class="flex-1 min-h-0"
-              >
-                {render_slot(@plan)}
-              </div>
-              <.round_plan :if={@item == :plan and @round_pick != "1"} round={@shown_round} />
-              <div
-                :if={@item == :conversation}
-                id="task-item-conversation"
-                class="flex-1 min-h-0 flex flex-col"
+            <div
+              id="review-pane"
+              data-item={@item}
+              class="flex-1 min-w-0 min-h-0 flex flex-col @5xl:flex-row"
+            >
+              <%!-- The plan is read beside its conversation, so a comment and the reply to it are both in view. --%>
+              <%!-- Its edge drags it wider, and the width the hook sets is kept through patches. A split's child
+              waiting on its turn has run nothing, so it has no conversation to show. --%>
+              <aside
+                :if={@item in [:plan, :fix_plan] and @task.runs != []}
+                id="plan-chat"
+                data-qa="plan_chat"
+                phx-hook="SidebarResize"
+                phx-mounted={JS.ignore_attributes(["style"])}
+                class="relative order-last @5xl:order-first shrink-0 h-[45%] @5xl:h-auto @5xl:w-[var(--sidebar-width,400px)] min-h-0 flex flex-col border-t @5xl:border-t-0 @5xl:border-r border-slate-200 dark:border-slate-700"
               >
                 {render_slot(@conversation)}
-              </div>
-              <div
-                :if={@item == :children}
-                id="task-item-children"
-                class="flex-1 min-h-0 overflow-y-auto px-6 py-8"
-              >
-                {render_slot(@children)}
-              </div>
-              <.review_status
-                :if={
-                  @item == :findings and
-                    @phase in [
-                      :round,
-                      :planning,
-                      :waiting,
-                      :outdated,
-                      :fixing,
-                      :ci,
-                      :ci_failed,
-                      :finished
-                    ]
-                }
-                phase={@phase}
-                round={@round}
-                revising={@revising}
-                target={@myself}
-                sha={@sha}
-                counts={@counts}
-                agents={@agents}
-                pr_number={@task.pr_number}
-              />
-
-              <div :if={@item == :findings} class="@container flex-1 min-h-0">
-                <div class="h-full flex flex-col @2xl:flex-row min-h-0">
-                  <.finding_list
-                    findings={@findings}
-                    selected_key={@selected_key}
-                    running={@phase == :round}
-                    tally={@tally}
-                    changed={Map.new(@ruling_changes.since_plan, &{&1.key, &1.now})}
-                    target={@myself}
-                  />
-                  <.finding_detail
-                    :if={@selected}
-                    finding={@selected}
-                    position={@position}
-                    count={length(@findings)}
-                    decidable={
-                      @approvable and @phase not in [:round, :planning, :fixing, :ci, :finished]
-                    }
-                    ruling_was={
-                      Enum.find_value(
-                        @ruling_changes.since_plan,
-                        &(&1.key == @selected.key && &1.was)
-                      )
-                    }
-                    running={@phase == :round}
-                    where_code={@code.where}
-                    place_codes={@code.places}
-                    where_place={@code.where_place}
-                    head={@head}
-                    filed={@filed}
-                    filed_index={@filed_index}
-                    labels={@labels}
-                    names={@names}
-                    viewer_id={@current_scope.user && @current_scope.user.id}
-                    suppressor={@suppressor}
-                    neighbours={@neighbours}
-                    comments={@finding_placed}
-                    draft={@finding_draft}
-                    offered={@commentable}
-                    target={@myself}
-                  />
-                  <p
-                    :if={@selected == nil}
-                    id="review-no-findings"
-                    data-qa="review_no_findings"
-                    class="flex-1 p-8 text-sm text-slate-500 dark:text-slate-400"
-                  >
-                    {if @phase == :round,
-                      do: "Findings appear here as the round saves them.",
-                      else: "No findings."}
-                  </p>
-                </div>
-              </div>
-
-              <div
-                :if={@item == :fix_plan}
-                id="fix-plan-pane"
-                class="flex-1 min-w-0 min-h-0 overflow-y-auto px-5 py-5 @3xl:px-8 @3xl:py-6"
-              >
                 <div
-                  :if={@fix_plan.plan == nil}
-                  id="fix-plan-empty"
-                  class="flex flex-col items-center text-center max-w-md mx-auto py-14"
+                  data-resize-handle
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="Resize the conversation"
+                  aria-valuemin="280"
+                  tabindex="0"
+                  class="hidden @5xl:block absolute inset-y-0 -right-1 w-2 z-10 cursor-col-resize hover:bg-blue-500/30 focus-visible:bg-blue-500/40 focus-visible:outline-none"
+                />
+              </aside>
+
+              <div class="flex-1 min-w-0 min-h-0 flex flex-col">
+                <form
+                  :if={@item in [:plan, :fix_plan] and length(@round_options) > 1}
+                  id="plan-rounds"
+                  phx-change="pick_round"
+                  phx-target={@myself}
+                  class="shrink-0 flex items-center gap-2 px-5 py-2 border-b border-slate-200 dark:border-slate-700"
                 >
-                  <div class="relative flex items-center justify-center size-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 ring-1 ring-slate-200 dark:ring-slate-700">
-                    <.icon name="pi-clipboard-text" class="size-7" />
-                    <span
-                      :if={Run.running?(@run)}
-                      class="absolute -bottom-1 -right-1 size-4 rounded-full border-2 border-slate-300 dark:border-slate-600 border-t-blue-500 motion-safe:animate-spin bg-white dark:bg-slate-900"
+                  <label
+                    for="plan-round-select"
+                    class="text-xs font-semibold text-slate-500 dark:text-slate-400"
+                  >
+                    Round
+                  </label>
+                  <select
+                    id="plan-round-select"
+                    name="round"
+                    class="rounded-md border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 py-1 pl-2 pr-8 text-xs font-semibold text-slate-800 dark:text-slate-100"
+                  >
+                    <option
+                      :for={{value, label} <- @round_options}
+                      value={value}
+                      selected={value == @round_pick}
+                    >
+                      {label}
+                    </option>
+                  </select>
+                </form>
+                <div
+                  :if={@item == :issue}
+                  id="task-item-issue"
+                  class="flex-1 min-h-0 overflow-y-auto px-6 py-8"
+                >
+                  {render_slot(@issue)}
+                </div>
+                <div
+                  :if={@item == :plan and @round_pick == "1"}
+                  id="task-item-plan"
+                  class="flex-1 min-h-0"
+                >
+                  {render_slot(@plan)}
+                </div>
+                <.round_plan :if={@item == :plan and @round_pick != "1"} round={@shown_round} />
+                <div
+                  :if={@item == :children}
+                  id="task-item-children"
+                  class="flex-1 min-h-0 overflow-y-auto px-6 py-8"
+                >
+                  {render_slot(@children)}
+                </div>
+                <.review_status
+                  :if={
+                    @item == :findings and
+                      @phase in [
+                        :round,
+                        :planning,
+                        :waiting,
+                        :outdated,
+                        :fixing,
+                        :ci,
+                        :ci_failed,
+                        :finished
+                      ]
+                  }
+                  phase={@phase}
+                  round={@round}
+                  revising={@revising}
+                  target={@myself}
+                  sha={@sha}
+                  counts={@counts}
+                  agents={@agents}
+                  pr_number={@task.pr_number}
+                />
+
+                <div :if={@item == :findings} class="@container flex-1 min-h-0">
+                  <div class="h-full flex flex-col @2xl:flex-row min-h-0">
+                    <.finding_list
+                      findings={@findings}
+                      selected_key={@selected_key}
+                      running={@phase == :round}
+                      tally={@tally}
+                      changed={Map.new(@ruling_changes.since_plan, &{&1.key, &1.now})}
+                      target={@myself}
                     />
+                    <.finding_detail
+                      :if={@selected}
+                      finding={@selected}
+                      position={@position}
+                      count={length(@findings)}
+                      decidable={
+                        @approvable and @phase not in [:round, :planning, :fixing, :ci, :finished]
+                      }
+                      ruling_was={
+                        Enum.find_value(
+                          @ruling_changes.since_plan,
+                          &(&1.key == @selected.key && &1.was)
+                        )
+                      }
+                      running={@phase == :round}
+                      where_code={@code.where}
+                      place_codes={@code.places}
+                      where_place={@code.where_place}
+                      head={@head}
+                      filed={@filed}
+                      filed_index={@filed_index}
+                      labels={@labels}
+                      names={@names}
+                      viewer_id={@current_scope.user && @current_scope.user.id}
+                      suppressor={@suppressor}
+                      neighbours={@neighbours}
+                      comments={@finding_placed}
+                      draft={@finding_draft}
+                      offered={@commentable}
+                      target={@myself}
+                    />
+                    <p
+                      :if={@selected == nil}
+                      id="review-no-findings"
+                      data-qa="review_no_findings"
+                      class="flex-1 p-8 text-sm text-slate-500 dark:text-slate-400"
+                    >
+                      {if @phase == :round,
+                        do: "Findings appear here as the round saves them.",
+                        else: "No findings."}
+                    </p>
                   </div>
-                  <h2 class="mt-5 text-base font-semibold text-slate-900 dark:text-slate-100">
-                    {if Run.running?(@run), do: "Writing the fix plan", else: "No fix plan"}
-                  </h2>
-                  <p class="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-                    {if Run.running?(@run),
-                      do:
-                        "On #{asked(@fix_plan)}. Approve appears in the header once the plan is saved.",
-                      else:
-                        "The lead stopped before it saved one, and nothing changed in the worktree. Message the lead to write it."}
-                  </p>
                 </div>
 
-                <div :if={@fix_plan.plan}>
-                  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-5">
-                    <h2 class="text-xl font-bold text-slate-900 dark:text-slate-100">Fix plan</h2>
-                    <span class="text-sm text-slate-500 dark:text-slate-400">
-                      Fix round {@fix_plan.round} · saved
-                      <.local_time id="fix-plan-saved-at" at={@fix_plan.saved_at} />
-                    </span>
-                  </div>
-
+                <div
+                  :if={@item == :fix_plan}
+                  id="fix-plan-pane"
+                  class="flex-1 min-w-0 min-h-0 overflow-y-auto px-5 py-5 @3xl:px-8 @3xl:py-6"
+                >
                   <div
-                    :if={@revising}
-                    id="fix-plan-revising"
-                    class="mb-5 flex items-center gap-2.5 rounded-lg border border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/40 px-4 py-2.5 text-[13px] text-blue-800 dark:text-blue-200"
+                    :if={@fix_plan.plan == nil}
+                    id="fix-plan-empty"
+                    class="flex flex-col items-center text-center max-w-md mx-auto py-14"
                   >
-                    <span
-                      :if={Run.running?(@run)}
-                      class="size-3 shrink-0 rounded-full border-2 border-slate-300 dark:border-slate-600 border-t-blue-500 motion-safe:animate-spin"
-                    />
-                    <span class="min-w-0">
+                    <div class="relative flex items-center justify-center size-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 ring-1 ring-slate-200 dark:ring-slate-700">
+                      <.icon name="pi-clipboard-text" class="size-7" />
+                      <span
+                        :if={Run.running?(@run)}
+                        class="absolute -bottom-1 -right-1 size-4 rounded-full border-2 border-slate-300 dark:border-slate-600 border-t-blue-500 motion-safe:animate-spin bg-white dark:bg-slate-900"
+                      />
+                    </div>
+                    <h2 class="mt-5 text-base font-semibold text-slate-900 dark:text-slate-100">
+                      {if Run.running?(@run), do: "Writing the fix plan", else: "No fix plan"}
+                    </h2>
+                    <p class="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
                       {if Run.running?(@run),
                         do:
-                          "Revising on #{@revising}. This plan is replaced when the lead saves the new one, and Approve comes back then.",
+                          "On #{asked(@fix_plan)}. Approve appears in the header once the plan is saved.",
                         else:
-                          "The lead stopped before it saved the revised plan, so there is nothing to approve. Message the lead to save it."}
-                    </span>
+                          "The lead stopped before it saved one, and nothing changed in the worktree. Message the lead to write it."}
+                    </p>
                   </div>
 
-                  <div
-                    :if={@plan_state == :outdated and not Run.running?(@run)}
-                    id="fix-plan-outdated"
-                    class="mb-5 flex items-start gap-2.5 rounded-lg border border-amber-300 dark:border-amber-800/70 bg-amber-50 dark:bg-amber-950/30 px-4 py-2.5 text-[13px] text-amber-900 dark:text-amber-200"
-                  >
-                    <.icon name="pi-swap" class="size-4 mt-0.5 shrink-0" />
-                    <span class="min-w-0 wrap-anywhere">
-                      <span class="font-semibold">Out of date.</span>
-                      <span :for={{change, index} <- Enum.with_index(@ruling_changes.since_plan)}>{separator(
-                        index,
-                        length(@ruling_changes.since_plan)
-                      )}<code class="font-mono text-[12px]">{change.key}</code>
-                      changed from {ruling(change.was)} to {ruling(change.now)}</span>
-                      after this plan was saved. Send the change from the tray for a revised plan, or change it back to approve this one.
-                    </span>
-                  </div>
+                  <div :if={@fix_plan.plan}>
+                    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-5">
+                      <h2 class="text-xl font-bold text-slate-900 dark:text-slate-100">Fix plan</h2>
+                      <span class="text-sm text-slate-500 dark:text-slate-400">
+                        Fix round {@fix_plan.round} · saved
+                        <.local_time id="fix-plan-saved-at" at={@fix_plan.saved_at} />
+                      </span>
+                    </div>
 
-                  <div class={[@plan_state not in [:waiting, :approved] && "opacity-70"]}>
-                    <.fix_plan_sheet
-                      sheet={FixPlan.build_sheet(@fix_plan)}
-                      changed={Map.new(@ruling_changes.since_plan, &{&1.key, &1.now})}
-                    />
+                    <div
+                      :if={@revising}
+                      id="fix-plan-revising"
+                      class="mb-5 flex items-center gap-2.5 rounded-lg border border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/40 px-4 py-2.5 text-[13px] text-blue-800 dark:text-blue-200"
+                    >
+                      <span
+                        :if={Run.running?(@run)}
+                        class="size-3 shrink-0 rounded-full border-2 border-slate-300 dark:border-slate-600 border-t-blue-500 motion-safe:animate-spin"
+                      />
+                      <span class="min-w-0">
+                        {if Run.running?(@run),
+                          do:
+                            "Revising on #{@revising}. This plan is replaced when the lead saves the new one, and Approve comes back then.",
+                          else:
+                            "The lead stopped before it saved the revised plan, so there is nothing to approve. Message the lead to save it."}
+                      </span>
+                    </div>
+
+                    <div
+                      :if={@plan_state == :outdated and not Run.running?(@run)}
+                      id="fix-plan-outdated"
+                      class="mb-5 flex items-start gap-2.5 rounded-lg border border-amber-300 dark:border-amber-800/70 bg-amber-50 dark:bg-amber-950/30 px-4 py-2.5 text-[13px] text-amber-900 dark:text-amber-200"
+                    >
+                      <.icon name="pi-swap" class="size-4 mt-0.5 shrink-0" />
+                      <span class="min-w-0 wrap-anywhere">
+                        <span class="font-semibold">Out of date.</span>
+                        <span :for={{change, index} <- Enum.with_index(@ruling_changes.since_plan)}>{separator(
+                          index,
+                          length(@ruling_changes.since_plan)
+                        )}<code class="font-mono text-[12px]">{change.key}</code>
+                        changed from {ruling(change.was)} to {ruling(change.now)}</span>
+                        after this plan was saved. Send the change from the tray for a revised plan, or change it back to approve this one.
+                      </span>
+                    </div>
+
+                    <div class={[@plan_state not in [:waiting, :approved] && "opacity-70"]}>
+                      <.fix_plan_sheet
+                        sheet={FixPlan.build_sheet(@fix_plan)}
+                        changed={Map.new(@ruling_changes.since_plan, &{&1.key, &1.now})}
+                        placed={@fix_plan_comments.placed}
+                        lifted={@fix_plan_comments.lifted}
+                        draft={@fix_plan_draft}
+                        offered={@fix_plan_offered}
+                        target={@myself}
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div :if={@item == :diff} class="flex-1 min-w-0 min-h-0">
-                <.live_component
-                  module={DiffView}
-                  id="diff-view"
-                  task={@task}
-                  current_scope={@current_scope}
-                  focus_file={@diff_file}
-                  open={@diff_open}
+                <div :if={@item == :diff} class="flex-1 min-w-0 min-h-0">
+                  <.live_component
+                    module={DiffView}
+                    id="diff-view"
+                    task={@task}
+                    current_scope={@current_scope}
+                    focus_file={@diff_file}
+                    open={@diff_open}
+                  />
+                </div>
+
+                <.screen_grid
+                  :if={@item == :screens}
+                  task_id={@task.id}
+                  screens={@screens}
+                  labels={@labels}
+                  unsent={@unsent_screens}
+                  target={@myself}
                 />
+
+                <.demo_player
+                  :if={@item == :demo}
+                  task={@task}
+                  demo={@demo}
+                  beats={@beats}
+                  recorded={@recorded}
+                  recording={@recording}
+                  stale={@stale}
+                  rerecordable={@approvable and not Run.running?(@run)}
+                  target={@myself}
+                />
+
+                <.browser_picker
+                  :if={@item == :browser}
+                  sessions={@sessions}
+                  picked={@browser}
+                  url={@url}
+                  beats={length(@beats)}
+                  target={@myself}
+                />
+
+                <%!-- Under every other item, the comments waiting to be sent, so Send is never an item away. --%>
+                <div :if={@item not in [:plan, :fix_plan]} class="shrink-0">
+                  {render_slot(@conversation)}
+                </div>
               </div>
-
-              <.screen_grid
-                :if={@item == :screens}
-                task_id={@task.id}
-                screens={@screens}
-                labels={@labels}
-                unsent={@unsent_screens}
-                target={@myself}
-              />
-
-              <.demo_player
-                :if={@item == :demo}
-                task={@task}
-                demo={@demo}
-                beats={@beats}
-                recorded={@recorded}
-                recording={@recording}
-                stale={@stale}
-                rerecordable={@approvable and not Run.running?(@run)}
-                target={@myself}
-              />
-
-              <.browser_picker
-                :if={@item == :browser}
-                sessions={@sessions}
-                picked={@browser}
-                url={@url}
-                beats={length(@beats)}
-                target={@myself}
-              />
-
-              <%!-- Under every other item, the comments waiting to be sent, so Send is never an item away. --%>
-              <div :if={@item != :conversation} class="shrink-0">{render_slot(@conversation)}</div>
             </div>
           </div>
         </div>
@@ -660,6 +694,82 @@ defmodule RailWeb.Live.TaskDetail do
     {:noreply, load(socket)}
   end
 
+  # The line is read off this tab's own copy of the plan by its key, so only a line it shows can be commented on.
+  def handle_event("open_document_comment", %{"doc" => "fix_plan", "key" => key}, socket) do
+    %{fix_plan_lines: lines, fix_plan_offered: offered} = socket.assigns
+
+    socket =
+      case offered && Enum.find(lines, &(&1.key == key)) do
+        %{} = line ->
+          draft = %{
+            doc: :fix_plan,
+            key: line.key,
+            kind: line.kind,
+            label: line.label,
+            text: line.text,
+            occurrence: line.occurrence,
+            body: nil
+          }
+
+          assign(socket, :fix_plan_draft, draft)
+
+        _gone_or_not_offered ->
+          socket
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("change_plan_comment", %{"body" => body}, %{assigns: %{fix_plan_draft: %{} = draft}} = socket) do
+    {:noreply, assign(socket, :fix_plan_draft, %{draft | body: body})}
+  end
+
+  def handle_event("change_plan_comment", _params, socket), do: {:noreply, socket}
+
+  def handle_event("cancel_plan_comment", _params, socket) do
+    {:noreply, assign(socket, :fix_plan_draft, nil)}
+  end
+
+  # A blank comment is refused and the box stays open on what was typed. It goes to the review agent, which writes
+  # the plan, through the conversation's tray.
+  def handle_event("save_plan_comment", %{"body" => body}, %{assigns: %{fix_plan_draft: %{} = draft}} = socket) do
+    attrs = %{
+      target: :fix_plan,
+      body: body,
+      element_kind: draft.kind,
+      element_label: draft.label,
+      element_occurrence: draft.occurrence,
+      element_text: draft.text
+    }
+
+    case Pipeline.create_plan_comment(socket.assigns.current_scope, socket.assigns.run, attrs) do
+      {:ok, _comment} ->
+        socket = socket |> assign(:fix_plan_draft, nil) |> assign(:error, nil) |> assign_fix_plan_comments()
+        {:noreply, socket}
+
+      {:error, %Ecto.Changeset{}} ->
+        {:noreply, assign(socket, :fix_plan_draft, %{draft | body: body})}
+
+      {:error, reason} ->
+        socket = socket |> assign(:fix_plan_draft, nil) |> assign(:error, message_for(reason))
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("save_plan_comment", _params, socket), do: {:noreply, socket}
+
+  # Read back rather than dropped from the list, since another tab may have sent it.
+  def handle_event("remove_plan_comment", %{"id" => id}, socket) do
+    case Enum.find(socket.assigns.plan_comments, &(&1.id == id)) do
+      %PlanComment{} = comment ->
+        {:ok, _removed} = Pipeline.delete_plan_comment(socket.assigns.current_scope, comment)
+        {:noreply, assign_fix_plan_comments(socket)}
+
+      nil ->
+        {:noreply, assign_fix_plan_comments(socket)}
+    end
+  end
+
   # The URL's item opens a task the stage starts showing, a child switched to included; after that the stage
   # keeps its own, so the page's patches never send it back to an item it has left.
   defp open_url_item(%{assigns: %{task: %Task{id: id}}} = socket, %{task: %Task{id: id}}), do: socket
@@ -724,8 +834,8 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign_rounds(rounds, fix_plan, plan_state)
     |> assign(:plan_run, runs[:plan])
     |> assign(:plan_label, plan_label(task, runs[:plan], List.first(rounds)))
-    |> assign(:chat_label, chat_label(task, socket.assigns.chat_run))
     |> assign_fix_plan(fix_plan, plan_state, findings)
+    |> assign_fix_plan_comments()
     |> assign(:findings, findings)
     |> assign(:phase, phase)
     |> assign(:round, if(phase in [:planning, :waiting, :outdated], do: fix_plan.round, else: round(phase, passes)))
@@ -766,6 +876,39 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign(:ruling_changes, ruling_changes)
     |> assign(:revising, revising(fix_plan, plan_state, run, ruling_changes))
     |> assign(:show_approve, approve?(task, run, plan_state, scope))
+  end
+
+  # The reader's comments on the next round's plan, numbered as the tray numbers them, under the lines they were
+  # written on. A line takes one while the plan waits on approval and the review agent can take a message; they are
+  # read only while the plan is the item open.
+  defp assign_fix_plan_comments(socket) do
+    %{fix_plan: fix_plan, plan_state: state, run: run, task: task, current_scope: scope, item: item} = socket.assigns
+    open? = item == :fix_plan and match?(%FixPlan{plan: plan} when is_binary(plan), fix_plan)
+    lines = if open?, do: fix_plan |> FixPlan.build_sheet() |> build_fix_plan_lines() |> Map.fetch!(:lines), else: []
+    comments = if open? and match?(%{user: %{}}, scope), do: Pipeline.list_plan_comments(scope, task), else: []
+    numbered = comments |> Enum.with_index(1) |> Enum.filter(&(elem(&1, 0).target == :fix_plan))
+    placement = calculate_document_comments(lines, numbered)
+
+    offered =
+      open? and state != :approved and is_nil(task.cleaned_up_at) and Run.can_chat?(run) and
+        match?(%{user: %{}}, scope)
+
+    socket
+    |> assign(:fix_plan_lines, lines)
+    |> assign(:fix_plan_offered, offered)
+    |> assign(:plan_comments, comments)
+    |> assign(:fix_plan_comments, placement)
+    |> assign(:fix_plan_draft, if(offered, do: socket.assigns.fix_plan_draft))
+    |> report_lifted(if(open?, do: Enum.map(placement.lifted, &elem(&1, 0).id)))
+  end
+
+  # The conversation's tray marks the same comments changed, and hears of it only when they change.
+  defp report_lifted(%{assigns: %{reported_lifted: ids}} = socket, ids), do: socket
+  defp report_lifted(socket, nil), do: socket
+
+  defp report_lifted(socket, ids) do
+    send(self(), {:plan_comments_lifted, ids})
+    assign(socket, :reported_lifted, ids)
   end
 
   # The conversation's tray shows what Send sends and whether it can; the page holds both and hands them on.
@@ -1012,7 +1155,7 @@ defmodule RailWeb.Live.TaskDetail do
   defp waiting_plan?(%{fix_plan: %FixPlan{}, plan_state: state}), do: state != :approved
   defp waiting_plan?(_assigns), do: false
 
-  # The whole task's items before the review's: the issue, the plan, the conversation and a split's children.
+  # The whole task's items before the review's: the issue, the plan with its conversation and a split's children.
   defp page_items(assigns) do
     [
       %{
@@ -1032,22 +1175,13 @@ defmodule RailWeb.Live.TaskDetail do
           icon: "pi-clipboard-text",
           picked_icon: "pi-clipboard-text-fill",
           state: assigns.plan_label,
-          badge: nil,
+          # Its conversation is beside it, so the questions waiting there are counted on it.
+          badge: if(assigns.questions > 0, do: assigns.questions),
           dot: if(assigns.task.stage == :plan and Run.running?(assigns.plan_run), do: :running),
           mark: nil
         },
         fix_plan_item(assigns) || %{}
       ),
-      %{
-        key: :conversation,
-        label: "Chat",
-        icon: "pi-chat-text",
-        picked_icon: "pi-chat-text-fill",
-        state: assigns.chat_label,
-        badge: if(assigns.questions > 0, do: assigns.questions),
-        dot: nil,
-        mark: nil
-      },
       assigns.split &&
         %{
           key: :children,
@@ -1154,10 +1288,6 @@ defmodule RailWeb.Live.TaskDetail do
   # Work its owner started without a tech lead's approval still waits on one.
   defp plan_label(%Task{}, _plan_run, %Round{approved_at: nil}), do: "Started without approval"
   defp plan_label(%Task{}, _plan_run, _approved_or_none), do: "Approved"
-
-  defp chat_label(%Task{stage: :plan}, _run), do: "Talk to Plan"
-  defp chat_label(%Task{}, %Run{}), do: "Talk to the review agent"
-  defp chat_label(%Task{}, nil), do: "Opens once the round is reviewed"
 
   defp round(:round, passes), do: length(passes) + 1
   defp round(_phase, passes), do: max(length(passes), 1)
@@ -1414,7 +1544,7 @@ defmodule RailWeb.Live.TaskDetail do
 
   defp item("issue"), do: :issue
   defp item("plan"), do: :plan
-  defp item("conversation"), do: :conversation
+  defp item("conversation"), do: :plan
   defp item("children"), do: :children
   defp item("fix_plan"), do: :fix_plan
   defp item("diff"), do: :diff
@@ -1434,7 +1564,7 @@ defmodule RailWeb.Live.TaskDetail do
   defp message_for(:review_finished), do: "The review is finished, so its rulings are settled."
   defp message_for(:cleaned_up), do: "This task is cleaned up, so it takes no more comments."
   defp message_for(:not_found), do: "That screen is gone: a retake or a cleanup removed it."
-  defp message_for(:no_fix_plan), do: "There is no fix plan to approve."
+  defp message_for(:no_fix_plan), do: "There is no fix plan waiting on approval."
   defp message_for({:fix_plan_not_waiting, :outdated}), do: "A ruling changed since that plan was saved. Nothing started."
   defp message_for({:fix_plan_not_waiting, :approved}), do: "That fix plan is already approved."
   defp message_for({:fix_plan_not_waiting, _writing}), do: "The lead is revising that fix plan. Nothing started."

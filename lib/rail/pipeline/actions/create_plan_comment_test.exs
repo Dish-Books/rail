@@ -218,4 +218,40 @@ defmodule Rail.Pipeline.Actions.CreatePlanCommentTest do
     assert [%{body: "Say what settles."}, %{body: "And when."}, %{target: :plan}] =
              Pipeline.list_plan_comments(ada, task)
   end
+
+  test "a comment on the next round's plan saves only while that plan is saved and waits on approval", %{
+    task: task,
+    run: run,
+    ada: ada
+  } do
+    attrs = %{
+      target: :fix_plan,
+      element_kind: :paragraph,
+      element_label: "Fix finding nil-crash, paragraph 1",
+      element_occurrence: 1,
+      element_text: "Guard nil.",
+      body: "Guard it at the caller instead."
+    }
+
+    path = Path.join([task.scratch_path, "fix_plans", "PCC-1.json"])
+    File.mkdir_p!(Path.dirname(path))
+
+    assert {:error, :no_fix_plan} = Pipeline.create_plan_comment(ada, run, attrs)
+
+    File.write!(path, Jason.encode!(%{round: 1, plan: nil, version: 0}))
+    assert {:error, :no_fix_plan} = Pipeline.create_plan_comment(ada, run, attrs)
+
+    File.write!(path, Jason.encode!(%{round: 1, plan: "Guard nil.", version: 1}))
+
+    assert {:ok, %PlanComment{target: :fix_plan, status: :unsent, element_label: "Fix finding nil-crash, paragraph 1"}} =
+             Pipeline.create_plan_comment(ada, run, attrs)
+
+    File.write!(
+      path,
+      Jason.encode!(%{round: 1, plan: "Guard nil.", version: 1, approved_by: "ada", approved_at: DateTime.utc_now()})
+    )
+
+    assert {:error, :no_fix_plan} = Pipeline.create_plan_comment(ada, run, %{attrs | body: "And this."})
+    assert [%PlanComment{body: "Guard it at the caller instead."}] = Pipeline.list_plan_comments(ada, task)
+  end
 end

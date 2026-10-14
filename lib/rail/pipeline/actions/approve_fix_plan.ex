@@ -3,18 +3,21 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlan do
   Approves the plan the review agent saved for the next round, the only thing that starts its changes: the plan
   becomes the task's next round, approved, and the task goes back to Engineer, where a `StartEngineer` job
   committed with the move starts the engineer on it with a clean conversation. Only the version the person read,
-  still waiting, is approved. Anyone who can open the project approves a later round's plan. A plan that changes
+  still waiting, is approved, and the comments left unsent on it go. Anyone who can open the project approves a
+  later round's plan. A plan that changes
   the ticket, as a person asked, puts the new ticket on its round and on the issue.
   """
 
   import Ecto.Query
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
+  import Rail.Pipeline.Utils.BroadcastPlanComments
   import Rail.Pipeline.Utils.WriteFixPlan
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.FixPlan
+  alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -40,16 +43,31 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlan do
              %FixPlan{} = fix_plan <- Pipeline.read_fix_plan(task) || {:error, :no_fix_plan},
              :ok <- latest(fix_plan, version),
              :waiting <- waiting(FixPlan.state(fix_plan, task, Pipeline.list_findings(task))) do
-          approve(scope, task, fix_plan)
+          {approve(scope, task, fix_plan), drop_unsent_comments(task)}
         else
           {:error, reason} -> Repo.rollback(reason)
         end
       end)
 
-    with {:ok, %Task{} = task} <- result do
+    with {:ok, {%Task{} = task, authors}} <- result do
       broadcast_pipeline_changed(task)
+      Enum.each(authors, &broadcast_plan_comments(task.id, &1))
       {:ok, Repo.get!(Run, run.id)}
     end
+  end
+
+  # A comment left unsent on the plan was for a change to it, which approving it has passed, so it goes with it.
+  # Its authors' trays are told it went.
+  defp drop_unsent_comments(%Task{id: task_id}) do
+    {_count, authors} =
+      Repo.delete_all(
+        from(comment in PlanComment,
+          where: comment.task_id == ^task_id and comment.target == :fix_plan and comment.status == :unsent,
+          select: comment.user_id
+        )
+      )
+
+    Enum.uniq(authors)
   end
 
   defp latest(%FixPlan{version: version}, version), do: :ok

@@ -17,6 +17,7 @@ defmodule RailWeb.Components.PlanDiagram do
   attr :placed, :map, default: %{}, doc: "the reader's comments on each line, by its key"
   attr :draft, :map, default: nil, doc: "the line the comment box is open under"
   attr :offered, :boolean, default: false, doc: "the reader can comment now"
+  attr :doc, :atom, default: :plan, values: [:plan, :split_part]
 
   def plan_diagram(%{diagram: %{kind: kind, source: source}} = assigns) do
     nodes =
@@ -26,7 +27,10 @@ defmodule RailWeb.Components.PlanDiagram do
     # Keyed on the source, so a rewritten plan mounts a fresh hook that draws it.
     assigns =
       assigns
-      |> assign(:id, "plan-diagram-#{kind}-#{:erlang.phash2(source)}")
+      |> assign(
+        :id,
+        "#{if assigns.doc == :plan, do: "plan", else: "split-part"}-diagram-#{kind}-#{:erlang.phash2(source)}"
+      )
       |> assign(:title, Map.fetch!(@titles, kind))
       |> assign(:icon, Map.fetch!(@icons, kind))
       |> assign(:nodes, Jason.encode!(nodes))
@@ -123,7 +127,7 @@ defmodule RailWeb.Components.PlanDiagram do
           line={line}
           layout={:code}
           framed={false}
-          doc={:plan}
+          doc={@doc}
           placed={@placed}
           draft={@draft}
           offered={@offered}
@@ -135,7 +139,7 @@ defmodule RailWeb.Components.PlanDiagram do
         :for={node <- @diagram.nodes}
         line={node}
         layout={:node}
-        doc={:plan}
+        doc={@doc}
         placed={@placed}
         draft={@draft}
         offered={@offered}

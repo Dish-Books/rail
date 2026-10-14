@@ -265,6 +265,46 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
            ] = Repo.all(from o in Observation, where: o.task_id == ^task_id, order_by: o.source_kind)
   end
 
+  # The review agent writes the next round's plan, so a comment on it corrects the review agent, not Plan.
+  test "a comment on the next round's plan becomes a rule for the review agent quoting its line", %{
+    task: %{id: task_id} = task,
+    user_id: user_id
+  } do
+    comment = %PlanComment{
+      id: "pcm_rc_fix_plan",
+      target: :fix_plan,
+      user_id: user_id,
+      element_kind: :paragraph,
+      element_label: "Fix finding nil-crash, paragraph 1",
+      element_occurrence: 1,
+      element_text: "Guard it at the caller.\nAnd in the action.",
+      body: "Guard nil where the map is read."
+    }
+
+    assert {:ok,
+            [
+              %Learning{
+                status: :provisional,
+                kind: :convention,
+                roles: [:review_lead],
+                rule: "Guard nil where the map is read.",
+                why:
+                  "From a fix round's plan comment on Fix finding nil-crash, paragraph 1:\n\n> Guard it at the caller.\n> And in the action."
+              }
+            ]} = Learnings.record_corrections(task, [comment])
+
+    assert [
+             %Observation{
+               source_kind: :plan_comment,
+               source_id: "pcm_rc_fix_plan",
+               actor_id: ^user_id,
+               excerpt: "Guard it at the caller.\nAnd in the action."
+             }
+           ] = Repo.all(from o in Observation, where: o.task_id == ^task_id)
+
+    assert {:ok, []} = Learnings.record_corrections(task, [comment])
+  end
+
   test "a comment saved before blocks were kept is quoted by its line", %{task: task} do
     comment = %DiffComment{id: "dcm_rc_old", path: "a.ex", line_text: "old line", context_text: "", body: "Rename it"}
 

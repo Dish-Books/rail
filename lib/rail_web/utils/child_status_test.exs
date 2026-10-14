@@ -200,7 +200,7 @@ defmodule RailWeb.Utils.ChildStatusTest do
     failed = child.(2, stage: :review, runs: [run.(:review_lead, status: :failed, error: "Chrome could not reach it")])
     running = child.(3, runs: [run.(:engineer, status: :running)])
 
-    assert %{badge: 2, line: "engineer role asked 2 questions", action: %{label: "Answer", item: "conversation"}} =
+    assert %{badge: 2, line: "engineer role asked 2 questions", action: %{label: "Answer", item: "plan"}} =
              child_status(blocked, [blocked])
 
     assert %{

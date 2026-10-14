@@ -1,6 +1,6 @@
 defmodule RailWeb.Components.PlanCommentTray do
   @moduledoc """
-  The reader's unsent ticket, design and plan comments, above the composer as the message they will become, with
+  The reader's unsent ticket, design, plan and next round's plan comments, above the composer as the message they will become, with
   Send beside them while their agent can take a message: Plan, and once the work started the review agent. Only
   their author sees them.
   """
@@ -87,7 +87,7 @@ defmodule RailWeb.Components.PlanCommentTray do
                 :if={comment.target != :design}
                 class="shrink-0 font-sans font-semibold text-slate-600 dark:text-slate-300"
               >
-                {if comment.target == :ticket, do: "Ticket", else: "Plan"}
+                {target_label(comment.target)}
               </span>
               <span :if={comment.target != :design} class="truncate">{comment.element_label}</span>
               <span :if={comment.target == :design} class="truncate" title={comment.selector}>
@@ -155,4 +155,8 @@ defmodule RailWeb.Components.PlanCommentTray do
 
   defp noun(1), do: " comment"
   defp noun(_count), do: " comments"
+
+  defp target_label(:ticket), do: "Ticket"
+  defp target_label(:plan), do: "Plan"
+  defp target_label(:fix_plan), do: "Next round's plan"
 end

@@ -184,4 +184,29 @@ defmodule RailWeb.Components.PlanCommentTrayTest do
     assert [number | _icons] = Floki.attribute(plan, "span[aria-hidden='true']", "class")
     assert number =~ "border-dashed"
   end
+
+  test "a row on the next round's plan names it and its line" do
+    comment = %PlanComment{
+      id: "pcm_f",
+      target: :fix_plan,
+      element_kind: :file,
+      element_label: "File 2",
+      element_text: "lib/tray.ex",
+      body: "Count them in the tray."
+    }
+
+    html =
+      render_component(&PlanCommentTray.plan_comment_tray/1,
+        comments: [comment],
+        can_send: true,
+        plan_running: false,
+        agent: "The review agent",
+        target: nil
+      )
+
+    [row] = html |> Floki.parse_fragment!() |> Floki.find("#plan-comment-pcm_f")
+    assert Floki.text(row) =~ ~r/Next round's plan\s+File 2\s+"lib\/tray.ex"/
+    assert Floki.text(row) =~ "Count them in the tray."
+    assert Floki.attribute(row, "data-found") == ["true"]
+  end
 end

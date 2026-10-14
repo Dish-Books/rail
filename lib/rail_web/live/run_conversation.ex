@@ -1452,7 +1452,7 @@ defmodule RailWeb.Live.RunConversation do
     |> assign_new(:plan_comments, fn -> [] end)
     |> assign_new(:missing_anchors, fn -> [] end)
     |> assign_new(:lifted_comments, fn -> [] end)
-    |> assign_new(:tray_open, fn -> true end)
+    |> assign_new(:tray_open, fn -> false end)
     |> assign_new(:review_tray, fn -> nil end)
     |> assign_new(:review_pane, fn -> false end)
     |> assign_new(:review_finding_comments, fn -> [] end)

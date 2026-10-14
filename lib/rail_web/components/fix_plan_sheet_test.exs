@@ -2,8 +2,10 @@ defmodule RailWeb.Components.FixPlanSheetTest do
   use ExUnit.Case, async: true
 
   import Phoenix.LiveViewTest
+  import RailWeb.Utils.BuildFixPlanLines
 
   alias Rail.Pipeline.Schemas.FixPlan
+  alias Rail.Pipeline.Schemas.PlanComment
   alias RailWeb.Components.FixPlanSheet
 
   setup do
@@ -145,5 +147,82 @@ defmodule RailWeb.Components.FixPlanSheetTest do
       assert doc |> Floki.find("#plan-summary") |> Floki.text() =~ said
       assert comments == 0 or doc |> Floki.find("#fix-plan-item-comment-1") |> Floki.text() =~ "Comment 1 · Finding"
     end
+  end
+
+  test "every line of its text draws a + on the next round's plan only while commenting is offered", %{sheet: sheet} do
+    offered =
+      (&FixPlanSheet.fix_plan_sheet/1)
+      |> render_component(sheet: sheet, offered: true, target: "#review-stage")
+      |> Floki.parse_fragment!()
+
+    adds = offered |> Floki.attribute("[data-qa='line_comment_add']", "phx-value-key") |> MapSet.new()
+    drawn = for line <- build_fix_plan_lines(sheet).lines, into: MapSet.new(), do: line.key
+
+    assert adds == drawn
+    assert offered |> Floki.attribute("[data-qa='line_comment_add']", "phx-value-doc") |> Enum.uniq() == ["fix_plan"]
+    assert offered |> Floki.attribute("[data-qa='line_comment_add']", "phx-target") |> Enum.uniq() == ["#review-stage"]
+    assert "Comment on File 2" in Floki.attribute(offered, "[data-qa='line_comment_add']", "aria-label")
+
+    quiet = (&FixPlanSheet.fix_plan_sheet/1) |> render_component(sheet: sheet) |> Floki.parse_fragment!()
+
+    assert Floki.find(quiet, "[data-qa='line_comment_add']") == []
+    assert quiet |> Floki.find("[data-qa='commentable_line']") |> length() == MapSet.size(drawn)
+  end
+
+  test "a comment is drawn under its line, the box opens under the line it is for, and a changed one sits at the top",
+       %{sheet: sheet} do
+    %{files: [_first, %{path_line: path_line} | _files], verification_lines: [verification]} =
+      build_fix_plan_lines(sheet)
+
+    placed = %PlanComment{
+      id: "pcm_placed",
+      target: :fix_plan,
+      element_kind: :file,
+      element_label: "File 2",
+      element_text: "lib/tray.ex",
+      body: "Count them in the tray."
+    }
+
+    lifted = %PlanComment{
+      id: "pcm_lifted",
+      target: :fix_plan,
+      element_kind: :paragraph,
+      element_label: "Summary, paragraph 1",
+      element_text: "Three changes.",
+      body: "Which three?"
+    }
+
+    doc =
+      (&FixPlanSheet.fix_plan_sheet/1)
+      |> render_component(
+        sheet: sheet,
+        offered: true,
+        placed: %{path_line.key => [{placed, 1}]},
+        lifted: [{lifted, 2}],
+        draft: %{doc: :fix_plan, key: verification.key, label: verification.label, body: "Run it twice."}
+      )
+      |> Floki.parse_fragment!()
+
+    [under] =
+      doc
+      |> Floki.find("[data-qa='commentable_line']")
+      |> Enum.filter(&(Floki.find(&1, "#line-fix_plan-#{path_line.key}") != []))
+
+    assert under |> Floki.find("[data-qa='line_comments'] #document-comment-pcm_placed") |> Floki.text() =~
+             "Count them in the tray."
+
+    assert under |> Floki.find("[data-qa='document_comment_number']") |> Floki.text() =~ "1"
+    assert [_placed] = Floki.find(doc, "#document-comment-pcm_placed")
+
+    assert [_box] = Floki.find(doc, "#document-comment-form-#{verification.key}")
+
+    [changed] = Floki.find(doc, "#fix-plan-changed-comments [data-lifted='true']")
+    assert Floki.text(changed) =~ "Summary, paragraph 1 as you commented on it"
+    assert Floki.text(changed) =~ "Three changes."
+    assert [_lifted] = Floki.find(doc, "#document-comment-pcm_lifted")
+
+    quiet = (&FixPlanSheet.fix_plan_sheet/1) |> render_component(sheet: sheet) |> Floki.parse_fragment!()
+    assert Floki.find(quiet, "#fix-plan-changed-comments") == []
+    assert Floki.find(quiet, "[data-qa='line_comments']") == []
   end
 end
