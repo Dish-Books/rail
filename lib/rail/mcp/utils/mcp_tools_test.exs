@@ -6,7 +6,7 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
   alias Rail.Roles.Schemas.Role
 
   setup do
-    stages = [:plan, :product, :design, :architect, :engineer, :review_lead, :review, :qa, :demo, :triage]
+    stages = [:plan, :engineer, :review_lead, :review, :qa, :demo, :triage]
     %{names: Map.new(stages, fn stage -> {stage, %Role{stage: stage} |> mcp_tools() |> Enum.map(& &1["name"])} end)}
   end
 
@@ -138,9 +138,6 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
     assert names[:triage] == ["knowledge_search"]
 
     # Product, design and architect run inside Plan, on its tools; no run holds those roles now.
-    assert names[:product] == ["knowledge_search"]
-    assert names[:design] == ["knowledge_search"]
-    assert names[:architect] == ["knowledge_search"]
   end
 
   test "save_plan takes the ticket, the plan and the design option it is written for, none of them required" do

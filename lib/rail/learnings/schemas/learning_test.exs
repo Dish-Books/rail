@@ -36,7 +36,7 @@ defmodule Rail.Learnings.Schemas.LearningTest do
 
   test "labels read the way the page says them" do
     assert Learning.roles_label(%Learning{roles: []}) == "Every role"
-    assert Learning.roles_label(%Learning{roles: [:review, :design]}) == "Reviewer, Designer"
+    assert Learning.roles_label(%Learning{roles: [:review, :plan]}) == "Reviewer, Plan"
 
     assert Enum.map(Learning.kinds(), &Learning.kind_label/1) == [
              "Convention",
@@ -53,9 +53,6 @@ defmodule Rail.Learnings.Schemas.LearningTest do
     assert Enum.map(Learning.roles(), &Learning.role_label/1) ==
              [
                "Plan",
-               "Product",
-               "Designer",
-               "Architect",
                "Engineer",
                "Review lead",
                "Reviewer",

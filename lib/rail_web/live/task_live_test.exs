@@ -1449,7 +1449,7 @@ defmodule RailWeb.TaskLiveTest do
       stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
 
       roles =
-        Map.new([:product, :design, :architect, :engineer], fn stage ->
+        Map.new([:plan, :engineer], fn stage ->
           {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
           {stage, role}
         end)

@@ -106,9 +106,9 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert has_element?(view, "#pipeline-stages-list")
     assert has_element?(view, "#stage-row-engineer")
     assert has_element?(view, "#bound-role-name-engineer", "Senior Engineer")
-    assert has_element?(view, "#stage-row-product")
-    assert has_element?(view, "#unbound-stage-notice-product", "No role bound")
-    assert has_element?(view, "#assign-stage-button-product")
+    assert has_element?(view, "#stage-row-qa")
+    assert has_element?(view, "#unbound-stage-notice-qa", "No role bound")
+    assert has_element?(view, "#assign-stage-button-qa")
     refute has_element?(view, "#unbound-roles-section")
 
     # Change project via selector
@@ -154,7 +154,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
 
     # Open create modal for product stage
-    view |> element("#assign-stage-button-product") |> render_click()
+    view |> element("#assign-stage-button-qa") |> render_click()
     assert has_element?(view, "#role-editor-modal")
     assert has_element?(view, "#role-modal-title", "New role")
     refute has_element?(view, "#role-identifier-card")
@@ -185,7 +185,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
       "role" => %{
         "name" => "Product Lead",
         "description" => "Owns specs",
-        "stage" => "product",
+        "stage" => "qa",
         "model_choice" => "claude:claude-haiku-5",
         "reasoning_effort" => "medium",
         "system_prompt" => "",
@@ -202,7 +202,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
       "role" => %{
         "name" => "Product Lead",
         "description" => "Owns specs",
-        "stage" => "product",
+        "stage" => "qa",
         "model_choice" => "claude:claude-haiku-5",
         "reasoning_effort" => "medium",
         "system_prompt" => "You are product lead.",
@@ -211,12 +211,12 @@ defmodule RailWeb.Settings.RolesLiveTest do
     })
 
     refute has_element?(view, "#role-editor-modal")
-    assert has_element?(view, "#bound-role-name-product", "Product Lead")
+    assert has_element?(view, "#bound-role-name-qa", "Product Lead")
 
     assert {:ok, %Role{cli: :claude, model: "claude-haiku-5"}} =
-             Roles.get_role(project_id: project.id, stage: :product)
+             Roles.get_role(project_id: project.id, stage: :qa)
 
-    assert has_element?(view, "#bound-role-no-account-product", "no signed-in account")
+    assert has_element?(view, "#bound-role-no-account-qa", "no signed-in account")
   end
 
   test "toolbar add button creates a role on the first free stage", %{admin_conn: conn} do
@@ -922,7 +922,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
 
     # Open create modal from a stage row
-    view |> element("#assign-stage-button-product") |> render_click()
+    view |> element("#assign-stage-button-qa") |> render_click()
     assert has_element?(view, "#role-editor-modal")
 
     # Every account's models are rows, the seeded account's and ours
@@ -935,7 +935,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
       "role" => %{
         "name" => "",
         "description" => "A description",
-        "stage" => "product",
+        "stage" => "qa",
         "model_choice" => "claude:claude-sonnet-5",
         "reasoning_effort" => "high",
         "system_prompt" => "Prompt",
@@ -1051,7 +1051,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
 
     send(view.pid, :unrelated_pipeline_event)
 
-    view |> element("#assign-stage-button-product") |> render_click()
+    view |> element("#assign-stage-button-qa") |> render_click()
     # The seeded account's Opus and the setup's Sonnet; a backend with no models adds no row.
     assert [_opus, _sonnet] = view |> render() |> Floki.parse_fragment!() |> Floki.find("[data-qa=role-model-option]")
 
@@ -1186,7 +1186,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     _unlabeled = offering.(["claude-sonnet-5.5"], %{})
 
     assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
-    view |> element("#assign-stage-button-design") |> render_click()
+    view |> element("#assign-stage-button-demo") |> render_click()
 
     assert has_element?(view, "#role-model-claude-claude-sonnet-5", "Claude Code · work, max-2")
     assert has_element?(view, "#role-model-claude-claude-sonnet-5 .text-slate-400", "· ops signed out · down unavailable")
@@ -1199,14 +1199,14 @@ defmodule RailWeb.Settings.RolesLiveTest do
     |> render_submit(%{
       "role" => %{
         "name" => "Designer",
-        "stage" => "design",
+        "stage" => "demo",
         "model_choice" => "claude:claude-sonnet-5.5",
         "system_prompt" => "You design."
       }
     })
 
     assert {:ok, %Role{cli: :claude, model: "claude-sonnet-5.5"}} =
-             Roles.get_role(project_id: project.id, stage: :design)
+             Roles.get_role(project_id: project.id, stage: :demo)
   end
 
   test "the roles list names each role's model and how many signed-in accounts offer it", %{
@@ -1228,7 +1228,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     _ops = offering.(["claude-fable-5-1"], %{label: "ops", status: :signed_out})
     scope = Rail.Scope.for_user(admin_user)
 
-    for {stage, model} <- [engineer: "claude-sonnet-5", design: "claude-fable-5-1", review: "claude-opus-5-5"] do
+    for {stage, model} <- [engineer: "claude-sonnet-5", demo: "claude-fable-5-1", review: "claude-opus-5-5"] do
       {:ok, _role} =
         Roles.create_role(scope, project, %{
           name: "#{stage}",
@@ -1244,7 +1244,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert has_element?(view, "#stage-role-details-engineer", "claude-sonnet-5")
     assert has_element?(view, "#bound-role-accounts-engineer", "on 2 accounts")
     assert has_element?(view, "#bound-role-accounts-review", "on 1 account")
-    assert has_element?(view, "#bound-role-no-account-design", "no signed-in account")
+    assert has_element?(view, "#bound-role-no-account-demo", "no signed-in account")
     refute has_element?(view, "#stage-role-details-engineer", "Claude Code")
   end
 
@@ -1263,7 +1263,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     Rail.Repo.delete!(Rail.Repo.get!(Backend, "bkd_test_seed"))
 
     assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
-    view |> element("#assign-stage-button-product") |> render_click()
+    view |> element("#assign-stage-button-qa") |> render_click()
 
     assert has_element?(view, "#role-model-claude-claude-sonnet-5 input[checked]")
   end

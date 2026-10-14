@@ -1249,7 +1249,7 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, design_run} =
         Pipeline.create_run(%{
           task_id: task.id,
-          role_id: roles[:design].id,
+          role_id: roles[:plan].id,
           status: :finished,
           stage_outcome: :done,
           started_at: DateTime.shift(now, hour: -5),

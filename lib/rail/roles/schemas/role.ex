@@ -9,11 +9,8 @@ defmodule Rail.Roles.Schemas.Role do
   alias Rail.Tools.Schemas.Backend
 
   @canonical_stages [
-    # Writes the ticket, the design and the plan itself. Product, design and architect are no longer run.
+    # Writes the ticket, the design and the plan itself.
     :plan,
-    :product,
-    :design,
-    :architect,
     :engineer,
     # Leads review, QA, engineer and demo, which run inside it as subagents; a task at Review enters it.
     :review_lead,

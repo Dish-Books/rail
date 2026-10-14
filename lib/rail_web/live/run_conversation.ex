@@ -718,7 +718,7 @@ defmodule RailWeb.Live.RunConversation do
     %Turn{status: status, turns: turns, label: label, content: content} = assigns.msg
     key = "sub-#{assigns.idx}"
     saved = subagent_saved(assigns.msg)
-    {name, work} = subagent_name(label, content) || {plan_subagent_name(label, assigns.roles_map), content}
+    {name, work} = subagent_name(label, content) || {plan_subagent_name(label), content}
 
     assigns =
       assigns
@@ -1573,14 +1573,9 @@ defmodule RailWeb.Live.RunConversation do
     end
   end
 
-  defp plan_subagent_name(label, roles_map) do
-    stage = %{"product" => :product, "designer" => :design, "architect" => :architect}[label]
-
-    case Enum.find(Map.values(roles_map), &(stage != nil and &1.stage == stage)) do
-      %{name: name} -> name
-      nil -> label |> String.split(~r/[-_\s]+/, trim: true) |> Enum.map_join(" ", &String.capitalize/1)
-    end
-  end
+  # A conversation from before Plan worked alone still names the subagents it led.
+  defp plan_subagent_name(label),
+    do: label |> String.split(~r/[-_\s]+/, trim: true) |> Enum.map_join(" ", &String.capitalize/1)
 
   # What the subagent's saves came to, read off its own tool calls: a refused save saved nothing.
   defp subagent_saved(%Turn{status: :skipped}), do: "skipped"

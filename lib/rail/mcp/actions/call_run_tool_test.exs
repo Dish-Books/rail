@@ -464,10 +464,10 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
     end
 
     test "a role it is not offered to falls through to the proxy and finds nothing", %{context: context, project: project} do
-      {:ok, product} = Roles.get_role(project_id: project.id, stage: :product)
+      {:ok, qa} = Roles.get_role(project_id: project.id, stage: :qa)
 
       assert {:error, :unknown_tool} =
-               Mcp.call_run_tool(%{context | role: product}, "ask_questions", %{
+               Mcp.call_run_tool(%{context | role: qa}, "ask_questions", %{
                  "questions" => [%{"prompt" => "Which database?"}]
                })
     end

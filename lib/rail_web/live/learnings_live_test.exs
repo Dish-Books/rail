@@ -934,7 +934,7 @@ defmodule RailWeb.LearningsLiveTest do
 
     assert has_element?(view, "#learning-rule", "Say how long the oldest one has waited.")
     assert has_element?(view, "[data-qa=learning-status]", "Provisional")
-    assert has_element?(view, "#learning-detail", "Designer")
+    assert has_element?(view, "#learning-detail", "Plan")
     assert has_element?(view, "#learning-sources", "Design comment · Dana Okafor")
     assert has_element?(view, ~s(#learning-sources a[href="/tasks/#{task.id}"]), "LLV-10")
     assert has_element?(view, "#learning-why", ~s(From a design comment on waiting-lanes, `#needs` "Needs you 3":))
