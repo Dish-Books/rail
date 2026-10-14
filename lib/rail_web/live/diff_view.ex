@@ -1,15 +1,13 @@
 defmodule RailWeb.Live.DiffView do
   @moduledoc """
-  The diff pane and everything it holds, on the Engineer tab and in the Review tab's Diff item alike: the
-  whole branch, the uncommitted work or one commit against its first parent, picked in the toolbar, with
-  the reader's comments, sent to `run` unless `sends` is false, as in Review, whose tray sends them. A merge's
-  view takes no comments.
+  The diff pane and everything it holds, the task page's Diff item: the whole branch, the uncommitted work or
+  one commit against its first parent, picked in the toolbar, with the reader's comments, which the Review
+  tray sends. A merge's view takes no comments.
 
   The diff is read off the worktree on mount, when the page asks with `reload`, and when HEAD or the
   worktree's status has moved since; a file whose digest has not moved keeps its highlighting. Marking a
   file read is per person and pinned to the file as it was read. Each part of the pane is an assign of its
-  own, so an event's reply redraws every part it moved and no other: Send reads Sending from the click,
-  and Sent in its own reply.
+  own, so an event's reply redraws every part it moved and no other.
   """
   use RailWeb, :live_component
 
@@ -18,7 +16,6 @@ defmodule RailWeb.Live.DiffView do
   alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
-  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
 
   # Another of the reader's tabs saved, removed, sent or resolved comments. Only
@@ -41,9 +38,7 @@ defmodule RailWeb.Live.DiffView do
     socket =
       socket
       |> assign(assigns)
-      |> assign_new(:open, fn -> nil end)
       |> assign_new(:opened, fn -> nil end)
-      |> assign_new(:error, fn -> nil end)
       |> assign_new(:view, fn -> :branch end)
       |> assign_new(:wrap, fn -> :scroll end)
       |> assign_new(:query, fn -> "" end)
@@ -83,15 +78,6 @@ defmodule RailWeb.Live.DiffView do
   def render(assigns) do
     ~H"""
     <div id="diff-view" data-qa="diff_view" class="h-full flex flex-col min-h-0">
-      <p
-        :if={@error}
-        id="diff-error"
-        data-qa="diff_error"
-        class="shrink-0 px-4 py-2 border-b border-slate-200 dark:border-slate-700 max-h-32 overflow-auto whitespace-pre-wrap text-xs text-red-600 dark:text-red-500"
-      >
-        {@error}
-      </p>
-
       <div
         :if={@loading?}
         id="diff-loading"
@@ -307,31 +293,6 @@ defmodule RailWeb.Live.DiffView do
     end
   end
 
-  # A view with no Send of its own, drawn before the task reached Review, sends nothing.
-  def handle_event("send_diff_comments", _params, %{assigns: %{sends: false}} = socket), do: {:noreply, socket}
-
-  # The reply redraws every comment as Sent, and the page's refresh after it reads
-  # the diff only if the worktree moved, so nothing draws them unsent in between.
-  # Nothing left to send is a second click or another tab.
-  def handle_event("send_diff_comments", _params, socket) do
-    socket =
-      case Pipeline.send_diff_comments(socket.assigns.current_scope, socket.assigns.run) do
-        {:ok, _delivery, _run} ->
-          send(self(), :task_changed)
-          assign(socket, :error, nil)
-
-        {:error, :nothing_to_send} ->
-          socket
-
-        {:error, reason} ->
-          assign(socket, :error, message_for(reason, socket.assigns.agent))
-      end
-
-    socket = socket |> assign_comments() |> sync_pane()
-
-    {:noreply, socket}
-  end
-
   # Only a comment's author resolves it. One found unsent or gone was clicked on a
   # stale page, which reading the list again puts right.
   def handle_event("resolve_diff_comment", %{"id" => id, "resolved" => resolved}, socket) do
@@ -489,9 +450,6 @@ defmodule RailWeb.Live.DiffView do
       comment_list: assigns.comment_list,
       selected_comment: assigns.selected_comment,
       draft: assigns.draft,
-      running?: Run.running?(assigns.run),
-      agent: assigns.agent,
-      sends?: assigns.sends,
       commentable?: commentable?(assigns)
     }
   end
@@ -579,12 +537,4 @@ defmodule RailWeb.Live.DiffView do
   defp empty_message(:uncommitted), do: "Everything in the worktree is committed."
   defp empty_message(:branch), do: "Nothing has been changed on this branch yet."
   defp empty_message({:commit, _sha}), do: "This commit changed nothing that can be shown."
-
-  defp message_for(:chat_unavailable, agent),
-    do: "The #{String.downcase(agent)} has no conversation to send these to yet."
-
-  defp message_for({:invalid_stage, stage}, _agent),
-    do: "This conversation is closed now that the task is at #{Task.stage_label(stage)}."
-
-  defp message_for(reason, _agent), do: "Could not send these: #{inspect(reason)}"
 end

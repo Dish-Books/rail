@@ -78,7 +78,7 @@ defmodule RailWeb.Utils.StageLabel do
   @doc """
   What the human is being asked to read, for a stage that has finished.
 
-  Public because `role_status_label.ex` and `child_status.ex` read it, so the task page, the tab and the split
+  Public because `child_status.ex` reads it, so the task page and the split
   board name the errand alike.
   """
   def approval_label(%Task{stage: :plan} = task) do

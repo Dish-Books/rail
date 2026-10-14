@@ -118,36 +118,33 @@ defmodule RailWeb.Live.PlanStageTest do
     Pipeline.append_run_events(run.id, nil, ["[human:#{user.id}] Split the export from the import."])
 
     {:ok, _split} = Pipeline.save_split(task, %{"children" => [child.(1, "One", 1, []), child.(2, "Two", 1, [1])]})
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-    assert has_element?(view, "#task-conversation-column")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation")
+    assert has_element?(view, "#task-item-conversation textarea")
 
     {:ok, task} = Pipeline.update_task(task, %{stage: :split})
     Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [approved_at: DateTime.utc_now()])
-    {:ok, plan_role} = Roles.get_role(project_id: task.project_id, stage: :plan)
-
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{plan_role.id}")
-    assert has_element?(view, "#plan-approved", "Plan approved")
-    assert has_element?(view, "#task-conversation-column #conversation-closed", "this conversation is closed")
-    assert has_element?(view, "#task-conversation-column", "Split the export from the import.")
-    refute has_element?(view, "#task-conversation-column textarea")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation&agent=plan")
+    assert has_element?(view, "#review-item-plan[title='Plan: Approved']")
+    assert has_element?(view, "#task-item-conversation #conversation-closed", "take messages")
+    assert has_element?(view, "#task-item-conversation", "Split the export from the import.")
+    refute has_element?(view, "#task-item-conversation textarea")
 
     # A page drawn before approval can still send, and the closed conversation takes nothing.
     view |> with_target("#conversation-tab-root") |> render_hook("send_chat", %{"message" => "Use semicolons."})
     refute Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "Use semicolons."))
   end
 
-  test "with no split the Split item reads Not split and Approve shows as today", %{conn: conn, task: task} do
+  test "with no split the Split item reads Not split", %{conn: conn, task: task} do
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
     assert has_element?(view, "#plan-item-split-status", "Not split: one task")
-    assert has_element?(view, "#approve-plan")
 
     view |> element("#plan-item-split") |> render_click()
     assert has_element?(view, "#plan-split-none", "Not split")
     assert has_element?(view, "#plan-split-none", "Approve makes one task, which moves to Implement.")
   end
 
-  test "a saved split lays its children out in the rounds they start in, and Approve shows", %{
+  test "a saved split lays its children out in the rounds they start in", %{
     conn: conn,
     task: task,
     child: child
@@ -182,7 +179,6 @@ defmodule RailWeb.Live.PlanStageTest do
     assert has_element?(view, "#plan-split-child-2", "2 criteria")
     assert has_element?(view, "#plan-split-child-2", "lib/rail/part_2.ex")
     assert has_element?(view, "#plan-split-child-2", "+ 1 more")
-    assert has_element?(view, "#approve-plan")
   end
 
   test "a card opens to its child's whole ticket and part of the plan, and closes again", %{
@@ -339,7 +335,7 @@ defmodule RailWeb.Live.PlanStageTest do
     on_exit(fn -> File.rm_rf(parent.scratch_path) end)
     Repo.update_all(from(r in Round, where: r.task_id == ^third.id), set: [plan: sheet_plan()])
 
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=PST-13")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=PST-13&item=plan")
 
     assert has_element?(view, "#child-plan-waiting", "Starts when PST-11 and PST-12 merge.")
     assert has_element?(view, "#child-plan-approved", "Approved in PST-10 · part 3 of 3")

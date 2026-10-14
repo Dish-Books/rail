@@ -48,172 +48,134 @@ defmodule RailWeb.Live.PlanStage do
   def render(assigns) do
     ~H"""
     <div id="plan-stage" data-qa="plan-stage" class="contents">
-      <.task_layout
-        task={@task}
-        run={@run}
-        stage_run={@stage_run}
-        line={@line}
-        title={@task.issue.title}
-        status={@status}
-        flush
+      <p
+        :if={@error}
+        id="plan-error"
+        data-qa="plan_error"
+        class="px-6 pt-3 text-xs text-red-600 dark:text-red-500"
       >
-        <:breadcrumb :if={@breadcrumb != []}>{render_slot(@breadcrumb)}</:breadcrumb>
-        <:tabs>{render_slot(@tabs)}</:tabs>
+        {@error}
+      </p>
 
-        <:actions>
-          {render_slot(@actions)}
+      <.child_plan_pane
+        :if={@child_of}
+        child_of={@child_of}
+        plan={@plan}
+        sheet={@sheet}
+        diagram_views={@diagram_views}
+        target={@myself}
+      />
 
-          <span
-            :if={@approved}
-            id="plan-approved"
-            data-qa="plan_approved"
-            class="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400"
+      <div :if={!@child_of} class="@container h-full">
+        <div class="h-full flex flex-col @5xl:flex-row">
+          <nav
+            id="plan-items"
+            aria-label="Plan outputs"
+            class="shrink-0 flex @5xl:flex-col gap-2 @5xl:gap-1 p-2 @5xl:w-[280px] border-b @5xl:border-b-0 @5xl:border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/30"
           >
-            <.icon name="pi-check-circle" class="size-4" /> Plan approved
-          </span>
-
-          <button
-            :if={@show_approve}
-            type="button"
-            id="approve-plan"
-            data-qa="approve_plan"
-            phx-click="approve"
-            phx-target={@myself}
-            phx-disable-with="Approving…"
-            class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            <.icon name="pi-check" class="size-4" /> Approve
-          </button>
-        </:actions>
-
-        <:alerts :if={@error}>
-          <p id="plan-error" data-qa="plan_error" class="text-xs text-red-600 dark:text-red-500">
-            {@error}
-          </p>
-        </:alerts>
-
-        <.child_plan_pane
-          :if={@child_of}
-          child_of={@child_of}
-          plan={@plan}
-          sheet={@sheet}
-          diagram_views={@diagram_views}
-          target={@myself}
-        />
-
-        <div :if={!@child_of} class="@container h-full">
-          <div class="h-full flex flex-col @5xl:flex-row">
-            <nav
-              id="plan-items"
-              aria-label="Plan outputs"
-              class="shrink-0 flex @5xl:flex-col gap-2 @5xl:gap-1 p-2 @5xl:w-[280px] border-b @5xl:border-b-0 @5xl:border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/30"
+            <button
+              :for={item <- @items}
+              type="button"
+              id={"plan-item-#{item.id}"}
+              data-qa="plan_item"
+              aria-current={to_string(item.id == @selected_item)}
+              phx-click="select_item"
+              phx-value-item={item.id}
+              phx-target={@myself}
+              class={[
+                "flex-1 @5xl:flex-none @5xl:w-full min-w-0 flex gap-2.5 px-3 py-2.5 rounded-lg text-left cursor-pointer",
+                item.id == @selected_item &&
+                  "bg-blue-50 dark:bg-blue-950/40 ring-1 ring-blue-200 dark:ring-blue-800",
+                item.id != @selected_item && "hover:bg-slate-100 dark:hover:bg-slate-800/60"
+              ]}
             >
-              <button
-                :for={item <- @items}
-                type="button"
-                id={"plan-item-#{item.id}"}
-                data-qa="plan_item"
-                aria-current={to_string(item.id == @selected_item)}
-                phx-click="select_item"
-                phx-value-item={item.id}
-                phx-target={@myself}
-                class={[
-                  "flex-1 @5xl:flex-none @5xl:w-full min-w-0 flex gap-2.5 px-3 py-2.5 rounded-lg text-left cursor-pointer",
-                  item.id == @selected_item &&
-                    "bg-blue-50 dark:bg-blue-950/40 ring-1 ring-blue-200 dark:ring-blue-800",
-                  item.id != @selected_item && "hover:bg-slate-100 dark:hover:bg-slate-800/60"
-                ]}
-              >
-                <.icon name={item.icon} class="size-[17px] mt-0.5 text-slate-500 dark:text-slate-300" />
-                <span class="min-w-0 flex-1">
-                  <span class={[
-                    "block text-[13.5px] font-semibold",
-                    item.tone == :skipped && "text-slate-500 dark:text-slate-400",
-                    item.tone != :skipped && "text-slate-900 dark:text-slate-100"
-                  ]}>
-                    {item.label}
-                  </span>
-                  <span
-                    id={"plan-item-#{item.id}-status"}
-                    class={["block text-[11.5px] truncate", status_class(item.tone)]}
-                  >
-                    {item.line}<span :if={item.line && item.saved_at}> · </span><span :if={
-                      item.saved_at
-                    }>saved
-                    <.local_time
-                      id={"plan-item-#{item.id}-saved"}
-                      at={item.saved_at}
-                    /></span>
-                  </span>
+              <.icon name={item.icon} class="size-[17px] mt-0.5 text-slate-500 dark:text-slate-300" />
+              <span class="min-w-0 flex-1">
+                <span class={[
+                  "block text-[13.5px] font-semibold",
+                  item.tone == :skipped && "text-slate-500 dark:text-slate-400",
+                  item.tone != :skipped && "text-slate-900 dark:text-slate-100"
+                ]}>
+                  {item.label}
                 </span>
-                <.item_mark tone={item.tone} />
-              </button>
-            </nav>
+                <span
+                  id={"plan-item-#{item.id}-status"}
+                  class={["block text-[11.5px] truncate", status_class(item.tone)]}
+                >
+                  {item.line}<span :if={item.line && item.saved_at}> · </span><span :if={
+                    item.saved_at
+                  }>saved
+                  <.local_time
+                    id={"plan-item-#{item.id}-saved"}
+                    at={item.saved_at}
+                  /></span>
+                </span>
+              </span>
+              <.item_mark tone={item.tone} />
+            </button>
+          </nav>
 
-            <div
-              id="plan-pane"
-              class="flex-1 min-w-0 min-h-0 overflow-y-auto px-6 @5xl:px-8 py-5 @5xl:py-6"
-            >
-              <.ticket_pane
-                :if={@selected_item == "ticket"}
-                ticket={@ticket}
-                lines={@ticket_lines}
-                running={@running}
-                pick_up={@pick_up}
-                placed={@ticket_comments.placed}
-                changed={@ticket_comments.lifted}
-                draft={@line_draft}
-                offered={@ticket_offered}
-                target={@myself}
-              />
+          <div
+            id="plan-pane"
+            class="flex-1 min-w-0 min-h-0 overflow-y-auto px-6 @5xl:px-8 py-5 @5xl:py-6"
+          >
+            <.ticket_pane
+              :if={@selected_item == "ticket"}
+              ticket={@ticket}
+              lines={@ticket_lines}
+              running={@running}
+              pick_up={@pick_up}
+              placed={@ticket_comments.placed}
+              changed={@ticket_comments.lifted}
+              draft={@line_draft}
+              offered={@ticket_offered}
+              target={@myself}
+            />
 
-              <.design_pane
-                :if={@selected_item == "design"}
-                task={@task}
-                design={@design}
-                option={@option}
-                plan={@plan}
-                running={@running}
-                pick_up={@pick_up}
-                can_pick={@can_pick}
-                comment_reason={@comment_reason}
-                commenting={@commenting}
-                draft={@draft}
-                markers={@markers}
-                user_id={@current_scope.user.id}
-                target={@myself}
-              />
+            <.design_pane
+              :if={@selected_item == "design"}
+              task={@task}
+              design={@design}
+              option={@option}
+              plan={@plan}
+              running={@running}
+              pick_up={@pick_up}
+              can_pick={@can_pick}
+              comment_reason={@comment_reason}
+              commenting={@commenting}
+              draft={@draft}
+              markers={@markers}
+              user_id={@current_scope.user.id}
+              target={@myself}
+            />
 
-              <.plan_pane
-                :if={@selected_item == "plan"}
-                plan={@plan}
-                sheet={@sheet}
-                banner={@banner}
-                approved={@approved}
-                running={@running}
-                pending_text={@pending_text}
-                diagram_views={@diagram_views}
-                lines={@plan_lines}
-                placed={@plan_comments.placed}
-                changed={@plan_comments.lifted}
-                draft={@line_draft}
-                offered={@plan_offered}
-                target={@myself}
-              />
+            <.plan_pane
+              :if={@selected_item == "plan"}
+              plan={@plan}
+              sheet={@sheet}
+              banner={@banner}
+              approved={@approved}
+              running={@running}
+              pending_text={@pending_text}
+              diagram_views={@diagram_views}
+              lines={@plan_lines}
+              placed={@plan_comments.placed}
+              changed={@plan_comments.lifted}
+              draft={@line_draft}
+              offered={@plan_offered}
+              target={@myself}
+            />
 
-              <.split_pane
-                :if={@selected_item == "split"}
-                split={@split}
-                open_child={@open_child}
-                diagram_views={@diagram_views}
-                target={@myself}
-              />
-            </div>
+            <.split_pane
+              :if={@selected_item == "split"}
+              split={@split}
+              open_child={@open_child}
+              diagram_views={@diagram_views}
+              target={@myself}
+            />
           </div>
         </div>
-
-        <:sidebar :if={!@child_of}>{render_slot(@sidebar)}</:sidebar>
-      </.task_layout>
+      </div>
     </div>
     """
   end
@@ -234,10 +196,6 @@ defmodule RailWeb.Live.PlanStage do
 
   def handle_event("pick", %{"key" => key}, socket) do
     socket.assigns.current_scope |> Pipeline.pick_design_option(socket.assigns.run, key) |> respond(socket)
-  end
-
-  def handle_event("approve", _params, socket) do
-    socket.assigns.current_scope |> Pipeline.approve_plan(socket.assigns.run) |> respond(socket)
   end
 
   # A card opens to its child's whole ticket and part of the plan; opening it again closes it.
@@ -1170,7 +1128,6 @@ defmodule RailWeb.Live.PlanStage do
     |> assign(:banner, banner(plan, picked, running))
     |> assign(:pick_up, pick_up(run))
     |> assign(:pending_text, pending_text(running, pick_up(run)))
-    |> assign(:show_approve, approvable?(socket.assigns, ticket, design, plan))
     |> assign(:comment_reason, comment_reason(design, run, approved))
     |> stop_commenting_unless_allowed()
     |> close_line_draft_unless_offered()
@@ -1333,17 +1290,6 @@ defmodule RailWeb.Live.PlanStage do
 
   # Clamped, so an element scrolled partly out of the frame cannot push the box out of it.
   defp percent(value, whole), do: (value / whole * 100) |> max(0.0) |> min(100.0) |> Float.round(3)
-
-  defp approvable?(%{approvable: approvable}, ticket, design, plan) do
-    approvable and ticket != nil and plan != nil and
-      case design do
-        %{options: [_first | _rest], picked: picked} ->
-          is_binary(picked) and plan.design != nil and plan.design.key == picked
-
-        _no_options ->
-          true
-      end
-  end
 
   defp items(ticket, design, picked, plan, sheet, split, running) do
     options = if design, do: design.options, else: []
@@ -1543,14 +1489,7 @@ defmodule RailWeb.Live.PlanStage do
     {:noreply, assign(socket, :error, message_for(reason))}
   end
 
-  defp message_for(:stage_running), do: "Something is still running on this task."
   defp message_for({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not Plan."
-  defp message_for(:no_ticket), do: "Plan has not saved a ticket yet."
-  defp message_for(:no_plan), do: "Plan has not saved a plan yet."
-  defp message_for(:nothing_picked), do: "Pick a design before approving."
-  defp message_for(:plan_not_for_pick), do: "The plan is not written for the picked design yet."
-  defp message_for(:screenshot_missing), do: "The picked design has no screenshot yet."
-  defp message_for(:stale_screenshot), do: "The screenshot is older than the design. Ask Plan to retake it."
   defp message_for(:already_picked), do: "A design has already been picked."
   defp message_for(:design_not_found), do: "No design options are saved yet."
   defp message_for(:option_not_found), do: "That design option no longer exists."

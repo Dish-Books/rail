@@ -22,7 +22,7 @@ defmodule RailWeb.Live.ReviewStage do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Pipeline.Turn
+  alias Rail.Roles.Schemas.Role
   alias Rail.Tools
   alias Rail.Users
   alias RailWeb.Live.DiffView
@@ -42,10 +42,14 @@ defmodule RailWeb.Live.ReviewStage do
     {:ok, socket}
   end
 
+  # Something the page heard moved what the stage shows; it reads it again off the task it holds.
+  def update(%{reload: true}, socket), do: {:ok, load(socket)}
+
   def update(assigns, socket) do
     socket =
       socket
       |> open_url_item(assigns)
+      |> open_url_file(assigns)
       |> assign(assigns)
       |> assign_new(:error, fn -> nil end)
       |> assign_new(:selected_key, fn -> nil end)
@@ -69,14 +73,14 @@ defmodule RailWeb.Live.ReviewStage do
     <div id="review-stage" data-qa="review-stage" class="contents">
       <.task_layout
         task={@task}
-        run={@run}
+        run={@stage_run}
         stage_run={@stage_run}
         line={@line}
         title={@task.issue.title}
+        status={@status}
         flush
       >
         <:breadcrumb :if={@breadcrumb != []}>{render_slot(@breadcrumb)}</:breadcrumb>
-        <:tabs>{render_slot(@tabs)}</:tabs>
         <:actions>
           {render_slot(@actions)}
 
@@ -123,6 +127,30 @@ defmodule RailWeb.Live.ReviewStage do
             <.review_items items={@items} picked={@item} target={@myself} />
 
             <div id="review-pane" data-item={@item} class="flex-1 min-w-0 min-h-0 flex flex-col">
+              <div
+                :if={@item == :issue}
+                id="task-item-issue"
+                class="flex-1 min-h-0 overflow-y-auto px-6 py-8"
+              >
+                {render_slot(@issue)}
+              </div>
+              <div :if={@item == :plan} id="task-item-plan" class="flex-1 min-h-0">
+                {render_slot(@plan)}
+              </div>
+              <div
+                :if={@item == :conversation}
+                id="task-item-conversation"
+                class="flex-1 min-h-0 flex flex-col"
+              >
+                {render_slot(@conversation)}
+              </div>
+              <div
+                :if={@item == :children}
+                id="task-item-children"
+                class="flex-1 min-h-0 overflow-y-auto px-6 py-8"
+              >
+                {render_slot(@children)}
+              </div>
               <.review_status
                 :if={
                   @item == :findings and
@@ -288,12 +316,9 @@ defmodule RailWeb.Live.ReviewStage do
                   module={DiffView}
                   id="diff-view"
                   task={@task}
-                  run={@run}
-                  agent="Review lead"
                   current_scope={@current_scope}
                   focus_file={@diff_file}
                   open={@diff_open}
-                  sends={false}
                 />
               </div>
 
@@ -326,11 +351,12 @@ defmodule RailWeb.Live.ReviewStage do
                 beats={length(@beats)}
                 target={@myself}
               />
+
+              <%!-- Under every other item, the comments waiting to be sent, so Send is never an item away. --%>
+              <div :if={@item != :conversation} class="shrink-0">{render_slot(@conversation)}</div>
             </div>
           </div>
         </div>
-
-        <:sidebar>{render_slot(@sidebar)}</:sidebar>
       </.task_layout>
 
       <.screen_view
@@ -350,7 +376,7 @@ defmodule RailWeb.Live.ReviewStage do
 
   @impl true
   def handle_event("pick_item", %{"item" => item}, socket) do
-    socket = socket |> pick(item(item)) |> load()
+    socket = socket |> pick(item(item) || :findings) |> load()
     {:noreply, socket}
   end
 
@@ -579,7 +605,24 @@ defmodule RailWeb.Live.ReviewStage do
   # The URL's item opens a task the stage starts showing, a child switched to included; after that the stage
   # keeps its own, so the page's patches never send it back to an item it has left.
   defp open_url_item(%{assigns: %{task: %Task{id: id}}} = socket, %{task: %Task{id: id}}), do: socket
-  defp open_url_item(socket, assigns), do: assign(socket, :item, item(assigns[:url_item]))
+
+  defp open_url_item(socket, assigns) do
+    item = item(assigns[:url_item]) || if(assigns[:split_parent], do: :children, else: default_item(assigns.task))
+    assign(socket, :item, item)
+  end
+
+  # A file the URL names opens in the diff, and stays open once the reader moves on from it.
+  defp open_url_file(socket, %{url_file: file}) when is_binary(file) and file != "" do
+    diff_file = if socket.assigns[:url_file] == file, do: socket.assigns.diff_file, else: file
+    socket |> assign(:url_file, file) |> assign(:diff_file, diff_file)
+  end
+
+  defp open_url_file(socket, _assigns), do: socket
+
+  # A page opens on what the task is waiting on now.
+  defp default_item(%Task{stage: :plan}), do: :plan
+  defp default_item(%Task{stage: :engineer}), do: :diff
+  defp default_item(%Task{}), do: :findings
 
   # The page puts the open item in the URL, so a reload comes back to it.
   defp pick(socket, item) do
@@ -587,24 +630,39 @@ defmodule RailWeb.Live.ReviewStage do
     assign(socket, :item, item)
   end
 
+  defp assign_demo_and_browsers(%{assigns: %{task: task}} = socket, runs) do
+    recording = Tools.get_browser_recording(task) != nil
+    sessions = sessions(task, runs, recording)
+    browser = picked_browser(sessions, socket.assigns.browser)
+
+    socket
+    |> assign(:beats, Pipeline.list_demo_beats(task))
+    |> assign(:recorded, Task.demo_recorded?(task))
+    |> assign(:recording, recording)
+    |> assign(:sessions, sessions)
+    |> assign(:browser, browser)
+    |> assign(:url, browser && socket.assigns.item == :browser && Tools.get_browser_url(task, browser))
+  end
+
   # Everything the open item shows is read off the rows and the disk again; what only one item needs is
   # read only while it is the one open.
   defp load(socket) do
-    %{task: task, run: run} = socket.assigns
+    %{task: task} = socket.assigns
     findings = Pipeline.list_findings(task)
     passes = Pipeline.read_review(task)
-    ci = Pipeline.get_ci_status(run)
+    runs = role_runs(task)
+    ci = runs[:engineer] && Pipeline.get_ci_status(runs[:engineer])
     fix_plan = Pipeline.read_fix_plan(task)
     plan_state = fix_plan && FixPlan.state(fix_plan, task, findings)
-    phase = phase(run, task, passes, ci, plan_state)
+    phase = phase(runs, task, passes, ci, plan_state)
     counts = counts(findings)
-    beats = Pipeline.list_demo_beats(task)
-    recording = Tools.get_browser_recording(task) != nil
-    sessions = sessions(task, run, recording)
-    browser = picked_browser(sessions, socket.assigns.browser)
     selected = Enum.find(findings, List.first(findings), &(&1.key == socket.assigns.selected_key))
 
     socket
+    |> assign(:passes, passes)
+    |> assign(:plan_run, runs[:plan])
+    |> assign(:plan_label, plan_label(task, runs[:plan]))
+    |> assign(:chat_label, chat_label(task, socket.assigns.chat_run))
     |> assign_fix_plan(fix_plan, plan_state, findings)
     |> assign(:findings, findings)
     |> assign(:phase, phase)
@@ -613,22 +671,17 @@ defmodule RailWeb.Live.ReviewStage do
     |> assign(:counts, counts)
     |> assign(
       :agents,
-      if(socket.assigns.item == :findings and phase in [:round, :planning, :fixing], do: agents(run), else: [])
+      if(socket.assigns.item == :findings and phase in [:round, :planning, :fixing], do: agents(runs), else: [])
     )
     |> assign(:tally, tally(phase, counts, findings, passes))
     |> assign_branch(passes)
     |> assign_screen_comments()
-    |> assign(:beats, beats)
-    |> assign(:recorded, Task.demo_recorded?(task))
-    |> assign(:recording, recording)
-    |> assign(:sessions, sessions)
-    |> assign(:browser, browser)
-    |> assign(:url, browser && socket.assigns.item == :browser && Tools.get_browser_url(task, browser))
+    |> assign_demo_and_browsers(runs)
     |> assign_items()
     |> assign_selected(selected, findings)
     |> assign(:commentable, task.stage in [:review, :finalize, :merged] and is_nil(task.cleaned_up_at))
     |> assign_finding_comments()
-    |> watch(browser)
+    |> watch()
     |> tray(findings, passes, phase)
   end
 
@@ -747,8 +800,8 @@ defmodule RailWeb.Live.ReviewStage do
   end
 
   # The page holds the subscription a frame arrives on, so it is told which browser is being watched.
-  defp watch(socket, browser) do
-    watched = if socket.assigns.item == :browser, do: browser
+  defp watch(socket) do
+    watched = if socket.assigns.item == :browser, do: socket.assigns.browser
     send(self(), {:watch_browser, watched})
     socket
   end
@@ -842,17 +895,78 @@ defmodule RailWeb.Live.ReviewStage do
       picked_icon: "pi-browsers-fill",
       state: browser_state(sessions),
       badge: nil,
-      dot:
-        cond do
-          Enum.any?(sessions, &(&1.state == :recording)) -> :recording
-          Enum.any?(sessions, &(&1.state == :driving)) -> :running
-          true -> nil
-        end,
+      dot: browser_dot(sessions),
       mark: nil
     }
 
-    items = [findings, fix_plan_item(socket.assigns), diff, screens, demo, browser]
-    assign(socket, :items, Enum.reject(items, &is_nil/1))
+    items =
+      page_items(socket.assigns) ++
+        shown(socket.assigns, [findings, fix_plan_item(socket.assigns), diff, screens, demo, browser])
+
+    assign(socket, :items, Enum.reject(items, &(&1 in [nil, false])))
+  end
+
+  defp browser_dot(sessions) do
+    cond do
+      Enum.any?(sessions, &(&1.state == :recording)) -> :recording
+      Enum.any?(sessions, &(&1.state == :driving)) -> :running
+      true -> nil
+    end
+  end
+
+  # Each part of the work shows once there is something of it to read: the diff and the browser once the task is
+  # built, the rest once it is reviewed.
+  defp shown(%{task: task, passes: passes}, [findings, fix_plan, diff, screens, demo, browser]) do
+    reviewed? = task.stage in [:review, :finalize, :merged] or passes != []
+    built? = task.stage != :plan
+    [reviewed? && findings, fix_plan, built? && diff, reviewed? && screens, reviewed? && demo, built? && browser]
+  end
+
+  # The whole task's items before the review's: the issue, the plan, the conversation and a split's children.
+  defp page_items(assigns) do
+    [
+      %{
+        key: :issue,
+        label: "Issue",
+        icon: "pi-ticket",
+        picked_icon: "pi-ticket-fill",
+        state: assigns.task.issue.identifier,
+        badge: nil,
+        dot: nil,
+        mark: nil
+      },
+      %{
+        key: :plan,
+        label: "Plan",
+        icon: "pi-clipboard-text",
+        picked_icon: "pi-clipboard-text-fill",
+        state: assigns.plan_label,
+        badge: nil,
+        dot: if(assigns.task.stage == :plan and Run.running?(assigns.plan_run), do: :running),
+        mark: nil
+      },
+      %{
+        key: :conversation,
+        label: "Chat",
+        icon: "pi-chat-text",
+        picked_icon: "pi-chat-text-fill",
+        state: assigns.chat_label,
+        badge: if(assigns.questions > 0, do: assigns.questions),
+        dot: nil,
+        mark: nil
+      },
+      assigns.split &&
+        %{
+          key: :children,
+          label: "Children",
+          icon: "pi-tree-structure",
+          picked_icon: "pi-tree-structure-fill",
+          state: "The split's children",
+          badge: nil,
+          dot: nil,
+          mark: nil
+        }
+    ]
   end
 
   defp fix_plan_item(%{fix_plan: nil}), do: nil
@@ -883,7 +997,7 @@ defmodule RailWeb.Live.ReviewStage do
 
   # What a plan being revised is revised on: the rulings changed since it was saved, the comments it does not cover,
   # or else a message, which revises it too.
-  defp revising(%FixPlan{plan: plan} = fix_plan, plan_state, %Run{} = run, ruling_changes) when is_binary(plan) do
+  defp revising(%FixPlan{plan: plan} = fix_plan, plan_state, run, ruling_changes) when is_binary(plan) do
     revising? = plan_state == :revising or (Run.running?(run) and plan_state in [:waiting, :outdated])
 
     if revising? do
@@ -920,33 +1034,43 @@ defmodule RailWeb.Live.ReviewStage do
   defp ruling(:skip), do: "Don't fix"
 
   # Approve starts the engineer, so it is offered only on the latest plan while it waits and the lead is idle.
-  defp approve?(%Task{} = task, %Run{} = run, :waiting, scope) do
+  defp approve?(%Task{} = task, run, :waiting, scope) do
     task.stage in [:review, :finalize, :merged] and is_nil(task.cleaned_up_at) and not Run.running?(run) and
       match?(%{user: %{}}, scope)
   end
 
-  defp approve?(%Task{}, %Run{}, _plan_state, _scope), do: false
+  defp approve?(%Task{}, _run, _plan_state, _scope), do: false
 
-  # What the run is doing, read off the run, its CI, the passes it saved and its fix round's plan. A run working on
-  # the commit the last pass read is fixing, since a Send of comments alone is a fix round too; any other working run
-  # is a round. Until its plan is approved, a fix round only plans.
-  defp phase(%Run{} = run, %Task{} = task, passes, ci, plan_state) do
+  # Where the round is, read off its runs: the engineer building it and its CI, the agents checking it, and the
+  # review agent's plan for the next. Until that plan is approved, nothing changes the branch.
+  defp phase(runs, %Task{} = task, passes, ci, plan_state) do
+    checking? = Enum.any?([:qa, :review, :screens, :review_lead], &Run.running?(runs[&1]))
+
     cond do
       match?(%{state: :running}, ci) -> :ci
-      Run.running?(run) and plan_state in [:writing, :revising, :waiting, :outdated] -> :planning
+      task.stage == :engineer and match?(%{state: :failed, failures: failures} when failures >= 3, ci) -> :ci_failed
+      task.stage == :engineer -> :fixing
+      Run.running?(runs[:review_lead]) and plan_state in [:writing, :revising, :waiting, :outdated] -> :planning
       plan_state in [:waiting, :outdated] -> plan_state
-      Run.running?(run) and fixing?(task, passes) -> :fixing
-      Run.running?(run) -> :round
+      checking? -> :round
       passes != [] and List.last(passes).finished_at != nil -> :finished
-      match?(%{state: :failed, failures: failures} when failures >= 3, ci) -> :ci_failed
       true -> :ruling
     end
   end
 
-  defp fixing?(%Task{} = task, [_first | _rest] = passes),
-    do: List.last(passes).head in [nil, (Git.branch_fingerprint(task.worktree_path) || %{})[:head_sha]]
+  # Each role's run on the task, by its stage.
+  defp role_runs(%Task{runs: runs}) do
+    for %Run{role: %Role{stage: stage}} = run <- runs, into: %{}, do: {stage, run}
+  end
 
-  defp fixing?(%Task{}, []), do: false
+  defp plan_label(%Task{stage: :plan}, plan_run),
+    do: if(Run.running?(plan_run), do: "Plan is writing", else: "Not approved yet")
+
+  defp plan_label(%Task{}, _plan_run), do: "Approved"
+
+  defp chat_label(%Task{stage: :plan}, _run), do: "Talk to Plan"
+  defp chat_label(%Task{}, %Run{}), do: "Talk to the review agent"
+  defp chat_label(%Task{}, nil), do: "Opens once the round is reviewed"
 
   defp round(:round, passes), do: length(passes) + 1
   defp round(_phase, passes), do: max(length(passes), 1)
@@ -1041,8 +1165,8 @@ defmodule RailWeb.Live.ReviewStage do
   end
 
   # A tab is driving while the run works and Rail holds it, and the demo recorder's is recording while filmed.
-  defp sessions(%Task{} = task, %Run{} = run, recording) do
-    running = Run.running?(run)
+  defp sessions(%Task{} = task, runs, recording) do
+    running = Enum.any?(Map.values(runs), &Run.running?/1)
 
     for session <- Tools.list_browser_sessions(task) do
       state =
@@ -1060,28 +1184,19 @@ defmodule RailWeb.Live.ReviewStage do
     if Enum.any?(sessions, &(&1.name == picked)), do: picked, else: sessions |> List.first() |> then(&(&1 && &1.name))
   end
 
-  # The subagents of the turn the run is on, by role, with the work the lead gave each.
-  defp agents(%Run{} = run) do
-    case Tools.list_os_processes(run_id: run.id, kind: :agent) do
-      [latest | _earlier] ->
-        run
-        |> Pipeline.list_run_events(os_process_id: latest.id)
-        |> Enum.map(& &1.line)
-        |> Pipeline.parse_transcript()
-        |> Enum.flat_map(fn
-          %Turn{author: :subagent} = turn -> [agent(turn)]
-          %Turn{} -> []
-        end)
-
-      [] ->
-        []
-    end
-  end
-
-  defp agent(%Turn{label: label, content: content, status: status}) do
-    {name, work} = subagent_name(label, content) || {label, content}
-
-    %{name: name, work: work, running: status == :running}
+  # The agents checking the round, each a run Rail started, with what each is for.
+  defp agents(runs) do
+    for {stage, work} <- [
+          engineer: "Builds the round",
+          qa: "Tests the running app",
+          review: "Reads the diff",
+          screens: "Shoots each screen state",
+          demo: "Records the demo",
+          review_lead: "Turns the reports into findings and the next plan"
+        ],
+        %Run{} = run <- [runs[stage]],
+        Run.running?(run),
+        do: %{name: run.role.name, work: work, running: true}
   end
 
   # How many of the branch's commits came after the one the demo was recorded on, counted when the tab draws.
@@ -1204,12 +1319,17 @@ defmodule RailWeb.Live.ReviewStage do
   defp double_click?({key, at}, key), do: System.monotonic_time(:millisecond) - at < @double_click_ms
   defp double_click?(_advanced_to, _key), do: false
 
+  defp item("issue"), do: :issue
+  defp item("plan"), do: :plan
+  defp item("conversation"), do: :conversation
+  defp item("children"), do: :children
   defp item("fix_plan"), do: :fix_plan
   defp item("diff"), do: :diff
   defp item("screens"), do: :screens
   defp item("demo"), do: :demo
   defp item("browser"), do: :browser
-  defp item(_findings), do: :findings
+  defp item("findings"), do: :findings
+  defp item(_unnamed), do: nil
 
   defp decision("fix"), do: :fix
   defp decision("skip"), do: :skip

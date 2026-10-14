@@ -148,7 +148,7 @@ defmodule RailWeb.Utils.ChildStatusTest do
              line: "Findings to rule",
              needs_attention: true,
              badge: :dot,
-             action: %{label: "Review", tab: "rol_review_lead"}
+             action: %{label: "Review", item: "findings"}
            } = child_status(at_review, [at_review])
   end
 
@@ -200,7 +200,7 @@ defmodule RailWeb.Utils.ChildStatusTest do
     failed = child.(2, stage: :review, runs: [run.(:review_lead, status: :failed, error: "Chrome could not reach it")])
     running = child.(3, runs: [run.(:engineer, status: :running)])
 
-    assert %{badge: 2, line: "engineer role asked 2 questions", action: %{label: "Answer", tab: "rol_engineer"}} =
+    assert %{badge: 2, line: "engineer role asked 2 questions", action: %{label: "Answer", item: "conversation"}} =
              child_status(blocked, [blocked])
 
     assert %{
@@ -208,7 +208,7 @@ defmodule RailWeb.Utils.ChildStatusTest do
              label: "Review failed",
              line: "Review failed: Chrome could not reach it",
              line_class: "text-red-600 dark:text-red-500",
-             action: %{label: "Fix", tab: "rol_review_lead"},
+             action: %{label: "Fix", item: "findings"},
              cells: [%{mark: :done}, %{chip: %{label: "Failed"}}, _finalize]
            } = child_status(failed, [failed])
 
@@ -288,7 +288,7 @@ defmodule RailWeb.Utils.ChildStatusTest do
              cells: [%{mark: :done}, %{mark: :done}, %{mark: :current, chip: %{label: "Ready to finalize"}}],
              needs_attention: true,
              badge: :dot,
-             action: %{label: "Finalize", tab: "finalize"}
+             action: %{label: "Finalize", item: "findings"}
            } = child_status(unmarked, [unmarked])
 
     ready = %{unmarked | marked_ready_at: now}

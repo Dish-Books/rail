@@ -120,7 +120,6 @@ defmodule Rail.Pipeline do
   defdelegate create_diff_comment(scope, task, attrs), to: Actions.CreateDiffComment
   defdelegate list_diff_comments(scope, task, opts \\ []), to: Actions.ListDiffComments
   defdelegate delete_diff_comment(scope, comment), to: Actions.DeleteDiffComment
-  defdelegate send_diff_comments(scope, run), to: Actions.SendDiffComments
   defdelegate set_diff_comment_resolved(scope, comment, resolved?), to: Actions.SetDiffCommentResolved
   defdelegate create_screen_comment(scope, task, attrs), to: Actions.CreateScreenComment
   defdelegate list_screen_comments(scope, task), to: Actions.ListScreenComments

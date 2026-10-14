@@ -48,7 +48,7 @@ defmodule RailWeb.Components.ChildSwitcher do
           class="hidden absolute left-0 top-full mt-2 w-[440px] max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-1.5 shadow-xl z-50"
         >
           <.link
-            phx-click={pick(~p"/tasks/#{@parent.id}?tab=children")}
+            phx-click={pick(~p"/tasks/#{@parent.id}?item=children")}
             id="child-switcher-all"
             class="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-[13px] font-semibold text-slate-700 dark:text-slate-200"
           >

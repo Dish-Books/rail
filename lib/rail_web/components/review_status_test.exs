@@ -11,7 +11,11 @@ defmodule RailWeb.Components.ReviewStatusTest do
     explorers = [%{name: "QA explorer 1", work: "Checks 1 and 2", running: true}]
     reviewer = [%{name: "Code reviewer", work: "Read the branch", running: true}]
 
-    for {agents, said} <- [{explorers, "Round 1 · 1 QA explorer working"}, {reviewer, "Round 1 · Code reviewer working"}] do
+    for {agents, said} <- [
+          {[], "Round 1 · Starting"},
+          {explorers, "Round 1 · QA explorer 1 working"},
+          {reviewer, "Round 1 · Code reviewer working"}
+        ] do
       html = render_component(&ReviewStatus.review_status/1, phase: :round, round: 1, agents: agents, counts: @counts)
 
       assert [^said] =

@@ -106,7 +106,7 @@ defmodule RailWeb.Components.UpNextTest do
     row = html |> Floki.parse_fragment!() |> Floki.find("#up-next-finalize-row-run_finalize")
 
     assert html =~ "up-next-featured-run_plan"
-    assert ["/tasks/tsk_finalize?tab=finalize"] = Floki.attribute(row, "href")
+    assert ["/tasks/tsk_finalize"] = Floki.attribute(row, "href")
     assert Floki.text(row) =~ "review finished"
     assert Floki.text(row) =~ "Finalize"
 
@@ -245,20 +245,20 @@ defmodule RailWeb.Components.UpNextTest do
     {:ok, %Run{id: ^run_id}} = Pipeline.start_fix_round(system_scope(), run)
     html = render_component(&UpNext.up_next/1, runs: [shown])
 
-    assert html =~ ~s(href="/tasks/#{task_id}?tab=#{lead.id}")
+    assert html =~ ~s(href="/tasks/#{task_id}?item=findings")
     assert html =~ "Ready to merge"
     assert html =~ "the pull request is waiting on you to merge it."
 
     html = render_component(&UpNext.up_next/1, runs: [waiting.(:engineer), shown])
 
     assert html =~ ~r/id="up-next-row-#{run_id}".*>\s*Ready to merge\s*</s
-    assert html =~ ~s(href="/tasks/#{task_id}?tab=#{lead.id}")
+    assert html =~ ~s(href="/tasks/#{task_id}?item=findings")
 
     html = render_component(&UpNext.up_next/1, runs: [%{shown | task: %{task | pr_url: nil}}])
 
     assert html =~ "Ready for review"
     assert html =~ ~s(href="/tasks/#{task_id}")
-    refute html =~ "?tab="
+    refute html =~ "?item="
   end
 
   test "a Review round waiting on a person reads Review with the Findings icon, however its findings are ruled", %{
@@ -403,7 +403,7 @@ defmodule RailWeb.Components.UpNextTest do
     for stage <- [:review, :finalize] do
       run = waiting.(stage)
       run = %{run | role_id: "rol_lead", task: %{run.task | id: "tsk_#{stage}"}}
-      href = "/tasks/tsk_#{stage}?tab=rol_lead&item=fix_plan"
+      href = "/tasks/tsk_#{stage}?item=fix_plan"
 
       File.write!(
         Path.join(scratch, "fix_plans/UPN-1.json"),

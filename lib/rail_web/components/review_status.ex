@@ -140,14 +140,10 @@ defmodule RailWeb.Components.ReviewStatus do
   end
 
   defp working(agents) do
-    reviewers = Enum.count(agents, &(&1.running and &1.name == "Code reviewer"))
-    explorers = Enum.count(agents, &(&1.running and String.starts_with?(&1.name, "QA explorer")))
-
-    case {reviewers, explorers} do
-      {0, 0} -> "Starting"
-      {0, count} -> "#{plural(count, "QA explorer")} working"
-      {_one, 0} -> "Code reviewer working"
-      {_one, count} -> "Code reviewer and #{plural(count, "QA explorer")} working"
+    case for(%{running: true, name: name} <- agents, do: name) do
+      [] -> "Starting"
+      [one] -> "#{one} working"
+      names -> Enum.join(Enum.drop(names, -1), ", ") <> " and #{List.last(names)} working"
     end
   end
 

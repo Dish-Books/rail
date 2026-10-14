@@ -38,9 +38,6 @@ defmodule RailWeb.Live.DiffToolbarTest do
         viewed: 1,
         total: 4,
         unsent: 0,
-        running?: false,
-        agent: "Engineer",
-        sends?: true,
         commentable?: true
       }
     }
@@ -68,20 +65,13 @@ defmodule RailWeb.Live.DiffToolbarTest do
              ~r/9c41e07 against its first parent\s+7b19e4c/
   end
 
-  test "a merge's view offers no Send, and says why", %{toolbar: toolbar} do
-    html = DiffToolbar |> render_component(%{toolbar | unsent: 2, commentable?: false}) |> Floki.parse_fragment!()
+  # Review's tray sends the comments, so a merge's view only says it takes none.
+  test "a merge's view says it takes no comments, and any other view says nothing", %{toolbar: toolbar} do
+    merge = DiffToolbar |> render_component(%{toolbar | unsent: 2, commentable?: false}) |> Floki.parse_fragment!()
+    branch = DiffToolbar |> render_component(%{toolbar | unsent: 2}) |> Floki.parse_fragment!()
 
-    assert [] = Floki.find(html, "#send-diff-comments")
-    assert html |> Floki.find("[data-qa='diff_no_comments']") |> Floki.text() =~ "No comments on a merge"
-  end
-
-  # Review's tray sends its comments, so its diff has no Send of its own.
-  test "a view that does not send offers no Send and no hint", %{toolbar: toolbar} do
-    html = DiffToolbar |> render_component(%{toolbar | unsent: 2, sends?: false}) |> Floki.parse_fragment!()
-
-    assert [] = Floki.find(html, "#send-diff-comments")
-    assert [] = Floki.find(html, "[data-qa='diff_comments_hint']")
-    assert [] = Floki.find(html, "[data-qa='diff_no_comments']")
+    assert merge |> Floki.find("[data-qa='diff_no_comments']") |> Floki.text() =~ "No comments on a merge"
+    assert [] = Floki.find(branch, "[data-qa='diff_no_comments']")
   end
 
   test "counts what the diff added and took away, and how much of it is read", %{toolbar: toolbar} do
@@ -97,35 +87,6 @@ defmodule RailWeb.Live.DiffToolbarTest do
     assert render_component(DiffToolbar, %{toolbar | viewed: 0, total: 0}) =~ "width: 0%;"
   end
 
-  test "with nothing unsent there is nothing to send", %{toolbar: toolbar} do
-    html = render_component(DiffToolbar, toolbar)
-
-    refute html =~ "send-diff-comments"
-    refute html =~ "Engineer is"
-  end
-
-  test "sends every unsent comment, and says an idle engineer starts at once", %{toolbar: toolbar} do
-    html = render_component(DiffToolbar, %{toolbar | unsent: 3})
-
-    assert html |> Floki.parse_fragment!() |> Floki.find("#send-diff-comments") |> Floki.text() =~ "Send 3 comments"
-    assert html =~ "Engineer is idle and starts on these at once."
-
-    # The click marks the pane loading until its reply, which reads as Sending, and takes no second click.
-    assert [send] = html |> Floki.parse_fragment!() |> Floki.find("#send-diff-comments[data-busy-self]")
-    assert [click] = Floki.attribute(send, "phx-click")
-    assert click =~ ~s("loading":"#diff-pane")
-    assert send |> Floki.find("[data-qa='send_diff_comments_sending']") |> Floki.text() =~ "Sending 3"
-  end
-
-  test "says comments sent to a working agent wait for its turn to end", %{toolbar: toolbar} do
-    html = render_component(DiffToolbar, %{toolbar | unsent: 1, running?: true, agent: "Review lead"})
-
-    assert html |> Floki.parse_fragment!() |> Floki.find("#send-diff-comments > span") |> hd() |> Floki.text() =~
-             ~r/\A\s*Send 1 comment\s*\z/
-
-    assert html =~ "Review lead is working. These wait until its turn ends."
-  end
-
   test "long lines scroll or wrap, as the reader chose", %{toolbar: toolbar} do
     scroll = DiffToolbar |> render_component(toolbar) |> Floki.parse_fragment!()
     wrap = DiffToolbar |> render_component(%{toolbar | wrap: :wrap}) |> Floki.parse_fragment!()
@@ -139,26 +100,12 @@ defmodule RailWeb.Live.DiffToolbarTest do
 
   # The choice is the browser's, so the hook applies it and tells the stage.
   test "the wrap control is the browser's, told to the stage", %{toolbar: toolbar} do
-    html = DiffToolbar |> render_component(%{toolbar | target: "#engineer-stage"}) |> Floki.parse_fragment!()
+    html = DiffToolbar |> render_component(%{toolbar | target: "#review-stage"}) |> Floki.parse_fragment!()
 
     assert Floki.attribute(html, "#diff-wrap", "phx-hook") == ["DiffWrap"]
-    assert Floki.attribute(html, "#diff-wrap", "data-target") == ["#engineer-stage"]
+    assert Floki.attribute(html, "#diff-wrap", "data-target") == ["#review-stage"]
     assert Floki.attribute(html, "#diff-wrap-wrap", "phx-click") == ["select_diff_wrap"]
     assert Floki.attribute(html, "#diff-wrap-wrap", "phx-value-wrap") == ["wrap"]
-    assert Floki.attribute(html, "#diff-wrap-wrap", "phx-target") == ["#engineer-stage"]
-  end
-
-  # A narrow toolbar hides the hint and the word after the count.
-  test "Send says what the hint says, and its noun is what a narrow toolbar drops", %{toolbar: toolbar} do
-    working = DiffToolbar |> render_component(%{toolbar | unsent: 2, running?: true}) |> Floki.parse_fragment!()
-    idle = DiffToolbar |> render_component(%{toolbar | unsent: 1}) |> Floki.parse_fragment!()
-
-    assert Floki.attribute(working, "#send-diff-comments", "title") == [
-             "Engineer is working. These wait until its turn ends."
-           ]
-
-    assert Floki.attribute(idle, "#send-diff-comments", "title") == ["Engineer is idle and starts on these at once."]
-    assert working |> Floki.find("[data-qa='send_noun']") |> Floki.text() == " comments"
-    assert idle |> Floki.find("[data-qa='send_noun']") |> Floki.text() == " comment"
+    assert Floki.attribute(html, "#diff-wrap-wrap", "phx-target") == ["#review-stage"]
   end
 end

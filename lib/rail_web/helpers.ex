@@ -17,7 +17,6 @@ defmodule RailWeb.Helpers do
   defdelegate format_reservation(reservation), to: Utils.FormatReservation
   defdelegate format_run_status(status), to: Utils.FormatRunStatus
   defdelegate render_markdown(content, assets_base \\ nil), to: Utils.RenderMarkdown
-  defdelegate role_status_label(role, run, task), to: Utils.RoleStatusLabel
   defdelegate run_state_style(run, task), to: Utils.RunStateStyle
   defdelegate stage_label(task, run), to: Utils.StageLabel
   defdelegate subagent_name(label, description), to: Utils.SubagentName
