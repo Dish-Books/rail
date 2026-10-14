@@ -12,6 +12,7 @@ defmodule Rail.Pipeline.Schemas.Task do
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects.Schemas.Project
+  alias Rail.Roles.Schemas.Role
   alias Rail.Scope
   alias Rail.Users.Schemas.User
 
@@ -173,6 +174,29 @@ defmodule Rail.Pipeline.Schemas.Task do
   def role_stage(:review), do: :review_lead
   def role_stage(:finalize), do: :review_lead
   def role_stage(stage) when is_atom(stage), do: stage
+
+  @checks [:qa, :review, :screens]
+
+  @doc "The stages of the runs that check a Review round and hold back the review agent, which the demo does not."
+  def check_stages, do: @checks
+
+  @doc """
+  The run that says where this task stands: the latest at its stage, or at Review a check started since the review
+  agent last was and not done yet, in flight first, since that agent waits on it. Requires `runs` with their `role`.
+  """
+  def stage_run(%__MODULE__{runs: runs, stage: stage}) when is_list(runs) do
+    role_stage = role_stage(stage)
+    stage_runs = for %Run{role: %Role{stage: ^role_stage}} = run <- runs, do: run
+    latest = Enum.max_by(stage_runs, &(&1.started_at || &1.inserted_at), DateTime, fn -> nil end)
+
+    holding =
+      for %Run{role: %Role{stage: check}} = run <- runs,
+          stage == :review and check in @checks and Run.state(run) != :done,
+          is_nil(latest) or DateTime.after?(run.started_at, latest.started_at),
+          do: run
+
+    Enum.find(holding, &Run.running?/1) || List.first(holding) || latest
+  end
 
   # A merge GitHub has not answered in this long is one whose caller died, so another can be started.
   @merge_claim_seconds 60

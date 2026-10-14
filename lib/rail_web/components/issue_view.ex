@@ -111,7 +111,7 @@ defmodule RailWeb.Components.IssueView do
               class="flex items-center gap-2 text-slate-900 dark:text-slate-100 hover:underline"
             >
               <.icon name="pi-git-branch" class="h-4 w-4 text-slate-500 dark:text-slate-400" />
-              <span>{stage_label(@issue.task, stage_run(@issue.task))}</span>
+              <span>{stage_label(@issue.task, Task.stage_run(@issue.task))}</span>
             </.link>
 
             <div
@@ -387,12 +387,5 @@ defmodule RailWeb.Components.IssueView do
       seconds < 86_400 -> "#{div(seconds, 3600)}h ago"
       true -> "#{div(seconds, 86_400)}d ago"
     end
-  end
-
-  # Where the task got to is what the latest run at the stage it sits at says.
-  defp stage_run(%{runs: runs, stage: stage}) do
-    runs
-    |> Enum.filter(&(&1.role != nil and &1.role.stage == Task.role_stage(stage)))
-    |> Enum.max_by(&(&1.started_at || &1.inserted_at), DateTime, fn -> nil end)
   end
 end

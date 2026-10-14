@@ -1517,6 +1517,72 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#in-progress-task-#{task.id}[data-state='running']", "Review running")
     end
 
+    test "a Review round whose checks are running is in progress, not stalled on its lead's last run", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+      task = task_for.("Checks running", %{stage: :review})
+
+      {:ok, last_round} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:review_lead].id,
+          status: :finished,
+          started_at: DateTime.shift(now, hour: -2),
+          completed_at: DateTime.shift(now, hour: -1)
+        })
+
+      {:ok, _qa} =
+        Pipeline.create_run(%{task_id: task.id, role_id: roles[:qa].id, status: :running, started_at: now})
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#up-next-empty")
+      refute has_element?(view, "#up-next-featured-#{last_round.id}")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
+      refute has_element?(view, "#attention-badge")
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='running']", "Review running")
+      # Starting the round reopened the lead's run, but it had handed its round over before that.
+      assert has_element?(view, "#activity-ended-#{last_round.id}", "is ready for review")
+    end
+
+    test "a Review round whose QA failed waits on QA, not on its lead's last run", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+      task = task_for.("QA failed", %{stage: :review})
+
+      {:ok, last_round} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:review_lead].id,
+          status: :finished,
+          started_at: DateTime.shift(now, hour: -2),
+          completed_at: DateTime.shift(now, hour: -1)
+        })
+
+      {:ok, qa} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:qa].id,
+          status: :finished,
+          error: "QA did not save its report.",
+          started_at: DateTime.shift(now, minute: -10),
+          completed_at: now
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#up-next-featured-#{qa.id}", "QA did not save its report.")
+      refute has_element?(view, "#up-next-featured-#{last_round.id}")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='failed']", "Review failed")
+    end
+
     test "a Review run whose review is finished becomes a Finalize row, ready to finalize", %{
       conn: conn,
       roles: roles,

@@ -103,6 +103,31 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
     assert Pipeline.count_attention() == 1
   end
 
+  test "a task at Review whose round is being checked waits on nobody, though its lead's last run reads stopped", %{
+    roles: roles,
+    task_for: task_for
+  } do
+    now = DateTime.utc_now()
+    task = task_for.(:review)
+
+    {:ok, _last_round} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:review_lead].id,
+        status: :finished,
+        started_at: DateTime.shift(now, hour: -2),
+        completed_at: DateTime.shift(now, hour: -1)
+      })
+
+    {:ok, qa} = Pipeline.create_run(%{task_id: task.id, role_id: roles[:qa].id, status: :running, started_at: now})
+
+    assert Pipeline.count_attention() == 0
+
+    {:ok, _failed} = Pipeline.update_run(qa, %{status: :failed, error: "QA did not save its report."})
+
+    assert Pipeline.count_attention() == 1
+  end
+
   test "a run at a stage the task has left is not counted", %{roles: roles, task_for: task_for} do
     task = task_for.(:engineer)
 

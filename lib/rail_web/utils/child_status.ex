@@ -27,7 +27,7 @@ defmodule RailWeb.Utils.ChildStatus do
   def child_status(%Task{issue: %Issue{} = issue} = child, siblings) do
     by_position = Map.new(siblings, &{&1.split_position, &1})
     earlier = for position <- child.builds_on, sibling = by_position[position], do: sibling
-    run = stage_run(child)
+    run = Task.stage_run(child)
 
     unstarted? = issue.completed_at == nil and child.runs == []
     open = Enum.filter(earlier, &(is_nil(&1.merged_at) and is_nil(&1.issue.completed_at) and not canceled?(&1)))
@@ -271,13 +271,6 @@ defmodule RailWeb.Utils.ChildStatus do
   defp action(:blocked, _child), do: "Answer"
   defp action(:done, %Task{} = child), do: approval_label(child)
   defp action(_stalled, _child), do: "Fix"
-
-  # A child is read through its stage's latest run, as the task page reads it.
-  defp stage_run(%Task{runs: runs, stage: stage}) do
-    runs
-    |> Enum.filter(&(&1.role.stage == Task.role_stage(stage)))
-    |> Enum.max_by(&(&1.started_at || &1.inserted_at), DateTime, fn -> nil end)
-  end
 
   defp canceled?(%Task{issue: %Issue{state: state}}), do: state in [:canceled, :duplicate]
 
