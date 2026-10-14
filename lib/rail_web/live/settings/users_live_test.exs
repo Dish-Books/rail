@@ -378,7 +378,7 @@ defmodule RailWeb.Settings.UsersLiveTest do
   end
 
   test "an accepted invite cannot be revoked from the list", %{admin_conn: conn, admin_scope: scope} do
-    assert {:ok, %Invite{id: invite_id} = invite} = Users.invite_user(scope, %{email: "accepted@example.com"})
+    assert {:ok, %Invite{id: invite_id} = invite} = Users.invite_user(scope, %{email: "accepted-users-live@example.com"})
     assert {:ok, _updated} = invite |> Invite.changeset(%{accepted_at: DateTime.utc_now()}) |> Repo.update()
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/users")

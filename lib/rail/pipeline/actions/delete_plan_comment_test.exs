@@ -46,10 +46,19 @@ defmodule Rail.Pipeline.Actions.DeletePlanCommentTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_pcdelete_ada", login: "ada", email: "ada@example.com"})
+    {:ok, ada} =
+      Users.register_oauth_user(%{
+        github_id: "gh_pcdelete_ada",
+        login: "ada-delete-plan-comment",
+        email: "ada-delete-plan-comment@example.com"
+      })
 
     {:ok, grace} =
-      Users.register_oauth_user(%{github_id: "gh_pcdelete_grace", login: "grace", email: "grace@example.com"})
+      Users.register_oauth_user(%{
+        github_id: "gh_pcdelete_grace",
+        login: "grace-delete-plan-comment",
+        email: "grace-delete-plan-comment@example.com"
+      })
 
     attrs = %{
       target: :design,

@@ -68,7 +68,11 @@ defmodule RailWeb.TriageImageControllerTest do
     message_id: message_id
   } do
     {:ok, outsider} =
-      Users.register_oauth_user(%{github_id: "gh_outsider", login: "outsider", email: "outsider@example.com"})
+      Users.register_oauth_user(%{
+        github_id: "gh_outsider",
+        login: "outsider-triage-image-controller",
+        email: "outsider-triage-image-controller@example.com"
+      })
 
     {:ok, outsider} = Users.update_user(system_scope(), outsider, %{project_ids: ["prj_other"]})
 
@@ -76,7 +80,12 @@ defmodule RailWeb.TriageImageControllerTest do
              "Not found"
 
     {:ok, admin} =
-      Users.register_oauth_user(%{github_id: "gh_image_admin", login: "image_admin", email: "a@x.com", admin: true})
+      Users.register_oauth_user(%{
+        github_id: "gh_image_admin",
+        login: "image_admin",
+        email: "a-triage-image-controller@x.com",
+        admin: true
+      })
 
     assert conn |> log_in_user(admin) |> get(~p"/triage/messages/#{message_id}/images/F_SHOT") |> response(200) ==
              "png-bytes"

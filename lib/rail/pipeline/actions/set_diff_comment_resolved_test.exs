@@ -37,8 +37,20 @@ defmodule Rail.Pipeline.Actions.SetDiffCommentResolvedTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_dcr_ada", login: "ada", email: "ada@example.com"})
-    {:ok, grace} = Users.register_oauth_user(%{github_id: "gh_dcr_grace", login: "grace", email: "grace@example.com"})
+    {:ok, ada} =
+      Users.register_oauth_user(%{
+        github_id: "gh_dcr_ada",
+        login: "ada-set-diff-comment-resolved",
+        email: "ada-set-diff-comment-resolved@example.com"
+      })
+
+    {:ok, grace} =
+      Users.register_oauth_user(%{
+        github_id: "gh_dcr_grace",
+        login: "grace-set-diff-comment-resolved",
+        email: "grace-set-diff-comment-resolved@example.com"
+      })
+
     ada = user_scope(user: ada)
 
     {:ok, comment} =

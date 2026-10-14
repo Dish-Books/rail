@@ -6,7 +6,13 @@ defmodule Rail.Users.Actions.ListTechLeadsTest do
 
   test "lists the tech leads granted the project and the admin tech leads, by name, and nobody else" do
     register = fn login, attrs ->
-      {:ok, user} = Users.register_oauth_user(%{github_id: "gh_#{login}", login: login, email: "#{login}@example.com"})
+      {:ok, user} =
+        Users.register_oauth_user(%{
+          github_id: "gh_#{login}_list-tech-leads",
+          login: "#{login}-list-tech-leads",
+          email: "#{login}-list-tech-leads@example.com"
+        })
+
       {:ok, user} = Users.update_user(system_scope(), user, attrs)
       user
     end

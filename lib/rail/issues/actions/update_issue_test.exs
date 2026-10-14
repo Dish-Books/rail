@@ -60,7 +60,11 @@ defmodule Rail.Issues.Actions.UpdateIssueTest do
     [first, second] =
       Enum.map(["first_owner", "second_owner"], fn login ->
         {:ok, user} =
-          Users.register_oauth_user(%{github_id: "gh_#{login}", login: login, email: "#{login}@example.com"})
+          Users.register_oauth_user(%{
+            github_id: "gh_#{login}_update-issue",
+            login: "#{login}-update-issue",
+            email: "#{login}-update-issue@example.com"
+          })
 
         user
       end)

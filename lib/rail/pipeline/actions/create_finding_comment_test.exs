@@ -33,7 +33,11 @@ defmodule Rail.Pipeline.Actions.CreateFindingCommentTest do
     {:ok, _pass} = Pipeline.save_review(task)
 
     {:ok, %{id: user_id} = ada} =
-      Users.register_oauth_user(%{github_id: "gh_cfc_ada", login: "ada", email: "ada@example.com"})
+      Users.register_oauth_user(%{
+        github_id: "gh_cfc_ada",
+        login: "ada-create-finding-comment",
+        email: "ada-create-finding-comment@example.com"
+      })
 
     %{task: task, finding: finding, elsewhere: elsewhere, ada: user_scope(user: ada), user_id: user_id}
   end

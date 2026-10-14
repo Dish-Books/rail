@@ -71,7 +71,8 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
     {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => @plan})
     {:ok, run} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
 
-    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_afp_ada", login: "ada", email: "ada-afp@example.com"})
+    {:ok, ada} =
+      Users.register_oauth_user(%{github_id: "gh_afp_ada", login: "ada-approve-fix-plan", email: "ada-afp@example.com"})
 
     %{task: task, run: run, crash: crash, nit: nit, ada: user_scope(user: %{ada | project_ids: [project.id]})}
   end
@@ -89,8 +90,14 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
     assert note =~ "<fix_plan>\n#{@plan}\n</fix_plan>"
     assert %Run{status: :running} = Repo.reload!(run)
     # Read approved before the job runs, so no page shows the claimed run as revising the plan.
-    assert %FixPlan{approved_by: "ada", approved_at: %DateTime{}, version: 1} = Pipeline.read_fix_plan(task)
-    assert_enqueued(worker: StartApprovedFixPlan, args: %{run_id: run_id, version: 1, approved_by: "ada"})
+    assert %FixPlan{approved_by: "ada-approve-fix-plan", approved_at: %DateTime{}, version: 1} =
+             Pipeline.read_fix_plan(task)
+
+    assert_enqueued(
+      worker: StartApprovedFixPlan,
+      args: %{run_id: run_id, version: 1, approved_by: "ada-approve-fix-plan"}
+    )
+
     refute Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "approved the fix plan"))
     assert_received {:pipeline_changed, ^task_id}
   end

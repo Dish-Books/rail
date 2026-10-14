@@ -26,10 +26,18 @@ defmodule Rail.Git.Actions.SetFileViewedTest do
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     {:ok, ada} =
-      Users.register_oauth_user(%{github_id: "gh_vwf_ada", login: "ada", email: "ada@example.com"})
+      Users.register_oauth_user(%{
+        github_id: "gh_vwf_ada",
+        login: "ada-set-file-viewed",
+        email: "ada-set-file-viewed@example.com"
+      })
 
     {:ok, grace} =
-      Users.register_oauth_user(%{github_id: "gh_vwf_grace", login: "grace", email: "grace@example.com"})
+      Users.register_oauth_user(%{
+        github_id: "gh_vwf_grace",
+        login: "grace-set-file-viewed",
+        email: "grace-set-file-viewed@example.com"
+      })
 
     %{task: task, ada: user_scope(user: ada), grace: user_scope(user: grace)}
   end

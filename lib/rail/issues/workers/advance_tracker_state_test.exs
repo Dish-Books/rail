@@ -30,7 +30,12 @@ defmodule Rail.Issues.Workers.AdvanceTrackerStateTest do
         })
       end)
 
-      {:ok, owner} = Users.register_oauth_user(%{github_id: "gh_owner", login: "owner", email: "owner@example.com"})
+      {:ok, owner} =
+        Users.register_oauth_user(%{
+          github_id: "gh_owner",
+          login: "owner",
+          email: "owner-advance-tracker-state@example.com"
+        })
 
       {:ok, issue} =
         Issues.create_issue(system_scope(), project, %{description: "Advance Issue", owner_user_id: owner.id})

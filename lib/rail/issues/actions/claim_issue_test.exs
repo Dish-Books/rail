@@ -24,7 +24,11 @@ defmodule Rail.Issues.Actions.ClaimIssueTest do
     [claimer, rival] =
       Enum.map(["claimer", "rival"], fn login ->
         {:ok, user} =
-          Users.register_oauth_user(%{github_id: "gh_#{login}", login: login, email: "#{login}@example.com"})
+          Users.register_oauth_user(%{
+            github_id: "gh_#{login}_claim-issue",
+            login: "#{login}-claim-issue",
+            email: "#{login}-claim-issue@example.com"
+          })
 
         user |> Ecto.Changeset.change(linear_user_id: "lin_usr_#{login}") |> Repo.update!()
       end)
@@ -52,7 +56,11 @@ defmodule Rail.Issues.Actions.ClaimIssueTest do
 
   test "refuses a user who never linked Linear", %{issue: issue} do
     {:ok, unlinked} =
-      Users.register_oauth_user(%{github_id: "gh_unlinked", login: "unlinked", email: "unlinked@example.com"})
+      Users.register_oauth_user(%{
+        github_id: "gh_unlinked",
+        login: "unlinked-claim-issue",
+        email: "unlinked-claim-issue@example.com"
+      })
 
     assert {:error, :linear_not_linked} = Issues.claim_issue(Scope.for_user(unlinked), issue)
     assert Repo.get!(Issue, issue.id).owner_user_id == nil

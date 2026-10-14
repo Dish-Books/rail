@@ -393,9 +393,9 @@ defmodule Rail.Pipeline.Actions.HandOverWorkTest do
         %User{}
         |> User.changeset(%{
           github_id: "gh_cmw",
-          login: "ada",
+          login: "ada-hand-over-work",
           name: "Ada",
-          email: "ada@example.com",
+          email: "ada-hand-over-work@example.com",
           github_token: "gho_ada",
           github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
         })

@@ -1655,7 +1655,11 @@ defmodule RailWeb.Live.RunConversationTest do
       [ada, grace] =
         for name <- ["ada", "grace"] do
           {:ok, user} =
-            Users.register_oauth_user(%{github_id: "gh_rct_#{name}", login: name, email: "#{name}@rct.example"})
+            Users.register_oauth_user(%{
+              github_id: "gh_rct_#{name}_run-conversation",
+              login: "#{name}-run-conversation",
+              email: "#{name}-run-conversation@rct.example"
+            })
 
           {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
           user

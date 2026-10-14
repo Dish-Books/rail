@@ -47,8 +47,19 @@ defmodule Rail.Pipeline.Actions.ListPlanCommentsTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_pclist_ada", login: "ada", email: "ada@example.com"})
-    {:ok, grace} = Users.register_oauth_user(%{github_id: "gh_pclist_grace", login: "grace", email: "grace@example.com"})
+    {:ok, ada} =
+      Users.register_oauth_user(%{
+        github_id: "gh_pclist_ada",
+        login: "ada-list-plan-comments",
+        email: "ada-list-plan-comments@example.com"
+      })
+
+    {:ok, grace} =
+      Users.register_oauth_user(%{
+        github_id: "gh_pclist_grace",
+        login: "grace-list-plan-comments",
+        email: "grace-list-plan-comments@example.com"
+      })
 
     attrs = %{
       target: :design,

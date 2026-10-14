@@ -148,7 +148,13 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
     task: task,
     run: run
   } do
-    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_rfn_ada", login: "ada", email: "ada@example.com"})
+    {:ok, ada} =
+      Users.register_oauth_user(%{
+        github_id: "gh_rfn_ada",
+        login: "ada-review-run-finished",
+        email: "ada-review-run-finished@example.com"
+      })
+
     ada = user_scope(user: ada)
     File.mkdir_p!(Path.join([task.scratch_path, "qa", "screens", "toolbar"]))
     File.write!(Path.join([task.scratch_path, "qa", "screens", "toolbar", "1.jpg"]), "jpeg")

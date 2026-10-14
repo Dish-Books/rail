@@ -547,7 +547,7 @@ defmodule RailWeb.LearningsLiveTest do
     {:ok, admin} =
       Users.register_oauth_user(%{
         github_id: "llv-admin",
-        login: "ada",
+        login: "ada-learnings-live",
         name: "Ada Admin",
         email: "ada@llv.example",
         admin: true

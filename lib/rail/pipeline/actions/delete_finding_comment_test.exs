@@ -27,8 +27,19 @@ defmodule Rail.Pipeline.Actions.DeleteFindingCommentTest do
         evidence: [%{name: "range", kind: :code, file: "lib/a.ex", line: 3}]
       })
 
-    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_dfc_ada", login: "ada", email: "ada@example.com"})
-    {:ok, grace} = Users.register_oauth_user(%{github_id: "gh_dfc_grace", login: "grace", email: "grace@example.com"})
+    {:ok, ada} =
+      Users.register_oauth_user(%{
+        github_id: "gh_dfc_ada",
+        login: "ada-delete-finding-comment",
+        email: "ada-delete-finding-comment@example.com"
+      })
+
+    {:ok, grace} =
+      Users.register_oauth_user(%{
+        github_id: "gh_dfc_grace",
+        login: "grace-delete-finding-comment",
+        email: "grace-delete-finding-comment@example.com"
+      })
 
     {:ok, comment} =
       Pipeline.create_finding_comment(user_scope(user: ada), task, %{

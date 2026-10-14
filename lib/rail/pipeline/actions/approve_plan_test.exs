@@ -319,8 +319,20 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
     task: %{id: task_id} = task,
     run: run
   } do
-    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_app_ada", login: "ada", email: "ada@example.com"})
-    {:ok, grace} = Users.register_oauth_user(%{github_id: "gh_app_grace", login: "grace", email: "grace@example.com"})
+    {:ok, ada} =
+      Users.register_oauth_user(%{
+        github_id: "gh_app_ada",
+        login: "ada-approve-plan",
+        email: "ada-approve-plan@example.com"
+      })
+
+    {:ok, grace} =
+      Users.register_oauth_user(%{
+        github_id: "gh_app_grace",
+        login: "grace-approve-plan",
+        email: "grace-approve-plan@example.com"
+      })
+
     [ada, grace] = Enum.map([ada, grace], &user_scope(user: &1))
 
     comment = %{

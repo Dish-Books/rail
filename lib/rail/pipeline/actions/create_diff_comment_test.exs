@@ -23,7 +23,11 @@ defmodule Rail.Pipeline.Actions.CreateDiffCommentTest do
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     {:ok, %{id: user_id} = ada} =
-      Users.register_oauth_user(%{github_id: "gh_dcm_ada", login: "ada", email: "ada@example.com"})
+      Users.register_oauth_user(%{
+        github_id: "gh_dcm_ada",
+        login: "ada-create-diff-comment",
+        email: "ada-create-diff-comment@example.com"
+      })
 
     %{task: task, task_id: task_id, user_id: user_id, ada: user_scope(user: ada)}
   end

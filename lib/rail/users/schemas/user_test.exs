@@ -17,7 +17,7 @@ defmodule Rail.Users.Schemas.UserTest do
   test "changeset accepts valid attributes" do
     attrs = %{
       github_id: "12345",
-      login: "octocat",
+      login: "octocat-user",
       name: "Mona Lisa",
       email: "octocat@github.com",
       avatar_url: "https://example.com/avatar.png",
