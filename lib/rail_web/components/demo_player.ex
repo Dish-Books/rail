@@ -1,7 +1,8 @@
 defmodule RailWeb.Components.DemoPlayer do
   @moduledoc """
   Review's Demo item: a header row saying what the demo was recorded on, then the video with its caption
-  bar beneath it, never over it, and the walkthrough beside it. Each beat seeks the player to the moment
+  bar beneath it, never over it, and the walkthrough beside it, scrolling on its own and following playback so
+  the video stays in view. Each beat seeks the player to the moment
   it was said, and one that proves an acceptance criterion quotes it. A demo the branch has moved past
   says so in slate above the video, with Re-record.
   """
@@ -27,7 +28,7 @@ defmodule RailWeb.Components.DemoPlayer do
     <div
       id="review-demo"
       data-qa="review_demo"
-      class="flex-1 min-w-0 min-h-0 flex flex-col overflow-y-auto"
+      class="flex-1 min-w-0 min-h-0 flex flex-col"
     >
       <div class="h-12 shrink-0 flex items-center gap-2 px-5 border-b border-slate-200 dark:border-slate-700">
         <span class="text-sm font-bold text-slate-900 dark:text-slate-100">Demo</span>
@@ -47,9 +48,15 @@ defmodule RailWeb.Components.DemoPlayer do
         No demo was recorded. A change with nothing on screen gets none, and the demo recorder's take appears here once it is saved.
       </p>
 
-      <div :if={@recorded or @recording} class="p-5">
-        <div class="flex flex-col @4xl:flex-row gap-4 min-h-0">
-          <div :if={@recorded} id="demo-player" data-qa="demo_player" class="flex-1 min-w-0 space-y-3">
+      <%!-- The walkthrough scrolls on its own, so the video stays in view while it is read. --%>
+      <div :if={@recorded or @recording} class="flex-1 min-h-0 p-5">
+        <div class="h-full flex flex-col @4xl:flex-row gap-4 min-h-0">
+          <div
+            :if={@recorded}
+            id="demo-player"
+            data-qa="demo_player"
+            class="shrink-0 @4xl:flex-1 @4xl:min-h-0 @4xl:overflow-y-auto min-w-0 space-y-3"
+          >
             <div
               :if={@stale && not @recording}
               id="demo-stale"
@@ -140,7 +147,11 @@ defmodule RailWeb.Components.DemoPlayer do
             </p>
           </div>
 
-          <div id="demo-beats" data-qa="demo_beats" class="@4xl:w-[280px] shrink-0">
+          <div
+            id="demo-beats"
+            data-qa="demo_beats"
+            class="flex-1 min-h-0 overflow-y-auto @4xl:flex-none @4xl:w-[280px]"
+          >
             <p class="px-2.5 pb-2 text-[10.5px] font-extrabold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
               {if @recording, do: "Narrated so far", else: "Walkthrough"}
             </p>

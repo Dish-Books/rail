@@ -1591,20 +1591,66 @@ defmodule RailWeb.Live.ReviewStageTest do
     test "while the lead writes it, Fix plan runs under Findings with no Approve anywhere", %{conn: conn, task: task} do
       {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      assert has_element?(view, "#review-item-fix-plan[title='Fix plan: Writing the plan'] [data-qa=review_item_running]")
+      assert has_element?(view, "#review-item-plan[title='Plan: Writing the plan'] [data-qa=review_item_running]")
       assert has_element?(view, "#review-status", "Fix round 1 · Review lead writing the fix plan")
       refute has_element?(view, "#approve-fix-plan")
 
-      view |> element("#review-item-fix-plan") |> render_click()
+      view |> element("#review-item-plan") |> render_click()
       assert has_element?(view, "#fix-plan-empty", "Writing the fix plan")
       assert has_element?(view, "#fix-plan-empty", "On the 2 findings ruled Fix and comment 1.")
+    end
+
+    # One Plan item reads every round: the first plan, each later round's as approved, and the next one's waiting.
+    test "the round picker opens each round's plan, its changes first, and the URL keeps the round", %{
+      conn: conn,
+      task: task,
+      run: run,
+      plan: plan
+    } do
+      Repo.insert!(%Round{
+        task_id: task.id,
+        number: 1,
+        plan: "## Implementation plan\n\nFirst.",
+        approved_at: DateTime.utc_now()
+      })
+
+      Repo.insert!(%Round{
+        task_id: task.id,
+        number: 2,
+        plan:
+          "Fix the nil.\n\n### Changes to the plan\n\n- Criteria: vendor becomes tag, as Ada asked.\n\n### What changes\n\nGuard it.",
+        approved_at: DateTime.utc_now()
+      })
+
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#review-item-plan") |> render_click()
+      assert has_element?(view, "#plan-round-select option[value=next][selected]", "Round 3 · waiting on approval")
+      assert has_element?(view, "#fix-plan-sheet")
+
+      view |> form("#plan-rounds", %{"round" => "2"}) |> render_change()
+      assert_patch(view, ~p"/tasks/#{task.id}?item=plan&round=2")
+      assert has_element?(view, "#round-plan-changes", "vendor becomes tag, as Ada asked")
+      assert has_element?(view, "#round-plan-body", "Guard it.")
+      refute has_element?(view, "#round-plan-body", "vendor becomes tag")
+
+      view |> form("#plan-rounds", %{"round" => "1"}) |> render_change()
+      assert has_element?(view, "#task-item-plan #plan-stage")
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan&round=2")
+      assert has_element?(view, "#round-plan-approved", "Round 2")
+
+      view |> form("#plan-rounds", %{"round" => "next"}) |> render_change()
+      assert has_element?(view, "#fix-plan-sheet")
     end
 
     test "a turn that stopped before a plan was saved leaves nothing to approve", %{conn: conn, task: task, run: run} do
       {:ok, _stopped} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished})
       {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=fix_plan")
 
-      assert has_element?(view, "#review-item-fix-plan[title='Fix plan: No plan'] [data-qa=review_item_stopped]")
+      assert has_element?(view, "#review-item-plan[title='Plan: No plan'] [data-qa=review_item_stopped]")
       assert has_element?(view, "#fix-plan-empty", "No fix plan")
       refute has_element?(view, "#approve-fix-plan")
     end
@@ -1617,7 +1663,7 @@ defmodule RailWeb.Live.ReviewStageTest do
 
       assert has_element?(
                view,
-               "#review-item-fix-plan[title='Fix plan: Waiting on your approval'] [data-qa=review_item_waiting]"
+               "#review-item-plan[title='Plan: Waiting on your approval'] [data-qa=review_item_waiting]"
              )
 
       assert has_element?(view, "#review-status[data-phase=waiting]", "Fix round 1 · Fix plan waiting on your approval")
@@ -1640,7 +1686,7 @@ defmodule RailWeb.Live.ReviewStageTest do
       {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
       {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=fix_plan")
 
-      assert has_element?(view, "#review-item-fix-plan[aria-current=true]")
+      assert has_element?(view, "#review-item-plan[aria-current=true]")
       assert has_element?(view, "#fix-plan-sheet")
     end
 
@@ -1655,14 +1701,14 @@ defmodule RailWeb.Live.ReviewStageTest do
       _settled = render(view)
 
       refute has_element?(view, "#approve-fix-plan")
-      assert has_element?(view, "#review-item-fix-plan[title='Fix plan: Out of date']")
+      assert has_element?(view, "#review-item-plan[title='Plan: Out of date']")
       assert has_element?(view, "#review-status[data-phase=outdated]", "Fix round 1 · Fix plan out of date")
       assert has_element?(view, "#finding-view-only-send", "Don't fix · changed since the plan")
       assert has_element?(view, "#finding-ruling-changed", "Ruling changed since the fix plan · was Fix")
       assert has_element?(view, "#review-tray-ruling-view-only-send", "Don't fix, was Fix")
       assert has_element?(view, "#review-send-tray-hint", "The fix plan is out of date. Send asks the lead to revise it.")
 
-      view |> element("#review-item-fix-plan") |> render_click()
+      view |> element("#review-item-plan") |> render_click()
       assert has_element?(view, "#fix-plan-outdated code", "view-only-send")
       assert has_element?(view, "#fix-plan-outdated", "view-only-send changed from Fix to Don't fix after")
       refute has_element?(view, "#fix-plan-outdated", "`")
@@ -1676,11 +1722,11 @@ defmodule RailWeb.Live.ReviewStageTest do
       assert has_element?(view, "#approve-fix-plan")
       refute has_element?(view, "#review-tray-ruling-view-only-send")
       refute has_element?(view, "#finding-ruling-changed")
-      assert has_element?(view, "#review-item-fix-plan[title='Fix plan: Waiting on your approval']")
+      assert has_element?(view, "#review-item-plan[title='Plan: Waiting on your approval']")
 
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), view_only, :skip)
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), twice, :skip)
-      view |> element("#review-item-fix-plan") |> render_click()
+      view |> element("#review-item-plan") |> render_click()
 
       assert has_element?(
                view,
@@ -1708,14 +1754,14 @@ defmodule RailWeb.Live.ReviewStageTest do
       _settled = render(view)
 
       refute has_element?(view, "#approve-fix-plan")
-      assert has_element?(view, "#review-item-fix-plan[title='Fix plan: Revising']")
+      assert has_element?(view, "#review-item-plan[title='Plan: Revising']")
       assert has_element?(view, "#fix-plan-revising", "Revising on comments 2 and 3.")
       assert has_element?(view, "#fix-plan-sheet")
 
       {:ok, _stopped} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished})
       {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=fix_plan")
       assert has_element?(view, "#fix-plan-revising", "The lead stopped before it saved the revised plan")
-      assert has_element?(view, "#review-item-fix-plan[title='Fix plan: Revision stopped']")
+      assert has_element?(view, "#review-item-plan[title='Plan: Revision stopped']")
     end
 
     test "a plan revised on a dropped finding and a new comment still lays out what it covers, not ticked as the round",

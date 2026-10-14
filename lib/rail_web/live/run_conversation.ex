@@ -1141,6 +1141,7 @@ defmodule RailWeb.Live.RunConversation do
           disabled={@is_unavailable or @chat_sending}
           autocomplete="off"
           phx-hook="ChatComposer"
+          data-draft-key={"rail:draft:#{@run && @run.id}"}
           phx-debounce="300"
           phx-no-format
           class="flex-1 resize-none px-3 py-2 text-xs sm:text-sm rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"

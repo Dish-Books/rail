@@ -63,6 +63,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:current_section, :tasks)
       |> assign(:item, nil)
       |> assign(:agent, nil)
+      |> assign(:round, nil)
       |> assign(:plan_run, nil)
       |> assign(:rounds, [])
       |> assign(:review_run, nil)
@@ -122,6 +123,7 @@ defmodule RailWeb.TaskLive do
         socket
         |> assign(:item, params["item"])
         |> assign(:agent, params["agent"])
+        |> assign(:round, params["round"])
         |> apply_task(socket.assigns.task)
       else
         socket
@@ -130,6 +132,7 @@ defmodule RailWeb.TaskLive do
         |> assign(:child, params["child"])
         |> assign(:item, params["item"])
         |> assign(:agent, params["agent"])
+        |> assign(:round, params["round"])
         |> assign(:focus_file, params["file"])
         |> refresh_task()
       end
@@ -182,6 +185,7 @@ defmodule RailWeb.TaskLive do
           split_parent={@parent != nil and @parent.id == @task.id}
           current_scope={@current_scope}
           url_item={@item}
+          url_round={@round}
           url_file={@focus_file}
         >
           <:breadcrumb :if={@show_switcher}>
@@ -393,6 +397,11 @@ defmodule RailWeb.TaskLive do
   def handle_info({:plan_comments_lifted, ids}, socket) do
     send_update(RunConversation, id: "run-conversation", lifted_plan_comments: ids)
     {:noreply, socket}
+  end
+
+  # The Plan item opened another round, which the URL names in place for a reload.
+  def handle_info({:plan_round, round}, socket) do
+    {:noreply, push_patch(socket, to: task_path(socket, item: "plan", round: round), replace: true)}
   end
 
   # The stage opened another item, which the URL names in place for a reload.
@@ -699,6 +708,7 @@ defmodule RailWeb.TaskLive do
       child: issue.identifier,
       item: socket.assigns.item,
       agent: socket.assigns.agent,
+      round: socket.assigns.round,
       file: socket.assigns.focus_file
     ]
 
