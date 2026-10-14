@@ -27,6 +27,9 @@ defmodule Rail.Pipeline.Actions.HandleIssueFinishedTest do
     {:ok, _child} =
       Pipeline.create_child_task(parent, child_issue, %{
         number: 1,
+        title: "A part",
+        ticket: "Its criteria.",
+        estimate: 1,
         builds_on: [],
         builds_screen: false,
         plan: "## Implementation plan"

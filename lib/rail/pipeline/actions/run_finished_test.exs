@@ -8,6 +8,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
@@ -45,10 +46,12 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     # Plan checks that its agent left a ticket and a plan behind, so a run meant to
     # read as clean needs both there.
-    File.mkdir_p!(Path.join(task.scratch_path, "tickets"))
-    File.write!(Path.join([task.scratch_path, "tickets", "RUN-1.md"]), "---\ntitle: Run Finished Issue\n---\n\nBody.\n")
-    File.mkdir_p!(Path.join(task.scratch_path, "plans"))
-    File.write!(Path.join([task.scratch_path, "plans", "RUN-1.md"]), "## Implementation plan\n\nExtend the module.\n")
+    Repo.insert!(%Round{
+      task_id: task.id,
+      number: 1,
+      plan: "## Implementation plan\n\nExtend the module.",
+      ticket: %Round.Ticket{title: "Run Finished Issue", description: "Body."}
+    })
 
     exited = fn stage, run_attrs ->
       {:ok, run} =
@@ -386,7 +389,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   end
 
   test "a Plan run that left no plan stays open for the message that fixes it", %{task: task, exited: exited} do
-    File.rm!(Path.join([task.scratch_path, "plans", "RUN-1.md"]))
+    Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [plan: nil])
     {_run, os_process} = exited.(:plan, %{})
 
     assert {:ok, %Run{stage_outcome: :in_progress, error: "The Plan agent did not save a plan."}} =
@@ -396,7 +399,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   end
 
   test "a Plan run that left no ticket stays open for the message that fixes it", %{task: task, exited: exited} do
-    File.rm!(Path.join([task.scratch_path, "tickets", "RUN-1.md"]))
+    Repo.delete_all(from(r in Round, where: r.task_id == ^task.id))
     {_run, os_process} = exited.(:plan, %{})
 
     assert {:ok, %Run{stage_outcome: :in_progress, error: "The Plan agent did not save a ticket."}} =

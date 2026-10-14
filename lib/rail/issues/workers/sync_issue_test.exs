@@ -165,6 +165,21 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
     refute Map.has_key?(second, "title")
   end
 
+  test "a cleared estimate is sent as a null", %{issue: issue} do
+    {:ok, issue} = Issues.update_issue(issue, %{estimate: 5})
+    {:ok, issue} = Issues.update_issue(issue, %{estimate: nil})
+    test_pid = self()
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      send(test_pid, {:input, Jason.decode!(body)["variables"]["input"]})
+      Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
+    end)
+
+    assert :ok = perform_job(SyncIssue, %{issue_id: issue.id, fields: ["estimate"]})
+    assert_received {:input, %{"estimate" => nil}}
+  end
+
   test "the title still lands when Linear refuses the estimate", %{issue: issue} do
     {:ok, issue} = Issues.update_issue(issue, %{title: "New title", estimate: 7})
     test_pid = self()

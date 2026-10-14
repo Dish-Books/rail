@@ -135,7 +135,16 @@ defmodule Rail.Pipeline.Workers.CleanupMergedTaskTest do
         for number <- [1, 2] do
           {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Child #{number}", parent: parent_issue})
 
-          part = %{number: number, builds_on: [], builds_screen: false, plan: "## Implementation plan\n\nPart."}
+          part = %{
+            number: number,
+            title: "A part",
+            ticket: "Its criteria.",
+            estimate: 1,
+            builds_on: [],
+            builds_screen: false,
+            plan: "## Implementation plan\n\nPart."
+          }
+
           {:ok, child} = Pipeline.create_child_task(parent, issue, part)
           Repo.preload(child, :issue)
         end

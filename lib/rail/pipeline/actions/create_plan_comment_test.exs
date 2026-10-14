@@ -178,7 +178,7 @@ defmodule Rail.Pipeline.Actions.CreatePlanCommentTest do
     assert {:error, :no_ticket} = Pipeline.create_plan_comment(ada, run, ticket)
     assert {:error, :no_plan} = Pipeline.create_plan_comment(ada, run, plan)
 
-    {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Recordings", description: "Recordings open blank."})
+    {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Recordings", description: "Recordings open blank."})
     {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan})
 
     assert {:ok, %PlanComment{target: :ticket, element_label: "Paragraph 1"}} =
@@ -194,7 +194,7 @@ defmodule Rail.Pipeline.Actions.CreatePlanCommentTest do
     run: chatty,
     ada: ada
   } do
-    {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Recordings", description: "Recordings open blank."})
+    {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Recordings", description: "Recordings open blank."})
     {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan})
 
     {:ok, silent} =

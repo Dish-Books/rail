@@ -3,8 +3,10 @@ defmodule Rail.Pipeline.Actions.CreateChildTaskTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.ImplementationPlan
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
+
+  @part "## Implementation plan\n\n### Approach\n\nBuild it.\n\nNo diagrams: one module changes.\n\n### File-level changes\n\n- `lib/rail.ex`: builds it.\n\n### Verification\n\n- `lib/rail_test.exs`: covers it."
 
   setup %{project: project} do
     for {id, identifier} <- [{"lin_cct_parent", "CCT-1"}, {"lin_cct_child", "CCT-2"}] do
@@ -40,7 +42,15 @@ defmodule Rail.Pipeline.Actions.CreateChildTaskTest do
     File.write!(Path.join(design, "board.html"), "<h1>Board</h1>")
     File.write!(Path.join(design, "picked"), "board")
 
-    child = %{number: 2, builds_on: [1], builds_screen: true, plan: "## Implementation plan\n\nMy part."}
+    child = %{
+      number: 2,
+      title: "The second part",
+      ticket: "Its own criteria.",
+      estimate: 2,
+      builds_on: [1],
+      builds_screen: true,
+      plan: @part
+    }
 
     assert {:ok,
             %Task{stage: :engineer, parent_task_id: ^parent_id, issue_id: ^issue_id, split_position: 2, builds_on: [1]} =
@@ -49,8 +59,12 @@ defmodule Rail.Pipeline.Actions.CreateChildTaskTest do
 
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
-    assert {:ok, %ImplementationPlan{content: "## Implementation plan\n\nMy part."}} =
-             Pipeline.get_implementation_plan(task)
+    assert %Round{
+             number: 1,
+             plan: @part,
+             approved_at: %DateTime{},
+             ticket: %{title: "The second part", description: "Its own criteria.", estimate: 2}
+           } = Pipeline.read_plan(task)
 
     assert %{picked: "board", options: [%{key: "board", html: "<h1>Board</h1>"}]} = Pipeline.read_design(task)
   end
@@ -67,7 +81,10 @@ defmodule Rail.Pipeline.Actions.CreateChildTaskTest do
                number: 1,
                builds_on: [],
                builds_screen: false,
-               plan: "## Implementation plan"
+               title: "A part",
+               ticket: "Its criteria.",
+               estimate: 1,
+               plan: @part
              })
 
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
@@ -82,7 +99,10 @@ defmodule Rail.Pipeline.Actions.CreateChildTaskTest do
                number: 1,
                builds_on: [],
                builds_screen: false,
-               plan: "## Implementation plan"
+               title: "A part",
+               ticket: "Its criteria.",
+               estimate: 1,
+               plan: @part
              })
 
     assert Pipeline.read_design(task) == nil
@@ -94,7 +114,10 @@ defmodule Rail.Pipeline.Actions.CreateChildTaskTest do
         number: 1,
         builds_on: [],
         builds_screen: false,
-        plan: "## Implementation plan"
+        title: "A part",
+        ticket: "Its criteria.",
+        estimate: 1,
+        plan: @part
       })
 
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -115,7 +138,10 @@ defmodule Rail.Pipeline.Actions.CreateChildTaskTest do
                number: 1,
                builds_on: [],
                builds_screen: false,
-               plan: "## Implementation plan"
+               title: "A part",
+               ticket: "Its criteria.",
+               estimate: 1,
+               plan: @part
              })
 
     assert %{split_position: ["has already been taken"]} = errors_on(changeset)

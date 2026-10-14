@@ -45,7 +45,6 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   import Rail.Mcp.Utils.RunToolSaveReview
   import Rail.Mcp.Utils.RunToolSaveScreen
   import Rail.Mcp.Utils.RunToolSaveSplit
-  import Rail.Mcp.Utils.RunToolSaveTicket
   import Rail.Mcp.Utils.ToolAllowed
   import Rail.Mcp.Utils.WithUpstreamToken
 
@@ -58,7 +57,6 @@ defmodule Rail.Mcp.Actions.CallRunTool do
 
   @unlogged [
     "ask_questions",
-    "save_ticket",
     "save_design_option",
     "save_plan",
     "save_split",
@@ -227,7 +225,6 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp run("save_screen", task, arguments, opts), do: run_tool_save_screen(task, arguments, opts)
   defp run("demo_start", task, arguments, opts), do: run_tool_demo_start(task, arguments, opts)
   defp run("demo_say", task, arguments, opts), do: run_tool_demo_say(task, arguments, opts)
-  defp run("save_ticket", task, arguments, opts), do: run_tool_save_ticket(task, arguments, opts)
   defp run("save_design_option", task, arguments, opts), do: run_tool_save_design_option(task, arguments, opts)
   defp run("save_plan", task, arguments, opts), do: run_tool_save_plan(task, arguments, opts)
   defp run("save_split", task, arguments, opts), do: run_tool_save_split(task, arguments, opts)

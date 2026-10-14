@@ -642,6 +642,9 @@ defmodule RailWeb.IssuesLiveTest do
 
         part = %{
           number: number,
+          title: "A part",
+          ticket: "Its criteria.",
+          estimate: 1,
           builds_on: builds_on,
           builds_screen: false,
           plan: "## Implementation plan\n\nPart #{number}."

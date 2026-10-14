@@ -216,7 +216,7 @@ defmodule RailWeb.OverviewLive do
 
   # A split is one piece of work, so its children are read through their parent, which they are cleaned up with.
   defp load_tasks(project_id, owner_user_id) do
-    preload = [:project, :issue, :implementation_plan, runs: [:role, :questions]]
+    preload = [:project, :issue, :rounds, runs: [:role, :questions]]
 
     tasks =
       [project_id: project_id, owner_user_id: owner_user_id, preload: preload]
@@ -345,7 +345,7 @@ defmodule RailWeb.OverviewLive do
 
   # A split is split when its plan was approved, which is when its children were made.
   defp splits(tasks, children) do
-    for %{implementation_plan: %{captured_at: at}} = task <- tasks, split = children[task.id] do
+    for %{rounds: [%{approved_at: %DateTime{} = at} | _later]} = task <- tasks, split = children[task.id] do
       %{
         id: "split-#{task.id}",
         at: at,

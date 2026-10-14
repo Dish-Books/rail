@@ -14,12 +14,13 @@ defmodule Rail.Pipeline.Utils.PlanRunFinished do
   def plan_run_finished(%Run{} = run, _opts) do
     task = Repo.preload(run.task, :issue)
     design = Pipeline.read_design(task, pages: false)
+    plan = Pipeline.read_plan(task)
     options = if design, do: design.options, else: []
     incomplete = Enum.reject(options, &(File.regular?(&1.html_path) and File.regular?(&1.screenshot_path)))
 
     error =
       cond do
-        Pipeline.read_ticket(task) == nil ->
+        plan == nil ->
           "The Plan agent did not save a ticket."
 
         options != [] and design.picked == nil and length(options) != 3 ->
@@ -28,7 +29,7 @@ defmodule Rail.Pipeline.Utils.PlanRunFinished do
         incomplete != [] ->
           "Saved design options missing a page or screenshot: #{Enum.map_join(incomplete, ", ", & &1.key)}."
 
-        Pipeline.read_plan(task) == nil ->
+        plan.plan == nil ->
           "The Plan agent did not save a plan."
 
         true ->

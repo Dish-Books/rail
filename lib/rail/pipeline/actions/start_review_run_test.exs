@@ -4,7 +4,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
-  alias Rail.Pipeline.Schemas.ImplementationPlan
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -246,10 +246,11 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
       recommendation: :skip
     })
 
-    Repo.insert!(%ImplementationPlan{
+    Repo.insert!(%Round{
       task_id: task.id,
-      content: "## Implementation plan\n\nFilter by vendor.",
-      captured_at: DateTime.utc_now()
+      number: 1,
+      plan: "## Implementation plan\n\nFilter by vendor.",
+      approved_at: DateTime.utc_now()
     })
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->

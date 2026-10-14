@@ -3,10 +3,8 @@ defmodule Rail.Pipeline.Utils.FormatTicket do
   alias Rail.Issues.Schemas.Issue
 
   @doc """
-  Writes an issue out as the ticket markdown `parse_ticket/1` reads back.
-
-  A field the issue has nothing for is left out rather than written empty, so a
-  round trip through the scratch file does not invent a priority or an estimate.
+  Writes an issue out as ticket markdown for a brief: its title, priority and estimate as front matter above its
+  description. A field the issue has nothing for is left out rather than written empty.
   """
   def format_ticket(%Issue{} = issue) do
     fields =

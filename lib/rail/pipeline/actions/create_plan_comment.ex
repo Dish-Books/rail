@@ -9,6 +9,7 @@ defmodule Rail.Pipeline.Actions.CreatePlanComment do
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.PlanComment
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -38,9 +39,14 @@ defmodule Rail.Pipeline.Actions.CreatePlanComment do
 
   defp validate_target(%Task{} = task, %Ecto.Changeset{valid?: true} = changeset) do
     case Ecto.Changeset.get_field(changeset, :target) do
-      :design -> validate_pick(task, Ecto.Changeset.get_field(changeset, :option_key))
-      :ticket -> if Pipeline.read_ticket(task), do: :ok, else: {:error, :no_ticket}
-      :plan -> if Pipeline.read_plan(task), do: :ok, else: {:error, :no_plan}
+      :design ->
+        validate_pick(task, Ecto.Changeset.get_field(changeset, :option_key))
+
+      :ticket ->
+        if Pipeline.read_plan(task), do: :ok, else: {:error, :no_ticket}
+
+      :plan ->
+        if match?(%Round{plan: plan} when is_binary(plan), Pipeline.read_plan(task)), do: :ok, else: {:error, :no_plan}
     end
   end
 

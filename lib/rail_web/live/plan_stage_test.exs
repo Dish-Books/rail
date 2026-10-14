@@ -6,7 +6,7 @@ defmodule RailWeb.Live.PlanStageTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.ImplementationPlan
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Scope
@@ -67,7 +67,7 @@ defmodule RailWeb.Live.PlanStageTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Previews", description: "## Acceptance criteria\n\n- One\n"})
+    {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Previews", description: "## Acceptance criteria\n\n- One\n"})
     {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan})
 
     child = fn number, title, estimate, builds_on ->
@@ -122,7 +122,7 @@ defmodule RailWeb.Live.PlanStageTest do
     assert has_element?(view, "#task-conversation-column")
 
     {:ok, task} = Pipeline.update_task(task, %{stage: :split})
-    Repo.insert!(%ImplementationPlan{task_id: task.id, content: @plan, captured_at: DateTime.utc_now()})
+    Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [approved_at: DateTime.utc_now()])
     {:ok, plan_role} = Roles.get_role(project_id: task.project_id, stage: :plan)
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{plan_role.id}")
@@ -324,6 +324,9 @@ defmodule RailWeb.Live.PlanStageTest do
 
         part = %{
           number: number,
+          title: "A part",
+          ticket: "Its criteria.",
+          estimate: 1,
           builds_on: builds_on,
           builds_screen: false,
           plan: "## Implementation plan\n\nPart #{number}."
@@ -334,7 +337,7 @@ defmodule RailWeb.Live.PlanStageTest do
       end
 
     on_exit(fn -> File.rm_rf(parent.scratch_path) end)
-    Repo.update_all(from(p in ImplementationPlan, where: p.task_id == ^third.id), set: [content: sheet_plan()])
+    Repo.update_all(from(r in Round, where: r.task_id == ^third.id), set: [plan: sheet_plan()])
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=PST-13")
 

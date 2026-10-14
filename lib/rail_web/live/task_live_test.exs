@@ -14,8 +14,8 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
-  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.RunEvent
   alias Rail.Pipeline.Schemas.Task
@@ -528,7 +528,7 @@ defmodule RailWeb.TaskLiveTest do
     Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Which region?"})
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-    reject(&Pipeline.read_ticket/1)
+    reject(&Pipeline.read_plan/1)
 
     for typed <- ["P", "Po", "Postgres", "Postgres, on the managed plan"] do
       view |> form("#answer-question-form", %{"answer" => typed}) |> render_change()
@@ -1325,7 +1325,7 @@ defmodule RailWeb.TaskLiveTest do
       role: role,
       project: project
     } do
-      File.write!(Path.join([task.scratch_path, "tickets", "TLV-1.md"]), "The ticket as approved.")
+      {:ok, _ticket} = Pipeline.save_plan(task, %{title: "A ticket", description: "The ticket as approved."})
 
       {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
 
@@ -1453,7 +1453,7 @@ defmodule RailWeb.TaskLiveTest do
 
       save_ticket = fn ->
         description = "## Problem\n\nSlow.\n\n## Acceptance criteria\n\n- One\n- Two\n- Three\n- Four\n"
-        {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Sandboxes show usage", description: description})
+        {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Sandboxes show usage", description: description})
       end
 
       save_options = fn keys ->
@@ -1537,7 +1537,7 @@ defmodule RailWeb.TaskLiveTest do
       two |> element("#plan-item-design") |> render_click()
       assert has_element?(two, "#design-tab-cards", "Cards")
       assert has_element?(two, "#design-tab-building-2", "Being built")
-      assert has_element?(two, "#pick-design-cards[disabled]")
+      assert has_element?(two, "#pick-design-cards:not([disabled])")
 
       save_plan.(nil)
 
@@ -1707,7 +1707,7 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#plan-revising", "Not yet revised for Table. Below is the plan written for Cards.")
       refute has_element?(view, "#approve-plan")
 
-      File.rm!(Path.join([task.scratch_path, "plans", "TLV-1.design.json"]))
+      Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [design: nil])
       send(view.pid, {:output_saved, task.id})
       _settled = render(view)
       assert has_element?(view, "#plan-revising", "Below is the plan written before the pick.")
@@ -1769,7 +1769,7 @@ defmodule RailWeb.TaskLiveTest do
       assert %Issue{title: "Sandboxes show usage", description: description} = Repo.get!(Issue, task.issue_id)
       assert description =~ "## Design: Table"
 
-      assert %ImplementationPlan{content: content} = Repo.get_by(ImplementationPlan, task_id: task.id)
+      assert %Round{plan: content} = Repo.get_by(Round, task_id: task.id)
       assert content =~ "For table."
     end
 
@@ -1954,7 +1954,7 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "figure [data-qa='plan_diagram_source']:not(.hidden)")
     end
 
-    test "after approval the tab shows the plan as approved, not what scratch says now", %{
+    test "after approval the tab shows the plan as approved", %{
       conn: conn,
       task: task,
       role: role,
@@ -1964,11 +1964,9 @@ defmodule RailWeb.TaskLiveTest do
       save_ticket.()
       save_plan.(nil)
 
-      Repo.insert!(%ImplementationPlan{
-        task_id: task.id,
-        content: "## Implementation plan\n\nAs approved.",
-        captured_at: DateTime.utc_now()
-      })
+      Repo.update_all(from(r in Round, where: r.task_id == ^task.id),
+        set: [plan: "## Implementation plan\n\nAs approved.", approved_at: DateTime.utc_now()]
+      )
 
       {:ok, _moved} = Pipeline.update_task(task, %{stage: :engineer})
 
@@ -2043,7 +2041,6 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       reject(&Pipeline.read_design/2)
       reject(&Pipeline.read_plan/1)
-      reject(&Pipeline.read_ticket/1)
 
       view |> form("#answer-question-form", %{"answer" => "A, please"}) |> render_change()
       view |> element("#question-option-1") |> render_click()
@@ -2395,9 +2392,12 @@ defmodule RailWeb.TaskLiveTest do
       pick: pick
     } do
       pick.()
-      {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan, design: "waiting-lanes"})
+
+      {:ok, _plan} =
+        Pipeline.save_plan(task, %{title: "A ticket", description: "Body.", plan: @plan, design: "waiting-lanes"})
+
       {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
-      Repo.insert!(%ImplementationPlan{task_id: task.id, content: @plan, captured_at: DateTime.utc_now()})
+      Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [approved_at: DateTime.utc_now()])
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{run.role_id}")
       view |> element("#plan-item-design") |> render_click()
@@ -2508,7 +2508,7 @@ defmodule RailWeb.TaskLiveTest do
       """
 
       {:ok, _ticket} =
-        Pipeline.save_ticket(task, %{title: "Recordings settle", description: description, priority: :medium, estimate: 3})
+        Pipeline.save_plan(task, %{title: "Recordings settle", description: description, priority: :medium, estimate: 3})
 
       {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan, design: "waiting-lanes"})
 
@@ -2651,7 +2651,7 @@ defmodule RailWeb.TaskLiveTest do
       view |> form("[data-qa='document_comment_form']", %{"body" => "Kept."}) |> render_submit()
 
       {:ok, _ticket} =
-        Pipeline.save_ticket(task, %{
+        Pipeline.save_plan(task, %{
           title: "Recordings settle",
           description: String.replace(description, "at first paint", "the moment the browser paints")
         })
@@ -2723,7 +2723,7 @@ defmodule RailWeb.TaskLiveTest do
     } do
       {:ok, _design} = Pipeline.create_plan_comment(scope, run, design)
       Repo.update_all(from(r in Run, where: r.id == ^run.id), set: [conversation_id: nil])
-      {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Recordings settle", description: "Short.", estimate: 1})
+      {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Recordings settle", description: "Short.", estimate: 1})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       view |> element("#plan-item-ticket") |> render_click()
@@ -2746,7 +2746,7 @@ defmodule RailWeb.TaskLiveTest do
     } do
       {:ok, _design} = Pipeline.create_plan_comment(scope, run, design)
       {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
-      Repo.insert!(%ImplementationPlan{task_id: task.id, content: @plan, captured_at: DateTime.utc_now()})
+      Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [approved_at: DateTime.utc_now()])
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{run.role_id}")
       view |> element("#plan-item-ticket") |> render_click()
@@ -4982,14 +4982,13 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "a turn finishing re-reads the ticket the agent may have changed", %{conn: conn, task: task, run: run} do
-      ticket_path = Path.join([task.scratch_path, "tickets", "TLV-1.md"])
-      File.write!(ticket_path, "# A ticket\n\nThe first draft.")
+      {:ok, _first} = Pipeline.save_plan(task, %{title: "A ticket", description: "The first draft."})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       view |> element("#plan-item-ticket") |> render_click()
       assert has_element?(view, "[data-qa='plan_ticket']", "The first draft.")
 
-      File.write!(ticket_path, "# A ticket\n\nThe revised draft.")
+      {:ok, _revised} = Pipeline.save_plan(task, %{description: "The revised draft."})
       send(view.pid, {:os_process_finished, run, %{}})
 
       # The page forwards to the component, which renders on its own turn.
@@ -6338,6 +6337,9 @@ defmodule RailWeb.TaskLiveTest do
 
           part = %{
             number: number,
+            title: "A part",
+            ticket: "Its criteria.",
+            estimate: 1,
             builds_on: builds_on,
             builds_screen: false,
             plan: "## Implementation plan\n\nPart #{number}."

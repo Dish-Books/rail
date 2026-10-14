@@ -269,6 +269,9 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         {:ok, child} =
           Pipeline.create_child_task(owner, issue, %{
             number: number,
+            title: "A part",
+            ticket: "Its criteria.",
+            estimate: 1,
             builds_on: [],
             builds_screen: false,
             plan: "## Implementation plan"
