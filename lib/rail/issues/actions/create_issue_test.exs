@@ -170,6 +170,28 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
     assert %{priority: ["is invalid"]} = errors_on(changeset)
   end
 
+  test "create_issue/2 keeps the workflow opening it, over a row the webhook saved first", %{project: project} do
+    [%{id: workflow_id}] = sync_workflow_files(project, %{".rail/workflows/sweep.yml" => workflow_yaml()})
+
+    %Issue{id: mirrored_id} =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_TST-84",
+        identifier: "TST-84",
+        title: "Sweep 2026-10-12",
+        state: :triage
+      })
+      |> Repo.insert!()
+
+    expect_linear_issue("TST-84")
+
+    assert {:ok, %Issue{id: ^mirrored_id, workflow_id: ^workflow_id}} =
+             Issues.create_issue(system_scope(), project, %{title: "Sweep 2026-10-12", workflow_id: workflow_id})
+
+    assert %Issue{workflow_id: ^workflow_id} = Repo.get!(Issue, mirrored_id)
+  end
+
   test "create_issue/2 returns an error when Linear does not create it", %{project: project} do
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{"data" => %{"issueCreate" => %{"success" => false}}})

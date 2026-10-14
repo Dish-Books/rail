@@ -39,6 +39,7 @@ config :rail, Oban,
     {Oban.Plugins.Cron,
      crontab: [
        {"* * * * *", Rail.Tools.Workers.ReconcileOsProcesses},
+       {"* * * * *", Rail.Workflows.Workers.StartDueWorkflows},
        {"*/5 * * * *", Rail.Tools.Workers.RefreshUsage},
        {"*/15 * * * *", Rail.Git.Workers.FetchDefaultBranches},
        {"0 6 * * *", Rail.Learnings.Workers.ScheduleCurators},

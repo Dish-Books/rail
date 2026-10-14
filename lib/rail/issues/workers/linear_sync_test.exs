@@ -110,6 +110,36 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
     refute_enqueued(worker: SyncIssue)
   end
 
+  test "an issue a workflow opened keeps its workflow through a full sync", %{project: project} do
+    [%{id: workflow_id}] = sync_workflow_files(project, %{".rail/workflows/sweep.yml" => workflow_yaml()})
+    stub(DateTime, :utc_now, fn -> ~U[2026-10-12 10:00:00.000000Z] end)
+    expect_linear_issue("TST-84")
+    {:ok, _issue} = Issues.create_issue(system_scope(), project, %{title: "Sweep 2026-10-12", workflow_id: workflow_id})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issues" => %{
+            "nodes" => [
+              %{
+                "id" => "lin_TST-84",
+                "identifier" => "TST-84",
+                "title" => "Sweep 2026-10-12, retitled",
+                "state" => %{"id" => "st_1", "name" => "Todo", "type" => "unstarted"}
+              }
+            ],
+            "pageInfo" => %{"hasNextPage" => true, "endCursor" => "cursor_2"}
+          }
+        }
+      })
+    end)
+
+    assert :ok = perform_job(LinearSync, %{project_id: project.id, started_at: "2026-10-12T10:00:00.000000Z"})
+
+    assert %Issue{title: "Sweep 2026-10-12, retitled", workflow_id: ^workflow_id} =
+             Repo.get_by(Issue, external_id: "lin_TST-84")
+  end
+
   test "an unowned issue the page gives an owner has its Linear status caught up, and no other does", %{
     project: project
   } do

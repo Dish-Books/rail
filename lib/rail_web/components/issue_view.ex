@@ -13,6 +13,7 @@ defmodule RailWeb.Components.IssueView do
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Workflows.Schemas.Workflow
 
   attr :issue, :any, required: true
   attr :assignees, :list, required: true
@@ -21,6 +22,9 @@ defmodule RailWeb.Components.IssueView do
   attr :show_task, :boolean, default: true
   # A child of a split is owned through its parent, so its owner is read here, not changed.
   attr :owner_editable, :boolean, default: true
+  # The workflow that opened the issue, named under its title; only admins can follow it to Settings.
+  attr :workflow, :any, default: nil
+  attr :link_workflow, :boolean, default: false
 
   def issue_view(assigns) do
     ~H"""
@@ -39,13 +43,36 @@ defmodule RailWeb.Components.IssueView do
 
       <div class="flex flex-col lg:flex-row gap-10">
         <article class="flex-1 min-w-0 space-y-6">
-          <h1
-            id="issue-title"
-            data-qa="issue-title"
-            class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100"
-          >
-            {@issue.title}
-          </h1>
+          <div class="space-y-2">
+            <h1
+              id="issue-title"
+              data-qa="issue-title"
+              class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100"
+            >
+              {@issue.title}
+            </h1>
+            <p
+              :if={@workflow}
+              id="issue-workflow-byline"
+              class="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400"
+            >
+              <.icon name="pi-repeat" class="h-4 w-4" />
+              <span>
+                Opened by the <.link
+                  :if={@link_workflow}
+                  navigate={~p"/settings/workflows"}
+                  id="issue-workflow-link"
+                  title="Settings › Workflows"
+                  class="font-medium text-slate-700 dark:text-slate-200 underline decoration-slate-400 dark:decoration-slate-600 underline-offset-2 hover:decoration-slate-300 focus-visible:outline-2 focus-visible:outline-indigo-500 rounded"
+                  phx-no-format
+                >{Workflow.name(@workflow)}</.link>
+                <span :if={!@link_workflow} class="font-medium text-slate-700 dark:text-slate-200">
+                  {Workflow.name(@workflow)}
+                </span>
+                workflow on {Calendar.strftime(@issue.inserted_at, "%b %-d, %H:%M")} UTC
+              </span>
+            </p>
+          </div>
 
           <div id="issue-description" data-qa="issue-description">
             <.markdown
