@@ -19,6 +19,8 @@ defmodule Rail.Pipeline.Schemas.Round do
     field :plan_saved_at, :utc_datetime_usec
     # Whether the plan asks for a new demo once the round is reviewed.
     field :record_demo, :boolean, default: false
+    # When its plan was sent to a tech lead, which saving the plan again undoes.
+    field :ready_at, :utc_datetime_usec
     field :approved_at, :utc_datetime_usec
     # The branch's HEAD when the round started, and the one its review read.
     field :base_head, :string
@@ -40,6 +42,7 @@ defmodule Rail.Pipeline.Schemas.Round do
     end
 
     belongs_to :task, Task
+    belongs_to :ready_by, User
     belongs_to :approved_by, User
 
     timestamps()
@@ -82,9 +85,18 @@ defmodule Rail.Pipeline.Schemas.Round do
     |> cast_embed(:ticket, with: &ticket_changeset/2, required: number == 1)
     |> cast_embed(:design, with: &cast(&1, &2, [:key, :title]))
     |> validate_plan(number)
-    |> change(plan_version: round.plan_version + 1, plan_saved_at: DateTime.utc_now())
+    |> change(plan_version: round.plan_version + 1, plan_saved_at: DateTime.utc_now(), ready_at: nil, ready_by_id: nil)
     |> unique_constraint([:task_id, :number])
   end
+
+  @doc """
+  Builds a changeset marking the round's plan sent to a tech lead by `user_id`, which is nil when Rail sent it.
+  A plan already sent keeps who sent it and when.
+  """
+  def ready_changeset(%__MODULE__{ready_at: %DateTime{}} = round, _user_id), do: change(round)
+
+  def ready_changeset(%__MODULE__{} = round, user_id),
+    do: change(round, ready_at: DateTime.utc_now(), ready_by_id: user_id)
 
   @doc """
   Builds a changeset marking the round approved by `user_id`, which is nil when Rail approved it.

@@ -194,11 +194,11 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
     assert %Issue{title: "Approved title", description: ^description} = Repo.get!(Issue, task.issue_id)
   end
 
-  test "a second approval gets the invalid-stage error and publishes nothing again", %{task: task, run: run} do
+  test "a second approval is told the plan is already approved and publishes nothing again", %{task: task, run: run} do
     assert {:ok, _approved} = Pipeline.approve_plan(system_scope(), run)
     {:ok, _issue} = Issues.update_issue(Repo.get!(Issue, task.issue_id), %{description: "Edited in Linear since."})
 
-    assert {:error, {:invalid_stage, :engineer}} = Pipeline.approve_plan(system_scope(), run)
+    assert {:error, :already_approved} = Pipeline.approve_plan(system_scope(), run)
     assert %Issue{description: "Edited in Linear since."} = Repo.get!(Issue, task.issue_id)
   end
 
@@ -275,9 +275,91 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
     assert {:error, :stage_running} = Pipeline.approve_plan(system_scope(), working)
   end
 
-  test "a user without the project cannot approve it", %{task: task, run: run} do
-    assert {:error, :not_found} = Pipeline.approve_plan(user_scope(project_ids: []), run)
+  test "a tech lead without the project cannot approve it, and nobody else can approve at all", %{task: task, run: run} do
+    outsider = %{id: "usr_app_outsider", tech_lead: true, admin: false, project_ids: []}
+
+    assert {:error, :not_found} = Pipeline.approve_plan(user_scope(user: outsider), run)
+    assert {:error, :not_authorized} = Pipeline.approve_plan(user_scope(admin: true), run)
     assert %Task{stage: :plan} = Repo.reload!(task)
+  end
+
+  describe "a tech lead's approval" do
+    setup %{project: project, task: task} do
+      people =
+        Map.new([owner: false, lead: true], fn {who, tech_lead} ->
+          {:ok, user} =
+            Users.register_oauth_user(%{
+              github_id: "gh_app_#{who}",
+              login: "#{who}-approve-plan",
+              email: "#{who}-approve-plan@example.com"
+            })
+
+          {:ok, user} = Users.update_user(system_scope(), user, %{tech_lead: tech_lead, project_ids: [project.id]})
+          {who, user_scope(user: user)}
+        end)
+
+      Repo.update_all(from(i in Issue, where: i.id == ^task.issue_id), set: [owner_user_id: people.owner.user.id])
+      people
+    end
+
+    test "waits for the owner to send the plan, then starts the work and records who approved", %{
+      task: %Task{id: task_id} = task,
+      run: run,
+      owner: owner,
+      lead: %{user: %{id: lead_id}} = lead
+    } do
+      assert {:error, :plan_not_ready} = Pipeline.approve_plan(lead, run)
+      assert %Task{stage: :plan} = Repo.reload!(task)
+
+      {:ok, _sent} = Pipeline.send_plan_to_lead(owner, run)
+
+      assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(lead, run)
+      assert %Task{stage: :engineer} = Repo.reload!(task)
+      assert_enqueued(worker: StartEngineer, args: %{task_id: task_id})
+      assert %Round{approved_at: %DateTime{}, approved_by_id: ^lead_id} = Pipeline.read_plan(task)
+      assert [] = Pipeline.list_tasks(project_id: task.project_id, plan_ready: true)
+    end
+
+    test "needs no send when the lead owns the task", %{task: task, run: run, lead: %{user: %{id: lead_id}} = lead} do
+      Repo.update_all(from(i in Issue, where: i.id == ^task.issue_id), set: [owner_user_id: lead_id])
+
+      assert {:ok, %Run{}} = Pipeline.approve_plan(lead, run)
+      assert %Round{approved_at: %DateTime{}, approved_by_id: ^lead_id, ready_at: nil} = Pipeline.read_plan(task)
+    end
+
+    test "on work its owner already started only records the approval, once, on the first round", %{
+      task: %Task{id: task_id} = task,
+      run: run,
+      owner: owner,
+      lead: %{user: %{id: lead_id}} = lead
+    } do
+      {:ok, _started} = Pipeline.start_plan(owner, run)
+      {:ok, _later} = Pipeline.create_round(task)
+      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+
+      # Nothing is stubbed for Linear, so publishing again would fail the test.
+      assert {:ok, %Run{}} = Pipeline.approve_plan(lead, run)
+      assert %Task{stage: :engineer} = Repo.reload!(task)
+      assert_received {:pipeline_changed, ^task_id}
+
+      assert [%Round{number: 1, approved_at: %DateTime{}, approved_by_id: ^lead_id}, %Round{number: 2, approved_at: nil}] =
+               Pipeline.list_rounds(task)
+
+      assert {:error, :already_approved} = Pipeline.approve_plan(lead, run)
+    end
+
+    test "on a started task is refused for a project the lead cannot open, or a task with no plan", %{
+      task: task,
+      run: run
+    } do
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :engineer})
+      outsider = %{id: "usr_app_outsider", tech_lead: true, admin: false, project_ids: []}
+
+      assert {:error, :not_found} = Pipeline.approve_plan(user_scope(user: outsider), run)
+
+      Repo.delete_all(from(r in Round, where: r.task_id == ^task.id))
+      assert {:error, :no_plan} = Pipeline.approve_plan(system_scope(), run)
+    end
   end
 
   test "the ticket's priority and estimate go to the issue with its title and description", %{task: task, run: run} do
@@ -511,7 +593,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
       assert {:ok, _approved} = Pipeline.approve_plan(system_scope(), run)
 
       # No Linear stub is queued, so a second issueCreate would raise.
-      assert {:error, {:invalid_stage, :split}} = Pipeline.approve_plan(system_scope(), run)
+      assert {:error, :already_approved} = Pipeline.approve_plan(system_scope(), run)
       assert length(Pipeline.list_tasks(parent_task_id: task.id)) == 3
     end
 

@@ -12,6 +12,7 @@ defmodule Rail.Pipeline.Schemas.Task do
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects.Schemas.Project
+  alias Rail.Scope
   alias Rail.Users.Schemas.User
 
   # The linear pipeline, then stages a task can be parked in off that path.
@@ -121,6 +122,12 @@ defmodule Rail.Pipeline.Schemas.Task do
     |> validate_number(:split_position, greater_than: 0)
     |> validate_builds_on()
   end
+
+  @doc """
+  True when the scope's user owns the task's issue. Requires `issue` to be preloaded.
+  """
+  def owned_by?(%__MODULE__{issue: %Issue{owner_user_id: owner_id}}, %Scope{user: user}),
+    do: is_binary(owner_id) and is_map(user) and owner_id == user.id
 
   @doc """
   The first of the hundred ports the worktree of a task holding a slot owns.
