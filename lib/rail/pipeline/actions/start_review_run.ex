@@ -69,7 +69,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
 
     - A ruling the human changes, or a comment they leave, arrives as one message sent from Rail: rulings tagged `<ruling_change>` with what they were and are now, findings newly ruled Fix whole, and their comments, each numbered and tagged `<diff_comment>` with its file, line and code, `<screen_comment>` with the screen state, the commit it was written on and the path of the state's picture, or `<finding_comment>` with a finding's key, title and ruling and the piece of it commented on. Save a revised plan with `save_fix_plan` covering the round as it now stands, each comment by its number, and end your turn. A change asked for in the conversation is saved the same way.
     - A comment is not a finding and is never saved with `save_finding`.
-    - The human may ask to change the ticket, the acceptance criteria or the first plan. Only then, say so at the top of the plan under `### Changes to the plan`, each as what it was, what it becomes and who asked.
+    - The human may ask to change the ticket, the acceptance criteria or the first plan. Only then, say so at the top of the plan under `### Changes to the plan`, each as what it was, what it becomes and who asked, and pass the whole new `title` or `description`, criteria included, with `save_fix_plan`. Rail updates the ticket when the plan is approved.
 
     Findings:
 
