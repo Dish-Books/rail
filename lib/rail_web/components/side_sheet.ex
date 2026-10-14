@@ -18,7 +18,7 @@ defmodule RailWeb.Components.SideSheet do
       aria-label={@label}
       phx-window-keydown={@on_close}
       phx-key="Escape"
-      class="fixed right-0 top-[52px] bottom-0 w-[440px] max-w-full z-30 flex flex-col border-l border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 shadow-2xl"
+      class="fixed right-0 top-11 bottom-0 w-[440px] max-w-full z-30 flex flex-col border-l border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 shadow-2xl"
     >
       <div class="flex items-start gap-3 p-5 border-b border-slate-200 dark:border-slate-700">
         <div class="flex-1 min-w-0">{render_slot(@header)}</div>

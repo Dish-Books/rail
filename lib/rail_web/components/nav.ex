@@ -1,5 +1,7 @@
 defmodule RailWeb.Components.Nav do
-  @moduledoc false
+  @moduledoc """
+  The navigation rail and the bar across the top, kept narrow so the task page has the width.
+  """
   use RailWeb, :html
 
   alias RailWeb.Components.CaptureIssueModal
@@ -16,16 +18,16 @@ defmodule RailWeb.Components.Nav do
       data-qa="navigation_rail"
       class={[
         "nav-rail-transition flex flex-col justify-between h-full shrink-0 border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 select-none",
-        @is_rail_extended && "w-56",
-        !@is_rail_extended && "w-[68px]"
+        @is_rail_extended && "w-44",
+        !@is_rail_extended && "w-14"
       ]}
     >
       <!-- Top Group: Logo and Destinations -->
-      <div class="flex flex-col space-y-4 p-3">
+      <div class="flex flex-col space-y-3 p-2">
         <!-- Brand / Leading -->
-        <div class="flex items-center px-2 py-2" id="app-brand">
-          <div class="flex items-center justify-center h-9 w-9 rounded-lg bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 shrink-0">
-            <svg viewBox="0 0 64 64" class="h-9 w-9" fill="none" aria-hidden="true" id="brand-mark">
+        <div class="flex items-center px-1.5 py-1" id="app-brand">
+          <div class="flex items-center justify-center h-8 w-8 rounded-lg bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 shrink-0">
+            <svg viewBox="0 0 64 64" class="h-8 w-8" fill="none" aria-hidden="true" id="brand-mark">
               <mask id="brand-mark-rails" stroke-linejoin="round">
                 <path
                   d="M21 56V17H35a9.5 9.5 0 0 1 0 19H21M32 36 46 57"
@@ -171,7 +173,7 @@ defmodule RailWeb.Components.Nav do
       data-active={if @active, do: "true", else: "false"}
       title={@label}
       class={[
-        "flex items-center h-11 rounded-xl transition-colors relative group",
+        "flex items-center h-9 rounded-lg transition-colors relative group text-sm",
         @is_extended && "px-3",
         !@is_extended && "justify-center px-0",
         @active &&
@@ -220,7 +222,7 @@ defmodule RailWeb.Components.Nav do
     <header
       id="top-app-bar"
       data-qa="top_app_bar"
-      class="h-[52px] px-5 flex items-center justify-between border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shrink-0 z-20"
+      class="h-11 px-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shrink-0 z-20"
     >
       <!-- Left Group: Section Title & Project Filter -->
       <div class="flex items-center space-x-4">

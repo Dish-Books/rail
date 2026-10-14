@@ -87,6 +87,8 @@ defmodule RailWeb.OverviewLive do
             <.up_next runs={@waiting} blocked={@blocked} />
           </section>
 
+          <.plan_queue tasks={@plan_queue} now={@now} />
+
           <.review_queue tasks={@review_queue} now={@now} />
 
           <section id="since-yesterday-section">
@@ -201,6 +203,7 @@ defmodule RailWeb.OverviewLive do
 
     socket
     |> assign(:now, now)
+    |> assign(:plan_queue, plan_queue(socket.assigns.current_scope, project_id))
     |> assign(:waiting, waiting)
     |> assign(:blocked, blocked)
     |> assign(:review_queue, review_queue)
@@ -440,5 +443,12 @@ defmodule RailWeb.OverviewLive do
       age: format_age(DateTime.diff(now, task.updated_at)),
       children: statuses
     }
+  end
+
+  # Plans waiting on a tech lead, for the tech leads, who are the ones to approve them.
+  defp plan_queue(scope, project_id) do
+    if Scope.tech_lead?(scope),
+      do: Pipeline.list_tasks(project_id: project_id, plan_ready: true, preload: [:project, :issue, :rounds]),
+      else: []
   end
 end

@@ -57,6 +57,8 @@ export const DemoCaptions = {
 
     document.querySelectorAll("[data-at-ms]").forEach((row) => {
       if (playing && Number(row.dataset.atMs) === playing.at_ms) {
+        // The walkthrough follows the video, moving only when the beat playing changes.
+        if (!row.hasAttribute("aria-current")) row.scrollIntoView?.({ block: "nearest" });
         row.setAttribute("aria-current", "true");
       } else {
         row.removeAttribute("aria-current");

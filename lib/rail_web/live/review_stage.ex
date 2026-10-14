@@ -19,6 +19,7 @@ defmodule RailWeb.Live.ReviewStage do
   alias Rail.Pipeline.Schemas.FindingEvidence
   alias Rail.Pipeline.Schemas.FindingPlace
   alias Rail.Pipeline.Schemas.FixPlan
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
@@ -53,6 +54,7 @@ defmodule RailWeb.Live.ReviewStage do
       |> assign(assigns)
       |> assign_new(:error, fn -> nil end)
       |> assign_new(:selected_key, fn -> nil end)
+      |> assign_new(:plan_round, fn -> assigns[:url_round] end)
       |> assign_new(:advanced_to, fn -> nil end)
       |> assign_new(:filed_index, fn -> 0 end)
       |> assign_new(:browser, fn -> nil end)
@@ -124,9 +126,40 @@ defmodule RailWeb.Live.ReviewStage do
 
         <div class="@container h-full">
           <div class="h-full flex flex-col @xl:flex-row min-h-0">
-            <.review_items items={@items} picked={@item} target={@myself} />
+            <.review_items
+              items={@items}
+              picked={if @item == :fix_plan, do: :plan, else: @item}
+              target={@myself}
+            />
 
             <div id="review-pane" data-item={@item} class="flex-1 min-w-0 min-h-0 flex flex-col">
+              <form
+                :if={@item in [:plan, :fix_plan] and length(@round_options) > 1}
+                id="plan-rounds"
+                phx-change="pick_round"
+                phx-target={@myself}
+                class="shrink-0 flex items-center gap-2 px-5 py-2 border-b border-slate-200 dark:border-slate-700"
+              >
+                <label
+                  for="plan-round-select"
+                  class="text-xs font-semibold text-slate-500 dark:text-slate-400"
+                >
+                  Round
+                </label>
+                <select
+                  id="plan-round-select"
+                  name="round"
+                  class="rounded-md border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 py-1 pl-2 pr-8 text-xs font-semibold text-slate-800 dark:text-slate-100"
+                >
+                  <option
+                    :for={{value, label} <- @round_options}
+                    value={value}
+                    selected={value == @round_pick}
+                  >
+                    {label}
+                  </option>
+                </select>
+              </form>
               <div
                 :if={@item == :issue}
                 id="task-item-issue"
@@ -134,9 +167,14 @@ defmodule RailWeb.Live.ReviewStage do
               >
                 {render_slot(@issue)}
               </div>
-              <div :if={@item == :plan} id="task-item-plan" class="flex-1 min-h-0">
+              <div
+                :if={@item == :plan and @round_pick == "1"}
+                id="task-item-plan"
+                class="flex-1 min-h-0"
+              >
                 {render_slot(@plan)}
               </div>
+              <.round_plan :if={@item == :plan and @round_pick != "1"} round={@shown_round} />
               <div
                 :if={@item == :conversation}
                 id="task-item-conversation"
@@ -375,8 +413,27 @@ defmodule RailWeb.Live.ReviewStage do
   end
 
   @impl true
+  # Plan opens on the latest round: the next one's plan while it waits on approval.
+  def handle_event("pick_item", %{"item" => "plan"}, socket) do
+    item = if waiting_plan?(socket.assigns), do: :fix_plan, else: :plan
+    socket = socket |> pick(item) |> assign(:plan_round, nil) |> load()
+    {:noreply, socket}
+  end
+
   def handle_event("pick_item", %{"item" => item}, socket) do
     socket = socket |> pick(item(item) || :findings) |> load()
+    {:noreply, socket}
+  end
+
+  def handle_event("pick_round", %{"round" => "next"}, socket) do
+    socket = socket |> pick(:fix_plan) |> load()
+    {:noreply, socket}
+  end
+
+  # The URL names the round, so a refresh comes back to it.
+  def handle_event("pick_round", %{"round" => round}, socket) do
+    send(self(), {:plan_round, round})
+    socket = socket |> assign(:item, :plan) |> assign(:plan_round, round) |> load()
     {:noreply, socket}
   end
 
@@ -660,6 +717,9 @@ defmodule RailWeb.Live.ReviewStage do
 
     socket
     |> assign(:passes, passes)
+    |> assign(:fix_plan, fix_plan)
+    |> assign(:plan_state, plan_state)
+    |> assign_rounds(Pipeline.list_rounds(task), fix_plan, plan_state)
     |> assign(:plan_run, runs[:plan])
     |> assign(:plan_label, plan_label(task, runs[:plan]))
     |> assign(:chat_label, chat_label(task, socket.assigns.chat_run))
@@ -692,7 +752,11 @@ defmodule RailWeb.Live.ReviewStage do
     ruling_changes =
       if fix_plan, do: FixPlan.calculate_ruling_changes(fix_plan, task, findings), else: %{unsent: [], since_plan: []}
 
-    socket = if socket.assigns.item == :fix_plan and fix_plan == nil, do: pick(socket, :findings), else: socket
+    # Once approved, the next round's plan is that round's, read in the Plan item like any other.
+    socket =
+      if socket.assigns.item == :fix_plan and (fix_plan == nil or plan_state == :approved),
+        do: pick(socket, :plan),
+        else: socket
 
     socket
     |> assign(:fix_plan, fix_plan)
@@ -900,8 +964,7 @@ defmodule RailWeb.Live.ReviewStage do
     }
 
     items =
-      page_items(socket.assigns) ++
-        shown(socket.assigns, [findings, fix_plan_item(socket.assigns), diff, screens, demo, browser])
+      page_items(socket.assigns) ++ shown(socket.assigns, [findings, diff, screens, demo, browser])
 
     assign(socket, :items, Enum.reject(items, &(&1 in [nil, false])))
   end
@@ -916,11 +979,36 @@ defmodule RailWeb.Live.ReviewStage do
 
   # Each part of the work shows once there is something of it to read: the diff and the browser once the task is
   # built, the rest once it is reviewed.
-  defp shown(%{task: task, passes: passes}, [findings, fix_plan, diff, screens, demo, browser]) do
+  defp shown(%{task: task, passes: passes}, [findings, diff, screens, demo, browser]) do
     reviewed? = task.stage in [:review, :finalize, :merged] or passes != []
     built? = task.stage != :plan
-    [reviewed? && findings, fix_plan, built? && diff, reviewed? && screens, reviewed? && demo, built? && browser]
+    [reviewed? && findings, built? && diff, reviewed? && screens, reviewed? && demo, built? && browser]
   end
+
+  # The rounds the Plan item reads: each one approved, and the next one's while it waits. A round's plan reads as
+  # it was approved; the first round's is the whole combined plan.
+  defp assign_rounds(socket, rounds, fix_plan, plan_state) do
+    next? = fix_plan != nil and plan_state != :approved
+
+    options =
+      Enum.map(rounds, &{to_string(&1.number), round_label(&1)}) ++
+        if(next?, do: [{"next", "Round #{length(rounds) + 1} · waiting on approval"}], else: [])
+
+    latest = if rounds == [], do: "1", else: to_string(List.last(rounds).number)
+    asked = if socket.assigns.item == :fix_plan, do: "next", else: socket.assigns.plan_round || latest
+    pick = if Enum.any?(options, &(elem(&1, 0) == asked)), do: asked, else: latest
+
+    socket
+    |> assign(:round_options, options)
+    |> assign(:round_pick, pick)
+    |> assign(:shown_round, Enum.find(rounds, &(to_string(&1.number) == pick)))
+  end
+
+  defp round_label(%Round{number: 1}), do: "Round 1 · the plan"
+  defp round_label(%Round{number: number}), do: "Round #{number}"
+
+  defp waiting_plan?(%{fix_plan: %FixPlan{}, plan_state: state}), do: state != :approved
+  defp waiting_plan?(_assigns), do: false
 
   # The whole task's items before the review's: the issue, the plan, the conversation and a split's children.
   defp page_items(assigns) do
@@ -935,16 +1023,19 @@ defmodule RailWeb.Live.ReviewStage do
         dot: nil,
         mark: nil
       },
-      %{
-        key: :plan,
-        label: "Plan",
-        icon: "pi-clipboard-text",
-        picked_icon: "pi-clipboard-text-fill",
-        state: assigns.plan_label,
-        badge: nil,
-        dot: if(assigns.task.stage == :plan and Run.running?(assigns.plan_run), do: :running),
-        mark: nil
-      },
+      Map.merge(
+        %{
+          key: :plan,
+          label: "Plan",
+          icon: "pi-clipboard-text",
+          picked_icon: "pi-clipboard-text-fill",
+          state: assigns.plan_label,
+          badge: nil,
+          dot: if(assigns.task.stage == :plan and Run.running?(assigns.plan_run), do: :running),
+          mark: nil
+        },
+        fix_plan_item(assigns) || %{}
+      ),
       %{
         key: :conversation,
         label: "Chat",
@@ -969,12 +1060,13 @@ defmodule RailWeb.Live.ReviewStage do
     ]
   end
 
+  # The next round's plan, while there is one, is what the Plan item says it is doing.
   defp fix_plan_item(%{fix_plan: nil}), do: nil
+  defp fix_plan_item(%{plan_state: :approved}), do: nil
 
-  defp fix_plan_item(%{fix_plan: fix_plan, plan_state: plan_state, run: run}) do
+  defp fix_plan_item(%{plan_state: plan_state, run: run}) do
     {state, dot, mark} =
       case {Run.running?(run), plan_state} do
-        {_running, :approved} -> {"Approved by #{fix_plan.approved_by}", nil, :done}
         {true, :writing} -> {"Writing the plan", :running, nil}
         {true, _revising} -> {"Revising", :running, nil}
         {false, :waiting} -> {"Waiting on your approval", nil, :waiting}
@@ -983,16 +1075,7 @@ defmodule RailWeb.Live.ReviewStage do
         {false, :revising} -> {"Revision stopped", nil, :stopped}
       end
 
-    %{
-      key: :fix_plan,
-      label: "Fix plan",
-      icon: "pi-clipboard-text",
-      picked_icon: "pi-clipboard-text-fill",
-      state: state,
-      badge: nil,
-      dot: dot,
-      mark: mark
-    }
+    %{state: state, dot: dot, mark: mark}
   end
 
   # What a plan being revised is revised on: the rulings changed since it was saved, the comments it does not cover,

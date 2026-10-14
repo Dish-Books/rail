@@ -53,6 +53,39 @@ defmodule RailWeb.OverviewLiveTest do
     assert has_element?(view, "#theme-toggle-button")
   end
 
+  # A tech lead approves plans, so the plans sent to them are theirs to see; anyone else gets none.
+  test "a tech lead sees the plans sent to them, the one started without approval marked, and nobody else does", %{
+    conn: conn,
+    project: project
+  } do
+    {:ok, lead} =
+      Users.register_oauth_user(%{github_id: "gh_ovl_lead", login: "ovl-lead", email: "ovl-lead@example.com"})
+
+    {:ok, lead} = Users.update_user(system_scope(), lead, %{tech_lead: true, project_ids: [project.id]})
+
+    {:ok, dev} =
+      Users.register_oauth_user(%{github_id: "gh_ovl_dev", login: "ovl-dev", email: "ovl-dev@example.com", admin: true})
+
+    sent = learnings_task(project, "OVL-1", :plan)
+    started = learnings_task(project, "OVL-2", :engineer)
+    unsent = learnings_task(project, "OVL-3", :plan)
+
+    for {task, ready_at} <- [{sent, DateTime.utc_now()}, {started, DateTime.utc_now()}, {unsent, nil}] do
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+      Repo.insert!(%Round{task_id: task.id, number: 1, plan: "A plan.", ready_at: ready_at})
+    end
+
+    assert {:ok, view, _html} = live(log_in_user(conn, lead), ~p"/")
+    assert has_element?(view, "#plan-queue-count", "2 plans")
+    assert has_element?(view, "#plan-queue-row-OVL-1[href='/tasks/#{sent.id}?item=plan']")
+    refute has_element?(view, "#plan-queue-row-OVL-1 [data-qa=plan_queue_started]")
+    assert has_element?(view, "#plan-queue-row-OVL-2 [data-qa=plan_queue_started]", "Started without approval")
+    refute has_element?(view, "#plan-queue-row-OVL-3")
+
+    assert {:ok, view, _html} = live(log_in_user(conn, dev), ~p"/")
+    refute has_element?(view, "#plan-queue-section")
+  end
+
   test "a task leaves without a reload when Linear deletes its issue, and stays when Linear archives it", %{
     conn: conn,
     project: project
