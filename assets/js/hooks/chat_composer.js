@@ -58,14 +58,15 @@ export const ChatComposer = {
     });
   },
 
-  // A draft only fills a box the server left empty, and the server hears it as typed,
-  // so the next render does not clear it.
+  // A draft only fills a box the server left empty. The server is told it directly,
+  // since an input event fired while the page is still joining is dropped, and the
+  // render that follows would empty the box again.
   restore() {
     const draft = this.key ? draftStore.read(this.key) : "";
     if (draft === "" || this.el.value !== "") return;
 
     this.el.value = draft;
-    this.el.dispatchEvent(new Event("input", { bubbles: true }));
+    this.pushEventTo(this.el, "chat_input_change", { message: draft });
   },
 
   updated() {

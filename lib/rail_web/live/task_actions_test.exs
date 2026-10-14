@@ -732,6 +732,7 @@ defmodule RailWeb.Live.TaskActionsTest do
       assert {:ok, as_dan, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
       assert has_element?(as_dan, "#task-plan-unapproved", "Plan not approved")
       refute has_element?(as_dan, "#task-approve-plan")
+      assert has_element?(as_dan, "#review-item-plan[title='Plan: Started without approval']")
 
       assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
       assert has_element?(view, "#task-plan-unapproved", "Plan not approved")

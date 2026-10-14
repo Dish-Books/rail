@@ -128,6 +128,24 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
       assert Enum.any?(errors, &(&1 =~ "has `#### Finding one` under `### What changes`"))
     end
 
+    # A person can ask for a change no finding or comment carries, as with nothing outstanding at Finalize.
+    test "a change only a person asked for goes under its own item, and a file for it names it", %{fix_plan: fix_plan} do
+      plan =
+        "### Changes to the plan\n\n- Criterion 1: a dot, not parentheses.\n\n### What changes\n\n" <>
+          "#### Changes to the plan\n\nThe heading takes a dot.\n\n" <>
+          "### File-level changes\n\n- `lib/heading.ex`: the dot. For the changes to the plan."
+
+      fix_plan = %{fix_plan | findings: [], comments: []}
+
+      assert {:ok, %FixPlan{covered_keys: [], covered_comments: 0}} =
+               fix_plan |> FixPlan.save_changeset(%{"plan" => plan}) |> apply_action(:update)
+
+      unnamed = String.replace(plan, " For the changes to the plan.", "")
+      assert %{plan: [error]} = fix_plan |> FixPlan.save_changeset(%{"plan" => unnamed}) |> errors_on()
+      assert error =~ "`lib/heading.ex` under `### File-level changes` naming no item"
+      assert error =~ "`changes to the plan`"
+    end
+
     test "an empty plan is refused", %{fix_plan: fix_plan} do
       assert %{plan: ["can't be blank"]} = fix_plan |> FixPlan.save_changeset(%{"plan" => " "}) |> errors_on()
     end
@@ -280,8 +298,23 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
       fix_plan = %{fix_plan | findings: []}
       {:ok, saved} = fix_plan |> FixPlan.save_changeset(%{"plan" => plan}) |> apply_action(:update)
 
-      assert %{summary: "", files: [], verification: nil, counts: %{files: 0}} = FixPlan.build_sheet(saved)
+      assert %{summary: "", files: [], verification: nil, changes: nil, counts: %{files: 0}} =
+               FixPlan.build_sheet(saved)
+
       assert FixPlan.build_sheet(fix_plan) == nil
+    end
+
+    test "the changes a person asked for read as one, the section first and then its item", %{fix_plan: fix_plan} do
+      plan =
+        "### Changes to the plan\n\n- Criterion 1: a dot.\n\n### What changes\n\n" <>
+          "#### Changes to the plan\n\nThe heading takes a dot.\n\n### File-level changes\n\n" <>
+          "- `lib/heading.ex`: the dot. For the changes to the plan."
+
+      {:ok, saved} =
+        %{fix_plan | findings: [], comments: []} |> FixPlan.save_changeset(%{"plan" => plan}) |> apply_action(:update)
+
+      assert %{changes: "- Criterion 1: a dot.\n\nThe heading takes a dot.", items: [], counts: %{files: 1}} =
+               FixPlan.build_sheet(saved)
     end
   end
 

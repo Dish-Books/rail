@@ -21,7 +21,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveFixPlan do
 
       {:error, :no_fix_plan} ->
         {:refused,
-         "Nothing saved: no fix plan is due. A plan is due only after a Send in the Review tray and before its plan is approved."}
+         "Nothing saved: no fix plan is due. A plan is due once the round's review is saved, until the task merges."}
 
       {:error, changeset} ->
         {:error, changeset}

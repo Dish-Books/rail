@@ -709,6 +709,7 @@ defmodule RailWeb.Live.TaskDetail do
     findings = Pipeline.list_findings(task)
     passes = Pipeline.read_review(task)
     runs = role_runs(task)
+    rounds = Pipeline.list_rounds(task)
     ci = runs[:engineer] && Pipeline.get_ci_status(runs[:engineer])
     fix_plan = Pipeline.read_fix_plan(task)
     plan_state = fix_plan && FixPlan.state(fix_plan, task, findings)
@@ -720,9 +721,9 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign(:passes, passes)
     |> assign(:fix_plan, fix_plan)
     |> assign(:plan_state, plan_state)
-    |> assign_rounds(Pipeline.list_rounds(task), fix_plan, plan_state)
+    |> assign_rounds(rounds, fix_plan, plan_state)
     |> assign(:plan_run, runs[:plan])
-    |> assign(:plan_label, plan_label(task, runs[:plan]))
+    |> assign(:plan_label, plan_label(task, runs[:plan], List.first(rounds)))
     |> assign(:chat_label, chat_label(task, socket.assigns.chat_run))
     |> assign_fix_plan(fix_plan, plan_state, findings)
     |> assign(:findings, findings)
@@ -1147,10 +1148,12 @@ defmodule RailWeb.Live.TaskDetail do
     for %Run{role: %Role{stage: stage}} = run <- runs, into: %{}, do: {stage, run}
   end
 
-  defp plan_label(%Task{stage: :plan}, plan_run),
+  defp plan_label(%Task{stage: :plan}, plan_run, _first),
     do: if(Run.running?(plan_run), do: "Plan is writing", else: "Not approved yet")
 
-  defp plan_label(%Task{}, _plan_run), do: "Approved"
+  # Work its owner started without a tech lead's approval still waits on one.
+  defp plan_label(%Task{}, _plan_run, %Round{approved_at: nil}), do: "Started without approval"
+  defp plan_label(%Task{}, _plan_run, _approved_or_none), do: "Approved"
 
   defp chat_label(%Task{stage: :plan}, _run), do: "Talk to Plan"
   defp chat_label(%Task{}, %Run{}), do: "Talk to the review agent"

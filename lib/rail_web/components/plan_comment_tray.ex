@@ -1,7 +1,8 @@
 defmodule RailWeb.Components.PlanCommentTray do
   @moduledoc """
-  The reader's unsent plan comments, above the Plan composer as the message they will become, with Send beside
-  them while Plan can take a message. Only their author sees them.
+  The reader's unsent ticket, design and plan comments, above the composer as the message they will become, with
+  Send beside them while their agent can take a message: Plan, and once the work started the review agent. Only
+  their author sees them.
   """
   use RailWeb, :html
 
@@ -11,6 +12,7 @@ defmodule RailWeb.Components.PlanCommentTray do
   attr :open, :boolean, default: true
   attr :can_send, :boolean, required: true
   attr :plan_running, :boolean, required: true
+  attr :agent, :string, default: "Plan", doc: "who the comments go to: Plan, and once the work started the review agent"
   attr :target, :any, required: true
 
   def plan_comment_tray(assigns) do
@@ -52,7 +54,7 @@ defmodule RailWeb.Components.PlanCommentTray do
           phx-click="send_plan_comments"
           phx-disable-with="Sending…"
           phx-target={@target}
-          title={hint(@plan_running)}
+          title={hint(@agent, @plan_running)}
           class="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 shadow-xs whitespace-nowrap cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:opacity-50"
         >
           <.icon name="pi-paper-plane-tilt" class="size-4" />
@@ -138,7 +140,7 @@ defmodule RailWeb.Components.PlanCommentTray do
             @plan_running && "bg-green-500",
             not @plan_running && "bg-slate-400"
           ]} />
-          <span class="truncate">{hint(@plan_running)}</span>
+          <span class="truncate">{hint(@agent, @plan_running)}</span>
         </span>
       </div>
     </div>
@@ -148,8 +150,8 @@ defmodule RailWeb.Components.PlanCommentTray do
   defp element(%{target: :design, element_text: ""} = comment), do: "<#{comment.element_tag}>"
   defp element(comment), do: ~s("#{comment.element_text}")
 
-  defp hint(true), do: "Plan is working. These wait until its turn ends."
-  defp hint(false), do: "Plan is idle and starts on these at once."
+  defp hint(agent, true), do: "#{agent} is working. These wait until its turn ends."
+  defp hint(agent, false), do: "#{agent} is idle and starts on these at once."
 
   defp noun(1), do: " comment"
   defp noun(_count), do: " comments"

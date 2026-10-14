@@ -108,6 +108,17 @@ defmodule RailWeb.Components.PlanCommentTrayTest do
     assert working |> Floki.parse_fragment!() |> Floki.find("#send-plan-comments") |> Floki.text() =~ ~r/Send 1\s*comment/
     assert working =~ "Plan is working. These wait until its turn ends."
 
+    review =
+      render_component(&PlanCommentTray.plan_comment_tray/1,
+        comments: comments,
+        can_send: true,
+        plan_running: false,
+        agent: "The review agent",
+        target: nil
+      )
+
+    assert review =~ "The review agent is idle and starts on these at once."
+
     closed =
       render_component(&PlanCommentTray.plan_comment_tray/1,
         comments: comments,

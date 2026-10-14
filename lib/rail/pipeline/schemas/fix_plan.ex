@@ -12,6 +12,9 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
 
   @sections ["Changes to the plan", "What changes", "File-level changes", "Verification"]
 
+  # The item a change a person asked for, to the ticket or the design, goes under when no finding or comment carries it.
+  @changes {:changes, :plan}
+
   @counted "\\d+ (?:finding|changed ruling|comment)s?"
   @sent Regex.compile!("\\ASent (#{@counted}(?:(?:, | and )#{@counted})*)\\.\\n")
 
@@ -139,9 +142,9 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
   end
 
   @doc """
-  Lays the plan out for the Review tab: its summary, an item per finding and comment it covers, each with the
-  numbers of the files that name it, the numbered files, Verification, the counts and whether it covers the round as
-  sent. `nil` before a plan is saved.
+  Lays the plan out for the Review tab: its summary, the changes to the ticket or the design a person asked for, an
+  item per finding and comment it covers, each with the numbers of the files that name it, the numbered files,
+  Verification, the counts and whether it covers the round as sent. `nil` before a plan is saved.
   """
   def build_sheet(%__MODULE__{plan: nil}), do: nil
 
@@ -180,12 +183,22 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
       end)
 
     verification = sections |> List.keyfind("Verification", 0, {nil, []}) |> elem(1) |> Enum.join("\n") |> String.trim()
+    # What a person asked to change, to the ticket or the design, read first: the section and its item.
+    changes =
+      [
+        sections |> List.keyfind("Changes to the plan", 0, {nil, []}) |> elem(1) |> Enum.join("\n"),
+        bodies[@changes] || ""
+      ]
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.join("\n\n")
 
     %{
       summary: lead |> Enum.reject(&String.match?(&1, ~r/\A\#{1,2} /)) |> Enum.join("\n") |> String.trim(),
       items: findings ++ comments,
       files: files,
       verification: if(verification != "", do: verification),
+      changes: if(changes != "", do: changes),
       counts: %{findings: length(findings), comments: length(comments), files: length(files)},
       covers_round:
         MapSet.new(fix_plan.covered_keys) == MapSet.new(fix_plan.findings, & &1.key) and
@@ -279,7 +292,10 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
 
     errors ++
       Enum.map(named -- Enum.uniq(named), &"names #{item(&1)} under `### What changes` more than once") ++
-      Enum.map(Enum.uniq(named) -- sent, &"names #{item(&1)} under `### What changes`, which this round did not send") ++
+      Enum.map(
+        Enum.uniq(named) -- [@changes | sent],
+        &"names #{item(&1)} under `### What changes`, which this round did not send"
+      ) ++
       Enum.map(sent -- named, &"leaves out #{item(&1)}; give it a `####` of its own under `### What changes`")
   end
 
@@ -287,21 +303,25 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
 
   defp validate_files_named(changeset, %__MODULE__{} = fix_plan) do
     validate_change(changeset, :plan, fn :plan, plan ->
-      items = Enum.map(fix_plan.findings, &{:finding, &1.key}) ++ Enum.map(fix_plan.comments, &{:comment, &1.number})
+      items =
+        [@changes | Enum.map(fix_plan.findings, &{:finding, &1.key})] ++
+          Enum.map(fix_plan.comments, &{:comment, &1.number})
 
       for file <- ImplementationPlan.build_file_changes(plan) || [],
           not Enum.any?(items, &names?(file.description, &1)),
           do:
             {:plan,
-             "has `#{file.path}` under `### File-level changes` naming no item; end its bullet with the finding's key in backticks or `comment N`"}
+             "has `#{file.path}` under `### File-level changes` naming no item; end its bullet with the finding's key in backticks, `comment N` or `changes to the plan`"}
     end)
   end
 
   defp names?(description, {:finding, key}), do: String.contains?(description, "`#{key}`")
   defp names?(description, {:comment, number}), do: Regex.match?(~r/\bcomment #{number}\b/i, description)
+  defp names?(description, @changes), do: Regex.match?(~r/\bchanges to the plan\b/i, description)
 
   defp item({:finding, key}), do: "`#{key}`"
   defp item({:comment, number}), do: "comment #{number}"
+  defp item(@changes), do: "the changes to the plan"
 
   # Each `####` under What changes is a finding by its key in backticks or a comment by its number.
   defp items(lines) do
@@ -315,9 +335,14 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
             id = {:comment, String.to_integer(Enum.at(match, 1))}
             {errors, [id | named], bodies, id}
 
+          Regex.match?(~r/\A#### Changes to the plan\s*\z/i, line) ->
+            {errors, [@changes | named], bodies, @changes}
+
           String.starts_with?(line, "####") ->
-            {["has `#{line}` under `### What changes`; each item is `#### `key`` or `#### Comment N`" | errors], named,
-             bodies, nil}
+            {[
+               "has `#{line}` under `### What changes`; each item is `#### `key``, `#### Comment N` or `#### Changes to the plan`"
+               | errors
+             ], named, bodies, nil}
 
           current == nil and String.trim(line) != "" ->
             {["has text under `### What changes` before its first `####` item" | errors], named, bodies, current}

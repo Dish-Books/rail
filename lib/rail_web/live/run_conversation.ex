@@ -120,6 +120,7 @@ defmodule RailWeb.Live.RunConversation do
           open={@tray_open}
           can_send={Run.can_chat?(@selected_run)}
           plan_running={Run.running?(@selected_run)}
+          agent={if review_run?(assigns), do: "The review agent", else: "Plan"}
           target={@myself}
         />
 
@@ -284,6 +285,7 @@ defmodule RailWeb.Live.RunConversation do
               open={@tray_open}
               can_send={Run.can_chat?(@selected_run)}
               plan_running={Run.running?(@selected_run)}
+              agent={if review_run?(assigns), do: "The review agent", else: "Plan"}
               target={@myself}
             />
 
