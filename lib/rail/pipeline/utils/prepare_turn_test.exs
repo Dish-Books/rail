@@ -50,22 +50,11 @@ defmodule Rail.Pipeline.Utils.PrepareTurnTest do
     assert [] = Pipeline.list_run_events(run)
   end
 
-  # A resumed turn is sent only its message, so the one that finds the branch behind opens by saying so.
-  test "opens a turn whose branch is behind the default branch by saying so", %{
-    run: run,
-    task: %Task{worktree_path: worktree_path}
-  } do
+  # Update is how a branch is brought up to date, as a round of its own, so a turn is never told to merge first.
+  test "says nothing of a branch behind the default branch", %{run: run, task: %Task{worktree_path: worktree_path}} do
     git!(worktree_path, ["commit", "--allow-empty", "-m", "landed on main"])
     git!(worktree_path, ["update-ref", "refs/remotes/origin/main", "HEAD"])
     git!(worktree_path, ["reset", "--quiet", "--hard", "HEAD~1"])
-    expect(Git, :fetch_default_branch, fn _project, _path -> :ok end)
-    expect(Git, :set_commit_identity, fn _task -> :ok end)
-
-    assert prepare_turn(run) ==
-             "Rail fetched origin/main as this turn started, and the branch is behind it: bring the branch up " <>
-               "to date with it, by merging it in, before anything else.\n\n"
-
-    git!(worktree_path, ["merge", "--quiet", "--no-edit", "origin/main"])
     expect(Git, :fetch_default_branch, fn _project, _path -> :ok end)
     expect(Git, :set_commit_identity, fn _task -> :ok end)
 

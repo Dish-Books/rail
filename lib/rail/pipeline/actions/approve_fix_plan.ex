@@ -3,13 +3,16 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlan do
   Approves the plan the review agent saved for the next round, the only thing that starts its changes: the plan
   becomes the task's next round, approved, and the task goes back to Engineer, where a `StartEngineer` job
   committed with the move starts the engineer on it with a clean conversation. Only the version the person read,
-  still waiting, is approved. Anyone who can open the project approves a later round's plan.
+  still waiting, is approved. Anyone who can open the project approves a later round's plan. A plan that changes
+  the ticket, as a person asked, puts the new ticket on its round and on the issue.
   """
 
   import Ecto.Query
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.WriteFixPlan
 
+  alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.Round
@@ -59,7 +62,7 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlan do
   defp approve(%Scope{user: user}, %Task{} = task, %FixPlan{} = fix_plan) do
     {:ok, round} = Pipeline.create_round(task)
 
-    {:ok, _approved} =
+    {:ok, approved} =
       round
       |> Round.approve_changeset(user && user.id)
       |> Ecto.Changeset.change(
@@ -70,7 +73,10 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlan do
         retake_screens: fix_plan.retake_screens,
         base_head: fix_plan.head
       )
+      |> amend(fix_plan)
       |> Repo.update()
+
+    :ok = publish(task, approved, fix_plan)
 
     # A task a teammate marked ready has changes coming, so it is not ready any more.
     {:ok, task} = task |> Task.changeset(%{marked_ready_at: nil, marked_ready_by_id: nil}) |> Repo.update()
@@ -80,5 +86,33 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlan do
     name = if user, do: user.name || user.login, else: "Rail"
     :ok = write_fix_plan(task, %{fix_plan | approved_by: name, approved_at: DateTime.utc_now()})
     task
+  end
+
+  # The round carries the ticket as the plan changed it, so every agent after reads the criteria as they now stand.
+  defp amend(changeset, %FixPlan{title: nil, description: nil}), do: changeset
+
+  defp amend(changeset, %FixPlan{} = fix_plan) do
+    ticket = Ecto.Changeset.get_field(changeset, :ticket) || %Round.Ticket{}
+
+    Ecto.Changeset.put_embed(changeset, :ticket, %{
+      Map.from_struct(ticket)
+      | title: fix_plan.title || ticket.title,
+        description: fix_plan.description || ticket.description
+    })
+  end
+
+  # The tracker's ticket follows, keeping the design section approval added below the description.
+  defp publish(%Task{}, %Round{}, %FixPlan{title: nil, description: nil}), do: :ok
+
+  defp publish(%Task{issue: %Issue{} = issue}, %Round{}, %FixPlan{} = fix_plan) do
+    design =
+      case String.split(issue.description || "", "\n\n## Design: ", parts: 2) do
+        [_description, section] -> "\n\n## Design: " <> section
+        [_none] -> ""
+      end
+
+    attrs = %{title: fix_plan.title, description: fix_plan.description && fix_plan.description <> design}
+    {:ok, _issue} = Issues.update_issue(issue, Map.reject(attrs, fn {_field, value} -> is_nil(value) end))
+    :ok
   end
 end

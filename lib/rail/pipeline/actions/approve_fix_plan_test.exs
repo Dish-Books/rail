@@ -116,6 +116,39 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
     assert_received {:pipeline_changed, ^task_id}
   end
 
+  # Every agent after reads the criteria as they now stand, and the tracker's ticket keeps its design.
+  test "a plan that changes the ticket puts it on the new round and the issue once approved", %{
+    task: task,
+    run: run,
+    ada: ada
+  } do
+    {:ok, _designed} =
+      Issues.update_issue(task.issue, %{description: "Filter by vendor.\n\n## Design: Chips\n\nChips."})
+
+    amended = "### Changes to the plan\n\n- Criteria: vendor becomes tag, as Ada asked.\n\n" <> @plan
+
+    {:ok, _saved} =
+      Pipeline.save_fix_plan(task, %{"plan" => amended, "title" => "Filter by tag", "description" => "Filter by tag."})
+
+    reject(Tools, :start_os_process, 2)
+    assert {:ok, %Run{}} = Pipeline.approve_fix_plan(ada, run, 2)
+
+    assert %Round{number: 2, ticket: %Round.Ticket{title: "Filter by tag", description: "Filter by tag."}} =
+             Pipeline.read_plan(task)
+
+    assert %{title: "Filter by tag", description: "Filter by tag.\n\n## Design: Chips\n\nChips."} =
+             Repo.reload!(task.issue)
+  end
+
+  test "a ticket with no design section takes the new description as it is", %{task: task, run: run, ada: ada} do
+    amended = "### Changes to the plan\n\n- Criteria: vendor becomes tag, as Ada asked.\n\n" <> @plan
+    {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => amended, "description" => "Filter by tag."})
+    reject(Tools, :start_os_process, 2)
+
+    assert {:ok, %Run{}} = Pipeline.approve_fix_plan(ada, run, 2)
+    assert %{description: "Filter by tag."} = Repo.reload!(task.issue)
+  end
+
   test "a replaced version, or a plan revising, is refused and nothing starts", %{
     task: task,
     run: run,

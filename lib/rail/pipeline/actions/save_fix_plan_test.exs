@@ -96,4 +96,23 @@ defmodule Rail.Pipeline.Actions.SaveFixPlanTest do
 
     assert %FixPlan{retake_screens: true, record_demo: true} = Pipeline.read_fix_plan(task)
   end
+
+  # A changed ticket is said where the person approving reads it, before anything is approved on it.
+  test "a plan that changes the ticket says so under Changes to the plan, or is refused", %{task: task} do
+    assert {:error, changeset} = Pipeline.save_fix_plan(task, %{"plan" => @plan, "description" => "Filter by tag."})
+
+    assert %{plan: ["changes the ticket, so it opens with a `### Changes to the plan` section" <> _rest]} =
+             errors_on(changeset)
+
+    amended = "### Changes to the plan\n\n- Criteria: vendor becomes tag, as Ada asked.\n\n" <> @plan
+
+    assert {:ok, %FixPlan{title: "Filter by tag", description: "Filter by tag."}} =
+             Pipeline.save_fix_plan(task, %{
+               "plan" => amended,
+               "title" => "Filter by tag",
+               "description" => "Filter by tag."
+             })
+
+    assert %FixPlan{title: "Filter by tag", description: "Filter by tag."} = Pipeline.read_fix_plan(task)
+  end
 end

@@ -551,6 +551,16 @@ defmodule Rail.Mcp.Utils.McpTools do
           "retake_screens" => %{
             "type" => "boolean",
             "description" => "True when the screen states should be photographed again once this round is built."
+          },
+          "title" => %{
+            "type" => "string",
+            "description" => "Only when a person asked to change the ticket: its whole new title."
+          },
+          "description" => %{
+            "type" => "string",
+            "description" =>
+              "Only when a person asked to change the ticket or its acceptance criteria: its whole new description, " <>
+                "criteria included. The ticket is updated when the plan is approved."
           }
         },
         "required" => ["plan"]

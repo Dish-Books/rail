@@ -22,6 +22,8 @@ defmodule Rail.Pipeline.Utils.WriteFixPlan do
         :covered_comments,
         :record_demo,
         :retake_screens,
+        :title,
+        :description,
         :version,
         :saved_at,
         :approved_by,

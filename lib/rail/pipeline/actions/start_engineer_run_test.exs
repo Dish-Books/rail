@@ -80,8 +80,8 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
       assert prompt =~ "Work you leave uncommitted is not sent on"
       assert prompt =~ "Your last message is what the human reads, not the commit body"
       assert prompt =~ "End every commit message with the line `Ticket: SEN-1`."
-      assert prompt =~ "check your branch against `origin/main`, which Rail fetched as the turn started"
-      assert prompt =~ "bring it up to date by merging it in"
+      assert prompt =~ "Never merge `origin/main` in unless the plan says to"
+      assert prompt =~ "a person brings the branch up to date with Update, which is a round of its own"
 
       assert prompt =~
                "Never rewrite commit history: no rebase, no amend, no reset or squash of a commit, nothing forced."

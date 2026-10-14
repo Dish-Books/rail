@@ -29,6 +29,9 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
     field :record_demo, :boolean, default: false
     # Whether the plan asks for the screen states to be shot again once its round is built.
     field :retake_screens, :boolean, default: false
+    # The ticket as a person asked it changed, whole, or nil where they asked for no change.
+    field :title, :string
+    field :description, :string
     field :version, :integer, default: 0
     field :saved_at, :utc_datetime_usec
     field :approved_by, :string
@@ -61,6 +64,8 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
       :covered_comments,
       :record_demo,
       :retake_screens,
+      :title,
+      :description,
       :version,
       :saved_at,
       :approved_by,
@@ -78,10 +83,11 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
   """
   def save_changeset(%__MODULE__{} = fix_plan, attrs) do
     fix_plan
-    |> cast(attrs, [:plan, :record_demo, :retake_screens])
+    |> cast(attrs, [:plan, :record_demo, :retake_screens, :title, :description])
     |> update_change(:plan, &String.trim/1)
     |> validate_required([:plan])
     |> validate_structure(fix_plan)
+    |> validate_amendments()
     |> ImplementationPlan.validate_file_changes(:plan)
     |> validate_files_named(fix_plan)
     |> then(fn changeset ->
@@ -374,4 +380,19 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
   end
 
   defp drop_code([]), do: []
+
+  # A changed ticket is said where the person reads the plan, before anything is approved on it.
+  defp validate_amendments(changeset) do
+    amended = get_field(changeset, :title) != nil or get_field(changeset, :description) != nil
+    plan = get_field(changeset, :plan) || ""
+
+    if amended and not String.contains?(plan, "### Changes to the plan"),
+      do:
+        add_error(
+          changeset,
+          :plan,
+          "changes the ticket, so it opens with a `### Changes to the plan` section saying what was asked, by whom, and what each part was and becomes"
+        ),
+      else: changeset
+  end
 end
