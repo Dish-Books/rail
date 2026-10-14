@@ -102,17 +102,21 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
   # A later round fixes what the review found, so the findings and the human's comments come with its plan.
   defp fixes(%Task{} = task) do
     case Pipeline.read_plan(task) do
-      %Round{number: number} when number > 1 -> format_findings(task) <> comments(Pipeline.read_fix_plan(task))
-      _first_or_none -> ""
+      %Round{number: number} = round when number > 1 ->
+        format_findings(task) <> comments(round, Pipeline.read_fix_plan(task))
+
+      _first_or_none ->
+        ""
     end
   end
 
-  defp comments(%FixPlan{comments: [_first | _rest] = comments}) do
+  # Only the fix plan this round was approved from answers comments: an Update's round has none of its own.
+  defp comments(%Round{plan_saved_at: saved_at}, %FixPlan{saved_at: saved_at, comments: [_first | _rest] = comments}) do
     lines = Enum.map_join(comments, "\n", &"#{&1.number}. On #{&1.place}: #{&1.text}")
     "The human's comments this round, by the numbers the plan uses:\n\n#{lines}\n\n"
   end
 
-  defp comments(_none), do: ""
+  defp comments(%Round{}, _none_or_another), do: ""
 
   defp ci(%Task{project: %Project{ci_command: command}}) when command in [nil, ""],
     do: "\n- This project has no CI command for Rail to run, so run its own checks yourself before you finish."

@@ -51,6 +51,10 @@ defmodule Rail.Pipeline.Schemas.Task do
     field :builds_on, {:array, :integer}, default: []
     # Finalize: who marked it ready, a merge started and not yet answered, GitHub's refusal and the squash commit.
     field :marked_ready_at, :utc_datetime_usec
+    # How the branch stood against the default branch when Rail last looked, for the Update the page offers.
+    field :base_behind, :boolean, default: false
+    field :base_conflicts, {:array, :string}, default: []
+    field :base_checked_at, :utc_datetime_usec
     field :merge_started_at, :utc_datetime_usec
     field :merge_error, :string
     field :merge_error_at, :utc_datetime_usec
@@ -93,7 +97,10 @@ defmodule Rail.Pipeline.Schemas.Task do
     :merge_error,
     :merge_error_at,
     :merged_by_id,
-    :merge_sha
+    :merge_sha,
+    :base_behind,
+    :base_conflicts,
+    :base_checked_at
   ]
 
   @required_fields [
