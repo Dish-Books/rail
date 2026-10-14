@@ -24,6 +24,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   """
 
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
+  import Rail.Pipeline.Utils.CheckRunFinished
   import Rail.Pipeline.Utils.CiRunFinished
   import Rail.Pipeline.Utils.DispatchMessage
   import Rail.Pipeline.Utils.EngineerRunFinished
@@ -116,11 +117,12 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp usage(%{"usage" => usage}) when is_map(usage), do: struct(Run.Usage, usage)
   defp usage(_other), do: nil
 
-  # A turn that is over drives no browser, and the next one signs in again, so whatever its
-  # subagents left open is closed rather than kept in the shared Chrome while a human rules.
-  defp end_turn(%Run{role: %Role{stage: :review_lead}, task: %Task{} = task} = run, %OsProcess{kind: :agent}) do
-    :ok = Tools.stop_browser_session(task)
-    say_uncommitted(run)
+  # A turn that is over drives no browser, and the next one signs in again, so the one it left open is
+  # closed rather than kept in the shared Chrome.
+  defp end_turn(%Run{role: %Role{stage: stage}, task: %Task{} = task} = run, %OsProcess{kind: :agent})
+       when stage in [:qa, :screens, :demo] do
+    :ok = Tools.stop_browser_session(task, to_string(stage))
+    run
   end
 
   defp end_turn(%Run{role: %Role{stage: :engineer}} = run, %OsProcess{kind: :agent}), do: say_uncommitted(run)
@@ -194,6 +196,8 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp finish_action(%Run{role: %Role{stage: :plan}}), do: &plan_run_finished/2
   defp finish_action(%Run{role: %Role{stage: :engineer}}), do: &engineer_run_finished/2
   defp finish_action(%Run{role: %Role{stage: :review_lead}}), do: &review_run_finished/2
+
+  defp finish_action(%Run{role: %Role{stage: stage}}) when stage in [:qa, :review, :screens], do: &check_run_finished/2
 
   defp finish_action(%Run{}), do: fn run, _opts -> run end
 

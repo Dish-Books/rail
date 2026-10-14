@@ -5,8 +5,10 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.FixPlan
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
-  alias Rail.Pipeline.Workers.StartApprovedFixPlan
+  alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Workers.StartEngineer
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
@@ -33,6 +35,8 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
     {:ok, task} = Pipeline.create_task(issue, :review)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
     task = Repo.preload(task, :issue)
+    # The round the review read, built on the plan the lead approved.
+    Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Filter by vendor.", approved_at: DateTime.utc_now()})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     {:ok, run} =
@@ -71,34 +75,44 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
     {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => @plan})
     {:ok, run} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
 
-    {:ok, ada} =
+    {:ok, %{id: ada_id} = ada} =
       Users.register_oauth_user(%{github_id: "gh_afp_ada", login: "ada-approve-fix-plan", email: "ada-afp@example.com"})
 
-    %{task: task, run: run, crash: crash, nit: nit, ada: user_scope(user: %{ada | project_ids: [project.id]})}
+    %{
+      task: task,
+      run: run,
+      crash: crash,
+      nit: nit,
+      ada: user_scope(user: %{ada | project_ids: [project.id]}),
+      ada_id: ada_id
+    }
   end
 
-  test "approving the latest waiting plan claims the run on it word for word and queues the lead's start", %{
+  test "approving the latest waiting plan makes it the next round and queues the engineer's start on it", %{
     task: %{id: task_id} = task,
     run: %{id: run_id} = run,
-    ada: ada
+    ada: ada,
+    ada_id: ada_id
   } do
+    {:ok, _resaved} = Pipeline.save_fix_plan(task, %{"plan" => @plan, "retake_screens" => true})
+    {:ok, _marked} = Pipeline.update_task(task, %{marked_ready_at: DateTime.utc_now()})
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
-    # The start is the job's, committed with the claim, so it survives the page that approved.
+    # The start is the job's, committed with the round, so it survives the page that approved.
     reject(Tools, :start_os_process, 2)
 
-    assert {:ok, %Run{id: ^run_id, status: :running, pending_answer: note}} = Pipeline.approve_fix_plan(ada, run, 1)
-    assert note =~ "<fix_plan>\n#{@plan}\n</fix_plan>"
-    assert %Run{status: :running} = Repo.reload!(run)
-    # Read approved before the job runs, so no page shows the claimed run as revising the plan.
-    assert %FixPlan{approved_by: "ada-approve-fix-plan", approved_at: %DateTime{}, version: 1} =
-             Pipeline.read_fix_plan(task)
+    assert {:ok, %Run{id: ^run_id}} = Pipeline.approve_fix_plan(ada, run, 2)
 
-    assert_enqueued(
-      worker: StartApprovedFixPlan,
-      args: %{run_id: run_id, version: 1, approved_by: "ada-approve-fix-plan"}
-    )
+    assert [
+             %Round{number: 1},
+             %Round{number: 2, plan: @plan, plan_version: 2, record_demo: false, retake_screens: true} = round
+           ] =
+             Pipeline.list_rounds(task)
 
-    refute Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "approved the fix plan"))
+    assert %Round{approved_at: %DateTime{}, approved_by_id: ^ada_id} = round
+    # Changes are coming, so a task a teammate marked ready is not ready any more.
+    assert %Task{stage: :engineer, marked_ready_at: nil} = Repo.reload!(task)
+    assert %FixPlan{approved_by: "ada-approve-fix-plan", approved_at: %DateTime{}} = Pipeline.read_fix_plan(task)
+    assert_enqueued(worker: StartEngineer, args: %{task_id: task_id})
     assert_received {:pipeline_changed, ^task_id}
   end
 
@@ -132,25 +146,23 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
     assert %Run{status: :finished} = Repo.reload!(run)
 
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
-    assert {:ok, %Run{status: :running}} = Pipeline.approve_fix_plan(ada, run, 1)
+    assert {:ok, %Run{}} = Pipeline.approve_fix_plan(ada, run, 1)
   end
 
-  test "two Approves of the latest plan at once queue the lead's start once", %{run: run, ada: ada} do
+  test "two Approves of the latest plan at once make one round and queue the engineer's start once", %{
+    task: task,
+    run: run,
+    ada: ada
+  } do
     results =
-      Task.await_many(for _tab <- 1..2, do: Task.async(fn -> Pipeline.approve_fix_plan(ada, run, 1) end))
+      Elixir.Task.await_many(for _tab <- 1..2, do: Elixir.Task.async(fn -> Pipeline.approve_fix_plan(ada, run, 1) end))
 
-    assert [{:error, :stage_running}, {:ok, %Run{}}] = Enum.sort(results)
-    assert [%Oban.Job{}] = all_enqueued(worker: StartApprovedFixPlan)
+    assert [{:error, {:fix_plan_not_waiting, :approved}}, {:ok, %Run{}}] = Enum.sort(results)
+    assert [%Round{number: 1}, %Round{number: 2}] = Pipeline.list_rounds(task)
+    assert [%Oban.Job{}] = all_enqueued(worker: StartEngineer)
   end
 
-  test "an Approve while a start for the run is still queued claims nothing", %{run: %{id: run_id} = run, ada: ada} do
-    {:ok, _queued} = Oban.insert(StartApprovedFixPlan.new(%{run_id: run_id, version: 1}))
-
-    assert {:error, :stage_running} = Pipeline.approve_fix_plan(ada, run, 1)
-    assert %Run{status: :finished, stage_outcome: :done, pending_answer: "Sent 1 finding." <> _send} = Repo.reload!(run)
-  end
-
-  test "an Approve while the lead works, or with no plan saved, is refused", %{task: task, run: run, ada: ada} do
+  test "an Approve while the review agent works, or with no plan saved, is refused", %{task: task, run: run, ada: ada} do
     reject(Tools, :start_os_process, 2)
     {:ok, working} = Pipeline.update_run(run, %{status: :running})
     assert {:error, :stage_running} = Pipeline.approve_fix_plan(ada, working, 1)

@@ -506,7 +506,7 @@ defmodule RailWeb.Live.ReviewStage do
 
   def handle_event("record_demo", _params, socket) do
     case Pipeline.record_demo(socket.assigns.current_scope, socket.assigns.task) do
-      {:ok, _sent, _run} ->
+      {:ok, _run} ->
         send(self(), :task_changed)
         {:noreply, assign(socket, :error, nil)}
 
@@ -629,7 +629,7 @@ defmodule RailWeb.Live.ReviewStage do
     |> assign(:commentable, task.stage in [:review, :finalize, :merged] and is_nil(task.cleaned_up_at))
     |> assign_finding_comments()
     |> watch(browser)
-    |> tray(findings, passes, phase, counts)
+    |> tray(findings, passes, phase)
   end
 
   # The round's plan, what changed in its rulings and whether it can be approved. Its item opens only while there is one.
@@ -650,7 +650,7 @@ defmodule RailWeb.Live.ReviewStage do
   end
 
   # The conversation's tray shows what Send sends and whether it can; the page holds both and hands them on.
-  defp tray(socket, findings, passes, phase, counts) do
+  defp tray(socket, findings, passes, phase) do
     %{stage: stage, cleaned_up_at: cleaned_up_at} = socket.assigns.task
     # While a round's plan waits on approval, Send carries only what changed since the last Send.
     plan = socket.assigns.plan_state in [:writing, :revising, :waiting, :outdated]
@@ -658,7 +658,6 @@ defmodule RailWeb.Live.ReviewStage do
     # Past Review the review is over and nobody rules, so only the reader's comments go, with no Finish review.
     gate = %{
       working: phase in [:round, :planning, :fixing, :ci],
-      undecided: if(stage == :review, do: counts.undecided, else: 0),
       finished: stage != :review or (passes != [] and List.last(passes).finished_at != nil),
       ci_failed: phase == :ci_failed,
       saved: passes != [],
@@ -956,7 +955,8 @@ defmodule RailWeb.Live.ReviewStage do
     %{
       total: length(findings),
       undecided: Enum.count(findings, &Finding.undecided?/1),
-      fix: Enum.count(findings, &Finding.outstanding?/1),
+      # An unruled finding goes to the round on its recommendation, but is counted as still to rule.
+      fix: Enum.count(findings, &(Finding.outstanding?(&1) and not Finding.undecided?(&1))),
       fixed: Enum.count(findings, &(&1.status == :fixed)),
       dismissed: Enum.count(findings, &(Finding.state(&1) in [:dismissed, :suppressed]))
     }

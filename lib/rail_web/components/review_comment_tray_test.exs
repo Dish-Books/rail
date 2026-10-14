@@ -25,7 +25,7 @@ defmodule RailWeb.Components.ReviewCommentTrayTest do
       ],
       diff: [%DiffComment{id: "dcm_1", path: "lib/a/tray.ex", line: 61, body: "Keep one hint."}],
       screen: [%ScreenComment{id: "scm_1", key: "toolbar", label: "Toolbar", commit: "e52a0bd91", body: "It wraps."}],
-      gate: %{working: false, undecided: 0, finished: false, ci_failed: false, saved: true, plan: false}
+      gate: %{working: false, finished: false, ci_failed: false, saved: true, plan: false}
     }
   end
 
@@ -90,8 +90,6 @@ defmodule RailWeb.Components.ReviewCommentTrayTest do
   test "each hint reads for the gate's state", %{fix: fix, diff: diff, gate: gate} do
     for {assigns, said, disabled} <- [
           {%{gate: %{gate | working: true}}, "The Review lead is working. Send waits until it stops.", true},
-          {%{gate: %{gate | undecided: 1}}, "Rule on 1 more finding before you send.", true},
-          {%{gate: %{gate | undecided: 2}}, "Rule on 2 more findings before you send.", true},
           {%{gate: %{gate | saved: false}}, "Send waits for the first round to finish.", true},
           {%{fix: []}, "Nothing to fix. Send starts a fix round on your comments.", false},
           {%{fix: [], gate: %{gate | finished: true}},
@@ -112,7 +110,7 @@ defmodule RailWeb.Components.ReviewCommentTrayTest do
   end
 
   test "the working hint pulses green" do
-    gate = %{working: true, undecided: 0, finished: false, ci_failed: false, saved: true, plan: false}
+    gate = %{working: true, finished: false, ci_failed: false, saved: true, plan: false}
 
     doc =
       (&ReviewCommentTray.review_comment_tray/1)

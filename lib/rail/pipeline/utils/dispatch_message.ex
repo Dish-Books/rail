@@ -15,7 +15,6 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   import Rail.Pipeline.Utils.DeliverPlanComments
   import Rail.Pipeline.Utils.PrepareTurn
   import Rail.Pipeline.Utils.PrepareWorktree
-  import Rail.Pipeline.Utils.ReviewSubagents
   import Rail.Pipeline.Utils.StartWorktreeSetup
 
   alias Ecto.Adapters.SQL.Sandbox
@@ -129,8 +128,8 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
     broadcast_changed(run)
 
     {:ok, task} = task |> Task.changeset(%{worktree_path: worktree_path}) |> Repo.update()
-    # The agents that commit to the branch start every turn on a fresh default branch, as themselves.
-    behind = if role.stage in [:engineer, :review_lead], do: prepare_turn(%{run | task: task}), else: ""
+    # The engineer, who commits to the branch, starts every turn on a fresh default branch, as the ticket's owner.
+    behind = if role.stage == :engineer, do: prepare_turn(%{run | task: task}), else: ""
     pick = if role.stage == :plan, do: unheard_pick(run, task, message), else: ""
 
     argv =
@@ -141,9 +140,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
         read_only: false,
         system_prompt: role.system_prompt,
         conversation_id: run.conversation_id,
-        work_dir: worktree_path,
-        # Subagents are a spawn flag, not part of the saved session, so every lead's turn passes them again.
-        agents: subagents(role, task)
+        work_dir: worktree_path
       )
 
     case Tools.start_os_process(run, argv) do
@@ -173,9 +170,6 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
       _no_pick_or_heard -> ""
     end
   end
-
-  defp subagents(%Role{stage: :review_lead}, %Task{} = task), do: review_subagents(task)
-  defp subagents(%Role{}, %Task{}), do: []
 
   # The message never reached an agent, so it goes back on the row as though it
   # had never left: still queued, still the human's to cancel or re-send.

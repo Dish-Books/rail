@@ -65,25 +65,20 @@ defmodule Rail.Pipeline.Utils.SendBackRefusedPushTest do
     assert said =~ "It went back to the engineer."
   end
 
-  test "a push made outside Rail goes back to the Review lead, to have its engineer merge it in", %{
+  # Those commits are someone's work, so the engineer merges them in rather than pushing over them.
+  test "a branch someone pushed to outside Rail goes back to the engineer to merge those commits in", %{
     task: task,
     run: run
   } do
-    lead = run.(:review_lead)
-    test_pid = self()
+    %Run{id: run_id} = engineer = run.(:engineer)
 
-    expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
-      send(test_pid, {:resumed, prompt})
+    expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "Someone pushed to origin/#{task.worktree_name} outside Rail, so Rail did not push over it."
+      assert prompt =~ "Those commits are someone's work, so they are kept."
       {:ok, %OsProcess{run: spawned}}
     end)
 
-    assert %Run{} = send_back_refused_push(lead, :pushed_outside_rail)
-
-    assert_received {:resumed, prompt}
-    assert prompt =~ "Someone pushed to origin/#{task.worktree_name} outside Rail, so Rail did not push over it."
-    assert prompt =~ "Have the engineer merge `origin/#{task.worktree_name}`"
-    assert [%{line: "[rail] Someone pushed" <> said}] = Pipeline.list_run_events(lead)
-    assert said =~ "It went back to the Review lead."
+    assert %Run{id: ^run_id} = send_back_refused_push(engineer, :pushed_outside_rail)
   end
 
   test "an agent that cannot be resumed says why on the run", %{run: run} do

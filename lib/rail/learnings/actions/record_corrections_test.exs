@@ -172,7 +172,7 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
                 id: rule_id,
                 status: :provisional,
                 kind: :design,
-                roles: [:design],
+                roles: [:plan],
                 rule: "Say how long the oldest one has waited.",
                 why: ^why
               }
@@ -245,7 +245,7 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
               %Learning{
                 status: :provisional,
                 kind: :product,
-                roles: [:product],
+                roles: [:plan],
                 rule: "Make it 5 seconds.",
                 why:
                   "From a ticket comment on Criterion 2:\n\n> A page that never goes idle starts recording after 10 seconds."
@@ -253,7 +253,7 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
               %Learning{
                 status: :provisional,
                 kind: :convention,
-                roles: [:architect],
+                roles: [:plan],
                 rule: "Wait on page-loading-stop.",
                 why: "From a plan comment on File 1:\n\n> lib/rail/qa/actions/start_recording.ex"
               }

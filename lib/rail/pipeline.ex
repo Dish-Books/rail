@@ -58,6 +58,9 @@ defmodule Rail.Pipeline do
   defdelegate get_ci_status(run), to: Actions.GetCiStatus
 
   defdelegate start_review_run(run), to: Actions.StartReviewRun
+  defdelegate start_check_run(run), to: Actions.StartCheckRun
+  defdelegate save_report(task, role, report), to: Actions.SaveReport
+  defdelegate read_reports(task), to: Actions.ReadReports
   defdelegate save_finding(task, attrs), to: Actions.SaveFinding
   defdelegate list_findings(task), to: Actions.ListFindings
   defdelegate decide_finding(scope, finding, decision), to: Actions.DecideFinding
@@ -130,7 +133,7 @@ defmodule Rail.Pipeline do
   defdelegate stop_and_send_message(scope, run, opts \\ []), to: Actions.StopAndSendMessage
   defdelegate stop_run(scope, run, opts \\ []), to: Actions.StopRun
 
-  defdelegate start_or_resume_run(task, role, worktree_path), to: Actions.StartOrResumeRun
+  defdelegate start_or_resume_run(task, role, worktree_path, opts \\ []), to: Actions.StartOrResumeRun
   defdelegate create_run(attrs), to: Actions.CreateRun
   defdelegate get_run(id), to: Actions.GetRun
   defdelegate list_runs(opts \\ []), to: Actions.ListRuns

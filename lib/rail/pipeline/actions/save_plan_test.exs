@@ -312,6 +312,14 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
       assert {:ok, %Round{plan: ^saved}} = Pipeline.save_plan(task, %{plan: plan})
     end
 
+    # What runs after QA is what the plan asks for, so the screens are shot again and a demo recorded only then.
+    test "a plan says whether its round's screens are shot again and a demo recorded", %{task: task} do
+      assert {:ok, %Round{retake_screens: false, record_demo: false}} = Pipeline.save_plan(task, %{plan: @plan})
+
+      assert {:ok, %Round{retake_screens: true, record_demo: true}} =
+               Pipeline.save_plan(task, %{"plan" => @plan, "retake_screens" => true, "record_demo" => true})
+    end
+
     test "a second save replaces the first", %{task: task, plan: plan} do
       {:ok, _first} = Pipeline.save_plan(task, %{plan: @plan})
       second = String.replace(plan, "Extend the module.", "Replace the module.")

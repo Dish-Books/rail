@@ -45,7 +45,7 @@ defmodule Rail.Learnings.Actions.RetrieveLearningsTest do
     %{id: plan_id} = learning(project, %{rule: "Plan", kind: :convention, roles: [:plan]}, embedding: [1.0])
 
     %{id: architect_id} =
-      learning(project, %{rule: "Architect", kind: :convention, roles: [:architect]}, embedding: [0.9, 0.1])
+      learning(project, %{rule: "Architect", kind: :convention, roles: [:plan]}, embedding: [0.9, 0.1])
 
     learning(project, %{rule: "Engineer", kind: :convention, roles: [:engineer]}, embedding: [1.0])
 
@@ -69,7 +69,7 @@ defmodule Rail.Learnings.Actions.RetrieveLearningsTest do
       learning(project, %{rule: "Engineer", kind: :convention, roles: [:engineer]}, embedding: [0.8, 0.2])
 
     %{id: demo_id} = learning(project, %{rule: "Demo", kind: :convention, roles: [:demo]}, embedding: [0.7, 0.3])
-    learning(project, %{rule: "Architect", kind: :convention, roles: [:architect]}, embedding: [1.0])
+    learning(project, %{rule: "Architect", kind: :convention, roles: [:plan]}, embedding: [1.0])
 
     assert [
              %Learning{id: ^review_id},

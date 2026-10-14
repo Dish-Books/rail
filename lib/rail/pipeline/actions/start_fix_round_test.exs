@@ -71,12 +71,6 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
     %{task: task, run: run, crash: crash, nit: nit}
   end
 
-  test "it is refused while any finding is undecided", %{run: run, crash: crash} do
-    {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
-
-    assert {:error, :findings_undecided} = Pipeline.start_fix_round(system_scope(), run)
-  end
-
   test "with findings ruled Fix it resumes the Review run on them, their rules and places, and the task stays at Review",
        %{task: task, run: %{id: run_id} = run, crash: crash, nit: nit} do
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
@@ -698,7 +692,7 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
       assert {:ok, %Run{status: :running}} = Pipeline.start_fix_round(ada, run)
     end
 
-    test "nothing goes while a finding is unruled or the lead works, and the comments stay unsent", %{
+    test "nothing goes while the review agent works, and the comments stay unsent", %{
       task: task,
       run: run,
       crash: crash,
@@ -709,9 +703,6 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
       {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "Name it."))
       reject(Tools, :start_os_process, 2)
-
-      assert {:error, :findings_undecided} = Pipeline.start_fix_round(ada, run)
-
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
       {:ok, _working} = Pipeline.update_run(run, %{status: :running})
 

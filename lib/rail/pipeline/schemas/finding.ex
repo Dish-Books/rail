@@ -156,11 +156,13 @@ defmodule Rail.Pipeline.Schemas.Finding do
   def suppressed?(%__MODULE__{}), do: false
 
   @doc """
-  True when this finding is one the next fix round fixes: ruled Fix and not fixed, which includes one a
-  pass found still failing, since it keeps its ruling.
+  True when this finding is one the next round fixes: not fixed, and ruled Fix or, while nobody has ruled it,
+  recommended to be fixed. One a pass found still failing keeps its ruling, and one a rule suppressed waits
+  for a person to rule Fix.
   """
   def outstanding?(%__MODULE__{status: :fixed}), do: false
   def outstanding?(%__MODULE__{decision: :fix}), do: true
+  def outstanding?(%__MODULE__{decision: nil, recommendation: :fix} = finding), do: not suppressed?(finding)
   def outstanding?(%__MODULE__{}), do: false
 
   @doc """

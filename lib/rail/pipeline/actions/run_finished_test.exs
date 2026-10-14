@@ -19,7 +19,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   setup %{project: project} do
     roles =
-      Map.new([:plan, :engineer, :review_lead, :debugger], fn stage ->
+      Map.new([:plan, :engineer, :qa, :review_lead, :debugger], fn stage ->
         {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
 
         {stage, role}
@@ -197,7 +197,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert [%{prompt: "Which database?"}] = pending_questions(task.id)
   end
 
-  test "a Review lead turn that saved its review leaves the task at review with what it found", %{
+  test "a review agent turn that saved its review leaves the task at review with what it found", %{
     task: task,
     exited: exited
   } do
@@ -216,7 +216,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
         why: "It crashes.",
         rule: "Every caller handles a missing worktree.",
         severity: :major,
-        recommendation: :fix,
+        recommendation: :skip,
         places: [%{file: "lib/a.ex", line: 3, label: "handle/1"}],
         evidence: [%{name: "The clause", kind: :code, file: "lib/a.ex", line: 3}]
       })
@@ -230,30 +230,49 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert [%{key: "unhandled-nil", decision: nil}] = Pipeline.list_findings(task)
   end
 
-  # A human may take days to rule, and every tab kept for them is memory the shared Chrome's
-  # other tabs need. The next round signs in again.
-  test "a Review lead turn that ends closes every browser its subagents left open", %{task: task, exited: exited} do
+  # A turn that is over drives no browser, and every tab kept is memory the shared Chrome's other tabs need.
+  test "a QA turn that ends closes its own browser and leaves the others open", %{task: task, exited: exited} do
     {:ok, task} = Pipeline.update_task(task, %{stage: :review})
 
-    for name <- ["explorer-1", "demo"] do
+    for name <- ["qa", "demo"] do
       %BrowserSession{}
       |> BrowserSession.changeset(%{task_id: task.id, name: name, status: :running})
       |> Repo.insert!()
     end
 
-    {_run, os_process} = exited.(:review_lead, %{})
+    {_run, os_process} = exited.(:qa, %{})
 
     assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 1, error: "stopped"})
 
-    assert [%BrowserSession{status: :finished, ended_reason: :closed}, %BrowserSession{status: :finished}] =
-             Repo.all(from s in BrowserSession, where: s.task_id == ^task.id)
+    assert [
+             %BrowserSession{name: "demo", status: :running},
+             %BrowserSession{name: "qa", status: :finished, ended_reason: :closed}
+           ] = Repo.all(from s in BrowserSession, where: s.task_id == ^task.id, order_by: s.name)
   end
 
-  test "a Review lead turn that did not save its review says so and stays open", %{task: task, exited: exited} do
+  test "a QA turn that saved its report latches done and starts the screenshots agent the plan asked for", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
+    Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [retake_screens: true])
+    {:ok, _saved} = Pipeline.save_report(task, :qa, "Two rows.")
+    stub(Git, :get_or_create_worktree, fn _project, _task -> {:ok, task.worktree_path} end)
+    {_run, os_process} = exited.(:qa, %{})
+
+    expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "You photograph every screen state the change below affects"
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+  end
+
+  test "a review agent turn that did not save its review says so and stays open", %{task: task, exited: exited} do
     {:ok, _task} = Pipeline.update_task(task, %{stage: :review})
     {_run, os_process} = exited.(:review_lead, %{})
 
-    assert {:ok, %Run{stage_outcome: :in_progress, error: "The Review lead did not save its review."}} =
+    assert {:ok, %Run{stage_outcome: :in_progress, error: "The review agent did not save its review."}} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
 
     assert %Task{stage: :review} = Repo.reload!(task)
@@ -278,7 +297,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
         why: "It crashes.",
         rule: "Every caller handles a missing worktree.",
         severity: :major,
-        recommendation: :fix,
+        recommendation: :skip,
         places: [%{file: "lib/a.ex", line: 3, label: "handle/1"}],
         evidence: [%{name: "The clause", kind: :code, file: "lib/a.ex", line: 3}]
       })
@@ -296,6 +315,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   test "a finish that blows up says so on the run", %{task: task, exited: exited} do
     {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
     {:ok, _pass} = Pipeline.save_review(task)
+    stub(Git, :branch_unpushed?, fn _path -> false end)
     stub(Git, :branch_fingerprint, fn _path -> raise "git fell over" end)
 
     {_run, os_process} = exited.(:review_lead, %{})
@@ -373,7 +393,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert %Task{stage: :engineer} = Repo.reload!(task)
   end
 
-  # Past Engineer the branch is the Review lead's, so an engineer turn there leaves the task where it is.
+  # Past Engineer the round is the checking agents', so an engineer turn there leaves the task where it is.
   test "an engineer turn after the task left Engineer moves nothing, whatever it changed", %{
     task: task,
     exited: exited
@@ -806,247 +826,6 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
              Pipeline.run_finished(os_process, %{exit_code: 0})
   end
 
-  describe "CI on the Review lead's run" do
-    setup %{task: task} do
-      {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
-      {:ok, _pass} = Pipeline.save_review(task)
-
-      %{task: task, head_sha: String.trim(git!(task.worktree_path, ["rev-parse", "HEAD"]))}
-    end
-
-    test "that passed on a commit that asked for review pushes the branch and starts the next round", %{
-      task: task,
-      exited: exited,
-      head_sha: head_sha
-    } do
-      {%Run{id: run_id} = run, os_process} =
-        exited.(:review_lead, %{ci_failure_streak: 1, stage_outcome: :done, review_on_ci_pass: true})
-
-      os_process = os_process |> OsProcess.changeset(%{kind: :ci, head_sha: head_sha}) |> Repo.update!()
-      started = "[rail] Round 2 started after CI passed on #{String.slice(head_sha, 0, 7)}"
-
-      expect(Git, :push_branch, fn _scope, _task -> :ok end)
-      expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-
-      assert {:ok, %Run{ci_failure_streak: 0, stage_outcome: :in_progress, error: nil, review_on_ci_pass: false}} =
-               Pipeline.run_finished(os_process, %{exit_code: 0})
-
-      assert %Task{stage: :review, pr_number: 7} = Repo.reload!(task)
-      assert [%{line: ^started}] = Pipeline.list_run_events(run)
-    end
-
-    # A resumed lead reads only the note, so the note is what keeps a fix round from recording again.
-    test "that passed on a fix round tells the next round to leave the demo already saved", %{
-      task: task,
-      exited: exited,
-      head_sha: head_sha
-    } do
-      {:ok, _demo} = Pipeline.save_demo(task, %{"title" => "Filters", "summary" => "It filters."})
-      git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Guard the nil"])
-      fixed_sha = String.trim(git!(task.worktree_path, ["rev-parse", "HEAD"]))
-      {%Run{id: run_id}, os_process} = exited.(:review_lead, %{review_on_ci_pass: true})
-      os_process = os_process |> OsProcess.changeset(%{kind: :ci, head_sha: fixed_sha}) |> Repo.update!()
-
-      expect(Git, :push_branch, fn _scope, _task -> :ok end)
-      expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-
-      assert {:ok, %Run{pending_answer: note}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-      assert note =~ String.slice(head_sha, 0, 7)
-    end
-
-    test "that passed on a fix round after a take that encoded tells the next round to leave it", %{
-      task: task,
-      exited: exited,
-      head_sha: head_sha
-    } do
-      {:ok, _demo} = Pipeline.save_demo(task, %{"title" => "Filters", "summary" => "It filters."})
-      assert %{success: 1} = Oban.drain_queue(queue: :issues)
-      File.write!(Path.join([task.scratch_path, "demo", "demo.webm"]), "webm")
-      git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Guard the nil"])
-      fixed_sha = String.trim(git!(task.worktree_path, ["rev-parse", "HEAD"]))
-      {%Run{id: run_id}, os_process} = exited.(:review_lead, %{review_on_ci_pass: true})
-      os_process = os_process |> OsProcess.changeset(%{kind: :ci, head_sha: fixed_sha}) |> Repo.update!()
-
-      expect(Git, :push_branch, fn _scope, _task -> :ok end)
-      expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-
-      assert {:ok, %Run{pending_answer: note}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-      assert note =~ String.slice(head_sha, 0, 7)
-    end
-
-    # The recorder saved a write-up without calling demo_start, so the encode ran and left no video.
-    test "that passed on a fix round after a take that encoded no video names no recorded take", %{
-      task: task,
-      exited: exited,
-      head_sha: head_sha
-    } do
-      {:ok, _demo} = Pipeline.save_demo(task, %{"title" => "Filters", "summary" => "It filters."})
-      assert %{success: 1} = Oban.drain_queue(queue: :issues)
-      git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Guard the nil"])
-      fixed_sha = String.trim(git!(task.worktree_path, ["rev-parse", "HEAD"]))
-      {%Run{id: run_id}, os_process} = exited.(:review_lead, %{review_on_ci_pass: true})
-      os_process = os_process |> OsProcess.changeset(%{kind: :ci, head_sha: fixed_sha}) |> Repo.update!()
-
-      expect(Git, :push_branch, fn _scope, _task -> :ok end)
-      expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-
-      assert {:ok, %Run{pending_answer: note}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-      refute note =~ String.slice(head_sha, 0, 7)
-    end
-
-    test "that passed on a fix round with no demo saved names no recorded take", %{
-      task: task,
-      exited: exited,
-      head_sha: head_sha
-    } do
-      git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Guard the nil"])
-      fixed_sha = String.trim(git!(task.worktree_path, ["rev-parse", "HEAD"]))
-      {%Run{id: run_id}, os_process} = exited.(:review_lead, %{review_on_ci_pass: true})
-      os_process = os_process |> OsProcess.changeset(%{kind: :ci, head_sha: fixed_sha}) |> Repo.update!()
-
-      expect(Git, :push_branch, fn _scope, _task -> :ok end)
-      expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-
-      assert {:ok, %Run{pending_answer: note}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-      refute note =~ String.slice(head_sha, 0, 7)
-    end
-
-    # CI Rail ran on its own, such as Run CI from the diff, asked for no round.
-    test "that passed on a commit that did not ask for review pushes and starts no round", %{
-      task: task,
-      exited: exited
-    } do
-      {:ok, _finding} =
-        Pipeline.save_finding(task, %{
-          key: "unhandled-nil",
-          kind: :code,
-          raised_by: :code_reviewer,
-          title: "Nil is not handled",
-          problem: "It crashes.",
-          file: "lib/a.ex",
-          line: 3,
-          fix: "Guard it.",
-          why: "It crashes.",
-          rule: "Every caller handles nil.",
-          severity: :major,
-          recommendation: :fix,
-          places: [%{file: "lib/a.ex", line: 3}],
-          evidence: [%{name: "range", kind: :code, file: "lib/a.ex", line: 3}]
-        })
-
-      {run, os_process} = exited.(:review_lead, %{ci_failure_streak: 1, stage_outcome: :done})
-      os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
-
-      expect(Git, :push_branch, fn _scope, _task -> :ok end)
-      stub(Git, :branch_unpushed?, fn _path -> false end)
-      reject(Tools, :start_os_process, 2)
-
-      assert {:ok, %Run{ci_failure_streak: 0, stage_outcome: :done, error: nil, review_on_ci_pass: false}} =
-               Pipeline.run_finished(os_process, %{exit_code: 0})
-
-      assert %Task{stage: :review, pr_number: 7} = Repo.reload!(task)
-      assert [] = Pipeline.list_run_events(run)
-    end
-
-    test "that passed on a commit it has no record of still starts the next round", %{exited: exited} do
-      {run, os_process} = exited.(:review_lead, %{review_on_ci_pass: true})
-      os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
-
-      expect(Git, :push_branch, fn _scope, _task -> :ok end)
-      expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-
-      assert {:ok, %Run{error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-      assert [%{line: "[rail] Round 2 started after CI passed"}] = Pipeline.list_run_events(run)
-    end
-
-    test "that passed with dispatch off says the round was not started", %{exited: exited} do
-      {_run, os_process} = exited.(:review_lead, %{review_on_ci_pass: true})
-      os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
-
-      expect(Git, :push_branch, fn _scope, _task -> :ok end)
-      expect(Tools, :start_os_process, fn _spawned, _argv -> {:error, :dispatch_disabled} end)
-
-      assert {:ok, %Run{error: "Dispatch is off, so round 2 was not started."}} =
-               Pipeline.run_finished(os_process, %{exit_code: 0})
-    end
-
-    test "that passed and could not start the lead says why", %{exited: exited} do
-      {_run, os_process} = exited.(:review_lead, %{review_on_ci_pass: true})
-      os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
-
-      expect(Git, :push_branch, fn _scope, _task -> :ok end)
-      expect(Tools, :start_os_process, fn spawned, _argv -> {:error, {:spawn_failed, :enoent, spawned}} end)
-
-      assert {:ok, %Run{error: "Could not start round 2: :enoent"}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-    end
-
-    test "that passed on a branch that will not push says so and starts nothing", %{exited: exited} do
-      {_run, os_process} = exited.(:review_lead, %{review_on_ci_pass: true})
-      os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
-
-      expect(Git, :push_branch, fn _scope, _task -> {:error, "no CI receipt for this tree"} end)
-      reject(Tools, :start_os_process, 2)
-
-      assert {:ok,
-              %Run{
-                review_on_ci_pass: false,
-                error: "CI passed, but the branch could not be pushed: no CI receipt for this tree"
-              }} = Pipeline.run_finished(os_process, %{exit_code: 0})
-    end
-
-    test "that failed goes back to the lead with the end of its output", %{task: task, exited: exited} do
-      {run, os_process} = exited.(:review_lead, %{})
-      stream_path = Path.join(task.scratch_path, "ci.log")
-      File.write!(stream_path, "1 test, 1 failure\n")
-
-      os_process =
-        os_process
-        |> OsProcess.changeset(%{kind: :ci, command: "mise run ci", stream_path: stream_path})
-        |> Repo.update!()
-
-      test_pid = self()
-
-      expect(Tools, :start_os_process, fn spawned, argv ->
-        send(test_pid, {:resumed, Enum.join(argv, " ")})
-        {:ok, %OsProcess{run: spawned}}
-      end)
-
-      assert {:ok, %Run{status: :running, ci_failure_streak: 1}} =
-               Pipeline.run_finished(os_process, %{exit_code: 1, error: "Exited with code 1"})
-
-      assert_received {:resumed, prompt}
-      assert prompt =~ "`mise run ci` exited with code 1"
-      assert prompt =~ "1 test, 1 failure"
-
-      assert [%{line: "[rail] CI failed, so its output went back to the Review lead (1 of 3)."}] =
-               Pipeline.list_run_events(run)
-    end
-
-    test "that failed a third time in a row waits for a person", %{exited: exited} do
-      {_run, os_process} = exited.(:review_lead, %{ci_failure_streak: 2})
-      os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
-
-      reject(Tools, :start_os_process, 2)
-
-      assert {:ok,
-              %Run{
-                ci_failure_streak: 3,
-                error:
-                  "CI failed 3 times in a row, so it was not sent back again. Read its output, then message the Review lead, which can run CI again with nothing changed."
-              }} = Pipeline.run_finished(os_process, %{exit_code: 1})
-    end
-
-    test "that was stopped before it finished says how to go on", %{exited: exited} do
-      {_run, os_process} = exited.(:review_lead, %{})
-      os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
-
-      reject(Tools, :start_os_process, 2)
-
-      assert {:ok, %Run{error: "CI was stopped before it finished. Message the Review lead to run it again when ready."}} =
-               Pipeline.run_finished(os_process, %{exit_code: -1})
-    end
-  end
-
   describe "CI that passed on a commit" do
     # Review only takes a branch the remote has, on a commit CI passed, so the
     # worktree is one CI's pass can really push.
@@ -1075,13 +854,20 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     test "a human asked for goes on to review with nobody clicking", %{task: task, exited: exited, ci: ci} do
       {_run, os_process} = exited.(:engineer, %{review_on_ci_pass: true})
       os_process = os_process |> OsProcess.changeset(ci) |> Repo.update!()
+      test_pid = self()
 
-      expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      # Review opens on QA and the code reviewer together.
+      expect(Tools, :start_os_process, 2, fn spawned, _argv ->
+        send(test_pid, {:spawned, Repo.preload(spawned, :role, force: true).role.stage})
+        {:ok, %OsProcess{run: spawned}}
+      end)
 
       assert {:ok, %Run{stage_outcome: :done, review_on_ci_pass: false}} =
                Pipeline.run_finished(os_process, %{exit_code: 0})
 
       assert %Task{stage: :review} = Repo.reload!(task)
+      assert_received {:spawned, :qa}
+      assert_received {:spawned, :review}
     end
 
     # CI a person ran from the diff asked for no review, so the work waits for them to send it.
@@ -1154,7 +940,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert [%{prompt: "Keep both migrations?"}] = pending_questions(task.id)
   end
 
-  describe "a Review lead an earlier round latched, then messaged" do
+  describe "a review agent an earlier round latched, then messaged" do
     setup %{task: task, roles: roles} do
       {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
 
@@ -1196,7 +982,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       {:ok, :sent, %Run{}} = Pipeline.send_message(system_scope(), run, "Are you sure about the nil?")
       assert_receive {:spawned, os_process}
 
-      assert {:ok, %Run{stage_outcome: :in_progress, error: "The Review lead did not save its review."} = failed} =
+      assert {:ok, %Run{stage_outcome: :in_progress, error: "The review agent did not save its review."} = failed} =
                Pipeline.run_finished(os_process, %{exit_code: 0})
 
       assert :failed = failed |> Repo.preload(:questions, force: true) |> Run.state()

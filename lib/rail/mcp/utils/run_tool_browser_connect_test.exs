@@ -65,7 +65,7 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnectTest do
     File.write!(Path.join(task.worktree_path, "scripts/linkless.sh"), "echo 'Created someone@rail.test'")
     File.write!(Path.join(task.worktree_path, "scripts/nameless.sh"), "echo 'http://127.0.0.1:#{port}/signin.html'")
 
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :qa)
 
     {:ok, run} =
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
@@ -96,7 +96,7 @@ defmodule Rail.Mcp.Utils.RunToolBrowserConnectTest do
     %{
       task: task,
       project: project,
-      opts: [stage: :review_lead, os_process: os_process],
+      opts: [stage: :qa, os_process: os_process],
       link: "http://127.0.0.1:#{port}/signin.html",
       seeded: Path.join(task.worktree_path, "seeded")
     }

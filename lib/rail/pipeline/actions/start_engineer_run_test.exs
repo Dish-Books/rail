@@ -104,7 +104,69 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     refute File.exists?(commits_dir)
   end
 
-  # Product can approve straight past design and architect, which leaves no plan.
+  # Each round starts on a clean conversation, so a later round's brief carries what it fixes with its plan.
+  test "a later round carries the findings already on the task and the human's comments with its plan", %{
+    task: task,
+    run: run
+  } do
+    Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Filter by vendor.", approved_at: DateTime.utc_now()})
+    Repo.insert!(%Round{task_id: task.id, number: 2, plan: "Guard the nil.", approved_at: DateTime.utc_now()})
+
+    {:ok, _finding} =
+      Pipeline.save_finding(task, %{
+        key: "unhandled-nil",
+        kind: :code,
+        raised_by: :code_reviewer,
+        title: "Nil is not handled",
+        problem: "It crashes.",
+        file: "lib/a.ex",
+        line: 3,
+        fix: "Guard it.",
+        why: "It crashes.",
+        rule: "Every caller handles nil.",
+        severity: :major,
+        recommendation: :fix,
+        places: [%{file: "lib/a.ex", line: 3}],
+        evidence: [%{name: "range", kind: :code, file: "lib/a.ex", line: 3}]
+      })
+
+    path = Path.join([task.scratch_path, "fix_plans", "SEN-1.json"])
+    File.mkdir_p!(Path.dirname(path))
+
+    File.write!(
+      path,
+      Jason.encode!(%{
+        round: 1,
+        plan: "Guard the nil.",
+        approved_at: "2026-10-12T16:58:00Z",
+        comments: [%{number: 1, kind: "diff", place: "lib/a.ex:3", text: "Name it."}]
+      })
+    )
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "Guard the nil."
+      assert prompt =~ "Each round starts you on a clean conversation"
+      assert prompt =~ "save your report with `save_report`"
+      assert prompt =~ "- `unhandled-nil` [round 1, major code, human ruled: not yet, status: open] Nil is not handled"
+      assert prompt =~ "The human's comments this round, by the numbers the plan uses:\n\n1. On lib/a.ex:3: Name it."
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_engineer_run(run)
+
+    # A round whose plan answered no comment carries only the findings.
+    File.write!(path, Jason.encode!(%{round: 1, plan: "Guard the nil.", approved_at: "2026-10-12T16:58:00Z"}))
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "`unhandled-nil`"
+      refute prompt =~ "The human's comments this round"
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_engineer_run(run)
+  end
+
+  # A task sent straight to Engineer has no plan.
   test "says the ticket is the whole specification when there is no plan", %{run: run} do
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
       assert ["-p", prompt | _rest] = argv

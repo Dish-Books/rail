@@ -79,8 +79,9 @@ defmodule Rail.Mcp.Utils.RunToolSaveFindingTest do
              run_tool_save_finding(task, Map.put(finding, "evidence", evidence), [])
   end
 
+  # One nobody asked to fix: a finding to fix is saved fixed with the round's report on it.
   test "a later save of a known key notes its status and leaves what it said", %{task: task, finding: finding} do
-    {:ok, _saved} = run_tool_save_finding(task, finding, [])
+    {:ok, _saved} = run_tool_save_finding(task, %{finding | "recommendation" => "skip"}, [])
 
     assert {:ok, "Noted unhandled-nil as fixed. What it said when raised stands."} =
              run_tool_save_finding(

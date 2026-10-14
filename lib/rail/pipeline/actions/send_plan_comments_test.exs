@@ -268,7 +268,7 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
                actor_id: ^ada_id,
                task_id: ^task_id,
                capture: %{"html" => ~s(<label id="group-by-project">Group by project</label>), "width" => 160},
-               learning: %{status: :provisional, kind: :design, roles: [:design], rule: "Turn this on by default."}
+               learning: %{status: :provisional, kind: :design, roles: [:plan], rule: "Turn this on by default."}
              }
            ] = Repo.all(from o in Observation, where: o.task_id == ^task.id, preload: :learning)
   end
@@ -377,12 +377,12 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
              %Observation{
                source_id: ^plan_id,
                source_kind: :plan_comment,
-               learning: %{status: :provisional, roles: [:architect], rule: "Why?"}
+               learning: %{status: :provisional, roles: [:plan], rule: "Why?"}
              },
              %Observation{
                source_id: ^ticket_id,
                source_kind: :ticket_comment,
-               learning: %{status: :provisional, kind: :product, roles: [:product], rule: "Who?"}
+               learning: %{status: :provisional, kind: :product, roles: [:plan], rule: "Who?"}
              }
            ] =
              from(o in Observation, where: o.task_id == ^task.id, preload: :learning)

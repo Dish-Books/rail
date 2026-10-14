@@ -10,7 +10,7 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
   alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Task
 
-  @sections ["What changes", "File-level changes", "Verification"]
+  @sections ["Changes to the plan", "What changes", "File-level changes", "Verification"]
 
   @counted "\\d+ (?:finding|changed ruling|comment)s?"
   @sent Regex.compile!("\\ASent (#{@counted}(?:(?:, | and )#{@counted})*)\\.\\n")
@@ -25,6 +25,10 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
     # Kept at save, since a Send that drops a finding from the round leaves the saved plan still naming it.
     field :covered_titles, {:map, :string}, default: %{}
     field :covered_comments, :integer, default: 0
+    # Whether the plan asks for a new demo once its round is built.
+    field :record_demo, :boolean, default: false
+    # Whether the plan asks for the screen states to be shot again once its round is built.
+    field :retake_screens, :boolean, default: false
     field :version, :integer, default: 0
     field :saved_at, :utc_datetime_usec
     field :approved_by, :string
@@ -55,6 +59,8 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
       :covered_keys,
       :covered_titles,
       :covered_comments,
+      :record_demo,
+      :retake_screens,
       :version,
       :saved_at,
       :approved_by,
@@ -72,7 +78,7 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
   """
   def save_changeset(%__MODULE__{} = fix_plan, attrs) do
     fix_plan
-    |> cast(attrs, [:plan])
+    |> cast(attrs, [:plan, :record_demo, :retake_screens])
     |> update_change(:plan, &String.trim/1)
     |> validate_required([:plan])
     |> validate_structure(fix_plan)

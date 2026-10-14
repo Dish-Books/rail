@@ -462,8 +462,8 @@ defmodule RailWeb.TaskLiveTest do
     refute has_element?(view, "#retry-run")
   end
 
-  # The migration leaves every task it moved to Review on a stopped lead run with no conversation.
-  test "a Review lead run with no conversation is retried by entering Review again", %{
+  # The migration leaves every task it moved to Review on a stopped review run with no conversation.
+  test "a review agent run with no conversation is retried by entering Review again", %{
     conn: conn,
     task: task,
     project: project
@@ -477,7 +477,7 @@ defmodule RailWeb.TaskLiveTest do
     stub(Git, :get_or_create_worktree, fn _project, _task -> {:ok, task.worktree_path} end)
 
     expect(Tools, :start_os_process, fn spawned, argv ->
-      assert "--agents" in argv
+      refute "--agents" in argv
       {:ok, %OsProcess{run: spawned}}
     end)
 
@@ -1449,7 +1449,7 @@ defmodule RailWeb.TaskLiveTest do
       stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
 
       roles =
-        Map.new([:product, :design, :architect, :engineer], fn stage ->
+        Map.new([:plan, :engineer], fn stage ->
           {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
           {stage, role}
         end)
@@ -3361,7 +3361,8 @@ defmodule RailWeb.TaskLiveTest do
         end
       end)
 
-      expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+      # Review opens on QA and the code reviewer together.
+      expect(Tools, :start_os_process, 2, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       view |> element("#push-work") |> render_click()
@@ -3697,7 +3698,7 @@ defmodule RailWeb.TaskLiveTest do
         :ok
       end)
 
-      expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+      expect(Tools, :start_os_process, 2, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -5779,8 +5780,8 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#review-error", "This task is at Merged, not Review.")
     end
 
-    # Clicked in the moment before a save's broadcast lands, the refusal is said.
-    test "a finding raised underneath the page holds the tray's Send", %{conn: conn, task: task, code: code} do
+    # An unruled finding goes on the review agent's recommendation, so one raised after the page loaded goes too.
+    test "a finding raised underneath the page goes with the tray's Send", %{conn: conn, task: task, code: code} do
       {:ok, finding} = Pipeline.save_finding(task, code)
       {:ok, _pass} = Pipeline.save_review(task)
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), finding, :fix)
@@ -5789,9 +5790,14 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "#send-review-tray[disabled]")
 
       Repo.insert!(Finding.raise_changeset(%Finding{task_id: task.id, round: 1}, %{code | key: "raised-late"}))
-      view |> element("#send-review-tray") |> render_click()
 
-      assert has_element?(view, "#review-send-tray-hint", "Some findings have no ruling yet.")
+      expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
+        assert prompt =~ "Sent 2 findings."
+        assert prompt =~ "raised-late"
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      view |> element("#send-review-tray") |> render_click()
     end
 
     test "ruling on a finding keeps the list in place and reads the next one needing a call", %{

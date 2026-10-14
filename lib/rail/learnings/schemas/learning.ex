@@ -79,12 +79,10 @@ defmodule Rail.Learnings.Schemas.Learning do
   def status_label(:retired), do: "Retired"
 
   def role_label(:plan), do: "Plan"
-  def role_label(:product), do: "Product"
-  def role_label(:design), do: "Designer"
-  def role_label(:architect), do: "Architect"
   def role_label(:engineer), do: "Engineer"
   def role_label(:review_lead), do: "Review lead"
   def role_label(:review), do: "Reviewer"
+  def role_label(:screens), do: "Screenshots"
   def role_label(:qa), do: "QA"
   def role_label(:demo), do: "Demo"
   def role_label(:debugger), do: "Debugger"

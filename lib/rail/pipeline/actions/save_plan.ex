@@ -16,9 +16,10 @@ defmodule Rail.Pipeline.Actions.SavePlan do
   @ticket ["title", "description", "priority", "estimate"]
 
   @doc """
-  Saves `attrs` on `task`'s round: the ticket's `title`, `description`, `priority` and `estimate`, the `plan`, and
-  the `design` option key the plan is written for. A priority or estimate never saved is the issue's. Returns
-  `{:ok, round}`, `{:error, :round_approved}` once the plan is approved, or `{:error, changeset}`.
+  Saves `attrs` on `task`'s round: the ticket's `title`, `description`, `priority` and `estimate`, the `plan`, the
+  `design` option key the plan is written for, `record_demo`, whether the round should end with a demo, and
+  `retake_screens`, whether with its screen states shot again. A priority or estimate never saved is the issue's.
+  Returns `{:ok, round}`, `{:error, :round_approved}` once the plan is approved, or `{:error, changeset}`.
   """
   def save_plan(%Task{} = task, attrs) when is_map(attrs) do
     %Task{issue: %Issue{} = issue} = task = Repo.preload(task, :issue)
@@ -34,7 +35,8 @@ defmodule Rail.Pipeline.Actions.SavePlan do
     with %Round{approved_at: nil} <- round,
          {:ok, design} <- design(task, given),
          ticket = Map.merge(kept(round, issue), Map.take(given, @ticket)),
-         attrs = given |> Map.take(["plan"]) |> Map.put("ticket", ticket) |> Map.merge(design),
+         attrs =
+           given |> Map.take(["plan", "record_demo", "retake_screens"]) |> Map.put("ticket", ticket) |> Map.merge(design),
          {:ok, saved} <- round |> Round.plan_changeset(attrs) |> Repo.insert_or_update() do
       Pipeline.broadcast_output_saved(task)
       {:ok, saved}

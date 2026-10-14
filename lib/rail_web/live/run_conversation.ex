@@ -718,7 +718,7 @@ defmodule RailWeb.Live.RunConversation do
     %Turn{status: status, turns: turns, label: label, content: content} = assigns.msg
     key = "sub-#{assigns.idx}"
     saved = subagent_saved(assigns.msg)
-    {name, work} = subagent_name(label, content) || {plan_subagent_name(label, assigns.roles_map), content}
+    {name, work} = subagent_name(label, content) || {plan_subagent_name(label), content}
 
     assigns =
       assigns
@@ -1491,7 +1491,6 @@ defmodule RailWeb.Live.RunConversation do
   defp tray_message(:fix_plan_waiting),
     do: "Nothing changed since the fix plan was saved. Approve the plan, change a ruling or add a comment."
 
-  defp tray_message(:findings_undecided), do: "Some findings have no ruling yet. Rule on every one first."
   defp tray_message(:nothing_to_start), do: "There is nothing to send: the review is finished."
   defp tray_message(:dispatch_disabled), do: "Dispatch is off, so the Review lead was not resumed."
   defp tray_message(:ci_not_passed), do: "CI has not passed on the fix commit, so the review cannot finish yet."
@@ -1573,14 +1572,9 @@ defmodule RailWeb.Live.RunConversation do
     end
   end
 
-  defp plan_subagent_name(label, roles_map) do
-    stage = %{"product" => :product, "designer" => :design, "architect" => :architect}[label]
-
-    case Enum.find(Map.values(roles_map), &(stage != nil and &1.stage == stage)) do
-      %{name: name} -> name
-      nil -> label |> String.split(~r/[-_\s]+/, trim: true) |> Enum.map_join(" ", &String.capitalize/1)
-    end
-  end
+  # A conversation from before Plan worked alone still names the subagents it led.
+  defp plan_subagent_name(label),
+    do: label |> String.split(~r/[-_\s]+/, trim: true) |> Enum.map_join(" ", &String.capitalize/1)
 
   # What the subagent's saves came to, read off its own tool calls: a refused save saved nothing.
   defp subagent_saved(%Turn{status: :skipped}), do: "skipped"

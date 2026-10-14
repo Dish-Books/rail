@@ -1,19 +1,15 @@
 defmodule Rail.Pipeline.Actions.HandOverWork do
   @moduledoc """
-  Sends on what the agent of the stage a task is at committed, through CI where the project has it and then
-  pushed: the engineer's to Review, the Review lead's fixes or merge to its next round, and past Review only
-  pushed. A Fix finding the lead saved fixed is noted as fixed in the commit handed over.
+  Sends on what the engineer committed, through CI where the project has it and then pushed, and on to Review,
+  where Rail starts the agents that check the round.
   """
 
   import Rail.Pipeline.Utils.CiPassed
   import Rail.Pipeline.Utils.OpenPullRequest
-  import Rail.Pipeline.Utils.ReviewPushedBranch
   import Rail.Pipeline.Utils.StartCi
 
   alias Rail.Git
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.Finding
-  alias Rail.Pipeline.Schemas.FindingNote
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
@@ -33,72 +29,30 @@ defmodule Rail.Pipeline.Actions.HandOverWork do
 
     with :ok <- handable(task, run),
          :ok <- Git.check_push(task) do
-      review? = review?(task, run)
       # Set before CI starts, so a CI that finishes fast still finds it.
-      flagged = update(run, %{review_on_ci_pass: review?})
+      flagged = update(run, %{review_on_ci_pass: true})
 
       if command in [nil, ""] or ci_passed?(task),
-        do: push(scope, flagged, review?),
+        do: push(scope, flagged),
         else: run_ci(flagged)
     end
   end
 
-  # The branch is the current stage's: once Engineer hands it on, Review's lead commits it, after the merge too.
+  # Only the engineer commits, so the branch is its to hand over while the task is at Engineer.
   defp handable(%Task{stage: stage} = task, %Run{role: %Role{stage: role_stage}}) do
     cond do
-      Task.role_stage(stage) != role_stage and {stage, role_stage} != {:merged, :review_lead} ->
-        {:error, {:invalid_stage, stage}}
-
-      not Git.branch_unpushed?(task.worktree_path) ->
-        {:error, :nothing_to_send}
-
-      true ->
-        :ok
+      {stage, role_stage} != {:engineer, :engineer} -> {:error, {:invalid_stage, stage}}
+      not Git.branch_unpushed?(task.worktree_path) -> {:error, :nothing_to_send}
+      true -> :ok
     end
   end
 
-  # A round is a read of a new HEAD, so a branch the last round already read is only pushed. Past Review
-  # nobody can rule a round, so Finalize and the merged branch are only pushed too.
-  defp review?(%Task{stage: :review} = task, %Run{role: %Role{stage: :review_lead}}) do
-    head = Git.branch_fingerprint(task.worktree_path)[:head_sha]
-    note_fixes(task, head)
-
-    case List.last(Pipeline.read_review(task)) do
-      %{head: ^head} when is_binary(head) -> false
-      _moved -> true
-    end
-  end
-
-  defp review?(%Task{}, %Run{role: %Role{stage: :review_lead}}), do: false
-  defp review?(%Task{}, %Run{}), do: true
-
-  defp note_fixes(%Task{} = task, head) do
-    fixed = for %Finding{status: :fixed} = finding <- Pipeline.list_findings(task), pending?(finding), do: finding
-
-    for finding <- fixed do
-      notes = Enum.map(finding.notes, &in_commit(&1, head))
-
-      finding
-      |> Ecto.Changeset.change(fixed_in: head)
-      |> Ecto.Changeset.put_embed(:notes, notes)
-      |> Repo.update!()
-    end
-
-    if fixed != [], do: Pipeline.broadcast_output_saved(task)
-  end
-
-  # A fix the lead saved is in whatever commit the turn hands over, saved before the engineer committed or after.
-  defp pending?(%Finding{notes: notes}), do: Enum.any?(notes, &match?(%FindingNote{kind: :fix, commit: nil}, &1))
-
-  defp in_commit(%FindingNote{kind: :fix, commit: nil} = note, head), do: %{note | commit: head}
-  defp in_commit(%FindingNote{} = note, _head), do: note
-
-  # Pushed once CI has passed on HEAD, and reviewed once pushed when asked; CI's finish does both where it runs.
-  defp push(%Scope{} = scope, %Run{task: %Task{} = task} = run, review?) do
+  # Pushed once CI has passed on HEAD, and sent to Review once pushed; CI's finish does both where it runs.
+  defp push(%Scope{} = scope, %Run{task: %Task{} = task} = run) do
     case Git.push_branch(scope, task) do
       :ok ->
         pushed = %{update(run, %{review_on_ci_pass: false, error: nil}) | task: open_pull_request(task, run)}
-        if review?, do: review_pushed_branch(pushed, "it was pushed"), else: {:ok, pushed}
+        Pipeline.send_to_review(pushed)
 
       {:error, reason} ->
         _cleared = update(run, %{review_on_ci_pass: false})

@@ -1,11 +1,12 @@
 defmodule Rail.Pipeline.Actions.StartFixRound do
   @moduledoc """
-  What a person's Send in the Review tray does once every finding is ruled: the Review run is reopened and resumed
-  on the findings ruled Fix, a carried one included, with their rules and places, then the sender's unsent finding,
-  diff and screen comments, as one message that asks only for a fix plan, and the task stays at Review. The round's
+  What a person's Send in the Review tray does: the review agent's run is reopened and resumed on the findings to
+  fix, those ruled Fix and those nobody has ruled that it recommends fixing, a carried one included, with their
+  rules and places, then the sender's unsent finding, diff and screen comments, as one message that asks only for
+  a fix plan, and the task stays at Review. The round's
   fix plan records the branch's HEAD, so only commits past it count as the planning turn's. With nothing
   to send it reads Finish review, which finishes the review and takes the pull request out of draft. After that, at
-  Finalize and after the merge until cleanup, a Send of comments resumes the lead on them alone.
+  Finalize and after the merge until cleanup, a Send of comments resumes the review agent on them alone.
 
   While the round's fix plan waits on approval, a Send carries only what changed since the last one: rulings and
   new comments, for a revised plan. A round that changes down to nothing ends as Finish review does.
@@ -41,7 +42,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
   alias Rail.Roles
   alias Rail.Scope
 
-  @plan_steps "Plan the round before anything changes: read the code each finding and comment touches, yourself or through the code reviewer, and save one fix plan with `save_fix_plan` that says, for each finding by its key and each comment by its number, what will change or why nothing will. Change nothing in the worktree and commit nothing: end your turn once the plan is saved. The human approves it in Rail, and that is what starts the engineer."
+  @plan_steps "Plan the round before anything changes: read the code each finding and comment touches and save one fix plan with `save_fix_plan` that says, for each finding by its key and each comment by its number, what will change or why nothing will. Change nothing in the worktree and commit nothing: end your turn once the plan is saved. The human approves it in Rail, and that is what starts the engineer."
 
   @revise_steps "Revise the fix plan to match and save it again with `save_fix_plan`, covering every finding now ruled Fix and every comment of the round, then end your turn. Change nothing in the worktree and commit nothing."
 
@@ -49,7 +50,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
 
   @doc """
   Sends the Review tray of the scope user on `run`, the task's Review run. Returns `{:ok, run}` as it now stands, or
-  `{:error, reason}` while a finding is undecided, the run works, there is nothing left to start, nothing changed
+  `{:error, reason}` while the run works, there is nothing left to start, nothing changed
   while a fix plan waits, a review with nothing to fix would finish on a commit CI has not passed, or the task is
   cleaned up or not yet at Review.
   """
@@ -57,7 +58,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
     run = Run |> Repo.get!(run.id) |> Repo.preload([task: [:issue, :project, :runs]], force: true)
     findings = Pipeline.list_findings(run.task)
     passes = Pipeline.read_review(run.task)
-    # Past Review the review is over whatever its last pass says, so only comments resume the lead there.
+    # Past Review the review is over whatever its last pass says, so only comments resume the review agent there.
     finished? = run.task.stage != :review or (passes != [] and List.last(passes).finished_at != nil)
 
     # Nobody rules past Review, so a finding a later turn marked not fixed is not sent as Fix there.
@@ -65,7 +66,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
     waiting = waiting_plan(Pipeline.read_fix_plan(run.task))
     changes = if waiting, do: FixPlan.calculate_ruling_changes(waiting, run.task, findings).unsent, else: []
 
-    with :ok <- startable(run.task, findings, passes),
+    with :ok <- startable(run.task, passes),
          claimed = claim(scope, run.task),
          comments = claimed.finding ++ claimed.diff ++ claimed.screen,
          :ok <- changed(waiting, changes, comments),
@@ -88,17 +89,15 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
   defp changed(%FixPlan{}, [], []), do: {:error, :fix_plan_waiting}
   defp changed(_waiting, _changes, _comments), do: :ok
 
-  defp startable(%Task{cleaned_up_at: %DateTime{}}, _findings, _passes), do: {:error, :cleaned_up}
+  defp startable(%Task{cleaned_up_at: %DateTime{}}, _passes), do: {:error, :cleaned_up}
 
-  defp startable(%Task{stage: stage}, _findings, _passes) when stage not in [:review, :finalize, :merged],
+  defp startable(%Task{stage: stage}, _passes) when stage not in [:review, :finalize, :merged],
     do: {:error, {:invalid_stage, stage}}
 
-  defp startable(%Task{} = task, findings, passes) do
+  defp startable(%Task{} = task, passes) do
     cond do
       Task.running?(task) -> {:error, :stage_running}
       passes == [] -> {:error, :nothing_to_start}
-      # Nobody rules past Review, so a finding left unruled there holds nothing back.
-      task.stage == :review and Enum.any?(findings, &Finding.undecided?/1) -> {:error, :findings_undecided}
       true -> :ok
     end
   end
@@ -154,7 +153,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
   defp claim(%Scope{}, %Task{}), do: %{finding: [], diff: [], screen: []}
 
   # Finishing the review is when its run completes, which every page showing the task hears. A chat turn that
-  # stopped or failed left the lead in progress with its error, which the finished review settles.
+  # stopped or failed left the review agent in progress with its error, which the finished review settles.
   defp finish(%Run{} = run, waiting) do
     # A round changed down to nothing leaves no plan to approve, and its turns plan nothing more.
     if waiting, do: File.rm!(fix_plan_path(run.task))
@@ -369,7 +368,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
   defp count(items, word) when length(items) == 1, do: "1 #{word}"
   defp count(items, word), do: "#{length(items)} #{word}s"
 
-  # Tagged the way an issue's comments are, since the lead's own prose could otherwise read as the next finding.
+  # Tagged the way an issue's comments are, since the review agent's own prose could otherwise read as the next finding.
   defp finding(%Finding{} = finding) do
     still = if finding.status == :not_fixed, do: ~s( still_failing="true"), else: ""
 

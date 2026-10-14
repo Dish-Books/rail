@@ -86,10 +86,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
 
     roles =
       for {stage, model} <- [
-            plan: "claude-opus-5-5",
-            product: "claude-sonnet-5-5",
-            design: "claude-opus-5-5",
-            architect: "claude-fable-5-1"
+            plan: "claude-opus-5-5"
           ],
           into: %{} do
         {:ok, role} =
@@ -237,9 +234,9 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     assert {:ok, %OsProcess{}} = Pipeline.start_plan_run(%{run | role: role})
   end
 
-  test "the brief carries the rules people set for product, design and architect", %{project: project, issue: issue} do
+  test "the brief carries the rules people set for Plan, and not another role's", %{project: project, issue: issue} do
     stub_vertex(%{"source document" => vector([1.0])})
-    learning(project, %{rule: "Copy says task, never ticket", kind: :product, roles: [:design]}, embedding: [1.0])
+    learning(project, %{rule: "Copy says task, never ticket", kind: :product, roles: [:plan]}, embedding: [1.0])
     learning(project, %{rule: "Engineers only", kind: :convention, roles: [:engineer]}, embedding: [1.0])
 
     expect(Tools, :start_os_process, fn %Run{} = run, ["-p", prompt | _rest] ->

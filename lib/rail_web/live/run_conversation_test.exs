@@ -18,7 +18,7 @@ defmodule RailWeb.Live.RunConversationTest do
 
   setup %{project: project} do
     roles =
-      Map.new([:plan, :product, :design, :architect, :engineer, :review_lead], fn stage ->
+      Map.new([:plan, :engineer, :review_lead], fn stage ->
         {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
         {stage, role}
       end)
@@ -87,7 +87,7 @@ defmodule RailWeb.Live.RunConversationTest do
     {:ok, architect} =
       Pipeline.create_run(%{
         task_id: task.id,
-        role_id: roles[:architect].id,
+        role_id: roles[:plan].id,
         status: :finished,
         started_at: ~U[2026-09-09 09:00:00.000000Z],
         completed_at: ~U[2026-09-09 09:05:00.000000Z]
@@ -121,7 +121,7 @@ defmodule RailWeb.Live.RunConversationTest do
     {:ok, architect} =
       Pipeline.create_run(%{
         task_id: task.id,
-        role_id: roles[:architect].id,
+        role_id: roles[:plan].id,
         status: :finished,
         started_at: ~U[2026-09-09 09:00:00.000000Z]
       })
@@ -1213,7 +1213,7 @@ defmodule RailWeb.Live.RunConversationTest do
     {:ok, planning} =
       Pipeline.create_run(%{
         task_id: task.id,
-        role_id: roles[:architect].id,
+        role_id: roles[:plan].id,
         status: :finished,
         started_at: DateTime.utc_now()
       })
@@ -1283,11 +1283,11 @@ defmodule RailWeb.Live.RunConversationTest do
     html = render_component(RunConversation, id: "conv", task: task, runs: [run], stage_run: run, roles_map: roles_map)
 
     assert html =~
-             ~r/id="subagent-[^"]+" data-qa="subagent-block" data-status="done".*product role.*wrote the ticket.*ticket saved/s
+             ~r/id="subagent-[^"]+" data-qa="subagent-block" data-status="done".*Product.*wrote the ticket.*ticket saved/s
 
     # Plan is still working, so the Designer may yet be handed its part: nothing reads as skipped.
     refute html =~ ~s(data-status="skipped")
-    assert html =~ ~r/data-status="running".*architect role.*plan from the ticket/s
+    assert html =~ ~r/data-status="running".*Architect.*plan from the ticket/s
 
     # The finished Product line is closed; the Architect still working is open on its own transcript.
     refute html =~ "Reading the issue."
@@ -1318,7 +1318,7 @@ defmodule RailWeb.Live.RunConversationTest do
 
     html = render_component(RunConversation, id: "conv", task: task, runs: [run], stage_run: run, roles_map: roles_map)
 
-    assert html =~ ~r/product role.*data-status="skipped".*design role.*no screen changes in this task.*architect role/s
+    assert html =~ ~r/Product.*data-status="skipped".*Designer.*no screen changes in this task.*Architect/s
   end
 
   test "an Architect handed its part before the Designer does not make the design read as skipped", %{
@@ -1348,7 +1348,7 @@ defmodule RailWeb.Live.RunConversationTest do
 
     html = render_component(RunConversation, id: "conv", task: task, runs: [run], stage_run: run, roles_map: roles_map)
 
-    assert html =~ ~r/architect role.*design role.*three options/s
+    assert html =~ ~r/Architect.*Designer.*three options/s
     refute html =~ ~s(data-status="skipped")
   end
 
@@ -1466,7 +1466,7 @@ defmodule RailWeb.Live.RunConversationTest do
     assert html =~ ~r/data-status="failed".*General Purpose.*look around/s
 
     # A Designer line before the Architect's means there was a screen, so none is marked skipped; a re-save is one option.
-    assert html =~ ~r/data-status="done".*design role.*three options.*1 option/s
+    assert html =~ ~r/data-status="done".*Designer.*three options.*1 option/s
     refute html =~ "skipped"
   end
 
