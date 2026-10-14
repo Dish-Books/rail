@@ -1726,6 +1726,37 @@ defmodule RailWeb.Live.TaskDetailTest do
       refute has_element?(view, "[data-qa=line_comments]", "Say which role.")
     end
 
+    test "a box on the waiting plan keeps what is typed and cancels, and a stale event or a refused save changes nothing",
+         %{conn: conn, task: task, run: run, plan: plan, user: user} do
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=fix_plan")
+      key = "paragraph-#{:erlang.phash2({"Disable Send.", 1})}"
+      detail = with_target(view, "#task-detail")
+
+      render_click(detail, "open_document_comment", %{"doc" => "fix_plan", "key" => "paragraph-gone"})
+      render_click(detail, "change_plan_comment", %{"body" => "No box."})
+      render_click(detail, "save_plan_comment", %{"body" => "No box."})
+      render_click(detail, "remove_plan_comment", %{"id" => "pcm_gone"})
+      refute has_element?(view, "[data-qa=document_comment]")
+
+      view |> element("#line-fix_plan-#{key} [data-qa=line_comment_add]") |> render_click()
+      view |> form("#document-comment-form-#{key}", %{"body" => "Half"}) |> render_change()
+      assert has_element?(view, "#document-comment-body-#{key}", "Half")
+
+      view |> element("#document-comment-form-#{key} [data-qa=document_comment_cancel]") |> render_click()
+      refute has_element?(view, "#document-comment-form-#{key}")
+
+      view |> element("#line-fix_plan-#{key} [data-qa=line_comment_add]") |> render_click()
+      # The review agent's conversation is gone, which this tab has not heard of yet.
+      run |> Repo.reload!() |> Ecto.Changeset.change(conversation_id: nil) |> Repo.update!()
+      view |> form("#document-comment-form-#{key}", %{"body" => "Too late."}) |> render_submit()
+
+      refute has_element?(view, "#document-comment-form-#{key}")
+      assert has_element?(view, "#review-error")
+      assert Pipeline.list_plan_comments(user_scope(user: user), task) == []
+    end
+
     test "an approved plan takes no comments on its lines", %{conn: conn, task: task, run: run, plan: plan} do
       {:ok, saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
       {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})

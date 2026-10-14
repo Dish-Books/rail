@@ -783,28 +783,10 @@ defmodule RailWeb.Live.PlanStage do
     """
   end
 
-  attr :split, :any, required: true
+  attr :split, :map, required: true
   attr :open_child, :integer, default: nil
   attr :diagram_views, :map, default: %{}
   attr :target, :any, default: nil
-
-  defp split_pane(%{split: nil} = assigns) do
-    ~H"""
-    <div
-      id="plan-split-none"
-      data-qa="plan_split_none"
-      class="flex flex-col items-center text-center max-w-md mx-auto py-14"
-    >
-      <div class="flex items-center justify-center size-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 ring-1 ring-slate-200 dark:ring-slate-700">
-        <.icon name="pi-arrows-split" class="size-7" />
-      </div>
-      <h2 class="mt-5 text-base font-semibold text-slate-900 dark:text-slate-100">Not split</h2>
-      <p class="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-        Approve makes one task, which moves to Implement. Ask Plan for a split when the work is too big for one ticket.
-      </p>
-    </div>
-    """
-  end
 
   defp split_pane(assigns) do
     children = Enum.map(assigns.split.children, &Map.put(&1, :first_file, first_file(&1.plan)))

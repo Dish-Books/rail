@@ -55,6 +55,18 @@ defmodule RailWeb.Components.FixPlanSheetTest do
     assert Floki.find(doc, "[data-qa=fix_plan_item_changed]") == []
   end
 
+  test "a code block and a table in its text draw as code lines and table rows", %{sheet: sheet} do
+    verification = "```\nmix test lib/send_test.exs\n```\n\n| Check | Result |\n|---|---|\n| Send | passes |"
+
+    doc =
+      (&FixPlanSheet.fix_plan_sheet/1)
+      |> render_component(sheet: %{sheet | verification: verification})
+      |> Floki.parse_fragment!()
+
+    assert doc |> Floki.find("[data-kind=code]") |> Floki.text() =~ "mix test lib/send_test.exs"
+    assert doc |> Floki.find("[data-kind=table_row]") |> length() == 2
+  end
+
   test "a covered finding now ruled Don't fix reads so at its entry", %{sheet: sheet} do
     doc =
       (&FixPlanSheet.fix_plan_sheet/1)
