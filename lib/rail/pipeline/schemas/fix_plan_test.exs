@@ -88,12 +88,14 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
         String.replace(
           @plan,
           "### File-level changes",
-          "#### Comment 2\n\nMore.\n\n#### Comment 1\n\nAgain.\n\n### File-level changes"
+          "#### Comment 2\n\nMore.\n\n#### Comment 1\n\nAgain.\n\n#### Changes to the plan\n\nA dot.\n\n" <>
+            "#### Changes to the plan\n\nAnd a dash.\n\n### File-level changes"
         )
 
       assert %{plan: errors} = fix_plan |> FixPlan.save_changeset(%{"plan" => plan}) |> errors_on()
       assert Enum.any?(errors, &(&1 =~ "names comment 2 under `### What changes`, which this round did not send"))
       assert Enum.any?(errors, &(&1 =~ "names comment 1 under `### What changes` more than once"))
+      assert Enum.any?(errors, &(&1 =~ "names the changes to the plan under `### What changes` more than once"))
     end
 
     test "a file naming no item is refused naming its path", %{fix_plan: fix_plan} do
