@@ -22,7 +22,6 @@ defmodule RailWeb.Layouts do
   attr :flash, :map, required: true, doc: "the map of flash messages"
   attr :current_section, :atom, required: true
   attr :current_scope, Rail.Scope, required: true
-  attr :is_rail_extended, :boolean, required: true
   attr :attention_count, :integer, required: true
   attr :triage_count, :integer, required: true
   attr :current_project_id, :string, required: true
@@ -35,10 +34,10 @@ defmodule RailWeb.Layouts do
 
   def app(assigns) do
     ~H"""
-    <div class="flex h-dvh w-screen overflow-hidden bg-white dark:bg-slate-900" id="app-scaffold">
+    <%!-- Clipped rather than hidden: a hidden box can still be scrolled by scrollIntoView or focus, sliding the rail off the left edge. --%>
+    <div class="flex h-dvh w-full overflow-clip bg-white dark:bg-slate-900" id="app-scaffold">
       <.nav
         current_section={@current_section}
-        is_rail_extended={@is_rail_extended}
         attention_count={@attention_count}
         triage_count={@triage_count}
       />

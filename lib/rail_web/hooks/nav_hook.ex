@@ -16,7 +16,6 @@ defmodule RailWeb.Hooks.NavHook do
 
     socket =
       socket
-      |> assign(:is_rail_extended, true)
       |> assign(:theme, "dark")
       |> assign(:show_project_switcher, false)
       |> assign(:projects, projects)
@@ -41,11 +40,6 @@ defmodule RailWeb.Hooks.NavHook do
       |> assign(:kept_params, if(params["everyone"] == "true", do: [everyone: true], else: []))
 
     {:cont, socket}
-  end
-
-  defp handle_nav_events("toggle_rail", _params, socket) do
-    socket = assign(socket, :is_rail_extended, not socket.assigns.is_rail_extended)
-    {:halt, socket}
   end
 
   defp handle_nav_events("theme_changed", %{"theme" => theme}, socket) do

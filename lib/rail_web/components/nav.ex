@@ -1,13 +1,12 @@
 defmodule RailWeb.Components.Nav do
   @moduledoc """
-  The navigation rail and the bar across the top, kept narrow so the task page has the width.
+  The navigation rail, icons only, and the bar across the top, kept narrow so the task page has the width.
   """
   use RailWeb, :html
 
   alias RailWeb.Components.CaptureIssueModal
 
   attr :current_section, :atom, required: true
-  attr :is_rail_extended, :boolean, default: true
   attr :attention_count, :integer, default: 0
   attr :triage_count, :integer, default: 0
 
@@ -16,16 +15,12 @@ defmodule RailWeb.Components.Nav do
     <aside
       id="navigation-rail"
       data-qa="navigation_rail"
-      class={[
-        "nav-rail-transition flex flex-col justify-between h-full shrink-0 border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 select-none",
-        @is_rail_extended && "w-44",
-        !@is_rail_extended && "w-14"
-      ]}
+      class="flex flex-col items-center h-full w-12 shrink-0 border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 select-none"
     >
       <!-- Top Group: Logo and Destinations -->
-      <div class="flex flex-col space-y-3 p-2">
+      <div class="flex flex-col items-center space-y-3 py-2">
         <!-- Brand / Leading -->
-        <div class="flex items-center px-1.5 py-1" id="app-brand">
+        <div class="flex items-center py-1" id="app-brand" title="Rail">
           <div class="flex items-center justify-center h-8 w-8 rounded-lg bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 shrink-0">
             <svg viewBox="0 0 64 64" class="h-8 w-8" fill="none" aria-hidden="true" id="brand-mark">
               <mask id="brand-mark-rails" stroke-linejoin="round">
@@ -43,13 +38,6 @@ defmodule RailWeb.Components.Nav do
               <rect width="64" height="52" fill="currentColor" mask="url(#brand-mark-rails)" />
             </svg>
           </div>
-          <span
-            :if={@is_rail_extended}
-            class="ml-3 text-sm font-bold tracking-widest text-slate-900 dark:text-slate-100 uppercase"
-            id="brand-name"
-          >
-            Rail
-          </span>
         </div>
 
         <!-- Destinations List -->
@@ -57,7 +45,6 @@ defmodule RailWeb.Components.Nav do
           <.nav_item
             section={:overview}
             active={@current_section == :overview}
-            is_extended={@is_rail_extended}
             label="Overview"
             icon_active="pi-squares-four-fill"
             icon_inactive="pi-squares-four"
@@ -68,7 +55,6 @@ defmodule RailWeb.Components.Nav do
           <.nav_item
             section={:triage}
             active={@current_section == :triage}
-            is_extended={@is_rail_extended}
             label="Triage"
             icon_active="pi-chat-circle-text-fill"
             icon_inactive="pi-chat-circle-text"
@@ -80,7 +66,6 @@ defmodule RailWeb.Components.Nav do
           <.nav_item
             section={:issues}
             active={@current_section == :issues}
-            is_extended={@is_rail_extended}
             label="Issues"
             icon_active="pi-lightbulb-fill"
             icon_inactive="pi-lightbulb"
@@ -91,7 +76,6 @@ defmodule RailWeb.Components.Nav do
           <.nav_item
             section={:learnings}
             active={@current_section == :learnings}
-            is_extended={@is_rail_extended}
             label="Learnings"
             icon_active="pi-brain-fill"
             icon_inactive="pi-brain"
@@ -102,7 +86,6 @@ defmodule RailWeb.Components.Nav do
           <.nav_item
             section={:sandboxes}
             active={@current_section == :sandboxes}
-            is_extended={@is_rail_extended}
             label="Sandboxes"
             icon_active="pi-cube-fill"
             icon_inactive="pi-cube"
@@ -125,7 +108,6 @@ defmodule RailWeb.Components.Nav do
                 :slack_workspaces
               ]
             }
-            is_extended={@is_rail_extended}
             label="Settings"
             icon_active="pi-gear-fill"
             icon_inactive="pi-gear"
@@ -134,29 +116,12 @@ defmodule RailWeb.Components.Nav do
           />
         </nav>
       </div>
-
-      <!-- Bottom Group: Rail Toggle -->
-      <div class="p-3 border-t border-slate-200 dark:border-slate-700">
-        <button
-          type="button"
-          id="rail-toggle"
-          data-qa="rail_toggle"
-          phx-click="toggle_rail"
-          title={if @is_rail_extended, do: "Collapse sidebar", else: "Expand sidebar"}
-          aria-label={if @is_rail_extended, do: "Collapse sidebar", else: "Expand sidebar"}
-          class="flex items-center justify-center w-full h-10 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
-        >
-          <.icon :if={@is_rail_extended} name="pi-caret-left" class="h-5 w-5" />
-          <.icon :if={!@is_rail_extended} name="pi-caret-right" class="h-5 w-5" />
-        </button>
-      </div>
     </aside>
     """
   end
 
   attr :section, :atom, required: true
   attr :active, :boolean, required: true
-  attr :is_extended, :boolean, required: true
   attr :label, :string, required: true
   attr :icon_active, :string, required: true
   attr :icon_inactive, :string, required: true
@@ -172,10 +137,9 @@ defmodule RailWeb.Components.Nav do
       data-qa={"nav_#{destination_slug(@section)}"}
       data-active={if @active, do: "true", else: "false"}
       title={@label}
+      aria-label={@label}
       class={[
-        "flex items-center h-9 rounded-lg transition-colors relative group text-sm",
-        @is_extended && "px-3",
-        !@is_extended && "justify-center px-0",
+        "flex items-center justify-center h-9 w-9 rounded-lg transition-colors relative",
         @active &&
           "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 font-semibold shadow-xs",
         !@active &&
@@ -194,13 +158,6 @@ defmodule RailWeb.Components.Nav do
           {@attention_count}
         </span>
       </div>
-      <span
-        :if={@is_extended}
-        class="ml-3 text-sm truncate"
-        id={"nav-label-#{destination_slug(@section)}"}
-      >
-        {@label}
-      </span>
     </.link>
     """
   end

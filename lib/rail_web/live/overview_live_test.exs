@@ -296,29 +296,6 @@ defmodule RailWeb.OverviewLiveTest do
     assert has_element?(view, "#selected-project-name", project_name)
   end
 
-  test "toggles navigation rail expanded and collapsed state", %{conn: conn} do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_overview_live_4",
-        login: "overview_live_user_4",
-        email: "overview_live_user_4@example.com",
-        admin: true
-      })
-
-    authed_conn = log_in_user(conn, user)
-
-    assert {:ok, view, _html} = live(authed_conn, ~p"/")
-    assert has_element?(view, "#brand-name", "Rail")
-
-    # Collapse rail
-    view |> element("#rail-toggle") |> render_click()
-    refute has_element?(view, "#brand-name")
-
-    # Expand rail
-    view |> element("#rail-toggle") |> render_click()
-    assert has_element?(view, "#brand-name", "Rail")
-  end
-
   # The Theme hook flips <html data-theme> itself and reports the result back, so the
   # server only ever reacts to "theme_changed".
   test "follows the theme the client reports", %{conn: conn} do

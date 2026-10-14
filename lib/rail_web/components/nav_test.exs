@@ -6,18 +6,12 @@ defmodule RailWeb.Components.NavTest do
   alias Rail.Projects.Schemas.Project
   alias RailWeb.Components.Nav
 
-  test "nav_rail renders 4 destinations in exact order with extended labels" do
-    html =
-      render_component(&Nav.nav/1,
-        current_section: :overview,
-        is_rail_extended: true,
-        attention_count: 0
-      )
+  test "nav_rail renders its destinations in order as icons, each named by its title" do
+    html = render_component(&Nav.nav/1, current_section: :overview, attention_count: 0)
 
     assert html =~ "id=\"navigation-rail\""
     assert html =~ "data-qa=\"navigation_rail\""
-    assert html =~ "id=\"brand-name\""
-    assert html =~ "Rail"
+    assert html =~ "id=\"brand-mark\""
 
     assert html =~ "id=\"nav-overview\""
     assert [_before, after_issues] = String.split(html, "id=\"nav-issues\"")
@@ -27,39 +21,22 @@ defmodule RailWeb.Components.NavTest do
     refute before_sandboxes =~ "attention-badge"
     assert html =~ ~s(href="/sandboxes")
     assert html =~ "id=\"nav-settings\""
-
-    # Active highlighting on overview
-    assert html =~ "data-active=\"true\""
-    assert html =~ "Overview"
-    assert html =~ "Issues"
-    assert html =~ "Sandboxes"
-    assert html =~ "Settings"
-
-    # Collapse sidebar tooltip
-    assert html =~ "title=\"Collapse sidebar\""
-  end
-
-  test "nav_rail collapsed hides text labels and shows expand tooltip" do
-    html =
-      render_component(&Nav.nav/1,
-        current_section: :issues,
-        is_rail_extended: false,
-        attention_count: 0
-      )
-
-    assert html =~ "id=\"navigation-rail\""
-    refute html =~ "id=\"brand-name\""
-    refute html =~ "id=\"nav-label-overview\""
-    assert html =~ "title=\"Expand sidebar\""
-    assert html =~ ~s(href="/issues")
     refute html =~ "?project="
+
+    assert html =~ "data-active=\"true\""
+
+    for label <- ["Overview", "Triage", "Issues", "Learnings", "Sandboxes", "Settings"] do
+      assert html =~ ~s(aria-label="#{label}")
+    end
+
+    refute html =~ "id=\"rail-toggle\""
+    refute html =~ ~r/>\s*Overview\s*</
   end
 
   test "nav_rail renders attention badge on overview when attention_count > 0" do
     html_with_badge =
       render_component(&Nav.nav/1,
         current_section: :overview,
-        is_rail_extended: true,
         attention_count: 4
       )
 
@@ -69,7 +46,6 @@ defmodule RailWeb.Components.NavTest do
     html_no_badge =
       render_component(&Nav.nav/1,
         current_section: :overview,
-        is_rail_extended: true,
         attention_count: 0
       )
 
@@ -78,7 +54,7 @@ defmodule RailWeb.Components.NavTest do
 
   test "the Triage destination sits between Overview and Issues, with its own badge" do
     html =
-      render_component(&Nav.nav/1, current_section: :triage, is_rail_extended: true, attention_count: 3, triage_count: 2)
+      render_component(&Nav.nav/1, current_section: :triage, attention_count: 3, triage_count: 2)
 
     assert [_before, after_overview] = String.split(html, ~s(id="nav-overview"))
     assert [between, _after] = String.split(after_overview, ~s(id="nav-issues"))
@@ -87,7 +63,7 @@ defmodule RailWeb.Components.NavTest do
     assert between =~ ~s(id="triage-badge")
     assert html =~ ~s(id="attention-badge")
 
-    refute render_component(&Nav.nav/1, current_section: :triage, is_rail_extended: true, triage_count: 0) =~
+    refute render_component(&Nav.nav/1, current_section: :triage, triage_count: 0) =~
              ~s(id="triage-badge")
   end
 
@@ -96,7 +72,6 @@ defmodule RailWeb.Components.NavTest do
       html =
         render_component(&Nav.nav/1,
           current_section: section,
-          is_rail_extended: true,
           attention_count: 0
         )
 
@@ -108,7 +83,6 @@ defmodule RailWeb.Components.NavTest do
       html =
         render_component(&Nav.nav/1,
           current_section: sub,
-          is_rail_extended: true,
           attention_count: 0
         )
 
@@ -231,7 +205,6 @@ defmodule RailWeb.Components.NavTest do
       render_component(&Nav.nav_item/1,
         section: :custom_dest,
         active: false,
-        is_extended: true,
         label: "Custom Section",
         icon_active: "pi-squares-four-fill",
         icon_inactive: "pi-squares-four",
