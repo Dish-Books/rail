@@ -3,10 +3,11 @@ defmodule Rail.Pipeline.Workers.EncodeDemo do
   Encodes the take the demo recorder just saved, and publishes it as the video on the issue and the pull
   request. One job per task while one is queued or running, so a write-up saved twice encodes once.
 
-  The encode squeezes out the time nothing happened and ends once the last caption has been read, so the
-  captions go in with their reading times and come back as where they landed in the video, written beside
-  the moment each was said. What goes wrong is said in the Review lead's conversation, where the human
-  reads the run, since a demo that did not encode is not a reason to fail the review.
+  Each caption is spoken first, with Gemini's text-to-speech, and the voice-over is mixed into the video once it
+  is encoded. The encode squeezes out the time nothing happened and ends once the last caption has been read, so
+  the captions go in held for as long as each takes to read or to say, and come back as where they landed in the
+  video, written beside the moment each was said. What goes wrong is said in the demo recorder's conversation,
+  where the human reads the run, since a demo that did not encode is not a reason to fail the review.
   """
   use Oban.Worker,
     queue: :issues,
@@ -52,11 +53,13 @@ defmodule Rail.Pipeline.Workers.EncodeDemo do
 
   defp encoded(%Task{} = task, directory) do
     beats = Pipeline.list_demo_beats(task)
-    marks = Enum.map(beats, &{&1.recorded_ms, DemoBeat.reading_ms(&1)})
+    voice = voice_over(task, directory, beats)
+    marks = beats |> Enum.zip(voice || List.duplicate(0, length(beats))) |> Enum.map(&mark/1)
 
     case Tools.encode_recording(directory, marks) do
       {:ok, _video, video_times} ->
         timed(directory, beats, video_times)
+        if voice, do: voiced(task, directory, video_times)
         published(task)
 
       {:error, :nothing_recorded} ->
@@ -67,6 +70,36 @@ defmodule Rail.Pipeline.Workers.EncodeDemo do
 
       {:error, {:encode_failed, output}} ->
         say(task, "The demo could not be encoded. ffmpeg said: #{tail(output)}")
+    end
+  end
+
+  # Each caption holds for as long as it takes to read or to say, whichever is longer, with a breath after it.
+  defp mark({%DemoBeat{} = beat, 0}), do: {beat.recorded_ms, DemoBeat.reading_ms(beat)}
+  defp mark({%DemoBeat{} = beat, spoken_ms}), do: {beat.recorded_ms, max(DemoBeat.reading_ms(beat), spoken_ms + 400)}
+
+  # Spoken before the encode, so the encode knows how long each line takes. A machine with no Google credentials
+  # makes silent demos, which is nothing to say; a voice that failed is said, and the demo goes out silent.
+  defp voice_over(%Task{}, _directory, []), do: nil
+
+  defp voice_over(%Task{} = task, directory, beats) do
+    case Tools.record_voice_over(directory, Enum.map(beats, & &1.text)) do
+      {:ok, durations} ->
+        durations
+
+      {:error, :goth_disabled} ->
+        nil
+
+      {:error, reason} ->
+        say(task, "The demo has no voice-over: the captions could not be spoken: #{inspect(reason)}")
+        nil
+    end
+  end
+
+  defp voiced(%Task{} = task, directory, video_times) do
+    case Tools.mix_voice_over(directory, video_times) do
+      {:ok, _video} -> :ok
+      {:error, :no_ffmpeg} -> say(task, "The demo has no voice-over: ffmpeg is not installed on this machine.")
+      {:error, {:encode_failed, output}} -> say(task, "The demo has no voice-over. ffmpeg said: #{tail(output)}")
     end
   end
 
@@ -141,7 +174,7 @@ defmodule Rail.Pipeline.Workers.EncodeDemo do
 
   # One line, since a log line that wraps reads its tail as the agent's words.
   defp say(%Task{} = task, text) do
-    {:ok, %Role{id: role_id}} = Roles.get_role(project_id: task.project_id, stage: :review_lead)
+    {:ok, %Role{id: role_id}} = Roles.get_role(project_id: task.project_id, stage: :demo)
 
     case Repo.get_by(Run, task_id: task.id, role_id: role_id) do
       %Run{id: run_id} ->

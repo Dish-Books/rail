@@ -58,6 +58,8 @@ defmodule Rail.Tools do
   defdelegate get_browser_recording(task), to: Actions.GetBrowserRecording
   defdelegate stop_browser_recording(task), to: Actions.StopBrowserRecording
   defdelegate encode_recording(directory, marks \\ []), to: Actions.EncodeRecording
+  defdelegate record_voice_over(directory, lines), to: Actions.RecordVoiceOver
+  defdelegate mix_voice_over(directory, starts_ms), to: Actions.MixVoiceOver
 
   defdelegate build_args(opts), to: Actions.BuildArgs
   defdelegate start_os_process(run, argv), to: Actions.StartOsProcess
