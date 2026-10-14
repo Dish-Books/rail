@@ -110,7 +110,15 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     run: run
   } do
     Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Filter by vendor.", approved_at: DateTime.utc_now()})
-    Repo.insert!(%Round{task_id: task.id, number: 2, plan: "Guard the nil.", approved_at: DateTime.utc_now()})
+    saved_at = ~U[2026-10-12 16:50:00.000000Z]
+
+    Repo.insert!(%Round{
+      task_id: task.id,
+      number: 2,
+      plan: "Guard the nil.",
+      plan_saved_at: saved_at,
+      approved_at: DateTime.utc_now()
+    })
 
     {:ok, _finding} =
       Pipeline.save_finding(task, %{
@@ -138,6 +146,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
       Jason.encode!(%{
         round: 1,
         plan: "Guard the nil.",
+        saved_at: saved_at,
         approved_at: "2026-10-12T16:58:00Z",
         comments: [%{number: 1, kind: "diff", place: "lib/a.ex:3", text: "Name it."}]
       })
@@ -154,10 +163,17 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
 
     assert {:ok, %OsProcess{}} = Pipeline.start_engineer_run(run)
 
-    # A round whose plan answered no comment carries only the findings.
-    File.write!(path, Jason.encode!(%{round: 1, plan: "Guard the nil.", approved_at: "2026-10-12T16:58:00Z"}))
+    # An Update's round was approved from no fix plan, so the last one's comments are not its to answer.
+    Repo.insert!(%Round{
+      task_id: task.id,
+      number: 3,
+      plan: "Merge main in.",
+      plan_saved_at: DateTime.utc_now(),
+      approved_at: DateTime.utc_now()
+    })
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "Merge main in."
       assert prompt =~ "`unhandled-nil`"
       refute prompt =~ "The human's comments this round"
       {:ok, %OsProcess{run: spawned}}

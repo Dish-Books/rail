@@ -33,6 +33,8 @@ defmodule Rail.Pipeline.Actions.SendToReview do
     with :ok <- sendable(run.task) do
       {:ok, latched} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
       {:ok, reviewing} = Pipeline.enter_stage(run.task, :review, start: false)
+      # A round that brought the branch up to date clears its Update, and one that did not may still need it.
+      {:ok, reviewing} = Pipeline.check_base(reviewing)
       :ok = start_checks(reviewing)
 
       {:ok, %{latched | task: run.task, role: run.role}}

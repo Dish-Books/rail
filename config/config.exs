@@ -41,6 +41,7 @@ config :rail, Oban,
        {"* * * * *", Rail.Tools.Workers.ReconcileOsProcesses},
        {"*/5 * * * *", Rail.Tools.Workers.RefreshUsage},
        {"*/15 * * * *", Rail.Git.Workers.FetchDefaultBranches},
+       {"5-59/15 * * * *", Rail.Pipeline.Workers.CheckBases},
        {"0 6 * * *", Rail.Learnings.Workers.ScheduleCurators},
        {"15 * * * *", Rail.Learnings.Workers.EmbedPending}
      ]}
