@@ -4,6 +4,7 @@ defmodule Rail.Pipeline.Actions.ListTasks do
   import Ecto.Query
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
 
@@ -17,6 +18,8 @@ defmodule Rail.Pipeline.Actions.ListTasks do
   `split_child: true` every child of every split.
   `ready: true` keeps the review queue: tasks at Finalize marked ready and not merged, whose issue Linear has
   not closed, oldest mark first.
+  `plan_ready: true` keeps the tech leads' plans to approve: tasks whose first round's plan was sent and is not
+  approved, started or not, oldest sent first.
   Cleaned-up tasks are left out unless `include_cleaned_up: true`.
   """
   def list_tasks(opts \\ []) do
@@ -31,6 +34,7 @@ defmodule Rail.Pipeline.Actions.ListTasks do
     |> filter_split_child(opts[:split_child])
     |> filter_stage(opts[:stage])
     |> filter_ready(opts[:ready])
+    |> filter_plan_ready(opts[:plan_ready])
     |> filter_cleaned_up(opts[:include_cleaned_up])
     |> Repo.all()
   end
@@ -38,6 +42,8 @@ defmodule Rail.Pipeline.Actions.ListTasks do
   defp default_order(opts) do
     cond do
       opts[:ready] -> [asc: :marked_ready_at, asc: :id]
+      # Ordered by its round, which the filter joins.
+      opts[:plan_ready] -> []
       opts[:parent_task_id] -> [asc: :split_position]
       true -> [asc: :inserted_at]
     end
@@ -90,4 +96,13 @@ defmodule Rail.Pipeline.Actions.ListTasks do
   end
 
   defp filter_ready(query, nil), do: query
+
+  defp filter_plan_ready(query, true) do
+    query
+    |> join(:inner, [task: t], r in Round, as: :round, on: r.task_id == t.id and r.number == 1)
+    |> where([round: r], not is_nil(r.ready_at) and is_nil(r.approved_at))
+    |> order_by([task: t, round: r], asc: r.ready_at, asc: t.id)
+  end
+
+  defp filter_plan_ready(query, nil), do: query
 end

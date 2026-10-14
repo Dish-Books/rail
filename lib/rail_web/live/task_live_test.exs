@@ -1437,7 +1437,10 @@ defmodule RailWeb.TaskLiveTest do
   end
 
   describe "the Plan stage" do
-    setup %{project: project, task: task, run: run} do
+    setup %{project: project, task: task, run: run, scope: scope} do
+      # A tech lead who owns the task approves its plan without it being sent first.
+      {:ok, _lead} = Users.update_user(system_scope(), scope.user, %{tech_lead: true})
+      Repo.update_all(from(i in Issue, where: i.id == ^task.issue_id), set: [owner_user_id: scope.user.id])
       {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
       {:ok, run} = Pipeline.update_run(run, %{conversation_id: "sess_plan_stage"})
       design_dir = Path.join(task.scratch_path, "design")
@@ -1773,12 +1776,8 @@ defmodule RailWeb.TaskLiveTest do
       assert content =~ "For table."
     end
 
-    test "an Approve clicked on a page that has not caught up is refused, and the page catches up", %{
-      conn: conn,
-      task: task,
-      save_ticket: save_ticket,
-      save_plan: save_plan
-    } do
+    test "an Approve clicked on a page that has not caught up approves the work already started, and the page catches up",
+         %{conn: conn, task: task, save_ticket: save_ticket, save_plan: save_plan} do
       save_ticket.()
       save_plan.(nil)
 
@@ -1787,9 +1786,28 @@ defmodule RailWeb.TaskLiveTest do
 
       view |> element("#approve-plan") |> render_click()
 
-      assert has_element?(view, "#plan-error", "This task is at Implement, not Plan.")
+      refute has_element?(view, "#plan-error")
       refute has_element?(view, "#approve-plan")
       assert has_element?(view, "[data-qa='task_status_chip']", "Queued for Implement")
+      assert %Round{approved_at: %DateTime{}} = Pipeline.read_plan(task)
+    end
+
+    test "a pick clicked on a page that has not caught up is refused, saying where the task is", %{
+      conn: conn,
+      task: task,
+      save_ticket: save_ticket,
+      save_options: save_options
+    } do
+      save_ticket.()
+      save_options.(["cards", "table", "timeline"])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#plan-item-design") |> render_click()
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :engineer})
+
+      view |> element("#pick-design-cards") |> render_click()
+
+      assert has_element?(view, "#plan-error", "This task is at Implement, not Plan.")
     end
 
     test "a page left open ignores another task's move", %{

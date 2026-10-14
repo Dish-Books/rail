@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
   alias Rail.Issues
   alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.AdvanceSplit
   alias Rail.Pipeline.Workers.CleanupMergedTask
@@ -47,6 +48,14 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       })
 
     %{task: task, lead: priya, scope: Scope.for_user(priya)}
+  end
+
+  # No GitHub mock is queued, so a merge request would raise.
+  test "work started without approval does not merge until a lead approves its plan", %{task: task, scope: scope} do
+    Repo.insert!(%Round{task_id: task.id, number: 1, plan: "## Implementation plan", ready_at: DateTime.utc_now()})
+
+    assert {:error, :plan_not_approved} = Pipeline.merge_task(scope, task)
+    assert %Task{stage: :finalize, merge_started_at: nil} = Repo.reload!(task)
   end
 
   test "a tech lead's merge says Merging, squash-merges as the lead, records it and enters Merged", %{

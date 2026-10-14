@@ -35,7 +35,11 @@ defmodule Rail.Pipeline do
   defdelegate enter_stage(task, stage, opts \\ []), to: Actions.EnterStage
 
   defdelegate start_plan_run(issue_or_run), to: Actions.StartPlanRun
+  @decorate can?(resource: :tasks, action: :approve)
   defdelegate approve_plan(scope, run), to: Actions.ApprovePlan
+
+  defdelegate send_plan_to_lead(scope, run), to: Actions.SendPlanToLead
+  defdelegate start_plan(scope, run), to: Actions.StartPlan
   defdelegate read_design(task, opts \\ []), to: Actions.ReadDesign
   defdelegate save_design_option(task, attrs), to: Actions.SaveDesignOption
   defdelegate pick_design_option(scope, run, key), to: Actions.PickDesignOption
