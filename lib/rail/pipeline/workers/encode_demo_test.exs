@@ -11,7 +11,7 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
   alias Rail.Tools
 
   setup %{project: project} do
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :demo)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -67,6 +67,66 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
              %DemoBeat{at_ms: 0, recorded_ms: 0, text: "Starting on the bills page"},
              %DemoBeat{at_ms: 31_000, recorded_ms: 95_000, criterion: "A bill saves"}
            ] = Pipeline.list_demo_beats(task)
+  end
+
+  # The voice-over is spoken before the encode, so each caption holds for as long as its line takes to say.
+  test "each caption is spoken, held long enough to say, and the voice-over mixed in where it plays", %{
+    task: task,
+    run: run,
+    demo_dir: demo_dir
+  } do
+    File.mkdir_p!(Path.join(demo_dir, "frames"))
+
+    File.write!(Path.join(demo_dir, "captions.jsonl"), """
+    {"at_ms": 0, "text": "Starting on the bills page", "criterion": null}
+    {"at_ms": 95000, "text": "Saved exactly as entered", "criterion": "A bill saves"}
+    """)
+
+    expect(Tools, :record_voice_over, fn ^demo_dir, ["Starting on the bills page", "Saved exactly as entered"] ->
+      {:ok, [2_000, 500]}
+    end)
+
+    # Said for longer than it reads, the first holds for its line and a breath; the second reads longer than it is said.
+    expect(Tools, :encode_recording, fn ^demo_dir, [{0, 2_400}, {95_000, 1_200}] ->
+      {:ok, Path.join(demo_dir, "demo.webm"), [0, 31_000]}
+    end)
+
+    expect(Tools, :mix_voice_over, fn ^demo_dir, [0, 31_000] -> {:ok, Path.join(demo_dir, "demo.webm")} end)
+
+    assert :ok = perform_job(EncodeDemo, %{task_id: task.id})
+    refute Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "voice-over"))
+  end
+
+  # A demo is still worth watching silent, so a voice that failed is said and the video goes out without it.
+  test "a voice that could not be spoken or mixed is said, and the demo goes out silent", %{
+    task: task,
+    run: run,
+    demo_dir: demo_dir
+  } do
+    File.mkdir_p!(Path.join(demo_dir, "frames"))
+    File.write!(Path.join(demo_dir, "captions.jsonl"), ~s({"at_ms": 0, "text": "Starting here", "criterion": null}\n))
+
+    expect(Tools, :record_voice_over, fn ^demo_dir, ["Starting here"] -> {:error, {:speech_error, 429, "slow"}} end)
+    expect(Tools, :encode_recording, fn ^demo_dir, [{0, 1_200}] -> {:ok, Path.join(demo_dir, "demo.webm"), [0]} end)
+
+    assert :ok = perform_job(EncodeDemo, %{task_id: task.id})
+
+    assert [%{line: "[rail] The demo has no voice-over: the captions could not be spoken: " <> _reason} | _rest] =
+             Pipeline.list_run_events(run)
+
+    expect(Tools, :record_voice_over, fn ^demo_dir, _lines -> {:ok, [300]} end)
+    expect(Tools, :encode_recording, fn ^demo_dir, _marks -> {:ok, Path.join(demo_dir, "demo.webm"), [0]} end)
+    expect(Tools, :mix_voice_over, fn ^demo_dir, [0] -> {:error, {:encode_failed, "Unknown encoder\nlibopus"}} end)
+    assert :ok = perform_job(EncodeDemo, %{task_id: task.id})
+
+    expect(Tools, :record_voice_over, fn ^demo_dir, _lines -> {:ok, [300]} end)
+    expect(Tools, :encode_recording, fn ^demo_dir, _marks -> {:ok, Path.join(demo_dir, "demo.webm"), [0]} end)
+    expect(Tools, :mix_voice_over, fn ^demo_dir, [0] -> {:error, :no_ffmpeg} end)
+    assert :ok = perform_job(EncodeDemo, %{task_id: task.id})
+
+    lines = Enum.map(Pipeline.list_run_events(run), & &1.line)
+    assert "[rail] The demo has no voice-over. ffmpeg said: Unknown encoder libopus" in lines
+    assert "[rail] The demo has no voice-over: ffmpeg is not installed on this machine." in lines
   end
 
   test "a recorded demo is posted on the ticket and linked from the pull request", %{
@@ -199,7 +259,7 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
   end
 
   # A demo is not a reason to fail the review, so what went wrong is said where the human reads the run.
-  test "a demo that could not be published says so on the Review lead's run", %{
+  test "a demo that could not be published says so on the demo recorder's run", %{
     task: task,
     run: run,
     demo_dir: demo_dir
@@ -283,8 +343,8 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
     assert_received {:output_saved, ^task_id}
   end
 
-  # The Review lead's run is where a problem is said, and a task can lose it to Retry before the job runs.
-  test "a task with no Review lead run has nowhere to say what went wrong", %{task: task, run: run} do
+  # The demo recorder's run is where a problem is said, and a task can lose it before the job runs.
+  test "a task with no demo recorder run has nowhere to say what went wrong", %{task: task, run: run} do
     Repo.delete!(run)
 
     assert :ok = perform_job(EncodeDemo, %{task_id: task.id})
