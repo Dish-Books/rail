@@ -88,6 +88,21 @@ defmodule Rail.Pipeline.Actions.SaveFixPlanTest do
     assert {:error, :no_fix_plan} = Pipeline.save_fix_plan(task, %{"plan" => @plan})
   end
 
+  # A person can ask for a change at Finalize, once nothing is left to fix.
+  test "once a review is saved a plan is due unasked, even with nothing to fix", %{task: task, path: path} do
+    File.rm!(path)
+    reviews = Path.join([task.scratch_path, "reviews", "SFP-1.json"])
+    File.mkdir_p!(Path.dirname(reviews))
+    File.write!(reviews, ~s({"passes": [{"round": 1, "saved_at": "2026-10-14T10:00:00Z", "head": "abc"}]}))
+
+    plan =
+      "### Changes to the plan\n\n- Criterion 1: a dot.\n\n### What changes\n\n#### Changes to the plan\n\n" <>
+        "The heading takes a dot.\n\n### File-level changes\n\n- `lib/a.ex`: the dot. For the changes to the plan."
+
+    assert {:ok, %FixPlan{version: 1, round: 1, head: "abc", findings: [], covered_keys: []}} =
+             Pipeline.save_fix_plan(%{task | stage: :finalize}, %{"plan" => plan, "description" => "A dot."})
+  end
+
   test "a plan says whether its round's screens are shot again and a demo recorded", %{task: task} do
     assert {:ok, %FixPlan{retake_screens: false, record_demo: false}} = Pipeline.save_fix_plan(task, %{"plan" => @plan})
 
@@ -101,7 +116,7 @@ defmodule Rail.Pipeline.Actions.SaveFixPlanTest do
   test "a plan that changes the ticket says so under Changes to the plan, or is refused", %{task: task} do
     assert {:error, changeset} = Pipeline.save_fix_plan(task, %{"plan" => @plan, "description" => "Filter by tag."})
 
-    assert %{plan: ["changes the ticket, so it opens with a `### Changes to the plan` section" <> _rest]} =
+    assert %{plan: ["changes the ticket or the design, so it opens with a `### Changes to the plan` section" <> _rest]} =
              errors_on(changeset)
 
     amended = "### Changes to the plan\n\n- Criteria: vendor becomes tag, as Ada asked.\n\n" <> @plan
@@ -114,5 +129,15 @@ defmodule Rail.Pipeline.Actions.SaveFixPlanTest do
              })
 
     assert %FixPlan{title: "Filter by tag", description: "Filter by tag."} = Pipeline.read_fix_plan(task)
+  end
+
+  test "a plan that changed the design says so under Changes to the plan, or is refused", %{task: task} do
+    assert {:error, changeset} = Pipeline.save_fix_plan(task, %{"plan" => @plan, "design_changed" => true})
+    assert %{plan: ["changes the ticket or the design" <> _rest]} = errors_on(changeset)
+
+    amended = "### Changes to the plan\n\n- Design: chips become a menu, as Ada asked.\n\n" <> @plan
+
+    assert {:ok, %FixPlan{design_changed: true}} =
+             Pipeline.save_fix_plan(task, %{"plan" => amended, "design_changed" => true})
   end
 end

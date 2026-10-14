@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.SaveFixPlan do
   @moduledoc """
   Saves the review agent's plan for the next round, in place of the one before it. A plan is due once a review is
-  saved with something to fix, or while one a Send asked for waits.
+  saved, until the task merges, or while one a Send asked for waits.
   """
 
   import Ecto.Changeset
@@ -32,24 +32,23 @@ defmodule Rail.Pipeline.Actions.SaveFixPlan do
   end
 
   # A plan a Send asked for waits to be saved. With none waiting, the review agent writes the next round's
-  # unasked once its review is saved: it covers every finding to fix as they stand now.
-  defp due(%Task{} = task) do
+  # unasked once a review is saved: it covers every finding to fix as they stand now, and a change to the ticket or
+  # the design a person asked for, which can come with no finding at all.
+  defp due(%Task{stage: stage} = task) do
     passes = Pipeline.read_review(task)
 
     case Pipeline.read_fix_plan(task) do
       %FixPlan{approved_at: nil} = waiting ->
         waiting
 
-      _none_or_approved when task.stage == :review and passes != [] ->
+      _none_or_approved when stage in [:review, :finalize] and passes != [] ->
         fix = task |> Pipeline.list_findings() |> Enum.filter(&Finding.outstanding?/1)
 
-        if fix != [] do
-          %FixPlan{
-            round: length(passes),
-            head: List.last(passes).head,
-            findings: Enum.map(fix, &%FixPlan.Finding{key: &1.key, title: &1.title})
-          }
-        end
+        %FixPlan{
+          round: length(passes),
+          head: List.last(passes).head,
+          findings: Enum.map(fix, &%FixPlan.Finding{key: &1.key, title: &1.title})
+        }
 
       _none_due ->
         nil

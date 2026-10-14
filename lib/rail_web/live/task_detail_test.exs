@@ -1,4 +1,4 @@
-defmodule RailWeb.Live.ReviewStageTest do
+defmodule RailWeb.Live.TaskDetailTest do
   use RailWeb.ConnCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
@@ -17,6 +17,9 @@ defmodule RailWeb.Live.ReviewStageTest do
   alias Rail.Tools.Schemas.BrowserSession
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
+
+  # Stubbed, never called, so it is named rather than imported.
+  @clock RailWeb.Utils.MonotonicMs
 
   setup %{conn: conn, project: project} do
     id = System.unique_integer([:positive])
@@ -182,6 +185,8 @@ defmodule RailWeb.Live.ReviewStageTest do
     code: code,
     screen: screen
   } do
+    stub(@clock, :monotonic_ms, fn -> 0 end)
+
     {:ok, _code} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
     {:ok, _screen} = Pipeline.save_finding(task, Map.put(screen, :key, "send-twice"))
     {:ok, _pass} = Pipeline.save_review(task)
@@ -197,7 +202,8 @@ defmodule RailWeb.Live.ReviewStageTest do
     assert %Finding{decision: :fix} = Repo.get_by!(Finding, task_id: task.id, key: "view-only-send")
 
     # The second click of a double click is held for a moment, so ruling the next one waits it out.
-    Process.sleep(400)
+    # The clock has moved past the double-click window.
+    stub(@clock, :monotonic_ms, fn -> 1_000 end)
     view |> element("#decide-skip-send-twice") |> render_click()
     assert has_element?(view, "#review-finding-footer", "1 to fix · 1 not fixing")
     assert has_element?(view, "#review-tray-finding-view-only-send", "A view-only member can send diff comments")
@@ -400,7 +406,7 @@ defmodule RailWeb.Live.ReviewStageTest do
 
     # A piece this finding does not have, or a stale page's, opens nothing.
     for params <- [%{"piece" => "place", "index" => "7"}, %{"piece" => "verdict"}] do
-      view |> with_target("#review-stage") |> render_click("open_finding_comment", params)
+      view |> with_target("#task-detail") |> render_click("open_finding_comment", params)
       refute has_element?(view, "#finding-comment-form")
     end
 
@@ -414,9 +420,9 @@ defmodule RailWeb.Live.ReviewStageTest do
     refute has_element?(view, "[data-qa=finding_title_comments] [data-qa=document_comment]")
     refute has_element?(view, "#review-send-tray [data-kind=finding]")
 
-    view |> with_target("#review-stage") |> render_click("remove_finding_comment", %{"id" => "fcm_gone"})
-    view |> with_target("#review-stage") |> render_click("save_finding_comment", %{"body" => "No box."})
-    view |> with_target("#review-stage") |> render_click("change_finding_comment", %{"body" => "No box."})
+    view |> with_target("#task-detail") |> render_click("remove_finding_comment", %{"id" => "fcm_gone"})
+    view |> with_target("#task-detail") |> render_click("save_finding_comment", %{"body" => "No box."})
+    view |> with_target("#task-detail") |> render_click("change_finding_comment", %{"body" => "No box."})
     assert Pipeline.list_finding_comments(user_scope(user: user), task) == []
   end
 
@@ -462,7 +468,7 @@ defmodule RailWeb.Live.ReviewStageTest do
 
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-    assert has_element?(view, "#review-stage")
+    assert has_element?(view, "#task-detail")
     refute has_element?(view, "#review-send-tray")
   end
 
@@ -1145,7 +1151,7 @@ defmodule RailWeb.Live.ReviewStageTest do
       refute has_element?(view, "[data-qa='diff_file_section'][data-path='b.ex']")
 
       # A commit the branch does not have, after a rebase say, opens the whole branch.
-      view |> with_target("#review-stage") |> render_click("open_diff", %{"commit" => String.duplicate("0", 40)})
+      view |> with_target("#task-detail") |> render_click("open_diff", %{"commit" => String.duplicate("0", 40)})
 
       assert has_element?(view, "#diff-commit-picker", "Whole branch")
     end
@@ -1254,7 +1260,7 @@ defmodule RailWeb.Live.ReviewStageTest do
       view |> element("#screen-view-comment") |> render_click()
       assert has_element?(view, "#screen-view-comment[aria-pressed=true]")
       refute has_element?(view, "#screen-view-panel[phx-window-keydown]")
-      view |> with_target("#review-stage") |> render_hook("screen_key", %{"key" => "ArrowRight"})
+      view |> with_target("#task-detail") |> render_hook("screen_key", %{"key" => "ArrowRight"})
       assert has_element?(view, "#screen-view-name", "File list just after Send")
       view |> element("#screen-comment-form [data-qa=screen_comment_cancel]") |> render_click()
       assert has_element?(view, "#screen-view-panel[phx-window-keydown]")
@@ -1335,7 +1341,7 @@ defmodule RailWeb.Live.ReviewStageTest do
       view |> element("#screen-view [data-qa=screen_comment_remove]") |> render_click()
 
       refute has_element?(view, "#screen-view [data-qa=screen_comment]")
-      view |> with_target("#review-stage") |> render_click("remove_screen_comment", %{"id" => "scm_gone"})
+      view |> with_target("#task-detail") |> render_click("remove_screen_comment", %{"id" => "scm_gone"})
 
       File.rm_rf!(Path.join([task.scratch_path, "qa", "screens"]))
       send(view.pid, {:output_saved, task.id})
@@ -1391,7 +1397,7 @@ defmodule RailWeb.Live.ReviewStageTest do
       assert has_element?(view, "[data-qa=review_screens_none]", "No screens yet.")
       refute has_element?(view, "[data-qa=review_screens_on]")
 
-      view |> with_target("#review-stage") |> render_click("open_screen", %{"key" => "gone"})
+      view |> with_target("#task-detail") |> render_click("open_screen", %{"key" => "gone"})
 
       assert has_element?(view, "[data-qa=review_screens_none]")
     end
@@ -1692,6 +1698,8 @@ defmodule RailWeb.Live.ReviewStageTest do
 
     test "ruling a Fix finding Don't fix withdraws Approve and marks the change everywhere, and ruling it back undoes it",
          %{conn: conn, task: task, run: run, plan: plan, view_only: view_only, twice: twice} do
+      stub(@clock, :monotonic_ms, fn -> 0 end)
+
       {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
       {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
       {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
@@ -1715,7 +1723,8 @@ defmodule RailWeb.Live.ReviewStageTest do
       assert has_element?(view, "#fix-plan-item-view-only-send [data-qa=fix_plan_item_changed]", "Now Don't fix")
 
       view |> element("#review-item-findings") |> render_click()
-      Process.sleep(400)
+      # The clock has moved past the double-click window.
+      stub(@clock, :monotonic_ms, fn -> 1_000 end)
       view |> element("#decide-fix-view-only-send") |> render_click()
       _settled = render(view)
 

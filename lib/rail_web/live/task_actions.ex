@@ -56,6 +56,18 @@ defmodule RailWeb.Live.TaskActions do
         {@error}
       </span>
 
+      <.button
+        :if={@failed}
+        id="task-retry"
+        phx-click="retry"
+        phx-value-run={@failed.id}
+        phx-target={@myself}
+        phx-disable-with="Starting…"
+        title={@failed.error}
+      >
+        <.icon name="pi-arrow-clockwise" class="size-4" />Retry {@failed.role.name}
+      </.button>
+
       <span
         :if={@plan.unapproved}
         id="task-plan-unapproved"
@@ -109,10 +121,11 @@ defmodule RailWeb.Live.TaskActions do
         :if={@update and @task.base_conflicts != []}
         id="task-conflicts"
         data-qa="task_conflicts"
-        title={Enum.join(@task.base_conflicts, "\n")}
-        class="inline-flex items-center gap-1.5 text-xs font-semibold text-red-600 dark:text-red-400"
+        role="status"
+        title={"Merging #{@task.project.default_branch} in conflicts in:\n" <> Enum.join(@task.base_conflicts, "\n")}
+        class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-300 ring-1 ring-inset ring-red-200 dark:ring-red-900"
       >
-        <.icon name="pi-git-diff" class="size-3.5" />
+        <.icon name="pi-warning-fill" class="size-3.5" />
         {conflicts(@task.base_conflicts)} with {@task.project.default_branch}
       </span>
 
@@ -232,6 +245,10 @@ defmodule RailWeb.Live.TaskActions do
 
   def handle_event("update_branch", _params, socket) do
     socket.assigns.current_scope |> Pipeline.update_branch(socket.assigns.task) |> respond(socket)
+  end
+
+  def handle_event("retry", %{"run" => run_id}, socket) do
+    socket.assigns.current_scope |> Pipeline.retry_run(%Run{id: run_id}) |> respond(socket)
   end
 
   def handle_event("mark_ready", _params, socket) do
@@ -355,6 +372,7 @@ defmodule RailWeb.Live.TaskActions do
     |> assign(:tech_lead, tech_lead)
     |> assign(:state, state)
     |> assign(:plan_run, plan_run(task))
+    |> assign(:failed, failed_run(task))
     |> assign(:plan, plan_actions(task, socket.assigns[:rounds] || Pipeline.list_rounds(task), scope, tech_lead))
     |> assign(:update, task.stage in [:review, :finalize] and task.base_behind and is_nil(task.cleaned_up_at))
     |> assign(
@@ -366,6 +384,14 @@ defmodule RailWeb.Live.TaskActions do
   defp plan_run(%Task{runs: runs}) when is_list(runs), do: Enum.find(runs, &match?(%Run{role: %Role{stage: :plan}}, &1))
 
   defp plan_run(%Task{}), do: nil
+
+  # A failed run of the step the task is at, which nothing else starts again.
+  defp failed_run(%Task{runs: runs, stage: stage}) when is_list(runs) and stage in [:engineer, :review] do
+    retryable = if stage == :engineer, do: [:engineer], else: [:qa, :review, :screens, :demo, :review_lead]
+    Enum.find(runs, &(&1.role.stage in retryable and Run.state(&1) == :failed))
+  end
+
+  defp failed_run(%Task{}), do: nil
 
   # What the initial plan asks of this reader. Its owner sends it or starts it; a tech lead approves it once sent,
   # straight away when they own it, and later when the owner started it without approval.
@@ -470,6 +496,7 @@ defmodule RailWeb.Live.TaskActions do
   defp message(:already_approved), do: "The plan is already approved."
   defp message(:not_owner), do: "Only the task's owner sends or starts its plan."
   defp message(:up_to_date), do: "The branch is already up to date."
+  defp message(:not_retryable), do: "That run is not one to retry now."
   defp message(:no_pull_request), do: "This task has no pull request yet."
   defp message(:no_ticket), do: "Plan has not saved a ticket yet."
   defp message(:no_plan), do: "Plan has not saved a plan yet."

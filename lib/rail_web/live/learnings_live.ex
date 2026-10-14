@@ -2,6 +2,8 @@ defmodule RailWeb.LearningsLive do
   @moduledoc false
   use RailWeb, :live_view
 
+  import RailWeb.Utils.MonotonicMs
+
   alias Rail.Learnings
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Learnings.Schemas.LearningProposal
@@ -318,7 +320,7 @@ defmodule RailWeb.LearningsLive do
          {:ok, _decided} <- action.(proposal) do
       socket =
         socket
-        |> assign(:decided, {id, System.monotonic_time(:millisecond)})
+        |> assign(:decided, {id, monotonic_ms()})
         |> push_patch(to: list_path(socket.assigns, []))
 
       {:noreply, socket}
@@ -338,8 +340,7 @@ defmodule RailWeb.LearningsLive do
     end
   end
 
-  defp double_click?({decided_id, at}, id) when decided_id != id,
-    do: System.monotonic_time(:millisecond) - at < @double_click_ms
+  defp double_click?({decided_id, at}, id) when decided_id != id, do: monotonic_ms() - at < @double_click_ms
 
   defp double_click?(_decided, _id), do: false
 

@@ -99,6 +99,25 @@ defmodule RailWeb.Components.FixPlanSheetTest do
     assert doc |> Floki.find("#fix-plan-item-comment-2") |> Floki.text() =~ "Comment 2 · Screen"
   end
 
+  test "the changes a person asked for are called out before the summary" do
+    fix_plan = %FixPlan{
+      round: 1,
+      plan:
+        "### Changes to the plan\n\n- Criterion 1: a dot.\n\nThe heading takes a dot.\n\n### What changes\n\n" <>
+          "#### Changes to the plan\n\nThe span and the script change."
+    }
+
+    doc =
+      (&FixPlanSheet.fix_plan_sheet/1)
+      |> render_component(sheet: FixPlan.build_sheet(fix_plan))
+      |> Floki.parse_fragment!()
+
+    changes = doc |> Floki.find("#fix-plan-changes") |> Floki.text()
+    assert changes =~ "Criterion 1: a dot."
+    assert changes =~ "The span and the script change."
+    assert doc |> Floki.find("#plan-summary") |> Floki.text() =~ ~r/0\s*findings/
+  end
+
   test "one finding, or several, reads as covered with a finding comment" do
     for {count, comments, said} <- [
           {1, 1, "The Fix finding and comment 1 covered"},

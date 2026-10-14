@@ -120,6 +120,7 @@ defmodule RailWeb.Live.RunConversation do
           open={@tray_open}
           can_send={Run.can_chat?(@selected_run)}
           plan_running={Run.running?(@selected_run)}
+          agent={if review_run?(assigns), do: "The review agent", else: "Plan"}
           target={@myself}
         />
 
@@ -284,6 +285,7 @@ defmodule RailWeb.Live.RunConversation do
               open={@tray_open}
               can_send={Run.can_chat?(@selected_run)}
               plan_running={Run.running?(@selected_run)}
+              agent={if review_run?(assigns), do: "The review agent", else: "Plan"}
               target={@myself}
             />
 
@@ -1479,8 +1481,9 @@ defmodule RailWeb.Live.RunConversation do
   defp identifier(_no_issue), do: nil
 
   # Only the Plan run's conversation is where plan comments wait to be sent.
+  # Plan takes the reader's ticket, design and plan comments, and once the work started the review agent does.
   defp assign_plan_comments(%{assigns: %{current_scope: %{user: %{}} = scope, task: task}} = socket) do
-    if plan_run?(socket.assigns),
+    if plan_run?(socket.assigns) or review_run?(socket.assigns),
       do: assign(socket, :plan_comments, Pipeline.list_plan_comments(scope, task)),
       else: assign(socket, :plan_comments, [])
   end

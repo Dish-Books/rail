@@ -97,6 +97,7 @@ defmodule Rail.Pipeline do
   defdelegate record_demo(scope, task), to: Actions.RecordDemo
   defdelegate check_base(task), to: Actions.CheckBase
   defdelegate update_branch(scope, task), to: Actions.UpdateBranch
+  defdelegate retry_run(scope, run), to: Actions.RetryRun
   defdelegate save_screen(task, attrs), to: Actions.SaveScreen
   defdelegate list_screens(task), to: Actions.ListScreens
 

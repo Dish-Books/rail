@@ -1,15 +1,16 @@
-defmodule RailWeb.Live.ReviewStage do
+defmodule RailWeb.Live.TaskDetail do
   @moduledoc """
-  Review, read the way Plan lists its own items: a slim rail of Findings, a fix round's Fix plan, Diff, Screens,
-  Demo and Browser beside the picked item's pane. Findings is the list beside one finding, with what the run is
-  doing above them while it works or waits; ruling moves on to the next finding. Fix plan is the round's plan,
-  which the header's Approve starts, and a ruling changed since it was saved is marked where it shows. What Send would send and whether it
-  can is handed to the page for the conversation's tray. Diff is the branch, or one commit of it, which a
-  finding's commits open. Screens is each screen state's one shot, opened over the page to step through and
-  comment on, Demo plays the latest recording with its walkthrough and says when the branch has moved past
-  it, and Browser watches any tab the explorers and the demo recorder have open.
+  A task's page body: the header with every decision on it, and a slim rail of the task's items beside the picked
+  one. Issue, Plan and Chat are the page's own, handed in as slots; Plan reads every round, with the next one's plan
+  and its Approve while it waits. Findings is the list beside one finding, with what the round's agents are doing
+  above them; ruling moves on to the next finding. What Send would send and whether it can is handed to the page
+  for the conversation's tray. Diff is the branch, or one commit of it, which a finding's commits open. Screens is
+  each screen state's one shot, opened over the page to step through and comment on, Demo plays the latest
+  recording with its walkthrough and says when the branch has moved past it, and Browser watches QA's browser.
   """
   use RailWeb, :live_component
+
+  import RailWeb.Utils.MonotonicMs
 
   alias Rail.Git
   alias Rail.Learnings
@@ -72,7 +73,7 @@ defmodule RailWeb.Live.ReviewStage do
   @impl true
   def render(assigns) do
     ~H"""
-    <div id="review-stage" data-qa="review-stage" class="contents">
+    <div id="task-detail" data-qa="task-detail" class="contents">
       <.task_layout
         task={@task}
         run={@stage_run}
@@ -630,7 +631,7 @@ defmodule RailWeb.Live.ReviewStage do
         |> assign(:error, nil)
         |> assign(:selected_key, selected_key)
         |> assign(:filed_index, 0)
-        |> assign(:advanced_to, if(selected_key != key, do: {selected_key, System.monotonic_time(:millisecond)}))
+        |> assign(:advanced_to, if(selected_key != key, do: {selected_key, monotonic_ms()}))
         |> load()
       else
         true -> socket
@@ -708,6 +709,7 @@ defmodule RailWeb.Live.ReviewStage do
     findings = Pipeline.list_findings(task)
     passes = Pipeline.read_review(task)
     runs = role_runs(task)
+    rounds = Pipeline.list_rounds(task)
     ci = runs[:engineer] && Pipeline.get_ci_status(runs[:engineer])
     fix_plan = Pipeline.read_fix_plan(task)
     plan_state = fix_plan && FixPlan.state(fix_plan, task, findings)
@@ -719,9 +721,9 @@ defmodule RailWeb.Live.ReviewStage do
     |> assign(:passes, passes)
     |> assign(:fix_plan, fix_plan)
     |> assign(:plan_state, plan_state)
-    |> assign_rounds(Pipeline.list_rounds(task), fix_plan, plan_state)
+    |> assign_rounds(rounds, fix_plan, plan_state)
     |> assign(:plan_run, runs[:plan])
-    |> assign(:plan_label, plan_label(task, runs[:plan]))
+    |> assign(:plan_label, plan_label(task, runs[:plan], List.first(rounds)))
     |> assign(:chat_label, chat_label(task, socket.assigns.chat_run))
     |> assign_fix_plan(fix_plan, plan_state, findings)
     |> assign(:findings, findings)
@@ -924,10 +926,10 @@ defmodule RailWeb.Live.ReviewStage do
       label: "Diff",
       icon: "pi-git-diff",
       picked_icon: "pi-git-diff-fill",
-      state: diff_state(socket.assigns.history),
+      state: diff_state(socket.assigns.history) <> conflicts_state(socket.assigns.task),
       badge: nil,
       dot: nil,
-      mark: nil
+      mark: if(socket.assigns.task.base_conflicts != [], do: :failed)
     }
 
     screens = %{
@@ -1146,10 +1148,12 @@ defmodule RailWeb.Live.ReviewStage do
     for %Run{role: %Role{stage: stage}} = run <- runs, into: %{}, do: {stage, run}
   end
 
-  defp plan_label(%Task{stage: :plan}, plan_run),
+  defp plan_label(%Task{stage: :plan}, plan_run, _first),
     do: if(Run.running?(plan_run), do: "Plan is writing", else: "Not approved yet")
 
-  defp plan_label(%Task{}, _plan_run), do: "Approved"
+  # Work its owner started without a tech lead's approval still waits on one.
+  defp plan_label(%Task{}, _plan_run, %Round{approved_at: nil}), do: "Started without approval"
+  defp plan_label(%Task{}, _plan_run, _approved_or_none), do: "Approved"
 
   defp chat_label(%Task{stage: :plan}, _run), do: "Talk to Plan"
   defp chat_label(%Task{}, %Run{}), do: "Talk to the review agent"
@@ -1213,6 +1217,12 @@ defmodule RailWeb.Live.ReviewStage do
 
   defp diff_state(history),
     do: "#{plural(length(history.commits), "commit")} · +#{history.additions} -#{history.deletions}"
+
+  # The branch would conflict with the default branch, which the header's Update merges in.
+  defp conflicts_state(%Task{base_conflicts: []}), do: ""
+
+  defp conflicts_state(%Task{base_conflicts: paths, project: project}),
+    do: " · conflicts with #{project.default_branch} in #{plural(length(paths), "file")}"
 
   defp screens_state([]), do: "No screens yet"
 
@@ -1399,7 +1409,7 @@ defmodule RailWeb.Live.ReviewStage do
   end
 
   # The second click of a double click lands on the finding just moved to, which nobody has read yet.
-  defp double_click?({key, at}, key), do: System.monotonic_time(:millisecond) - at < @double_click_ms
+  defp double_click?({key, at}, key), do: monotonic_ms() - at < @double_click_ms
   defp double_click?(_advanced_to, _key), do: false
 
   defp item("issue"), do: :issue

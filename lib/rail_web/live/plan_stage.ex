@@ -1096,14 +1096,19 @@ defmodule RailWeb.Live.PlanStage do
 
   defp load(socket) do
     %{task: task, run: run} = socket.assigns
-    round = Pipeline.read_plan(task)
-    ticket = round && round.ticket && Map.put(Map.from_struct(round.ticket), :saved_at, round.plan_saved_at)
+    # The combined plan is the first round's; a later round carries the ticket as its plan changed it.
+    rounds = Pipeline.list_rounds(task)
+    round = List.first(rounds)
+    latest = List.last(rounds)
+    ticket = latest && latest.ticket && Map.put(Map.from_struct(latest.ticket), :saved_at, latest.plan_saved_at)
     design = Pipeline.read_design(task)
     plan = if round && round.plan, do: %{content: round.plan, saved_at: round.plan_saved_at, design: round.design}
     approved = plan != nil and round.approved_at != nil
     split = Pipeline.read_split(task)
     running = Run.running?(run)
     can_chat = Run.can_chat?(run)
+    # Once the work started, a comment asks the review agent for a change to the plan, the design or the ticket.
+    amending = approved and task.stage in [:review, :finalize] and Run.can_chat?(socket.assigns[:chat_run])
     picked = design && Enum.find(design.options, &(&1.key == design.picked))
     selected_key = selected_key(design, socket.assigns.selected_key)
     sheet = plan && build_plan_sheet(plan.content)
@@ -1120,7 +1125,7 @@ defmodule RailWeb.Live.PlanStage do
     |> assign(:approved, approved)
     |> assign(:running, running)
     |> assign(:can_pick, task.stage == :plan and can_chat)
-    |> assign_offered(ticket, plan, can_chat and not approved)
+    |> assign_offered(ticket, plan, (can_chat and not approved) or amending)
     |> assign(:selected_key, selected_key)
     |> assign(:option, shown_option(design, selected_key))
     |> assign(:items, items)
@@ -1128,7 +1133,7 @@ defmodule RailWeb.Live.PlanStage do
     |> assign(:banner, banner(plan, picked, running))
     |> assign(:pick_up, pick_up(run))
     |> assign(:pending_text, pending_text(running, pick_up(run)))
-    |> assign(:comment_reason, comment_reason(design, run, approved))
+    |> assign(:comment_reason, comment_reason(design, run, approved and not amending))
     |> stop_commenting_unless_allowed()
     |> close_line_draft_unless_offered()
     |> assign_comments()
@@ -1222,8 +1227,10 @@ defmodule RailWeb.Live.PlanStage do
   defp layout(%{kind: :table_row}), do: :table_row
   defp layout(_line), do: :text
 
-  # Comments go to Plan through its conversation, which an approved plan no longer has.
-  defp comment_reason(_design, _run, true), do: "The plan is approved, so the design takes no more comments."
+  # Comments go to Plan through its conversation, and once the work started to the review agent, which only a
+  # task under review has.
+  defp comment_reason(_design, _run, true),
+    do: "The plan is approved, so the design takes comments again once the round is under review."
 
   # Before a pick there is nothing to comment on, and the pick comes first.
   defp comment_reason(%{picked: picked}, %Run{} = run, false) when is_binary(picked) do

@@ -1,6 +1,7 @@
 defmodule RailWeb.Components.FixPlanSheet do
   @moduledoc """
-  A fix round's plan laid out for approval: its summary, What changes with an item per finding and comment the plan
+  A fix round's plan laid out for approval: the changes to the ticket or the design a person asked for, called out
+  first, its summary, What changes with an item per finding and comment the plan
   covers, In this plan beside it, then File-level changes numbered as on the Plan tab, and Verification. Nothing in it
   takes a comment.
   """
@@ -25,6 +26,17 @@ defmodule RailWeb.Components.FixPlanSheet do
     >
       <div class="grid gap-6 items-start @min-[900px]:grid-cols-[minmax(0,1fr)_280px] @min-[1300px]:grid-cols-[minmax(0,1fr)_320px] @min-[1300px]:gap-8">
         <section class="min-w-0 max-w-[900px]">
+          <aside
+            :if={@sheet.changes}
+            id="fix-plan-changes"
+            data-qa="fix_plan_changes"
+            class="mb-5 rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950 px-4 py-3"
+          >
+            <h3 class="flex items-center gap-1.5 text-sm font-semibold text-amber-900 dark:text-amber-200">
+              <.icon name="pi-pencil-simple-line" class="size-4" /> Changes to the plan
+            </h3>
+            <.markdown content={@sheet.changes} class="mt-2" />
+          </aside>
           <.markdown
             :if={@sheet.summary != ""}
             content={@sheet.summary}
