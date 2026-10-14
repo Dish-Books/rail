@@ -100,12 +100,12 @@ defmodule RailWeb.Live.DiffToolbarTest do
 
   # The choice is the browser's, so the hook applies it and tells the stage.
   test "the wrap control is the browser's, told to the stage", %{toolbar: toolbar} do
-    html = DiffToolbar |> render_component(%{toolbar | target: "#review-stage"}) |> Floki.parse_fragment!()
+    html = DiffToolbar |> render_component(%{toolbar | target: "#task-detail"}) |> Floki.parse_fragment!()
 
     assert Floki.attribute(html, "#diff-wrap", "phx-hook") == ["DiffWrap"]
-    assert Floki.attribute(html, "#diff-wrap", "data-target") == ["#review-stage"]
+    assert Floki.attribute(html, "#diff-wrap", "data-target") == ["#task-detail"]
     assert Floki.attribute(html, "#diff-wrap-wrap", "phx-click") == ["select_diff_wrap"]
     assert Floki.attribute(html, "#diff-wrap-wrap", "phx-value-wrap") == ["wrap"]
-    assert Floki.attribute(html, "#diff-wrap-wrap", "phx-target") == ["#review-stage"]
+    assert Floki.attribute(html, "#diff-wrap-wrap", "phx-target") == ["#task-detail"]
   end
 end

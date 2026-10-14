@@ -101,7 +101,7 @@ defmodule Rail.Pipeline.Actions.SaveFixPlanTest do
   test "a plan that changes the ticket says so under Changes to the plan, or is refused", %{task: task} do
     assert {:error, changeset} = Pipeline.save_fix_plan(task, %{"plan" => @plan, "description" => "Filter by tag."})
 
-    assert %{plan: ["changes the ticket, so it opens with a `### Changes to the plan` section" <> _rest]} =
+    assert %{plan: ["changes the ticket or the design, so it opens with a `### Changes to the plan` section" <> _rest]} =
              errors_on(changeset)
 
     amended = "### Changes to the plan\n\n- Criteria: vendor becomes tag, as Ada asked.\n\n" <> @plan
@@ -114,5 +114,15 @@ defmodule Rail.Pipeline.Actions.SaveFixPlanTest do
              })
 
     assert %FixPlan{title: "Filter by tag", description: "Filter by tag."} = Pipeline.read_fix_plan(task)
+  end
+
+  test "a plan that changed the design says so under Changes to the plan, or is refused", %{task: task} do
+    assert {:error, changeset} = Pipeline.save_fix_plan(task, %{"plan" => @plan, "design_changed" => true})
+    assert %{plan: ["changes the ticket or the design" <> _rest]} = errors_on(changeset)
+
+    amended = "### Changes to the plan\n\n- Design: chips become a menu, as Ada asked.\n\n" <> @plan
+
+    assert {:ok, %FixPlan{design_changed: true}} =
+             Pipeline.save_fix_plan(task, %{"plan" => amended, "design_changed" => true})
   end
 end

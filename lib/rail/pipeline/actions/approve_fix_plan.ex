@@ -101,18 +101,40 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlan do
     })
   end
 
-  # The tracker's ticket follows, keeping the design section approval added below the description.
-  defp publish(%Task{}, %Round{}, %FixPlan{title: nil, description: nil}), do: :ok
+  # The tracker's ticket follows: the description as the plan changed it, and below it the design section approval
+  # added, or the picked design's new picture when the plan changed the design.
+  defp publish(%Task{}, %Round{}, %FixPlan{title: nil, description: nil, design_changed: false}), do: :ok
 
-  defp publish(%Task{issue: %Issue{} = issue}, %Round{}, %FixPlan{} = fix_plan) do
+  defp publish(%Task{issue: %Issue{} = issue} = task, %Round{}, %FixPlan{} = fix_plan) do
+    [description | section] = String.split(issue.description || "", "\n\n## Design: ", parts: 2)
+
     design =
-      case String.split(issue.description || "", "\n\n## Design: ", parts: 2) do
-        [_description, section] -> "\n\n## Design: " <> section
-        [_none] -> ""
-      end
+      if fix_plan.design_changed,
+        do: design_section(task),
+        else: Enum.map_join(section, &("\n\n## Design: " <> &1))
 
-    attrs = %{title: fix_plan.title, description: fix_plan.description && fix_plan.description <> design}
+    attrs = %{title: fix_plan.title, description: (fix_plan.description || description) <> design}
     {:ok, _issue} = Issues.update_issue(issue, Map.reject(attrs, fn {_field, value} -> is_nil(value) end))
     :ok
+  end
+
+  # A tracker that cannot hold the picture, such as GitHub Issues, still gets the design's text.
+  defp design_section(%Task{issue: %Issue{} = issue, project: project} = task) do
+    case Pipeline.read_design(task, pages: false) do
+      %{picked: key, options: options} when is_binary(key) ->
+        option = Enum.find(options, &(&1.key == key))
+        screenshot = File.read!(Path.join([task.scratch_path, "design", "#{key}.png"]))
+
+        image =
+          case Issues.upload_asset(project, "#{issue.identifier}-#{key}.png", "image/png", screenshot) do
+            {:ok, url} -> "\n\n![#{option.title}](#{url})"
+            {:error, _unsupported} -> ""
+          end
+
+        "\n\n" <> String.trim("## Design: #{option.title}\n\n#{option.summary}") <> image
+
+      _no_pick ->
+        ""
+    end
   end
 end

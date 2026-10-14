@@ -24,6 +24,7 @@ defmodule Rail.Pipeline.Utils.WriteFixPlan do
         :retake_screens,
         :title,
         :description,
+        :design_changed,
         :version,
         :saved_at,
         :approved_by,

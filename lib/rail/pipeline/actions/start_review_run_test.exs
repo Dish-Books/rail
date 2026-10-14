@@ -140,7 +140,8 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     reject(@prepare_turn, :prepare_turn, 1)
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
-      assert prompt =~ "You change nothing: no edits, no commits, no push."
+      assert prompt =~ "You change nothing in the worktree: no edits, no commits, no push."
+      assert prompt =~ "pass `design_changed: true` with the plan"
       assert prompt =~ "Call `save_review` once every finding is saved"
       assert prompt =~ "Then write the next round's plan."
       assert prompt =~ "Pass `retake_screens: true` when what the plan changes shows on screen"

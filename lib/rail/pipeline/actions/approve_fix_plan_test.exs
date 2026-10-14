@@ -149,6 +149,70 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
     assert %{description: "Filter by tag."} = Repo.reload!(task.issue)
   end
 
+  # The ticket's picture is the design as approved, so a plan that changed it puts the new one up.
+  test "a plan that changed the design puts its new picture on the issue once approved", %{task: task, run: run, ada: ada} do
+    dir = Path.join(task.scratch_path, "design")
+    File.mkdir_p!(dir)
+    File.write!(Path.join(dir, "chips.png"), "png bytes")
+    File.write!(Path.join(dir, "chips.html"), "<h1>Chips</h1>")
+
+    File.write!(
+      Path.join(dir, "manifest.json"),
+      Jason.encode!(%{options: [%{key: "chips", title: "Chips", summary: "As a menu now."}]})
+    )
+
+    File.write!(Path.join(dir, "picked"), "chips")
+
+    {:ok, _old} =
+      Issues.update_issue(task.issue, %{
+        description: "Filter by vendor.\n\n## Design: Chips\n\nChips.\n\n![Chips](old.png)"
+      })
+
+    amended = "### Changes to the plan\n\n- Design: chips become a menu, as Ada asked.\n\n" <> @plan
+    {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => amended, "design_changed" => true})
+    expect(Issues, :upload_asset, fn _project, "AFP-1-chips.png", "image/png", "png bytes" -> {:ok, "new.png"} end)
+    reject(Tools, :start_os_process, 2)
+
+    assert {:ok, %Run{}} = Pipeline.approve_fix_plan(ada, run, 2)
+
+    assert %{description: "Filter by vendor.\n\n## Design: Chips\n\nAs a menu now.\n\n![Chips](new.png)"} =
+             Repo.reload!(task.issue)
+  end
+
+  test "a tracker that cannot hold the picture gets the design's text", %{task: task, run: run, ada: ada} do
+    dir = Path.join(task.scratch_path, "design")
+    File.mkdir_p!(dir)
+    File.write!(Path.join(dir, "chips.png"), "png bytes")
+    File.write!(Path.join(dir, "chips.html"), "<h1>Chips</h1>")
+
+    File.write!(
+      Path.join(dir, "manifest.json"),
+      Jason.encode!(%{options: [%{key: "chips", title: "Chips", summary: "A menu."}]})
+    )
+
+    File.write!(Path.join(dir, "picked"), "chips")
+    {:ok, _old} = Issues.update_issue(task.issue, %{description: "Filter."})
+
+    amended = "### Changes to the plan\n\n- Design: a menu, as Ada asked.\n\n" <> @plan
+    {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => amended, "design_changed" => true})
+    expect(Issues, :upload_asset, fn _project, _name, _type, _bytes -> {:error, :unsupported} end)
+    reject(Tools, :start_os_process, 2)
+
+    assert {:ok, %Run{}} = Pipeline.approve_fix_plan(ada, run, 2)
+    assert %{description: "Filter.\n\n## Design: Chips\n\nA menu."} = Repo.reload!(task.issue)
+  end
+
+  test "a design changed with nothing picked puts no design section up", %{task: task, run: run, ada: ada} do
+    {:ok, _old} = Issues.update_issue(task.issue, %{description: "Filter."})
+    amended = "### Changes to the plan\n\n- Design: a menu, as Ada asked.\n\n" <> @plan
+    {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => amended, "design_changed" => true})
+    reject(&Issues.upload_asset/4)
+    reject(Tools, :start_os_process, 2)
+
+    assert {:ok, %Run{}} = Pipeline.approve_fix_plan(ada, run, 2)
+    assert %{description: "Filter."} = Repo.reload!(task.issue)
+  end
+
   test "a replaced version, or a plan revising, is refused and nothing starts", %{
     task: task,
     run: run,

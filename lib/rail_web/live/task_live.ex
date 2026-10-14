@@ -31,9 +31,9 @@ defmodule RailWeb.TaskLive do
   alias Rail.Users
   alias RailWeb.Live.DiffView
   alias RailWeb.Live.PlanStage
-  alias RailWeb.Live.ReviewStage
   alias RailWeb.Live.RunConversation
   alias RailWeb.Live.TaskActions
+  alias RailWeb.Live.TaskDetail
 
   # The engineer writes files as it works and the pane reads them off disk, so a
   # reader watching a run wants the diff to keep up. Re-reading on every batch of
@@ -171,8 +171,8 @@ defmodule RailWeb.TaskLive do
 
         <.live_component
           :if={@task != nil}
-          module={ReviewStage}
-          id="task-stage"
+          module={TaskDetail}
+          id="task-detail"
           task={@task}
           run={@review_run}
           chat_run={@chat_run}
@@ -232,6 +232,7 @@ defmodule RailWeb.TaskLive do
               current_scope={@current_scope}
               task={@task}
               run={@plan_run}
+              chat_run={@chat_run}
               stage_run={@stage_run}
               line={@line}
               approvable={@task.stage == :plan and not Run.running?(@plan_run)}
@@ -377,7 +378,7 @@ defmodule RailWeb.TaskLive do
   # The tray, which only the review agent's conversation draws, opens a finding or a screen state.
   def handle_info({event, key}, socket) when event in [:open_review_finding, :open_review_screen] do
     opened = if event == :open_review_finding, do: [open_finding: key], else: [open_screen: key]
-    send_update(ReviewStage, [id: "task-stage"] ++ opened)
+    send_update(TaskDetail, [id: "task-detail"] ++ opened)
     {:noreply, socket}
   end
 
@@ -647,7 +648,7 @@ defmodule RailWeb.TaskLive do
   defp reload_review_comments(socket, task_id) do
     # The stage reads the task it already holds: one handed over here could be older than the page's next render.
     with %{task_id: ^task_id, task: %Task{}} <- socket.assigns do
-      send_update(ReviewStage, id: "task-stage", reload: true)
+      send_update(TaskDetail, id: "task-detail", reload: true)
       send_update(RunConversation, id: "run-conversation", reload_review_comments: true)
     end
 
@@ -658,7 +659,7 @@ defmodule RailWeb.TaskLive do
   # A task cleaned up underneath the page has nothing on disk to read.
   defp reload_stage(socket) do
     with %{task: %Task{} = task, open_item: item} <- socket.assigns do
-      send_update(ReviewStage, id: "task-stage", reload: true)
+      send_update(TaskDetail, id: "task-detail", reload: true)
       if item == :plan, do: send_update(PlanStage, id: "plan-stage", task: task)
       if item == :diff, do: send_update(DiffView, id: "diff-view", reload: true)
     end

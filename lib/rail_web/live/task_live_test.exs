@@ -31,6 +31,9 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
+  # Stubbed, never called, so it is named rather than imported.
+  @clock RailWeb.Utils.MonotonicMs
+
   # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
   @plan """
   ## Implementation plan
@@ -2370,11 +2373,68 @@ defmodule RailWeb.TaskLiveTest do
 
       refute has_element?(view, "#send-plan-comments")
       assert has_element?(view, "#design-comment-toggle[disabled]")
-      assert has_element?(view, "#plan-stage", "The plan is approved, so the design takes no more comments.")
+
+      assert has_element?(
+               view,
+               "#plan-stage",
+               "The plan is approved, so the design takes comments again once the round is under review."
+             )
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=conversation&agent=plan")
       assert has_element?(view, "#conversation-closed", "Only Plan, and then the review agent, take messages.")
       refute has_element?(view, "#chat-input")
+    end
+
+    # Once the round is under review a comment on the design asks the review agent for a change to it.
+    test "under review, a comment on the design goes to the review agent", %{
+      conn: conn,
+      task: task,
+      scope: scope,
+      run: run,
+      pick: pick,
+      element: element
+    } do
+      pick.()
+
+      {:ok, _plan} =
+        Pipeline.save_plan(task, %{title: "A ticket", description: "Body.", plan: @plan, design: "waiting-lanes"})
+
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+      Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [approved_at: DateTime.utc_now()])
+      {:ok, lead} = Roles.get_role(project_id: task.project_id, stage: :review_lead)
+
+      {:ok, %Run{id: lead_id}} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: lead.id,
+          status: :finished,
+          conversation_id: "sess_tlv_design_review",
+          started_at: DateTime.utc_now()
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+      view |> element("#plan-item-design") |> render_click()
+      refute has_element?(view, "#design-comment-toggle[disabled]")
+
+      {:ok, _comment} =
+        Pipeline.create_plan_comment(scope, run, %{
+          target: :design,
+          option_key: "waiting-lanes",
+          selector: element["selector"],
+          element_text: element["text"],
+          element_tag: element["tag"],
+          capture: %{html: element["html"], width: 160, height: 20},
+          body: "Make it a menu."
+        })
+
+      _settled = render(view)
+
+      expect(Tools, :start_os_process, fn %Run{id: ^lead_id} = spawned, ["-p", prompt | _rest] ->
+        assert prompt =~ "Make it a menu."
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      view |> element("#send-plan-comments") |> render_click()
     end
 
     test "a comment the design or the chat moved under says why it was not saved", %{
@@ -3064,7 +3124,7 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       [stage_cid] =
-        view |> render() |> Floki.parse_fragment!() |> Floki.attribute("#review-stage", "data-phx-component")
+        view |> render() |> Floki.parse_fragment!() |> Floki.attribute("#task-detail", "data-phx-component")
 
       {_ref, _topic, proxy} = view.proxy
       1 = :erlang.trace(proxy, true, [:receive])
@@ -3130,7 +3190,7 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       [stage_cid] =
-        view |> render() |> Floki.parse_fragment!() |> Floki.attribute("#review-stage", "data-phx-component")
+        view |> render() |> Floki.parse_fragment!() |> Floki.attribute("#task-detail", "data-phx-component")
 
       {_ref, _topic, proxy} = view.proxy
       1 = :erlang.trace(proxy, true, [:receive])
@@ -5100,6 +5160,9 @@ defmodule RailWeb.TaskLiveTest do
 
     # A double click's second click lands on the finding just moved to, which nobody has read.
     test "a double click rules only the finding that was read", %{conn: conn, task: task, code: code} do
+      # The page reads time off a clock the test holds still, however slow the machine is.
+      stub(@clock, :monotonic_ms, fn -> 0 end)
+
       for {key, severity} <- [{"a-blocker", :blocker}, {"a-major", :major}, {"a-nit", :nit}],
           do: {:ok, _saved} = Pipeline.save_finding(task, %{code | key: key, title: key, severity: severity})
 
@@ -5121,6 +5184,9 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "the finding moved to can be ruled on once it has been seen", %{conn: conn, task: task, code: code} do
+      # The page reads time off a clock the test holds still, however slow the machine is.
+      stub(@clock, :monotonic_ms, fn -> 0 end)
+
       for {key, severity} <- [{"a-blocker", :blocker}, {"a-major", :major}],
           do: {:ok, _saved} = Pipeline.save_finding(task, %{code | key: key, title: key, severity: severity})
 
@@ -5129,7 +5195,8 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       view |> element("#decide-fix-a-blocker") |> render_click()
-      Process.sleep(400)
+      # The clock has moved past the double-click window.
+      stub(@clock, :monotonic_ms, fn -> 1_000 end)
       view |> element("#decide-fix-a-major") |> render_click()
 
       assert [%{key: "a-blocker", decision: :fix}, %{key: "a-major", decision: :fix}] = Pipeline.list_findings(task)

@@ -13,7 +13,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveFixPlan do
   def run_tool_save_fix_plan(%Task{} = task, arguments, _opts) do
     case Pipeline.save_fix_plan(
            task,
-           Map.take(arguments, ["plan", "record_demo", "retake_screens", "title", "description"])
+           Map.take(arguments, ["plan", "record_demo", "retake_screens", "title", "description", "design_changed"])
          ) do
       {:ok, fix_plan} ->
         {:ok,

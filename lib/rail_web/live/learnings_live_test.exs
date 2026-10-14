@@ -16,6 +16,9 @@ defmodule RailWeb.LearningsLiveTest do
   alias Rail.Repo
   alias Rail.Users
 
+  # Stubbed, never called, so it is named rather than imported.
+  @clock RailWeb.Utils.MonotonicMs
+
   setup %{conn: conn, project: project} do
     id = System.unique_integer([:positive])
 
@@ -255,6 +258,8 @@ defmodule RailWeb.LearningsLiveTest do
 
   # The second click of a double click lands on the proposal the queue moved to, which nobody has read.
   test "a double click on Approve or Reject decides only the proposal that was open", %{conn: conn, project: project} do
+    stub(@clock, :monotonic_ms, fn -> 0 end)
+
     [first, second, third] =
       for n <- 1..3 do
         draft = learning(project, %{rule: "Draft #{n}", kind: :convention}, status: :proposed)
@@ -269,7 +274,8 @@ defmodule RailWeb.LearningsLiveTest do
     assert %LearningProposal{status: :approved} = Repo.reload!(first)
     assert %LearningProposal{status: :pending} = Repo.reload!(second)
 
-    Process.sleep(400)
+    # The clock has moved past the double-click window.
+    stub(@clock, :monotonic_ms, fn -> 1_000 end)
     view |> element("#reject-proposal-button") |> render_click()
     view |> element("#reject-proposal-button") |> render_click()
 

@@ -779,6 +779,7 @@ defmodule RailWeb.Live.TaskActionsTest do
       assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
 
       assert has_element?(view, "#task-conflicts", "Conflicts in 2 files with main")
+      assert has_element?(view, "#review-item-diff[title*='conflicts with main in 2 files'] [data-qa=review_item_failed]")
       assert has_element?(view, "#task-update[title='Merge main in, as a round of its own']", "Update")
 
       view |> element("#task-update") |> render_click()
@@ -804,6 +805,36 @@ defmodule RailWeb.Live.TaskActionsTest do
       view |> element("#task-update") |> render_click()
 
       assert has_element?(view, "#task-actions-error[role='alert']", "The branch is already up to date.")
+    end
+  end
+
+  describe "a failed run of the step the task is at" do
+    # Nothing starts after a check that failed, so the round goes on only once it runs again.
+    test "offers Retry on it, naming the agent, and a refusal says why", %{
+      conn: conn,
+      project: project,
+      task: task,
+      dan: dan
+    } do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+      {:ok, qa} = Roles.get_role(project_id: project.id, stage: :qa)
+
+      {:ok, %{id: run_id}} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: qa.id,
+          status: :finished,
+          error: "Chrome went away",
+          started_at: DateTime.utc_now()
+        })
+
+      expect(Pipeline, :retry_run, fn _scope, %{id: ^run_id} -> {:error, :not_retryable} end)
+
+      assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#task-retry[title='Chrome went away']", "Retry qa role")
+
+      view |> element("#task-retry") |> render_click()
+      assert has_element?(view, "#task-actions-error", "That run is not one to retry now.")
     end
   end
 

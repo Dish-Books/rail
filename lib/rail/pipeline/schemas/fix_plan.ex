@@ -32,6 +32,8 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
     # The ticket as a person asked it changed, whole, or nil where they asked for no change.
     field :title, :string
     field :description, :string
+    # Whether the review agent saved the picked design again, as a person asked.
+    field :design_changed, :boolean, default: false
     field :version, :integer, default: 0
     field :saved_at, :utc_datetime_usec
     field :approved_by, :string
@@ -66,6 +68,7 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
       :retake_screens,
       :title,
       :description,
+      :design_changed,
       :version,
       :saved_at,
       :approved_by,
@@ -83,7 +86,7 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
   """
   def save_changeset(%__MODULE__{} = fix_plan, attrs) do
     fix_plan
-    |> cast(attrs, [:plan, :record_demo, :retake_screens, :title, :description])
+    |> cast(attrs, [:plan, :record_demo, :retake_screens, :title, :description, :design_changed])
     |> update_change(:plan, &String.trim/1)
     |> validate_required([:plan])
     |> validate_structure(fix_plan)
@@ -383,7 +386,10 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
 
   # A changed ticket is said where the person reads the plan, before anything is approved on it.
   defp validate_amendments(changeset) do
-    amended = get_field(changeset, :title) != nil or get_field(changeset, :description) != nil
+    amended =
+      get_field(changeset, :title) != nil or get_field(changeset, :description) != nil or
+        get_field(changeset, :design_changed)
+
     plan = get_field(changeset, :plan) || ""
 
     if amended and not String.contains?(plan, "### Changes to the plan"),
@@ -391,7 +397,7 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
         add_error(
           changeset,
           :plan,
-          "changes the ticket, so it opens with a `### Changes to the plan` section saying what was asked, by whom, and what each part was and becomes"
+          "changes the ticket or the design, so it opens with a `### Changes to the plan` section saying what was asked, by whom, and what each part was and becomes"
         ),
       else: changeset
   end

@@ -54,7 +54,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     String.trim("""
     You are the review agent for the change below. QA drove the built app and the code reviewer read the branch, each on its own, and their reports are below with the engineer's. You turn what they found into findings the human can rule on, then write the plan for the next round. You are the one the human talks to about this review.
 
-    You change nothing: no edits, no commits, no push. You hand work to nobody: when a report leaves doubt, read the code or open the picture yourself. The worktree is #{worktree_path} and every path you touch is under it. Nothing under #{scratch_path} is part of the change; QA's checklist is #{Path.join(scratch_path, "qa/checklist.json")} and its evidence is beside it.
+    You change nothing in the worktree: no edits, no commits, no push. You hand work to nobody: when a report leaves doubt, read the code or open the picture yourself. The worktree is #{worktree_path} and every path you touch is under it. Nothing under #{scratch_path} is part of the change; QA's checklist is #{Path.join(scratch_path, "qa/checklist.json")} and its evidence is beside it.
 
     How a review works:
 
@@ -70,6 +70,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     - A ruling the human changes, or a comment they leave, arrives as one message sent from Rail: rulings tagged `<ruling_change>` with what they were and are now, findings newly ruled Fix whole, and their comments, each numbered and tagged `<diff_comment>` with its file, line and code, `<screen_comment>` with the screen state, the commit it was written on and the path of the state's picture, or `<finding_comment>` with a finding's key, title and ruling and the piece of it commented on. Save a revised plan with `save_fix_plan` covering the round as it now stands, each comment by its number, and end your turn. A change asked for in the conversation is saved the same way.
     - A comment is not a finding and is never saved with `save_finding`.
     - The human may ask to change the ticket, the acceptance criteria or the first plan. Only then, say so at the top of the plan under `### Changes to the plan`, each as what it was, what it becomes and who asked, and pass the whole new `title` or `description`, criteria included, with `save_fix_plan`. Rail updates the ticket when the plan is approved.
+    - A comment on the ticket, the design or the first plan arrives as a message too, each quoting the line it is on. One that asks to change the picked design: edit its page #{Path.join([scratch_path, "design", "<key>.html"])}, retake its screenshot with `chromium --headless --no-sandbox --disable-gpu --hide-scrollbars --virtual-time-budget=8000 --window-size=1920,1170 --screenshot=<that folder>/<key>.png file://<that folder>/<key>.html`, open the picture and check it, save it again with `save_design_option` under the same `key`, and pass `design_changed: true` with the plan. Rail puts the new picture on the ticket when the plan is approved.
 
     Findings:
 

@@ -63,9 +63,11 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
     assert names[:demo] == browser ++ ["demo_start", "demo_say", "save_demo", "knowledge_search"]
   end
 
-  test "the review agent is offered the tools it saves findings, the review and the next plan with, and no browser",
+  # A person can ask for the picked design to change, which the review agent saves as Plan did.
+  test "the review agent is offered the tools it saves findings, the review, the next plan and the design with",
        %{names: names} do
-    assert names[:review_lead] == ["save_finding", "save_fix_plan", "save_review", "ask_questions", "knowledge_search"]
+    assert names[:review_lead] ==
+             ["save_finding", "save_fix_plan", "save_review", "save_design_option", "ask_questions", "knowledge_search"]
   end
 
   test "save_report takes the whole report, for the agents nobody relays for", %{names: names} do

@@ -278,7 +278,8 @@ defmodule Rail.Mcp.Utils.McpTools do
     "end_line" => %{"type" => "integer", "description" => "The last line, when it spans more than one."}
   }
 
-  @plan_tools [
+  # Plan's, and the review agent's once a person asks for the picked design to change.
+  @design_tools [
     %{
       "name" => "save_design_option",
       "description" =>
@@ -303,7 +304,10 @@ defmodule Rail.Mcp.Utils.McpTools do
         },
         "required" => ["key", "title", "summary"]
       }
-    },
+    }
+  ]
+
+  @plan_tools [
     %{
       "name" => "save_plan",
       "description" =>
@@ -561,6 +565,12 @@ defmodule Rail.Mcp.Utils.McpTools do
             "description" =>
               "Only when a person asked to change the ticket or its acceptance criteria: its whole new description, " <>
                 "criteria included. The ticket is updated when the plan is approved."
+          },
+          "design_changed" => %{
+            "type" => "boolean",
+            "description" =>
+              "True when, as a person asked, you saved the picked design again with `save_design_option`. Its " <>
+                "picture on the ticket is replaced when the plan is approved."
           }
         },
         "required" => ["plan"]
@@ -672,7 +682,7 @@ defmodule Rail.Mcp.Utils.McpTools do
   The tools Rail serves this run itself: the save tools each agent hands its output over with, the browser for
   the three that drive the app, `ask_questions` for the agents a person talks to, and the knowledge base for all.
   """
-  def mcp_tools(%Role{stage: :plan}), do: @plan_tools ++ @question_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :plan}), do: @design_tools ++ @plan_tools ++ @question_tools ++ @knowledge_tools
   def mcp_tools(%Role{stage: :engineer}), do: @report_tools ++ @question_tools ++ @knowledge_tools
   def mcp_tools(%Role{stage: :qa}), do: @browser_tools ++ @check_tools ++ @report_tools ++ @knowledge_tools
   def mcp_tools(%Role{stage: :review}), do: @report_tools ++ @knowledge_tools
@@ -680,6 +690,8 @@ defmodule Rail.Mcp.Utils.McpTools do
 
   def mcp_tools(%Role{stage: :demo}), do: @browser_tools ++ @demo_tools ++ @demo_report_tools ++ @knowledge_tools
 
-  def mcp_tools(%Role{stage: :review_lead}), do: @review_lead_tools ++ @question_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :review_lead}),
+    do: @review_lead_tools ++ @design_tools ++ @question_tools ++ @knowledge_tools
+
   def mcp_tools(%Role{}), do: @knowledge_tools
 end
