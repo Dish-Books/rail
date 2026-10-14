@@ -79,11 +79,11 @@ default_roles = [
     max_concurrent: 2,
     position: 3
   },
-  # Leads the four below inside one Review run, each a subagent on its own role's model.
+  # Turns what the three below report on a round into findings and the next round's plan.
   %{
     stage: :review_lead,
-    name: "Review lead",
-    description: "Leads the code reviewer, QA explorers, engineer and demo recorder through Review",
+    name: "Review",
+    description: "Turns QA's and the code reviewer's reports into findings and writes the next round's plan",
     icon_name: "pi-seal-check-fill",
     cli: :claude,
     model: "claude-opus-5-5",
@@ -113,6 +113,18 @@ default_roles = [
     model: "claude-opus-5-5",
     reasoning_effort: :high,
     system_prompt: read_prompt.("qa"),
+    max_concurrent: 1,
+    position: 5
+  },
+  %{
+    stage: :screens,
+    name: "Screenshots",
+    description: "Photographs every screen state a round's change affects",
+    icon_name: "pi-eye",
+    cli: :claude,
+    model: "claude-opus-5-5",
+    reasoning_effort: :high,
+    system_prompt: read_prompt.("screens"),
     max_concurrent: 1,
     position: 5
   },

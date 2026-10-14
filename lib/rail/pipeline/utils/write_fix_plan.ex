@@ -20,6 +20,8 @@ defmodule Rail.Pipeline.Utils.WriteFixPlan do
         :covered_keys,
         :covered_titles,
         :covered_comments,
+        :record_demo,
+        :retake_screens,
         :version,
         :saved_at,
         :approved_by,

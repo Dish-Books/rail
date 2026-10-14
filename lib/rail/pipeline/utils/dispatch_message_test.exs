@@ -188,8 +188,8 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     assert %Run{error: nil, exit_code: nil} = Repo.reload!(failed)
   end
 
-  # Subagents are a spawn flag, not part of the saved session, so the lead's every turn passes them again.
-  test "a message to the Review lead spawns with the code reviewer, explorer, engineer and demo recorder", %{
+  # The review agent commits nothing, so its turn readies no branch, and it leads nobody.
+  test "a message to the review agent spawns it alone, with no subagents and no branch to bring up to date", %{
     project: project,
     task: %Task{id: task_id} = task
   } do
@@ -207,20 +207,21 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
       })
 
     expect(Tools, :start_os_process, fn spawned, argv ->
-      [json] = for ["--agents", json] <- Enum.chunk_every(argv, 2, 1), do: json
-
-      assert %{"code-reviewer" => %{}, "explorer" => %{}, "engineer" => %{}, "demo-recorder" => %{}} =
-               Jason.decode!(json)
+      refute "--agents" in argv
+      assert "Check the empty state too" in argv
 
       {:ok, %OsProcess{run: spawned}}
     end)
 
     assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
-    assert_received {:prepared, ^task_id}
+    refute_received {:prepared, ^task_id}
   end
 
   # The engineer's turn starts on a fresh default branch, committing as the ticket's owner.
-  test "a message to a run that leads nobody spawns with no subagents", %{project: project, task: task} do
+  test "a message to the engineer spawns it with no subagents, on a branch brought up to date", %{
+    project: project,
+    task: task
+  } do
     {:ok, %Task{id: task_id} = task} = Pipeline.update_task(task, %{stage: :engineer})
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 

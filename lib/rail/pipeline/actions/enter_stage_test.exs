@@ -104,12 +104,15 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: task.issue_id})
   end
 
-  test "Review is spawned as the Review lead, with its own brief and its subagents", %{task: task, roles: roles} do
+  test "Review entered with a start spawns the review agent on its own brief, with no subagents", %{
+    task: task,
+    roles: roles
+  } do
     %{id: review_lead_role_id} = roles[:review_lead]
 
     expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] = argv ->
-      assert prompt =~ "You lead Rail's Review step"
-      assert "--agents" in argv
+      assert prompt =~ "You are the review agent for the change below."
+      refute "--agents" in argv
       {:ok, %OsProcess{run: spawned, task: task}}
     end)
 

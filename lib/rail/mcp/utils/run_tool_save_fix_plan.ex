@@ -11,7 +11,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveFixPlan do
   fix. Refused outright when no fix plan is due.
   """
   def run_tool_save_fix_plan(%Task{} = task, arguments, _opts) do
-    case Pipeline.save_fix_plan(task, Map.take(arguments, ["plan"])) do
+    case Pipeline.save_fix_plan(task, Map.take(arguments, ["plan", "record_demo", "retake_screens"])) do
       {:ok, fix_plan} ->
         {:ok,
          "Fix plan saved as version #{fix_plan.version} of fix round #{fix_plan.round}. Change nothing and end your turn: the human approves it in Rail."}

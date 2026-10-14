@@ -321,7 +321,7 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
                })
 
       assert {:ok, %{"content" => [%{"text" => "Write-up saved: One round."}]}} =
-               Mcp.call_run_tool(lead, "save_demo", %{"title" => "One round", "summary" => "Shown."})
+               Mcp.call_run_tool(context.(:demo), "save_demo", %{"title" => "One round", "summary" => "Shown."})
 
       # The engineer commits with git and its turn ending hands the work over, so no tool does either.
       assert {:error, :unknown_tool} =
@@ -341,7 +341,7 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
         {:plan, "save_split", :save_split},
         {:review_lead, "save_finding", :save_finding},
         {:review_lead, "save_fix_plan", :save_fix_plan},
-        {:review_lead, "save_demo", :save_demo}
+        {:demo, "save_demo", :save_demo}
       ]
 
       dropped =

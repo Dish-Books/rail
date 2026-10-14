@@ -6,7 +6,7 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
   alias Rail.Roles.Schemas.Role
 
   setup do
-    stages = [:plan, :engineer, :review_lead, :review, :qa, :demo, :triage]
+    stages = [:plan, :engineer, :review_lead, :review, :qa, :screens, :demo, :triage]
     %{names: Map.new(stages, fn stage -> {stage, %Role{stage: stage} |> mcp_tools() |> Enum.map(& &1["name"])} end)}
   end
 
@@ -20,7 +20,7 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
              "knowledge_search"
            ]
 
-    assert names[:engineer] == ["ask_questions", "knowledge_search"]
+    assert names[:engineer] == ["save_report", "ask_questions", "knowledge_search"]
   end
 
   test "only the Plan, Engineer and Review leads are offered ask_questions, a list of prompts with options", %{
@@ -53,25 +53,27 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
     end
   end
 
-  test "the Review lead is offered the browser, the checklist, the camera, and the tools it reports with",
+  test "each agent that checks a round is offered its own tools, and the three that drive the app a browser",
        %{names: names} do
-    assert names[:review_lead] == [
-             "browser_connect",
-             "browser_problems",
-             "browser_close",
-             "qa_plan",
-             "qa_check",
-             "qa_shot",
-             "save_screen",
-             "demo_start",
-             "demo_say",
-             "save_finding",
-             "save_fix_plan",
-             "save_review",
-             "save_demo",
-             "ask_questions",
-             "knowledge_search"
-           ]
+    browser = ["browser_connect", "browser_problems", "browser_close"]
+
+    assert names[:qa] == browser ++ ["qa_plan", "qa_check", "qa_shot", "save_report", "knowledge_search"]
+    assert names[:review] == ["save_report", "knowledge_search"]
+    assert names[:screens] == browser ++ ["save_screen", "knowledge_search"]
+    assert names[:demo] == browser ++ ["demo_start", "demo_say", "save_demo", "knowledge_search"]
+  end
+
+  test "the review agent is offered the tools it saves findings, the review and the next plan with, and no browser",
+       %{names: names} do
+    assert names[:review_lead] == ["save_finding", "save_fix_plan", "save_review", "ask_questions", "knowledge_search"]
+  end
+
+  test "save_report takes the whole report, for the agents nobody relays for", %{names: names} do
+    for_result = for({stage, tools} <- names, "save_report" in tools, do: stage)
+    assert Enum.sort(for_result) == [:engineer, :qa, :review]
+
+    assert %{"inputSchema" => %{"properties" => %{"report" => %{"type" => "string"}}, "required" => ["report"]}} =
+             %Role{stage: :qa} |> mcp_tools() |> Enum.find(&(&1["name"] == "save_report"))
   end
 
   test "only the Review lead is offered save_fix_plan", %{names: names} do
@@ -105,7 +107,7 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
   # Rail names the file, so a shot takes a caption and a browser and never a path.
   test "qa_shot takes what the picture shows, which browser and at what width, and nothing else" do
     assert %{"inputSchema" => %{"properties" => properties, "required" => ["name"]}} =
-             %Role{stage: :review_lead} |> mcp_tools() |> Enum.find(&(&1["name"] == "qa_shot"))
+             %Role{stage: :qa} |> mcp_tools() |> Enum.find(&(&1["name"] == "qa_shot"))
 
     assert %{
              "name" => %{"type" => "string"},
@@ -123,15 +125,9 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
                "properties" => %{"key" => %{"type" => "string"}, "label" => %{"type" => "string"}} = properties,
                "required" => ["key", "label"]
              }
-           } = %Role{stage: :review_lead} |> mcp_tools() |> Enum.find(&(&1["name"] == "save_screen"))
+           } = %Role{stage: :screens} |> mcp_tools() |> Enum.find(&(&1["name"] == "save_screen"))
 
     assert Map.keys(properties) == ["browser", "key", "label", "width"]
-  end
-
-  test "the lead's subagents are offered only the knowledge base", %{names: names} do
-    assert names[:review] == ["knowledge_search"]
-    assert names[:qa] == ["knowledge_search"]
-    assert names[:demo] == ["knowledge_search"]
   end
 
   test "a stage with no output of its own is offered only the knowledge base", %{names: names} do

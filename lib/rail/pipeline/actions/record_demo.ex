@@ -1,43 +1,35 @@
 defmodule Rail.Pipeline.Actions.RecordDemo do
   @moduledoc """
-  Re-record on a demo the branch has moved past: asks the Review lead, idle at Review, to have its demo
-  recorder record the shot list again on HEAD. Refused while the lead works, so two clicks ask once.
+  Re-record on a demo the branch has moved past: starts the demo recorder on HEAD, a run of its own. Refused
+  while anything works on the task, since the recorder needs the worktree's app server to itself, so two clicks
+  record once.
   """
 
-  alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.Run
+  import Rail.Pipeline.Utils.StartRoleRun
+
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Roles.Schemas.Role
+  alias Rail.Roles
   alias Rail.Scope
 
-  @ask """
-  Record the demo again: a person asked for a new take, as the branch has moved on since it was recorded. Have the demo recorder record the same shot list on HEAD, in the browser named `demo`, and save it with `save_demo`. Later rounds keep the take it saves. Nothing else in the review changes.
-  """
-
   @doc """
-  Messages `task`'s Review lead to record the demo again, as the scope's user. Returns what
-  `Rail.Pipeline.send_message/4` does, or `{:error, reason}` when the task is not at Review or the lead works.
+  Starts the demo recorder on `task` for the scope's user. Returns `{:ok, run}` as it now stands, or
+  `{:error, reason}` for a project the scope cannot open, a task not at Review, one something works on, or a
+  project with no demo role.
   """
   def record_demo(%Scope{} = scope, %Task{} = task) do
-    task = Repo.preload(task, [runs: :role], force: true)
+    task = Task |> Repo.get!(task.id) |> Repo.preload(:runs)
 
-    with :ok <- at_review(task),
-         {:ok, run} <- lead_run(task),
-         :ok <- idle(run) do
-      Pipeline.send_message(scope, run, String.trim(@ask))
+    with true <- Scope.can_access_project?(scope, task.project_id) || {:error, :not_found},
+         :ok <- recordable(task),
+         {:ok, role} <- Roles.get_role(project_id: task.project_id, stage: :demo) do
+      start_role_run(task, role, fresh: true)
+    else
+      {:error, :role_not_found} -> {:error, :not_found}
+      {:error, _reason} = refused -> refused
     end
   end
 
-  defp at_review(%Task{stage: :review}), do: :ok
-  defp at_review(%Task{stage: stage}), do: {:error, {:invalid_stage, stage}}
-
-  defp lead_run(%Task{runs: runs}) do
-    case Enum.filter(runs, &match?(%Run{role: %Role{stage: :review_lead}}, &1)) do
-      [] -> {:error, :no_stage_run}
-      leads -> {:ok, Enum.max_by(leads, &(&1.started_at || &1.inserted_at), DateTime)}
-    end
-  end
-
-  defp idle(%Run{} = run), do: if(Run.running?(run), do: {:error, :stage_running}, else: :ok)
+  defp recordable(%Task{stage: stage}) when stage != :review, do: {:error, {:invalid_stage, stage}}
+  defp recordable(%Task{} = task), do: if(Task.running?(task), do: {:error, :stage_running}, else: :ok)
 end

@@ -21,7 +21,7 @@ defmodule RailWeb.Components.ReviewCommentTray do
 
   attr :gate, :map,
     required: true,
-    doc: "`%{working:, undecided:, finished:, ci_failed:, saved:, plan:}`, as the Review stage works it out"
+    doc: "`%{working:, finished:, ci_failed:, saved:, plan:}`, as the Review stage works it out"
 
   attr :open, :boolean, default: true
   attr :error, :string, default: nil, doc: "why the last Send was refused"
@@ -41,7 +41,7 @@ defmodule RailWeb.Components.ReviewCommentTray do
       |> assign(:show_finish, count == 0 and not gate.working and not gate.plan)
       |> assign(:mine, comments != [])
       |> assign(:show_rows, assigns.open and count > 0)
-      |> assign(:can_send, not gate.working and gate.saved and gate.undecided == 0 and (count > 0 or not gate.ci_failed))
+      |> assign(:can_send, not gate.working and gate.saved and (count > 0 or not gate.ci_failed))
       |> assign(:comments, Enum.with_index(comments, 1))
       |> assign(:hint, hint)
       |> assign(:working, working)
@@ -288,7 +288,6 @@ defmodule RailWeb.Components.ReviewCommentTray do
       is_binary(error) -> {error, false}
       gate.working -> {"The Review lead is working. Send waits until it stops.", true}
       not gate.saved -> {"Send waits for the first round to finish.", false}
-      gate.undecided > 0 -> {"Rule on #{findings(gate.undecided)} before you send.", false}
       gate.plan -> {plan_hint(fix ++ comments), false}
       fix == [] and comments == [] -> {empty_hint(gate), false}
       gate.finished -> {"The review is finished. Send reopens it with a fix round on your comments.", false}
@@ -305,9 +304,6 @@ defmodule RailWeb.Components.ReviewCommentTray do
 
   defp ruling(:fix), do: "Fix"
   defp ruling(:skip), do: "Don't fix"
-
-  defp findings(1), do: "1 more finding"
-  defp findings(count), do: "#{count} more findings"
 
   # A code finding's place reads by its file's name, its full path in the title.
   defp where(%Finding{kind: :code, file: file, line: line}) when is_binary(file) and is_integer(line),

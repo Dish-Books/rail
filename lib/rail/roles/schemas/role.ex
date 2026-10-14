@@ -12,11 +12,14 @@ defmodule Rail.Roles.Schemas.Role do
     # Writes the ticket, the design and the plan itself.
     :plan,
     :engineer,
-    # Leads review, QA, engineer and demo, which run inside it as subagents; a task at Review enters it.
-    :review_lead,
-    :review,
+    # The agents that check a round once it is pushed, each a run of its own: QA and the code reviewer report,
+    # the screenshots agent shoots each affected screen, and the demo recorder records when the plan asks.
     :qa,
+    :review,
+    :screens,
     :demo,
+    # The review agent: turns the reports into findings and writes the next round's plan.
+    :review_lead,
     :debugger,
     # Reads Slack threads rather than working a task, so no task ever enters it.
     :triage,

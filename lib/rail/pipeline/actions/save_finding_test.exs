@@ -329,7 +329,7 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
 
   # A round is a read of a new HEAD, so a pass saved again on the commit round 1 read is still round 1.
   test "saving a known key again at the HEAD round 1 read notes round 1", %{task: task, head: head, attrs: attrs} do
-    {:ok, %Finding{id: id}} = Pipeline.save_finding(task, attrs)
+    {:ok, %Finding{id: id}} = Pipeline.save_finding(task, %{attrs | "recommendation" => "skip"})
     {:ok, %{round: 1}} = Pipeline.save_review(task)
 
     assert {:ok,
@@ -343,7 +343,7 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
     task: task,
     attrs: attrs
   } do
-    {:ok, %Finding{id: id}} = Pipeline.save_finding(task, attrs)
+    {:ok, %Finding{id: id}} = Pipeline.save_finding(task, %{attrs | "recommendation" => "skip"})
     {:ok, %{round: 1}} = Pipeline.save_review(task)
     git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 1"])
     head = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()

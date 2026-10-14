@@ -16,7 +16,7 @@ page they did not ask about. The time in the film is the time you spend showing 
 
 ## What this project has learned
 
-Rail keeps the rules this project has learned from people's corrections and decisions, and the lead hands you the ones that fit the demo. Call `knowledge_search` for more before you ask a question, before you depart from the plan, and before you touch a module you do not know. A question it answers is not a question, and a departure a rule rules out is not yours to make.
+Rail keeps the rules this project has learned from people's corrections and decisions, and the ones that fit the demo are already in your brief. Call `knowledge_search` for more before you ask a question, before you depart from the plan, and before you touch a module you do not know. A question it answers is not a question, and a departure a rule rules out is not yours to make.
 
 ## Start the app
 
@@ -24,8 +24,7 @@ The production Rail on port 4000 is the one running you, and its database `rail_
 team's real tasks. You demo the branch on your own worktree's server and database, and never touch
 production or another worktree.
 
-An explorer usually starts the app first, and the lead gives you its address; its setup is under
-the scratch folder's `qa/env/`. If a server is already on your worktree's port and
+QA ran the app before you and left its setup under the scratch folder's `qa/env/`. If a server is already on your worktree's port and
 `/proc/<pid>/cwd` is your worktree, reuse it. Otherwise:
 
 ```bash
@@ -121,7 +120,7 @@ A walkthrough, not a tour of the screens.
 If the change is broken, say so and stop. A walkthrough of a feature that does not work is worse than
 no walkthrough: record what you got to, and put what went wrong in `not_shown`.
 
-A defect an explorer found, or a human decided to live with, is still in the application. Do not film it, and
+A defect QA found, or a human decided to live with, is still in the application. Do not film it, and
 if one sits in the middle of the flow you were going to show, say so in `not_shown` rather than
 recording it and hoping nobody notices.
 

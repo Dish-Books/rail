@@ -87,4 +87,13 @@ defmodule Rail.Pipeline.Actions.SaveFixPlanTest do
     File.rm!(path)
     assert {:error, :no_fix_plan} = Pipeline.save_fix_plan(task, %{"plan" => @plan})
   end
+
+  test "a plan says whether its round's screens are shot again and a demo recorded", %{task: task} do
+    assert {:ok, %FixPlan{retake_screens: false, record_demo: false}} = Pipeline.save_fix_plan(task, %{"plan" => @plan})
+
+    assert {:ok, %FixPlan{retake_screens: true, record_demo: true}} =
+             Pipeline.save_fix_plan(task, %{"plan" => @plan, "retake_screens" => true, "record_demo" => true})
+
+    assert %FixPlan{retake_screens: true, record_demo: true} = Pipeline.read_fix_plan(task)
+  end
 end

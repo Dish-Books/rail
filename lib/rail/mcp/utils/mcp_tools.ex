@@ -96,8 +96,8 @@ defmodule Rail.Mcp.Utils.McpTools do
           "browser" => %{
             "type" => "string",
             "description" =>
-              "A name for this browser, a few letters, digits, spaces or dashes: the one the lead gave you, such " <>
-                "as `explorer-1` or `demo`. Another name is another browser signed in as another account."
+              "A name for this browser, a few letters, digits, spaces or dashes. Leave it out: yours is named for " <>
+                "your part, `qa`, `screens` or `demo`, and another name is another browser signed in as another account."
           },
           "account" => %{
             "type" => "string",
@@ -197,7 +197,7 @@ defmodule Rail.Mcp.Utils.McpTools do
       "name" => "qa_shot",
       "description" =>
         "Photograph the page and save it in the QA folder. Say what the picture is of; Rail names the file " <>
-          "and returns its path, which goes to the lead to cite in a finding's evidence: the path, never " <>
+          "and returns its path, which goes in your report for a finding's evidence: the path, never " <>
           "the picture. Take it at the point a check asserts something on screen, not after every keystroke. A " <>
           "picture all one color is refused and nothing is saved.",
       "inputSchema" => %{
@@ -213,7 +213,7 @@ defmodule Rail.Mcp.Utils.McpTools do
     %{
       "name" => "save_screen",
       "description" =>
-        "Photograph one screen state the lead named and save it as that state's image for HEAD's commit. It " <>
+        "Photograph one screen state the change affects and save it as that state's image for HEAD's commit. It " <>
           "replaces the state's earlier picture each round. Take it of the state as the change leaves it, under the " <>
           "same `key` every round. Refused while the worktree has uncommitted changes, and for a picture all one color, " <>
           "which keeps the earlier one. Returns the path, which a finding can cite as evidence.",
@@ -222,8 +222,7 @@ defmodule Rail.Mcp.Utils.McpTools do
         "properties" => %{
           "key" => %{
             "type" => "string",
-            "description" =>
-              "The state's name the lead gave you, lowercase letters, digits and dashes, the same every round."
+            "description" => "The state's name, lowercase letters, digits and dashes, the same every round."
           },
           "label" => %{
             "type" => "string",
@@ -330,6 +329,15 @@ defmodule Rail.Mcp.Utils.McpTools do
             "description" => "Points, zero or more. Never saved, the issue's own estimate stays."
           },
           "plan" => %{"type" => "string", "description" => "The whole implementation plan, in markdown."},
+          "record_demo" => %{
+            "type" => "boolean",
+            "description" => "True when the change has something on screen worth a recorded walkthrough once it is built."
+          },
+          "retake_screens" => %{
+            "type" => "boolean",
+            "description" =>
+              "True when the change has something on screen, so each state it affects is photographed once it is built."
+          },
           "design" => %{
             "type" => "string",
             "description" =>
@@ -522,16 +530,29 @@ defmodule Rail.Mcp.Utils.McpTools do
     %{
       "name" => "save_fix_plan",
       "description" =>
-        "Save the plan for the fix round a Send started, before anything changes; each save replaces the last, and " <>
-          "the human approves it in Rail. Markdown: a short summary, then `### What changes` with a `#### `key`` for " <>
-          "each finding the round sent, by its key in backticks, and a `#### Comment N` for each comment, by its " <>
+        "Save the plan for the next round, once the review is saved; each save replaces the last, and the human " <>
+          "approves it in Rail, which starts an engineer on it. Markdown: a short summary, then `### What changes` " <>
+          "with a `#### `key`` for each finding to fix, by its key in backticks, and a `#### Comment N` for each " <>
+          "comment the human sent, by its " <>
           "number, each saying what will change or why nothing will. Then `### File-level changes`, one bullet per " <>
           "file starting with its path in backticks, as in the implementation plan, each ending with the item it is " <>
           "for: the finding's key in backticks or `comment N`. Then `### Verification`. Leave out the last two when " <>
-          "nothing will change. A plan that leaves out an item the round sent is refused with what to fix.",
+          "nothing will change. A `### Changes to the plan` section comes first when the human asked to change the " <>
+          "ticket, its criteria or the first plan. A plan that leaves out a finding to fix or a comment is refused " <>
+          "with what to fix.",
       "inputSchema" => %{
         "type" => "object",
-        "properties" => %{"plan" => %{"type" => "string", "description" => "The whole fix plan, in markdown."}},
+        "properties" => %{
+          "plan" => %{"type" => "string", "description" => "The whole plan, in markdown."},
+          "record_demo" => %{
+            "type" => "boolean",
+            "description" => "True when a new demo should be recorded once this round is built."
+          },
+          "retake_screens" => %{
+            "type" => "boolean",
+            "description" => "True when the screen states should be photographed again once this round is built."
+          }
+        },
         "required" => ["plan"]
       }
     },
@@ -564,6 +585,21 @@ defmodule Rail.Mcp.Utils.McpTools do
           }
         },
         "required" => ["title", "summary"]
+      }
+    }
+  ]
+
+  @report_tools [
+    %{
+      "name" => "save_report",
+      "description" =>
+        "Save your report for this round: what you changed, saw or read, as your brief asks. Nobody relays for " <>
+          "you, so this is how the agents after you hear it. Each save replaces the last, so save the whole of " <>
+          "it, before you end your turn.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{"report" => %{"type" => "string", "description" => "The whole report, in markdown."}},
+        "required" => ["report"]
       }
     }
   ]
@@ -619,18 +655,21 @@ defmodule Rail.Mcp.Utils.McpTools do
     }
   ]
 
+  @screen_tools Enum.filter(@qa_tools, &(&1["name"] == "save_screen"))
+  @check_tools @qa_tools -- @screen_tools
+
   @doc """
-  The tools Rail serves this run itself: the browser for the Review lead, whose
-  explorers and demo recorder drive one, the save tools each lead hands its
-  output over with, `ask_questions` for the leads, and the knowledge base for all.
+  The tools Rail serves this run itself: the save tools each agent hands its output over with, the browser for
+  the three that drive the app, `ask_questions` for the agents a person talks to, and the knowledge base for all.
   """
   def mcp_tools(%Role{stage: :plan}), do: @plan_tools ++ @question_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :engineer}), do: @question_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :engineer}), do: @report_tools ++ @question_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :qa}), do: @browser_tools ++ @check_tools ++ @report_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :review}), do: @report_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :screens}), do: @browser_tools ++ @screen_tools ++ @knowledge_tools
 
-  def mcp_tools(%Role{stage: :review_lead}),
-    do:
-      @browser_tools ++
-        @qa_tools ++ @demo_tools ++ @review_lead_tools ++ @demo_report_tools ++ @question_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :demo}), do: @browser_tools ++ @demo_tools ++ @demo_report_tools ++ @knowledge_tools
 
+  def mcp_tools(%Role{stage: :review_lead}), do: @review_lead_tools ++ @question_tools ++ @knowledge_tools
   def mcp_tools(%Role{}), do: @knowledge_tools
 end

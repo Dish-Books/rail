@@ -3,9 +3,9 @@ defmodule Rail.Pipeline.Actions.SendToReview do
   Hands the engineer's work to Review, by a person's click or once CI passes on the engineer's commit.
 
   The engineer's commits are the artifact, so there is nothing to capture here:
-  the branch already carries everything. What this is for is the same one-way
-  door the earlier stages have: the task leaves Engineer, and the fixes Review
-  asks for are made inside Review.
+  the branch already carries everything. The task leaves Engineer for Review,
+  where Rail starts QA and the code reviewer on the round, and comes back to
+  Engineer when the next round's plan is approved.
 
   A branch the remote has never heard of is refused, since it is not a branch
   anyone else can review; the diff pane's Push sends it. Work left uncommitted is
@@ -13,6 +13,7 @@ defmodule Rail.Pipeline.Actions.SendToReview do
   """
 
   import Rail.Pipeline.Utils.CiPassed
+  import Rail.Pipeline.Utils.StartChecks
 
   alias Rail.Git
   alias Rail.Pipeline
@@ -31,7 +32,8 @@ defmodule Rail.Pipeline.Actions.SendToReview do
 
     with :ok <- sendable(run.task) do
       {:ok, latched} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
-      {:ok, _next} = Pipeline.enter_stage(run.task, :review)
+      {:ok, reviewing} = Pipeline.enter_stage(run.task, :review, start: false)
+      :ok = start_checks(reviewing)
 
       {:ok, %{latched | task: run.task, role: run.role}}
     end

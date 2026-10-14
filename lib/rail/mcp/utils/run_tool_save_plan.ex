@@ -8,7 +8,7 @@ defmodule Rail.Mcp.Utils.RunToolSavePlan do
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
 
-  @fields ["title", "description", "priority", "estimate", "plan", "design"]
+  @fields ["title", "description", "priority", "estimate", "plan", "design", "record_demo", "retake_screens"]
 
   @again "Save again after every change; the human reads the last save."
 

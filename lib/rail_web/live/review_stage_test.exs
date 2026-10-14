@@ -7,7 +7,9 @@ defmodule RailWeb.Live.ReviewStageTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DemoBeat
   alias Rail.Pipeline.Schemas.Finding
-  alias Rail.Pipeline.Workers.StartApprovedFixPlan
+  alias Rail.Pipeline.Schemas.Round
+  alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Workers.StartEngineer
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
@@ -163,7 +165,8 @@ defmodule RailWeb.Live.ReviewStageTest do
     assert has_element?(view, "#finding-view-only-send [data-qa=review_finding_state]", "Needs your call")
   end
 
-  test "Send is disabled until every finding is ruled, then starts the round; ruling moves on to the next", %{
+  # An unruled finding goes to the round on the review agent's recommendation, so Send does not wait on a ruling.
+  test "Send carries the findings to fix, unruled ones on their recommendation; ruling moves on to the next", %{
     conn: conn,
     task: task,
     run: run,
@@ -176,10 +179,9 @@ defmodule RailWeb.Live.ReviewStageTest do
 
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-    assert has_element?(view, "#finish-review[disabled]")
-    assert has_element?(view, "#review-send-tray-hint", "Rule on 2 more findings before you send.")
     assert has_element?(view, "#review-finding-footer", "2 to rule")
     refute has_element?(view, "#review-finding-footer button")
+    refute has_element?(view, "#send-review-tray[disabled]")
 
     view |> element("#decide-fix-view-only-send") |> render_click()
     assert has_element?(view, "#finding-send-twice[aria-current=true]")
@@ -191,7 +193,6 @@ defmodule RailWeb.Live.ReviewStageTest do
     assert has_element?(view, "#review-finding-footer", "1 to fix · 1 not fixing")
     assert has_element?(view, "#review-tray-finding-view-only-send", "A view-only member can send diff comments")
     refute has_element?(view, "#review-tray-finding-send-twice")
-    refute has_element?(view, "#send-review-tray[disabled]")
 
     expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: %{spawned | status: :running}}} end)
     view |> element("#send-review-tray", "Send 1") |> render_click()
@@ -1064,7 +1065,6 @@ defmodule RailWeb.Live.ReviewStageTest do
           nothing_to_start: "There is nothing to send: the review is finished.",
           dispatch_disabled: "Dispatch is off, so the Review lead was not resumed.",
           stage_running: "The Review lead is working. Send waits until it stops.",
-          findings_undecided: "Some findings have no ruling yet. Rule on every one first.",
           invalid_stage: "This task is at Merged, not Review."
         ] do
       error = if reason == :invalid_stage, do: {:invalid_stage, :merged}, else: reason
@@ -1457,7 +1457,7 @@ defmodule RailWeb.Live.ReviewStageTest do
 
       assert has_element?(view, "#demo-stale button", short)
       assert has_element?(view, "#demo-stale", "1 commit ago; may be out of date")
-      expect(Pipeline, :record_demo, fn _scope, _task -> {:ok, :sent, run} end)
+      expect(Pipeline, :record_demo, fn _scope, _task -> {:ok, run} end)
       view |> element("#demo-rerecord") |> render_click()
       refute has_element?(view, "#review-error")
 
@@ -1735,10 +1735,10 @@ defmodule RailWeb.Live.ReviewStageTest do
       assert has_element?(view, "#plan-summary", "Both Fix findings and comment 1 covered, before the last Send")
     end
 
-    test "Approve starts the lead, and the header then says who approved it", %{
+    test "Approve makes the plan the next round and starts the engineer on it, on a clean conversation", %{
       conn: conn,
       task: task,
-      run: %{id: run_id} = run,
+      run: run,
       plan: plan
     } do
       {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
@@ -1747,18 +1747,18 @@ defmodule RailWeb.Live.ReviewStageTest do
 
       view |> element("#approve-fix-plan") |> render_click()
       refute has_element?(view, "#approve-fix-plan")
-      assert has_element?(view, "#fix-plan-approved-header", "Approved by Dana")
-      refute has_element?(view, "#fix-plan-revising")
+      assert %Task{stage: :engineer} = Repo.reload!(task)
+      assert [%Round{number: 1, plan: ^plan, approved_at: %DateTime{}}] = Pipeline.list_rounds(task)
 
-      # The lead is started by the job committed with the claim, which the page hears when it has.
-      expect(Tools, :start_os_process, fn %{id: ^run_id} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-      [%Oban.Job{args: args}] = all_enqueued(worker: StartApprovedFixPlan)
-      assert :ok = perform_job(StartApprovedFixPlan, args)
-      _settled = render(view)
+      # The engineer is started by the job committed with the round, which the page hears when it has.
+      expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] = argv ->
+        assert prompt =~ plan
+        refute "--resume" in argv
+        {:ok, %OsProcess{run: spawned}}
+      end)
 
-      assert has_element?(view, "#fix-plan-approved-header", "Approved by Dana")
-      assert has_element?(view, "#review-item-fix-plan [data-qa=review_item_done]")
-      assert %{status: :running} = Repo.reload!(run)
+      [%Oban.Job{args: args}] = all_enqueued(worker: StartEngineer)
+      assert :ok = perform_job(StartEngineer, args)
     end
 
     test "Approve on a replaced plan is refused with the time it was replaced, and nothing starts", %{
@@ -1827,12 +1827,7 @@ defmodule RailWeb.Live.ReviewStageTest do
       view |> element("#approve-fix-plan") |> render_click()
       _settled = render(other)
       refute has_element?(other, "#approve-fix-plan")
-
-      expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-      [%Oban.Job{args: args}] = all_enqueued(worker: StartApprovedFixPlan)
-      assert :ok = perform_job(StartApprovedFixPlan, args)
-      _settled = render(other)
-      assert has_element?(other, "#fix-plan-approved-header", "Approved by")
+      assert [%Oban.Job{}] = all_enqueued(worker: StartEngineer)
     end
   end
 end

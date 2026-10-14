@@ -12,6 +12,9 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
   alias Rail.Roles
   alias Rail.Users
 
+  @plan "Guard it.\n\n### What changes\n\n#### `unhandled-nil`\n\nGuard nil.\n\n" <>
+          "### File-level changes\n\n- `lib/a.ex`: guards nil. For `unhandled-nil`.\n\n### Verification\n\nRun it."
+
   setup %{project: project} do
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
 
@@ -69,13 +72,19 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
     }
   end
 
-  test "a round with a finding to rule waits for the human, with the pull request in draft", %{
+  test "a round with a finding to fix waits on its plan's approval, with the pull request in draft", %{
     task: task,
     run: run,
     finding: finding
   } do
     {:ok, _saved} = Pipeline.save_finding(task, finding)
     {:ok, _closed} = Pipeline.save_review(task)
+
+    assert %Run{error: "The review agent left findings to fix with no plan for the next round."} =
+             review_run_finished(run, [])
+
+    # With no Send waiting, the plan is the review agent's to write unasked, covering what is to fix.
+    assert {:ok, _plan} = Pipeline.save_fix_plan(task, %{"plan" => @plan})
 
     assert %Run{error: nil} = review_run_finished(run, [])
     assert %Task{stage: :review, pr_is_draft: true} = Repo.reload!(task)
@@ -210,7 +219,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
   end
 
   test "a turn that ends without saving its review records that, and moves nothing", %{task: task, run: run} do
-    assert %Run{error: "The Review lead did not save its review."} = review_run_finished(run, [])
+    assert %Run{error: "The review agent did not save its review."} = review_run_finished(run, [])
     assert %Task{stage: :review} = Repo.reload!(task)
   end
 
@@ -224,84 +233,25 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
     git!(worktree, ["add", "."])
     git!(worktree, ["commit", "-m", "Fix round 1"])
 
-    assert %Run{error: "The Review lead did not save its review."} = review_run_finished(run, [])
+    assert %Run{error: "The review agent did not save its review."} = review_run_finished(run, [])
   end
 
   test "a pass with no commit is taken at its word", %{task: task, run: run, finding: finding} do
     {:ok, %{head: nil}} = Pipeline.save_review(%{task | worktree_path: "/nonexistent/rfn"})
-    {:ok, _ruled_later} = Pipeline.save_finding(task, finding)
+    {:ok, _ruled_later} = Pipeline.save_finding(task, %{finding | recommendation: :skip})
 
     assert %Run{error: nil} = review_run_finished(run, [])
   end
 
-  describe "a turn that committed" do
-    setup %{task: task, worktree: worktree} do
-      {:ok, _closed} = Pipeline.save_review(task)
-      git!(worktree, ["commit", "--allow-empty", "-m", "Guard the nil"])
-      stub(Git, :branch_unpushed?, fn _path -> true end)
-      :ok
-    end
+  # Only the engineer changes the branch, so a review agent's commit is held for a person to see.
+  test "a turn that committed is failed, and nothing is sent on", %{task: task, run: run, worktree: worktree} do
+    {:ok, _closed} = Pipeline.save_review(task)
+    git!(worktree, ["commit", "--allow-empty", "-m", "Guard the nil"])
+    stub(Git, :branch_unpushed?, fn _path -> true end)
+    reject(&Pipeline.hand_over_work/2)
 
-    test "with a Fix finding not saved fixed is held, and nothing is sent on", %{task: task, run: run, finding: finding} do
-      {:ok, saved} = Pipeline.save_finding(task, finding)
-      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), saved, :fix)
-      reject(&Pipeline.hand_over_work/2)
-
-      assert %Run{error: "This turn committed, but unhandled-nil ruled Fix is not saved as fixed." <> _rest} =
-               review_run_finished(run, [])
-    end
-
-    test "with two Fix findings not saved fixed names both", %{task: task, run: run, finding: finding} do
-      for key <- ["unhandled-nil", "unhandled-empty"] do
-        {:ok, saved} = Pipeline.save_finding(task, %{finding | key: key})
-        {:ok, _ruled} = Pipeline.decide_finding(system_scope(), saved, :fix)
-      end
-
-      reject(&Pipeline.hand_over_work/2)
-
-      assert %Run{error: "This turn committed, but " <> named} = review_run_finished(run, [])
-      assert named =~ ~r/unhandled-(nil|empty), unhandled-(nil|empty) ruled Fix are not saved as fixed/
-    end
-
-    # Bringing the branch up to date before the human has ruled owes no fix report yet.
-    test "while findings wait on the human hands the commits over", %{task: task, run: run, finding: finding} do
-      {:ok, _saved} = Pipeline.save_finding(task, finding)
-      expect(Pipeline, :hand_over_work, fn _scope, %Run{} = run -> {:ok, %{run | status: :running}} end)
-
-      assert %Run{status: :running, error: nil} = review_run_finished(run, [])
-    end
-
-    test "that only pushed has the round it closed checked as any other", %{task: task, run: run} do
-      {:ok, _read} = Pipeline.save_review(task)
-      expect(Pipeline, :hand_over_work, fn _scope, %Run{} = run -> {:ok, run} end)
-
-      assert %Run{error: nil} = review_run_finished(%{run | pending_chat: "One more thing"}, [])
-    end
-
-    test "whose branch someone pushed to outside Rail goes back to the lead", %{run: %Run{id: run_id} = run} do
-      expect(Pipeline, :hand_over_work, fn _scope, _run -> {:error, :pushed_outside_rail} end)
-
-      expect(Rail.Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, ["-p", prompt | _rest] ->
-        assert prompt =~ "Have the engineer merge"
-        {:ok, %Rail.Tools.Schemas.OsProcess{run: spawned}}
-      end)
-
-      assert %Run{id: ^run_id, error: nil} = review_run_finished(run, [])
-    end
-
-    test "whose commits could not be sent on says why", %{run: run} do
-      expect(Pipeline, :hand_over_work, fn _scope, _run -> {:error, "remote rejected"} end)
-
-      assert %Run{error: "The Review lead's commits could not be sent on: remote rejected"} =
-               review_run_finished(run, [])
-    end
-
-    test "whose hand-over was refused says why", %{run: run} do
-      expect(Pipeline, :hand_over_work, fn _scope, _run -> {:error, {:invalid_stage, :engineer}} end)
-
-      assert %Run{error: "The Review lead's commits could not be sent on: {:invalid_stage, :engineer}"} =
-               review_run_finished(run, [])
-    end
+    assert %Run{error: "The review agent committed. Only the engineer changes the branch, so nothing was sent on."} =
+             review_run_finished(run, [])
   end
 
   describe "a turn on a fix round's plan" do
@@ -316,7 +266,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
         Jason.encode!(%{round: 1, head: head, findings: [], comments: [%{number: 1, kind: "diff", text: "Why?"}]})
       )
 
-      %{path: path}
+      :ok
     end
 
     test "that saved the plan ends done with the review open, even with nothing left to rule, and sends nothing on", %{
@@ -332,36 +282,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
     end
 
     test "that ended with no plan saved records that, with nothing to approve", %{run: run} do
-      assert %Run{error: "The Review lead did not save a fix plan."} = review_run_finished(run, [])
-    end
-
-    test "that committed before approval is held and sends nothing on", %{task: task, run: run, worktree: worktree} do
-      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => "### What changes\n\n#### Comment 1\n\nAnswered."})
-      git!(worktree, ["commit", "--allow-empty", "-m", "Too soon"])
-      stub(Git, :branch_unpushed?, fn _path -> true end)
-      reject(&Pipeline.hand_over_work/2)
-
-      assert %Run{error: "This turn committed while the fix plan waits on approval." <> _rest} =
-               review_run_finished(run, [])
-    end
-
-    # A fix commit CI failed is still unpushed when the next Send asks for a plan, and is no commit of this turn's.
-    test "on a branch already unpushed when the round was sent ends done with the plan saved", %{task: task, run: run} do
-      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => "### What changes\n\n#### Comment 1\n\nAnswered."})
-      stub(Git, :branch_unpushed?, fn _path -> true end)
-      reject(&Pipeline.hand_over_work/2)
-
-      assert %Run{error: nil} = review_run_finished(run, [])
-    end
-
-    test "after approval hands its commits over as any fix round does", %{task: task, run: run, path: path} do
-      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => "### What changes\n\n#### Comment 1\n\nAnswered."})
-      approved = path |> File.read!() |> Jason.decode!() |> Map.put("approved_at", "2026-10-12T16:58:00Z")
-      File.write!(path, Jason.encode!(approved))
-      stub(Git, :branch_unpushed?, fn _path -> true end)
-      expect(Pipeline, :hand_over_work, fn _scope, %Run{} = run -> {:ok, %{run | status: :running}} end)
-
-      assert %Run{status: :running, error: nil} = review_run_finished(run, [])
+      assert %Run{error: "The review agent did not save the round's plan."} = review_run_finished(run, [])
     end
   end
 end

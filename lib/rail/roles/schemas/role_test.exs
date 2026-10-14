@@ -33,9 +33,9 @@ defmodule Rail.Roles.Schemas.RoleTest do
     %{project: project, role: role}
   end
 
-  test "canonical_stages/0 returns list of 9 stages" do
+  test "canonical_stages/0 returns list of 10 stages" do
     stages = Role.canonical_stages()
-    assert length(stages) == 9
+    assert length(stages) == 10
     assert :plan in stages
     assert :review_lead in stages
     assert :triage in stages

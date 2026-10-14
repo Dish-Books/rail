@@ -6,7 +6,6 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
-  alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Tools
@@ -47,57 +46,27 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     %{task: task, run: %{run | role: role}}
   end
 
-  test "spawns the lead on its own model with the code reviewer, explorer, engineer and demo recorder", %{
+  # Each of the others is a run Rail started, so the review agent is spawned alone, on what they reported.
+  test "spawns the review agent on its own model with no subagents, handed the round's reports", %{
     task: task,
     run: run
   } do
-    expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
-      assert ["-p", _prompt, "--model", "claude-opus-5-5" | _rest] = argv
-      [json] = for ["--agents", json] <- Enum.chunk_every(argv, 2, 1), do: json
+    File.mkdir_p!(Path.join(task.scratch_path, "reports"))
+    File.write!(Path.join([task.scratch_path, "reports", "qa.md"]), "Saving twice shows two rows.")
+    File.write!(Path.join([task.scratch_path, "reports", "review.md"]), "Nothing to report.")
 
-      assert %{
-               "code-reviewer" => %{"model" => "claude-opus-5-5"},
-               "explorer" => %{"model" => "claude-opus-5-5"},
-               "engineer" => %{"model" => "claude-opus-5-5"},
-               "demo-recorder" => %{"model" => "claude-opus-5-5"}
-             } = Jason.decode!(json)
-
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt, "--model", "claude-opus-5-5" | _rest] = argv ->
+      refute "--agents" in argv
+      assert prompt =~ "The report QA saved this round:\n\n<report from=\"qa\">\nSaving twice shows two rows.\n</report>"
+      assert prompt =~ "<report from=\"review\">\nNothing to report.\n</report>"
+      refute prompt =~ "<report from=\"engineer\">"
       {:ok, %OsProcess{run: spawned}}
     end)
 
     assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_review_run(run)
-    assert File.dir?(Path.join([task.scratch_path, "qa", "evidence"]))
-    assert File.dir?(Path.join(task.scratch_path, "demo"))
   end
 
-  # A turn that only plans a fix round changes nothing, so the approved turn is the one that merges.
-  test "a planning turn on a branch behind the default gets no merge-first line, and the approved turn gets it", %{
-    task: task,
-    run: run
-  } do
-    path = Path.join([task.scratch_path, "fix_plans", "SRV-1.json"])
-    File.mkdir_p!(Path.dirname(path))
-    File.write!(path, Jason.encode!(%{round: 1, findings: [], comments: []}))
-    stub(@prepare_turn, :prepare_turn, fn %Run{} -> "The branch is behind origin/main.\n\n" end)
-
-    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
-      refute prompt =~ "The branch is behind origin/main."
-      {:ok, %OsProcess{run: spawned}}
-    end)
-
-    assert {:ok, %OsProcess{}} = Pipeline.start_review_run(run)
-
-    File.write!(path, Jason.encode!(%{round: 1, findings: [], comments: [], approved_at: "2026-10-12T16:58:00Z"}))
-
-    expect(Tools, :start_os_process, fn %Run{} = spawned,
-                                        ["-p", "The branch is behind origin/main.\n\n" <> _brief | _rest] ->
-      {:ok, %OsProcess{run: spawned}}
-    end)
-
-    assert {:ok, %OsProcess{}} = Pipeline.start_review_run(run)
-  end
-
-  test "neither the lead nor any subagent is handed the design page or its images", %{task: task, run: run} do
+  test "the review agent is not handed the design page or its images", %{task: task, run: run} do
     design_dir = Path.join(task.scratch_path, "design")
     File.mkdir_p!(design_dir)
     File.write!(Path.join(design_dir, "manifest.json"), ~s({"options": [{"key": "cards", "title": "Cards"}]}))
@@ -108,14 +77,9 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
       ~s(<h1>REVIEW-DESIGN-MARKER</h1><img src="data:image/png;base64,#{String.duplicate("iVBORw0K", 1_000)}">)
     )
 
-    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] = argv ->
-      [json] = for ["--agents", json] <- Enum.chunk_every(argv, 2, 1), do: json
-
-      for brief <- [prompt | json |> Jason.decode!() |> Map.values() |> Enum.map(& &1["prompt"])] do
-        refute brief =~ "REVIEW-DESIGN-MARKER"
-        refute brief =~ "data:image"
-      end
-
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      refute prompt =~ "REVIEW-DESIGN-MARKER"
+      refute prompt =~ "data:image"
       {:ok, %OsProcess{run: spawned}}
     end)
 
@@ -171,32 +135,19 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     assert {:ok, %OsProcess{}} = Pipeline.start_review_run(run)
   end
 
-  # The engineer commits and keeps the branch up to date; Rail only pushes what a turn leaves committed.
-  test "briefs the lead that its engineer commits, Rail pushes, and the branch is checked against main each turn", %{
-    task: %Task{worktree_path: worktree_path},
-    run: run
-  } do
-    test_pid = self()
+  # Only the engineer changes the branch, so the review agent's turn is not brought up to date before it starts.
+  test "briefs the review agent that it changes nothing and writes the next round's plan unasked", %{run: run} do
+    reject(@prepare_turn, :prepare_turn, 1)
 
-    expect(@prepare_turn, :prepare_turn, fn %Run{task: %Task{worktree_path: ^worktree_path}} ->
-      send(test_pid, :prepared)
-      "The branch is behind origin/main.\n\n"
-    end)
-
-    expect(Tools, :start_os_process, fn %Run{} = spawned,
-                                        ["-p", "The branch is behind origin/main.\n\n" <> _brief = prompt | _rest] ->
-      assert_received :prepared
-      assert prompt =~ "the engineer makes and commits every change"
-      assert prompt =~ "ending each commit message with the line `Ticket: SRV-1`"
-      assert prompt =~ "Nobody pushes: a turn that ends with commits the remote does not have yet hands them to Rail"
-      assert prompt =~ "check the branch against `origin/main`, which Rail fetched as the turn started"
-      assert prompt =~ "have the engineer bring it up to date by merging it in"
-      assert prompt =~ "nobody rewrites commit history: no rebase, no amend, no reset or squash of a commit"
-      assert prompt =~ "Save each Fix finding with `save_finding`, `status` fixed"
-      assert prompt =~ "A turn that committed while a Fix finding is not saved fixed is held"
-      refute prompt =~ "`commit`"
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "You change nothing: no edits, no commits, no push."
+      assert prompt =~ "Call `save_review` once every finding is saved"
+      assert prompt =~ "Then write the next round's plan."
+      assert prompt =~ "Pass `retake_screens: true` when what the plan changes shows on screen"
+      assert prompt =~ "`record_demo: true` when it would leave the saved demo wrong"
+      assert prompt =~ "Only then, say so at the top of the plan under `### Changes to the plan`"
+      refute prompt =~ "subagent"
       refute prompt =~ "request_merge"
-      refute prompt =~ "merge_follow_up"
 
       {:ok, %OsProcess{run: spawned}}
     end)
@@ -278,7 +229,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
   end
 
   describe "the checklist" do
-    test "carries the rules found per changed file, with ids, for the lead to hand on, and names the id field", %{
+    test "carries the rules found per changed file, with ids, and names the id field", %{
       project: project,
       run: run
     } do

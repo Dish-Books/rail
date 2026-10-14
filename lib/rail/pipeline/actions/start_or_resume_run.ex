@@ -10,7 +10,7 @@ defmodule Rail.Pipeline.Actions.StartOrResumeRun do
   @doc """
   Marks the run for a task/role pair as running, creating it on first use.
 
-  A resumed run keeps its history and its conversation. The worktree is
+  A resumed run keeps its history and, unless `fresh: true`, its conversation. The worktree is
   fingerprinted here and stamped on the row, so later gates can tell whether the
   tree moved underneath them.
 
@@ -20,7 +20,7 @@ defmodule Rail.Pipeline.Actions.StartOrResumeRun do
   The row comes back with its task and its role loaded: the run is
   the handle the spawn path works from, and it has to be enough on its own.
   """
-  def start_or_resume_run(task, role, worktree_path) do
+  def start_or_resume_run(task, role, worktree_path, opts \\ []) do
     {head_sha, dirty_digest} = fingerprint(worktree_path)
 
     attrs = %{
@@ -31,6 +31,9 @@ defmodule Rail.Pipeline.Actions.StartOrResumeRun do
       stage_fingerprint_head_sha: head_sha,
       stage_fingerprint_dirty_digest: dirty_digest
     }
+
+    # A round starts each agent on a clean context: what it needs of the last is in its brief.
+    attrs = if Keyword.get(opts, :fresh, false), do: Map.put(attrs, :conversation_id, nil), else: attrs
 
     case Repo.one(from r in Run, where: r.task_id == ^task.id and r.role_id == ^role.id) do
       %Run{} = existing ->

@@ -16,7 +16,6 @@ defmodule Rail.Tools.Follower do
   use GenServer, restart: :transient
 
   import Ecto.Query
-  import Rail.Pipeline.Utils.SubagentBrowser
   import Rail.Tools.Utils.AdmitSandboxes
   import Rail.Tools.Utils.DecodeUtf8Lenient
   import Rail.Tools.Utils.DrainErrFile
@@ -34,7 +33,6 @@ defmodule Rail.Tools.Follower do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
-  alias Rail.Tools
   alias Rail.Tools.ClaudeEvents
   alias Rail.Tools.Clients.Docker
   alias Rail.Tools.FollowerRegistry
@@ -191,7 +189,7 @@ defmodule Rail.Tools.Follower do
         pending_events: pending_events
     }
 
-    {alive?, updated_state} = updated_state |> close_ended_browsers() |> check_alive()
+    {alive?, updated_state} = check_alive(updated_state)
 
     cond do
       alive? and past_deadline?(updated_state) ->
@@ -231,20 +229,6 @@ defmodule Rail.Tools.Follower do
   end
 
   defp past_deadline?(%__MODULE__{}), do: false
-
-  # A subagent that answered is done with its browser, and the next one under
-  # that name signs in again. A name nothing is open under closes nothing.
-  defp close_ended_browsers(%__MODULE__{event_state: %ClaudeEvents{ended_subagents: [_ended | _rest] = ended}} = state) do
-    with [_name | _rest] = browsers <-
-           for({type, description} <- ended, name = subagent_browser(type, description), do: name),
-         {:ok, task} <- Pipeline.get_task(state.task_id) do
-      for name <- browsers, do: :ok = Tools.stop_browser_session(task, name)
-    end
-
-    %{state | event_state: %{state.event_state | ended_subagents: []}}
-  end
-
-  defp close_ended_browsers(%__MODULE__{} = state), do: state
 
   defp process_incoming_lines(lines, state) do
     Enum.reduce(lines, {state.event_state, state.pending_events}, fn line, {ev_state, pending} ->

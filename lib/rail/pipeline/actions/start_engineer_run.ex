@@ -8,6 +8,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
   """
 
   import Rail.Pipeline.Utils.FormatComments
+  import Rail.Pipeline.Utils.FormatFindings
   import Rail.Pipeline.Utils.FormatTicket
   import Rail.Pipeline.Utils.LearningsBrief
   import Rail.Pipeline.Utils.PrepareTurn
@@ -15,6 +16,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -82,11 +84,12 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
 
     - A test that fails only where your change does not touch is not a reason to hold the work back: name the test in the commit body and finish. If you stop part way, for a question or anything else, do not commit half a change, and the task waits for you.#{ci(task)}
     - Run every command in the foreground and wait for it, test runs included. Never start one in the background meaning to read it when it finishes: your turn ends the moment you stop writing, the CLI carrying you exits, and it kills whatever you left running. Nothing wakes you when it is done, so "I have started X and will check it shortly" is the end of the round with X unread and the work unfinished. A single command is cut off at ten minutes, so give a long one a `timeout` under that, or run it in parts, rather than backgrounding it.
-    - Review and QA findings come back as further turns of this same conversation. Commit each round as a commit of its own, describing that round's change, not the whole ticket over again.
+    - Each round starts you on a clean conversation: this brief is all you are given of what came before. Commit the round as a commit of its own, describing this round's change, not the whole ticket over again.
+    - Before you end a turn that commits, save your report with `save_report`: what you changed and why, and every file you changed that the plan did not name. For each finding below the plan covers, give the places you covered and those you left with why, and the test that failed first by its file and name. For each comment, say by its number what was done with it. QA, the code reviewer and the review agent read your report, and nothing else you say reaches them.
     - Ask everything at once. Research to the end before you stop, then ask every question you could not close in one `ask_questions` call before you end your turn, each with its options, your recommended answer first. Leave the options out where the answer is free text. The human sees the round when your turn ends and answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or a named assumption is not a question.
 
     #{plan(task)}
-    #{design(task)}#{learnings_brief(run, fn -> ["#{issue.title}\n\n#{issue.description}" | plan_text(task)] end)}
+    #{fixes(task)}#{design(task)}#{learnings_brief(run, fn -> ["#{issue.title}\n\n#{issue.description}" | plan_text(task)] end)}
     The ticket it was planned from:
 
     #{format_ticket(issue)}
@@ -95,6 +98,21 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
     #{format_comments(issue.comments)}
     """)
   end
+
+  # A later round fixes what the review found, so the findings and the human's comments come with its plan.
+  defp fixes(%Task{} = task) do
+    case Pipeline.read_plan(task) do
+      %Round{number: number} when number > 1 -> format_findings(task) <> comments(Pipeline.read_fix_plan(task))
+      _first_or_none -> ""
+    end
+  end
+
+  defp comments(%FixPlan{comments: [_first | _rest] = comments}) do
+    lines = Enum.map_join(comments, "\n", &"#{&1.number}. On #{&1.place}: #{&1.text}")
+    "The human's comments this round, by the numbers the plan uses:\n\n#{lines}\n\n"
+  end
+
+  defp comments(_none), do: ""
 
   defp ci(%Task{project: %Project{ci_command: command}}) when command in [nil, ""],
     do: "\n- This project has no CI command for Rail to run, so run its own checks yourself before you finish."

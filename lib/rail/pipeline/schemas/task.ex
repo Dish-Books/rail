@@ -160,8 +160,8 @@ defmodule Rail.Pipeline.Schemas.Task do
   def stages, do: @stages
 
   @doc """
-  The stage of the role that works a task at `stage`: Review is led by the Review lead, whose
-  subagents are the review, QA, engineer and demo roles.
+  The stage of the role a person talks to about a task at `stage`: at Review and Finalize that is the review
+  agent, beside the runs that check each round.
   """
   def role_stage(:review), do: :review_lead
   def role_stage(:finalize), do: :review_lead

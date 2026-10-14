@@ -14,7 +14,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
     worktree = create_temp_git_repo()
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
-    {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
+    {:ok, lead} = Roles.get_role(project_id: project.id, stage: :screens)
 
     # A blank tab all one white, and Rail's Learnings with nothing to review, which is sparse but not blank.
     flat = File.read!("test/support/fixtures/flat_page.png")
@@ -203,7 +203,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
           {%{"key" => "toolbar", "label" => "Toolbar", "width" => 200}, "`width` is the width to lay the page out at"},
           {%{"key" => "toolbar", "label" => "Toolbar", "width" => 768.5}, "`width` is the width to lay the page out at"},
           {%{"key" => "toolbar"}, "save_screen needs the state's `key` and a `label`"},
-          {%{"key" => "toolbar", "label" => "Toolbar"}, "Pass `browser`"}
+          {%{"key" => "toolbar", "label" => "Toolbar", "browser" => "a/b"}, "`browser` is a name"}
         ] do
       assert {:error, {:refused, refused}} = Mcp.call_run_tool(context, "save_screen", arguments)
       assert refused =~ said

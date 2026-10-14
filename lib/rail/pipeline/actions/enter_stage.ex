@@ -16,18 +16,13 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   """
 
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
-  import Rail.Pipeline.Utils.PrepareWorktree
-  import Rail.Pipeline.Utils.StartWorktreeSetup
+  import Rail.Pipeline.Utils.StartRoleRun
 
   alias Rail.Issues
-  alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
-  alias Rail.Tools
 
   # The stages a ticket's tracker status follows; the rest leave it where it is.
   # Only a split parent enters `:merged`, once its last child has, and its ticket is then Done.
@@ -38,7 +33,7 @@ defmodule Rail.Pipeline.Actions.EnterStage do
 
   Returns `{:ok, run}` with the run left executing, or `{:ok, task}` under
   `start: false`, which records the move and stops there, for a stage a person
-  decides whether to run at all.
+  decides whether to run at all. `fresh: true` starts the role on a new conversation, as a round does.
   """
   def enter_stage(%Task{} = task, stage, opts \\ []) when is_atom(stage) do
     {:ok, task} = claim_stage(task, stage)
@@ -46,7 +41,7 @@ defmodule Rail.Pipeline.Actions.EnterStage do
     result =
       if Keyword.get(opts, :start, true) do
         {:ok, %Role{} = role} = Roles.get_role(project_id: task.project_id, stage: Task.role_stage(stage))
-        start_role(task, role)
+        start_role_run(task, role, Keyword.take(opts, [:fresh]))
       else
         {:ok, task}
       end
@@ -67,83 +62,5 @@ defmodule Rail.Pipeline.Actions.EnterStage do
 
       task
     end)
-  end
-
-  # The run is started before the spawn is attempted, because starting it is what
-  # unlatches the stage. A worktree Rail cannot make is a failure to record on the
-  # run, not a reason for the stage never to have been entered.
-  #
-  # Every way out of here settles the run, including the spawn that never
-  # happened. A run left at `:running` with no OS process behind it is a run
-  # nothing recovers: `Boot.reconcile/1` works from `os_processes` rows and there
-  # is none, so it survives every restart, reads as busy, and hides the buttons
-  # that would move it on.
-  #
-  # A worktree the project has a setup script for runs it first, and the stage is
-  # entered again once it has succeeded.
-  defp start_role(%Task{} = task, %Role{} = role) do
-    {task, worktree_path} = worktree(task)
-    {:ok, %Run{} = run} = Pipeline.start_or_resume_run(task, role, worktree_path)
-
-    if worktree_path do
-      case start_worktree_setup(run) do
-        # The run's own role is the stored row; this one carries the prompt the repo merged.
-        :not_needed -> start_agent(%{run | role: role})
-        {:ok, os_process} -> {:ok, os_process.run}
-        {:error, %Run{} = failed} -> {:ok, failed}
-      end
-    else
-      {:ok, fail(run, "Could not prepare the worktree at #{task.worktree_path}.")}
-    end
-  end
-
-  defp start_agent(%Run{} = run) do
-    case start_process(run) do
-      {:ok, os_process} -> {:ok, os_process.run}
-      {:error, {:spawn_failed, _reason, %Run{} = failed}} -> {:ok, failed}
-      {:error, :dispatch_disabled} -> {:ok, fail(run, "Dispatch is off, so no agent was started for this stage.")}
-    end
-  end
-
-  defp worktree(%Task{} = task) do
-    with %Project{} = project <- Repo.get(Project, task.project_id),
-         {:ok, task, resolved} <- prepare_worktree(project, task) do
-      {task, resolved}
-    else
-      _unavailable -> {task, nil}
-    end
-  end
-
-  defp fail(%Run{} = run, error) do
-    {:ok, run} = run |> Run.changeset(%{error: error, status: :failed}) |> Repo.update()
-    run
-  end
-
-  # A stage with a brief of its own spawns itself; the rest have nothing to add.
-  # The run carries its task and its role, so it is the whole of what a spawn needs.
-  defp start_process(%Run{role: %Role{stage: :plan}} = run), do: Pipeline.start_plan_run(run)
-  defp start_process(%Run{role: %Role{stage: :engineer}} = run), do: Pipeline.start_engineer_run(run)
-  defp start_process(%Run{role: %Role{stage: :review_lead}} = run), do: Pipeline.start_review_run(run)
-
-  defp start_process(%Run{task: %Task{} = task, role: %Role{} = role} = run) do
-    prompt =
-      Pipeline.build_prompt(
-        task: task,
-        context_snippet: "",
-        pending_answer: run.pending_answer,
-        conversation_id: run.conversation_id
-      )
-
-    argv =
-      Tools.build_args(
-        prompt: prompt,
-        model: role.model,
-        reasoning_effort: role.reasoning_effort || "high",
-        system_prompt: role.system_prompt,
-        conversation_id: run.conversation_id,
-        work_dir: task.worktree_path
-      )
-
-    Tools.start_os_process(run, argv)
   end
 end
