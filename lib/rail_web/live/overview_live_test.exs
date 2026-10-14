@@ -453,7 +453,7 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, _marked} = Pipeline.mark_ready(Scope.for_user(user), ready)
       row = "#review-queue-row-#{ready.issue.identifier}"
 
-      assert has_element?(view, "#{row}[href='/tasks/#{ready.id}?tab=finalize'][data-state='ready']")
+      assert has_element?(view, "#{row}[href='/tasks/#{ready.id}'][data-state='ready']")
       assert has_element?(view, row, "marked by overview_queue_user")
       assert has_element?(view, row, "#151")
       assert has_element?(view, "#review-queue-count", "1 task")
@@ -1540,7 +1540,7 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, %Run{id: ^run_id}} = Pipeline.start_fix_round(system_scope(), run)
 
       assert {:ok, view, _html} = live(conn, ~p"/")
-      assert has_element?(view, "#up-next-finalize-row-#{run_id}[href='/tasks/#{task.id}?tab=finalize']", "Finalize")
+      assert has_element?(view, "#up-next-finalize-row-#{run_id}[href='/tasks/#{task.id}']", "Finalize")
       assert has_element?(view, "#in-progress-task-#{task.id}.bg-amber-50", "Ready to finalize")
 
       # Marked ready, it waits on a tech lead, so its owner's row, the stat and Up next all let it go.

@@ -38,9 +38,6 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
         selected_comment: nil,
         draft: nil,
         picker: %{view: :branch, history: %{commits: []}, dirty?: false, parent: nil},
-        running?: false,
-        agent: "Engineer",
-        sends?: true,
         commentable?: true
       }
     }
@@ -259,10 +256,10 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
       ]
 
       assert %{
-               toolbar: %{unsent: 4, running?: true, agent: "Engineer"},
+               toolbar: %{unsent: 4},
                tree: %{rows: [%{unsent: 1}, %{unsent: 2}]},
                sections: [{_filter, %{unsent: 1}}, {_mix, %{unsent: 2}}]
-             } = calculate_diff_pane(%{assigns | files: [diff, other], comments: comments, running?: true})
+             } = calculate_diff_pane(%{assigns | files: [diff, other], comments: comments})
     end
 
     # Line changed is said of every comment, but the notice is about what Send sends.

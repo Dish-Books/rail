@@ -157,7 +157,7 @@ defmodule RailWeb.Utils.ChildStatus do
       badge: if(needs, do: :dot),
       line: if(state == :refused, do: "Merge refused: #{child.merge_error}", else: label),
       line_class: style.text_class,
-      action: if(needs, do: %{label: "Finalize", tab: "finalize"})
+      action: if(needs, do: %{label: "Finalize", item: "findings"})
     }
   end
 
@@ -227,9 +227,14 @@ defmodule RailWeb.Utils.ChildStatus do
           needs -> "text-amber-700 dark:text-amber-300"
           true -> "text-slate-600 dark:text-slate-300"
         end,
-      action: if(needs, do: %{label: action(state, child), tab: run.role_id})
+      action: if(needs, do: %{label: action(state, child), item: action_item(state, child)})
     }
   end
+
+  # A question is answered in the conversation; anything else needing the reader is the stage's own item.
+  defp action_item(:blocked, %Task{}), do: "conversation"
+  defp action_item(_state, %Task{stage: :engineer}), do: "diff"
+  defp action_item(_state, %Task{}), do: "findings"
 
   defp chip(:running, _stage, _style), do: %{label: "Running", icon: "pi-play-circle", class: blue()}
   defp chip(:blocked, _stage, _style), do: %{label: "Questions", icon: "pi-question", class: @amber}

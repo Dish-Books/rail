@@ -74,7 +74,6 @@ defmodule RailWeb.CoreComponents do
   defdelegate split_board(assigns), to: Components.SplitBoard
   defdelegate status_icon(assigns), to: Components.IssueIcons
   defdelegate task_layout(assigns), to: Components.TaskLayout
-  defdelegate task_tabs(assigns), to: Components.TaskTabs
   defdelegate throughput_chart(assigns), to: Components.ThroughputChart
   defdelegate top_app_bar(assigns), to: Components.Nav
   defdelegate triage_image(assigns), to: Components.TriageImage

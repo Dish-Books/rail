@@ -1805,8 +1805,9 @@ defmodule RailWeb.Live.RunConversationTest do
       refute has_element?(view, "[data-qa=review_tray_comment]")
       assert Pipeline.list_diff_comments(ada, task, unsent: true) == []
 
+      # Under Findings the conversation is only its trays.
       view
-      |> with_target("#conversation-tab-root")
+      |> with_target("#conversation-tray")
       |> render_click("remove_review_tray_comment", %{"kind" => "diff", "id" => "x"})
 
       refute has_element?(view, "[data-qa=review_tray_comment]")
@@ -1914,7 +1915,7 @@ defmodule RailWeb.Live.RunConversationTest do
       diff: diff
     } do
       Repo.update_all(from(f in Finding, where: f.task_id == ^task.id), set: [decision: :skip])
-      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
+      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}?item=conversation")
 
       view |> element("#finish-review") |> render_click()
       _settled = render(view)
@@ -1922,8 +1923,7 @@ defmodule RailWeb.Live.RunConversationTest do
       refute has_element?(view, "#review-send-tray")
       assert has_element?(view, "#composer-root")
 
-      # The page followed the task on to Finalize; its Review tab is where comments are sent from.
-      view |> element("#task-tab-#{run.role_id}") |> render_click()
+      # At Finalize the Chat still talks to the review agent, whose tray is where comments are sent from.
       {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "One more thing."))
       _settled = render(view)
 
@@ -1946,7 +1946,8 @@ defmodule RailWeb.Live.RunConversationTest do
       diff: diff
     } do
       {:ok, _mine} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "Name it."))
-      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
+      # The card is a message in the conversation, which only the Chat item shows in full.
+      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}?item=conversation")
 
       expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: %{spawned | status: :running}}} end)
       view |> element("#send-review-tray", "Send 2") |> render_click()
@@ -1959,7 +1960,7 @@ defmodule RailWeb.Live.RunConversationTest do
 
       {:ok, _again} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "And this."))
       {:ok, _idle} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
-      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
+      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}?item=conversation")
 
       expect(Pipeline, :start_fix_round, fn _scope, _run -> {:error, :fix_plan_waiting} end)
       view |> element("#send-review-tray", "Send 1") |> render_click()

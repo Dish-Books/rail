@@ -1,11 +1,7 @@
 defmodule RailWeb.Components.TaskLayout do
   @moduledoc """
-  The frame every task page sits in: a header across the top, the stage's work
-  below it, and the conversation in a sidebar on the right.
-
-  The stage decides the title, the meta line and the actions; the page decides
-  the sidebar. Either can be the one rendering the frame, so it takes all of
-  them as slots.
+  The frame the task page sits in: a header across the top with every decision a person makes on the task, and
+  the task's items below it.
   """
   use RailWeb, :html
 
@@ -27,11 +23,9 @@ defmodule RailWeb.Components.TaskLayout do
 
   slot :breadcrumb
   slot :meta
-  slot :tabs
   slot :actions
   slot :alerts
   slot :inner_block
-  slot :sidebar
 
   def task_layout(assigns) do
     assigns =
@@ -44,11 +38,7 @@ defmodule RailWeb.Components.TaskLayout do
       <div
         id="task-header"
         data-qa="task-header"
-        class={[
-          "px-6 pt-5 space-y-3 border-b border-slate-200 dark:border-slate-700",
-          @tabs == [] && "pb-5",
-          @tabs != [] && "bg-slate-50 dark:bg-slate-800/30"
-        ]}
+        class="px-6 py-4 space-y-2 border-b border-slate-200 dark:border-slate-700"
       >
         {render_slot(@breadcrumb)}
 
@@ -153,8 +143,6 @@ defmodule RailWeb.Components.TaskLayout do
         >
           {@run.error}
         </p>
-
-        {render_slot(@tabs)}
       </div>
 
       <div class="flex flex-col lg:flex-row flex-1 min-h-0">
@@ -169,15 +157,6 @@ defmodule RailWeb.Components.TaskLayout do
         >
           {render_slot(@inner_block)}
         </div>
-
-        <!-- A pane read on its own leaves no column behind: it has the width. -->
-        <aside
-          :if={@sidebar != []}
-          id="task-conversation-column"
-          class="w-full lg:w-[440px] flex-1 lg:flex-none flex flex-col min-h-0 border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-700"
-        >
-          {render_slot(@sidebar)}
-        </aside>
       </div>
     </div>
     """

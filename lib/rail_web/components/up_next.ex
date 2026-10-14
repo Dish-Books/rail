@@ -167,12 +167,13 @@ defmodule RailWeb.Components.UpNext do
   defp parent_identifier(%Run{task: %Task{parent_task: %Task{issue: %{identifier: identifier}}}}), do: identifier
   defp parent_identifier(%Run{}), do: nil
 
-  # Review is what the merge is decided on, so a change ready for it opens there, and one at Finalize on Finalize.
+  # Review is what the merge is decided on, so a change ready for it opens on its findings, and one at Finalize on
+  # the task, whose header merges it.
   defp destination(run, fix_plans) do
     cond do
-      MapSet.member?(fix_plans, run.id) -> [navigate: ~p"/tasks/#{run.task_id}?tab=#{run.role_id}&item=fix_plan"]
-      finalizing?(run) -> [navigate: ~p"/tasks/#{run.task_id}?tab=finalize"]
-      ready_to_merge?(run) -> [navigate: ~p"/tasks/#{run.task_id}?tab=#{run.role_id}"]
+      MapSet.member?(fix_plans, run.id) -> [navigate: ~p"/tasks/#{run.task_id}?item=fix_plan"]
+      finalizing?(run) -> [navigate: ~p"/tasks/#{run.task_id}"]
+      ready_to_merge?(run) -> [navigate: ~p"/tasks/#{run.task_id}?item=findings"]
       true -> [navigate: ~p"/tasks/#{run.task_id}"]
     end
   end

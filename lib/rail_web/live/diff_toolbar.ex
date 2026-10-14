@@ -102,44 +102,6 @@ defmodule RailWeb.Live.DiffToolbar do
       </form>
 
       <span
-        :if={@unsent > 0 and @commentable? and @sends?}
-        data-qa="diff_comments_hint"
-        class="hidden @5xl:inline-flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap"
-      >
-        <span class={[
-          "size-1.5 rounded-full",
-          @running? && "bg-green-500",
-          not @running? && "bg-slate-400"
-        ]} />
-        {hint(@agent, @running?)}
-      </span>
-
-      <%!-- The pane is marked loading from the click until the reply that redraws every comment as Sent. --%>
-      <button
-        :if={@unsent > 0 and @commentable? and @sends?}
-        type="button"
-        id="send-diff-comments"
-        data-qa="send_diff_comments"
-        data-busy-self
-        phx-click={JS.push("send_diff_comments", target: @target, loading: "#diff-pane")}
-        title={hint(@agent, @running?)}
-        class="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 shadow-xs cursor-pointer whitespace-nowrap group-[.phx-click-loading]/diff:opacity-60 group-[.phx-click-loading]/diff:pointer-events-none"
-      >
-        <span class="inline-flex group-[.phx-click-loading]/diff:hidden items-center gap-1.5">
-          <.icon name="pi-paper-plane-tilt" class="size-4" />
-          <span>
-            Send {@unsent}<span data-qa="send_noun" class="hidden @3xl:inline">{noun(@unsent)}</span>
-          </span>
-        </span>
-        <span
-          data-qa="send_diff_comments_sending"
-          class="hidden group-[.phx-click-loading]/diff:inline-flex items-center gap-1.5"
-        >
-          <.icon name="pi-circle-notch-bold" class="size-4 motion-safe:animate-spin" />Sending {@unsent}
-        </span>
-      </button>
-
-      <span
         :if={not @commentable?}
         data-qa="diff_no_comments"
         title="No comments on a merge"
@@ -154,10 +116,4 @@ defmodule RailWeb.Live.DiffToolbar do
 
   defp read(0, _viewed), do: 0
   defp read(total, viewed), do: div(viewed * 100, total)
-
-  defp hint(agent, true), do: "#{agent} is working. These wait until its turn ends."
-  defp hint(agent, false), do: "#{agent} is idle and starts on these at once."
-
-  defp noun(1), do: " comment"
-  defp noun(_unsent), do: " comments"
 end
