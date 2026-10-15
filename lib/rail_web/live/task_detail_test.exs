@@ -545,6 +545,8 @@ defmodule RailWeb.Live.TaskDetailTest do
         test: %{file: "test/a_test.exs", name: "refuses a view-only member"}
       })
 
+    # The broadcast reloads the finding through send_update, which lands after the first render's call.
+    _settled = render(view)
     assert has_element?(view, "#finding-outcome", "Fixed in #{short}")
     assert has_element?(view, "#finding-severity.bg-slate-100", "blocker")
     refute has_element?(view, "#finding-severity.bg-red-100")
