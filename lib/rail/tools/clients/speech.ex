@@ -45,10 +45,36 @@ defmodule Rail.Tools.Clients.Speech do
   defp audio(parts) do
     case Enum.find(parts, &match?(%{"inlineData" => %{"data" => _data}}, &1)) do
       %{"inlineData" => %{"data" => data, "mimeType" => "audio/L16;codec=pcm;rate=24000"}} -> Base.decode64(data)
+      %{"inlineData" => %{"data" => data, "mimeType" => "audio/wav"}} -> data |> Base.decode64!() |> wav_pcm()
       %{"inlineData" => %{"mimeType" => other}} -> {:error, {:unexpected_audio, other}}
       nil -> {:error, :no_audio}
     end
   end
+
+  # The same PCM wrapped in a WAV, with provenance chunks beside it; only its data chunk is the voice.
+  defp wav_pcm(<<"RIFF", _size::little-32, "WAVE", chunks::binary>>), do: wav_pcm(chunks, nil)
+  defp wav_pcm(_other), do: {:error, {:unexpected_audio, "audio/wav"}}
+
+  defp wav_pcm(<<"fmt ", size::little-32, format::binary-size(size), rest::binary>>, _format), do: wav_pcm(rest, format)
+
+  defp wav_pcm(<<"data", size::little-32, pcm::binary-size(size), _rest::binary>>, format) do
+    case format do
+      <<1::little-16, 1::little-16, @rate::little-32, _byte_rate::little-32, _align::little-16, 16::little-16,
+        _extra::binary>> ->
+        {:ok, pcm}
+
+      _other_format ->
+        {:error, {:unexpected_audio, "audio/wav"}}
+    end
+  end
+
+  # A chunk is padded to an even length.
+  defp wav_pcm(<<_id::binary-4, size::little-32, rest::binary>>, format) when byte_size(rest) >= size + rem(size, 2) do
+    <<_chunk::binary-size(size + rem(size, 2)), rest::binary>> = rest
+    wav_pcm(rest, format)
+  end
+
+  defp wav_pcm(_truncated, _format), do: {:error, {:unexpected_audio, "audio/wav"}}
 
   # Goth exits when its server is slow or gone and raises when no credentials resolve; either is a line that
   # cannot be spoken, not a crash for the encode.
