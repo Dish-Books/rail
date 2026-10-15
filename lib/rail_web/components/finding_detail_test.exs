@@ -653,6 +653,21 @@ defmodule RailWeb.Components.FindingDetailTest do
     assert doc |> Floki.find("[data-qa=finding_history]") |> Floki.text() |> String.split() |> Enum.join(" ") =~
              "Fixed in 2222222; test"
 
+    # A pass that found it fixed, with no fix round behind it, names the commit alone.
+    passed = %{
+      finding
+      | notes: [%FindingNote{round: 2, kind: :pass, at: @at, status: :fixed, commit: "2222222bbbb"}]
+    }
+
+    assert "Fixed in 2222222" =
+             (&FindingDetail.finding_detail/1)
+             |> render_component([finding: passed] ++ @attrs)
+             |> Floki.parse_fragment!()
+             |> Floki.find("#finding-outcome")
+             |> Floki.text()
+             |> String.split()
+             |> Enum.join(" ")
+
     # Only the note that it was once still failing is red.
     assert [_failing_note] = Floki.find(doc, "[class*=text-red-], [class*=bg-red-], [class*=-amber-]")
     assert doc |> Floki.find("[class*=text-red-]") |> Floki.text() =~ "Still failing on 1111111"
