@@ -64,6 +64,37 @@ defmodule RailWeb.DesignControllerTest do
     end
   end
 
+  test "a page linking Rail's kit by its local address loads the kit from Rail's own origin", %{
+    conn: conn,
+    task: task,
+    design_dir: dir
+  } do
+    local = "http://localhost:#{RailWeb.Endpoint.config(:http)[:port]}/design-kit"
+
+    File.write!(
+      Path.join(dir, "cards.html"),
+      ~s(<script src="#{local}/tailwind.js"></script><link rel="stylesheet" href="#{local}/phosphor.css"><h1>Cards</h1>)
+    )
+
+    for query <- [%{}, %{"comments" => "1"}] do
+      html = conn |> get(~p"/tasks/#{task.id}/design/cards?#{query}") |> html_response(200)
+
+      assert html =~
+               ~s(<script src="/design-kit/tailwind.js"></script><link rel="stylesheet" href="/design-kit/phosphor.css"><h1>Cards</h1>)
+
+      refute html =~ "localhost"
+    end
+  end
+
+  test "a page saved linking the CDNs is served exactly as saved", %{conn: conn, task: task, design_dir: dir} do
+    page =
+      ~s(<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script><link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css"><h1>Cards</h1>)
+
+    File.write!(Path.join(dir, "cards.html"), page)
+
+    assert conn |> get(~p"/tasks/#{task.id}/design/cards") |> html_response(200) == page
+  end
+
   test "a page asked for at an earlier version is served as it is now", %{conn: conn, task: task, design_dir: dir} do
     %{options: [%{html_version: before}]} = Pipeline.read_design(task)
     File.write!(Path.join(dir, "cards.html"), "<h1>Cards, without the links</h1>")

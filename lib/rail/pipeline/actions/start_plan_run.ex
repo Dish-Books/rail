@@ -97,7 +97,8 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
 
   defp brief(%Task{issue: %Issue{} = issue} = task, %Run{} = run) do
     dir = Path.join(task.scratch_path, "design")
-    kit = RailWeb.Endpoint.url() <> "/design-kit"
+    # Agents share Rail's host, so they dial its port: the public URL sits behind Cloudflare Access.
+    kit = "http://localhost:#{RailWeb.Endpoint.config(:http)[:port]}/design-kit"
 
     String.trim("""
     You run Rail's Plan step for the issue below: one conversation that ends with one plan the human approves with one click. The plan is the ticket, the design options when the change has a screen, and the implementation plan. You write all three yourself, and save them with Rail's tools. You change nothing in the worktree: no application code, no tests, no branch.

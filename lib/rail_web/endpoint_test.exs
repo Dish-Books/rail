@@ -17,7 +17,7 @@ defmodule RailWeb.EndpointTest do
     end
   end
 
-  # A sandboxed frame or a file:// screenshot has no origin, and fonts load only with CORS.
+  # A sandboxed frame or a file:// screenshot has no origin.
   test "serves the design kit to any origin, and Rail's own assets to none", %{conn: conn} do
     static = Application.app_dir(:rail, "priv/static")
     name = "endpoint-test-#{System.unique_integer([:positive])}.css"

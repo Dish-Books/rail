@@ -15,7 +15,7 @@ defmodule RailWeb.Endpoint do
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]
 
-  # A design page is sandboxed or a file:// page, so it has no origin, and browsers fetch fonts only with CORS.
+  # The kit is served to pages with no origin: sandboxed frames and the file:// screenshot.
   plug Plug.Static,
     at: "/design-kit",
     from: {:rail, "priv/static/design-kit"},
