@@ -168,15 +168,29 @@ defmodule RailWeb.Components.UpNext do
   defp parent_identifier(%Run{}), do: nil
 
   # Review is what the merge is decided on, so a change ready for it opens on its findings, and one at Finalize on
-  # the task, whose header merges it.
+  # the task, whose header merges it. A question is answered in its agent's conversation, beside the plan, which the
+  # task opens on by itself only for the agent taking messages: Plan at Plan, the review agent after.
   defp destination(run, fix_plans) do
     cond do
-      MapSet.member?(fix_plans, run.id) -> [navigate: ~p"/tasks/#{run.task_id}?item=fix_plan"]
-      finalizing?(run) -> [navigate: ~p"/tasks/#{run.task_id}"]
-      ready_to_merge?(run) -> [navigate: ~p"/tasks/#{run.task_id}?item=findings"]
-      true -> [navigate: ~p"/tasks/#{run.task_id}"]
+      MapSet.member?(fix_plans, run.id) ->
+        [navigate: ~p"/tasks/#{run.task_id}?item=fix_plan"]
+
+      finalizing?(run) ->
+        [navigate: ~p"/tasks/#{run.task_id}"]
+
+      ready_to_merge?(run) ->
+        [navigate: ~p"/tasks/#{run.task_id}?item=findings"]
+
+      Run.state(run) == :blocked and not chat_run?(run) ->
+        [navigate: ~p"/tasks/#{run.task_id}?item=plan&agent=#{run.role.stage}"]
+
+      true ->
+        [navigate: ~p"/tasks/#{run.task_id}"]
     end
   end
+
+  defp chat_run?(%Run{role: %Role{stage: stage}, task: %Task{stage: :plan}}), do: stage == :plan
+  defp chat_run?(%Run{role: %Role{stage: stage}}), do: stage == :review_lead
 
   # The Review run of a task at Finalize waits only on someone marking it ready.
   defp finalizing?(%Run{task: %Task{stage: :finalize}} = run), do: Run.state(run) == :done

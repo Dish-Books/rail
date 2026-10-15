@@ -130,7 +130,7 @@ defmodule RailWeb.Components.SplitBoard do
                     <span :if={status.action} class="mt-1 block">
                       <.link
                         patch={
-                          ~p"/tasks/#{@parent_id}?child=#{status.identifier}&item=#{status.action.item}"
+                          ~p"/tasks/#{@parent_id}?#{[child: status.identifier] ++ status.action.params}"
                         }
                         id={"split-action-#{status.identifier}"}
                         class="whitespace-nowrap text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"

@@ -157,7 +157,7 @@ defmodule RailWeb.Utils.ChildStatus do
       badge: if(needs, do: :dot),
       line: if(state == :refused, do: "Merge refused: #{child.merge_error}", else: label),
       line_class: style.text_class,
-      action: if(needs, do: %{label: "Finalize", item: "findings"})
+      action: if(needs, do: %{label: "Finalize", params: [item: "findings"]})
     }
   end
 
@@ -227,14 +227,17 @@ defmodule RailWeb.Utils.ChildStatus do
           needs -> "text-amber-700 dark:text-amber-300"
           true -> "text-slate-600 dark:text-slate-300"
         end,
-      action: if(needs, do: %{label: action(state, child), item: action_item(state, child)})
+      action: if(needs, do: %{label: action(state, child), params: action_params(state, child, run)})
     }
   end
 
-  # A question is answered in the conversation, beside the plan; anything else needing the reader is the stage's own item.
-  defp action_item(:blocked, %Task{}), do: "plan"
-  defp action_item(_state, %Task{stage: :engineer}), do: "diff"
-  defp action_item(_state, %Task{}), do: "findings"
+  # A question is answered in its agent's conversation, beside the plan, which opens on the review agent unless
+  # another is named; anything else needing the reader is the stage's own item. A child starts at Engineer, so Plan
+  # is never the one asking.
+  defp action_params(:blocked, %Task{}, %Run{role: %{stage: :review_lead}}), do: [item: "plan"]
+  defp action_params(:blocked, %Task{}, %Run{role: %{stage: stage}}), do: [item: "plan", agent: stage]
+  defp action_params(_state, %Task{stage: :engineer}, _run), do: [item: "diff"]
+  defp action_params(_state, %Task{}, _run), do: [item: "findings"]
 
   defp chip(:running, _stage, _style), do: %{label: "Running", icon: "pi-play-circle", class: blue()}
   defp chip(:blocked, _stage, _style), do: %{label: "Questions", icon: "pi-question", class: @amber}

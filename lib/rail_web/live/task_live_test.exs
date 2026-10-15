@@ -6191,6 +6191,11 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#split-row-TLV-11 [data-qa='split-row-badge']", "1")
       assert has_element?(view, "#split-action-TLV-11", "Answer")
 
+      # The engineer's question is answered in its own conversation, which Answer opens.
+      view |> element("#split-action-TLV-11") |> render_click()
+      assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-11&item=plan&agent=engineer")
+      assert has_element?(view, "[data-qa='question-card'] #question-prompt", "Which region?")
+
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-12")
       assert has_element?(view, "#child-switcher-TLV-11 [aria-label='1 waiting on you']", "1")
     end

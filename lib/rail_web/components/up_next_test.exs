@@ -169,6 +169,27 @@ defmodule RailWeb.Components.UpNextTest do
     assert render_component(&UpNext.up_next/1, runs: [blocked]) =~ "Which vendor field?"
   end
 
+  # The task's conversation opens on the agent taking messages, so any other agent's question names its agent.
+  test "a blocked run opens its own agent's conversation, beside the plan", %{waiting: waiting} do
+    href = fn stage ->
+      run = %{
+        waiting.(stage)
+        | status: :blocked_on_input,
+          stage_outcome: :in_progress,
+          questions: [%Question{status: :pending, prompt: "Which vendor field?"}]
+      }
+
+      (&UpNext.up_next/1)
+      |> render_component(runs: [run])
+      |> Floki.parse_fragment!()
+      |> Floki.attribute("#up-next-featured-#{run.id}", "href")
+    end
+
+    assert ["/tasks/tsk_engineer?item=plan&agent=engineer"] = href.(:engineer)
+    assert ["/tasks/tsk_review"] = href.(:review)
+    assert ["/tasks/tsk_plan"] = href.(:plan)
+  end
+
   test "a run whose questions are all answered is waiting to be sent", %{waiting: waiting} do
     answered = %{
       waiting.(:engineer)

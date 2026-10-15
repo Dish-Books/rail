@@ -1218,7 +1218,13 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#up-next-featured-#{review_run.id} [data-qa='up-next-action']", "Review")
 
       assert has_element?(view, "#up-next-row-#{one_question.id}[href='/tasks/#{one_task.id}']", "asked a question")
-      assert has_element?(view, "#up-next-row-#{two_questions.id}[href='/tasks/#{two_task.id}']", "asked 2 questions")
+
+      assert has_element?(
+               view,
+               "#up-next-row-#{two_questions.id}[href='/tasks/#{two_task.id}?item=plan&agent=engineer']",
+               "asked 2 questions"
+             )
+
       assert has_element?(view, "#up-next-row-#{two_questions.id}", "Answer")
 
       positions =
