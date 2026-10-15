@@ -340,6 +340,9 @@ defmodule RailWeb.TaskLive do
       else: {:noreply, socket}
   end
 
+  # The demo recording is what reads the page's actions, and the page has no use for them.
+  def handle_info({:browser_action, _task_id, _name, _kind}, socket), do: {:noreply, socket}
+
   def handle_info(:frame_window_closed, socket) do
     case socket.assigns.held_frame do
       data when is_binary(data) -> {:noreply, push_frame(assign(socket, :held_frame, nil), data)}

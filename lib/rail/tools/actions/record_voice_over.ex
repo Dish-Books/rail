@@ -1,7 +1,7 @@
 defmodule Rail.Tools.Actions.RecordVoiceOver do
   @moduledoc """
-  Speaks each of a demo's captions into a clip of its own, before the video is encoded, so the encode can hold each
-  caption's moment for as long as its line takes to say.
+  Speaks each of a demo's captions into a clip of its own, before the video is encoded, so the encode can time each
+  beat by how long its line takes to say.
   """
 
   alias Rail.Tools.Clients.Speech

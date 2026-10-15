@@ -5349,6 +5349,15 @@ defmodule RailWeb.TaskLiveTest do
       _settled = render(view)
       assert_push_event(view, "browser:frame", %{data: "explorer's"})
 
+      # The page's clicks go out on the same topic for the demo recording, and the page watching it lets them pass.
+      Phoenix.PubSub.broadcast(
+        Rail.PubSub,
+        "browser:#{task.id}:explorer-1",
+        {:browser_action, task.id, "explorer-1", "click"}
+      )
+
+      assert render(view) =~ "review-item-browser"
+
       send(view.pid, :frame_window_closed)
       view |> element("#review-browser-demo") |> render_click()
       _settled = render(view)

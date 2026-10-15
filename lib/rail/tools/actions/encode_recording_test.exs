@@ -40,7 +40,7 @@ defmodule Rail.Tools.Actions.EncodeRecordingTest do
       {"", 0}
     end)
 
-    assert {:ok, ^video, []} = Tools.encode_recording(directory)
+    assert {:ok, ^video, []} = Tools.encode_recording(directory, [], :reading)
 
     # The concat demuxer ignores the final entry's duration and flashes past the
     # last frame unless it is listed twice.
@@ -71,7 +71,7 @@ defmodule Rail.Tools.Actions.EncodeRecordingTest do
 
     expect(Tools, :run, fn "ffmpeg", _argv, _opts -> {"", 0} end)
 
-    assert {:ok, _video, [125]} = Tools.encode_recording(directory, [{1_000, 1_200}])
+    assert {:ok, _video, [125]} = Tools.encode_recording(directory, [{1_000, 1_200}], :reading)
 
     assert File.read!(Path.join(directory, "frames.txt")) == """
            file 'frames/000000.jpg'
@@ -81,6 +81,32 @@ defmodule Rail.Tools.Actions.EncodeRecordingTest do
            file 'frames/000002.jpg'
            duration 0.725
            file 'frames/000002.jpg'
+           """
+  end
+
+  # A spinner paints all through a voiced take, so the lines and the page's actions decide what is kept: the line
+  # starts as the click lands, seconds after its caption, and the time before is cut.
+  test "a voiced take is cut by its lines and the actions the page reported", %{directory: directory} do
+    File.write!(Path.join(directory, "frames.jsonl"), """
+    {"file": "000000.jpg", "at_ms": 0}
+    {"file": "000001.jpg", "at_ms": 5100}
+    """)
+
+    File.write!(Path.join(directory, "actions.jsonl"), """
+    {"kind": "click", "at_ms": 5000}
+    {"kind": "ke
+    """)
+
+    expect(Tools, :run, fn "ffmpeg", _argv, _opts -> {"", 0} end)
+
+    assert {:ok, _video, [1_000]} = Tools.encode_recording(directory, [{1_000, 1_000}], :spoken)
+
+    assert File.read!(Path.join(directory, "frames.txt")) == """
+           file 'frames/000000.jpg'
+           duration 1.400
+           file 'frames/000001.jpg'
+           duration 2.400
+           file 'frames/000001.jpg'
            """
   end
 
@@ -94,14 +120,14 @@ defmodule Rail.Tools.Actions.EncodeRecordingTest do
 
     expect(Tools, :run, fn "ffmpeg", _argv, _opts -> {"", 0} end)
 
-    assert {:ok, _video, []} = Tools.encode_recording(directory)
+    assert {:ok, _video, []} = Tools.encode_recording(directory, [], :reading)
     assert File.read!(Path.join(directory, "frames.txt")) =~ "file 'frames/000000.jpg'\nduration 0.001\n"
   end
 
   # Nothing is handed to ffmpeg at all, because a recording nothing painted into
   # is not a video that failed to encode.
   test "a recording nothing ever painted into is not a video", %{directory: directory} do
-    assert Tools.encode_recording(directory) == {:error, :nothing_recorded}
+    assert Tools.encode_recording(directory, [], :reading) == {:error, :nothing_recorded}
   end
 
   # The file is appended to while the browser paints, so its last line can be
@@ -114,7 +140,7 @@ defmodule Rail.Tools.Actions.EncodeRecordingTest do
 
     expect(Tools, :run, fn "ffmpeg", _argv, _opts -> {"", 0} end)
 
-    assert {:ok, _video, []} = Tools.encode_recording(directory)
+    assert {:ok, _video, []} = Tools.encode_recording(directory, [], :reading)
     refute File.read!(Path.join(directory, "frames.txt")) =~ "000001"
   end
 
@@ -123,7 +149,8 @@ defmodule Rail.Tools.Actions.EncodeRecordingTest do
 
     expect(Tools, :run, fn "ffmpeg", _argv, _opts -> {"frames/000000.jpg: Invalid data found\n", 1} end)
 
-    assert {:error, {:encode_failed, "frames/000000.jpg: Invalid data found"}} = Tools.encode_recording(directory)
+    assert {:error, {:encode_failed, "frames/000000.jpg: Invalid data found"}} =
+             Tools.encode_recording(directory, [], :reading)
   end
 
   # An executable nothing on the path matches is handed to the port bare and the
@@ -134,6 +161,6 @@ defmodule Rail.Tools.Actions.EncodeRecordingTest do
 
     expect(Tools, :run, fn "ffmpeg", _argv, _opts -> raise ErlangError, original: :enoent end)
 
-    assert Tools.encode_recording(directory) == {:error, :no_ffmpeg}
+    assert Tools.encode_recording(directory, [], :reading) == {:error, :no_ffmpeg}
   end
 end

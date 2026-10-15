@@ -19,6 +19,8 @@ defmodule Rail.Tools.Actions.EncodeRecording do
   on for forty seconds does not - `Rail.Tools.Utils.CompressTimeline` caps how
   long a still frame holds, and drops what was filmed after the last caption was
   read - so the video is what was shown rather than how long it took to show it.
+  A voiced take is cut by its lines and the page's actions instead, in
+  `Rail.Tools.Utils.FollowVoiceOver`, since a spinner never lets a frame hold.
 
   A machine with no ffmpeg is a machine that records but cannot encode. That is
   reported rather than raised: the frames are still there, and whoever reads the
@@ -26,6 +28,7 @@ defmodule Rail.Tools.Actions.EncodeRecording do
   """
 
   import Rail.Tools.Utils.CompressTimeline
+  import Rail.Tools.Utils.FollowVoiceOver
 
   alias Rail.Tools
 
@@ -33,9 +36,10 @@ defmodule Rail.Tools.Actions.EncodeRecording do
   Encodes the frames in `directory` into `directory/demo.webm`.
 
   `marks` are the captions, each `{at_ms, for_ms}` on the recording's clock - when
-  it was said and the time it takes to read. Only the frames the timeline keeps
-  are encoded. Returns `{:ok, path, video_times}`, where `video_times` is where each
-  mark begins in the video, in the order given.
+  it was said and, by `timing`, the time it takes to read (`:reading`) or to say
+  (`:spoken`). Only the frames the timeline keeps are encoded. Returns `{:ok, path,
+  video_times}`, where `video_times` is where each mark begins in the video, in
+  the order given.
 
   Returns `{:error, :nothing_recorded}` when no frame was ever written,
   `{:error, :no_ffmpeg}` on a machine that has none, and `{:error,
@@ -43,10 +47,11 @@ defmodule Rail.Tools.Actions.EncodeRecording do
   things to tell somebody: one is a recording that never happened, one is a
   machine to fix, and one is a recording to look at.
   """
-  def encode_recording(directory, marks \\ []) do
+  def encode_recording(directory, marks, timing) when timing in [:reading, :spoken] do
     case frames(directory) do
       [] -> {:error, :nothing_recorded}
-      frames -> encode(directory, compress_timeline(frames, marks))
+      frames when timing == :reading -> encode(directory, compress_timeline(frames, marks))
+      frames -> encode(directory, follow_voice_over(frames, marks, actions(directory)))
     end
   end
 
@@ -98,11 +103,23 @@ defmodule Rail.Tools.Actions.EncodeRecording do
   defp seconds(ms), do: :erlang.float_to_binary(ms / 1000, decimals: 3)
 
   # In the order they were written, which is the order the file is appended in.
-  # A half-written last line is a frame that was landing as the recording stopped;
-  # it is skipped rather than guessed at.
   defp frames(directory) do
     directory
-    |> Path.join("frames.jsonl")
+    |> written("frames.jsonl")
+    |> Enum.map(fn %{"file" => file, "at_ms" => at_ms} -> %{file: file, at_ms: at_ms} end)
+  end
+
+  # A take recorded before the page reported its actions has none, and each line plays at its caption.
+  defp actions(directory) do
+    directory
+    |> written("actions.jsonl")
+    |> Enum.map(fn %{"at_ms" => at_ms} -> at_ms end)
+  end
+
+  # A half-written last line was landing as the recording stopped; it is skipped rather than guessed at.
+  defp written(directory, file) do
+    directory
+    |> Path.join(file)
     |> File.read()
     |> case do
       {:ok, written} -> written
@@ -111,8 +128,8 @@ defmodule Rail.Tools.Actions.EncodeRecording do
     |> String.split("\n", trim: true)
     |> Enum.flat_map(fn line ->
       case Jason.decode(line) do
-        {:ok, %{"file" => file, "at_ms" => at_ms}} -> [%{file: file, at_ms: at_ms}]
-        _unreadable -> []
+        {:ok, decoded} -> [decoded]
+        {:error, _half_written} -> []
       end
     end)
   end
