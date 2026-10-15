@@ -127,10 +127,11 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   end
 
   defp next_step(%Run{}) do
-    "Fix what it reports and commit the fix. Rail runs CI again on what your turn leaves committed. When the " <>
-      "failure is not your change's to fix, such as a flaky test elsewhere, end your turn without changing " <>
-      "anything and Rail runs CI again on the same commit. When it failed on a change that landed on the default " <>
-      "branch, merge it into your branch first."
+    "Fix what it reports and commit the fix. Rail runs CI again on what your turn leaves committed. A failure " <>
+      "your change did not cause is still yours to clear, since nothing reaches Review until CI passes: fetch the " <>
+      "default branch and merge it in when it has the fix, and otherwise fix the failing test or code here, outside " <>
+      "the plan if that is where it is, naming the fix and why in your commit body and report. A flaky test is " <>
+      "fixed so it stops flaking. Never end the turn with nothing changed: CI would fail the same way again."
   end
 
   defp update(%Run{} = run, attrs) do

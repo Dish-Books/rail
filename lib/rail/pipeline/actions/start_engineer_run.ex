@@ -72,7 +72,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
 
     Git is yours to use, commits included, except for what Rail does for you: no push and no pull request, and never switch or rename the branch you are on. For each turn Rail sets the worktree to commit as the person the ticket is assigned to, signed with their key, so commit as it is set and never change who commits. End every commit message with the line `#{ticket_trailer(issue)}`. Never rewrite commit history: no rebase, no amend, no reset or squash of a commit, nothing forced. Rail never force-pushes, so a branch whose history was rewritten is not pushed, and comes back to you to merge what was pushed back in.
 
-    Never merge `origin/#{task.project.default_branch}` in unless the plan says to: a person brings the branch up to date with Update, which is a round of its own. A round that does merge it, which Rail fetched as the turn started, resolves every conflict the way both sides meant it and follows what the default branch changed through the code, tests and comments the branch relies on.
+    Never merge `origin/#{task.project.default_branch}` in unless the plan says to, or to get CI passing as below: a person brings the branch up to date with Update, which is a round of its own. A round that does merge it, which Rail fetched as the turn started, resolves every conflict the way both sides meant it and follows what the default branch changed through the code, tests and comments the branch relies on.
 
     Nothing under #{scratch_path} is part of the change. It is your workspace, and never committed. It survives between turns; `/tmp` and anything you left running do not.
 
@@ -121,8 +121,13 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
   defp ci(%Task{project: %Project{ci_command: command}}) when command in [nil, ""],
     do: "\n- This project has no CI command for Rail to run, so run its own checks yourself before you finish."
 
-  defp ci(%Task{project: %Project{ci_command: command}}) do
-    "\n- Once your turn hands your commits over, Rail runs `#{command}` on them before anything else sees them. If that fails, its output comes back to you as the next turn of this conversation. So never run `#{command}` or the whole test suite yourself: it would only run twice. Run the tests for the files you changed."
+  defp ci(%Task{project: %Project{ci_command: command, default_branch: default_branch}}) do
+    "\n- Once your turn hands your commits over, Rail runs `#{command}` on them before anything else sees them. If that fails, its output comes back to you as the next turn of this conversation. So never run `#{command}` or the whole test suite yourself: it would only run twice. Run the tests for the files you changed." <>
+      "\n- Nothing reaches Review until CI passes, so a failure is yours to clear even when your change did not cause it. " <>
+      "Fetch `origin/#{default_branch}`: when it has the fix, merge it in. When it does not, fix the failing test or " <>
+      "code on this branch, outside the plan if that is where it is, and name the fix and why in your commit body " <>
+      "and report. Never end a turn on a failing CI with nothing changed: CI fails the same way again, and after a few " <>
+      "failures in a row Rail stops and the task waits on a person."
   end
 
   defp workspace(%Task{worktree_path: worktree_path, worktree_name: branch, project: %Project{} = project}) do

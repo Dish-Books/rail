@@ -80,7 +80,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
       assert prompt =~ "Work you leave uncommitted is not sent on"
       assert prompt =~ "Your last message is what the human reads, not the commit body"
       assert prompt =~ "End every commit message with the line `Ticket: SEN-1`."
-      assert prompt =~ "Never merge `origin/main` in unless the plan says to"
+      assert prompt =~ "Never merge `origin/main` in unless the plan says to, or to get CI passing as below"
       assert prompt =~ "a person brings the branch up to date with Update, which is a round of its own"
 
       assert prompt =~
@@ -410,11 +410,15 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_engineer_run(run)
   end
 
-  test "tells the engineer CI runs on its commit, and that failures come back to it", %{project: project, run: run} do
+  test "tells the engineer CI runs on its commit, that failures come back to it, and that it clears any failure",
+       %{project: project, run: run} do
     {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
       assert prompt =~ "Rail runs `mise run ci` on them before anything else sees them"
+      assert prompt =~ "a failure is yours to clear even when your change did not cause it"
+      assert prompt =~ "Fetch `origin/main`: when it has the fix, merge it in."
+      assert prompt =~ "fix the failing test or code on this branch, outside the plan if that is where it is"
       {:ok, %OsProcess{run: spawned}}
     end)
 
