@@ -15,6 +15,13 @@ defmodule RailWeb.Endpoint do
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]
 
+  # A design page is sandboxed or a file:// page, so it has no origin, and browsers fetch fonts only with CORS.
+  plug Plug.Static,
+    at: "/design-kit",
+    from: {:rail, "priv/static/design-kit"},
+    gzip: not code_reloading?,
+    headers: %{"access-control-allow-origin" => "*"}
+
   plug Plug.Static,
     at: "/",
     from: :rail,

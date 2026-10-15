@@ -119,7 +119,8 @@ lane_dev() {
   staged_gate assets \
     "esbuild.install" "mix esbuild.install --if-missing" \
     "esbuild" "mix esbuild rail --minify" \
-    "esbuild overlay" "mix esbuild design_overlay --minify"
+    "esbuild overlay" "mix esbuild design_overlay --minify" \
+    "esbuild design kit" "mix esbuild design_kit --minify"
 }
 
 lane_tests() {

@@ -111,12 +111,12 @@ Read the screens the ticket touches, but start from these facts rather than re-r
 - **Task page** (`lib/rail_web/live/task_live.ex`, `components/task_layout.ex`, `task_tabs.ex`): a header with the title, identifier, branch and pull request, the Plan tab (`live/plan_stage.ex`) and one tab per other stage (`live/<stage>_stage.ex`), and the run conversation (`live/run_conversation.ex`) beside it.
 - **Buttons** (`components/button.ex`): `primary` is indigo-600; also `secondary`, `accent`, `success`, `danger`, `danger_solid`, `ghost`, `ghost_danger`.
 - **Run states** (`lib/rail_web/utils/run_state_style.ex`): Running is blue, Waiting for resources is violet, Needs you is amber, Failed is red, Stopped and Queued are slate. Amber means a person is being waited on; do not spend it on anything else.
-- **Icons**: Phosphor. The code names them `pi-<name>` (`pi-<name>-fill`, `pi-<name>-bold`); on the Phosphor web CDN the same icon is `ph ph-<name>` / `ph-fill ph-<name>` / `ph-bold ph-<name>`.
+- **Icons**: Phosphor. The code names them `pi-<name>` (`pi-<name>-fill`, `pi-<name>-bold`); in a mockup the same icon is `ph ph-<name>` / `ph-fill ph-<name>` / `ph-bold ph-<name>`.
 - **Components** are one file each under `lib/rail_web/components/`. Check there before you draw something new; where you had to invent something, the option's costs say so.
 
 ### Building the mockups
 
-- Load Tailwind from its browser CDN and Phosphor from its web CDN, and put the dark variant line above in a `<style type="text/tailwindcss">` block so `dark:` classes match the product.
+- Load Tailwind and Phosphor from Rail's design kit, at the addresses the brief gives, never from a CDN, and put the dark variant line above in a `<style type="text/tailwindcss">` block so `dark:` classes match the product.
 
 ### Before you design
 

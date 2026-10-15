@@ -127,6 +127,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     issue: %Issue{id: issue_id} = issue
   } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+    kit = RailWeb.Endpoint.url() <> "/design-kit"
 
     Repo.insert!(%Comment{
       issue_id: issue_id,
@@ -151,9 +152,12 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
       assert prompt =~ "Nothing is saved yet."
       assert prompt =~ "title: Attachments follow their source document"
       assert prompt =~ ~s(<comment author="Ana")
+      assert prompt =~ ~s(<script src="#{kit}/tailwind.js"></script>)
+      assert prompt =~ ~s(<link rel="stylesheet" href="#{kit}/phosphor.css">)
 
       refute "--agents" in argv
       refute prompt =~ "subagent"
+      refute prompt =~ "may come from a CDN"
 
       {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
     end)

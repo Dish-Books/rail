@@ -11,6 +11,12 @@ importers:
       '@phosphor-icons/core':
         specifier: ^2.1.1
         version: 2.1.1
+      '@phosphor-icons/web':
+        specifier: 2.1.1
+        version: 2.1.1
+      '@tailwindcss/browser':
+        specifier: 4.3.0
+        version: 4.3.0
       mermaid:
         specifier: ^11.17.2
         version: 11.17.2
@@ -94,6 +100,12 @@ packages:
 
   '@phosphor-icons/core@2.1.1':
     resolution: {integrity: sha512-v4ARvrip4qBCImOE5rmPUylOEK4iiED9ZyKjcvzuezqMaiRASCHKcRIuvvxL/twvLpkfnEODCOJp5dM4eZilxQ==}
+
+  '@phosphor-icons/web@2.1.1':
+    resolution: {integrity: sha512-QjrfbItu5Rb2i37GzsKxmrRHfZPTVk3oXSPBnQ2+oACDbQRWGAeB0AsvZw263n1nFouQuff+khOCtRbrc6+k+A==}
+
+  '@tailwindcss/browser@4.3.0':
+    resolution: {integrity: sha512-izCuCS1V4c18DH47BbJuAPoCi7LP9gSSanr4k42cL+GN3Km/H3QO3fpMVVPXUBpAatHYgfmQWOmrNJqq+bzAAQ==}
 
   '@types/d3-array@3.2.2':
     resolution: {integrity: sha512-hOLWVbm7uRza0BYXpIIW5pxfrKe0W+D5lrFiAEYR+pb6w3N2SwSMaJbXdUfSEv+dT4MfHBLtn5js0LAWaO6otw==}
@@ -524,6 +536,10 @@ snapshots:
       '@chevrotain/types': 11.1.2
 
   '@phosphor-icons/core@2.1.1': {}
+
+  '@phosphor-icons/web@2.1.1': {}
+
+  '@tailwindcss/browser@4.3.0': {}
 
   '@types/d3-array@3.2.2': {}
 
