@@ -125,7 +125,7 @@ defmodule Rail.Pipeline.Actions.StartCheckRun do
   end
 
   defp browser(name) do
-    "Call `browser_connect` for it: yours is named `#{name}`, signed in as its own fresh account, and is the one every browser tool uses when you name none. Check whether the app already answers at its address before you start a server, and stop only a server you started."
+    "Call `browser_connect` for it: yours is named `#{name}`, signed in as its own fresh account, and is the one every browser tool uses when you name none. Other agents drive the same app from browsers of their own at the same time: check whether it already answers at its address before you start a server, and leave the server running when you finish."
   end
 
   defp pictures do

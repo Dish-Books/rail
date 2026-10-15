@@ -1,14 +1,16 @@
 defmodule Rail.Pipeline.Utils.StartChecks do
   @moduledoc """
-  Starts the agents that check a round's change once it is pushed. QA and the code reviewer start together, each a
-  run of its own on a clean conversation. The screenshots agent and the demo recorder follow QA one at a time when
-  the round's plan asks for them, since the three that drive the app share the worktree's one server, and the
-  review agent follows them all but the demo.
+  Starts the agents that check a round's change once it is pushed, all together, each a run of its own on a clean
+  conversation: QA, the code reviewer, and the screenshots agent and the demo recorder when the round's plan asks
+  for them. Each that drives the app has a browser of its own on the worktree's one server. The review agent
+  follows them all but the demo.
   """
 
   import Ecto.Query
   import Rail.Pipeline.Utils.StartRoleRun
 
+  alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -16,8 +18,8 @@ defmodule Rail.Pipeline.Utils.StartChecks do
   alias Rail.Roles.Schemas.Role
 
   @doc """
-  Starts QA and the code reviewer on `task`, with last round's reports from them cleared and every checking run
-  open again. Returns `:ok`. A project with neither role has nothing to start.
+  Starts QA, the code reviewer and what the round's plan asks for on `task`, with last round's reports from them
+  cleared and every checking run open again. Returns `:ok`. A role the project does not have starts nothing.
   """
   def start_checks(%Task{} = task) do
     for role <- [:qa, :review], do: File.rm(Path.join([task.scratch_path, "reports", "#{role}.md"]))
@@ -31,11 +33,17 @@ defmodule Rail.Pipeline.Utils.StartChecks do
       set: [stage_outcome: :in_progress]
     )
 
-    for stage <- [:qa, :review],
+    for stage <- [:qa, :review | asked(Pipeline.read_plan(task))],
         {:ok, %Role{} = role} <- [Roles.get_role(project_id: task.project_id, stage: stage)] do
       {:ok, %Run{}} = start_role_run(task, role, fresh: true)
     end
 
     :ok
   end
+
+  # The screens are shot again and a demo recorded only when the round's plan asks.
+  defp asked(%Round{} = round),
+    do: for({stage, true} <- [screens: round.retake_screens, demo: round.record_demo], do: stage)
+
+  defp asked(nil), do: []
 end

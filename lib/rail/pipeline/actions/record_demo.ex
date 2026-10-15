@@ -1,8 +1,7 @@
 defmodule Rail.Pipeline.Actions.RecordDemo do
   @moduledoc """
   Re-record on a demo the branch has moved past: starts the demo recorder on HEAD, a run of its own. Refused
-  while anything works on the task, since the recorder needs the worktree's app server to itself, so two clicks
-  record once.
+  while anything works on the task, so two clicks record once.
   """
 
   import Rail.Pipeline.Utils.StartRoleRun

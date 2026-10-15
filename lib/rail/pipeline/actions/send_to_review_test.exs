@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
@@ -64,6 +65,40 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
   test "hands the task to review and latches the engineer run", %{task: task, run: run} do
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.send_to_review(run)
     assert %Task{stage: :review} = Repo.reload!(task)
+  end
+
+  # Each that drives the app has a browser of its own, so none waits on another.
+  test "starts QA, the code reviewer, the screenshots agent and the demo recorder together", %{task: task, run: run} do
+    Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Filter.", retake_screens: true, record_demo: true})
+    test_pid = self()
+
+    stub(Tools, :start_os_process, fn %Run{} = spawned, _argv ->
+      send(test_pid, {:started, Repo.preload(spawned, :role, force: true).role.stage})
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{}} = Pipeline.send_to_review(run)
+
+    for stage <- [:qa, :review, :screens, :demo], do: assert_received({:started, ^stage})
+    refute_received {:started, _stage}
+  end
+
+  test "starts only QA and the code reviewer when the round's plan asks for no screens or demo", %{
+    task: task,
+    run: run
+  } do
+    Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Filter."})
+    test_pid = self()
+
+    stub(Tools, :start_os_process, fn %Run{} = spawned, _argv ->
+      send(test_pid, {:started, Repo.preload(spawned, :role, force: true).role.stage})
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{}} = Pipeline.send_to_review(run)
+
+    for stage <- [:qa, :review], do: assert_received({:started, ^stage})
+    refute_received {:started, _stage}
   end
 
   # The engineer commits its own work, so what it left uncommitted stays behind rather than holding Review up.

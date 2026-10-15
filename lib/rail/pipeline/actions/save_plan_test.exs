@@ -312,7 +312,7 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
       assert {:ok, %Round{plan: ^saved}} = Pipeline.save_plan(task, %{plan: plan})
     end
 
-    # What runs after QA is what the plan asks for, so the screens are shot again and a demo recorded only then.
+    # What runs beside QA is what the plan asks for, so the screens are shot again and a demo recorded only then.
     test "a plan says whether its round's screens are shot again and a demo recorded", %{task: task} do
       assert {:ok, %Round{retake_screens: false, record_demo: false}} = Pipeline.save_plan(task, %{plan: @plan})
 

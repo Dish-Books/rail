@@ -250,20 +250,16 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
            ] = Repo.all(from s in BrowserSession, where: s.task_id == ^task.id, order_by: s.name)
   end
 
-  test "a QA turn that saved its report latches done and starts the screenshots agent the plan asked for", %{
+  # The screenshots agent started beside QA, so QA's finish starts nothing while the others work.
+  test "a QA turn that saved its report latches done and starts nothing while the other checks work", %{
     task: task,
     exited: exited
   } do
     {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
     Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [retake_screens: true])
     {:ok, _saved} = Pipeline.save_report(task, :qa, "Two rows.")
-    stub(Git, :get_or_create_worktree, fn _project, _task -> {:ok, task.worktree_path} end)
     {_run, os_process} = exited.(:qa, %{})
-
-    expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
-      assert prompt =~ "You photograph every screen state the change below affects"
-      {:ok, %OsProcess{run: spawned}}
-    end)
+    reject(Tools, :start_os_process, 2)
 
     assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
   end

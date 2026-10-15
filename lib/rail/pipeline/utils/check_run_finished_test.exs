@@ -60,15 +60,11 @@ defmodule Rail.Pipeline.Utils.CheckRunFinishedTest do
     refute_received {:started, _stage, _resumed}
   end
 
-  # The three that drive the app share the worktree's one server, so the screenshots agent waits for QA.
-  test "QA's finish starts the screenshots agent on a clean conversation, and nothing else", %{
-    task: task,
-    runs: runs
-  } do
+  # Every check started together, so a finish starts no other check.
+  test "QA's finish while the others still work latches it done and starts nothing", %{task: task, runs: runs} do
     {:ok, _saved} = Pipeline.save_report(task, :qa, "Two rows.")
 
     assert %Run{stage_outcome: :done, error: nil} = check_run_finished(runs.qa, [])
-    assert_received {:started, :screens, false}
     refute_received {:started, _stage, _resumed}
   end
 
@@ -79,42 +75,35 @@ defmodule Rail.Pipeline.Utils.CheckRunFinishedTest do
     {:ok, _saved} = Pipeline.save_report(task, :qa, "Two rows.")
     {:ok, _saved} = Pipeline.save_report(task, :review, "Nothing to report.")
 
+    assert %Run{stage_outcome: :done} = check_run_finished(runs.screens, [])
     assert %Run{stage_outcome: :done} = check_run_finished(runs.review, [])
     refute_received {:started, _stage, _resumed}
 
-    %Run{} = check_run_finished(runs.qa, [])
-    assert_received {:started, :screens, false}
-
-    assert %Run{stage_outcome: :done} = check_run_finished(runs.screens, [])
+    assert %Run{stage_outcome: :done} = check_run_finished(runs.qa, [])
     assert_received {:started, :review_lead, false}
     refute_received {:started, _stage, _resumed}
   end
 
-  # The demo is filmed on its own after the screenshots, and the review agent does not wait on it.
-  test "a round whose plan asks for a demo starts the recorder once the screenshots are done", %{
+  # The demo started beside the others, and the review agent does not wait on it.
+  test "a round whose plan asks for a demo starts the review agent without it", %{
     task: task,
     round: round,
     runs: runs
   } do
     round |> Ecto.Changeset.change(record_demo: true) |> Repo.update!()
-    {:ok, _saved} = Pipeline.save_report(task, :review, "Nothing to report.")
-    %Run{} = check_run_finished(runs.review, [])
-
-    assert %Run{stage_outcome: :done} = check_run_finished(runs.screens, [])
-    assert_received {:started, :demo, false}
-    refute_received {:started, :review_lead, _resumed}
-
     {:ok, _saved} = Pipeline.save_report(task, :qa, "Two rows.")
+    {:ok, _saved} = Pipeline.save_report(task, :review, "Nothing to report.")
     %Run{} = check_run_finished(runs.qa, [])
-    assert_received {:started, :screens, false}
+    %Run{} = check_run_finished(runs.review, [])
+    refute_received {:started, _stage, _resumed}
 
     %Run{} = check_run_finished(runs.screens, [])
-    assert_received {:started, :demo, false}
     assert_received {:started, :review_lead, false}
+    refute_received {:started, _stage, _resumed}
   end
 
   # A role the project does not have checks nothing, so nothing waits on it.
-  test "with no screenshots role, QA's finish goes straight on to the review agent", %{
+  test "with no screenshots role, QA and the code reviewer start the review agent alone", %{
     task: task,
     runs: runs
   } do
@@ -142,22 +131,6 @@ defmodule Rail.Pipeline.Utils.CheckRunFinishedTest do
 
     {:ok, _saved} = Pipeline.save_report(task, :review, "Nothing to report.")
     %Run{} = check_run_finished(runs.review, [])
-    assert_received {:started, :review_lead, false}
-    refute_received {:started, _stage, _resumed}
-  end
-
-  test "a round that asks for a demo and no screens has the recorder follow QA", %{
-    task: task,
-    round: round,
-    runs: runs
-  } do
-    round |> Ecto.Changeset.change(retake_screens: false, record_demo: true) |> Repo.update!()
-    {:ok, _saved} = Pipeline.save_report(task, :review, "Nothing to report.")
-    %Run{} = check_run_finished(runs.review, [])
-    {:ok, _saved} = Pipeline.save_report(task, :qa, "Two rows.")
-
-    %Run{} = check_run_finished(runs.qa, [])
-    assert_received {:started, :demo, false}
     assert_received {:started, :review_lead, false}
     refute_received {:started, _stage, _resumed}
   end
