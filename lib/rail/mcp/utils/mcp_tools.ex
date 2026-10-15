@@ -257,11 +257,13 @@ defmodule Rail.Mcp.Utils.McpTools do
           "would use - what is about to happen and why it matters, never the mechanics of how you " <>
           "are clicking it. Name the acceptance criterion in `criterion` when the beat is what " <>
           "proves one; that is what says the walkthrough covered the ticket rather than wandered " <>
-          "around the application.",
+          "around the application. Rail speaks the caption aloud as the voice-over, word for word, so " <>
+          "write it in words: letters, numbers and sentence punctuation, with no hyphens, slashes or " <>
+          "other symbols. A caption with any is refused.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{
-          "text" => %{"type" => "string", "description" => "The caption, one sentence."},
+          "text" => %{"type" => "string", "description" => "The caption, one sentence in words only."},
           "criterion" => %{
             "type" => "string",
             "description" => "The acceptance criterion this beat proves, quoted from the ticket."

@@ -82,6 +82,34 @@ defmodule Rail.Mcp.Utils.RunToolDemoSayTest do
     assert_received {:output_saved, ^task_id}
   end
 
+  # The caption is spoken word for word, and a symbol has no one way to be said.
+  test "a caption holding a symbol is refused naming it, and nothing is recorded", %{task: task} do
+    {:ok, _rolling} = run_tool_demo_start(task, %{"browser" => "demo"}, stage: :demo)
+
+    for {text, named} <- [
+          {"Picking Cash - Main as the account", ~s|"-"|},
+          {"Bank/Cash is listed", ~s|"/"|},
+          {"Bills & payments", ~s|"&"|},
+          {"Opening the list (all of it)", ~s|"(", ")"|},
+          {"A bill for $40 - paid", ~s|"$", "-"|}
+        ] do
+      assert {:refused, said} = run_tool_demo_say(task, %{"text" => text}, [])
+      assert said =~ "#{named} cannot be said"
+      assert said =~ "Nothing was recorded."
+    end
+
+    refute File.exists?(Path.join([task.scratch_path, "demo", "captions.jsonl"]))
+  end
+
+  test "a caption of words, numbers and sentence punctuation is recorded", %{task: task, written: written} do
+    {:ok, _rolling} = run_tool_demo_start(task, %{"browser" => "demo"}, stage: :demo)
+
+    assert {:ok, _said} =
+             run_tool_demo_say(task, %{"text" => "Sysco's 3 bills, 40 dollars each: all paid. Done? Yes!"}, [])
+
+    assert [%{"text" => "Sysco's 3 bills, 40 dollars each: all paid. Done? Yes!"}] = written.()
+  end
+
   test "a call with no words to say records nothing", %{task: task} do
     {:ok, _rolling} = run_tool_demo_start(task, %{"browser" => "demo"}, stage: :demo)
 

@@ -5,14 +5,15 @@ defmodule Rail.Tools.Clients.Speech do
   """
 
   @model "gemini-3.8-flash-tts"
-  @voice "Kore"
+  @voice "Achird"
+  @style "A friendly engineer showing a teammate a feature they built: conversational, at a natural pace, with varied intonation."
   @rate 24_000
 
   @doc "The sample rate every line is spoken at."
   def rate, do: @rate
 
   @doc """
-  Speaks `text` as a calm narrator. Returns `{:ok, pcm}`, or an error without a request when Goth is off.
+  Speaks `text` word for word in a presenter's voice. Returns `{:ok, pcm}`, or an error without a request when Goth is off.
   """
   def synthesize(text) when is_binary(text) do
     if Rail.goth_enabled?(), do: request(text), else: {:error, :goth_disabled}
@@ -25,8 +26,9 @@ defmodule Rail.Tools.Clients.Speech do
         base_url: "https://aiplatform.googleapis.com/v1",
         url: "/projects/#{project_id}/locations/global/publishers/google/models/#{@model}:generateContent",
         auth: {:bearer, token},
+        # Gemini 3.8 speaks `text` as a verbatim transcript, so how to say it goes in the part's speech metadata.
         json: %{
-          contents: [%{role: "user", parts: [%{text: "Say in a calm, clear product-demo voice: #{text}"}]}],
+          contents: [%{role: "user", parts: [%{text: text, speech_metadata: %{style: @style}}]}],
           generationConfig: %{
             responseModalities: ["AUDIO"],
             speechConfig: %{voiceConfig: %{prebuiltVoiceConfig: %{voiceName: @voice}}}
