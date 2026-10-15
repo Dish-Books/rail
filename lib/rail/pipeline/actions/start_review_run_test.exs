@@ -187,7 +187,8 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     {:ok, _fixed} =
       Pipeline.save_finding(task, Map.merge(attrs, %{key: "already-fixed", title: "Already fixed"}))
 
-    {:ok, _fixed} = Pipeline.save_finding(task, %{key: "already-fixed", status: "fixed"})
+    {:ok, %Finding{fixed_in: fixed_in}} = Pipeline.save_finding(task, %{key: "already-fixed", status: "fixed"})
+    short = String.slice(fixed_in, 0, 7)
 
     # Findings carried over from the old review table have no rule.
     Repo.insert!(%Finding{
@@ -214,7 +215,9 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
       assert prompt =~
                "- `left-alone` [round 1, minor code, human ruled: Don't fix, status: open] Left alone (lib/a.ex:3)"
 
-      assert prompt =~ "- `already-fixed` [round 1, minor code, human ruled: not yet, status: fixed] Already fixed"
+      assert prompt =~
+               "- `already-fixed` [round 1, minor code, human ruled: not yet, status: fixed, fixed in #{short}] Already fixed"
+
       assert prompt =~ ~r/human ruled: not yet, status: open\] Migrated \(lib\/b\.ex:1\)\n(?!  Rule)/
       assert prompt =~ "Filter by vendor."
 

@@ -58,6 +58,9 @@ defmodule RailWeb.Components.FindingDetail do
       |> assign(:commenting, commenting)
       |> assign(:cards?, cards?)
       |> assign(:where_box?, where_box?)
+      |> assign(:outcome, calculate_outcome(assigns.finding, assigns.running))
+      # A finding with no commit, unfixed or fixed before Rail noted one, has none to name.
+      |> assign(:show_fixed_in, is_binary(assigns.finding.fixed_in))
 
     ~H"""
     <div
@@ -67,45 +70,56 @@ defmodule RailWeb.Components.FindingDetail do
     >
       <div class="shrink-0 flex flex-wrap items-start gap-x-4 gap-y-3 px-6 py-4 border-b border-slate-200 dark:border-slate-700">
         <div class="min-w-0 flex-1 basis-[22rem]">
-          <div class="flex flex-wrap items-center gap-2.5">
-            <span class={[
-              "rounded px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider",
-              severity_chip(@finding.severity)
-            ]}>
-              {@finding.severity}
+          <p
+            id="finding-outcome"
+            data-qa="finding_state"
+            class={["flex items-center gap-2 text-[15px] font-semibold", @outcome.class]}
+          >
+            <.icon name={@outcome.icon} class="size-5" />
+            <span class="min-w-0 wrap-anywhere">
+              {@outcome.text}<span
+                :if={@outcome.detail}
+                class="font-normal text-slate-500 dark:text-slate-400"
+              > · {@outcome.detail}</span>
             </span>
-            <span class="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+          </p>
+          <p
+            id="finding-meta"
+            class="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs text-slate-500 dark:text-slate-400"
+          >
+            <span class="inline-flex items-center gap-1">
+              Raised as
+              <span
+                id="finding-severity"
+                data-qa="finding_severity"
+                class={["rounded px-1.5 py-px font-semibold", severity_tint(@finding)]}
+              >
+                {@finding.severity}
+              </span>
+            </span>
+            <span aria-hidden="true">·</span>
+            <span class="inline-flex items-center gap-1">
               <.icon
                 name={if @finding.kind == :screen, do: "pi-browser", else: "pi-code"}
-                class="size-[11px]"
+                class="size-3"
               />
               {if @finding.kind == :screen, do: "Screen", else: "Code"}
             </span>
-            <span
-              data-qa="finding_round"
-              class="shrink-0 rounded px-1.5 py-px text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 ring-1 ring-inset ring-slate-200 dark:ring-slate-700"
-            >
-              {round_chip(@finding)}
-            </span>
-            <span data-qa="finding_position" class="text-xs text-slate-500 dark:text-slate-400">
-              {@position} of {@count}
-            </span>
-            <span
-              data-qa="finding_state"
-              class={["inline-flex items-center gap-1 text-xs font-semibold", state_class(@finding)]}
-            >
-              {state_text(@finding, @running)}
-            </span>
+            <span aria-hidden="true">·</span>
+            <span data-qa="finding_round">{round_line(@finding)}</span>
+            <span aria-hidden="true">·</span>
+            <span data-qa="finding_position">{@position} of {@count}</span>
+            <span :if={@ruling_was} aria-hidden="true">·</span>
             <span
               :if={@ruling_was}
               id="finding-ruling-changed"
-              class="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 dark:text-amber-300"
+              class="inline-flex items-center gap-1 font-semibold text-amber-700 dark:text-amber-300"
             >
               <.icon name="pi-swap" class="size-[13px]" />Ruling changed since the fix plan · was {ruling(
                 @ruling_was
               )}
             </span>
-          </div>
+          </p>
           <div data-qa="finding_title" class="group/line relative mt-2">
             <.add commenting={@commenting} piece={:title} class="-left-6 top-1" />
             <h2 class="text-lg font-bold text-slate-900 dark:text-slate-100 wrap-anywhere">
@@ -223,7 +237,7 @@ defmodule RailWeb.Components.FindingDetail do
             data-qa="finding_recommendation"
             class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"
           >
-            <span class={["size-1.5 rounded-full", dot(@finding.severity)]} />
+            <span class={["size-1.5 rounded-full", dot(@finding)]} />
             {raised_by(@finding)} recommends {if @finding.recommendation == :skip,
               do: "Don't fix",
               else: "Fix"}
@@ -406,9 +420,15 @@ defmodule RailWeb.Components.FindingDetail do
               target={@target}
               qa="finding_raised_in"
             />
-            <span class="mx-1 text-slate-300 dark:text-slate-600">·</span>
-            <span class="text-[11.5px] font-semibold text-slate-600 dark:text-slate-300">Fixed in</span>
+            <span :if={@show_fixed_in} class="mx-1 text-slate-300 dark:text-slate-600">·</span>
+            <span
+              :if={@show_fixed_in}
+              class="text-[11.5px] font-semibold text-slate-600 dark:text-slate-300"
+            >
+              Fixed in
+            </span>
             <.commit
+              :if={@show_fixed_in}
               commit={@finding.fixed_in}
               labels={@labels}
               file={@finding.file}
@@ -843,8 +863,8 @@ defmodule RailWeb.Components.FindingDetail do
   defp on(nil), do: ""
   defp on(commit), do: " on #{short(commit)}"
 
-  # The lead saves a fix as the round reports it; its commit is noted once the turn hands it over.
-  defp fixed_in(nil), do: ", not yet sent on"
+  # A fix saved before Rail noted the commit it was saved on has none to name.
+  defp fixed_in(nil), do: ""
   defp fixed_in(commit), do: " in #{short(commit)}"
 
   defp words(nil), do: ""
@@ -864,30 +884,61 @@ defmodule RailWeb.Components.FindingDetail do
 
   defp on_branch(commit, labels), do: if(is_binary(commit) and Map.has_key?(labels, commit), do: commit)
 
-  defp round_chip(%Finding{carried_round: carried, round: round}) when is_integer(carried),
+  defp round_line(%Finding{carried_round: carried, round: round}) when is_integer(carried),
     do: "Round #{round}, carried into round #{carried}"
 
-  defp round_chip(%Finding{round: round}), do: "Round #{round}"
+  defp round_line(%Finding{round: round}), do: "Round #{round}"
 
-  defp state_text(%Finding{} = finding, running) do
+  # The status line leads the header, so it carries the commit and round a reader would otherwise hunt for.
+  defp calculate_outcome(%Finding{} = finding, running) do
     case Finding.state(finding) do
-      :undecided -> if running, do: "Rule on it once the round finishes", else: "Needs your call"
-      :to_fix -> "Fix"
-      :not_fixed -> "Still failing"
-      :fixed -> "Fixed"
-      :dismissed -> "Don't fix"
-      :suppressed -> "Suppressed"
+      :undecided when running ->
+        outcome("Rule on it once the round finishes", nil, "pi-hourglass-bold", "text-blue-600 dark:text-blue-400")
+
+      :undecided ->
+        outcome("Needs your call", nil, "pi-hand-pointing-bold", "text-blue-600 dark:text-blue-400")
+
+      :to_fix ->
+        outcome("Fix", nil, "pi-wrench-bold", "text-slate-700 dark:text-slate-300")
+
+      :not_fixed ->
+        outcome(
+          "Still failing",
+          on_commit(still_failing_on(finding)),
+          "pi-x-circle-fill",
+          "text-red-600 dark:text-red-400"
+        )
+
+      :fixed ->
+        text = if finding.fixed_in, do: "Fixed in #{short(finding.fixed_in)}", else: "Fixed"
+        outcome(text, fix_round(finding), "pi-check-circle-fill", "text-emerald-700 dark:text-emerald-400")
+
+      :dismissed ->
+        outcome("Don't fix", nil, "pi-prohibit-bold", "text-slate-700 dark:text-slate-300")
+
+      :suppressed ->
+        outcome("Suppressed", nil, "pi-funnel-simple-bold", "text-slate-700 dark:text-slate-300")
     end
   end
 
-  defp state_class(%Finding{} = finding) do
-    case Finding.state(finding) do
-      :undecided -> "text-blue-600 dark:text-blue-400"
-      :not_fixed -> "text-red-600 dark:text-red-400"
-      :fixed -> "text-emerald-600 dark:text-emerald-500"
-      _ruled -> "text-slate-500 dark:text-slate-400"
+  defp outcome(text, detail, icon, class), do: %{text: text, detail: detail, icon: icon, class: class}
+
+  defp on_commit(nil), do: nil
+  defp on_commit(commit), do: "on #{short(commit)}"
+
+  # The commit the last pass saw it still failing on.
+  defp still_failing_on(%Finding{notes: notes}) do
+    notes |> Enum.reverse() |> Enum.find_value(fn %FindingNote{} = note -> note.status == :not_fixed && note.commit end)
+  end
+
+  defp fix_round(%Finding{notes: notes}) do
+    case notes |> Enum.filter(&(&1.kind == :fix)) |> List.last() do
+      %FindingNote{round: round} -> "Fix round #{round}"
+      nil -> nil
     end
   end
+
+  defp settled?(%Finding{} = finding), do: Finding.state(finding) in [:fixed, :dismissed, :suppressed]
 
   defp raised_by(%Finding{raised_by: :code_reviewer}), do: "Code reviewer"
   defp raised_by(%Finding{raised_by: :review_lead}), do: "Review lead"
@@ -909,15 +960,35 @@ defmodule RailWeb.Components.FindingDetail do
   defp evidence_icon(:file), do: "pi-file"
   defp evidence_icon(_text), do: "pi-file-text"
 
-  defp severity_chip(:blocker), do: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
-  defp severity_chip(:major), do: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
-  defp severity_chip(:minor), do: "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400"
-  defp severity_chip(:nit), do: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+  # A settled finding keeps what it was raised as for the record, without asking for attention.
+  defp severity_tint(%Finding{} = finding) do
+    case {settled?(finding), finding.severity} do
+      {true, _severity} ->
+        "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 ring-1 ring-inset ring-slate-200 dark:ring-slate-700"
 
-  defp dot(:blocker), do: "bg-red-500"
-  defp dot(:major), do: "bg-amber-500"
-  defp dot(:minor), do: "bg-amber-400"
-  defp dot(:nit), do: "bg-slate-400"
+      {false, :blocker} ->
+        "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
+
+      {false, :major} ->
+        "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+
+      {false, :minor} ->
+        "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400"
+
+      {false, :nit} ->
+        "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+    end
+  end
+
+  defp dot(%Finding{} = finding) do
+    case {settled?(finding), finding.severity} do
+      {true, _severity} -> "bg-slate-400 dark:bg-slate-500"
+      {false, :blocker} -> "bg-red-500"
+      {false, :major} -> "bg-amber-500"
+      {false, :minor} -> "bg-amber-400"
+      {false, :nit} -> "bg-slate-400"
+    end
+  end
 
   defp ruling(:fix), do: "Fix"
   defp ruling(:skip), do: "Don't fix"
