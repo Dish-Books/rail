@@ -8,6 +8,7 @@ defmodule Rail.Pipeline.Actions.StartCheckRun do
 
   import Rail.Pipeline.Utils.ChangeContext
   import Rail.Pipeline.Utils.LearningsBrief
+  import Rail.Pipeline.Utils.RoundChange
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -53,7 +54,7 @@ defmodule Rail.Pipeline.Actions.StartCheckRun do
 
     How your part works:
 
-    1. Read the ticket, the plan and the diff, then write the checklist with `qa_plan`: every acceptance criterion gets at least one check quoting it in `criterion`.
+    1. #{checklist(task)}
     2. Start the app server from the worktree and drive the app in your browser. #{browser("qa")}
     3. Run each check and mark it with `qa_check` as soon as you have run it, with one line on what you saw. Take a picture with `qa_shot` at the point a check asserts something on screen. `qa_shot` saves it under #{Path.join(scratch_path, "qa")} and returns its path. Write a log, query output or any other file that proves a check there yourself.
     4. Re-check every finding below that is not ruled Don't fix and can be seen in the app, and say for each whether it still fails.
@@ -73,7 +74,7 @@ defmodule Rail.Pipeline.Actions.StartCheckRun do
 
     How your part works:
 
-    1. Read the plan, the ticket, the engineer's report when there is one, and the diff. When the default branch has been merged in, read the branch's own commits with `git log --first-parent --no-merges`.
+    1. Read the plan, the ticket, the engineer's report when there is one, and the diff: the whole change, and this round's own change when one is named below, which is what the round's plan asked for. When the default branch has been merged in, read the branch's own commits with `git log --first-parent --no-merges`.
     2. Find what breaks a rule: of the plan, of the ticket's acceptance criteria, of the project's written standards, of the code around it. Find every place a rule applies before you report it: a guard missing in one handler is usually missing in its siblings.
     3. For every finding below that is not ruled Don't fix, read what the round did about it: whether every place it lists is covered or left with a reason that holds, and whether its test fails without the fix and checks the saved record or what the user sees. Then say what else the change touches that no finding asked for: a fix that is right in one place and breaks a caller beside it is a finding of its own.
     4. Save your report with `save_report` before you end your turn. Each proposed finding is one broken rule: a title of 90 characters or less saying what is wrong, the rule in one sentence, every place it applies as a file and its line range with a short label each, the problem in at most two plain sentences, a fix of at most two sentences that says where the change belongs rather than writing the patch, why to fix or leave it, a severity of blocker, major, minor or nit, and whether you would fix it. A rule broken in three files is one finding with three places, and two symptoms of one cause are one finding. Then one line for each existing finding you read. A read that found nothing says so.
@@ -134,6 +135,22 @@ defmodule Rail.Pipeline.Actions.StartCheckRun do
     - Take a narrow picture by passing `width`, from 320 to 1920. A script's resize is gone once the script closes, and after a picture with a `width` the tab is back at its own width.
     - Rail refuses a picture all one color and saves nothing. A page that really renders blank is what you report, with its URL and the steps that reach it.
     """)
+  end
+
+  # A later round re-walks only what it can have changed: a full pass every round re-tests a merge's untouched flows.
+  defp checklist(%Task{} = task) do
+    case round_change(task) do
+      %{number: number, merged: merged} ->
+        touched =
+          if merged,
+            do: "what the merge changed in the files the branch had touched",
+            else: "what the round's diff touches"
+
+        "Read the ticket, the plan, the findings below and this round's own change, then write the checklist with `qa_plan`. This is round #{number}: the first round checked every acceptance criterion, so this pass checks what round #{number} changed. It has a check for each finding step 4 re-checks, checks for #{touched}, and a check quoting in `criterion` each acceptance criterion whose behavior that can reach. Run no check for a criterion it cannot reach, and say in your report, in one line for each area of criteria left out, why the round's change cannot reach it."
+
+      nil ->
+        "Read the ticket, the plan and the diff, then write the checklist with `qa_plan`: every acceptance criterion gets at least one check quoting it in `criterion`."
+    end
   end
 
   # The states an earlier round shot keep their keys, so each one's pictures line up across commits.

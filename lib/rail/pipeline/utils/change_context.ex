@@ -4,6 +4,7 @@ defmodule Rail.Pipeline.Utils.ChangeContext do
   import Rail.Pipeline.Utils.FormatComments
   import Rail.Pipeline.Utils.FormatFindings
   import Rail.Pipeline.Utils.FormatTicket
+  import Rail.Pipeline.Utils.RoundChange
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -30,7 +31,22 @@ defmodule Rail.Pipeline.Utils.ChangeContext do
   end
 
   defp plan(%Task{project: %Project{} = project} = task) do
-    read = "Read the change with `git diff origin/#{project.default_branch}...HEAD`."
+    whole = "git diff origin/#{project.default_branch}...HEAD"
+
+    read =
+      case round_change(task) do
+        %{base: base, merged: merged} ->
+          merge =
+            if merged,
+              do:
+                " This round merged the default branch in, so most of its own change is work the default branch already holds: what the merge changed in the files the branch had touched before it is `git diff #{base}..HEAD -- $(git diff --name-only origin/#{project.default_branch}...#{base})`.",
+              else: ""
+
+          "Read the whole change with `#{whole}`, and this round's own change with `git diff #{base}..HEAD`.#{merge}"
+
+        nil ->
+          "Read the change with `#{whole}`."
+      end
 
     case Pipeline.read_plan(task) do
       %Round{number: number, plan: content, approved_at: %DateTime{}} when is_binary(content) ->

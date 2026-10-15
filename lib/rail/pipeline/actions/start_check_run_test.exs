@@ -63,6 +63,96 @@ defmodule Rail.Pipeline.Actions.StartCheckRunTest do
     assert {:ok, %OsProcess{}} = Pipeline.start_check_run(runs.review)
   end
 
+  test "QA re-checks a later round's own change, not every acceptance criterion", %{task: task, runs: runs} do
+    base = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
+    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "the fix"])
+    Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Filter by vendor.", approved_at: DateTime.utc_now()})
+
+    Repo.insert!(%Round{
+      task_id: task.id,
+      number: 2,
+      plan: "Guard the nil.",
+      base_head: base,
+      approved_at: DateTime.utc_now()
+    })
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "This is round 2: the first round checked every acceptance criterion"
+      assert prompt =~ "in one line for each area of criteria left out, why the round's change cannot reach it"
+      assert prompt =~ "checks for what the round's diff touches"
+
+      assert prompt =~
+               "Read the whole change with `git diff origin/main...HEAD`, and this round's own change with `git diff #{base}..HEAD`."
+
+      refute prompt =~ "every acceptance criterion gets at least one check"
+      refute prompt =~ "This round merged the default branch in"
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_check_run(runs.qa)
+  end
+
+  test "a round that merged the default branch points its checkers at what the merge changed in the branch's files",
+       %{task: task, runs: runs} do
+    base = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
+    git!(task.worktree_path, ["checkout", "--quiet", "-b", "upstream"])
+    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "the default branch's work"])
+    git!(task.worktree_path, ["checkout", "--quiet", "main"])
+    git!(task.worktree_path, ["merge", "--quiet", "--no-ff", "--no-edit", "upstream"])
+
+    Repo.insert!(%Round{
+      task_id: task.id,
+      number: 2,
+      plan: "Merge it in.",
+      base_head: base,
+      approved_at: DateTime.utc_now()
+    })
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "You are the code reviewer for the change below"
+      assert prompt =~ "the whole change, and this round's own change when one is named below"
+
+      assert prompt =~
+               "This round merged the default branch in, so most of its own change is work the default branch already holds: what the merge changed in the files the branch had touched before it is `git diff #{base}..HEAD -- $(git diff --name-only origin/main...#{base})`."
+
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_check_run(runs.review)
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "checks for what the merge changed in the files the branch had touched"
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_check_run(runs.qa)
+  end
+
+  test "QA walks every acceptance criterion again when the round's start is no longer in the branch", %{
+    task: task,
+    runs: runs
+  } do
+    base = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
+    git!(task.worktree_path, ["commit", "--quiet", "--amend", "--allow-empty", "-m", "initial commit, rebased"])
+
+    Repo.insert!(%Round{
+      task_id: task.id,
+      number: 2,
+      plan: "Guard the nil.",
+      base_head: base,
+      approved_at: DateTime.utc_now()
+    })
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "every acceptance criterion gets at least one check quoting it in `criterion`"
+      assert prompt =~ "This is round 2. Read the change with `git diff origin/main...HEAD`."
+      refute prompt =~ "this round's own change with"
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_check_run(runs.qa)
+  end
+
   # The states keep their keys across rounds, so each one's pictures line up commit by commit.
   test "the screenshots agent chooses the keys on the first round and shoots the same ones after", %{
     task: task,
