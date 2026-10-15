@@ -519,6 +519,40 @@ defmodule RailWeb.Live.TaskDetailTest do
     assert has_element?(view, "[data-qa=finding_note] + span, [data-qa=finding_note]", "Fix round 1")
   end
 
+  test "the open finding reads Fixed in HEAD's commit, on a gray tint, once Review saves it fixed", %{
+    conn: conn,
+    user: user,
+    task: task,
+    head: head,
+    code: code
+  } do
+    {:ok, finding} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
+    {:ok, _pass} = Pipeline.save_review(task)
+    {:ok, _ruled} = Pipeline.decide_finding(user_scope(user: user), finding, :fix)
+    short = String.slice(head, 0, 7)
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    view |> element("#finding-view-only-send") |> render_click()
+
+    assert has_element?(view, "#finding-outcome", "Fix")
+    assert has_element?(view, "#finding-severity.bg-red-100", "blocker")
+
+    {:ok, _fixed} =
+      Pipeline.save_finding(task, %{
+        key: "view-only-send",
+        status: "fixed",
+        covered: [1, 2],
+        test: %{file: "test/a_test.exs", name: "refuses a view-only member"}
+      })
+
+    assert has_element?(view, "#finding-outcome", "Fixed in #{short}")
+    assert has_element?(view, "#finding-severity.bg-slate-100", "blocker")
+    refute has_element?(view, "#finding-severity.bg-red-100")
+    assert has_element?(view, "#finding-view-only-send [data-qa=review_finding_state]", "Fixed in #{short}")
+    assert has_element?(view, "[data-qa=finding_fixed_in]", short)
+    assert has_element?(view, "[data-qa=finding_note]", "Fixed in #{short}; covers")
+  end
+
   # The agents at work are the task's running runs, each with the work its role does.
   test "while a round runs nothing asks for a call, and the status names the agents at work", %{
     conn: conn,
