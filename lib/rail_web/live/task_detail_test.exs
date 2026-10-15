@@ -7,6 +7,7 @@ defmodule RailWeb.Live.TaskDetailTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DemoBeat
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.StartEngineer
@@ -627,7 +628,7 @@ defmodule RailWeb.Live.TaskDetailTest do
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=findings")
     short = String.slice(head, 0, 7)
 
-    assert has_element?(view, "#review-status[data-phase=ci]", "CI running on #{short} · Fix round 1")
+    assert has_element?(view, "#review-status[data-phase=ci]", "CI running on #{short} · Round 1")
     refute has_element?(view, "[data-qa=review_status_log]")
     assert has_element?(view, "#review-item-findings[title='Findings: CI running on #{short}']")
     refute has_element?(view, "#finish-review")
@@ -636,8 +637,9 @@ defmodule RailWeb.Live.TaskDetailTest do
     {:ok, _stopped} = Pipeline.update_run(run, %{status: :finished, ci_failure_streak: 3, error: "CI failed 3 times"})
     send(view.pid, {:pipeline_changed, task.id})
 
-    assert has_element?(view, "#review-status[data-phase=ci_failed]", "CI failed 3 times on fix round 1")
-    assert has_element?(view, "[data-qa=review_status_body]", "Read the CI output in the conversation")
+    assert has_element?(view, "#review-status[data-phase=ci_failed]", "CI failed 3 times on round 1")
+    assert has_element?(view, "[data-qa=review_status_body]", "Read the CI output in its conversation")
+    refute has_element?(view, "#review-status", "Review lead")
     refute has_element?(view, "[data-qa=review_status_log]")
     assert has_element?(view, "#review-item-findings [data-qa=review_item_failed]")
   end
@@ -708,7 +710,7 @@ defmodule RailWeb.Live.TaskDetailTest do
   end
 
   # An approved fix plan moves the task to Engineer, whose run is the fix round.
-  test "a fix round in progress says the engineer is fixing, and the footer counts what is being fixed", %{
+  test "a fix round in progress counts what is being fixed in the footer, and sends nothing until it ends", %{
     conn: conn,
     task: task,
     engineer_run: engineer_run,
@@ -722,7 +724,7 @@ defmodule RailWeb.Live.TaskDetailTest do
 
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=findings")
 
-    assert has_element?(view, "#review-status[data-phase=fixing]", "Fix round 1 · Engineer fixing 1 finding")
+    assert has_element?(view, "#review-status[data-phase=fixing]")
     assert has_element?(view, "#review-finding-footer", "1 fixing")
 
     # The Fix finding went out with the Send, and mid-round, CI on the fix commit included, nothing is sent or finished.
@@ -746,6 +748,66 @@ defmodule RailWeb.Live.TaskDetailTest do
     view |> element("#review-send-tray-fold") |> render_click()
     assert has_element?(view, "#review-tray-finding-view-only-send")
     assert has_element?(view, "#send-review-tray:not([disabled])", "Send 1")
+  end
+
+  # Update is a round of its own at Engineer, with nothing ruled Fix: the engineer merges, it is not the lead at work.
+  test "an Update round at Engineer says the engineer merges the default branch, and a failed or stopped one says so",
+       %{conn: conn, project: project, task: task, engineer_run: engineer_run} do
+    {:ok, _pass} = Pipeline.save_review(task)
+
+    Repo.insert!(%Round{
+      task_id: task.id,
+      number: 1,
+      plan: "## Implementation plan\n\nFirst.",
+      approved_at: DateTime.utc_now()
+    })
+
+    Repo.insert!(%Round{
+      task_id: task.id,
+      number: 2,
+      plan: "### What changes\n\nBring the branch up to date with `origin/#{project.default_branch}` by merging it in.",
+      approved_at: DateTime.utc_now()
+    })
+
+    {:ok, _updating} = Pipeline.update_task(task, %{stage: :engineer})
+    {:ok, engineer_run} = Pipeline.update_run(engineer_run, %{status: :running, stage_outcome: :in_progress})
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=findings")
+
+    assert has_element?(
+             view,
+             "#review-status[data-phase=fixing]",
+             "Round 2 · Update · Engineer merging origin/#{project.default_branch}"
+           )
+
+    refute has_element?(view, "#review-status", "Review lead")
+
+    assert has_element?(
+             view,
+             "#review-item-findings[title='Findings: Round 2 · Update running'] [data-qa=review_item_running]"
+           )
+
+    {:ok, engineer_run} = Pipeline.update_run(engineer_run, %{status: :finished, error: "Claude exited 1\nat line 3"})
+    send(view.pid, {:pipeline_changed, task.id})
+
+    assert has_element?(view, "#review-status[data-phase=stalled]", "Round 2 · Engineer failed")
+    assert has_element?(view, "[data-qa=review_status_detail]", "Claude exited 1")
+    refute has_element?(view, "[data-qa=review_status_detail]", "at line 3")
+    assert has_element?(view, "#task-retry")
+
+    assert has_element?(
+             view,
+             "#review-item-findings[title='Findings: Round 2 · Engineer failed'] [data-qa=review_item_failed]"
+           )
+
+    {:ok, _stopped} = Pipeline.update_run(engineer_run, %{error: nil})
+    send(view.pid, {:pipeline_changed, task.id})
+
+    assert has_element?(view, "#review-status[data-phase=stalled]", "Round 2 · Engineer stopped")
+
+    assert has_element?(
+             view,
+             "#review-item-findings[title='Findings: Round 2 · Engineer stopped'] [data-qa=review_item_stopped]"
+           )
   end
 
   test "the next round's status names the commit it re-reviews", %{conn: conn, task: task, run: run} do
@@ -1413,21 +1475,6 @@ defmodule RailWeb.Live.TaskDetailTest do
       end
     end
 
-    # A fix plan made of comments alone has nothing ruled Fix, so its round fixes no finding.
-    test "a fix round with no Fix finding says what was sent is being worked on", %{
-      conn: conn,
-      task: task,
-      engineer_run: engineer_run
-    } do
-      {:ok, %{round: 2}} = Pipeline.save_review(task)
-      {:ok, _fixing} = Pipeline.update_task(task, %{stage: :engineer})
-      {:ok, _working} = Pipeline.update_run(engineer_run, %{status: :running})
-
-      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=findings")
-
-      assert has_element?(view, "#review-status[data-phase=fixing]", "Nothing is ruled Fix")
-    end
-
     test "with no screens the Screens item says so, and a state a stale page names opens nothing", %{
       conn: conn,
       task: task
@@ -1906,6 +1953,55 @@ defmodule RailWeb.Live.TaskDetailTest do
       assert has_element?(view, "#fix-plan-item-view-only-send", "File 1")
       refute has_element?(view, "#fix-plan-item-comment-2")
       assert has_element?(view, "#plan-summary", "Both Fix findings and comment 1 covered, before the last Send")
+    end
+
+    # The approved plan is the round the engineer works, and a question it parks on is what the round waits for.
+    test "the approved round at Engineer says what the engineer fixes, and a question it asks is the way on", %{
+      conn: conn,
+      task: task,
+      run: run,
+      engineer_run: engineer_run,
+      plan: plan
+    } do
+      Repo.insert!(%Round{
+        task_id: task.id,
+        number: 1,
+        plan: "## Implementation plan\n\nFirst.",
+        approved_at: DateTime.utc_now()
+      })
+
+      {:ok, saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+      {:ok, _approved} = Pipeline.approve_fix_plan(system_scope(), run, saved.version)
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=findings")
+
+      assert has_element?(view, "#review-status[data-phase=fixing]", "Round 2 · Engineer fixing 2 findings and 1 comment")
+      assert has_element?(view, "#review-item-findings[title='Findings: Round 2 running'] [data-qa=review_item_running]")
+
+      {:ok, _blocked} = Pipeline.update_run(engineer_run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+
+      Repo.insert!(%Question{
+        task_id: task.id,
+        run_id: engineer_run.id,
+        prompt: "CI fails on a test that came from main.\nSkip it, or fix it here?",
+        status: :pending
+      })
+
+      send(view.pid, {:pipeline_changed, task.id})
+
+      assert has_element?(view, "#review-status[data-phase=blocked]", "Round 2 · Engineer waiting on your answer")
+      assert has_element?(view, "[data-qa=review_status_detail]", "CI fails on a test that came from main.")
+      refute has_element?(view, "[data-qa=review_status_detail]", "Skip it")
+      refute has_element?(view, "#review-item-findings [data-qa=review_item_running]")
+
+      assert has_element?(
+               view,
+               "#review-item-findings[title='Findings: Round 2 · Engineer waiting on an answer'] [data-qa=review_item_waiting]"
+             )
+
+      view |> element("#review-status-open-engineer", "Answer the engineer") |> render_click()
+      assert_patch(view, ~p"/tasks/#{task.id}?item=plan&agent=engineer")
+      assert has_element?(view, "[data-qa='question-card'] #question-prompt", "CI fails on a test that came from main.")
     end
 
     test "Approve makes the plan the next round and starts the engineer on it, on a clean conversation", %{

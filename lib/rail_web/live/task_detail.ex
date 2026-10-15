@@ -225,6 +225,8 @@ defmodule RailWeb.Live.TaskDetail do
                         :waiting,
                         :outdated,
                         :fixing,
+                        :blocked,
+                        :stalled,
                         :ci,
                         :ci_failed,
                         :finished
@@ -238,6 +240,10 @@ defmodule RailWeb.Live.TaskDetail do
                   counts={@counts}
                   agents={@agents}
                   pr_number={@task.pr_number}
+                  work={@work}
+                  base={@task.project.default_branch}
+                  question={@engineer.question}
+                  error={@engineer.error}
                 />
 
                 <div :if={@item == :findings} class="@container flex-1 min-h-0">
@@ -820,6 +826,7 @@ defmodule RailWeb.Live.TaskDetail do
     passes = Pipeline.read_review(task)
     runs = role_runs(task)
     rounds = Pipeline.list_rounds(task)
+    latest = List.last(rounds)
     ci = runs[:engineer] && Pipeline.get_ci_status(runs[:engineer])
     fix_plan = Pipeline.read_fix_plan(task)
     plan_state = fix_plan && FixPlan.state(fix_plan, task, findings)
@@ -838,7 +845,9 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign_fix_plan_comments()
     |> assign(:findings, findings)
     |> assign(:phase, phase)
-    |> assign(:round, if(phase in [:planning, :waiting, :outdated], do: fix_plan.round, else: round(phase, passes)))
+    |> assign(:round, round(phase, passes, fix_plan, latest))
+    |> assign(:work, work(latest, fix_plan))
+    |> assign(:engineer, engineer(runs[:engineer]))
     |> assign(:sha, ci_sha(ci))
     |> assign(:counts, counts)
     |> assign(
@@ -1054,12 +1063,15 @@ defmodule RailWeb.Live.TaskDetail do
       icon: "pi-list-checks",
       picked_icon: "pi-list-checks-fill",
       state: findings_state(phase, counts, socket.assigns),
-      badge: if(phase not in [:round, :fixing, :ci] and counts.undecided > 0, do: counts.undecided),
+      # Nothing is ruled while the engineer has the round, so what it waits on shows instead of the count to rule.
+      badge: if(phase not in [:round, :fixing, :blocked, :stalled, :ci] and counts.undecided > 0, do: counts.undecided),
       dot: if(phase in [:round, :fixing, :ci], do: :running),
       mark:
         cond do
           phase == :finished -> :done
+          phase == :blocked -> :waiting
           phase == :ci_failed -> :failed
+          phase == :stalled -> if(socket.assigns.engineer.error, do: :failed, else: :stopped)
           true -> nil
         end
     }
@@ -1268,7 +1280,7 @@ defmodule RailWeb.Live.TaskDetail do
     cond do
       match?(%{state: :running}, ci) -> :ci
       task.stage == :engineer and match?(%{state: :failed, failures: failures} when failures >= 3, ci) -> :ci_failed
-      task.stage == :engineer -> :fixing
+      task.stage == :engineer -> engineer_phase(Run.state(runs[:engineer]))
       Run.running?(runs[:review_lead]) and plan_state in [:writing, :revising, :waiting, :outdated] -> :planning
       plan_state in [:waiting, :outdated] -> plan_state
       checking? -> :round
@@ -1276,6 +1288,30 @@ defmodule RailWeb.Live.TaskDetail do
       true -> :ruling
     end
   end
+
+  # At Engineer the round is the engineer's: at work, in line or about to start, or waiting on an answer, or on a
+  # retry once it failed or stopped.
+  defp engineer_phase(:blocked), do: :blocked
+  defp engineer_phase(state) when state in [:failed, :stopped], do: :stalled
+  defp engineer_phase(_running_waiting_or_starting), do: :fixing
+
+  # What the round at Engineer is: the fix plan approved for it, an Update merging the default branch in, which
+  # only those two start past round 1, or the task's own first plan.
+  defp work(%Round{plan: plan}, %FixPlan{plan: plan, approved_at: %DateTime{}} = fix_plan),
+    do: {:fix, length(fix_plan.covered_keys), fix_plan.covered_comments}
+
+  defp work(%Round{number: number}, _fix_plan) when number > 1, do: :update
+  defp work(_first_or_none, _fix_plan), do: :build
+
+  # What the engineer waits on: the first line of the question it asked, or the error it failed on.
+  defp engineer(%Run{} = run) do
+    question = Enum.find(run.questions, &(&1.status == :pending))
+    %{question: question && first_line(question.prompt), error: run.error && first_line(run.error)}
+  end
+
+  defp engineer(nil), do: %{question: nil, error: nil}
+
+  defp first_line(text), do: text |> String.trim() |> String.split("\n", parts: 2) |> hd()
 
   # Each role's run on the task, by its stage.
   defp role_runs(%Task{runs: runs}) do
@@ -1289,8 +1325,14 @@ defmodule RailWeb.Live.TaskDetail do
   defp plan_label(%Task{}, _plan_run, %Round{approved_at: nil}), do: "Started without approval"
   defp plan_label(%Task{}, _plan_run, _approved_or_none), do: "Approved"
 
-  defp round(:round, passes), do: length(passes) + 1
-  defp round(_phase, passes), do: max(length(passes), 1)
+  # A fix plan is numbered for the review it answers, and the engineer's work for the round it builds.
+  defp round(phase, _passes, fix_plan, _latest) when phase in [:planning, :waiting, :outdated], do: fix_plan.round
+
+  defp round(phase, _passes, _fix_plan, %Round{number: number})
+       when phase in [:fixing, :blocked, :stalled, :ci, :ci_failed], do: number
+
+  defp round(:round, passes, _fix_plan, _latest), do: length(passes) + 1
+  defp round(_phase, passes, _fix_plan, _latest), do: max(length(passes), 1)
 
   defp counts(findings) do
     %{
@@ -1327,7 +1369,14 @@ defmodule RailWeb.Live.TaskDetail do
   end
 
   defp findings_state(:round, _counts, assigns), do: "Round #{assigns.round} running"
-  defp findings_state(:fixing, _counts, assigns), do: "Fix round #{assigns.round} running"
+  defp findings_state(:fixing, _counts, %{work: :update} = assigns), do: "Round #{assigns.round} · Update running"
+  defp findings_state(:fixing, _counts, assigns), do: "Round #{assigns.round} running"
+  defp findings_state(:blocked, _counts, assigns), do: "Round #{assigns.round} · Engineer waiting on an answer"
+
+  defp findings_state(:stalled, _counts, %{engineer: %{error: nil}} = assigns),
+    do: "Round #{assigns.round} · Engineer stopped"
+
+  defp findings_state(:stalled, _counts, assigns), do: "Round #{assigns.round} · Engineer failed"
   defp findings_state(:ci, _counts, %{sha: sha}), do: "CI running" <> if(sha, do: " on #{sha}", else: "")
   defp findings_state(:ci_failed, _counts, %{sha: sha}), do: "CI failed" <> if(sha, do: " on #{sha}", else: "")
   defp findings_state(:finished, _counts, _assigns), do: "Nothing left to rule"
