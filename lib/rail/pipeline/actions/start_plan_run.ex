@@ -97,6 +97,8 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
 
   defp brief(%Task{issue: %Issue{} = issue} = task, %Run{} = run) do
     dir = Path.join(task.scratch_path, "design")
+    # Agents share Rail's host, so they dial its port: the public URL sits behind Cloudflare Access.
+    kit = "http://localhost:#{RailWeb.Endpoint.config(:http)[:port]}/design-kit"
 
     String.trim("""
     You run Rail's Plan step for the issue below: one conversation that ends with one plan the human approves with one click. The plan is the ticket, the design options when the change has a screen, and the implementation plan. You write all three yourself, and save them with Rail's tools. You change nothing in the worktree: no application code, no tests, no branch.
@@ -119,7 +121,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     The design options:
 
     - Every file of them goes in #{dir}. Keep working files there too: it survives between turns, and `/tmp` does not.
-    - #{dir}/<key>.html for each option: one self-contained page mocking up the screen at a 1920px-wide viewport with realistic content. The page can scroll: show each state the screen has at full size, one below the other, rather than fitting them into one view. Inline all CSS; scripts may come from a CDN. Put no image in the page as a `data:` URI: the page goes into the engineer's brief, where a large one crowds out the work. Draw an image with CSS or inline SVG markup, or link it from a public URL, since Rail serves only the page and a file beside it does not load.
+    - #{dir}/<key>.html for each option: one self-contained page mocking up the screen at a 1920px-wide viewport with realistic content. The page can scroll: show each state the screen has at full size, one below the other, rather than fitting them into one view. Inline the page's own CSS. Load Tailwind as `<script src="#{kit}/tailwind.js"></script>` and Phosphor's icons as `<link rel="stylesheet" href="#{kit}/phosphor.css">`, both from Rail and never from a CDN, so the page is styled wherever Rail is reachable. Put no image in the page as a `data:` URI: the page goes into the engineer's brief, where a large one crowds out the work. Draw an image with CSS or inline SVG markup, or link it from a public URL, since Rail serves only the page and a file beside it does not load.
     - #{dir}/<key>.png for each option: a screenshot of its page, taken with headless Chrome:
 
     chromium --headless --no-sandbox --disable-gpu --hide-scrollbars --virtual-time-budget=8000 --window-size=1920,1170 --screenshot=#{dir}/<key>.png file://#{dir}/<key>.html
