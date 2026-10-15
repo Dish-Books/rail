@@ -8,6 +8,7 @@ defmodule RailWeb.Settings.RolesLive do
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
+  alias Rail.Types.Cpus
 
   @default_model "claude-opus-5-5"
 
@@ -590,7 +591,8 @@ defmodule RailWeb.Settings.RolesLive do
                         <.input
                           type="number"
                           label="CPUs"
-                          min="1"
+                          min="0.25"
+                          step="0.25"
                           name="role[reserved_cpus]"
                           id="role-cpus-input"
                           value={@modal_form["reserved_cpus"]}
@@ -601,7 +603,7 @@ defmodule RailWeb.Settings.RolesLive do
                           id="role-cpus-help"
                           class="mt-1.5 text-xs text-slate-500 dark:text-slate-400"
                         >
-                          Each of this role's agent turns and worktree setups holds this many.
+                          Each of this role's agent turns and worktree setups holds this many. Quarters of a CPU, like 0.5, are allowed.
                         </p>
                       </div>
                     </div>
@@ -1296,7 +1298,7 @@ defmodule RailWeb.Settings.RolesLive do
       reasoning_effort: parse_effort(role_params["reasoning_effort"]),
       system_prompt: String.trim(role_params["system_prompt"] || ""),
       max_concurrent: parse_int(role_params["max_concurrent"], 1),
-      reserved_cpus: parse_int(role_params["reserved_cpus"], 1),
+      reserved_cpus: if(role_params["reserved_cpus"] in [nil, ""], do: 1, else: role_params["reserved_cpus"]),
       mcp_tools: parse_mcp_tools(role_params["mcp_tools"]),
       position: if(existing_role, do: existing_role.position, else: roles_count)
     }
@@ -1372,9 +1374,9 @@ defmodule RailWeb.Settings.RolesLive do
   end
 
   defp reservation_summary(form) do
-    case Integer.parse(to_string(form["reserved_cpus"])) do
-      {cpus, ""} -> "#{cpus} #{if cpus == 1, do: "CPU", else: "CPUs"}"
-      _unparsed -> nil
+    case Cpus.cast(form["reserved_cpus"]) do
+      {:ok, cpus} -> format_reservation(%{reserved_cpus: cpus})
+      :error -> nil
     end
   end
 
@@ -1424,8 +1426,8 @@ defmodule RailWeb.Settings.RolesLive do
   # How many sandboxes of what is typed fit at once, or nil while it is not a
   # reservation at all.
   defp fit_preview(form, capacity) do
-    case Integer.parse(to_string(form["reserved_cpus"])) do
-      {cpus, ""} when cpus > 0 -> %{reserved_cpus: cpus, count: Role.fit_count(%{reserved_cpus: cpus}, capacity)}
+    case Cpus.cast(form["reserved_cpus"]) do
+      {:ok, cpus} when cpus > 0 -> %{reserved_cpus: cpus, count: Role.fit_count(%{reserved_cpus: cpus}, capacity)}
       _unparsed -> nil
     end
   end

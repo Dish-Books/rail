@@ -145,6 +145,14 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
     refute Map.has_key?(host_config, "MemorySwap")
   end
 
+  test "weighs a sandbox that reserves part of a CPU by that part", %{run: run} do
+    {:ok, _role} = Roles.update_role(system_scope(), Repo.preload(run, :role).role, %{reserved_cpus: 0.5})
+
+    assert {:ok, %OsProcess{reserved_cpus: 0.5}} = Tools.start_os_process(run, ["-p", "Build it."])
+
+    assert_received {:created, %{"HostConfig" => %{"CpuShares" => 512}}}
+  end
+
   test "a sandbox Docker will not start fails the run with why, and leaves nothing behind", %{run: run} do
     test_pid = self()
 

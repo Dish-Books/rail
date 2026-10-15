@@ -103,7 +103,7 @@ defmodule Rail.Tools.Utils.LaunchSandbox do
       "HostConfig" => %{
         "NetworkMode" => "host",
         "Binds" => Rail.sandbox_binds(),
-        "CpuShares" => os_process.reserved_cpus * 1024,
+        "CpuShares" => round(os_process.reserved_cpus * 1024),
         "NanoCpus" => capacity.cpus * 1_000_000_000,
         "OomScoreAdj" => 500,
         "Init" => true,

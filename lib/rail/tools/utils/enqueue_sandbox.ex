@@ -20,7 +20,7 @@ defmodule Rail.Tools.Utils.EnqueueSandbox do
   `{:error, reason}` when it could not be started.
   """
   def enqueue_sandbox(%OsProcess{} = os_process, %Run{} = run, spec, reserved_cpus)
-      when is_map(spec) and is_integer(reserved_cpus) do
+      when is_map(spec) and is_number(reserved_cpus) do
     queued =
       os_process
       |> OsProcess.changeset(%{

@@ -201,11 +201,23 @@ defmodule Rail.Roles.Schemas.RoleTest do
     assert Role.fit_count(%Role{reserved_cpus: 2}, capacity) == 7
     assert Role.fit_count(%{reserved_cpus: 1}, capacity) == 14
     assert Role.fit_count(%{reserved_cpus: 16}, capacity) == 0
+    assert Role.fit_count(%{reserved_cpus: 0.5}, capacity) == 28
+    assert Role.fit_count(%{reserved_cpus: 1.5}, capacity) == 9
   end
 
   test "a reservation of nothing is refused" do
     changeset = Role.changeset(%Role{}, %{reserved_cpus: 0})
 
-    assert %{reserved_cpus: ["must be greater than or equal to 1"]} = errors_on(changeset)
+    assert %{reserved_cpus: ["must be greater than 0"]} = errors_on(changeset)
+  end
+
+  test "a reservation in quarters of a CPU is kept, and anything finer is refused" do
+    for cpus <- [0.25, 0.5, "0.75", 1.5] do
+      refute Map.has_key?(errors_on(Role.changeset(%Role{}, %{reserved_cpus: cpus})), :reserved_cpus)
+    end
+
+    changeset = Role.changeset(%Role{}, %{reserved_cpus: "0.3"})
+
+    assert %{reserved_cpus: ["must be in quarters of a CPU, like 0.25, 0.5 or 1.5"]} = errors_on(changeset)
   end
 end

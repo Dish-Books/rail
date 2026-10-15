@@ -505,7 +505,14 @@ defmodule RailWeb.Settings.RolesLiveTest do
 
     view |> element("#edit-role-button-#{role_id}") |> render_click()
     assert has_element?(view, "#role-cpus-input[value='1']")
-    assert has_element?(view, "#role-cpus-help", "Each of this role's agent turns and worktree setups holds this many.")
+
+    assert has_element?(
+             view,
+             "#role-cpus-help",
+             "Each of this role's agent turns and worktree setups holds this many. Quarters of a CPU, like 0.5, are allowed."
+           )
+
+    assert has_element?(view, "#role-cpus-input[step='0.25'][min='0.25']")
     refute has_element?(view, "#role-memory-input")
     assert has_element?(view, "#role-sandbox-fit", "4 Bug Hunter sandboxes fit on this machine at once")
     assert has_element?(view, "#role-sandbox-fit", "1 of 4 CPUs each")
@@ -525,6 +532,11 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert has_element?(view, "#role-sandbox-fit", "2 Bug Hunter sandboxes fit on this machine at once")
     assert has_element?(view, "#role-unsaved-changes", "1 unsaved change · CPUs")
     assert has_element?(view, "#role-tab-summary-configuration", "Identity · Opus 5.5 · high · 2 CPUs")
+
+    view |> element("#role-form") |> render_change(%{"role" => %{"reserved_cpus" => "0.5"}})
+    assert has_element?(view, "#role-sandbox-fit", "8 Bug Hunter sandboxes fit on this machine at once")
+    assert has_element?(view, "#role-sandbox-fit", "0.5 of 4 CPUs each")
+    assert has_element?(view, "#role-tab-summary-configuration", "Identity · Opus 5.5 · high · 0.5 CPUs")
 
     view |> element("#role-form") |> render_change(%{"role" => %{"reserved_cpus" => ""}})
     refute has_element?(view, "#role-sandbox-fit")
@@ -559,6 +571,21 @@ defmodule RailWeb.Settings.RolesLiveTest do
            )
 
     assert {:ok, %Role{reserved_cpus: 1}} = Roles.get_role(id: role_id)
+
+    view
+    |> element("#role-form")
+    |> render_submit(%{
+      "role" => %{
+        "name" => "Bug Hunter",
+        "stage" => "debugger",
+        "model_choice" => "claude:claude-opus-5-5",
+        "system_prompt" => "You chase down defects.",
+        "reserved_cpus" => "0.5"
+      }
+    })
+
+    assert {:ok, %Role{reserved_cpus: 0.5}} = Roles.get_role(id: role_id)
+    assert has_element?(view, "#bound-role-reservation-debugger", "0.5 CPUs")
   end
 
   test "a machine whose capacity cannot be read shows no preview, and the role still saves", %{

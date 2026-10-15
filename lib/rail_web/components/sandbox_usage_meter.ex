@@ -8,7 +8,7 @@ defmodule RailWeb.Components.SandboxUsageMeter do
 
   attr :id, :string, required: true
   attr :used, :any, required: true, doc: "a float, or nil when there is no reading"
-  attr :reserved, :integer, default: nil
+  attr :reserved, :any, default: nil, doc: "a number of CPUs, whole or in part"
   attr :unit, :string, required: true
   attr :rest, :global
 
