@@ -729,7 +729,8 @@ defmodule RailWeb.Components.FindingDetailTest do
       assert doc |> Floki.find("#finding-severity") |> Floki.text() |> String.trim() == to_string(finding.severity)
       assert doc |> Floki.attribute("[data-qa=finding_recommendation] span", "class") |> Enum.join() =~ dot
       assert doc |> Floki.find("[data-qa=finding_recommendation]") |> Floki.text() =~ raiser
-      assert doc |> Floki.find("[data-qa=finding_fixed_in]") |> Floki.text() =~ "not yet"
+      assert [] = Floki.find(doc, "[data-qa=finding_fixed_in]")
+      refute doc |> Floki.find("[data-qa=finding_commits]") |> Floki.text() =~ "Fixed in"
     end
   end
 

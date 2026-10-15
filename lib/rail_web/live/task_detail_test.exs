@@ -324,7 +324,7 @@ defmodule RailWeb.Live.TaskDetailTest do
     assert has_element?(view, "#finding-places", "Applies in 2 places")
     assert has_element?(view, "#finding-places [data-qa=finding_place]", "send_diff_comments/2")
     assert has_element?(view, "[data-qa=finding_raised_in]", short)
-    assert has_element?(view, "[data-qa=finding_fixed_in]", "not yet")
+    refute has_element?(view, "[data-qa=finding_fixed_in]")
     assert has_element?(view, "[data-qa=finding_note]", "Raised on #{short}, from code reviewer: From the diff.")
     assert has_element?(view, "[data-qa=finding_note]", "You ruled Fix")
 

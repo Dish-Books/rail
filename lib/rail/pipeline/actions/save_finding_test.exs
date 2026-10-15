@@ -386,6 +386,21 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
              Pipeline.save_finding(task, %{fixed | "status" => "not_fixed"})
   end
 
+  test "a finding fixed before Rail noted its commit names none when saved fixed again, and a later fix names its HEAD",
+       %{task: task, attrs: attrs} do
+    {:ok, raised} = Pipeline.save_finding(task, %{attrs | "recommendation" => "skip"})
+    Repo.update!(change(raised, status: :fixed))
+    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Later"])
+    fixed = %{"key" => "send-twice", "status" => "fixed"}
+
+    assert {:ok, %Finding{status: :fixed, fixed_in: nil}} = Pipeline.save_finding(task, fixed)
+
+    later = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
+    {:ok, %Finding{fixed_in: nil}} = Pipeline.save_finding(task, %{fixed | "status" => "not_fixed"})
+
+    assert {:ok, %Finding{status: :fixed, fixed_in: ^later}} = Pipeline.save_finding(task, fixed)
+  end
+
   test "a Fix finding a later round finds still failing is carried into that round, once", %{
     task: task,
     attrs: attrs

@@ -83,9 +83,16 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
           note: Map.merge(said, %{kind: :pass, status: status, text: attrs["note"]})
         })
 
-      # A finding keeps the commit it was first saved fixed on, and one no longer fixed names none.
-      fixed? = get_field(changeset, :status) == :fixed
-      changeset = put_change(changeset, :fixed_in, if(fixed?, do: finding.fixed_in || said.commit))
+      # Only a move to fixed names HEAD: one already fixed keeps its commit, or none if fixed before Rail
+      # noted one, and one no longer fixed names none.
+      fixed_in =
+        cond do
+          finding.status == :fixed and get_field(changeset, :status) == :fixed -> finding.fixed_in
+          get_field(changeset, :status) == :fixed -> said.commit
+          true -> nil
+        end
+
+      changeset = put_change(changeset, :fixed_in, fixed_in)
 
       carried? =
         finding.decision == :fix and get_field(changeset, :status) == :not_fixed and finding.carried_round != said.round

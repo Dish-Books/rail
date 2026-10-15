@@ -59,8 +59,8 @@ defmodule RailWeb.Components.FindingDetail do
       |> assign(:cards?, cards?)
       |> assign(:where_box?, where_box?)
       |> assign(:outcome, calculate_outcome(assigns.finding, assigns.running))
-      # A fix saved before Rail noted its commit has none to name, and is not waiting on one.
-      |> assign(:show_fixed_in, assigns.finding.status != :fixed or is_binary(assigns.finding.fixed_in))
+      # A finding with no commit, unfixed or fixed before Rail noted one, has none to name.
+      |> assign(:show_fixed_in, is_binary(assigns.finding.fixed_in))
 
     ~H"""
     <div
