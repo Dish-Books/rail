@@ -111,7 +111,7 @@ defmodule Rail.Pipeline.Actions.StartCheckRun do
     1. Write your shot list from the ticket's acceptance criteria: the fewest beats that show each one, in the order a person would meet them.
     2. Start the app server from the worktree and drive the app in your browser. #{browser("demo")}
     3. Drive the whole walkthrough once off camera to find out how it behaves, and put any data you changed back.
-    4. Call `demo_start`, then follow the shot list in order. Say each beat with `demo_say` straight before you do it: one short plain sentence, naming the acceptance criterion in `criterion` when the beat proves one. Rail speaks each sentence as the demo's voice-over and holds the moment for as long as it takes to say, so write it to be heard: no markup, paths or symbols.
+    4. Call `demo_start`, then follow the shot list in order. Say each beat with `demo_say` straight before you do it: one short plain sentence, naming the acceptance criterion in `criterion` when the beat proves one. Rail speaks each sentence aloud as the demo's voice-over, word for word, and holds the moment for as long as it takes to say, so write it in words only: no hyphens, slashes or other symbols, and no markup or paths.
     5. Call `save_demo` straight after the last beat: saving is what stops the recording and has Rail encode it, so nothing after it is filmed, and a demo never saved is never seen. A shot you could not get goes in `not_shown`.
     6. Call `browser_close` once `save_demo` has answered and never before it, since closing the browser ends the recording. End your turn with what the demo shows and anything broken you walked into.
 
