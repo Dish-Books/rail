@@ -402,12 +402,13 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
 
   # The code a diff comment quotes is its lines around the comment, or the one line of an older comment.
   defp drop_code([first | rest] = lines) do
-    if Regex.match?(~r/\A[> ] [+\- ]/, first),
-      do: Enum.drop_while(lines, &Regex.match?(~r/\A[> ] [+\- ]/, &1)),
-      else: rest
+    if code_line?(first), do: Enum.drop_while(lines, &code_line?/1), else: rest
   end
 
   defp drop_code([]), do: []
+
+  # A blank line of the quoted code reaches the transcript with its marker and glyph trimmed away.
+  defp code_line?(line), do: line == "" or Regex.match?(~r/\A[> ] [+\- ]/, line)
 
   # A changed ticket is said where the person reads the plan, before anything is approved on it.
   defp validate_amendments(changeset) do

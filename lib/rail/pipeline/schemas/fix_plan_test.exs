@@ -410,6 +410,25 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
              } = FixPlan.parse_note(note)
     end
 
+    test "a diff comment's code with blank lines, as the transcript keeps them, is left out of its text" do
+      note = """
+      Sent 1 comment.
+
+      1. On the diff:
+      <diff_comment>
+      .rail/prompts/demo.md, line 84
+
+          The captions are what turn a screen recording into a demo.
+
+        - - **One sentence of about twelve words**.
+      > + - **One sentence, said aloud.**
+      Move this to the brief.
+      </diff_comment>
+      """
+
+      assert %{comments: [%{number: 1, text: "Move this to the brief."}]} = FixPlan.parse_note(note)
+    end
+
     test "any other message is no Send" do
       assert FixPlan.parse_note("Sent the email. Can you check?") == nil
       assert FixPlan.parse_note(nil) == nil
