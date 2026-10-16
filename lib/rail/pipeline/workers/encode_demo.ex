@@ -4,10 +4,10 @@ defmodule Rail.Pipeline.Workers.EncodeDemo do
   request. One job per task while one is queued or running, so a write-up saved twice encodes once.
 
   Each caption is spoken first, with Gemini's text-to-speech, and the voice-over is mixed into the video once it
-  is encoded. The encode squeezes out the time nothing happened and ends once the last caption has been read, so
-  the captions go in held for as long as each takes to read or to say, and come back as where they landed in the
-  video, written beside the moment each was said. What goes wrong is said in the demo recorder's conversation,
-  where the human reads the run, since a demo that did not encode is not a reason to fail the review.
+  is encoded. A voiced take is timed by how long each line takes to say, each starting as its action lands, and a
+  silent one by how long each caption takes to read. Where each landed in the video is written beside the moment
+  it was said. What goes wrong is said in the demo recorder's conversation, where the human reads the run, since a
+  demo that did not encode is not a reason to fail the review.
   """
   use Oban.Worker,
     queue: :issues,
@@ -54,9 +54,13 @@ defmodule Rail.Pipeline.Workers.EncodeDemo do
   defp encoded(%Task{} = task, directory) do
     beats = Pipeline.list_demo_beats(task)
     voice = voice_over(task, directory, beats)
-    marks = beats |> Enum.zip(voice || List.duplicate(0, length(beats))) |> Enum.map(&mark/1)
 
-    case Tools.encode_recording(directory, marks) do
+    encoded =
+      if voice,
+        do: Tools.encode_recording(directory, Enum.zip_with(beats, voice, &{&1.recorded_ms, &2}), :spoken),
+        else: Tools.encode_recording(directory, Enum.map(beats, &{&1.recorded_ms, DemoBeat.reading_ms(&1)}), :reading)
+
+    case encoded do
       {:ok, _video, video_times} ->
         timed(directory, beats, video_times)
         if voice, do: voiced(task, directory, video_times)
@@ -72,10 +76,6 @@ defmodule Rail.Pipeline.Workers.EncodeDemo do
         say(task, "The demo could not be encoded. ffmpeg said: #{tail(output)}")
     end
   end
-
-  # Each caption holds for as long as it takes to read or to say, whichever is longer, with a breath after it.
-  defp mark({%DemoBeat{} = beat, 0}), do: {beat.recorded_ms, DemoBeat.reading_ms(beat)}
-  defp mark({%DemoBeat{} = beat, spoken_ms}), do: {beat.recorded_ms, max(DemoBeat.reading_ms(beat), spoken_ms + 400)}
 
   # Spoken before the encode, so the encode knows how long each line takes. A machine with no Google credentials
   # makes silent demos, which is nothing to say; a voice that failed is said, and the demo goes out silent.

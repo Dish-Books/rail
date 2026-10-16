@@ -1,10 +1,7 @@
 defmodule RailWeb.Components.DemoPlayer do
   @moduledoc """
-  Review's Demo item: a header row saying what the demo was recorded on, then the video with its caption
-  bar beneath it, never over it, and the walkthrough to its left, scrolling on its own and following playback so
-  the video stays in view. Each beat seeks the player to the moment
-  it was said, and one that proves an acceptance criterion quotes it. A demo the branch has moved past
-  says so in slate above the video, with Re-record.
+  Review's Demo item: the video, sized so it and the caption bar under it always fit and its column never scrolls,
+  beside a walkthrough that scrolls on its own, follows playback and seeks the player. A stale demo offers Re-record.
   """
   use RailWeb, :html
 
@@ -55,13 +52,13 @@ defmodule RailWeb.Components.DemoPlayer do
             :if={@recorded}
             id="demo-player"
             data-qa="demo_player"
-            class="shrink-0 @4xl:flex-1 @4xl:min-h-0 @4xl:overflow-y-auto min-w-0 space-y-3"
+            class="flex-1 min-h-0 min-w-0 flex flex-col gap-3"
           >
             <div
               :if={@stale && not @recording}
               id="demo-stale"
               data-qa="demo_stale"
-              class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/60 px-3 py-2"
+              class="shrink-0 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/60 px-3 py-2"
             >
               <.icon
                 name="pi-clock-counter-clockwise"
@@ -99,7 +96,7 @@ defmodule RailWeb.Components.DemoPlayer do
               </button>
             </div>
 
-            <div :if={@demo} class="space-y-1.5">
+            <div :if={@demo} class="shrink-0 space-y-1.5">
               <h2
                 :if={@demo.title}
                 data-qa="demo_title"
@@ -115,42 +112,48 @@ defmodule RailWeb.Components.DemoPlayer do
               </p>
             </div>
 
-            <div
-              id="demo-video-frame"
-              phx-hook="DemoCaptions"
-              phx-update="ignore"
-              data-beats={Jason.encode!(Enum.map(@beats, &%{at_ms: &1.at_ms, text: &1.text}))}
-              class="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700"
-            >
-              <video
-                id="demo-video"
-                data-qa="demo_video"
-                controls
-                preload="metadata"
-                data-src={~p"/tasks/#{@task.id}/demo/video"}
-                class="block w-full aspect-video bg-slate-900"
-              />
-              <p
-                id="demo-caption"
-                data-qa="demo_caption"
-                class="min-h-[3.25rem] flex items-center justify-center px-4 py-3 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 text-center text-sm font-medium text-slate-900 dark:text-slate-100"
-              >
-              </p>
-            </div>
-
             <p
               :if={@demo && @demo.not_shown}
               data-qa="demo_not_shown"
-              class="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950 p-3 text-xs text-amber-800 dark:text-amber-300 wrap-anywhere"
+              class="shrink-0 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950 p-3 text-xs text-amber-800 dark:text-amber-300 wrap-anywhere"
             >
               Not shown: {@demo.not_shown}
             </p>
+
+            <%!-- As wide as the column allows while the video and a one-line caption bar fit the height left. --%>
+            <div class="flex-1 min-h-0 [container-type:size]">
+              <div
+                id="demo-video-frame"
+                phx-hook="DemoCaptions"
+                phx-update="ignore"
+                data-beats={Jason.encode!(Enum.map(@beats, &%{at_ms: &1.at_ms, text: &1.text}))}
+                class="mx-auto w-[min(100cqw,calc((100cqh_-_3.25rem_-_2px)*16/9))] overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700"
+              >
+                <video
+                  id="demo-video"
+                  data-qa="demo_video"
+                  controls
+                  preload="metadata"
+                  data-src={~p"/tasks/#{@task.id}/demo/video"}
+                  class="block w-full aspect-video bg-slate-900"
+                />
+                <p
+                  id="demo-caption"
+                  data-qa="demo_caption"
+                  class="min-h-[3.25rem] flex items-center justify-center px-4 py-3 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 text-center text-sm font-medium text-slate-900 dark:text-slate-100"
+                >
+                </p>
+              </div>
+            </div>
           </div>
 
           <div
             id="demo-beats"
             data-qa="demo_beats"
-            class="flex-1 min-h-0 overflow-y-auto @4xl:flex-none @4xl:w-[280px]"
+            class={[
+              "min-h-0 overflow-y-auto @4xl:flex-none @4xl:w-[280px] @4xl:max-h-none",
+              if(@recorded, do: "max-h-[33%] shrink-0", else: "flex-1")
+            ]}
           >
             <p class="px-2.5 pb-2 text-[10.5px] font-extrabold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
               {if @recording, do: "Narrated so far", else: "Walkthrough"}

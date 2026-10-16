@@ -50,7 +50,8 @@ defmodule Rail.Mcp.Utils.McpTools do
   an agent working out how the application behaves, which is not the demo. So the
   rehearsal happens off camera and the take is what gets recorded. `demo_say` is
   how the agent narrates what it is about to do, stamped against the recording's
-  own clock so the caption is up while the thing happens.
+  own clock so the caption is up while the thing happens. `demo_cut` marks where
+  setup between beats starts, so the voiced video leaves it out.
   """
 
   alias Rail.Roles.Schemas.Role
@@ -78,9 +79,10 @@ defmodule Rail.Mcp.Utils.McpTools do
       "description" =>
         "Get your tab in Rail's headless Chrome and the driver to drive it with. Returns the tab's " <>
           "DevTools websocket and the path of `driver.mjs`, a zero-dependency Node module: " <>
-          "`openBrowser(url)` gives you click, hover, type, press, select, typeDate, upload, goto, " <>
-          "evaluate, expect, until, text, shot, resize and drainProblems, all as trusted input " <>
-          "events so LiveView sees what a person's would produce. Write a script per check and run " <>
+          "`openBrowser(url)` gives you click, hover, scroll, type, press, select, typeDate, upload, " <>
+          "goto, evaluate, expect, until, text, shot, resize and drainProblems. Its clicks, key presses " <>
+          "and scrolls are trusted input events, so LiveView sees what a person's would produce and a " <>
+          "demo shows each as an action: scroll with `scroll`, never `evaluate`. Write a script per check and run " <>
           "it with `node`; the tab stays where each script leaves it, signed in. Rail watches the " <>
           "same tab, so the panel and a demo recording show what you do. Each `browser` name is a " <>
           "context and tab of its own; the first call for a name signs it in as a fresh account the " <>
@@ -253,7 +255,8 @@ defmodule Rail.Mcp.Utils.McpTools do
       "description" =>
         "Narrate the next beat of the walkthrough. Say it immediately before you do the thing, " <>
           "not after: Rail stamps it against the recording's clock and the caption goes up while " <>
-          "the action happens. One sentence, in the words someone who has never seen this codebase " <>
+          "the action happens. One sentence, spoken to the person watching as a presenter would say it, " <>
+          "in the words someone who has never seen this codebase " <>
           "would use - what is about to happen and why it matters, never the mechanics of how you " <>
           "are clicking it. Name the acceptance criterion in `criterion` when the beat is what " <>
           "proves one; that is what says the walkthrough covered the ticket rather than wandered " <>
@@ -271,6 +274,14 @@ defmodule Rail.Mcp.Utils.McpTools do
         },
         "required" => ["text"]
       }
+    },
+    %{
+      "name" => "demo_cut",
+      "description" =>
+        "Mark where you start setting up for the next beat. Call it before you seed data, switch user, reload " <>
+          "or wait between beats: the video leaves out what the page does from here to your next caption. Never " <>
+          "call it between a caption and the action it describes.",
+      "inputSchema" => %{"type" => "object", "properties" => %{}}
     }
   ]
 

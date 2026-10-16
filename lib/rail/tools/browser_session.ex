@@ -20,7 +20,9 @@ defmodule Rail.Tools.BrowserSession do
   watching, but a human who opens the QA panel while one is running wants to see
   it happening rather than read about it afterwards - and Chrome only encodes a
   frame when the page actually changes, so a session nobody is watching costs
-  almost nothing.
+  almost nothing. Each click, key press, wheel scroll and main-frame navigation
+  goes out on the same topic as `{:browser_action, task_id, name, kind}`, which is
+  what a voiced demo is cut by.
   """
   use GenServer, restart: :temporary
 
@@ -46,6 +48,23 @@ defmodule Rail.Tools.BrowserSession do
   @settled_after_ms 250
   # How often a held ack looks again for somebody to show the frame to.
   @unwatched_poll_ms 250
+
+  # Added on every document so the page reports each trusted action: a wheel, not a scroll, since a page scrolls
+  # itself as it streams. The flag stops a tab attached to again from listening twice.
+  @binding "__railAction"
+  @listener """
+  (() => {
+    if (window.__railListening) return
+    window.__railListening = true
+    const report = kind => event => {
+      if (event.isTrusted && typeof window.#{@binding} === 'function') window.#{@binding}(kind)
+    }
+    addEventListener('click', report('click'), true)
+    addEventListener('keydown', report('key'), true)
+    addEventListener('wheel', report('scroll'), {capture: true, passive: true})
+  })()
+  """
+  @actions ["click", "key", "scroll"]
 
   defstruct [
     :session_id,
@@ -266,7 +285,17 @@ defmodule Rail.Tools.BrowserSession do
   # somewhere is not the page going somewhere.
   def handle_info({:cdp_event, "Page.frameNavigated", %{"frame" => %{"url" => url} = frame}}, %__MODULE__{} = state)
       when not is_map_key(frame, "parentId") do
+    acted(state, "navigate")
+
     {:noreply, %{state | url: url}}
+  end
+
+  # The page's own scripts can call the binding too, so only the kinds the listener sends count.
+  def handle_info({:cdp_event, "Runtime.bindingCalled", %{"name" => @binding, "payload" => kind}}, %__MODULE__{} = state)
+      when kind in @actions do
+    acted(state, kind)
+
+    {:noreply, state}
   end
 
   # What the browser says without being asked. Most of it is noise; what is kept
@@ -311,6 +340,10 @@ defmodule Rail.Tools.BrowserSession do
     Phoenix.PubSub.broadcast(Rail.PubSub, topic(state), {:browser_frame, state.task_id, state.name, data})
 
     %{state | frame: data}
+  end
+
+  defp acted(%__MODULE__{} = state, kind) do
+    Phoenix.PubSub.broadcast(Rail.PubSub, topic(state), {:browser_action, state.task_id, state.name, kind})
   end
 
   # Phoenix.PubSub keeps its local subscribers in a Registry of its own name.
@@ -424,7 +457,12 @@ defmodule Rail.Tools.BrowserSession do
          {:ok, _set} <- command(state, "Emulation.setDeviceMetricsOverride", metrics),
          {:ok, _focus} <- command(state, "Emulation.setFocusEmulationEnabled", %{enabled: true}),
          :ok <- listen(state),
+         {:ok, _bound} <- command(state, "Runtime.addBinding", %{name: @binding}),
+         {:ok, _added} <- command(state, "Page.addScriptToEvaluateOnNewDocument", %{source: @listener}),
          {:ok, _casting} <- command(state, "Page.startScreencast", @screencast) do
+      # The document already open gets it too. A page with nowhere to run it is listened to from its next one.
+      _listening = command(state, "Runtime.evaluate", %{expression: @listener})
+
       {:ok, state}
     end
   end

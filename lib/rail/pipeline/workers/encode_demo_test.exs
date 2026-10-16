@@ -56,8 +56,9 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
     {"at_ms": 95000, "text": "Saved exactly as entered", "criterion": "A bill saves"}
     """)
 
-    # Each caption goes in with its reading time, four words a second.
-    expect(Tools, :encode_recording, fn ^demo_dir, [{0, 1_250}, {95_000, 1_200}] ->
+    # With no Google credentials there is no voice, so each caption goes in with its reading time, four words a
+    # second, and is timed as a silent demo always was.
+    expect(Tools, :encode_recording, fn ^demo_dir, [{0, 1_250}, {95_000, 1_200}], :reading ->
       {:ok, Path.join(demo_dir, "demo.webm"), [0, 31_000]}
     end)
 
@@ -69,8 +70,8 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
            ] = Pipeline.list_demo_beats(task)
   end
 
-  # The voice-over is spoken before the encode, so each caption holds for as long as its line takes to say.
-  test "each caption is spoken, held long enough to say, and the voice-over mixed in where it plays", %{
+  # The voice-over is spoken before the encode, so the encode times each line by how long it takes to say.
+  test "each caption is spoken, timed by its line, and plays where its line starts with the voice mixed in there", %{
     task: task,
     run: run,
     demo_dir: demo_dir
@@ -86,15 +87,17 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
       {:ok, [2_000, 500]}
     end)
 
-    # Said for longer than it reads, the first holds for its line and a breath; the second reads longer than it is said.
-    expect(Tools, :encode_recording, fn ^demo_dir, [{0, 2_400}, {95_000, 1_200}] ->
-      {:ok, Path.join(demo_dir, "demo.webm"), [0, 31_000]}
+    expect(Tools, :encode_recording, fn ^demo_dir, [{0, 2_000}, {95_000, 500}], :spoken ->
+      {:ok, Path.join(demo_dir, "demo.webm"), [300, 3_300]}
     end)
 
-    expect(Tools, :mix_voice_over, fn ^demo_dir, [0, 31_000] -> {:ok, Path.join(demo_dir, "demo.webm")} end)
+    expect(Tools, :mix_voice_over, fn ^demo_dir, [300, 3_300] -> {:ok, Path.join(demo_dir, "demo.webm")} end)
 
     assert :ok = perform_job(EncodeDemo, %{task_id: task.id})
     refute Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "voice-over"))
+
+    assert [%DemoBeat{at_ms: 300, recorded_ms: 0}, %DemoBeat{at_ms: 3_300, recorded_ms: 95_000}] =
+             Pipeline.list_demo_beats(task)
   end
 
   # A demo is still worth watching silent, so a voice that failed is said and the video goes out without it.
@@ -107,7 +110,10 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
     File.write!(Path.join(demo_dir, "captions.jsonl"), ~s({"at_ms": 0, "text": "Starting here", "criterion": null}\n))
 
     expect(Tools, :record_voice_over, fn ^demo_dir, ["Starting here"] -> {:error, {:speech_error, 429, "slow"}} end)
-    expect(Tools, :encode_recording, fn ^demo_dir, [{0, 1_200}] -> {:ok, Path.join(demo_dir, "demo.webm"), [0]} end)
+
+    expect(Tools, :encode_recording, fn ^demo_dir, [{0, 1_200}], :reading ->
+      {:ok, Path.join(demo_dir, "demo.webm"), [0]}
+    end)
 
     assert :ok = perform_job(EncodeDemo, %{task_id: task.id})
 
@@ -115,12 +121,12 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
              Pipeline.list_run_events(run)
 
     expect(Tools, :record_voice_over, fn ^demo_dir, _lines -> {:ok, [300]} end)
-    expect(Tools, :encode_recording, fn ^demo_dir, _marks -> {:ok, Path.join(demo_dir, "demo.webm"), [0]} end)
+    expect(Tools, :encode_recording, fn ^demo_dir, _marks, :spoken -> {:ok, Path.join(demo_dir, "demo.webm"), [0]} end)
     expect(Tools, :mix_voice_over, fn ^demo_dir, [0] -> {:error, {:encode_failed, "Unknown encoder\nlibopus"}} end)
     assert :ok = perform_job(EncodeDemo, %{task_id: task.id})
 
     expect(Tools, :record_voice_over, fn ^demo_dir, _lines -> {:ok, [300]} end)
-    expect(Tools, :encode_recording, fn ^demo_dir, _marks -> {:ok, Path.join(demo_dir, "demo.webm"), [0]} end)
+    expect(Tools, :encode_recording, fn ^demo_dir, _marks, :spoken -> {:ok, Path.join(demo_dir, "demo.webm"), [0]} end)
     expect(Tools, :mix_voice_over, fn ^demo_dir, [0] -> {:error, :no_ffmpeg} end)
     assert :ok = perform_job(EncodeDemo, %{task_id: task.id})
 
@@ -139,7 +145,7 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
     File.write!(Path.join(demo_dir, "EDM-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
     File.write!(Path.join(demo_dir, "demo.webm"), "webm bytes")
 
-    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
+    expect(Tools, :encode_recording, fn ^demo_dir, [], :reading -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -216,7 +222,7 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
     File.write!(Path.join(demo_dir, "EDM-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
     File.write!(Path.join(demo_dir, "demo.webm"), "webm bytes")
 
-    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
+    expect(Tools, :encode_recording, fn ^demo_dir, [], :reading -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -268,7 +274,7 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
     File.write!(Path.join(demo_dir, "EDM-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
     File.write!(Path.join(demo_dir, "demo.webm"), "webm bytes")
 
-    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
+    expect(Tools, :encode_recording, fn ^demo_dir, [], :reading -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
     Req.Test.expect(Rail.Linear, &Req.Test.json(&1, %{"data" => %{"fileUpload" => %{"success" => false}}}))
 
     assert :ok = perform_job(EncodeDemo, %{task_id: task.id})
@@ -276,7 +282,7 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
   end
 
   test "a take never started says so", %{task: task, run: run} do
-    reject(&Tools.encode_recording/2)
+    reject(&Tools.encode_recording/3)
 
     assert :ok = perform_job(EncodeDemo, %{task_id: task.id})
 
@@ -287,7 +293,7 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
   test "a browser that painted nothing is not a video", %{task: task, run: run, demo_dir: demo_dir} do
     File.mkdir_p!(Path.join(demo_dir, "frames"))
 
-    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:error, :nothing_recorded} end)
+    expect(Tools, :encode_recording, fn ^demo_dir, [], :reading -> {:error, :nothing_recorded} end)
 
     assert :ok = perform_job(EncodeDemo, %{task_id: task.id})
 
@@ -303,7 +309,7 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
   } do
     File.mkdir_p!(Path.join(demo_dir, "frames"))
 
-    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:error, :no_ffmpeg} end)
+    expect(Tools, :encode_recording, fn ^demo_dir, [], :reading -> {:error, :no_ffmpeg} end)
 
     assert :ok = perform_job(EncodeDemo, %{task_id: task.id})
 
@@ -315,7 +321,7 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
   test "an encode that failed says what ffmpeg said, on one line", %{task: task, run: run, demo_dir: demo_dir} do
     File.mkdir_p!(Path.join(demo_dir, "frames"))
 
-    expect(Tools, :encode_recording, fn ^demo_dir, [] ->
+    expect(Tools, :encode_recording, fn ^demo_dir, [], :reading ->
       {:error, {:encode_failed, "frames/000000.jpg:\nInvalid data"}}
     end)
 
@@ -328,7 +334,7 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
   test "a take with no write-up is encoded and not published", %{task: task, run: run, demo_dir: demo_dir} do
     File.mkdir_p!(Path.join(demo_dir, "frames"))
 
-    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
+    expect(Tools, :encode_recording, fn ^demo_dir, [], :reading -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
 
     assert :ok = perform_job(EncodeDemo, %{task_id: task.id})
 
@@ -356,7 +362,7 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
   end
 
   test "a task gone before its encode ran has nothing to encode" do
-    reject(&Tools.encode_recording/2)
+    reject(&Tools.encode_recording/3)
 
     assert :ok = perform_job(EncodeDemo, %{task_id: "tsk_gone"})
   end

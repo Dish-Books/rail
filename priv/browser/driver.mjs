@@ -204,6 +204,50 @@ export async function openBrowser(pageUrl) {
       await sleep(300)
     },
 
+    // A trusted wheel, so a demo shows the scroll as an action. It wheels the pane that scrolls the element,
+    // or beside the pane while the pane shows less than the element, so the document brings it on screen.
+    async scroll(target) {
+      const { x, y, deltaY } = await evaluate(`
+        (() => {
+          const by = ${typeof target === 'string' ? 'null' : JSON.stringify(target.y)}
+          if (by !== null) return { x: innerWidth / 2, y: innerHeight / 2, deltaY: by }
+          const el = ${typeof target === 'string' ? target : 'null'}
+          if (!(el instanceof Element)) return { deltaY: null }
+          const scrolls = (node) =>
+            ['auto', 'scroll'].includes(getComputedStyle(node).overflowY) && node.scrollHeight > node.clientHeight
+          let pane = el.parentElement
+          while (pane && !scrolls(pane)) pane = pane.parentElement
+          const box = pane ? pane.getBoundingClientRect() : { left: 0, top: 0, right: innerWidth, bottom: innerHeight }
+          let left = Math.max(box.left, 0)
+          let right = Math.min(box.right, innerWidth)
+          let top = Math.max(box.top, 0)
+          let bottom = Math.min(box.bottom, innerHeight)
+          const r = el.getBoundingClientRect()
+          const high = box.bottom - box.top
+          // An element taller than its pane can never fit, so a pane wholly on screen still counts as shown.
+          const shown = bottom - top >= Math.min(r.height, high) && bottom - top >= high / 4 && right - left >= 2
+          if (!shown) {
+            left = 0
+            top = 0
+            right = innerWidth
+            bottom = innerHeight
+          }
+          const clamp = (value, min, max) => Math.min(Math.max(value, min), max - 1)
+          // Centering an element the pane hides would scroll the pane past, so its nearest part comes on.
+          const aim = shown ? r.top + r.height / 2 : clamp(r.top + r.height / 2, box.top, box.bottom)
+          const beside = box.top > 0 ? box.top - 1 : box.bottom + 1
+          return {
+            x: clamp(r.left + r.width / 2, left, right),
+            y: shown ? clamp(r.top + r.height / 2, top, bottom) : clamp(beside, 0, innerHeight),
+            deltaY: aim - (top + bottom) / 2
+          }
+        })()
+      `)
+      if (typeof deltaY !== 'number') throw new Error(`nothing to scroll to for ${JSON.stringify(target)}`)
+      await send('Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX: 0, deltaY })
+      await sleep(200)
+    },
+
     press,
     type,
 
@@ -214,7 +258,8 @@ export async function openBrowser(pageUrl) {
       await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'a', code: 'KeyA', modifiers })
     },
 
-    // A native <select>'s list is drawn by the OS and no click reaches it, so it is set and told.
+    // A native <select>'s list is drawn by the OS and no click reaches it, so it is set and told, and
+    // reported to Rail as the click a person would have made.
     async select(selectorExpression, value) {
       const chosen = await evaluate(`
         (() => {
@@ -224,6 +269,7 @@ export async function openBrowser(pageUrl) {
           if (el.value !== ${JSON.stringify(value)}) return 'no such option'
           el.dispatchEvent(new Event('input', { bubbles: true }))
           el.dispatchEvent(new Event('change', { bubbles: true }))
+          window.__railAction?.('click')
           return 'ok'
         })()
       `)
@@ -245,8 +291,9 @@ export async function openBrowser(pageUrl) {
 
     // `DOM.setFileInputFiles` is not enough for a LiveView upload: LiveView only learns about files
     // through its own `track-uploads` event, so no entry is ever allocated and the upload silently
-    // does not exist. This hands LiveView real `File` objects the way its own JS interop does. Pass
-    // `contentType` to send a type the browser would not infer.
+    // does not exist. This hands LiveView real `File` objects the way its own JS interop does, and
+    // reports the click a person would have made to Rail. Pass `contentType` to send a type the
+    // browser would not infer.
     async upload(selectorExpression, paths, { contentType = null } = {}) {
       const files = paths.map((path) => {
         const bytes = readFileSync(path)
@@ -263,6 +310,7 @@ export async function openBrowser(pageUrl) {
             return new File([bytes], name, { type })
           })
           el.dispatchEvent(new CustomEvent('track-uploads', { detail: { files }, bubbles: true }))
+          window.__railAction?.('click')
           return 'dispatched'
         })()
       `)
