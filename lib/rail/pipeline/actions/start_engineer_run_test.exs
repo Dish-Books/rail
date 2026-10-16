@@ -78,6 +78,8 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
       assert prompt =~ "```elixir\ndef list_invoices(scope, filters)\n```"
       assert prompt =~ "A turn that ends with commits the remote does not have yet hands them over"
       assert prompt =~ "Work you leave uncommitted is not sent on"
+      assert prompt =~ "A later round whose plan changes no code"
+      assert prompt =~ "Rail sends the round to Review as it stands."
       assert prompt =~ "Your last message is what the human reads, not the commit body"
       assert prompt =~ "End every commit message with the line `Ticket: SEN-1`."
       assert prompt =~ "Never merge `origin/main` in unless the plan says to, or to get CI passing as below"
