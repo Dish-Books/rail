@@ -59,8 +59,33 @@ defmodule Rail.Tools.Utils.FollowVoiceOverTest do
               %{file: "a.jpg", hold_ms: 200},
               %{file: "b.jpg", hold_ms: 1_400},
               %{file: "waiting.jpg", hold_ms: 100},
-              %{file: "d.jpg", hold_ms: 2_400}
-            ], [0]} = follow_voice_over(frames, [{0, 500}], [100, 4_000])
+              %{file: "d.jpg", hold_ms: 2_800}
+            ], [0]} = follow_voice_over(frames, [{0, 3_500}], [100, 4_000])
+  end
+
+  # QA's take: after the Retry click the recorder switched user and waited, then said the next caption.
+  test "an action after its line has ended, seconds after the one before, is cut" do
+    frames = [
+      %{file: "a.jpg", at_ms: 0},
+      %{file: "retried.jpg", at_ms: 1_100},
+      %{file: "switched.jpg", at_ms: 6_400},
+      %{file: "signed_in.jpg", at_ms: 9_400},
+      %{file: "next.jpg", at_ms: 21_000}
+    ]
+
+    assert {[
+              %{file: "a.jpg", hold_ms: 1_100},
+              %{file: "retried.jpg", hold_ms: 3_300},
+              %{file: "next.jpg", hold_ms: 2_000}
+            ], [700, 4_400]} = follow_voice_over(frames, [{0, 2_700}, {22_000, 1_000}], [1_000, 6_300, 9_300])
+  end
+
+  # A form filled field by field and then saved goes on well past its caption, and its Save is the point.
+  test "a last beat whose actions follow one another keeps them past 10 s" do
+    frames = [%{file: "a.jpg", at_ms: 0}, %{file: "saved.jpg", at_ms: 14_100}]
+
+    assert {[%{file: "a.jpg", hold_ms: 10_400}, %{file: "saved.jpg", hold_ms: 2_400}], [1_000]} =
+             follow_voice_over(frames, [{0, 1_000}], Enum.to_list(2_000..14_000//2_000))
   end
 
   # Placed in the order said, two said in the same millisecond in the order given, and each comes back where it

@@ -13,8 +13,11 @@ defmodule Rail.Tools.Utils.FollowVoiceOver do
   # After each line before the next, before the first, and after the last.
   @pause_ms 1_000
 
-  # As in `CompressTimeline`: an action this long after the last caption is the run going on past the walkthrough.
+  # As in `CompressTimeline`: a first action this long after the last caption is the run going on past the walkthrough.
   @past_walkthrough_ms 10_000
+
+  # Actions this close together are one beat's however long its line, as a form's fields and then its Save are.
+  @chained_ms 3_000
 
   @doc """
   Returns `{frames, video_times}` for recorded `frames` - `%{file:, at_ms:}`, in order - `lines`, each `{at_ms,
@@ -44,22 +47,42 @@ defmodule Rail.Tools.Utils.FollowVoiceOver do
     {merged(shown), Enum.map(0..(length(lines) - 1), &placed[&1])}
   end
 
-  # In the order they were said, each beat runs to the next caption and starts its line just before its first
-  # action, never before its caption.
+  # In the order they were said, each beat starts its line just before its first action, never before its caption.
   defp beats(lines, actions) do
     sorted = lines |> Enum.with_index() |> Enum.sort_by(fn {{at_ms, _spoken_ms}, index} -> {at_ms, index} end)
     next_said = sorted |> tl() |> Enum.map(fn {{at_ms, _spoken_ms}, _index} -> at_ms end) |> Kernel.++([nil])
 
     Enum.zip_with(sorted, next_said, fn {{said, spoken_ms}, index}, next ->
-      acted = Enum.filter(actions, &in_beat?(&1, said, next))
-      start = if acted == [], do: said, else: max(said, hd(acted) - @lead_ms)
+      {start, acted} = acted(actions, said, next, spoken_ms)
 
       %{index: index, spoken_ms: spoken_ms, actions: acted, start: start, last?: is_nil(next)}
     end)
   end
 
-  defp in_beat?(at_ms, said, nil), do: at_ms >= said and at_ms <= said + @past_walkthrough_ms
-  defp in_beat?(at_ms, said, next), do: at_ms >= said and at_ms < next
+  # A beat keeps the first action after its caption, then each that lands while its line and pause last or that
+  # follows the one before closely. The rest before the next caption is setup for the next beat.
+  defp acted(actions, said, next, spoken_ms) do
+    case Enum.filter(actions, &(&1 >= said and (is_nil(next) or &1 < next))) do
+      [first | _rest] when is_nil(next) and first > said + @past_walkthrough_ms ->
+        {said, []}
+
+      [first | rest] ->
+        start = max(said, first - @lead_ms)
+        line_ends = start + spoken_ms + @pause_ms
+
+        kept =
+          Enum.reduce_while(rest, [first], fn at_ms, [previous | _earlier] = kept ->
+            if at_ms <= line_ends or at_ms - previous <= @chained_ms,
+              do: {:cont, [at_ms | kept]},
+              else: {:halt, kept}
+          end)
+
+        {start, Enum.reverse(kept)}
+
+      [] ->
+        {said, []}
+    end
+  end
 
   # What the beat keeps of the recording, each piece `{from, to, hold_ms}`, with the hold on the last piece for as
   # long as the line and its pause outlast what is kept. The last beat's pause comes after whichever ends later.

@@ -78,9 +78,10 @@ defmodule Rail.Mcp.Utils.McpTools do
       "description" =>
         "Get your tab in Rail's headless Chrome and the driver to drive it with. Returns the tab's " <>
           "DevTools websocket and the path of `driver.mjs`, a zero-dependency Node module: " <>
-          "`openBrowser(url)` gives you click, hover, type, press, select, typeDate, upload, goto, " <>
-          "evaluate, expect, until, text, shot, resize and drainProblems, all as trusted input " <>
-          "events so LiveView sees what a person's would produce. Write a script per check and run " <>
+          "`openBrowser(url)` gives you click, hover, scroll, type, press, select, typeDate, upload, " <>
+          "goto, evaluate, expect, until, text, shot, resize and drainProblems. Its clicks, key presses " <>
+          "and scrolls are trusted input events, so LiveView sees what a person's would produce and a " <>
+          "demo shows each as an action: scroll with `scroll`, never `evaluate`. Write a script per check and run " <>
           "it with `node`; the tab stays where each script leaves it, signed in. Rail watches the " <>
           "same tab, so the panel and a demo recording show what you do. Each `browser` name is a " <>
           "context and tab of its own; the first call for a name signs it in as a fresh account the " <>

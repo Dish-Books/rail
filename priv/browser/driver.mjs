@@ -204,6 +204,29 @@ export async function openBrowser(pageUrl) {
       await sleep(300)
     },
 
+    // A trusted wheel, so a demo shows the scroll as an action where `evaluate`'s would not be seen.
+    // Over an element it scrolls by however far the element sits from the middle of the viewport.
+    async scroll(target) {
+      const { x, y, deltaY } = await evaluate(`
+        (() => {
+          const by = ${typeof target === 'string' ? 'null' : JSON.stringify(target.y)}
+          if (by !== null) return { x: innerWidth / 2, y: innerHeight / 2, deltaY: by }
+          const el = ${typeof target === 'string' ? target : 'null'}
+          if (!(el instanceof Element)) return { deltaY: null }
+          const r = el.getBoundingClientRect()
+          const clamp = (value, max) => Math.min(Math.max(value, 0), max - 1)
+          return {
+            x: clamp(r.left + r.width / 2, innerWidth),
+            y: clamp(r.top + r.height / 2, innerHeight),
+            deltaY: r.top + r.height / 2 - innerHeight / 2
+          }
+        })()
+      `)
+      if (typeof deltaY !== 'number') throw new Error(`nothing to scroll to for ${JSON.stringify(target)}`)
+      await send('Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX: 0, deltaY })
+      await sleep(200)
+    },
+
     press,
     type,
 
@@ -214,7 +237,8 @@ export async function openBrowser(pageUrl) {
       await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'a', code: 'KeyA', modifiers })
     },
 
-    // A native <select>'s list is drawn by the OS and no click reaches it, so it is set and told.
+    // A native <select>'s list is drawn by the OS and no click reaches it, so it is set and told, and
+    // reported to Rail as the click a person would have made.
     async select(selectorExpression, value) {
       const chosen = await evaluate(`
         (() => {
@@ -224,6 +248,7 @@ export async function openBrowser(pageUrl) {
           if (el.value !== ${JSON.stringify(value)}) return 'no such option'
           el.dispatchEvent(new Event('input', { bubbles: true }))
           el.dispatchEvent(new Event('change', { bubbles: true }))
+          window.__railAction?.('click')
           return 'ok'
         })()
       `)
@@ -245,8 +270,9 @@ export async function openBrowser(pageUrl) {
 
     // `DOM.setFileInputFiles` is not enough for a LiveView upload: LiveView only learns about files
     // through its own `track-uploads` event, so no entry is ever allocated and the upload silently
-    // does not exist. This hands LiveView real `File` objects the way its own JS interop does. Pass
-    // `contentType` to send a type the browser would not infer.
+    // does not exist. This hands LiveView real `File` objects the way its own JS interop does, and
+    // reports the click a person would have made to Rail. Pass `contentType` to send a type the
+    // browser would not infer.
     async upload(selectorExpression, paths, { contentType = null } = {}) {
       const files = paths.map((path) => {
         const bytes = readFileSync(path)
@@ -263,6 +289,7 @@ export async function openBrowser(pageUrl) {
             return new File([bytes], name, { type })
           })
           el.dispatchEvent(new CustomEvent('track-uploads', { detail: { files }, bubbles: true }))
+          window.__railAction?.('click')
           return 'dispatched'
         })()
       `)

@@ -50,6 +50,7 @@ defmodule Rail.Tools.BrowserSessionTest do
     <!doctype html><title>Bill</title>
     <form>
       <label for="amount">Amount</label><input id="amount" type="text">
+      <select id="currency"><option value="usd">USD</option><option value="eur">EUR</option></select>
       <button type="button" id="save">Save</button>
     </form>
     """)
@@ -519,6 +520,20 @@ defmodule Rail.Tools.BrowserSessionTest do
       Browser.call(agent, "Input.dispatchMouseEvent", %{type: "mouseWheel", x: 20, y: 20, deltaX: 0, deltaY: 200})
 
     assert_receive {:browser_action, _task_id, "qa", "scroll"}, 5_000
+
+    # A native <select> is set in the page, so the driver's `select` reports the choice itself.
+    {:ok, _selected} =
+      Browser.call(agent, "Runtime.evaluate", %{
+        expression: """
+        const el = document.querySelector('#currency')
+        el.value = 'eur'
+        el.dispatchEvent(new Event('input', {bubbles: true}))
+        el.dispatchEvent(new Event('change', {bubbles: true}))
+        window.__railAction?.('click')
+        """
+      })
+
+    assert_receive {:browser_action, _task_id, "qa", "click"}, 5_000
 
     send(session, {:cdp_event, "Page.frameNavigated", %{"frame" => %{"url" => "about:blank", "parentId" => "main"}}})
     refute_receive {:browser_action, _task_id, "qa", _kind}, 500
