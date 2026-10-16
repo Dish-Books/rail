@@ -91,8 +91,6 @@ A walkthrough, not a tour of the screens.
   a caption of its own. Getting between two screens is not.
 - **Show the result, not just the action.** Clicking Send is not the point; the run picking the
   answers up and the card clearing is.
-- **Keep it moving.** Ten seconds between one caption and the next is a long time to watch nothing
-  being said.
 - **Stop when it is shown.** There is no summary slide and no lap of honor.
 
 ## The write-up
