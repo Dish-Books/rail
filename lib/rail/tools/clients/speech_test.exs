@@ -12,7 +12,7 @@ defmodule Rail.Tools.Clients.SpeechTest do
     :ok
   end
 
-  test "speaks the line at the global endpoint under Goth's project, on its token, as raw PCM" do
+  test "speaks the caption alone, in a presenter's voice, at the global endpoint under Goth's project, as raw PCM" do
     Req.Test.expect(Speech, fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn)
 
@@ -21,12 +21,19 @@ defmodule Rail.Tools.Clients.SpeechTest do
 
       assert ["Bearer test_token"] = Plug.Conn.get_req_header(conn, "authorization")
 
+      # Gemini 3.8 reads the text word for word, so a direction in front of the caption would be spoken too.
       assert %{
-               "contents" => [%{"parts" => [%{"text" => text}]}],
-               "generationConfig" => %{"responseModalities" => ["AUDIO"], "speechConfig" => %{"voiceConfig" => _voice}}
+               "contents" => [
+                 %{"parts" => [%{"text" => "Saved exactly as entered.", "speech_metadata" => %{"style" => style}}]}
+               ],
+               "generationConfig" => %{
+                 "responseModalities" => ["AUDIO"],
+                 "speechConfig" => %{"voiceConfig" => %{"prebuiltVoiceConfig" => %{"voiceName" => "Achird"}}}
+               }
              } = Jason.decode!(body)
 
-      assert text =~ "Saved exactly as entered."
+      assert style =~ "friendly engineer showing a teammate"
+      assert style =~ "varied intonation"
       Req.Test.json(conn, %{"candidates" => [%{"content" => %{"parts" => [@audio]}}]})
     end)
 

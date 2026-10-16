@@ -32,9 +32,22 @@ defmodule Rail.Mcp.Utils.RunToolDemoSay do
   it landed.
   """
   def run_tool_demo_say(%Task{} = task, %{"text" => text} = arguments, _opts) when is_binary(text) do
-    case Tools.get_browser_recording(task) do
-      recorder when is_pid(recorder) -> said(task, recorder, text, arguments["criterion"])
-      nil -> {:refused, "Nothing is recording, so that caption would belong to no video. Call demo_start first."}
+    recorder = Tools.get_browser_recording(task)
+    # The caption is spoken word for word, and a symbol such as the hyphen in "Cash - Main" has no one spoken form.
+    symbols = ~r/[^\p{L}\p{M}\p{Nd}\s.,;:?!'’]/u |> Regex.scan(text) |> List.flatten() |> Enum.uniq()
+
+    cond do
+      is_nil(recorder) ->
+        {:refused, "Nothing is recording, so that caption would belong to no video. Call demo_start first."}
+
+      symbols != [] ->
+        {:refused,
+         "The caption is spoken aloud, so it is written in words, numbers and sentence punctuation only, and " <>
+           "#{Enum.map_join(symbols, ", ", &inspect/1)} cannot be said. Write it in words and say it again. " <>
+           "Nothing was recorded."}
+
+      true ->
+        said(task, recorder, text, arguments["criterion"])
     end
   end
 
