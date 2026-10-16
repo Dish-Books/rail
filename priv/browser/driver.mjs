@@ -204,8 +204,8 @@ export async function openBrowser(pageUrl) {
       await sleep(300)
     },
 
-    // A trusted wheel, so a demo shows the scroll as an action. Over an element it wheels the pane that
-    // scrolls it, from the middle of the pane's visible part, or the viewport while the pane is off screen.
+    // A trusted wheel, so a demo shows the scroll as an action. It wheels the pane that scrolls the element,
+    // or beside the pane while the pane shows less than the element, so the document brings it on screen.
     async scroll(target) {
       const { x, y, deltaY } = await evaluate(`
         (() => {
@@ -222,20 +222,23 @@ export async function openBrowser(pageUrl) {
           let right = Math.min(box.right, innerWidth)
           let top = Math.max(box.top, 0)
           let bottom = Math.min(box.bottom, innerHeight)
-          const shown = bottom - top >= 2 && right - left >= 2
+          const r = el.getBoundingClientRect()
+          const high = box.bottom - box.top
+          // An element taller than its pane can never fit, so a pane wholly on screen still counts as shown.
+          const shown = bottom - top >= Math.min(r.height, high) && bottom - top >= high / 4 && right - left >= 2
           if (!shown) {
             left = 0
             top = 0
             right = innerWidth
             bottom = innerHeight
           }
-          const r = el.getBoundingClientRect()
           const clamp = (value, min, max) => Math.min(Math.max(value, min), max - 1)
           // Centering an element the pane hides would scroll the pane past, so its nearest part comes on.
           const aim = shown ? r.top + r.height / 2 : clamp(r.top + r.height / 2, box.top, box.bottom)
+          const beside = box.top > 0 ? box.top - 1 : box.bottom + 1
           return {
             x: clamp(r.left + r.width / 2, left, right),
-            y: clamp(r.top + r.height / 2, top, bottom),
+            y: shown ? clamp(r.top + r.height / 2, top, bottom) : clamp(beside, 0, innerHeight),
             deltaY: aim - (top + bottom) / 2
           }
         })()

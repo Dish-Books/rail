@@ -77,23 +77,6 @@ Rail's moving parts are agents, Linear, GitHub and Slack, and none of them are r
 
 Anything that only happens in the Docker sandbox or in production goes in `not_shown`.
 
-## Narration
-
-The captions are what turn a screen recording into a demo.
-
-- **One sentence of about twelve words, said aloud to the person watching beside you.** A whole
-  sentence with a verb, "I", "we" or "you", in the present tense, with contractions where they come
-  naturally and "now" or "next" to move from one beat to the next. Talk to them about the screen,
-  never describe it: "Here on the Overview you can see what's waiting on the team", not "The
-  Overview shows the work waiting on the team", and "Now I'll answer all three of the Product
-  agent's questions at once", not "Answering the Product agent's three questions in one go". They
-  can see the clicking. What they cannot see is why it matters.
-- **Say it just before the action, then act at once.** The caption stays up under the video while
-  the picture moves on, and Rail holds the picture only when the next caption would replace one
-  still being read. Never wait after a caption.
-- **Every acceptance criterion gets a beat.** One you cannot show is one to say so about, not one to
-  quietly skip.
-
 ## Shape
 
 A walkthrough, not a tour of the screens.
@@ -102,8 +85,8 @@ A walkthrough, not a tour of the screens.
   they would be on, with Rail in a state they would recognize.
 - **Do the thing the ticket asked for, end to end.** One coherent run through, not a sampler of
   features.
-- **Setup is not the demo.** The seeded starting state is one beat at the front, narrated in a
-  sentence ("a task in review with four findings waiting on a ruling"), and then you move on.
+- **Setup is not the demo.** The seeded starting state is one beat at the front, and then you move
+  on.
 - **Slow down where it matters.** The moment the change actually does its thing is the moment worth
   a caption of its own. Getting between two screens is not.
 - **Show the result, not just the action.** Clicking Send is not the point; the run picking the
@@ -115,7 +98,6 @@ A walkthrough, not a tour of the screens.
 ## The write-up
 
 - **`title`**: "Findings can be ruled on without losing your place", not "Add finding cursor".
-- **`summary`** is read before anybody presses play, in the same register as the captions.
 - **`not_shown`**: a screen that does not exist yet and a flow that needs a real Claude run or a
   real pull request read very differently to whoever picks this up, so say which.
 
