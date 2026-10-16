@@ -204,9 +204,8 @@ export async function openBrowser(pageUrl) {
       await sleep(300)
     },
 
-    // A trusted wheel, so a demo shows the scroll as an action where `evaluate`'s would not be seen.
-    // Over an element it wheels inside the pane that scrolls it, by however far the element sits from
-    // the middle of that pane's visible part: a wheel at the viewport's edge can miss an inner pane.
+    // A trusted wheel, so a demo shows the scroll as an action. Over an element it wheels the pane that
+    // scrolls it, from the middle of the pane's visible part, or the viewport while the pane is off screen.
     async scroll(target) {
       const { x, y, deltaY } = await evaluate(`
         (() => {
@@ -219,16 +218,25 @@ export async function openBrowser(pageUrl) {
           let pane = el.parentElement
           while (pane && !scrolls(pane)) pane = pane.parentElement
           const box = pane ? pane.getBoundingClientRect() : { left: 0, top: 0, right: innerWidth, bottom: innerHeight }
-          const left = Math.max(box.left, 0)
-          const right = Math.min(box.right, innerWidth)
-          const top = Math.max(box.top, 0)
-          const bottom = Math.min(box.bottom, innerHeight)
+          let left = Math.max(box.left, 0)
+          let right = Math.min(box.right, innerWidth)
+          let top = Math.max(box.top, 0)
+          let bottom = Math.min(box.bottom, innerHeight)
+          const shown = bottom - top >= 2 && right - left >= 2
+          if (!shown) {
+            left = 0
+            top = 0
+            right = innerWidth
+            bottom = innerHeight
+          }
           const r = el.getBoundingClientRect()
           const clamp = (value, min, max) => Math.min(Math.max(value, min), max - 1)
+          // Centering an element the pane hides would scroll the pane past, so its nearest part comes on.
+          const aim = shown ? r.top + r.height / 2 : clamp(r.top + r.height / 2, box.top, box.bottom)
           return {
             x: clamp(r.left + r.width / 2, left, right),
             y: clamp(r.top + r.height / 2, top, bottom),
-            deltaY: r.top + r.height / 2 - (top + bottom) / 2
+            deltaY: aim - (top + bottom) / 2
           }
         })()
       `)

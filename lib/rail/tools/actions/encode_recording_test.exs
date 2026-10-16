@@ -145,17 +145,19 @@ defmodule Rail.Tools.Actions.EncodeRecordingTest do
            """
   end
 
-  # QA's beat 3: the recorder switched user 2.6 s after the upload, which is close enough to chain into the beat.
+  # QA's beat 3: the recorder cut and started setup inside the 1.5 s the upload's beat plays after it, and the
+  # frame painted after the cut is never shown under the upload's line.
   test "setup cut right after a beat's action plays no silence", %{directory: directory} do
     File.write!(Path.join(directory, "frames.jsonl"), """
     {"file": "000000.jpg", "at_ms": 0}
     {"file": "000001.jpg", "at_ms": 75100}
-    {"file": "000002.jpg", "at_ms": 77700}
-    {"file": "000003.jpg", "at_ms": 79200}
-    {"file": "000004.jpg", "at_ms": 95600}
+    {"file": "000002.jpg", "at_ms": 75400}
+    {"file": "000003.jpg", "at_ms": 77700}
+    {"file": "000004.jpg", "at_ms": 79200}
+    {"file": "000005.jpg", "at_ms": 95600}
     """)
 
-    File.write!(Path.join(directory, "cuts.jsonl"), ~s({"at_ms": 77000}\n))
+    File.write!(Path.join(directory, "cuts.jsonl"), ~s({"at_ms": 75300}\n))
 
     File.write!(Path.join(directory, "actions.jsonl"), """
     {"kind": "click", "at_ms": 75026}
@@ -175,11 +177,11 @@ defmodule Rail.Tools.Actions.EncodeRecordingTest do
            duration 1.374
            file 'frames/000001.jpg'
            duration 2.626
-           file 'frames/000003.jpg'
+           file 'frames/000004.jpg'
            duration 0.400
-           file 'frames/000004.jpg'
+           file 'frames/000005.jpg'
            duration 2.400
-           file 'frames/000004.jpg'
+           file 'frames/000005.jpg'
            """
   end
 

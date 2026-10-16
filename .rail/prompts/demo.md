@@ -81,9 +81,13 @@ Anything that only happens in the Docker sandbox or in production goes in `not_s
 
 The captions are what turn a screen recording into a demo.
 
-- **One sentence of about twelve words**, in the words the person watching would use. "Answering
-  the Product agent's three questions in one go", not "clicking the Send answers button". They can
-  see the clicking. What they cannot see is why it matters.
+- **One sentence of about twelve words, said aloud to the person watching beside you.** A whole
+  sentence with a verb, "I", "we" or "you", in the present tense, with contractions where they come
+  naturally and "now" or "next" to move from one beat to the next. Talk to them about the screen,
+  never describe it: "Here on the Overview you can see what's waiting on the team", not "The
+  Overview shows the work waiting on the team", and "Now I'll answer all three of the Product
+  agent's questions at once", not "Answering the Product agent's three questions in one go". They
+  can see the clicking. What they cannot see is why it matters.
 - **Say it just before the action, then act at once.** The caption stays up under the video while
   the picture moves on, and Rail holds the picture only when the next caption would replace one
   still being read. Never wait after a caption.

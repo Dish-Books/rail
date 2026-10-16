@@ -80,6 +80,25 @@ defmodule Rail.Tools.Utils.FollowVoiceOverTest do
             ], [700, 4_400]} = follow_voice_over(frames, [{0, 2_700}, {22_000, 1_000}], [1_000, 6_300, 9_300])
   end
 
+  # QA's take5 beat 3: the recorder cut 340 ms after the upload and switched user, inside the upload's 1.5 s.
+  test "a cut ends the beat before it" do
+    frames = [
+      %{file: "uploading.jpg", at_ms: 0},
+      %{file: "receipt.jpg", at_ms: 73_000},
+      %{file: "switched.jpg", at_ms: 73_471},
+      %{file: "next.jpg", at_ms: 85_000},
+      %{file: "clicked.jpg", at_ms: 87_300}
+    ]
+
+    assert {[
+              %{file: "uploading.jpg", hold_ms: 1_401},
+              %{file: "receipt.jpg", hold_ms: 1_599},
+              %{file: "next.jpg", hold_ms: 372},
+              %{file: "clicked.jpg", hold_ms: 2_428}
+            ], [1_000, 3_000]} =
+             follow_voice_over(frames, [{71_892, 1_000}, {85_203, 1_000}], [72_899, 87_228], [73_239])
+  end
+
   # A form filled field by field and then saved goes on well past its caption, and its Save is the point.
   test "a last beat whose actions follow one another keeps them past 10 s" do
     frames = [%{file: "a.jpg", at_ms: 0}, %{file: "saved.jpg", at_ms: 14_100}]

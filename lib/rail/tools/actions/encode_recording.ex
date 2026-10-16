@@ -21,7 +21,7 @@ defmodule Rail.Tools.Actions.EncodeRecording do
   A voiced take is cut by its lines and the page's actions instead, in
   `Rail.Tools.Utils.FollowVoiceOver`, since a spinner never lets a frame hold.
   What the page did from a recorder's cut to the next caption is setup, so no
-  beat gets it.
+  beat gets it, and a cut also ends the beat before it.
 
   A machine with no ffmpeg is a machine that records but cannot encode. That is
   reported rather than raised: the frames are still there, and whoever reads the
@@ -50,9 +50,15 @@ defmodule Rail.Tools.Actions.EncodeRecording do
   """
   def encode_recording(directory, marks, timing) when timing in [:reading, :spoken] do
     case frames(directory) do
-      [] -> {:error, :nothing_recorded}
-      frames when timing == :reading -> encode(directory, compress_timeline(frames, marks))
-      frames -> encode(directory, follow_voice_over(frames, marks, actions(directory, marks)))
+      [] ->
+        {:error, :nothing_recorded}
+
+      frames when timing == :reading ->
+        encode(directory, compress_timeline(frames, marks))
+
+      frames ->
+        cuts = directory |> written("cuts.jsonl") |> Enum.map(fn %{"at_ms" => cut} -> cut end)
+        encode(directory, follow_voice_over(frames, marks, actions(directory, marks, cuts), cuts))
     end
   end
 
@@ -112,18 +118,16 @@ defmodule Rail.Tools.Actions.EncodeRecording do
 
   # A take recorded before the page reported its actions has none, and each line plays at its caption. A cut
   # with no caption after it runs to the end of the take.
-  defp actions(directory, marks) do
+  defp actions(directory, marks, cuts) do
     said = marks |> Enum.map(fn {at_ms, _for_ms} -> at_ms end) |> Enum.sort()
-
-    cuts =
-      directory
-      |> written("cuts.jsonl")
-      |> Enum.map(fn %{"at_ms" => cut} -> {cut, Enum.find(said, &(&1 >= cut))} end)
+    windows = Enum.map(cuts, fn cut -> {cut, Enum.find(said, &(&1 >= cut))} end)
 
     directory
     |> written("actions.jsonl")
     |> Enum.map(fn %{"at_ms" => at_ms} -> at_ms end)
-    |> Enum.reject(fn at_ms -> Enum.any?(cuts, fn {cut, next} -> at_ms >= cut and (is_nil(next) or at_ms < next) end) end)
+    |> Enum.reject(fn at_ms ->
+      Enum.any?(windows, fn {cut, next} -> at_ms >= cut and (is_nil(next) or at_ms < next) end)
+    end)
   end
 
   # A half-written last line was landing as the recording stopped; it is skipped rather than guessed at.

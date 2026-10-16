@@ -255,7 +255,8 @@ defmodule Rail.Mcp.Utils.McpTools do
       "description" =>
         "Narrate the next beat of the walkthrough. Say it immediately before you do the thing, " <>
           "not after: Rail stamps it against the recording's clock and the caption goes up while " <>
-          "the action happens. One sentence, in the words someone who has never seen this codebase " <>
+          "the action happens. One sentence, spoken to the person watching as a presenter would say it, " <>
+          "in the words someone who has never seen this codebase " <>
           "would use - what is about to happen and why it matters, never the mechanics of how you " <>
           "are clicking it. Name the acceptance criterion in `criterion` when the beat is what " <>
           "proves one; that is what says the walkthrough covered the ticket rather than wandered " <>

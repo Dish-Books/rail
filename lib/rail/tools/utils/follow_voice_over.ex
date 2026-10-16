@@ -21,14 +21,16 @@ defmodule Rail.Tools.Utils.FollowVoiceOver do
 
   @doc """
   Returns `{frames, video_times}` for recorded `frames` - `%{file:, at_ms:}`, in order - `lines`, each `{at_ms,
-  spoken_ms}` a caption said at `at_ms` and how long its line takes to say, and `actions`, the moments the page
-  was acted on, all on the recording's clock.
+  spoken_ms}` a caption said at `at_ms` and how long its line takes to say, `actions`, the moments the page
+  was acted on, and `cuts`, where the recorder started setup, all on the recording's clock.
 
   `frames` comes back as what the video shows, each with a `hold_ms`, and `video_times` is where each line starts
   in the video, in the order the lines were given.
   """
-  def follow_voice_over([_first | _rest] = frames, [_said | _more] = lines, actions) when is_list(actions) do
+  def follow_voice_over([_first | _rest] = frames, [_said | _more] = lines, actions, cuts \\ [])
+      when is_list(actions) and is_list(cuts) do
     beats = beats(lines, Enum.sort(actions))
+    cuts = Enum.sort(cuts)
     %{start: first_start} = hd(beats)
     lead_in = {max(first_start - @pause_ms, 0), first_start, 0}
     nexts = beats |> tl() |> Enum.map(& &1.start) |> Kernel.++([nil])
@@ -37,7 +39,7 @@ defmodule Rail.Tools.Utils.FollowVoiceOver do
       beats
       |> Enum.zip(nexts)
       |> Enum.flat_map_reduce({span(lead_in), %{}}, fn {beat, next_start}, {video_ms, placed} ->
-        pieces = pieces(beat, next_start)
+        pieces = pieces(beat, next_start, cuts)
 
         {pieces, {video_ms + Enum.sum_by(pieces, &span/1), Map.put(placed, beat.index, video_ms)}}
       end)
@@ -84,17 +86,17 @@ defmodule Rail.Tools.Utils.FollowVoiceOver do
     end
   end
 
-  # What the beat keeps of the recording, each piece `{from, to, hold_ms}`, with the hold on the last piece for as
-  # long as the line and its pause outlast what is kept. The last beat's pause comes after whichever ends later.
-  defp pieces(%{actions: []} = beat, _next_start), do: [{beat.start, beat.start, held(beat, 0)}]
+  # Each piece `{from, to, hold_ms}` the beat keeps stops at the next cut, and the last holds while the line and its
+  # pause outlast what is kept. The last beat's pause comes after whichever ends later.
+  defp pieces(%{actions: []} = beat, _next_start, _cuts), do: [{beat.start, beat.start, held(beat, 0)}]
 
-  defp pieces(%{actions: [first | rest]} = beat, next_start) do
+  defp pieces(%{actions: [first | rest]} = beat, next_start, cuts) do
     [{last_from, last_to} | earlier] =
       kept =
-      Enum.reduce(rest, [{beat.start, until(first, next_start)}], fn at_ms, [{from, to} | earlier] = so_far ->
+      Enum.reduce(rest, [{beat.start, until(first, next_start, cuts)}], fn at_ms, [{from, to} | earlier] = so_far ->
         if at_ms <= to,
-          do: [{from, max(to, until(at_ms, next_start))} | earlier],
-          else: [{at_ms, until(at_ms, next_start)} | so_far]
+          do: [{from, max(to, until(at_ms, next_start, cuts))} | earlier],
+          else: [{at_ms, until(at_ms, next_start, cuts)} | so_far]
       end)
 
     kept_ms = Enum.sum_by(kept, fn {from, to} -> to - from end)
@@ -102,8 +104,11 @@ defmodule Rail.Tools.Utils.FollowVoiceOver do
     Enum.reverse([{last_from, last_to, held(beat, kept_ms)} | Enum.map(earlier, fn {from, to} -> {from, to, 0} end)])
   end
 
-  defp until(at_ms, nil), do: at_ms + @after_action_ms
-  defp until(at_ms, next_start), do: min(at_ms + @after_action_ms, next_start)
+  defp until(at_ms, next_start, cuts) do
+    [at_ms + @after_action_ms, next_start, Enum.find(cuts, &(&1 > at_ms))]
+    |> Enum.filter(&is_integer/1)
+    |> Enum.min()
+  end
 
   defp held(%{last?: true} = beat, kept_ms), do: max(beat.spoken_ms, kept_ms) + @pause_ms - kept_ms
   defp held(beat, kept_ms), do: max(beat.spoken_ms + @pause_ms - kept_ms, 0)
