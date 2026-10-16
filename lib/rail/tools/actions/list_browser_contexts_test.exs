@@ -38,7 +38,12 @@ defmodule Rail.Tools.Actions.ListBrowserContextsTest do
   end
 
   test "a Chrome that refuses the question is unknown too" do
-    stub(Browser, :call, fn _connection, "Target.getBrowserContexts", _params -> {:error, "Not allowed"} end)
+    # Chrome answers only once the socket is up, so the refusal waits for it too:
+    # stopping a connection still mid-handshake would outlast the stop's timeout.
+    stub(Browser, :call, fn connection, "Target.getBrowserContexts", _params ->
+      _connected = :sys.get_state(connection)
+      {:error, "Not allowed"}
+    end)
 
     assert Tools.list_browser_contexts() == :unknown
   end

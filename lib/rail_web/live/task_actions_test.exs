@@ -698,6 +698,8 @@ defmodule RailWeb.Live.TaskActionsTest do
     end)
 
     send(view.pid, {:approvals_changed, task.id})
+    # The page hands the reload to the actions as an update of its own, which lands after this render.
+    _settled = render(view)
     render_async(view)
 
     assert has_element?(view, "#task-approvals", "Approved by Priya Raman")
