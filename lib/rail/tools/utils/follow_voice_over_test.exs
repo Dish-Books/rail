@@ -88,6 +88,12 @@ defmodule Rail.Tools.Utils.FollowVoiceOverTest do
              follow_voice_over(frames, [{0, 1_000}], Enum.to_list(2_000..14_000//2_000))
   end
 
+  test "a last beat whose only action comes long after its caption plays at its caption" do
+    frames = [%{file: "a.jpg", at_ms: 0}, %{file: "settings.jpg", at_ms: 30_100}]
+
+    assert {[%{file: "a.jpg", hold_ms: 1_500}], [0]} = follow_voice_over(frames, [{0, 500}], [30_000])
+  end
+
   # Placed in the order said, two said in the same millisecond in the order given, and each comes back where it
   # was asked about. The video ends a second after the last line.
   test "line starts come back in the order given, ties kept in order, and the video ends a second after the last" do

@@ -54,6 +54,8 @@ defmodule Rail.Tools.BrowserRecorderTest do
 
     Phoenix.PubSub.broadcast(Rail.PubSub, topic, {:browser_action, task.id, "demo", "click"})
     Phoenix.PubSub.broadcast(Rail.PubSub, topic, {:browser_frame, task.id, "demo", Base.encode64("painted")})
+    # The clock starts as the recorder takes the frame, which can be after the broadcast returns.
+    _taken = :sys.get_state(recorder)
     Process.sleep(20)
     Phoenix.PubSub.broadcast(Rail.PubSub, topic, {:browser_action, task.id, "demo", "navigate"})
 
