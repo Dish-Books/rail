@@ -5,9 +5,8 @@ defmodule Rail.Tools.Actions.EncodeRecording do
   The frames are already JPEGs, and keeping them would cost tens of megabytes for
   a walkthrough of a couple of minutes. VP9 in a WebM container brings the same
   two minutes down to a few, which is the difference between an artifact a person
-  opens and one they wait for. Nothing is scaled: the browser records at
-  1920x1080 and the video is 1920x1080, because a demo is watched to see the
-  application and a downscale is exactly what makes small text unreadable.
+  opens and one they wait for. The video is 1920x1080, and a frame of another size
+  is fitted inside it and padded, never stretched, so the player never resizes.
 
   Nothing is drawn on top of it either. The captions are a file beside the video
   and the player renders them under it, so every pixel of the recording is a
@@ -21,6 +20,8 @@ defmodule Rail.Tools.Actions.EncodeRecording do
   read - so the video is what was shown rather than how long it took to show it.
   A voiced take is cut by its lines and the page's actions instead, in
   `Rail.Tools.Utils.FollowVoiceOver`, since a spinner never lets a frame hold.
+  What the page did from a recorder's cut to the next caption is setup, so no
+  beat gets it.
 
   A machine with no ffmpeg is a machine that records but cannot encode. That is
   reported rather than raised: the frames are still there, and whoever reads the
@@ -51,7 +52,7 @@ defmodule Rail.Tools.Actions.EncodeRecording do
     case frames(directory) do
       [] -> {:error, :nothing_recorded}
       frames when timing == :reading -> encode(directory, compress_timeline(frames, marks))
-      frames -> encode(directory, follow_voice_over(frames, marks, actions(directory)))
+      frames -> encode(directory, follow_voice_over(frames, marks, actions(directory, marks)))
     end
   end
 
@@ -78,11 +79,11 @@ defmodule Rail.Tools.Actions.EncodeRecording do
     ErlangError -> {:error, :no_ffmpeg}
   end
 
-  # Every frame ffmpeg is handed is 1920x1080 already, so the encoder's only job
-  # is the codec. `-crf 36` with no bitrate is VP9's constant-quality mode, which
-  # is what keeps a mostly-still screen recording small.
+  # A tab painted at two sizes hands ffmpeg frames of both, and a WebM that changes size mid-stream resizes the
+  # player. `-crf 36` with no bitrate is VP9's constant-quality mode, which keeps a mostly-still recording small.
   defp encode(video) do
-    ["-c:v", "libvpx-vp9", "-crf", "36", "-b:v", "0", "-row-mt", "1", "-pix_fmt", "yuv420p", video]
+    ["-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"] ++
+      ["-c:v", "libvpx-vp9", "-crf", "36", "-b:v", "0", "-row-mt", "1", "-pix_fmt", "yuv420p", video]
   end
 
   # One `file`/`duration` pair per frame, plus the last file repeated: the concat
@@ -109,11 +110,20 @@ defmodule Rail.Tools.Actions.EncodeRecording do
     |> Enum.map(fn %{"file" => file, "at_ms" => at_ms} -> %{file: file, at_ms: at_ms} end)
   end
 
-  # A take recorded before the page reported its actions has none, and each line plays at its caption.
-  defp actions(directory) do
+  # A take recorded before the page reported its actions has none, and each line plays at its caption. A cut
+  # with no caption after it runs to the end of the take.
+  defp actions(directory, marks) do
+    said = marks |> Enum.map(fn {at_ms, _for_ms} -> at_ms end) |> Enum.sort()
+
+    cuts =
+      directory
+      |> written("cuts.jsonl")
+      |> Enum.map(fn %{"at_ms" => cut} -> {cut, Enum.find(said, &(&1 >= cut))} end)
+
     directory
     |> written("actions.jsonl")
     |> Enum.map(fn %{"at_ms" => at_ms} -> at_ms end)
+    |> Enum.reject(fn at_ms -> Enum.any?(cuts, fn {cut, next} -> at_ms >= cut and (is_nil(next) or at_ms < next) end) end)
   end
 
   # A half-written last line was landing as the recording stopped; it is skipped rather than guessed at.

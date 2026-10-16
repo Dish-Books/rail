@@ -50,7 +50,8 @@ defmodule Rail.Mcp.Utils.McpTools do
   an agent working out how the application behaves, which is not the demo. So the
   rehearsal happens off camera and the take is what gets recorded. `demo_say` is
   how the agent narrates what it is about to do, stamped against the recording's
-  own clock so the caption is up while the thing happens.
+  own clock so the caption is up while the thing happens. `demo_cut` marks where
+  setup between beats starts, so the voiced video leaves it out.
   """
 
   alias Rail.Roles.Schemas.Role
@@ -272,6 +273,14 @@ defmodule Rail.Mcp.Utils.McpTools do
         },
         "required" => ["text"]
       }
+    },
+    %{
+      "name" => "demo_cut",
+      "description" =>
+        "Mark where you start setting up for the next beat. Call it before you seed data, switch user, reload " <>
+          "or wait between beats: the video leaves out what the page does from here to your next caption. Never " <>
+          "call it between a caption and the action it describes.",
+      "inputSchema" => %{"type" => "object", "properties" => %{}}
     }
   ]
 

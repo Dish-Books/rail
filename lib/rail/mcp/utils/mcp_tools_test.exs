@@ -60,7 +60,7 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
     assert names[:qa] == browser ++ ["qa_plan", "qa_check", "qa_shot", "save_report", "knowledge_search"]
     assert names[:review] == ["save_report", "knowledge_search"]
     assert names[:screens] == browser ++ ["save_screen", "knowledge_search"]
-    assert names[:demo] == browser ++ ["demo_start", "demo_say", "save_demo", "knowledge_search"]
+    assert names[:demo] == browser ++ ["demo_start", "demo_say", "demo_cut", "save_demo", "knowledge_search"]
   end
 
   # A person can ask for the picked design to change, which the review agent saves as Plan did.

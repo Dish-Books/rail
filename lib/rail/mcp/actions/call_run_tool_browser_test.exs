@@ -172,6 +172,21 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     assert log =~ "[demo] say · refused"
   end
 
+  test "a cut is written to the take and the log says when it landed", %{context: context, task: task, run: run} do
+    {:error, {:refused, _not_recording}} = Mcp.call_run_tool(%{context | role: %Role{stage: :demo}}, "demo_cut", %{})
+    {:ok, _rolling} = Mcp.call_run_tool(%{context | role: %Role{stage: :demo}}, "demo_start", %{"browser" => "demo"})
+
+    assert {:ok, %{"content" => [%{"text" => "Cut at 0:00." <> _left_out}]}} =
+             Mcp.call_run_tool(%{context | role: %Role{stage: :demo}}, "demo_cut", %{})
+
+    assert File.exists?(Path.join([task.scratch_path, "demo", "cuts.jsonl"]))
+
+    log = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
+
+    assert log =~ "[demo] cut · refused"
+    assert log =~ "[demo] cut at 0:00"
+  end
+
   # The checklist is written before anything is opened, so neither of these costs
   # a browser.
   test "planning and marking off happen without a browser", %{context: context, task: task, run: run} do

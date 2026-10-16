@@ -31,6 +31,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   import Rail.Mcp.Utils.RunToolBrowserClose
   import Rail.Mcp.Utils.RunToolBrowserConnect
   import Rail.Mcp.Utils.RunToolBrowserProblems
+  import Rail.Mcp.Utils.RunToolDemoCut
   import Rail.Mcp.Utils.RunToolDemoSay
   import Rail.Mcp.Utils.RunToolDemoStart
   import Rail.Mcp.Utils.RunToolKnowledgeSearch
@@ -161,8 +162,8 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   # ten seconds to open is ten seconds of a person watching nothing happen.
   #
   # These are logged once they answer: a plan, mark or filing can be refused and its
-  # line must say so, `browser_problems` has nothing to say first, and a caption's time is the tool's.
-  defp answers_itself?(name), do: name in ["qa_plan", "qa_check", "qa_shot", "browser_problems", "demo_say"]
+  # line must say so, `browser_problems` has nothing to say first, and a caption's or cut's time is the tool's.
+  defp answers_itself?(name), do: name in ["qa_plan", "qa_check", "qa_shot", "browser_problems", "demo_say", "demo_cut"]
 
   # What the browser complained about, counted rather than quoted: the agent has
   # the list, and a watcher wants to know whether there was one.
@@ -176,6 +177,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   # The caption is the agent's and the timestamp is Rail's, so the log carries the
   # words with the moment they landed on rather than the receipt the agent read.
   defp said("demo_say", line, {:ok, "Said at " <> said}), do: "#{hd(String.split(said, "."))} #{line}"
+  defp said("demo_cut", line, {:ok, "Cut at " <> said}), do: "#{line} at #{hd(String.split(said, "."))}"
 
   defp said(_name, line, {:refused, _text}), do: line <> " · refused"
 
@@ -196,6 +198,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp asked("qa_shot", %{"name" => name}) when is_binary(name), do: "shot #{inspect(name)}"
   defp asked("demo_say", %{"text" => text}), do: "say #{inspect(text)}"
   defp asked("demo_say", _arguments), do: "say"
+  defp asked("demo_cut", _arguments), do: "cut"
   defp asked("knowledge_search", %{"query" => query}), do: "search #{inspect(query)}"
   defp asked(name, _arguments), do: name |> String.split("_", parts: 2) |> List.last()
 
@@ -227,6 +230,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp run("save_screen", task, arguments, opts), do: run_tool_save_screen(task, arguments, opts)
   defp run("demo_start", task, arguments, opts), do: run_tool_demo_start(task, arguments, opts)
   defp run("demo_say", task, arguments, opts), do: run_tool_demo_say(task, arguments, opts)
+  defp run("demo_cut", task, arguments, opts), do: run_tool_demo_cut(task, arguments, opts)
   defp run("save_design_option", task, arguments, opts), do: run_tool_save_design_option(task, arguments, opts)
   defp run("save_plan", task, arguments, opts), do: run_tool_save_plan(task, arguments, opts)
   defp run("save_split", task, arguments, opts), do: run_tool_save_split(task, arguments, opts)

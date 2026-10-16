@@ -205,7 +205,8 @@ export async function openBrowser(pageUrl) {
     },
 
     // A trusted wheel, so a demo shows the scroll as an action where `evaluate`'s would not be seen.
-    // Over an element it scrolls by however far the element sits from the middle of the viewport.
+    // Over an element it wheels inside the pane that scrolls it, by however far the element sits from
+    // the middle of that pane's visible part: a wheel at the viewport's edge can miss an inner pane.
     async scroll(target) {
       const { x, y, deltaY } = await evaluate(`
         (() => {
@@ -213,12 +214,21 @@ export async function openBrowser(pageUrl) {
           if (by !== null) return { x: innerWidth / 2, y: innerHeight / 2, deltaY: by }
           const el = ${typeof target === 'string' ? target : 'null'}
           if (!(el instanceof Element)) return { deltaY: null }
+          const scrolls = (node) =>
+            ['auto', 'scroll'].includes(getComputedStyle(node).overflowY) && node.scrollHeight > node.clientHeight
+          let pane = el.parentElement
+          while (pane && !scrolls(pane)) pane = pane.parentElement
+          const box = pane ? pane.getBoundingClientRect() : { left: 0, top: 0, right: innerWidth, bottom: innerHeight }
+          const left = Math.max(box.left, 0)
+          const right = Math.min(box.right, innerWidth)
+          const top = Math.max(box.top, 0)
+          const bottom = Math.min(box.bottom, innerHeight)
           const r = el.getBoundingClientRect()
-          const clamp = (value, max) => Math.min(Math.max(value, 0), max - 1)
+          const clamp = (value, min, max) => Math.min(Math.max(value, min), max - 1)
           return {
-            x: clamp(r.left + r.width / 2, innerWidth),
-            y: clamp(r.top + r.height / 2, innerHeight),
-            deltaY: r.top + r.height / 2 - innerHeight / 2
+            x: clamp(r.left + r.width / 2, left, right),
+            y: clamp(r.top + r.height / 2, top, bottom),
+            deltaY: r.top + r.height / 2 - (top + bottom) / 2
           }
         })()
       `)
