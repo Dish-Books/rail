@@ -223,6 +223,26 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
 
       odd = "You asked: Behind a flag?\nAnswered by Rail from somewhere: Yes."
       assert [%{citation: nil}] = Question.parse_answers_message(odd, lone)
+
+      # A citation holding the words after it ends where the rest of the message still matches.
+      echoed = "You asked: Behind a flag?\nAnswered by Rail from Dana: Yes. Bo's answer, Oct 2: Yes."
+      assert [%{citation: %{by: "Dana: Yes. Bo", date: "Oct 2"}}] = Question.parse_answers_message(echoed, lone)
+    end
+
+    test "reads back a round too long to match as one regex", %{round: [first, second | _rest]} do
+      long = String.duplicate("Which of the grid's columns keeps its filter once the page reloads? ", 60)
+
+      round =
+        for n <- 1..40 do
+          question = if rem(n, 2) == 0, do: second, else: first
+          %{question | id: "qst_#{n}", prompt: "#{n}. #{long}", inserted_at: DateTime.shift(first.inserted_at, second: n)}
+        end
+
+      text = Question.calculate_answers_message(round, %{"lrn_1" => "Dana's answer, Oct 2"})
+
+      assert parsed = Question.parse_answers_message(text, round)
+      assert length(parsed) == 40
+      assert %{citation: %{by: "Dana", date: "Oct 2"}} = Enum.at(parsed, 1)
     end
 
     test "a typed message, a round not yet sent, or answers that differ from the rows read as no round", %{

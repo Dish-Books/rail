@@ -145,22 +145,47 @@ defmodule Rail.Pipeline.Schemas.Question do
   defp parse_round(text, round) do
     citations = Map.new(round, &{&1.suggested_learning_id, @cited})
 
-    pattern =
+    [first | rest] =
       round
       |> calculate_answers_message(citations)
       |> normalized_lines()
-      |> Regex.escape()
-      |> String.replace(@cited, "(.*?)")
+      |> String.split(@cited)
 
-    case Regex.run(Regex.compile!("\\A" <> pattern <> "\\z"), text, capture: :all_but_first) do
-      cited when is_list(cited) ->
-        by_rail = for %__MODULE__{status: :answered, answered_by_rail: true} = question <- round, do: question.id
-        cited = by_rail |> Enum.zip(cited) |> Map.new(fn {id, said} -> {id, citation(said)} end)
-        Enum.map(round, &%{question: &1, citation: cited[&1.id]})
-
-      nil ->
-        nil
+    # Matched piece by piece rather than as one regex, which a long enough round makes too large to compile.
+    with true <- String.starts_with?(text, first),
+         cited when is_list(cited) <- said(String.replace_prefix(text, first, ""), rest) do
+      by_rail = for %__MODULE__{status: :answered, answered_by_rail: true} = question <- round, do: question.id
+      cited = by_rail |> Enum.zip(cited) |> Map.new(fn {id, said} -> {id, citation(said)} end)
+      Enum.map(round, &%{question: &1, citation: cited[&1.id]})
+    else
+      _no_match -> nil
     end
+  end
+
+  # What each citation said, given the text after the last piece matched and the pieces after it: a citation is one
+  # line, and the earliest end that lets the rest match is the one taken, as a lazy capture would.
+  defp said("", []), do: []
+  defp said(_text, []), do: nil
+
+  defp said(text, [piece | rest]) do
+    line_end =
+      text
+      |> :binary.match("\n")
+      |> then(fn
+        {at, _length} -> at
+        :nomatch -> byte_size(text)
+      end)
+
+    0..line_end//1
+    |> Stream.filter(&(text |> binary_part(&1, byte_size(text) - &1) |> String.starts_with?(piece)))
+    |> Enum.find_value(fn at ->
+      after_piece = binary_part(text, at + byte_size(piece), byte_size(text) - at - byte_size(piece))
+
+      case said(after_piece, rest) do
+        cited when is_list(cited) -> [binary_part(text, 0, at) | cited]
+        nil -> nil
+      end
+    end)
   end
 
   defp citation(said) do
