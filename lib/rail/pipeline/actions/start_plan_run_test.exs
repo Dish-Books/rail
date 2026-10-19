@@ -122,7 +122,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     %{project: project, roles: roles, issue: issue}
   end
 
-  test "creates the task at Plan, queues the Linear advance and spawns one process with no subagents", %{
+  test "creates the task at Plan, queues the Linear advance and spawns one process that has its plan checked", %{
     roles: %{plan: %Role{id: role_id}},
     issue: %Issue{id: issue_id} = issue
   } do
@@ -146,6 +146,11 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
       assert prompt =~ "skip them and say so in one line"
       assert prompt =~ "Never plan for all three."
       assert prompt =~ "which one you recommend and why"
+      assert prompt =~ "5. Have the plan checked before you end any turn that saved it"
+      assert prompt =~ "Start one subagent on a clean context to read it against the code."
+      assert prompt =~ "an acceptance criterion no step delivers"
+      assert prompt =~ "One check a turn: what it revised is checked when the next turn saves the plan."
+      assert prompt =~ "A fix the plan check brings is the one change a line nobody commented on can take."
       assert prompt =~ "A part you leave out of a save stays as the last save left it"
       assert prompt =~ "carry it everywhere it reaches before your turn ends"
       assert prompt =~ ~s(A pick arrives as a message that says only "I picked <title> \(<key>\).")
@@ -157,7 +162,6 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
       assert prompt =~ ~s(<link rel="stylesheet" href="#{kit}/phosphor.css">)
 
       refute "--agents" in argv
-      refute prompt =~ "subagent"
       refute prompt =~ "may come from a CDN"
       refute prompt =~ "https://rail.example.com/design-kit"
 
