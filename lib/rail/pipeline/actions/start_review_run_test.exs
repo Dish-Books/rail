@@ -47,7 +47,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
   end
 
   # Each of the others is a run Rail started, so the review agent is spawned alone, on what they reported.
-  test "spawns the review agent on its own model with no subagents, handed the round's reports", %{
+  test "spawns the review agent on its own model with no agents of its own, handed the round's reports", %{
     task: task,
     run: run
   } do
@@ -152,7 +152,12 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
       assert prompt =~
                "One on the next round's plan asks for an adjustment to it: save the revised plan with `save_fix_plan`"
 
-      refute prompt =~ "subagent"
+      assert prompt =~ "You hand work to nobody but the plan check below"
+      assert prompt =~ "6. Have the plan checked before you end any turn that saved it with `save_fix_plan`"
+      assert prompt =~ "a finding ruled Fix or recommended for fixing that no step covers"
+      assert prompt =~ "each comment by its number, have it checked as step 6 says, and end your turn."
+      assert prompt =~ "save the revised plan with `save_fix_plan`, have it checked as step 6 says, and end your turn."
+      assert prompt =~ "and what the check changed in a line each"
       refute prompt =~ "request_merge"
 
       {:ok, %OsProcess{run: spawned}}

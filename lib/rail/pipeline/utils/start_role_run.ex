@@ -1,7 +1,8 @@
 defmodule Rail.Pipeline.Utils.StartRoleRun do
   @moduledoc """
   Starts a role's run on a task: the run is marked running, the worktree made ready, and the role's agent spawned
-  on its own brief. Rail starts every agent this way, one run a role, and none leads another.
+  on its own brief. Rail starts every agent this way, one run a role, and none leads another: the one subagent is
+  the check Plan and the review agent have read each plan they save.
   """
 
   import Rail.Pipeline.Utils.PrepareWorktree
