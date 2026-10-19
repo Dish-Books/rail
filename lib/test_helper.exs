@@ -96,7 +96,9 @@ project =
         "canceled" => "st_canceled"
       },
       linear_workspace_id: "lw_test_seed",
-      clone_path: "/tmp/repos/test-seed"
+      # Under the run's own directory: tasks' worktrees are named for their issue, so a fixed path
+      # is one another suite on the same machine builds and removes too.
+      clone_path: Path.join(run_tmp_dir, "repos/test-seed")
     },
     upsert
   )
@@ -112,7 +114,7 @@ github_project =
       default_branch: "main",
       tracker: :github,
       key: "tgh",
-      clone_path: "/tmp/repos/test-gh"
+      clone_path: Path.join(run_tmp_dir, "repos/test-gh")
     },
     upsert
   )
