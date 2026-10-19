@@ -6,7 +6,8 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
   a fix plan, and the task stays at Review. The round's
   fix plan records the branch's HEAD, so only commits past it count as the planning turn's. With nothing
   to send it reads Finish review, which finishes the review and takes the pull request out of draft. After that, at
-  Finalize and after the merge until cleanup, a Send of comments resumes the review agent on them alone.
+  Finalize and after the merge until cleanup, a Send of comments resumes the review agent on them alone, and a task
+  a teammate marked ready is not ready any more, since changes are coming.
 
   While the round's fix plan waits on approval, a Send carries only what changed since the last one: rulings and
   new comments, for a revised plan. A round that changes down to nothing ends as Finish review does.
@@ -222,6 +223,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
       {overrides, corrections} = Enum.split_with(learned, &is_binary(&1.suppressed_by_id))
       {:ok, _flagged} = Learnings.record_overrides(run.task, overrides)
       {:ok, _learned} = Learnings.record_corrections(run.task, corrections ++ sent.finding ++ sent.diff ++ sent.screen)
+      {:ok, _unmarked} = run.task |> Task.changeset(%{marked_ready_at: nil, marked_ready_by_id: nil}) |> Repo.update()
       sent(run.task, sent, os_process.run)
     else
       {0, []} ->

@@ -624,15 +624,16 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
     end
 
     # Comments stay open until cleanup, and past Review they resume the lead without moving the task.
-    test "after Finish review, at Finalize, a Send of comments resumes the lead on them and leaves the stage", %{
-      task: task,
-      run: run,
-      crash: crash,
-      nit: nit,
-      ada: ada,
-      grace: grace,
-      diff: diff
-    } do
+    test "after Finish review, at Finalize, a Send of comments resumes the lead on them, leaves the stage and unmarks ready",
+         %{
+           task: task,
+           run: run,
+           crash: crash,
+           nit: nit,
+           ada: ada,
+           grace: grace,
+           diff: diff
+         } do
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
       {:ok, _finished} = Pipeline.update_task(task, %{pr_number: nil})
@@ -646,9 +647,13 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
         {:ok, %OsProcess{run: spawned}}
       end)
 
+      {:ok, _marked} =
+        Pipeline.update_task(task, %{marked_ready_at: DateTime.utc_now(), marked_ready_by_id: grace.user.id})
+
       assert {:ok, %Run{status: :running, completed_at: nil}} = Pipeline.start_fix_round(ada, run)
       assert [%{finished_at: %DateTime{}}] = Pipeline.read_review(task)
-      assert %Task{stage: :finalize} = Repo.reload!(task)
+      # Changes are coming, so the teammate's mark no longer holds.
+      assert %Task{stage: :finalize, marked_ready_at: nil, marked_ready_by_id: nil} = Repo.reload!(task)
     end
 
     # The merged branch stays until cleanup, so a comment still reaches the lead, whose commits only go onto it.
