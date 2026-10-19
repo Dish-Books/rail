@@ -494,6 +494,8 @@ defmodule RailWeb.Live.TaskActions do
   defp message(:not_found), do: "This task is not in a project you can open."
   defp message(:plan_not_ready), do: "The plan's owner has not sent it to the tech leads yet."
   defp message(:already_approved), do: "The plan is already approved."
+  defp message({:unanswered_questions, 1}), do: "Answer or dismiss the open question first."
+  defp message({:unanswered_questions, count}), do: "Answer or dismiss the #{count} open questions first."
   defp message(:not_owner), do: "Only the task's owner sends or starts its plan."
   defp message(:up_to_date), do: "The branch is already up to date."
   defp message(:not_retryable), do: "That run is not one to retry now."

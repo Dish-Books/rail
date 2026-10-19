@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -273,6 +274,16 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
     {:ok, working} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
 
     assert {:error, :stage_running} = Pipeline.approve_plan(system_scope(), working)
+  end
+
+  test "nothing is approved or started while a question waits on an answer", %{task: task, run: run} do
+    Repo.insert!(%Question{task_id: task.id, run_id: run.id, prompt: "Which cache?"})
+    Repo.insert!(%Question{task_id: task.id, run_id: run.id, prompt: "Behind a flag?"})
+
+    assert {:error, {:unanswered_questions, 2}} = Pipeline.approve_plan(system_scope(), run)
+    assert {:error, {:unanswered_questions, 2}} = Pipeline.start_plan(system_scope(), run)
+    assert %Task{stage: :plan} = Repo.reload!(task)
+    assert %Round{approved_at: nil} = Pipeline.read_plan(task)
   end
 
   test "a tech lead without the project cannot approve it, and nobody else can approve at all", %{task: task, run: run} do

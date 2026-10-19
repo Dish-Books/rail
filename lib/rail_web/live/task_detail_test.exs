@@ -2068,6 +2068,8 @@ defmodule RailWeb.Live.TaskDetailTest do
             {{:fix_plan_not_waiting, :approved}, "That fix plan is already approved."},
             {{:fix_plan_not_waiting, :revising}, "The lead is revising that fix plan. Nothing started."},
             {:no_fix_plan, "There is no fix plan waiting on approval."},
+            {{:unanswered_questions, 1}, "Answer or dismiss the open question first. Nothing started."},
+            {{:unanswered_questions, 2}, "Answer or dismiss the 2 open questions first. Nothing started."},
             {:stage_running, "Something is still running on this task."}
           ] do
         expect(Pipeline, :approve_fix_plan, fn _scope, _run, 1 -> {:error, reason} end)

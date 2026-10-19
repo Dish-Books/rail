@@ -13,7 +13,8 @@ defmodule Rail.Pipeline.Actions.StartPlan do
 
   @doc """
   Starts the work of the plan the Plan `run` saved as the scope's user. Returns `{:ok, run}`, or `{:error, reason}`:
-  `:not_owner` for anyone but the task's owner, or what the plan is missing.
+  `:not_owner` for anyone but the task's owner, `{:unanswered_questions, count}` while questions wait on an
+  answer, or what the plan is missing.
   """
   def start_plan(%Scope{} = scope, %Run{} = run) do
     start_planned_work(scope, run, :ready, fn task, _round ->

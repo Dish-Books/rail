@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.PlanComment
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -260,12 +261,21 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
     assert [%Oban.Job{}] = all_enqueued(worker: StartEngineer)
   end
 
-  test "an Approve while the review agent works, or with no plan saved, is refused", %{task: task, run: run, ada: ada} do
+  test "an Approve while the review agent works, with a question open, or with no plan saved, is refused", %{
+    task: task,
+    run: run,
+    ada: ada
+  } do
     reject(Tools, :start_os_process, 2)
     {:ok, working} = Pipeline.update_run(run, %{status: :running})
     assert {:error, :stage_running} = Pipeline.approve_fix_plan(ada, working, 1)
 
     {:ok, idle} = Pipeline.update_run(working, %{status: :finished})
+
+    # The plan may turn on the answer, so a question still open holds the Approve too.
+    question = Repo.insert!(%Question{task_id: task.id, run_id: run.id, prompt: "Which cache?"})
+    assert {:error, {:unanswered_questions, 1}} = Pipeline.approve_fix_plan(ada, idle, 1)
+    Repo.update!(Question.changeset(question, %{status: :dismissed}))
     path = Path.join([task.scratch_path, "fix_plans", "AFP-1.json"])
     fix_plan = path |> File.read!() |> Jason.decode!()
     File.write!(path, Jason.encode!(%{fix_plan | "plan" => nil, "version" => 0}))

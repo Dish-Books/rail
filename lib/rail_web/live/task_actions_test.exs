@@ -959,6 +959,8 @@ defmodule RailWeb.Live.TaskActionsTest do
             {:not_authorized, "Only a tech lead can approve a plan."},
             {:not_found, "This task is not in a project you can open."},
             {:already_approved, "The plan is already approved."},
+            {{:unanswered_questions, 1}, "Answer or dismiss the open question first."},
+            {{:unanswered_questions, 3}, "Answer or dismiss the 3 open questions first."},
             {:not_owner, "Only the task's owner sends or starts its plan."},
             {:no_pull_request, "This task has no pull request yet."},
             {:no_ticket, "Plan has not saved a ticket yet."},

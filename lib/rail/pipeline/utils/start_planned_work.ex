@@ -5,7 +5,7 @@ defmodule Rail.Pipeline.Utils.StartPlannedWork do
   where a `StartEngineer` job committed with the move starts the engineer. With a split saved, each child becomes
   a sub-issue with a task of its own instead, the parent moves to Split with its estimate cleared, and an
   `AdvanceSplit` job committed with them starts the children. Unsent plan comments are deleted, since the
-  conversation they would go to closes.
+  conversation they would go to closes. Nothing starts while a question waits on an answer.
 
   Starting is a one-way door. The task row is locked and the next stage claimed inside the same transaction, so a
   second click or a second tab waits on the lock, then finds the task moved on and is refused before anything is
@@ -15,6 +15,7 @@ defmodule Rail.Pipeline.Utils.StartPlannedWork do
   import Ecto.Query
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.BroadcastPlanComments
+  import Rail.Pipeline.Utils.CheckAnswered
   import Rail.Pipeline.Utils.CheckPlan
 
   alias Rail.Issues
@@ -42,6 +43,7 @@ defmodule Rail.Pipeline.Utils.StartPlannedWork do
 
         with true <- Scope.can_access_project?(scope, task.project_id) || {:error, :not_found},
              :ok <- startable(task),
+             :ok <- check_answered(task),
              {:ok, %Round{} = round, design} <- check_plan(task),
              :ok <- allowed.(task, round),
              split = Pipeline.read_split(task),

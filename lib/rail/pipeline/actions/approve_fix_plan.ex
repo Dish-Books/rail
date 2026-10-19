@@ -11,6 +11,7 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlan do
   import Ecto.Query
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.BroadcastPlanComments
+  import Rail.Pipeline.Utils.CheckAnswered
   import Rail.Pipeline.Utils.WriteFixPlan
 
   alias Rail.Issues
@@ -29,7 +30,7 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlan do
   Approves version `version` of the fix plan on `run`, the task's review run, as the scope's user, and queues the
   engineer's start. Returns `{:ok, run}`, or `{:error, reason}`: `{:fix_plan_replaced, saved_at}` when a later
   version was saved, `{:fix_plan_not_waiting, state}` when it is not waiting on approval, `:stage_running` while
-  anything works on the task.
+  anything works on the task, `{:unanswered_questions, count}` while questions wait on an answer.
   """
   def approve_fix_plan(%Scope{} = scope, %Run{} = run, version) when is_integer(version) do
     result =
@@ -40,6 +41,7 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlan do
 
         with true <- Scope.can_access_project?(scope, task.project_id) || {:error, :not_found},
              false <- Task.running?(task) && {:error, :stage_running},
+             :ok <- check_answered(task),
              %FixPlan{} = fix_plan <- Pipeline.read_fix_plan(task) || {:error, :no_fix_plan},
              :ok <- latest(fix_plan, version),
              :waiting <- waiting(FixPlan.state(fix_plan, task, Pipeline.list_findings(task))) do

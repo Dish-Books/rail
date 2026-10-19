@@ -1614,6 +1614,11 @@ defmodule RailWeb.Live.TaskDetail do
   defp message_for(:review_finished), do: "The review is finished, so its rulings are settled."
   defp message_for(:cleaned_up), do: "This task is cleaned up, so it takes no more comments."
   defp message_for(:not_found), do: "That screen is gone: a retake or a cleanup removed it."
+  defp message_for({:unanswered_questions, 1}), do: "Answer or dismiss the open question first. Nothing started."
+
+  defp message_for({:unanswered_questions, count}),
+    do: "Answer or dismiss the #{count} open questions first. Nothing started."
+
   defp message_for(:no_fix_plan), do: "There is no fix plan waiting on approval."
   defp message_for({:fix_plan_not_waiting, :outdated}), do: "A ruling changed since that plan was saved. Nothing started."
   defp message_for({:fix_plan_not_waiting, :approved}), do: "That fix plan is already approved."

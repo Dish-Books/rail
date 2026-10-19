@@ -17,7 +17,8 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
 
   @doc """
   Approves the plan the Plan `run` saved as the scope's user. Returns `{:ok, run}`, or `{:error, reason}`:
-  `:plan_not_ready` while its owner has not sent it, `:already_approved`, or what the plan is missing.
+  `:plan_not_ready` while its owner has not sent it, `:already_approved`, `{:unanswered_questions, count}` while
+  questions wait on an answer, or what the plan is missing.
   """
   def approve_plan(%Scope{} = scope, %Run{} = run) do
     task = Task |> Repo.get!(run.task_id) |> Repo.preload(:issue)
