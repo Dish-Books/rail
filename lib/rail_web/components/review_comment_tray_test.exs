@@ -25,7 +25,7 @@ defmodule RailWeb.Components.ReviewCommentTrayTest do
       ],
       diff: [%DiffComment{id: "dcm_1", path: "lib/a/tray.ex", line: 61, body: "Keep one hint."}],
       screen: [%ScreenComment{id: "scm_1", key: "toolbar", label: "Toolbar", commit: "e52a0bd91", body: "It wraps."}],
-      gate: %{working: false, finished: false, ci_failed: false, saved: true, plan: false}
+      gate: %{working: false, finished: false, ci_failed: false, saved: true, plan: false, undecided: 0}
     }
   end
 
@@ -110,7 +110,7 @@ defmodule RailWeb.Components.ReviewCommentTrayTest do
   end
 
   test "the working hint pulses green" do
-    gate = %{working: true, finished: false, ci_failed: false, saved: true, plan: false}
+    gate = %{working: true, finished: false, ci_failed: false, saved: true, plan: false, undecided: 0}
 
     doc =
       (&ReviewCommentTray.review_comment_tray/1)
@@ -140,6 +140,16 @@ defmodule RailWeb.Components.ReviewCommentTrayTest do
 
     assert [_finish] = Floki.find(doc, "#finish-review[disabled]")
     assert doc |> Floki.find("#review-send-tray-hint") |> Floki.text() =~ "CI failed on the fix commit"
+
+    doc =
+      (&ReviewCommentTray.review_comment_tray/1)
+      |> render_component(%{attrs | gate: %{gate | undecided: 2}})
+      |> Floki.parse_fragment!()
+
+    assert [_finish] = Floki.find(doc, "#finish-review[disabled]")
+
+    assert doc |> Floki.find("#review-send-tray-hint") |> Floki.text() =~
+             "Rule every finding before the review can finish: 2 still need a ruling."
   end
 
   test "empty while the lead works it offers neither Send nor Finish review", %{gate: gate} do

@@ -1170,13 +1170,22 @@ defmodule RailWeb.Live.TaskDetailTest do
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), finding, :fix)
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-    for {reason, said} <- [
-          nothing_to_start: "There is nothing to send: the review is finished.",
-          dispatch_disabled: "Dispatch is off, so the Review lead was not resumed.",
-          stage_running: "The Review lead is working. Send waits until it stops.",
-          invalid_stage: "This task is at Merged, not Review."
-        ] do
-      error = if reason == :invalid_stage, do: {:invalid_stage, :merged}, else: reason
+    for {{reason, said}, index} <-
+          Enum.with_index(
+            nothing_to_start: "There is nothing to send: the review is finished.",
+            dispatch_disabled: "Dispatch is off, so the Review lead was not resumed.",
+            stage_running: "The Review lead is working. Send waits until it stops.",
+            invalid_stage: "This task is at Merged, not Review.",
+            undecided_findings: "1 finding needs a ruling before the review can finish.",
+            undecided_findings: "2 findings need a ruling before the review can finish."
+          ) do
+      error =
+        case {reason, index} do
+          {:invalid_stage, _index} -> {:invalid_stage, :merged}
+          {:undecided_findings, index} -> {:undecided_findings, index - 3}
+          {reason, _index} -> reason
+        end
+
       expect(Pipeline, :start_fix_round, fn _scope, _run -> {:error, error} end)
       view |> element("#send-review-tray") |> render_click()
 

@@ -1524,6 +1524,10 @@ defmodule RailWeb.Live.RunConversation do
   defp tray_message(:nothing_to_start), do: "There is nothing to send: the review is finished."
   defp tray_message(:dispatch_disabled), do: "Dispatch is off, so the Review lead was not resumed."
   defp tray_message(:ci_not_passed), do: "CI has not passed on the fix commit, so the review cannot finish yet."
+
+  defp tray_message({:undecided_findings, count}),
+    do: "#{count} #{if count == 1, do: "finding needs", else: "findings need"} a ruling before the review can finish."
+
   defp tray_message(:cleaned_up), do: "This task is cleaned up, so nothing more can be sent."
   defp tray_message({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not Review."
 

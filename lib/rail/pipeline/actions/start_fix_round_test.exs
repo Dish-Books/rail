@@ -156,6 +156,21 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
     assert {:error, :nothing_to_start} = Pipeline.start_fix_round(system_scope(), run)
   end
 
+  test "nothing ruled Fix leaves the review open while a finding waits on a ruling", %{
+    task: task,
+    run: run,
+    crash: crash,
+    nit: nit
+  } do
+    {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
+    # Recommended Don't fix and never ruled: it is no fix, but nobody has said so.
+    nit |> Ecto.Changeset.change(recommendation: :skip) |> Repo.update!()
+
+    assert {:error, {:undecided_findings, 1}} = Pipeline.start_fix_round(system_scope(), run)
+    assert %Task{stage: :review} = Repo.reload!(task)
+    assert [%{finished_at: nil}] = Pipeline.read_review(task)
+  end
+
   # A chat turn that stopped or failed leaves the lead in progress with its error, which a finished review clears.
   test "Finish review after a stopped or failed chat turn saves the run done, with no error", %{
     task: task,

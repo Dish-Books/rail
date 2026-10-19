@@ -932,7 +932,8 @@ defmodule RailWeb.Live.TaskDetail do
       finished: stage != :review or (passes != [] and List.last(passes).finished_at != nil),
       ci_failed: phase == :ci_failed,
       saved: passes != [],
-      plan: plan
+      plan: plan,
+      undecided: if(stage == :review, do: Enum.count(findings, &Finding.undecided?/1), else: 0)
     }
 
     # The Fix findings went out with the Send, so they come back only if the round ends with them still outstanding.

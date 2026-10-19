@@ -21,7 +21,7 @@ defmodule RailWeb.Components.ReviewCommentTray do
 
   attr :gate, :map,
     required: true,
-    doc: "`%{working:, finished:, ci_failed:, saved:, plan:}`, as the Review stage works it out"
+    doc: "`%{working:, finished:, ci_failed:, saved:, plan:, undecided:}`, as the Review stage works it out"
 
   attr :open, :boolean, default: true
   attr :error, :string, default: nil, doc: "why the last Send was refused"
@@ -41,7 +41,10 @@ defmodule RailWeb.Components.ReviewCommentTray do
       |> assign(:show_finish, count == 0 and not gate.working and not gate.plan)
       |> assign(:mine, comments != [])
       |> assign(:show_rows, assigns.open and count > 0)
-      |> assign(:can_send, not gate.working and gate.saved and (count > 0 or not gate.ci_failed))
+      |> assign(
+        :can_send,
+        not gate.working and gate.saved and (count > 0 or (not gate.ci_failed and gate.undecided == 0))
+      )
       |> assign(:comments, Enum.with_index(comments, 1))
       |> assign(:hint, hint)
       |> assign(:working, working)
@@ -300,6 +303,11 @@ defmodule RailWeb.Components.ReviewCommentTray do
   defp plan_hint(_changes), do: "The fix plan is out of date. Send asks the lead to revise it."
 
   defp empty_hint(%{ci_failed: true}), do: "CI failed on the fix commit"
+
+  defp empty_hint(%{undecided: count}) when count > 0,
+    do:
+      "Rule every finding before the review can finish: #{count} still #{if count == 1, do: "needs", else: "need"} a ruling."
+
   defp empty_hint(_gate), do: "Nothing to fix. Finish review closes the review."
 
   defp ruling(:fix), do: "Fix"

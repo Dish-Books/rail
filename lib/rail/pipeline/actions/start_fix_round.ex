@@ -51,8 +51,8 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
   @doc """
   Sends the Review tray of the scope user on `run`, the task's Review run. Returns `{:ok, run}` as it now stands, or
   `{:error, reason}` while the run works, there is nothing left to start, nothing changed
-  while a fix plan waits, a review with nothing to fix would finish on a commit CI has not passed, or the task is
-  cleaned up or not yet at Review.
+  while a fix plan waits, a review with nothing to fix would finish on a commit CI has not passed or with findings
+  nobody has ruled, or the task is cleaned up or not yet at Review.
   """
   def start_fix_round(%Scope{} = scope, %Run{} = run) do
     run = Run |> Repo.get!(run.id) |> Repo.preload([task: [:issue, :project, :runs]], force: true)
@@ -70,7 +70,8 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
          claimed = claim(scope, run.task),
          comments = claimed.finding ++ claimed.diff ++ claimed.screen,
          :ok <- changed(waiting, changes, comments),
-         :ok <- sendable(run.task, finished?, fix, if(waiting, do: waiting.comments ++ comments, else: comments)) do
+         :ok <- sendable(run.task, finished?, fix, if(waiting, do: waiting.comments ++ comments, else: comments)),
+         :ok <- ruled(finished?, fix, if(waiting, do: waiting.comments ++ comments, else: comments), findings) do
       sent = Map.put(claimed, :fix, fix)
 
       cond do
@@ -112,6 +113,16 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
   end
 
   defp sendable(%Task{}, false, _fix, _comments), do: :ok
+
+  # A Send that would finish the review waits until a person has ruled every finding, so none is left for nobody.
+  defp ruled(false, [], [], findings) do
+    case Enum.count(findings, &Finding.undecided?/1) do
+      0 -> :ok
+      count -> {:error, {:undecided_findings, count}}
+    end
+  end
+
+  defp ruled(_finished, _fix, _comments, _findings), do: :ok
 
   # Claimed before sending, so a second tab's Send finds nothing left to send. Committed rather than held in a
   # transaction: the spawn reads the run from another process, which would not see an uncommitted note.
