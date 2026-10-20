@@ -65,9 +65,8 @@ defmodule Rail.DataCase do
   def stub_agent_spawn(%{real_spawn: true}), do: :ok
 
   def stub_agent_spawn(_context) do
-    # Above Linux's PID_MAX_LIMIT, so a process this stub does not reach that signals it can never hit a real one.
     Mimic.stub(Rail.Tools, :spawn_os_process, fn _executable, _args, _opts ->
-      {:ok, nil, 4_194_304 + System.unique_integer([:positive])}
+      {:ok, nil, System.unique_integer([:positive])}
     end)
 
     Mimic.stub(Rail.Tools.FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)

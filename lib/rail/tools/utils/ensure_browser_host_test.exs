@@ -61,7 +61,7 @@ defmodule Rail.Tools.Utils.EnsureBrowserHostTest do
       assert "--user-data-dir=#{profile}" in args
       assert "--headless=new" in args
       File.write!(Path.join(profile, "DevToolsActivePort"), "#{port}\n/devtools/browser/fresh\n")
-      {:ok, nil, 9_004_242}
+      {:ok, nil, 4242}
     end)
 
     assert {:ok, %{url: "ws://127.0.0.1:" <> _rest, port: ^port}} = ensure_browser_host()

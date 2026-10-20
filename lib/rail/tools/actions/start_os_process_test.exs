@@ -138,7 +138,7 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
 
     expect(Tools, :spawn_os_process, fn _executable, _args, opts ->
       send(test_pid, {:env, Keyword.fetch!(opts, :env)})
-      {:ok, nil, 9_004_242}
+      {:ok, nil, 4242}
     end)
 
     expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
@@ -156,7 +156,7 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
 
     expect(Tools, :spawn_os_process, fn _executable, _args, opts ->
       send(test_pid, {:env, Keyword.fetch!(opts, :env)})
-      {:ok, nil, 9_004_242}
+      {:ok, nil, 4242}
     end)
 
     expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
@@ -172,7 +172,7 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
 
     stub(Tools, :spawn_os_process, fn _executable, _args, opts ->
       send(test_pid, {:env, Keyword.fetch!(opts, :env)})
-      {:ok, nil, 9_004_243}
+      {:ok, nil, 4243}
     end)
 
     stub(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
@@ -316,7 +316,7 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
 
     expect(Tools, :spawn_os_process, fn _executable, args, opts ->
       send(test_pid, {:spawned, args, opts})
-      {:ok, nil, 9_004_245}
+      {:ok, nil, 4245}
     end)
 
     expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
@@ -340,7 +340,7 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
 
     expect(Tools, :spawn_os_process, fn _executable, args, opts ->
       send(test_pid, {:spawned, args, opts})
-      {:ok, nil, 9_004_244}
+      {:ok, nil, 4244}
     end)
 
     expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
@@ -419,7 +419,7 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
            ] = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
 
     Repo.update!(Backend.usage_changeset(signed_out, %{status: :ready}))
-    expect(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:ok, nil, 9_004_242} end)
+    expect(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:ok, nil, 4242} end)
     expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
 
     assert %{^held_id => {:ok, %OsProcess{status: :running}}} = admit_sandboxes()
@@ -508,7 +508,7 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
         launch: "{}"
       })
 
-      expect(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:ok, nil, 9_004_245} end)
+      expect(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:ok, nil, 4245} end)
       expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
 
       assert {:ok, %OsProcess{status: :running}} = Tools.start_os_process(run, ["2"])
@@ -603,7 +603,7 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
     # Each test sets up the accounts it ranks, so the one from the file's setup is gone.
     setup %{backend: backend} do
       Repo.delete!(backend)
-      stub(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:ok, nil, 9_004_242} end)
+      stub(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:ok, nil, 4242} end)
       stub(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
 
       # `hours` from now, so a window's reset reads the way a probe stores it.

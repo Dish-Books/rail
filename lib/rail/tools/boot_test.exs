@@ -163,7 +163,7 @@ defmodule Rail.Tools.BootTest do
       task_id: run.task_id,
       stream_path: stream_path,
       status: :running,
-      os_pid: 9_999_997,
+      os_pid: 999_997,
       stream_offset: byte_size(line1) + 1,
       started_at: DateTime.utc_now()
     })
@@ -194,7 +194,7 @@ defmodule Rail.Tools.BootTest do
     File.write!(stream_path, "#{line1}\n")
     File.write!("#{stream_path}.err", "")
 
-    dead_pid = 9_999_998
+    dead_pid = 999_998
 
     _run =
       %OsProcess{}
@@ -244,7 +244,7 @@ defmodule Rail.Tools.BootTest do
         task_id: run.task_id,
         stream_path: stream_path,
         status: :running,
-        os_pid: 9_999_997,
+        os_pid: 999_997,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
@@ -344,7 +344,7 @@ defmodule Rail.Tools.BootTest do
       task_id: run.task_id,
       stream_path: stream_path,
       status: :finished,
-      os_pid: 9_999_991,
+      os_pid: 999_991,
       started_at: DateTime.utc_now()
     })
 
@@ -405,7 +405,7 @@ defmodule Rail.Tools.BootTest do
       task_id: run1.task_id,
       stream_path: stream1,
       status: :running,
-      os_pid: 9_999_980,
+      os_pid: 999_980,
       started_at: DateTime.utc_now()
     })
 
@@ -437,7 +437,7 @@ defmodule Rail.Tools.BootTest do
       task_id: run2.task_id,
       stream_path: stream2,
       status: :running,
-      os_pid: 9_999_981,
+      os_pid: 999_981,
       started_at: DateTime.utc_now()
     })
 
@@ -465,7 +465,7 @@ defmodule Rail.Tools.BootTest do
       task_id: run3.task_id,
       stream_path: stream3,
       status: :running,
-      os_pid: 9_999_982,
+      os_pid: 999_982,
       started_at: DateTime.utc_now()
     })
 
@@ -490,7 +490,7 @@ defmodule Rail.Tools.BootTest do
         task_id: run4.task_id,
         stream_path: Path.join(tmp_dir, "nonexistent.ndjson"),
         status: :running,
-        os_pid: 9_999_983,
+        os_pid: 999_983,
         started_at: DateTime.utc_now()
       })
 
@@ -517,7 +517,7 @@ defmodule Rail.Tools.BootTest do
       kind: :setup,
       stream_path: stream_path,
       status: :running,
-      os_pid: 9_999_997,
+      os_pid: 999_997,
       started_at: DateTime.utc_now()
     })
     |> Repo.insert!()
@@ -546,7 +546,7 @@ defmodule Rail.Tools.BootTest do
       kind: :setup,
       stream_path: stream_path,
       status: :running,
-      os_pid: 9_999_996,
+      os_pid: 999_996,
       started_at: DateTime.utc_now()
     })
     |> Repo.insert!()
@@ -577,7 +577,7 @@ defmodule Rail.Tools.BootTest do
       kind: :setup,
       stream_path: stream_path,
       status: :running,
-      os_pid: 9_999_995,
+      os_pid: 999_995,
       started_at: DateTime.utc_now()
     })
     |> Repo.insert!()

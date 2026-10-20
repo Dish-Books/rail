@@ -82,7 +82,7 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
         run_id: run.id,
         task_id: task.id,
         role_id: roles[:qa].id,
-        os_pid: 9_001_234,
+        os_pid: 1234,
         stream_path: Path.join(task.scratch_path, "stream.ndjson"),
         status: :running,
         started_at: DateTime.utc_now()
