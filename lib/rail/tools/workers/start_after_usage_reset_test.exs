@@ -88,7 +88,7 @@ defmodule Rail.Tools.Workers.StartAfterUsageResetTest do
 
   test "is done once the turn has started", %{account: account, waiting: waiting} do
     account |> Backend.usage_changeset(%{name: :claude, status: :ready, usage: []}) |> Repo.update!()
-    expect(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:ok, nil, 4251} end)
+    expect(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:ok, nil, 9_004_251} end)
     expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
 
     assert :ok = perform_job(StartAfterUsageReset, %{os_process_id: waiting.id})

@@ -97,7 +97,7 @@ defmodule Rail.Tools.Actions.StartAfterUsageResetTest do
 
     account |> Backend.usage_changeset(%{name: :claude, status: :ready, usage: passed}) |> Repo.update!()
 
-    expect(Tools, :spawn_os_process, fn "/usr/bin/true", ["2"], _opts -> {:ok, nil, 4250} end)
+    expect(Tools, :spawn_os_process, fn "/usr/bin/true", ["2"], _opts -> {:ok, nil, 9_004_250} end)
     expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
 
     assert {:ok, %OsProcess{status: :running, backend_id: ^account_id, launch: nil}} =

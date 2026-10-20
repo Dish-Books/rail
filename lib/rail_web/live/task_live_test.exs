@@ -251,7 +251,7 @@ defmodule RailWeb.TaskLiveTest do
     |> Backend.usage_changeset(%{name: :claude, status: :ready, usage: []})
     |> Repo.update!()
 
-    stub(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:ok, nil, 4270} end)
+    stub(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:ok, nil, 9_004_270} end)
     stub(Rail.Tools.FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
     assert {:ok, %OsProcess{status: :running}} = Tools.start_after_usage_reset(waiting_id)
 

@@ -120,7 +120,7 @@ defmodule Rail.Tools.Actions.GetUsageWaitTest do
     %{id: home_id} = home = ready_backend.([], %{label: "home"})
     reset = at.(5)
 
-    stub(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:ok, nil, 4260} end)
+    stub(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:ok, nil, 9_004_260} end)
     stub(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
     assert {:ok, %OsProcess{id: first_id, backend_id: ^home_id}} = Tools.start_os_process(run, ["2"])
 

@@ -172,7 +172,7 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
 
     stub(Tools, :spawn_os_process, fn _executable, _args, opts ->
       send(test_pid, {:env, Keyword.fetch!(opts, :env)})
-      {:ok, nil, 4243}
+      {:ok, nil, 9_004_243}
     end)
 
     stub(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
@@ -316,7 +316,7 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
 
     expect(Tools, :spawn_os_process, fn _executable, args, opts ->
       send(test_pid, {:spawned, args, opts})
-      {:ok, nil, 4245}
+      {:ok, nil, 9_004_245}
     end)
 
     expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
@@ -340,7 +340,7 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
 
     expect(Tools, :spawn_os_process, fn _executable, args, opts ->
       send(test_pid, {:spawned, args, opts})
-      {:ok, nil, 4244}
+      {:ok, nil, 9_004_244}
     end)
 
     expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
@@ -508,7 +508,7 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
         launch: "{}"
       })
 
-      expect(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:ok, nil, 4245} end)
+      expect(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:ok, nil, 9_004_245} end)
       expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
 
       assert {:ok, %OsProcess{status: :running}} = Tools.start_os_process(run, ["2"])
