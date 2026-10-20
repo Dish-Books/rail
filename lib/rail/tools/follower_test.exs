@@ -814,7 +814,7 @@ defmodule Rail.Tools.FollowerTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
 
     {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(%{os_process | os_pid: 999_999, run: run}, tail_interval_ms: 20)
+      FollowerSupervisor.start_follower(%{os_process | os_pid: 9_999_999, run: run}, tail_interval_ms: 20)
 
     # The follower runs in its own process, so lend it this test's DB connection.
 

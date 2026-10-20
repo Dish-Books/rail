@@ -55,7 +55,7 @@ defmodule Rail.Tools.Workers.ReconcileOsProcessesTest do
         task_id: run.task_id,
         stream_path: stream_path,
         status: :running,
-        os_pid: 999_996,
+        os_pid: 9_999_996,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()

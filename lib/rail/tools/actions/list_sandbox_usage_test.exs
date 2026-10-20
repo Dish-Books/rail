@@ -38,7 +38,7 @@ defmodule Rail.Tools.Actions.ListSandboxUsageTest do
     insert: insert
   } do
     %OsProcess{id: busy_id} = insert.(%{runtime: :docker, container_id: "c-busy"})
-    _beside_rail = insert.(%{runtime: :local, os_pid: 4242})
+    _beside_rail = insert.(%{runtime: :local, os_pid: 9_004_242})
     _unreachable = insert.(%{runtime: :docker, container_id: "c-gone"})
 
     Req.Test.stub(Docker, fn

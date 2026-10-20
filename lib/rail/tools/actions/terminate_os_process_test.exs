@@ -13,7 +13,7 @@ defmodule Rail.Tools.Actions.TerminateOsProcessTest do
     assert Tools.terminate_os_process(pid, grace_period: 100) == :ok
     refute Tools.os_process_alive?(pid)
 
-    assert Tools.terminate_os_process(999_999) == :ok
+    assert Tools.terminate_os_process(9_999_999) == :ok
     assert Tools.terminate_os_process(nil) == :ok
   end
 

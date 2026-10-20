@@ -25,7 +25,7 @@ defmodule Rail.Tools.Schemas.OsProcessTest do
     attrs = %{
       run_id: run_id,
       task_id: task_id,
-      os_pid: 12_345,
+      os_pid: 9_012_345,
       stream_path: "/tmp/rail/streams/test.ndjson",
       status: :running,
       started_at: now
@@ -37,7 +37,7 @@ defmodule Rail.Tools.Schemas.OsProcessTest do
     assert get_change(changeset, :run_id) == run_id
     assert get_change(changeset, :task_id) == task_id
     refute get_field(changeset, :is_chat)
-    assert get_change(changeset, :os_pid) == 12_345
+    assert get_change(changeset, :os_pid) == 9_012_345
     assert get_change(changeset, :status) == :running
   end
 
@@ -92,7 +92,7 @@ defmodule Rail.Tools.Schemas.OsProcessTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        os_pid: 12_345,
+        os_pid: 9_012_345,
         stream_path: "/tmp/rail/streams/#{run.id}.ndjson",
         status: :starting,
         started_at: DateTime.utc_now()
@@ -101,7 +101,7 @@ defmodule Rail.Tools.Schemas.OsProcessTest do
 
     assert String.starts_with?(os_process.id, "proc_")
     assert os_process.run_id == run.id
-    assert os_process.os_pid == 12_345
+    assert os_process.os_pid == 9_012_345
     assert os_process.status == :starting
   end
 
