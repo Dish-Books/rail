@@ -118,6 +118,40 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "[data-qa='task_status_chip']", "Review the plan")
   end
 
+  test "the header's identifier opens the issue in its tracker in a new tab, and stays text with no address", %{
+    conn: conn,
+    task: task,
+    issue: issue
+  } do
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    assert has_element?(view, "span#task-issue-identifier", "TLV-1")
+    refute has_element?(view, "#task-issue-link")
+
+    issue |> Issue.tracker_changeset(%{url: "https://linear.app/tlv/issue/TLV-1"}) |> Repo.update!()
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    assert has_element?(
+             view,
+             "a#task-issue-link[href='https://linear.app/tlv/issue/TLV-1'][target='_blank'][rel='noopener noreferrer'][title='Open TLV-1 in Linear']",
+             "TLV-1"
+           )
+
+    refute has_element?(view, "#task-issue-identifier")
+    assert has_element?(view, "span[data-qa='task_branch_name']", task.worktree_name)
+
+    issue
+    |> Issue.tracker_changeset(%{tracker: :github, url: "https://github.com/org/app/issues/7"})
+    |> Repo.update!()
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    assert has_element?(
+             view,
+             "a#task-issue-link[href='https://github.com/org/app/issues/7'][title='Open TLV-1 in GitHub']",
+             "TLV-1"
+           )
+  end
+
   test "the header reads the task's own stage, not the tab a stage with no run falls back to", %{
     conn: conn,
     task: task,
@@ -5833,6 +5867,29 @@ defmodule RailWeb.TaskLiveTest do
       assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-13")
       assert has_element?(view, "[data-qa='task_detail_title']", "Child TLV-13")
       assert has_element?(view, "#review-pane[data-item=findings]")
+    end
+
+    test "a child's header links the child's own issue on every item, and switching children follows", %{
+      conn: conn,
+      parent: parent,
+      first: first,
+      third: third
+    } do
+      for child <- [first, third] do
+        url = "https://linear.app/tlv/issue/#{child.issue.identifier}"
+        child.issue |> Issue.tracker_changeset(%{url: url}) |> Repo.update!()
+      end
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-13")
+      assert has_element?(view, "[data-qa='task_status_chip']", "failed")
+      assert has_element?(view, "#task-issue-link[href='https://linear.app/tlv/issue/TLV-13']", "TLV-13")
+
+      view |> element("#review-item-plan") |> render_click()
+      assert has_element?(view, "#task-issue-link[href='https://linear.app/tlv/issue/TLV-13']", "TLV-13")
+
+      view |> element("#child-switcher-TLV-11") |> render_click()
+      assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-11")
+      assert has_element?(view, "#task-issue-link[href='https://linear.app/tlv/issue/TLV-11']", "TLV-11")
     end
 
     test "a waiting child's Plan item shows its approved part with no conversation and no branch", %{

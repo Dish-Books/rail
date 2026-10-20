@@ -7,6 +7,7 @@ defmodule RailWeb.Components.TaskLayout do
 
   import RailWeb.Utils.StageLabel, only: [ready_to_merge?: 2, review_waiting?: 2]
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Task
 
   attr :task, :any, required: true
@@ -90,7 +91,24 @@ defmodule RailWeb.Components.TaskLayout do
             </span>
           </span>
 
-          <span data-qa="task_issue_identifier" class="font-mono">
+          <a
+            :if={@task.issue.url not in [nil, ""]}
+            href={@task.issue.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            id="task-issue-link"
+            data-qa="task_issue_identifier"
+            title={"Open #{@task.issue.identifier} in #{Issue.tracker_label(@task.issue.tracker)}"}
+            class="inline-flex items-center gap-1 font-mono text-blue-600 dark:text-blue-400 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 rounded-sm"
+          >
+            <.icon name="pi-ticket" class="size-4" />{@task.issue.identifier}
+          </a>
+          <span
+            :if={@task.issue.url in [nil, ""]}
+            id="task-issue-identifier"
+            data-qa="task_issue_identifier"
+            class="font-mono"
+          >
             {@task.issue.identifier}
           </span>
           <span
