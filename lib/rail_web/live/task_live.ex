@@ -384,13 +384,15 @@ defmodule RailWeb.TaskLive do
   end
 
   # The reader's unsent plan comments moved, in another tab or this one: the Plan stage, or the next round's plan,
-  # draws their markers and the conversation their tray, and each reads its own.
+  # draws their markers, the conversation their tray and the header whether Approve plan waits on them, and each
+  # reads its own.
   def handle_info({:plan_comments_changed, task_id}, socket) do
     # The conversation is drawn under every item, as its trays at least, so it always reads them.
     with %{task_id: ^task_id, open_item: item} <- socket.assigns do
       if item == :plan, do: send_update(PlanStage, id: "plan-stage", reload_comments: true)
       if item == :fix_plan, do: send_update(TaskDetail, id: "task-detail", reload: true)
       send_update(RunConversation, id: "run-conversation", reload_plan_comments: true)
+      send_update(TaskActions, id: "task-actions")
     end
 
     {:noreply, socket}

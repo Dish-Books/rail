@@ -338,6 +338,37 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
       assert %Round{approved_at: %DateTime{}, approved_by_id: ^lead_id, ready_at: nil} = Pipeline.read_plan(task)
     end
 
+    test "waits on the lead's own unsent comments, which approving would delete, not on anyone else's", %{
+      task: task,
+      run: run,
+      owner: owner,
+      lead: %{user: %{id: lead_id}} = lead
+    } do
+      Repo.update_all(from(i in Issue, where: i.id == ^task.issue_id), set: [owner_user_id: lead_id])
+
+      comment = %{
+        target: :plan,
+        element_kind: :section_title,
+        element_label: "Approach",
+        element_occurrence: 1,
+        element_text: "Approach",
+        body: "Why?"
+      }
+
+      {:ok, _theirs} = Pipeline.create_plan_comment(owner, run, comment)
+      {:ok, first} = Pipeline.create_plan_comment(lead, run, comment)
+      {:ok, second} = Pipeline.create_plan_comment(lead, run, %{comment | body: "And how?"})
+
+      assert {:error, {:unsent_comments, 2}} = Pipeline.approve_plan(lead, run)
+      assert %Task{stage: :plan} = Repo.reload!(task)
+      assert [_first, _second] = Pipeline.list_plan_comments(lead, task)
+
+      for comment <- [first, second], do: {:ok, _removed} = Pipeline.delete_plan_comment(lead, comment)
+
+      assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(lead, run)
+      assert Pipeline.list_plan_comments(owner, task) == []
+    end
+
     test "on work its owner already started only records the approval, once, on the first round", %{
       task: %Task{id: task_id} = task,
       run: run,

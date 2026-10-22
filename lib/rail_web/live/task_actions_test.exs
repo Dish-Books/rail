@@ -6,6 +6,7 @@ defmodule RailWeb.Live.TaskActionsTest do
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -947,6 +948,41 @@ defmodule RailWeb.Live.TaskActionsTest do
              )
     end
 
+    test "a tech lead's own unsent comments hold Approve until they are sent or removed", %{
+      conn: conn,
+      plan_task: task,
+      priya: priya
+    } do
+      {:ok, _owner} = Issues.update_issue(task.issue, %{owner_user_id: priya.id})
+
+      comment =
+        Repo.insert!(%PlanComment{
+          task_id: task.id,
+          user_id: priya.id,
+          target: :plan,
+          body: "Why?",
+          element_kind: :section_title,
+          element_label: "Approach",
+          element_occurrence: 1,
+          element_text: "Approach"
+        })
+
+      assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
+
+      assert has_element?(
+               view,
+               "#task-approve-plan[disabled][title='Send or remove your unsent comment first.']",
+               "Approve plan"
+             )
+
+      Repo.delete!(comment)
+      send(view.pid, {:plan_comments_changed, task.id})
+      # The page hands the reload to the actions as an update of its own, which lands after this render.
+      _settled = render(view)
+
+      assert has_element?(view, "#task-approve-plan:not([disabled]):not([title])", "Approve plan")
+    end
+
     test "every refusal of the plan says in a sentence what stopped it", %{
       conn: conn,
       plan_task: task,
@@ -961,6 +997,8 @@ defmodule RailWeb.Live.TaskActionsTest do
             {:already_approved, "The plan is already approved."},
             {{:unanswered_questions, 1}, "Answer or dismiss the open question first."},
             {{:unanswered_questions, 3}, "Answer or dismiss the 3 open questions first."},
+            {{:unsent_comments, 1}, "Send or remove your unsent comment first."},
+            {{:unsent_comments, 2}, "Send or remove your 2 unsent comments first."},
             {:not_owner, "Only the task's owner sends or starts its plan."},
             {:no_pull_request, "This task has no pull request yet."},
             {:no_ticket, "Plan has not saved a ticket yet."},

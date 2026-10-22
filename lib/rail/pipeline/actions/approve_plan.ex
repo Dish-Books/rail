@@ -1,8 +1,9 @@
 defmodule Rail.Pipeline.Actions.ApprovePlan do
   @moduledoc """
   A tech lead approves a task's initial plan. At Plan that starts the work, as `start_planned_work/4` describes,
-  once the task's owner sent the plan or when the lead owns the task. On a task its owner already started without
-  approval it only records the approval, which is what lets the task merge.
+  once the task's owner sent the plan or when the lead owns the task, and once the lead's own unsent plan comments are
+  sent or removed, since starting deletes them. On a task its owner already started without approval it only records
+  the approval, which is what lets the task merge.
   """
 
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
@@ -18,15 +19,29 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
   @doc """
   Approves the plan the Plan `run` saved as the scope's user. Returns `{:ok, run}`, or `{:error, reason}`:
   `:plan_not_ready` while its owner has not sent it, `:already_approved`, `{:unanswered_questions, count}` while
-  questions wait on an answer, or what the plan is missing.
+  questions wait on an answer, `{:unsent_comments, count}` while the scope's user has that many plan comments unsent,
+  or what the plan is missing.
   """
   def approve_plan(%Scope{} = scope, %Run{} = run) do
     task = Task |> Repo.get!(run.task_id) |> Repo.preload(:issue)
 
     if task.stage == :plan,
-      do: start_planned_work(scope, run, :approved, &sent(scope, &1, &2)),
+      do: start_planned_work(scope, run, :approved, &allowed(scope, &1, &2)),
       else: approve_started(scope, task, run)
   end
+
+  defp allowed(%Scope{} = scope, %Task{} = task, %Round{} = round) do
+    with :ok <- check_unsent(scope, task), do: sent(scope, task, round)
+  end
+
+  defp check_unsent(%Scope{user: %{id: _user_id}} = scope, %Task{} = task) do
+    case length(Pipeline.list_plan_comments(scope, task)) do
+      0 -> :ok
+      count -> {:error, {:unsent_comments, count}}
+    end
+  end
+
+  defp check_unsent(%Scope{}, %Task{}), do: :ok
 
   defp sent(%Scope{system: true}, %Task{}, %Round{}), do: :ok
   defp sent(%Scope{}, %Task{}, %Round{ready_at: %DateTime{}}), do: :ok

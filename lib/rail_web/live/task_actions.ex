@@ -3,7 +3,8 @@ defmodule RailWeb.Live.TaskActions do
   Every decision a person makes on a task, in the page's header, shown for where the task is and who is reading:
 
   - the initial plan: its owner sends it to the tech leads or starts without approval, and a tech lead approves
-    it, also after its owner started it, while a "Plan not approved" chip says it has not been;
+    it, also after its owner started it, while a "Plan not approved" chip says it has not been. At Plan, Approve
+    waits on the lead's own unsent plan comments, which approving would delete;
   - a branch the default branch has moved past: Update, which merges it in as a round of its own;
   - a review with nothing left to fix: Ready for review, then a tech lead's Approve and Merge.
 
@@ -113,6 +114,8 @@ defmodule RailWeb.Live.TaskActions do
         phx-click="approve_plan"
         phx-target={@myself}
         phx-disable-with="Approving…"
+        disabled={@unsent_comments > 0}
+        title={@unsent_comments > 0 && unsent(@unsent_comments)}
       >
         <.icon name="pi-check" class="size-4" />Approve plan
       </.button>
@@ -374,6 +377,7 @@ defmodule RailWeb.Live.TaskActions do
     |> assign(:plan_run, plan_run(task))
     |> assign(:failed, failed_run(task))
     |> assign(:plan, plan_actions(task, socket.assigns[:rounds] || Pipeline.list_rounds(task), scope, tech_lead))
+    |> assign_unsent_comments()
     |> assign(:update, task.stage in [:review, :finalize] and task.base_behind and is_nil(task.cleaned_up_at))
     |> assign(
       :tech_leads,
@@ -415,6 +419,16 @@ defmodule RailWeb.Live.TaskActions do
         none
     end
   end
+
+  # Only at Plan does approving delete the reader's unsent comments, so only there does Approve wait on them.
+  defp assign_unsent_comments(%{assigns: %{plan: %{approve: true}, task: %Task{stage: :plan} = task}} = socket) do
+    case socket.assigns.current_scope do
+      %Scope{user: %{}} = scope -> assign(socket, :unsent_comments, length(Pipeline.list_plan_comments(scope, task)))
+      %Scope{} -> assign(socket, :unsent_comments, 0)
+    end
+  end
+
+  defp assign_unsent_comments(socket), do: assign(socket, :unsent_comments, 0)
 
   # Nothing is offered while Plan works, since what would be sent or approved is still changing.
   defp initial_plan(none, _owner?, _lead?, _sent?, true), do: none
@@ -469,6 +483,9 @@ defmodule RailWeb.Live.TaskActions do
     {:noreply, assign(socket, :error, message(reason))}
   end
 
+  defp unsent(1), do: "Send or remove your unsent comment first."
+  defp unsent(count), do: "Send or remove your #{count} unsent comments first."
+
   defp conflicts([_one]), do: "Conflicts in 1 file"
   defp conflicts(paths), do: "Conflicts in #{length(paths)} files"
 
@@ -496,6 +513,7 @@ defmodule RailWeb.Live.TaskActions do
   defp message(:already_approved), do: "The plan is already approved."
   defp message({:unanswered_questions, 1}), do: "Answer or dismiss the open question first."
   defp message({:unanswered_questions, count}), do: "Answer or dismiss the #{count} open questions first."
+  defp message({:unsent_comments, count}), do: unsent(count)
   defp message(:not_owner), do: "Only the task's owner sends or starts its plan."
   defp message(:up_to_date), do: "The branch is already up to date."
   defp message(:not_retryable), do: "That run is not one to retry now."
