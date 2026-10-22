@@ -10,7 +10,8 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
   a teammate marked ready is not ready any more, since changes are coming.
 
   While the round's fix plan waits on approval, a Send carries only what changed since the last one: rulings and
-  new comments, for a revised plan. A round that changes down to nothing ends as Finish review does.
+  new comments, for a revised plan. A round that changes down to nothing ends as Finish review does, and so does a
+  Send on a plan left with nothing to fix and no comment.
 
   What was ruled and sent is learned from, since a ruling can change until now: a Fix on a suppressed finding
   overrides its rule, and every other Fix and every comment is a correction.
@@ -70,7 +71,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
     with :ok <- startable(run.task, passes),
          claimed = claim(scope, run.task),
          comments = claimed.finding ++ claimed.diff ++ claimed.screen,
-         :ok <- changed(waiting, changes, comments),
+         :ok <- changed(waiting, changes, comments, fix),
          :ok <- sendable(run.task, finished?, fix, if(waiting, do: waiting.comments ++ comments, else: comments)),
          :ok <- ruled(finished?, fix, if(waiting, do: waiting.comments ++ comments, else: comments), findings) do
       sent = Map.put(claimed, :fix, fix)
@@ -87,9 +88,11 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
   defp waiting_plan(%FixPlan{approved_at: nil} = fix_plan), do: fix_plan
   defp waiting_plan(_none_or_approved), do: nil
 
-  # A plan waiting on approval is approved or changed: a Send with nothing new would only ask for the same plan.
-  defp changed(%FixPlan{}, [], []), do: {:error, :fix_plan_waiting}
-  defp changed(_waiting, _changes, _comments), do: :ok
+  # A plan waiting on approval is approved or changed: a Send with nothing new would only ask for the same plan. One
+  # whose rulings have left nothing to fix and no comment is no round any more, so the Send finishes the review.
+  defp changed(%FixPlan{comments: []}, [], [], []), do: :ok
+  defp changed(%FixPlan{}, [], [], _fix), do: {:error, :fix_plan_waiting}
+  defp changed(_waiting, _changes, _comments, _fix), do: :ok
 
   defp startable(%Task{cleaned_up_at: %DateTime{}}, _passes), do: {:error, :cleaned_up}
 

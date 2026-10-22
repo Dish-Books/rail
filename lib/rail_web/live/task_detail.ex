@@ -110,10 +110,11 @@ defmodule RailWeb.Live.TaskDetail do
             phx-click="approve_fix_plan"
             phx-value-version={@fix_plan.version}
             phx-target={@myself}
-            phx-disable-with="Approving…"
+            phx-disable-with="Starting…"
             class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
           >
-            <.icon name="pi-check-bold" class="size-4" /> Approve
+            <%!-- Not the PR's Approve, which sits in the same place at Finalize --%>
+            <.icon name="pi-play" class="size-4" /> Start fix round
           </button>
         </:actions>
 
@@ -125,7 +126,7 @@ defmodule RailWeb.Live.TaskDetail do
               <.local_time
                 id="review-error-replaced-at"
                 at={elem(@error, 1)}
-              />. Nothing started. Read the plan on screen, then approve it.
+              />. Nothing started. Read the plan on screen, then start the round.
             </span>
           </p>
         </:alerts>
@@ -884,7 +885,7 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign(:plan_state, plan_state)
     |> assign(:ruling_changes, ruling_changes)
     |> assign(:revising, revising(fix_plan, plan_state, run, ruling_changes))
-    |> assign(:show_approve, approve?(task, run, plan_state, scope))
+    |> assign(:show_approve, approve?(task, plan_state, scope))
   end
 
   # The reader's comments on the next round's plan, numbered as the tray numbers them, under the lines they were
@@ -933,6 +934,10 @@ defmodule RailWeb.Live.TaskDetail do
       ci_failed: phase == :ci_failed,
       saved: passes != [],
       plan: plan,
+      # A waiting plan whose rulings now leave nothing to fix and no comment is finished, not revised, by a Send.
+      emptied:
+        plan and stage == :review and match?(%FixPlan{comments: []}, socket.assigns.fix_plan) and
+          not Enum.any?(findings, &Finding.outstanding?/1),
       undecided: if(stage == :review, do: Enum.count(findings, &Finding.undecided?/1), else: 0)
     }
 
@@ -1265,13 +1270,14 @@ defmodule RailWeb.Live.TaskDetail do
   defp ruling(:fix), do: "Fix"
   defp ruling(:skip), do: "Don't fix"
 
-  # Approve starts the engineer, so it is offered only on the latest plan while it waits and the lead is idle.
-  defp approve?(%Task{} = task, run, :waiting, scope) do
-    task.stage in [:review, :finalize, :merged] and is_nil(task.cleaned_up_at) and not Run.running?(run) and
+  # Approve starts the engineer, so it is offered only on the latest plan while it waits and nothing works on the
+  # task, the checks included, as the approval itself requires.
+  defp approve?(%Task{} = task, :waiting, scope) do
+    task.stage in [:review, :finalize, :merged] and is_nil(task.cleaned_up_at) and not Task.running?(task) and
       match?(%{user: %{}}, scope)
   end
 
-  defp approve?(%Task{}, _run, _plan_state, _scope), do: false
+  defp approve?(%Task{}, _plan_state, _scope), do: false
 
   # Where the round is, read off its runs: the engineer building it and its CI, the agents checking it, and the
   # review agent's plan for the next. Until that plan is approved, nothing changes the branch.
