@@ -421,11 +421,9 @@ defmodule RailWeb.Live.TaskActions do
   end
 
   # Only at Plan does approving delete the reader's unsent comments, so only there does Approve wait on them.
-  defp assign_unsent_comments(%{assigns: %{plan: %{approve: true}, task: %Task{stage: :plan} = task}} = socket) do
-    case socket.assigns.current_scope do
-      %Scope{user: %{}} = scope -> assign(socket, :unsent_comments, length(Pipeline.list_plan_comments(scope, task)))
-      %Scope{} -> assign(socket, :unsent_comments, 0)
-    end
+  defp assign_unsent_comments(%{assigns: %{plan: %{approve: true}, task: %Task{stage: :plan}}} = socket) do
+    %{current_scope: scope, task: task} = socket.assigns
+    assign(socket, :unsent_comments, length(Pipeline.list_plan_comments(scope, task)))
   end
 
   defp assign_unsent_comments(socket), do: assign(socket, :unsent_comments, 0)
