@@ -1,15 +1,13 @@
 defmodule RailWeb.Utils.BuildPlanSheet do
   @moduledoc """
-  The plan sheet `ImplementationPlan.build_sheet/1` makes, with every part of it a reader can comment on as a line,
-  as `build_document_blocks/1` makes them: section titles and text, the In this plan card, files, module cards, and
-  each diagram's source lines and nodes.
+  The plan sheet `ImplementationPlan.build_sheet/1` makes, its cards grouped by where the code goes, with every part a
+  reader can comment on as a line, as `build_document_blocks/1` makes them, numbered in the order the page draws them.
   """
 
   import RailWeb.Utils.BuildDocumentBlocks
+  import RailWeb.Utils.RenderMarkdown
 
   alias Rail.Pipeline.Schemas.ImplementationPlan
-
-  @titles %{change: "Change diagram", call_flow: "Call flow"}
 
   @line %{
     key: nil,
@@ -29,236 +27,183 @@ defmodule RailWeb.Utils.BuildPlanSheet do
   }
 
   @doc """
-  Returns the plan's sheet with its lines, or `nil` when it does not lay out as one. A diagram's `nodes` are the ids it
-  defines, links or declares, and `lines` holds every line in reading order.
+  Returns the plan's sheet with its cards in `groups`, or `nil` when it does not lay out as one. `lines` holds every
+  line in the order the page draws it, the lines of a folded group or a closed sketch included.
   """
   def build_plan_sheet(content) when is_binary(content) do
     case ImplementationPlan.build_sheet(content) do
-      %{} = sheet -> sheet |> add_lines() |> number_lines()
+      %{} = sheet -> lay_out(sheet)
       nil -> nil
     end
   end
 
-  # Each part's lines, labelled as the page names them; their keys and occurrences come once all are in.
-  defp add_lines(sheet) do
-    summary = summary(sheet)
+  defp lay_out(sheet) do
+    groups = sheet.cards |> Enum.group_by(&group/1) |> then(&order_groups(sheet.cards, &1))
+    cards = groups |> Enum.flat_map(& &1.cards) |> Enum.with_index(1)
 
-    Map.merge(
-      %{
-        sheet
-        | diagrams: Enum.map(sheet.diagrams, &diagram_lines/1),
-          files: Enum.map(sheet.files, &Map.put(&1, :line, line(:file, &1.path, "File #{&1.number}"))),
-          modules: Enum.map(sheet.modules, &module_lines/1),
-          rest: Enum.map(sheet.rest, &Map.merge(&1, section_lines(&1.title, &1.body)))
-      },
-      %{
-        approach_lines: section_lines("Approach", sheet.approach),
-        no_diagrams_line: sheet.no_diagrams && line(:paragraph, sheet.no_diagrams, "Approach, no diagrams"),
-        summary: summary,
-        files_title: line(:section_title, "File-level changes", "File-level changes"),
-        program_title: line(:section_title, "Program design", "Program design"),
-        verification_lines: sheet.verification && section_lines("Verification", sheet.verification),
-        assumptions_lines: sheet.assumptions && section_lines("Assumptions", sheet.assumptions)
-      }
-    )
-  end
+    {approach, counts} = section("Approach", sheet.approach, %{})
+    {data_changes, counts} = items("Data changes", sheet.data_changes, &"Data change #{&1}", counts)
+    {decisions, counts} = items("Decisions", sheet.decisions, &"Decisions, item #{&1}", counts)
+    {changes_title, counts} = number(line(:section_title, "Changes", "Changes"), counts)
+    {cards, counts} = Enum.map_reduce(cards, counts, &card/2)
+    {criteria, counts} = criteria(sheet.criteria, counts)
+    {verification, _counts} = section("Verification", sheet.verification, counts)
 
-  # What the In this plan card says, worded here so each line is one a reader can comment on.
-  defp summary(sheet) do
-    unlisted =
-      Enum.count(sheet.modules, &(not MapSet.member?(MapSet.new(sheet.files, fn file -> file.path end), &1.path)))
+    by_path = Map.new(cards, &{&1.path, &1})
+    groups = Enum.map(groups, fn group -> %{group | cards: Enum.map(group.cards, &Map.fetch!(by_path, &1.path))} end)
 
-    kinds = Enum.map(sheet.diagrams, & &1.kind)
-
-    tally =
-      Enum.map_join(
-        [{length(sheet.files), "file"}, {length(sheet.modules), "module"}, {length(sheet.diagrams), "diagram"}],
-        " · ",
-        fn {count, noun} -> "#{count} #{if count == 1, do: noun, else: noun <> "s"}" end
-      )
-
-    lines =
-      [
-        {[:call_flow, :change] -- kinds == [], :check, "Change diagram and call flow"},
-        {is_binary(sheet.no_diagrams), :absent, "No diagrams, as the plan explains"},
-        {sheet.modules != [] and unlisted == 0, :check, "Every module in Program design is in File-level changes"},
-        {unlisted == 1, :warning, "1 module in Program design is not in File-level changes"},
-        {unlisted > 1, :warning, "#{unlisted} modules in Program design are not in File-level changes"},
-        {sheet.modules == [], :absent, "No program design: no application code changes"}
-      ]
-      |> Enum.filter(&elem(&1, 0))
-      |> Enum.with_index(2)
-      |> Enum.map(fn {{true, tone, text}, number} ->
-        %{tone: tone, line: line(:summary, text, "In this plan, line #{number}")}
-      end)
-
-    %{tally: line(:summary, tally, "In this plan, line 1"), lines: lines}
-  end
-
-  defp section_lines(title, markdown) do
-    %{
-      title_line: title && line(:section_title, title, title),
-      lines: Enum.map(build_document_blocks(markdown || ""), &%{&1 | label: within(title, &1.label)})
+    sheet = %{
+      approach: approach,
+      data_changes: data_changes,
+      decisions: decisions,
+      changes_title: changes_title,
+      groups: groups,
+      cards: cards,
+      criteria: criteria,
+      verification: verification
     }
-  end
 
-  defp within(nil, label), do: label
-  defp within(title, label), do: "#{title}, #{String.downcase(String.first(label))}#{String.slice(label, 1..-1//1)}"
-
-  defp diagram_lines(%{kind: kind, source: source} = diagram) do
-    title = Map.fetch!(@titles, kind)
-    sources = source |> String.trim_trailing("\n") |> String.split("\n")
-    last = length(sources)
-
-    Map.merge(diagram, %{
-      source_lines:
-        sources
-        |> Enum.with_index(1)
-        |> Enum.map(fn {text, number} ->
-          Map.merge(line(:source, text, "#{title} line #{number}"), %{
-            number: number,
-            first?: number == 1,
-            last?: number == last
-          })
-        end),
-      nodes: source |> node_ids() |> Enum.map(&line(:node, &1, "#{title} node"))
-    })
-  end
-
-  defp module_lines(%{name: name, path: path, signatures: signatures} = module) do
-    short = name |> String.split(".") |> List.last()
-
-    signature_lines =
-      for line <- build_document_blocks(signatures) do
-        if line.kind == :code,
-          do: %{line | kind: :signature, label: "#{short} line #{line.number}"},
-          else: %{line | label: within(short, line.label)}
-      end
-
-    Map.merge(module, %{
-      name_line: line(:module, name, name),
-      path_line: path && line(:module, path, "#{short} file"),
-      signature_lines: signature_lines
-    })
-  end
-
-  defp line(kind, text, label), do: Map.merge(@line, %{kind: kind, text: text, label: label})
-
-  # The ids Mermaid draws a node for: every one a flowchart defines or links, and every participant a sequence
-  # diagram declares or messages. A line it cannot read adds none, so that node only goes without its +.
-  defp node_ids(source) do
-    [header | body] = source |> String.split("\n") |> Enum.map(&String.trim/1)
-
-    ids =
-      if String.starts_with?(header, "sequenceDiagram"),
-        do: Enum.flat_map(body, &participants/1),
-        else: Enum.flat_map(body, &flowchart_ids/1)
-
-    Enum.uniq(ids)
-  end
-
-  defp participants(line) do
-    cond do
-      match = Regex.run(~r/\A(?:participant|actor)\s+(\S+?)(?:\s+as\s+.*)?\z/, line) ->
-        [Enum.at(match, 1)]
-
-      match =
-          Regex.run(
-            ~r/\A([^\s:+-][^:]*?)\s*(?:<<-->>|<<->>|-->>|->>|--x|-x|--\)|-\)|-->|->)\s*[+-]?\s*([^:]+?)\s*:/,
-            line
-          ) ->
-        [Enum.at(match, 1), Enum.at(match, 2)]
-
-      true ->
-        []
-    end
-  end
-
-  @flowchart_skip ~r/\A(%%|classDef\s|class\s|style\s|linkStyle\s|click\s|subgraph\b|end\b|direction\s|flowchart\b|graph\b)/
-
-  defp flowchart_ids(line) do
-    if line == "" or Regex.match?(@flowchart_skip, line) do
-      []
-    else
-      line
-      |> String.replace(~r/"[^"]*"/, "")
-      |> String.replace(~r/\|[^|]*\|/, "")
-      |> String.replace(~r/(?:--|==|-\.)\s[^-=.>]*?\s*(?:-->|---|==>|===|\.->|\.-)/, " --> ")
-      |> String.replace(~r/(?<=\w)(\[|\(|\{|>)[^\]\)\}]*(\]|\)|\})+/, "")
-      |> String.replace(~r/:::[\w-]+/, "")
-      |> String.split(~r/\s*(?:&|<?(?:-{2,}|={2,}|-\.+-?|~{3,})[->ox]?)\s*/)
-      |> Enum.map(&String.trim/1)
-      |> Enum.filter(&Regex.match?(~r/\A[A-Za-z0-9_][\w-]*\z/, &1))
-    end
-  end
-
-  # Numbered across the whole plan, in the order it reads, so lines that read the same are told apart.
-  defp number_lines(sheet) do
-    parts = [
-      :approach_lines,
-      :no_diagrams_line,
-      :summary,
-      :diagrams,
-      :files_title,
-      :files,
-      :program_title,
-      :modules,
-      :verification_lines,
-      :assumptions_lines,
-      :rest
-    ]
-
-    {sheet, _counts} = number_in(sheet, parts, %{})
     Map.put(sheet, :lines, collect(sheet))
   end
 
-  defp number(nil, counts), do: {nil, counts}
-
-  defp number(%{lines: lines, title_line: title} = section, counts) do
-    {title, counts} = number(title, counts)
-    {lines, counts} = number(lines, counts)
-    {%{section | title_line: title, lines: lines}, counts}
+  # Each context of `lib/rail` is a group, as are the web, migrations, prompts and assets; anything else goes by the
+  # first directory in its path.
+  defp group(%{path: path}) do
+    case Path.split(path) do
+      ["lib", "rail", context | _rest] -> {Path.rootname(context), "lib/rail/#{Path.rootname(context)}"}
+      ["lib", "rail_web" | _rest] -> {"web", "lib/rail_web"}
+      ["priv", "repo", "migrations" | _rest] -> {"migrations", "priv/repo/migrations"}
+      [".rail", "prompts" | _rest] -> {"prompts", ".rail/prompts"}
+      ["assets" | _rest] -> {"assets", "assets"}
+      [_file] -> {"root", "."}
+      [directory | _rest] -> {directory, directory}
+    end
   end
 
-  defp number(list, counts) when is_list(list), do: Enum.map_reduce(list, counts, &number/2)
-  defp number(%{tally: _tally} = summary, counts), do: number_in(summary, [:tally, :lines], counts)
-  defp number(%{tone: _tone} = summary, counts), do: number_in(summary, [:line], counts)
-  defp number(%{source_lines: _sources} = diagram, counts), do: number_in(diagram, [:source_lines, :nodes], counts)
-  defp number(%{path: _path, line: _line} = file, counts), do: number_in(file, [:line], counts)
+  # In the order each group first appears in the plan, and each group's cards in the plan's order.
+  defp order_groups(cards, grouped) do
+    cards
+    |> Enum.map(&group/1)
+    |> Enum.uniq()
+    |> Enum.map(fn {name, directory} = key ->
+      %{
+        name: name,
+        slug: name |> String.downcase() |> String.replace(~r/[^a-z0-9]+/, "-") |> String.trim("-"),
+        directory: directory,
+        cards: Map.fetch!(grouped, key)
+      }
+    end)
+  end
 
-  defp number(%{name_line: _name} = module, counts),
-    do: number_in(module, [:name_line, :path_line, :signature_lines], counts)
+  defp section(_title, nil, counts), do: {nil, counts}
 
+  defp section(title, markdown, counts) do
+    {title_line, counts} = number(line(:section_title, title, title), counts)
+
+    {lines, counts} =
+      markdown |> build_document_blocks() |> Enum.map_reduce(counts, &number(%{&1 | label: within(title, &1.label)}, &2))
+
+    {%{title_line: title_line, lines: lines}, counts}
+  end
+
+  defp items(_title, [], _label, counts), do: {nil, counts}
+
+  defp items(title, items, label, counts) do
+    {title_line, counts} = number(line(:section_title, title, title), counts)
+
+    {items, counts} =
+      items
+      |> Enum.with_index(1)
+      |> Enum.map_reduce(counts, fn {item, position}, counts ->
+        [line | _nested] = build_document_blocks(item.markdown)
+        {line, counts} = number(%{line | label: label.(position)}, counts)
+        {Map.merge(item, %{line: line, html: render_markdown(item[:text] || item[:description])}), counts}
+      end)
+
+    {%{title_line: title_line, items: items}, counts}
+  end
+
+  defp card({card, number}, counts) do
+    file = "File #{number}"
+    {file_line, counts} = number(line(:file, card.path, file), counts)
+
+    {prose, counts} =
+      card.prose |> build_document_blocks() |> Enum.map_reduce(counts, &number(%{&1 | label: within(file, &1.label)}, &2))
+
+    {signatures, counts} = code_lines(card.signatures, :signature, "#{file}, signature line", counts)
+    {sketch, counts} = code_lines(card.sketch, :code, "#{file}, sketch line", counts)
+
+    {Map.merge(card, %{number: number, line: file_line, prose: prose, signatures: signatures, sketch: sketch}), counts}
+  end
+
+  defp code_lines(nil, _kind, _label, counts), do: {[], counts}
+
+  defp code_lines(fenced, kind, label, counts) do
+    fenced
+    |> build_document_blocks()
+    |> Enum.map_reduce(counts, &number(%{&1 | kind: kind, label: "#{label} #{&1.number}"}, &2))
+  end
+
+  # A row per criterion the plan answers, its cells as a table's would be, the ticket's words for it drawn by the page.
+  defp criteria([], counts), do: {nil, counts}
+
+  defp criteria(criteria, counts) do
+    {title_line, counts} = number(line(:section_title, "Acceptance criteria", "Acceptance criteria"), counts)
+    last = length(criteria) - 1
+
+    {rows, counts} =
+      criteria
+      |> Enum.with_index()
+      |> Enum.map_reduce(counts, fn {criterion, index}, counts ->
+        names = Enum.map([criterion.files, criterion.tests], fn paths -> Enum.map(paths, &Path.basename/1) end)
+        text = Enum.join(["#{criterion.number}" | Enum.map(names, &Enum.join(&1, " "))], " | ")
+
+        row =
+          Map.merge(line(:table_row, text, "Criterion #{criterion.number}"), %{
+            cells: Enum.map(["#{criterion.number}" | Enum.map(names, &code/1)], &render_markdown/1),
+            columns: 3,
+            first?: index == 0,
+            last?: index == last
+          })
+
+        {row, counts} = number(row, counts)
+        {Map.put(criterion, :line, row), counts}
+      end)
+
+    {%{title_line: title_line, rows: rows}, counts}
+  end
+
+  # Named by their file alone, as the cards above give each its whole path, one to a line.
+  defp code(names), do: Enum.map_join(names, "\\\n", &"`#{&1}`")
+
+  defp within(title, label), do: "#{title}, #{String.downcase(String.first(label))}#{String.slice(label, 1..-1//1)}"
+
+  defp line(kind, text, label), do: Map.merge(@line, %{kind: kind, text: text, label: label})
+
+  # Numbered across the whole plan, in the order it is drawn, so lines that read the same are told apart.
   defp number(%{kind: kind, text: text} = line, counts) do
     occurrence = Map.get(counts, {kind, text}, 0) + 1
     key = "#{kind}-#{:erlang.phash2({text, occurrence})}"
     {%{line | occurrence: occurrence, key: key}, Map.put(counts, {kind, text}, occurrence)}
   end
 
-  defp number_in(map, fields, counts) do
-    Enum.reduce(fields, {map, counts}, fn field, {map, counts} ->
-      {value, counts} = number(Map.fetch!(map, field), counts)
-      {Map.put(map, field, value), counts}
-    end)
-  end
-
   defp collect(sheet) do
     [
-      sheet.approach_lines.title_line,
-      sheet.approach_lines.lines,
-      sheet.no_diagrams_line,
-      sheet.summary.tally,
-      Enum.map(sheet.summary.lines, & &1.line),
-      Enum.map(sheet.diagrams, &[&1.source_lines, &1.nodes]),
-      sheet.files_title,
-      Enum.map(sheet.files, & &1.line),
-      sheet.program_title,
-      Enum.map(sheet.modules, &[&1.name_line, &1.path_line, &1.signature_lines]),
-      sheet.verification_lines && [sheet.verification_lines.title_line, sheet.verification_lines.lines],
-      sheet.assumptions_lines && [sheet.assumptions_lines.title_line, sheet.assumptions_lines.lines],
-      Enum.map(sheet.rest, &[&1.title_line, &1.lines])
+      section_lines(sheet.approach),
+      items_lines(sheet.data_changes),
+      items_lines(sheet.decisions),
+      sheet.changes_title,
+      Enum.map(sheet.cards, &[&1.line, &1.prose, &1.signatures, &1.sketch]),
+      sheet.criteria && [sheet.criteria.title_line, Enum.map(sheet.criteria.rows, & &1.line)],
+      section_lines(sheet.verification)
     ]
     |> List.flatten()
     |> Enum.reject(&is_nil/1)
   end
+
+  defp section_lines(nil), do: nil
+  defp section_lines(section), do: [section.title_line, section.lines]
+
+  defp items_lines(nil), do: nil
+  defp items_lines(section), do: [section.title_line, Enum.map(section.items, & &1.line)]
 end

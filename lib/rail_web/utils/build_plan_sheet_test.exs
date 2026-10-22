@@ -4,83 +4,157 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
   import RailTest.Helpers
   import RailWeb.Utils.BuildPlanSheet
 
-  test "every section title, summary line, file entry, module card line and source line is a line" do
-    assert %{
-             lines: lines,
-             summary: %{tally: tally, lines: summary},
-             files: [first | _files],
-             modules: [action | _modules]
-           } =
-             build_plan_sheet(sheet_plan())
+  test "cards fall into groups in the order each first appears, and File N follows the order they are drawn" do
+    plan =
+      String.replace(sheet_plan(), "### Acceptance criteria", """
+      #### `.rail/prompts/plan.md`
 
-    assert %{kind: :summary, label: "In this plan, line 1", text: "2 files · 2 modules · 2 diagrams"} = tally
+      Says so.
+
+      #### `assets/js/app.js`
+
+      Registers nothing new.
+
+      #### `test/support/helpers.ex`
+
+      Helps.
+
+      #### `mix.exs`
+
+      Pins it.
+
+      ### Acceptance criteria
+      """)
+
+    assert %{groups: groups, cards: cards} = build_plan_sheet(plan)
 
     assert [
-             %{tone: :check, line: %{label: "In this plan, line 2", text: "Change diagram and call flow"}},
-             %{tone: :check, line: %{label: "In this plan, line 3", text: "Every module in Program design" <> _rest}}
-           ] = summary
+             {"pipeline", "pipeline", "lib/rail/pipeline",
+              [
+                "lib/rail/pipeline/actions/send_back_to_architect.ex",
+                "lib/rail/pipeline.ex",
+                "lib/rail/pipeline/actions/old_send_back.ex"
+              ]},
+             {"web", "web", "lib/rail_web", ["lib/rail_web/live/review_stage.ex"]},
+             {"migrations", "migrations", "priv/repo/migrations", [_migration]},
+             {"prompts", "prompts", ".rail/prompts", [".rail/prompts/plan.md"]},
+             {"assets", "assets", "assets", ["assets/js/app.js"]},
+             {"test", "test", "test", ["test/support/helpers.ex"]},
+             {"root", "root", ".", ["mix.exs"]}
+           ] = Enum.map(groups, &{&1.name, &1.slug, &1.directory, Enum.map(&1.cards, fn card -> card.path end)})
 
-    assert %{line: %{kind: :file, label: "File 1", text: "lib/rail/pipeline/actions/send_back_to_architect.ex"}} = first
+    assert [
+             {1, "lib/rail/pipeline/actions/send_back_to_architect.ex", "File 1"},
+             {2, "lib/rail/pipeline.ex", "File 2"},
+             {3, "lib/rail/pipeline/actions/old_send_back.ex", "File 3"},
+             {4, "lib/rail_web/live/review_stage.ex", "File 4"} | _rest
+           ] = Enum.map(cards, &{&1.number, &1.path, &1.line.label})
 
-    assert %{
-             name_line: %{kind: :module, text: "Rail.Pipeline.Actions.SendBackToArchitect"},
-             path_line: %{kind: :module, label: "SendBackToArchitect file"},
-             signature_lines: [%{kind: :signature, label: "SendBackToArchitect line 1", number: 1}]
-           } = action
+    assert %{line: %{label: "File 2"}} = groups |> hd() |> Map.fetch!(:cards) |> Enum.at(1)
+  end
 
-    labels = Enum.map(lines, & &1.label)
+  test "the lines hold every part in the order it is drawn, the sketch's included, each with a key of its own" do
+    assert %{lines: lines} = build_plan_sheet(sheet_plan())
 
-    for label <- [
-          "Approach",
-          "Approach, paragraph 1",
-          "File-level changes",
-          "Program design",
-          "Verification",
-          "Verification, item 1",
-          "Assumptions",
-          "Assumptions, item 1",
-          "Change diagram line 2",
-          "Call flow line 5",
-          "File 2",
-          "Pipeline line 1"
-        ] do
-      assert label in labels
-    end
+    assert [
+             {:section_title, "Approach"},
+             {:paragraph, "Approach, paragraph 1"},
+             {:section_title, "Data changes"},
+             {:list_item, "Data change 1"},
+             {:section_title, "Decisions"},
+             {:list_item, "Decisions, item 1"},
+             {:list_item, "Decisions, item 2"},
+             {:list_item, "Decisions, item 3"},
+             {:section_title, "Changes"},
+             {:file, "File 1"},
+             {:paragraph, "File 1, paragraph 1"},
+             {:signature, "File 1, signature line 1"},
+             {:code, "File 1, sketch line 1"},
+             {:code, "File 1, sketch line 2"},
+             {:code, "File 1, sketch line 3"},
+             {:file, "File 2"},
+             {:paragraph, "File 2, paragraph 1"},
+             {:signature, "File 2, signature line 1"},
+             {:file, "File 3"},
+             {:paragraph, "File 3, paragraph 1"},
+             {:file, "File 4"},
+             {:paragraph, "File 4, paragraph 1"},
+             {:file, "File 5"},
+             {:paragraph, "File 5, paragraph 1"},
+             {:section_title, "Acceptance criteria"},
+             {:table_row, "Criterion 1"},
+             {:table_row, "Criterion 3"},
+             {:section_title, "Verification"},
+             {:list_item, "Verification, item 1"}
+           ] = Enum.map(lines, &{&1.kind, &1.label})
 
     assert lines |> Enum.map(& &1.key) |> Enum.uniq() |> length() == length(lines)
   end
 
-  test "a flowchart's nodes, those only linked included, and a sequence diagram's participants come back by id" do
+  test "a decision and a data change keep their kind beside their own words, and the line reads as the plan does" do
     assert %{
-             diagrams: [
-               %{nodes: [%{text: "RS", kind: :node, label: "Change diagram node"}, %{text: "P"}, %{text: "SB"}]},
-               %{
-                 nodes: [
-                   %{text: "You", label: "Call flow node", occurrence: 1},
-                   %{text: "RS", occurrence: 2},
-                   %{text: "SB", occurrence: 2}
-                 ]
-               }
-             ]
+             data_changes: %{
+               items: [
+                 %{
+                   kind: "New column",
+                   name: "tasks.sent_back_note",
+                   html: "<p>text, null until a task is sent back.</p>",
+                   line: %{text: "New column tasks.sent_back_note: text, null until a task is sent back."}
+                 }
+               ]
+             },
+             decisions: %{
+               items: [
+                 %{kind: :decision, html: "<p>the note is kept on the task" <> _decision},
+                 %{kind: :ruled_out, line: %{text: "Ruled out: a table of send-backs with their history."}},
+                 %{kind: :assumption}
+               ]
+             }
            } = build_plan_sheet(sheet_plan())
   end
 
-  test "a flowchart's subgraphs, styles, edge texts and shapes add no node of their own" do
-    plan =
-      String.replace(sheet_plan(), ~s(  P --> SB["SendBackToArchitect"]:::new\n), """
-        P --> SB["SendBackToArchitect"]:::new
-        subgraph Stage [The stage]
-        X -- writes --> DB[("tasks")]
-        A>flag] -.-> B{decide} ==> C & D
-        end
-        style X fill:#000
-      """)
+  test "each criterion is a table row of its number, its files and its tests, marked first and last" do
+    assert %{criteria: %{rows: [first, last]}} = build_plan_sheet(sheet_plan())
 
-    assert %{diagrams: [%{nodes: nodes} | _call_flow]} = build_plan_sheet(plan)
-    assert Enum.map(nodes, & &1.text) == ["RS", "P", "SB", "X", "DB", "A", "B", "C", "D"]
+    assert %{
+             number: 1,
+             line: %{
+               kind: :table_row,
+               text: "1 | send_back_to_architect.ex | send_back_to_architect_test.exs",
+               cells: [
+                 "<p>1</p>",
+                 "<p><code>send_back_to_architect.ex</code></p>",
+                 "<p><code>send_back_to_architect_test.exs</code></p>"
+               ],
+               columns: 3,
+               first?: true,
+               last?: false
+             }
+           } = first
+
+    assert %{number: 3, line: %{text: "3 | review_stage.ex | ", cells: [_number, _files, ""], last?: true}} = last
   end
 
-  test "a plan that does not lay out has no sheet" do
+  test "lines that read the same are told apart by the order they are drawn in" do
+    plan = String.replace(sheet_plan(), "Adds the column.", "The new action replaces it.")
+
+    assert %{cards: cards} = build_plan_sheet(plan)
+
+    assert [%{occurrence: 1, key: first}, %{occurrence: 2, key: second}] =
+             for(card <- cards, line <- card.prose, line.text == "The new action replaces it.", do: line)
+
+    assert first != second
+  end
+
+  test "a plan without Data changes, criteria or Verification has no such part, and one that does not lay out has none" do
+    plan =
+      sheet_plan()
+      |> String.replace(~r/### Data changes\n.*?### Decisions/s, "### Decisions")
+      |> String.replace(~r/### Acceptance criteria\n.*\z/s, "")
+
+    assert %{data_changes: nil, criteria: nil, verification: nil, lines: lines} = build_plan_sheet(plan)
+    refute Enum.any?(lines, &(&1.kind == :table_row))
+
     assert build_plan_sheet("## Implementation plan\n\nJust prose.") == nil
   end
 end
