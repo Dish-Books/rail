@@ -8,6 +8,7 @@ defmodule RailWeb.Live.TaskActionsTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Round
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles
@@ -78,6 +79,24 @@ defmodule RailWeb.Live.TaskActionsTest do
     stub(Pipeline, :list_approvals, fn _task -> {:ok, []} end)
 
     %{conn: conn, task: task, dan: dan, priya: priya, michael: michael}
+  end
+
+  test "nothing offers Ready for review while the review agent works or its fix plan waits", %{
+    conn: conn,
+    task: task,
+    dan: dan
+  } do
+    lead_run = Repo.get_by!(Run, conversation_id: "sess_tat_lead")
+    {:ok, running} = Pipeline.update_run(lead_run, %{status: :running, stage_outcome: :in_progress})
+    assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
+    refute has_element?(view, "#task-ready-for-review")
+
+    {:ok, _done} = Pipeline.update_run(running, %{status: :finished, stage_outcome: :done})
+    File.mkdir_p!(Path.join(task.scratch_path, "fix_plans"))
+    plan = %{"version" => 1, "round" => 1, "plan" => "### What changes\n\nRename the heading."}
+    File.write!(Path.join([task.scratch_path, "fix_plans", "TAT-1.json"]), Jason.encode!(plan))
+    assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
+    refute has_element?(view, "#task-ready-for-review")
   end
 
   test "Ready for review marks the task ready, and the header then waits on a tech lead", %{

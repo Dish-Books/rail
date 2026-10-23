@@ -6,13 +6,15 @@ defmodule RailWeb.Live.TaskActions do
     it, also after its owner started it, while a "Plan not approved" chip says it has not been. At Plan, Approve
     waits on the lead's own unsent plan comments, which approving would delete;
   - a branch the default branch has moved past: Update, which merges it in as a round of its own;
-  - a review with nothing left to fix: Ready for review, then a tech lead's Approve and Merge.
+  - a review with nothing left to fix: Ready for review, then a tech lead's Approve and Merge, none of them while
+    the review agent works or its fix plan waits.
 
   A later round's plan is approved where it is read, beside it, so it is not here.
   """
   use RailWeb, :live_component
 
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -369,7 +371,7 @@ defmodule RailWeb.Live.TaskActions do
   defp load(socket) do
     %{task: task, current_scope: scope} = socket.assigns
     tech_lead = Scope.tech_lead?(scope)
-    state = if task.stage in [:finalize, :merged], do: Task.finalize_state(task)
+    state = if task.stage == :merged or (task.stage == :finalize and not revising?(task)), do: Task.finalize_state(task)
 
     socket
     |> assign(:tech_lead, tech_lead)
@@ -383,6 +385,12 @@ defmodule RailWeb.Live.TaskActions do
       :tech_leads,
       if(tech_lead or state in [nil, :not_ready, :merged], do: [], else: Users.list_tech_leads(task.project_id))
     )
+  end
+
+  # Changes are coming while the review agent works or its fix plan waits, so nothing is ready to review or merge.
+  defp revising?(%Task{runs: runs} = task) do
+    Enum.any?(runs, &(match?(%Run{role: %Role{stage: :review_lead}}, &1) and Run.running?(&1))) or
+      match?(%FixPlan{approved_at: nil}, Pipeline.read_fix_plan(task))
   end
 
   defp plan_run(%Task{runs: runs}) when is_list(runs), do: Enum.find(runs, &match?(%Run{role: %Role{stage: :plan}}, &1))

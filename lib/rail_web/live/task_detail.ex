@@ -92,16 +92,6 @@ defmodule RailWeb.Live.TaskDetail do
         <:actions>
           {render_slot(@actions)}
 
-          <span
-            :if={@plan_state == :approved}
-            id="fix-plan-approved-header"
-            data-qa="fix_plan_approved"
-            class="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400"
-          >
-            <.icon name="pi-check-circle" class="size-4" /> Approved by {@fix_plan.approved_by} ·
-            <.local_time id="fix-plan-approved-at" at={@fix_plan.approved_at} />
-          </span>
-
           <button
             :if={@show_approve}
             type="button"
