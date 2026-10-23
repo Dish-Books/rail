@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { formSubmitButton } from "../js/hooks/shortcuts.js";
+import { formSubmitButton, modalOpen } from "../js/hooks/shortcuts.js";
 
 describe("formSubmitButton", () => {
   it("gives the submit button of the form the target belongs to", () => {
@@ -22,5 +22,19 @@ describe("formSubmitButton", () => {
 
   it("gives nothing for a target with no form property, such as a link", () => {
     assert.equal(formSubmitButton({}), null);
+  });
+});
+
+describe("modalOpen", () => {
+  it("is true when the page shows a modal or dialog", () => {
+    const doc = {
+      querySelector: (selector) => (selector === "[id$='-modal'], [role='dialog']" ? { id: "project-modal" } : null)
+    };
+
+    assert.equal(modalOpen(doc), true);
+  });
+
+  it("is false when the page shows none", () => {
+    assert.equal(modalOpen({ querySelector: () => null }), false);
   });
 });
