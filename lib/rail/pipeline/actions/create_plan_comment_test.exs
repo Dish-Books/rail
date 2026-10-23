@@ -16,11 +16,19 @@ defmodule Rail.Pipeline.Actions.CreatePlanCommentTest do
 
   One module decides.
 
-  No diagrams: one module changes.
+  ### Decisions
 
-  ### File-level changes
+  - Decision: one module changes.
 
-  - `lib/rail.ex`: decides.
+  ### Changes
+
+  #### `lib/rail.ex`
+
+  Decides.
+
+  ### Acceptance criteria
+
+  - 1: `lib/rail.ex`
 
   ### Verification
 

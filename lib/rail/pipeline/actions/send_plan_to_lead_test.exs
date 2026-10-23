@@ -19,11 +19,19 @@ defmodule Rail.Pipeline.Actions.SendPlanToLeadTest do
 
   Extend the module.
 
-  No diagrams: one module changes.
+  ### Decisions
 
-  ### File-level changes
+  - Decision: one module changes.
 
-  - `lib/rail.ex`: extends the module.
+  ### Changes
+
+  #### `lib/rail.ex`
+
+  Extends the module.
+
+  ### Acceptance criteria
+
+  - 1: `lib/rail.ex`
 
   ### Verification
 

@@ -13,11 +13,19 @@ defmodule Rail.Pipeline.Actions.SaveSplitTest do
 
         Build it.
 
-        No diagrams: one module changes.
+        ### Decisions
 
-        ### File-level changes
+        - Decision: one module changes.
 
-        - `lib/rail.ex`: builds it.
+        ### Changes
+
+        #### `lib/rail.ex`
+
+        Builds it.
+
+        ### Acceptance criteria
+
+        - 1: `lib/rail.ex`
 
         ### Verification
 
@@ -147,18 +155,15 @@ defmodule Rail.Pipeline.Actions.SaveSplitTest do
     refute_received {:output_saved, ^task_id}
   end
 
-  test "a child's part whose No diagrams: line runs into the paragraph above is refused naming it", %{
+  test "a child's part that passes the line checks but would not lay out is refused naming it", %{
     task: task,
     children: [first, second] = children
   } do
     {:ok, _saved} = Pipeline.save_split(task, %{"children" => children})
-    run_on = String.replace(@part, "Build it.\n\nNo diagrams:", "Build it.\nNo diagrams:")
+    unlaid = String.replace(@part, "- Decision: one module changes.", "- Decision: one module changes.\n\n```\nnote\n```")
 
-    assert {:error, changeset} = Pipeline.save_split(task, %{"children" => [first, %{second | "plan" => run_on}]})
-
-    assert %{children: [%{}, %{plan: ["`No diagrams:` must start a paragraph of its own, after a blank line"]}]} =
-             errors_on(changeset)
-
+    assert {:error, changeset} = Pipeline.save_split(task, %{"children" => [first, %{second | "plan" => unlaid}]})
+    assert %{children: [%{}, %{plan: ["does not lay out as a plan: " <> _how]}]} = errors_on(changeset)
     assert %{children: [%{plan: @part}, %{plan: @part}]} = Pipeline.read_split(task)
   end
 

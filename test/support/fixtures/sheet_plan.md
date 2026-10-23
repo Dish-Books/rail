@@ -4,56 +4,57 @@
 
 Sending a task back is a stage move, so it goes through `Rail.Pipeline.Actions.EnterStage`, the only thing that writes `task.stage`.
 
-### Change diagram
+### Data changes
 
-```mermaid
-flowchart LR
-  RS["ReviewStage"]:::changed --> P["Pipeline"]:::changed
-  P --> SB["SendBackToArchitect"]:::new
-  classDef new fill:#052e16,stroke:#34d399,stroke-width:1.5px,stroke-dasharray:5 3,color:#d1fae5
-  classDef changed fill:#172554,stroke:#60a5fa,stroke-width:1.5px,color:#dbeafe
-```
+- New column `tasks.sent_back_note`: text, null until a task is sent back.
 
-### Call flow
+### Decisions
 
-From the Send back button to the tasks and runs tables.
+- Decision: the note is kept on the task, so the Architect reads it in its brief.
+- Ruled out: a table of send-backs with their history.
+- Assumption: the note is required.
 
-```mermaid
-sequenceDiagram
-  actor You
-  participant RS as ReviewStage
-  participant SB as SendBackToArchitect
-  You->>RS: Send back, with a note
-  RS->>SB: send_back_to_architect(run, note)
-```
+### Changes
 
-### File-level changes
+#### `lib/rail/pipeline/actions/send_back_to_architect.ex`
 
-- `lib/rail/pipeline/actions/send_back_to_architect.ex`: New action. Refuses unless the task is at `:review` and idle.
-- `lib/rail/pipeline.ex`: Delegates `send_back_to_architect/2` beside `send_to_qa/1`.
-
-### Program design
-
-#### `Rail.Pipeline.Actions.SendBackToArchitect` new
-
-`lib/rail/pipeline/actions/send_back_to_architect.ex`
+New action. Refuses unless the task is at `:review` and idle.
 
 ```elixir
 def send_back_to_architect(%Run{} = run, note)
 ```
 
-#### `Rail.Pipeline`
+```elixir sketch
+def send_back_to_architect(%Run{task: task} = run, note) do
+  enter_stage(task, :architect, %{sent_back_note: note})
+end
+```
 
-`lib/rail/pipeline.ex`
+#### `lib/rail_web/live/review_stage.ex`
+
+Adds the Send back button beside Send to QA.
+
+#### `lib/rail/pipeline.ex`
+
+Delegates `send_back_to_architect/2` beside `send_to_qa/1`.
 
 ```elixir
 defdelegate send_back_to_architect(run, note), to: Actions.SendBackToArchitect
 ```
 
+#### `priv/repo/migrations/20261022000000_add_sent_back_note.exs`
+
+Adds the column.
+
+#### `lib/rail/pipeline/actions/old_send_back.ex` deleted
+
+The new action replaces it.
+
+### Acceptance criteria
+
+- 1: `lib/rail/pipeline/actions/send_back_to_architect.ex`, `lib/rail/pipeline/actions/send_back_to_architect_test.exs`
+- 3: `lib/rail_web/live/review_stage.ex`
+
 ### Verification
 
-- `lib/rail/pipeline/actions/send_back_to_architect_test.exs` pins the move to `:architect`.
-
-### Assumptions
-
-- The note is required: an empty Send back tells the Architect nothing it can act on.
+- A task sent back from Review is at Architect with the note in its brief.

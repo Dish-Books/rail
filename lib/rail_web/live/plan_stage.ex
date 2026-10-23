@@ -18,6 +18,7 @@ defmodule RailWeb.Live.PlanStage do
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -38,7 +39,6 @@ defmodule RailWeb.Live.PlanStage do
       |> assign_new(:line_draft, fn -> nil end)
       |> assign_new(:reported_changed, fn -> nil end)
       |> assign_new(:selected_key, fn -> nil end)
-      |> assign_new(:diagram_views, fn -> %{change: :diagram, call_flow: :diagram} end)
       |> assign_new(:open_child, fn -> nil end)
       |> load()
 
@@ -63,7 +63,7 @@ defmodule RailWeb.Live.PlanStage do
         child_of={@child_of}
         plan={@plan}
         sheet={@sheet}
-        diagram_views={@diagram_views}
+        criteria={@criteria}
         target={@myself}
       />
 
@@ -113,7 +113,7 @@ defmodule RailWeb.Live.PlanStage do
               approved={@approved}
               running={@running}
               pending_text={@pending_text}
-              diagram_views={@diagram_views}
+              criteria={@criteria}
               lines={@plan_lines}
               placed={@plan_comments.placed}
               changed={@plan_comments.lifted}
@@ -127,7 +127,6 @@ defmodule RailWeb.Live.PlanStage do
             <.split_pane
               split={@split}
               open_child={@open_child}
-              diagram_views={@diagram_views}
               target={@myself}
             />
           </.plan_section>
@@ -314,14 +313,6 @@ defmodule RailWeb.Live.PlanStage do
       nil ->
         {:noreply, assign_comments(socket)}
     end
-  end
-
-  def handle_event("diagram_view", %{"view" => view}, socket) do
-    [diagram, shown] = String.split(view, ":")
-    diagram = if diagram == "call_flow", do: :call_flow, else: :change
-    shown = if shown == "source", do: :source, else: :diagram
-
-    {:noreply, update(socket, :diagram_views, &Map.put(&1, diagram, shown))}
   end
 
   # --- Panes ---
@@ -711,7 +702,7 @@ defmodule RailWeb.Live.PlanStage do
   attr :approved, :boolean, required: true
   attr :running, :boolean, required: true
   attr :pending_text, :string, required: true
-  attr :diagram_views, :map, required: true
+  attr :criteria, :list, required: true, doc: "the ticket's acceptance criteria, for the plan's criteria table"
   attr :lines, :list, required: true, doc: "the plan's lines, read off its sheet or, without one, off its markdown"
   attr :placed, :map, required: true
   attr :changed, :list, required: true
@@ -752,8 +743,7 @@ defmodule RailWeb.Live.PlanStage do
       <.plan_sheet
         :if={@sheet}
         sheet={@sheet}
-        diagram_views={@diagram_views}
-        event="diagram_view"
+        criteria={@criteria}
         target={@target}
         placed={@placed}
         changed={@changed}
@@ -785,18 +775,20 @@ defmodule RailWeb.Live.PlanStage do
 
   attr :split, :map, required: true
   attr :open_child, :integer, default: nil
-  attr :diagram_views, :map, default: %{}
   attr :target, :any, default: nil
 
   defp split_pane(assigns) do
     children = Enum.map(assigns.split.children, &Map.put(&1, :first_file, first_file(&1.plan)))
     open = Enum.find(assigns.split.children, &(&1.number == assigns.open_child))
 
+    open_criteria = open && open.ticket |> build_document_blocks() |> criteria_lines()
+
     assigns =
       assigns
       |> assign(:rounds, rounds(children))
       |> assign(:open, open)
-      |> assign(:open_sheet, open && build_plan_sheet(open.plan))
+      |> assign(:open_criteria, open_criteria)
+      |> assign(:open_sheet, open && build_plan_sheet(open.plan, Enum.map(open_criteria, & &1.number)))
 
     ~H"""
     <div id="plan-split" data-qa="plan_split" class="@container">
@@ -851,7 +843,7 @@ defmodule RailWeb.Live.PlanStage do
             <p class="text-[11.5px] text-slate-500 dark:text-slate-400">
               {count_label(criteria(child.ticket), "criterion", "criteria")}
             </p>
-            <div class="pt-2 border-t border-slate-200 dark:border-slate-800">
+            <div :if={child.first_file} class="pt-2 border-t border-slate-200 dark:border-slate-800">
               <p class="font-mono text-[11.5px] text-slate-700 dark:text-slate-300 truncate">
                 {child.first_file.path}
               </p>
@@ -897,11 +889,17 @@ defmodule RailWeb.Live.PlanStage do
             Part of the plan
           </p>
           <.plan_sheet
+            :if={@open_sheet}
             sheet={@open_sheet}
-            diagram_views={@diagram_views}
-            event="diagram_view"
+            criteria={@open_criteria}
+            part={@open.number}
             target={@target}
             doc={:split_part}
+          />
+          <.markdown
+            :if={@open_sheet == nil}
+            content={@open.plan}
+            class="max-w-3xl text-[15px] leading-relaxed"
           />
         </div>
       </section>
@@ -912,7 +910,7 @@ defmodule RailWeb.Live.PlanStage do
   attr :child_of, :map, required: true
   attr :plan, :any, required: true
   attr :sheet, :any, required: true
-  attr :diagram_views, :map, required: true
+  attr :criteria, :list, required: true
   attr :target, :any, required: true
 
   # A child never runs Plan: its plan is the part of its parent's it was approved with.
@@ -952,8 +950,8 @@ defmodule RailWeb.Live.PlanStage do
         <.plan_sheet
           :if={@sheet}
           sheet={@sheet}
-          diagram_views={@diagram_views}
-          event="diagram_view"
+          criteria={@criteria}
+          part={@child_of.position}
           target={@target}
         />
         <.markdown :if={@sheet == nil} content={@plan.content} class="text-[15px] leading-relaxed" />
@@ -1081,12 +1079,13 @@ defmodule RailWeb.Live.PlanStage do
     amending = approved and task.stage in [:review, :finalize] and Run.can_chat?(socket.assigns[:chat_run])
     picked = design && Enum.find(design.options, &(&1.key == design.picked))
     selected_key = selected_key(design, socket.assigns.selected_key)
-    sheet = plan && build_plan_sheet(plan.content)
+    ticket_lines = ticket_lines(ticket)
+    sheet = sheet(plan, ticket_lines)
     items = items(ticket, design, picked, plan, sheet, split, running)
 
     socket
     |> assign(:ticket, ticket)
-    |> assign_ticket_lines(ticket)
+    |> assign_ticket_lines(ticket_lines)
     |> assign(:design, design)
     |> assign(:plan, plan)
     |> assign(:split, split)
@@ -1156,15 +1155,17 @@ defmodule RailWeb.Live.PlanStage do
   defp close_line_draft_unless_offered(socket), do: socket
 
   # The title, the priority and the estimate are lines of the ticket as much as its description's are.
-  defp assign_ticket_lines(socket, nil), do: socket |> assign(:ticket_lines, nil) |> assign(:ticket_line_list, [])
+  defp assign_ticket_lines(socket, nil),
+    do: socket |> assign(:ticket_lines, nil) |> assign(:ticket_line_list, []) |> assign(:criteria, [])
 
-  defp assign_ticket_lines(socket, ticket) do
-    lines = ticket_lines(ticket)
-
+  defp assign_ticket_lines(socket, lines) do
     socket
     |> assign(:ticket_lines, lines)
     |> assign(:ticket_line_list, [lines.title, lines.priority, lines.estimate | lines.description])
+    |> assign(:criteria, criteria_lines(lines))
   end
+
+  defp ticket_lines(nil), do: nil
 
   defp ticket_lines(ticket) do
     priority = (ticket.priority && Issue.priority_label(ticket.priority)) || "No priority"
@@ -1187,6 +1188,12 @@ defmodule RailWeb.Live.PlanStage do
   defp ticket_line(kind, text, label) do
     %{key: "#{kind}-#{:erlang.phash2({text, 1})}", kind: kind, text: text, occurrence: 1, label: label, depth: 0}
   end
+
+  # A row for each of the ticket's criteria, so one the plan leaves out takes a comment too.
+  defp sheet(nil, _ticket_lines), do: nil
+
+  defp sheet(plan, ticket_lines),
+    do: build_plan_sheet(plan.content, ticket_lines |> criteria_lines() |> Enum.map(& &1.number))
 
   defp plan_lines(nil, _sheet), do: []
   defp plan_lines(_plan, %{lines: lines}), do: lines
@@ -1367,14 +1374,32 @@ defmodule RailWeb.Live.PlanStage do
 
   defp first_paragraph(ticket), do: ticket |> String.split(~r/\n\s*\n/, parts: 2) |> hd()
 
-  # A saved part passed the same section check as the plan, so it always lays out as a sheet.
+  # A part saved before the plan had cards still names its files under File-level changes.
   defp first_file(plan) do
-    %{files: [first | rest]} = build_plan_sheet(plan)
-    %{path: first.path, more: length(rest)}
+    files =
+      case build_plan_sheet(plan) do
+        %{cards: cards} -> cards
+        nil -> ImplementationPlan.build_file_changes(plan) || []
+      end
+
+    case files do
+      [first | rest] -> %{path: first.path, more: length(rest)}
+      [] -> nil
+    end
   end
 
-  defp files(%{files: files}), do: "#{length(files)} #{if length(files) == 1, do: "file", else: "files"}"
+  defp files(%{cards: cards}), do: count_label(length(cards), "file", "files")
   defp files(nil), do: nil
+
+  # The ticket's own acceptance criteria, as its lines name them, for the plan's criteria table to fill its rows from.
+  defp criteria_lines(nil), do: []
+  defp criteria_lines(%{description: lines}), do: criteria_lines(lines)
+
+  defp criteria_lines(lines) do
+    for %{label: "Criterion " <> number} = line <- lines,
+        {number, ""} <- [Integer.parse(number)],
+        do: %{number: number, html: line.html}
+  end
 
   # The acceptance criteria are the list under the heading that names them.
   defp criteria(description) do

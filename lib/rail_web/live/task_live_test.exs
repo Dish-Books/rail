@@ -34,7 +34,7 @@ defmodule RailWeb.TaskLiveTest do
   # Stubbed, never called, so it is named rather than imported.
   @clock RailWeb.Utils.MonotonicMs
 
-  # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
+  # The smallest plan the structure allows: one decision, one card and one criterion, and no data changes.
   @plan """
   ## Implementation plan
 
@@ -42,11 +42,19 @@ defmodule RailWeb.TaskLiveTest do
 
   Extend the module.
 
-  No diagrams: one module changes.
+  ### Decisions
 
-  ### File-level changes
+  - Decision: one module changes.
 
-  - `lib/rail.ex`: extends the module.
+  ### Changes
+
+  #### `lib/rail.ex`
+
+  Extends the module.
+
+  ### Acceptance criteria
+
+  - 1: `lib/rail.ex`
 
   ### Verification
 
@@ -1958,7 +1966,7 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "[data-qa='subagent-transcript']")
     end
 
-    test "a plan in the sheet's sections draws its diagrams, Source shows each, and the item counts its files", %{
+    test "a plan in the sheet's sections lays out as cards with no diagrams, and the item counts its files", %{
       conn: conn,
       task: task,
       save_ticket: save_ticket
@@ -1968,19 +1976,10 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      assert has_element?(view, "#plan-section-plan-status", "files · saved")
-      assert has_element?(view, "#plan-plan #plan-sheet")
-      refute has_element?(view, "figure [data-qa='plan_diagram_source']:not(.hidden)")
-
-      view |> element("button[phx-value-view='change:source']") |> render_click()
-      assert has_element?(view, "figure[id^='plan-diagram-change-'] [data-qa='plan_diagram_source']:not(.hidden)")
-
-      view |> element("button[phx-value-view='call_flow:source']") |> render_click()
-      assert has_element?(view, "figure[id^='plan-diagram-call_flow-'] [data-qa='plan_diagram_source']:not(.hidden)")
-
-      view |> element("button[phx-value-view='change:diagram']") |> render_click()
-      view |> element("button[phx-value-view='call_flow:diagram']") |> render_click()
-      refute has_element?(view, "figure [data-qa='plan_diagram_source']:not(.hidden)")
+      assert has_element?(view, "#plan-section-plan-status", "5 files · saved")
+      assert has_element?(view, "#plan-plan #plan-sheet #plan-group-pipeline #plan-card-1")
+      refute has_element?(view, "#plan-plan figure")
+      refute has_element?(view, "#plan-plan button[phx-value-view]")
     end
 
     test "after approval the Plan item shows the plan as approved", %{
@@ -2595,7 +2594,7 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, _ticket} =
         Pipeline.save_plan(task, %{title: "Recordings settle", description: description, priority: :medium, estimate: 3})
 
-      {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan, design: "waiting-lanes"})
+      {:ok, _plan} = Pipeline.save_plan(task, %{plan: sheet_plan(), design: "waiting-lanes"})
 
       design = %{
         target: :design,
@@ -2704,9 +2703,19 @@ defmodule RailWeb.TaskLiveTest do
       one |> form("[data-qa='document_comment_form']", %{"body" => "Which page?"}) |> render_submit()
       one |> element("#plan-sheet button[aria-label='Comment on File 1']") |> render_click()
       one |> form("[data-qa='document_comment_form']", %{"body" => "Wait on page-loading-stop."}) |> render_submit()
+      one |> element("#plan-sheet button[aria-label='Comment on File 1, sketch line 2']") |> render_click()
+      one |> form("[data-qa='document_comment_form']", %{"body" => "Through EnterStage?"}) |> render_submit()
+      one |> element("#plan-sheet button[aria-label='Comment on Criterion 1']") |> render_click()
+      one |> form("[data-qa='document_comment_form']", %{"body" => "And the second criterion?"}) |> render_submit()
 
       _settled = render(two)
       assert has_element?(two, "#plan-sheet [data-qa='document_comment']", "Wait on page-loading-stop.")
+
+      assert has_element?(
+               two,
+               "#plan-card-1 [data-qa='plan_card_sketch'][open] [data-qa='document_comment']",
+               "Through EnterStage?"
+             )
 
       one |> element("#send-plan-comments") |> render_click()
 
@@ -2716,8 +2725,12 @@ defmodule RailWeb.TaskLiveTest do
         refute has_element?(view, "[data-qa='document_comment']")
       end
 
-      assert has_element?(one, "[data-qa='plan_comment_card']", "3 comments on the design, the ticket and the plan")
+      assert has_element?(one, "[data-qa='plan_comment_card']", "5 comments on the design, the ticket and the plan")
       assert has_element?(one, "[data-qa='plan_comment_card']", "Which page?")
+
+      sent = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
+      assert sent =~ "File 1, sketch line 2"
+      assert sent =~ "1 | send_back_to_architect.ex | send_back_to_architect_test.exs"
     end
 
     test "a resave that changes a commented paragraph moves its comment to the top, changed, and leaves the others",

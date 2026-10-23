@@ -25,18 +25,26 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
 
         Build it.
 
-        No diagrams: one module changes.
+        ### Decisions
 
-        ### File-level changes
+        - Decision: one module changes.
 
-        - `lib/rail.ex`: builds it.
+        ### Changes
+
+        #### `lib/rail.ex`
+
+        Builds it.
+
+        ### Acceptance criteria
+
+        - 1: `lib/rail.ex`
 
         ### Verification
 
         - `lib/rail_test.exs`: covers it.
         """)
 
-  # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
+  # The smallest plan the structure allows: one decision, one card and one criterion, and no data changes.
   @plan """
   ## Implementation plan
 
@@ -44,11 +52,19 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
 
   Extend the module.
 
-  No diagrams: one module changes.
+  ### Decisions
 
-  ### File-level changes
+  - Decision: one module changes.
 
-  - `lib/rail.ex`: extends the module.
+  ### Changes
+
+  #### `lib/rail.ex`
+
+  Extends the module.
+
+  ### Acceptance criteria
+
+  - 1: `lib/rail.ex`
 
   ### Verification
 

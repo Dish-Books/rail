@@ -5,7 +5,7 @@ defmodule Rail.Pipeline.Actions.ReadPlanTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
 
-  @plan "## Implementation plan\n\n### Approach\n\nExtend it.\n\nNo diagrams: one module changes.\n\n### File-level changes\n\n- `lib/rail.ex`: extends it.\n\n### Verification\n\n- `lib/rail_test.exs`: covers it."
+  @plan "## Implementation plan\n\n### Approach\n\nExtend it.\n\n### Decisions\n\n- Decision: one module changes.\n\n### Changes\n\n#### `lib/rail.ex`\n\nExtends it.\n\n### Acceptance criteria\n\n- 1: `lib/rail.ex`\n\n### Verification\n\n- `lib/rail_test.exs`: covers it."
 
   setup %{project: project} do
     Req.Test.expect(Rail.Linear, fn conn ->

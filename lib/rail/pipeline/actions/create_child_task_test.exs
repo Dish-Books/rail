@@ -6,7 +6,7 @@ defmodule Rail.Pipeline.Actions.CreateChildTaskTest do
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
 
-  @part "## Implementation plan\n\n### Approach\n\nBuild it.\n\nNo diagrams: one module changes.\n\n### File-level changes\n\n- `lib/rail.ex`: builds it.\n\n### Verification\n\n- `lib/rail_test.exs`: covers it."
+  @part "## Implementation plan\n\n### Approach\n\nBuild it.\n\n### Decisions\n\n- Decision: one module changes.\n\n### Changes\n\n#### `lib/rail.ex`\n\nBuilds it.\n\n### Acceptance criteria\n\n- 1: `lib/rail.ex`\n\n### Verification\n\n- `lib/rail_test.exs`: covers it."
 
   setup %{project: project} do
     for {id, identifier} <- [{"lin_cct_parent", "CCT-1"}, {"lin_cct_child", "CCT-2"}] do

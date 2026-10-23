@@ -561,7 +561,7 @@ defmodule Rail.Mcp.Utils.McpTools do
           "with a `#### `key`` for each finding to fix, by its key in backticks, and a `#### Comment N` for each " <>
           "comment the human sent, by its " <>
           "number, each saying what will change or why nothing will. Then `### File-level changes`, one bullet per " <>
-          "file starting with its path in backticks, as in the implementation plan, each ending with the item it is " <>
+          "file starting with its path in backticks, each ending with the item it is " <>
           "for: the finding's key in backticks or `comment N`. Then `### Verification`. Leave out the last two when " <>
           "nothing will change, but save no plan in which nothing changes: name the findings to rule Skip instead. " <>
           "A `### Changes to the plan` section comes first when the human asked to change the " <>

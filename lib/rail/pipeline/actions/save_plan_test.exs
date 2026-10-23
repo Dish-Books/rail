@@ -6,7 +6,7 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
 
-  # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
+  # The smallest plan the structure allows: one decision, one card and one criterion, and no data changes.
   @plan """
   ## Implementation plan
 
@@ -14,11 +14,19 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
 
   Extend the module.
 
-  No diagrams: one module changes.
+  ### Decisions
 
-  ### File-level changes
+  - Decision: one module changes.
 
-  - `lib/rail.ex`: extends the module.
+  ### Changes
+
+  #### `lib/rail.ex`
+
+  Extends the module.
+
+  ### Acceptance criteria
+
+  - 1: `lib/rail.ex`
 
   ### Verification
 
@@ -115,13 +123,42 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
       %{plan: String.trim(@plan)}
     end
 
-    test "a No diagrams: line run into the Approach paragraph is refused, since the plan would not lay out", %{
+    test "a plan in the sections from before cards, diagrams and all, is refused naming the ones it needs", %{
       task: task
     } do
-      plan = String.replace(@plan, "Extend the module.\n\nNo diagrams:", "Extend the module.\nNo diagrams:")
+      plan = """
+      ## Implementation plan
+
+      ### Approach
+
+      Extend the module.
+
+      ### Change diagram
+
+      ```mermaid
+      flowchart LR
+        A["Rail"]
+      ```
+
+      ### File-level changes
+
+      - `lib/rail.ex`: extends the module.
+
+      ### Program design
+
+      #### `Rail`
+
+      `lib/rail.ex`
+
+      ### Verification
+
+      - `lib/rail_test.exs`: covers it.
+      """
 
       assert {:error, changeset} = Pipeline.save_plan(task, %{plan: plan})
-      assert %{plan: ["`No diagrams:` must start a paragraph of its own, after a blank line"]} = errors_on(changeset)
+      assert %{plan: [diagram | _rest] = errors} = errors_on(changeset)
+      assert diagram =~ "has a `### Change diagram` section, but the sections are `### Approach`, `### Data changes`"
+      assert "is missing its `### Changes` section" in errors
       assert %Round{plan: nil} = Pipeline.read_plan(task)
     end
 
@@ -175,81 +212,29 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
       assert ["is missing its `### Verification` section"] =
                refused.(String.replace(@plan, ~r/### Verification.*\z/s, ""))
 
-      swapped =
-        String.replace(@plan, ~r/(### File-level changes.*?)(### Verification.*)\z/s, "\\2\n\\1")
-
+      swapped = String.replace(@plan, ~r/(### Changes.*?)(### Acceptance criteria.*?)(### Verification)/s, "\\2\\1\\3")
       assert ["has its sections out of order; they go " <> _titles] = refused.(swapped)
 
-      assert ["leaves out both diagrams, so `### Approach` must end with a line starting `No diagrams:` that says why"] =
-               refused.(String.replace(@plan, "No diagrams: one module changes.\n\n", ""))
+      assert ["has a line under `### Decisions` that is not a bullet starting `Decision:`" <> _rest] =
+               refused.(String.replace(@plan, "- Decision: one", "- One"))
 
-      one_diagram =
-        String.replace(
-          @plan,
-          "### File-level changes",
-          "### Change diagram\n\n```mermaid\nflowchart LR\n```\n\n### File-level changes"
-        )
-
-      assert [
-               "has one diagram section without the other; include both `### Change diagram` and `### Call flow`, or neither"
-             ] =
-               refused.(one_diagram)
-
-      no_mermaid =
-        String.replace(
-          @plan,
-          "### File-level changes",
-          "### Change diagram\n\nA picture.\n\n### Call flow\n\nIt flows.\n\n### File-level changes"
-        )
-
-      assert [
-               "needs a ```mermaid block under `### Change diagram`",
-               "needs a ```mermaid block under `### Call flow`"
-             ] = refused.(no_mermaid)
-
-      assert ["has sub-bullets under `### File-level changes`; it is one flat bullet per file"] =
-               refused.(String.replace(@plan, "extends the module.\n", "extends the module.\n  - and more.\n"))
-
-      assert ["has a line under `### File-level changes` that is not a bullet starting with a file path in backticks"] =
-               refused.(String.replace(@plan, "- `lib/rail.ex`: extends the module.", "- The module grows."))
-
-      assert [
-               "has nothing under `### File-level changes`; it is one bullet per file, starting with its path in backticks"
-             ] =
-               refused.(String.replace(@plan, "- `lib/rail.ex`: extends the module.\n", ""))
-
-      assert [
-               "needs `### Program design` to start with a `#### `Module.Name`` heading; leave the section out when no signature changes"
-             ] =
+      assert ["lists `lib/rail.ex` more than once under `### Changes`; give each file one card"] =
                refused.(
                  String.replace(
                    @plan,
-                   "### Verification",
-                   "### Program design\n\nNo signature changes.\n\n### Verification"
+                   "### Acceptance criteria",
+                   "#### `lib/rail.ex`\n\nAgain.\n\n### Acceptance criteria"
                  )
                )
 
-      assert ["has a heading under `### Program design` that is not `#### `Module.Name``, optionally followed by `new`"] =
-               refused.(
-                 String.replace(@plan, "### Verification", "### Program design\n\n#### the module\n\n### Verification")
-               )
-
-      assert ["needs each module under `### Program design` followed by its file path in backticks on a line of its own"] =
-               refused.(
-                 String.replace(
-                   @plan,
-                   "### Verification",
-                   "### Program design\n\n#### `Rail`\n\n```elixir\ndef go\n```\n\n### Verification"
-                 )
-               )
+      assert ["has a line under `### Acceptance criteria` that is not a bullet starting with the number" <> _rest] =
+               refused.(String.replace(@plan, "- 1: `lib/rail.ex`", "- `lib/rail.ex`"))
 
       assert %Round{plan: ^plan} = Pipeline.read_plan(task)
     end
 
     # Code is fenced, so a heading or a bullet inside a block is the code's, not the plan's.
-    test "a plan with both diagrams, Program design and Assumptions is saved, whatever its code blocks hold", %{
-      task: task
-    } do
+    test "a plan with data changes, signatures and a sketch is saved, whatever its code blocks hold", %{task: task} do
       plan = """
       ## Implementation plan
 
@@ -257,55 +242,47 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
 
       Extend the module.
 
-      ### Change diagram
+      ### Data changes
 
-      ```mermaid
-      flowchart LR
-        A["Rail"]
-      ```
+      - New column `users.slack_notifications`: boolean, off by default,
+        existing users included.
 
-      ### Call flow
+      ### Decisions
 
-      It starts at the tool and ends in the database.
+      - Decision: one module changes.
+      - Ruled out: a table.
+      - Assumption: it stays small.
 
-      ```mermaid
-      sequenceDiagram
-        Tool->>Rail: save
-      ```
+      ### Changes
 
-      ### File-level changes
+      #### `lib/rail.ex`
 
-      - `lib/rail.ex`: extends the module,
-        over two lines.
-
-      ### Program design
-
-      #### `Rail` new
-
-      `lib/rail.ex`
+      Extends the module.
 
       ```elixir
-      ### not a section
-      - not a bullet
       def go
       ```
 
-      #### Rail.Other
-
-      `lib/rail/other.ex`
-
-      ```elixir
-      def other
+      ```elixir sketch
+      ### not a section
+      #### `not/a/card.ex`
+      - not a bullet
+      def go, do: :ok
       ```
+
+      #### `lib/rail/old.ex` deleted
+
+      Goes.
+
+      ### Acceptance criteria
+
+      - 1: `lib/rail.ex`, `lib/rail_test.exs`
+      - 3: `lib/rail.ex`
 
       ### Verification
 
-      - `lib/rail_test.exs`: covers the extension.
+      - The module goes.
         - and its edge.
-
-      ### Assumptions
-
-      - The module stays small.
       """
 
       saved = String.trim(plan)

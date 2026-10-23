@@ -15,11 +15,19 @@ defmodule Rail.Mcp.Utils.RunToolSaveSplitTest do
 
         Build it.
 
-        No diagrams: one module changes.
+        ### Decisions
 
-        ### File-level changes
+        - Decision: one module changes.
 
-        - `lib/rail.ex`: builds it.
+        ### Changes
+
+        #### `lib/rail.ex`
+
+        Builds it.
+
+        ### Acceptance criteria
+
+        - 1: `lib/rail.ex`
 
         ### Verification
 
