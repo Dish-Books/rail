@@ -252,7 +252,10 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     assert has_element?(view, "#capture-title-input[value='Some idea']")
   end
 
-  test "submit creates the issue as the user and closes", %{conn: conn, project: %{id: project_id} = project} do
+  test "submit creates the issue as the user and shows it in the dialog with links to Rail and Linear", %{
+    conn: conn,
+    project: %{id: project_id} = project
+  } do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_capture_8",
@@ -289,7 +292,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
       })
     end)
 
-    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/issues")
+    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/")
 
     view |> element("#global-capture-idea-button") |> render_click()
 
@@ -302,14 +305,208 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     })
     |> render_submit()
 
-    refute has_element?(view, "#capture-idea-dialog")
-    assert has_element?(view, "#issues-list > :first-child [data-qa='issue-title']", "Capture via LiveView")
-
-    assert %Issue{project_id: ^project_id, identifier: "CAP-101", title: "Capture via LiveView", priority: :high} =
+    assert %Issue{id: issue_id, project_id: ^project_id, identifier: "CAP-101", priority: :high} =
              Repo.get_by(Issue, external_id: "lin_capture_ok")
 
+    assert has_element?(view, "#capture-idea-dialog #capture-created[role='status']", "Created in Triage")
+    assert has_element?(view, "#capture-created-issue[href='/issues/#{issue_id}']", "CAP-101")
+    assert has_element?(view, "#capture-created-issue", "Capture via LiveView")
+    assert has_element?(view, "#capture-created", "#{project.name} (#{project.key})")
+    assert has_element?(view, "#capture-created", "High")
+
+    assert has_element?(
+             view,
+             "#capture-created-tracker[href='https://linear.app/issue/CAP-101'][target='_blank']",
+             "Open in Linear"
+           )
+
+    refute has_element?(view, "#capture-issue-form")
+    refute has_element?(view, "#capture-error-banner")
+
+    view |> element("#capture-created-issue") |> render_click()
+    assert_redirect(view, ~p"/issues/#{issue_id}")
+  end
+
+  test "a second submit while the created issue shows creates nothing more", %{conn: conn, project: project} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_capture_10",
+        login: "capture_user_10",
+        email: "capture_user_10@example.com",
+        admin: true
+      })
+
+    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/issues")
+
     view |> element("#global-capture-idea-button") |> render_click()
+
+    expect(Rail.Issues, :create_issue, fn _scope, %{id: project_id} = project, %{title: "Only once"} = attrs ->
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project_id,
+        external_id: "lin_capture_once",
+        identifier: "CAP-301",
+        title: attrs.title,
+        state: :triage,
+        url: "https://linear.app/issue/CAP-301"
+      })
+      |> Repo.insert()
+      |> then(fn {:ok, issue} -> {:ok, %{issue | project: project}} end)
+    end)
+
+    params = %{"title" => "Only once", "project_id" => project.id, "priority" => "medium"}
+    view |> form("#capture-issue-form", params) |> render_submit()
+
+    assert has_element?(view, "#capture-created-issue", "CAP-301")
+
+    view |> with_target("#capture-issue") |> render_submit("submit", params)
+
+    assert [%Issue{identifier: "CAP-301"}] = Repo.all(Issue)
+    assert has_element?(view, "#capture-created-issue", "CAP-301")
+  end
+
+  test "an issue a teammate creates never appears in the confirmation", %{conn: conn, project: project} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_capture_11",
+        login: "capture_user_11",
+        email: "capture_user_11@example.com",
+        admin: true
+      })
+
+    assert {:ok, view, _html} =
+             live(init_test_session(log_in_user(conn, user), %{selected_project_id: project.id}), ~p"/issues")
+
+    view |> element("#global-capture-idea-button") |> render_click()
+
+    expect(Rail.Issues, :create_issue, fn _scope, project, attrs ->
+      {:ok, %Issue{id: "iss_mine", identifier: "CAP-401", title: attrs.title, state: :triage, project: project}}
+    end)
+
+    view
+    |> form("#capture-issue-form", %{"title" => "Mine", "project_id" => project.id, "priority" => "medium"})
+    |> render_submit()
+
+    {:ok, %Issue{id: teammate_issue_id}} =
+      Repo.insert(
+        Issue.tracker_changeset(%Issue{}, %{
+          project_id: project.id,
+          external_id: "lin_capture_teammate",
+          identifier: "CAP-402",
+          title: "A teammate's issue",
+          state: :triage
+        })
+      )
+
+    Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_created, teammate_issue_id})
+
+    assert has_element?(view, "#issues-list [data-qa='issue-title']", "A teammate's issue")
+    assert has_element?(view, "#capture-created-issue[href='/issues/iss_mine']", "CAP-401")
+    refute has_element?(view, "#capture-created", "CAP-402")
+    refute has_element?(view, "#capture-created-tracker")
+  end
+
+  test "a GitHub project's created issue opens in GitHub and keeps its long title whole", %{
+    conn: conn,
+    github_project: github_project
+  } do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_capture_12",
+        login: "capture_user_12",
+        email: "capture_user_12@example.com",
+        admin: true
+      })
+
+    title =
+      "Recipe import keeps ingredient order, quantities and the source page's section headings when the page splits a recipe across tabs"
+
+    issue =
+      github_issue(github_project, %{
+        number: 214,
+        identifier: "tgh#214",
+        title: title,
+        priority: :urgent,
+        state: :triage,
+        url: "https://github.com/example/test-gh/issues/214"
+      })
+
+    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/")
+
+    view |> element("#global-capture-idea-button") |> render_click()
+
+    expect(Rail.Issues, :create_issue, fn _scope, _project, %{title: ^title, priority: :urgent} -> {:ok, issue} end)
+
+    view
+    |> form("#capture-issue-form", %{"title" => title, "project_id" => github_project.id, "priority" => "urgent"})
+    |> render_submit()
+
+    assert has_element?(view, "#capture-created-issue[href='/issues/#{issue.id}']", "tgh#214")
+    assert has_element?(view, "#capture-created-issue", title)
+    assert has_element?(view, "#capture-created", "Urgent")
+
+    assert has_element?(
+             view,
+             "#capture-created-tracker[href='https://github.com/example/test-gh/issues/214'][target='_blank']",
+             "Open in GitHub"
+           )
+  end
+
+  test "New issue and opening the dialog again both start from an empty form with today's defaults", %{
+    conn: conn,
+    project: project
+  } do
+    {:ok, other} =
+      Projects.create_project(system_scope(), %{
+        name: "Other Project",
+        github_repo: "org/capture-13120",
+        github_installation_id: 13_120,
+        key: "OTH",
+        default_branch: "main",
+        clone_path: "/tmp/repos/capture-13120",
+        linear_state_ids: %{"triage" => "st_triage"},
+        active: true
+      })
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_capture_13",
+        login: "capture_user_13",
+        email: "capture_user_13@example.com",
+        admin: true
+      })
+
+    assert {:ok, view, _html} =
+             live(init_test_session(log_in_user(conn, user), %{selected_project_id: project.id}), ~p"/issues")
+
+    stub(Rail.Issues, :create_issue, fn _scope, project, attrs ->
+      {:ok, %Issue{id: "iss_reset", identifier: "OTH-1", title: attrs.title, state: :triage, project: project}}
+    end)
+
+    filled = %{"title" => "Filed", "description" => "Body", "project_id" => other.id, "priority" => "low"}
+
+    view |> element("#global-capture-idea-button") |> render_click()
+    view |> form("#capture-issue-form", filled) |> render_submit()
+
+    view |> element("#capture-created-new") |> render_click()
+
+    refute has_element?(view, "#capture-created")
     assert has_element?(view, "#capture-title-input[value='']")
+    refute has_element?(view, "#capture-description-input", "Body")
+    assert has_element?(view, "#capture-project-dropdown option[value='#{project.id}'][selected]")
+    assert has_element?(view, "#capture-priority-dropdown option[value='medium'][selected]")
+
+    view |> form("#capture-issue-form", filled) |> render_submit()
+    view |> element("#capture-created-close") |> render_click()
+
+    refute has_element?(view, "#capture-idea-dialog")
+
+    view |> element("#global-capture-idea-button") |> render_click()
+
+    refute has_element?(view, "#capture-created")
+    assert has_element?(view, "#capture-title-input[value='']")
+    assert has_element?(view, "#capture-project-dropdown option[value='#{project.id}'][selected]")
+    assert has_element?(view, "#capture-priority-dropdown option[value='medium'][selected]")
   end
 
   test "submit keeps the dialog open with the values and shows the error when creating fails", %{conn: conn} do
@@ -355,6 +552,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     assert has_element?(view, "#capture-description-input", "Checkout returns 500")
     assert has_element?(view, "#capture-priority-dropdown option[value='urgent'][selected]")
     assert has_element?(view, "#capture-error-banner", "Could not create the issue")
+    refute has_element?(view, "#capture-created")
 
     expect(Rail.Issues, :create_issue, fn _scope, _project, _attrs -> {:error, "Direct string failure"} end)
 
