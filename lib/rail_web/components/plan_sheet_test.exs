@@ -63,13 +63,13 @@ defmodule RailWeb.Components.PlanSheetTest do
     ids =
       for part <- [1, 2] do
         (&PlanSheet.plan_sheet/1)
-        |> render_component(sheet: sheet, doc: :split_part, part: part)
+        |> render_component(sheet: sheet, part: part)
         |> Floki.parse_fragment!()
         |> Floki.attribute("details[data-qa='plan_group']", "id")
         |> hd()
       end
 
-    assert ids == ["split-part-1-group-pipeline", "split-part-2-group-pipeline"]
+    assert ids == ["plan-1-group-pipeline", "plan-2-group-pipeline"]
   end
 
   test "a card shows its path, its prose, then its signatures, and a Deleted badge only when deleted", %{sheet: sheet} do

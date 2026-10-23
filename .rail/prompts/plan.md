@@ -70,7 +70,7 @@ One conditional section is allowed, **`## Explicitly out of scope`**, where a re
 
 There are no other headings. Research earns its place by making those sections correct, not by being written down beside them.
 
-**Never cut what the asker named.** Scope they asked for stays in the ticket, whatever it does to the estimate. Where the work is too big for one ticket, keep the ticket whole and split the work as your brief says, from the code.
+**Never cut what the asker named.** Scope they asked for stays in the ticket, whatever it does to the estimate.
 
 - No padding. Do not restate the title in the first line. Do not add a heading with one obvious line under it.
 - Define a term the first time it appears, unless it is in the list above.
@@ -87,7 +87,7 @@ Every ticket carries both. Nothing leaves at priority None.
 | medium | Real friction with a workaround |
 | low | Polish; fine if it waits |
 
-A Fibonacci estimate, aiming for 1, 2 or 3. A 5 is fine for work that has to ship together. Above that, give the estimate and split the work as your brief says.
+A Fibonacci estimate, aiming for 1, 2 or 3. A 5 is fine for work that has to ship together. Above that, give the estimate as it is.
 
 | Points | Rough feel | Shape of the work |
 |---|---|---|
