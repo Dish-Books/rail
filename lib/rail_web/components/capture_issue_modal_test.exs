@@ -111,7 +111,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     refute has_element?(view, "#capture-project-dropdown option", "Inactive Project")
   end
 
-  test "closes from the close and cancel buttons", %{conn: conn} do
+  test "closes from the close and cancel buttons", %{conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_capture_4",
@@ -124,6 +124,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
 
     view |> element("#global-capture-idea-button") |> render_click()
     assert has_element?(view, "#capture-idea-dialog")
+    assert has_element?(view, "#close-new-issue-button[type='button'][form='capture-issue-form']")
 
     view |> element("#close-new-issue-button") |> render_click()
     refute has_element?(view, "#capture-idea-dialog")
@@ -132,6 +133,21 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     assert has_element?(view, "#capture-idea-dialog")
 
     view |> element("#capture-cancel-button") |> render_click()
+    refute has_element?(view, "#capture-idea-dialog")
+
+    expect(Rail.Issues, :create_issue, fn _scope, project, attrs ->
+      {:ok, %Issue{id: "iss_close", identifier: "CAP-501", title: attrs.title, state: :triage, project: project}}
+    end)
+
+    view |> element("#global-capture-idea-button") |> render_click()
+
+    view
+    |> form("#capture-issue-form", %{"title" => "Close the card", "project_id" => project.id, "priority" => "medium"})
+    |> render_submit()
+
+    assert has_element?(view, "#capture-created-issue", "CAP-501")
+
+    view |> element("#close-new-issue-button") |> render_click()
     refute has_element?(view, "#capture-idea-dialog")
   end
 
@@ -187,6 +203,11 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     assert has_element?(view, "#capture-project-dropdown option[value='#{project2.id}'][selected]")
     assert has_element?(view, "#capture-priority-dropdown option[value='urgent'][selected]")
     refute has_element?(view, "#capture-submit-button[disabled]")
+
+    view |> element("#global-capture-idea-button") |> render_click()
+
+    assert has_element?(view, "#capture-title-input[value='Support offline mode']")
+    assert has_element?(view, "#capture-project-dropdown option[value='#{project2.id}'][selected]")
   end
 
   test "submit does nothing when the title is blank", %{conn: conn} do
@@ -323,6 +344,9 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     refute has_element?(view, "#capture-issue-form")
     refute has_element?(view, "#capture-error-banner")
 
+    view |> element("#global-capture-idea-button") |> render_click()
+    assert has_element?(view, "#capture-created-issue", "CAP-101")
+
     view |> element("#capture-created-issue") |> render_click()
     assert_redirect(view, ~p"/issues/#{issue_id}")
   end
@@ -363,6 +387,41 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
 
     assert [%Issue{identifier: "CAP-301"}] = Repo.all(Issue)
     assert has_element?(view, "#capture-created-issue", "CAP-301")
+  end
+
+  test "the confirmation names the state the tracker filed the issue in", %{conn: conn, project: project} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_capture_14",
+        login: "capture_user_14",
+        email: "capture_user_14@example.com",
+        admin: true
+      })
+
+    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/issues")
+
+    view |> element("#global-capture-idea-button") |> render_click()
+
+    expect(Rail.Issues, :create_issue, fn _scope, %{id: project_id} = project, attrs ->
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project_id,
+        external_id: "lin_capture_backlog",
+        identifier: "CAP-302",
+        title: attrs.title,
+        state: :triage,
+        state_name: "Backlog"
+      })
+      |> Repo.insert()
+      |> then(fn {:ok, issue} -> {:ok, %{issue | project: project}} end)
+    end)
+
+    view
+    |> form("#capture-issue-form", %{"title" => "No triage here", "project_id" => project.id, "priority" => "medium"})
+    |> render_submit()
+
+    assert has_element?(view, "#capture-created", "Created in Backlog")
+    refute has_element?(view, "#capture-created", "Created in Triage")
   end
 
   test "an issue a teammate creates never appears in the confirmation", %{conn: conn, project: project} do
@@ -491,7 +550,8 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     view |> element("#capture-created-new") |> render_click()
 
     refute has_element?(view, "#capture-created")
-    assert has_element?(view, "#capture-title-input[value='']")
+    assert has_element?(view, "#capture-title-input[value=''][phx-mounted]")
+    refute has_element?(view, "#capture-title-input[autofocus]")
     refute has_element?(view, "#capture-description-input", "Body")
     assert has_element?(view, "#capture-project-dropdown option[value='#{project.id}'][selected]")
     assert has_element?(view, "#capture-priority-dropdown option[value='medium'][selected]")
@@ -504,7 +564,8 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     view |> element("#global-capture-idea-button") |> render_click()
 
     refute has_element?(view, "#capture-created")
-    assert has_element?(view, "#capture-title-input[value='']")
+    assert has_element?(view, "#capture-title-input[value=''][phx-mounted]")
+    refute has_element?(view, "#capture-title-input[autofocus]")
     assert has_element?(view, "#capture-project-dropdown option[value='#{project.id}'][selected]")
     assert has_element?(view, "#capture-priority-dropdown option[value='medium'][selected]")
   end
@@ -574,10 +635,23 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
 
     assert has_element?(view, "#capture-error-banner", ":not_authorized")
 
-    for {reason, message} <- [
-          github_issues_permission_missing: "The GitHub App needs Issues: read and write on this repository",
-          github_issues_disabled: "Issues are turned off on this repository"
-        ] do
+    for {reason, message} <-
+          [
+            github_issues_permission_missing: "The GitHub App needs Issues: read and write on this repository",
+            github_issues_disabled: "Issues are turned off on this repository",
+            linear_team_not_found: "This project has no Linear team",
+            no_workspace_token: "Rail is not connected to this project's Linear workspace"
+          ] ++
+            [
+              {{:linear_graphql_error, [%{"message" => "Title is too long"}, %{"message" => "Second"}]},
+               "Linear refused the issue: Title is too long"},
+              {{:linear_api_error, 400, %{"errors" => [%{"message" => "Team is archived"}]}},
+               "Linear refused the issue: Team is archived"},
+              {{:linear_api_error, 503, "Service Unavailable"}, "Linear could not create the issue (503)"},
+              {{:linear_mutation_failed, "issueCreate"}, "Linear did not create the issue"},
+              {{:github_api_error, 422, %{"message" => "Validation Failed"}}, "GitHub could not create the issue (422)"},
+              {%Req.TransportError{reason: :timeout}, "Could not reach the tracker (timeout)"}
+            ] do
       expect(Rail.Issues, :create_issue, fn _scope, _project, _attrs -> {:error, reason} end)
 
       render_submit(element(view, "#capture-issue-form"), %{

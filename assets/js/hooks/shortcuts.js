@@ -1,3 +1,6 @@
+// A modal can hold several forms, so ⌘Enter submits only the one the cursor is in.
+export const formSubmitButton = (target) => target.form?.querySelector("button[type='submit']") ?? null;
+
 export const Shortcuts = {
   mounted() {
     this.handleKeyDown = (e) => {
@@ -21,10 +24,7 @@ export const Shortcuts = {
         const modal = document.querySelector("[data-qa='capture_dialog'], #new-issue-modal, #project-modal");
         if (modal?.contains(e.target)) {
           e.preventDefault();
-          const submitBtn = modal.querySelector("button[type='submit']");
-          if (submitBtn) {
-            submitBtn.click();
-          }
+          formSubmitButton(e.target)?.click();
         }
       }
     };

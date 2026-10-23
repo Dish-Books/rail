@@ -69,6 +69,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
               type="button"
               id="close-new-issue-button"
               data-qa="close_new_issue_button"
+              form="capture-issue-form"
               phx-click="close"
               phx-target={@myself}
               class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 text-sm font-bold p-1 cursor-pointer"
@@ -80,7 +81,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
           <div :if={@created} id="capture-created" role="status" class="space-y-4">
             <p class="flex items-center gap-2 text-[13px] font-medium text-slate-800 dark:text-slate-200">
               <.icon name="pi-check-circle-fill" class="size-4 text-emerald-500" />
-              <span>Created in {Issue.state_label(@created.state)}</span>
+              <span>Created in {@created.state_name || Issue.state_label(@created.state)}</span>
             </p>
             <div class="min-w-0 space-y-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4 py-3">
               <.link
@@ -185,7 +186,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
                 name="title"
                 value={@title}
                 data-qa="capture_title_input"
-                autofocus
+                phx-mounted={JS.focus()}
                 placeholder="What needs doing?"
                 class="w-full px-3 py-2 text-sm rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500"
               />
@@ -276,6 +277,9 @@ defmodule RailWeb.Components.CaptureIssueModal do
     """
   end
 
+  # ⌘N reaches the top bar's button while the dialog is open, and must not wipe what it shows.
+  def handle_event("open", _params, %{assigns: %{open: true}} = socket), do: {:noreply, socket}
+
   def handle_event("open", _params, socket) do
     socket =
       socket
@@ -356,6 +360,21 @@ defmodule RailWeb.Components.CaptureIssueModal do
     do: "The GitHub App needs Issues: read and write on this repository"
 
   defp error_message(:github_issues_disabled), do: "Issues are turned off on this repository"
+
+  defp error_message({:linear_graphql_error, [%{"message" => message} | _rest]}) when is_binary(message),
+    do: "Linear refused the issue: #{message}"
+
+  defp error_message({:linear_api_error, _status, %{"errors" => [%{"message" => message} | _rest]}})
+       when is_binary(message), do: "Linear refused the issue: #{message}"
+
+  defp error_message({:linear_api_error, status, _body}), do: "Linear could not create the issue (#{status})"
+  defp error_message({:linear_mutation_failed, _mutation}), do: "Linear did not create the issue"
+  defp error_message(:linear_team_not_found), do: "This project has no Linear team"
+  defp error_message(:no_workspace_token), do: "Rail is not connected to this project's Linear workspace"
+  defp error_message({:github_api_error, status, _body}), do: "GitHub could not create the issue (#{status})"
+
+  defp error_message(%Req.TransportError{} = error), do: "Could not reach the tracker (#{Exception.message(error)})"
+
   defp error_message(reason) when is_binary(reason), do: reason
   defp error_message(reason), do: inspect(reason)
 end
