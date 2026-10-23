@@ -37,7 +37,7 @@ defmodule Rail.Git.Actions.LoadDiff do
   """
   def load_diff(%Scope{} = scope, %Task{} = task, filter \\ :branch, previous_files \\ []) do
     if Task.worktree_present?(task) do
-      viewed = Git.list_viewed_files(scope, task)
+      viewed = Git.list_viewed_files(scope, task, :diff)
       drawn = Map.new(previous_files, &{{&1.path, &1.digest}, &1.rows})
       sides = sides(task, filter)
       parsed = task |> raw_diff(filter, sides) |> parse_diff()

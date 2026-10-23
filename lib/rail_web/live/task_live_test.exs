@@ -3128,8 +3128,8 @@ defmodule RailWeb.TaskLiveTest do
 
       view |> element("[data-qa='diff-viewed-checkbox']") |> render_click()
 
-      assert %{"shipped.ex" => _digest} = Git.list_viewed_files(scope, task)
-      assert Git.list_viewed_files(user_scope(), task) == %{}
+      assert %{"shipped.ex" => _digest} = Git.list_viewed_files(scope, task, :diff)
+      assert Git.list_viewed_files(user_scope(), task, :diff) == %{}
 
       refute has_element?(view, "[data-qa='diff_line_row']")
 

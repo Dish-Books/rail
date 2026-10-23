@@ -167,7 +167,7 @@ defmodule RailWeb.Live.DiffView do
     read_already? = Enum.any?(socket.assigns.files, &(&1.path == path and &1.viewed?))
 
     {:ok, _marked} =
-      Git.set_file_viewed(socket.assigns.current_scope, socket.assigns.task, path, digest, not read_already?)
+      Git.set_file_viewed(socket.assigns.current_scope, socket.assigns.task, :diff, path, digest, not read_already?)
 
     # A click from a page drawn before the last refresh marks the version it saw,
     # which is only this one if the digest still matches.

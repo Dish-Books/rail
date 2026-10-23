@@ -4,6 +4,7 @@ defmodule RailWeb.Live.PlanStageTest do
   import Ecto.Query
   import Phoenix.LiveViewTest
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
@@ -417,6 +418,151 @@ defmodule RailWeb.Live.PlanStageTest do
 
     assert has_element?(view, "#plan-card-1 [data-qa='plan_card_sketch'][open]")
     assert has_element?(view, "#plan-criteria [data-qa='plan_criterion']", "Not covered")
+  end
+
+  describe "reviewed cards" do
+    setup %{task: task} do
+      {:ok, _plan} = Pipeline.save_plan(task, %{plan: sheet_plan()})
+      %{path: "lib/rail/pipeline/actions/send_back_to_architect.ex"}
+    end
+
+    test "marking a card collapses it and moves both counts, and a second click on the same state changes nothing", %{
+      conn: conn,
+      user: user,
+      task: task,
+      path: path
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+      assert has_element?(view, "#plan-reviewed-count", "0 of 5 reviewed")
+      assert has_element?(view, "#plan-card-1", "Refuses unless the task is at :review and idle.")
+
+      toggle = element(view, "#plan-card-1 [data-qa='plan_card_reviewed']")
+      [digest] = toggle |> render() |> Floki.parse_fragment!() |> Floki.attribute("button", "phx-value-digest")
+      render_click(toggle)
+
+      assert has_element?(view, "#plan-card-1 [data-qa='plan_card_reviewed'][aria-pressed='true']")
+      refute has_element?(view, "#plan-card-1", "Refuses unless the task is at :review and idle.")
+      refute has_element?(view, "#plan-card-1 [data-qa='plan_card_sketch']")
+      assert has_element?(view, "#plan-reviewed-count", "1 of 5 reviewed")
+      assert has_element?(view, "#plan-group-pipeline [data-qa='plan_group_reviewed']", "1 of 3 reviewed")
+      assert has_element?(view, "#plan-group-web [data-qa='plan_group_reviewed']", "0 of 1 reviewed")
+
+      # A double click, or a second tab, asks for the state already set.
+      click = fn reviewed ->
+        render_click(with_target(view, "#plan-stage"), "toggle_plan_file_reviewed", %{
+          "path" => path,
+          "digest" => digest,
+          "reviewed" => reviewed
+        })
+      end
+
+      click.("true")
+      assert Git.list_viewed_files(user_scope(user: user), task, :plan) == %{path => digest}
+      assert has_element?(view, "#plan-reviewed-count", "1 of 5 reviewed")
+
+      view |> element("#plan-card-1 [data-qa='plan_card_reviewed']") |> render_click()
+      click.("false")
+
+      assert Git.list_viewed_files(user_scope(user: user), task, :plan) == %{}
+      assert has_element?(view, "#plan-card-1 [data-qa='plan_card_reviewed'][aria-pressed='false']")
+      assert has_element?(view, "#plan-card-1", "Refuses unless the task is at :review and idle.")
+      assert has_element?(view, "#plan-reviewed-count", "0 of 5 reviewed")
+    end
+
+    test "a path that is not one of the plan's cards is ignored", %{conn: conn, user: user, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+      render_click(with_target(view, "#plan-stage"), "toggle_plan_file_reviewed", %{
+        "path" => "lib/rail/not_in_the_plan.ex",
+        "digest" => "any",
+        "reviewed" => "true"
+      })
+
+      assert Git.list_viewed_files(user_scope(user: user), task, :plan) == %{}
+      assert has_element?(view, "#plan-reviewed-count", "0 of 5 reviewed")
+    end
+
+    test "the marks are the reader's own: a reload keeps them and a teammate sees only theirs", %{
+      conn: conn,
+      task: task
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+      view |> element("#plan-card-1 [data-qa='plan_card_reviewed']") |> render_click()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+      assert has_element?(view, "#plan-card-1 [data-qa='plan_card_reviewed'][aria-pressed='true']")
+      assert has_element?(view, "#plan-reviewed-count", "1 of 5 reviewed")
+
+      {:ok, teammate} =
+        Users.register_oauth_user(%{
+          github_id: "gh_plan_stage_teammate",
+          login: "plan_stage_teammate",
+          email: "plan_stage_teammate@example.com",
+          admin: true
+        })
+
+      assert {:ok, theirs, _html} = live(log_in_user(build_conn(), teammate), ~p"/tasks/#{task.id}?item=plan")
+      assert has_element?(theirs, "#plan-card-1 [data-qa='plan_card_reviewed'][aria-pressed='false']")
+      assert has_element?(theirs, "#plan-reviewed-count", "0 of 5 reviewed")
+
+      theirs |> element("#plan-card-4 [data-qa='plan_card_reviewed']") |> render_click()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+      assert has_element?(view, "#plan-card-4 [data-qa='plan_card_reviewed'][aria-pressed='false']")
+    end
+
+    test "a revision that changes a reviewed card opens it unmarked saying so, and leaves an unchanged one reviewed", %{
+      conn: conn,
+      task: task
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+      view |> element("#plan-card-1 [data-qa='plan_card_reviewed']") |> render_click()
+      view |> element("#plan-card-4 [data-qa='plan_card_reviewed']") |> render_click()
+      assert has_element?(view, "#plan-reviewed-count", "2 of 5 reviewed")
+      refute has_element?(view, "[data-qa='plan_card_revised']")
+
+      revised = String.replace(sheet_plan(), "Refuses unless the task is at `:review` and idle.", "Refuses unless idle.")
+      {:ok, _plan} = Pipeline.save_plan(task, %{plan: revised})
+      _settled = render(view)
+
+      assert has_element?(view, "#plan-card-1[data-state='revised']")
+      assert has_element?(view, "#plan-card-1 [data-qa='plan_card_revised']", "Revised since you reviewed it.")
+      assert has_element?(view, "#plan-card-1 [data-qa='plan_card_reviewed'][aria-pressed='false']")
+      assert has_element?(view, "#plan-card-1", "Refuses unless idle.")
+      assert has_element?(view, "#plan-card-4[data-state='reviewed']")
+      refute has_element?(view, "#plan-card-4 [data-qa='plan_card_revised']")
+      assert has_element?(view, "#plan-reviewed-count", "1 of 5 reviewed")
+      assert has_element?(view, "#plan-group-pipeline [data-qa='plan_group_reviewed']", "0 of 3 reviewed")
+
+      # Marking it again reads the revision as reviewed.
+      view |> element("#plan-card-1 [data-qa='plan_card_reviewed']") |> render_click()
+      assert has_element?(view, "#plan-card-1[data-state='reviewed']")
+      assert has_element?(view, "#plan-reviewed-count", "2 of 5 reviewed")
+    end
+
+    test "a reviewed card keeps the reader's comments and an open box under its header, each naming its line", %{
+      conn: conn,
+      task: task
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+      view |> element("#plan-sheet button[aria-label='Comment on File 1, paragraph 1']") |> render_click()
+      view |> form("#plan-sheet [data-qa='document_comment_form']", %{"body" => "Idle how?"}) |> render_submit()
+      view |> element("#plan-sheet button[aria-label='Comment on File 1, signature line 1']") |> render_click()
+
+      view |> element("#plan-card-1 [data-qa='plan_card_reviewed']") |> render_click()
+
+      refute has_element?(view, "#plan-card-1", "Refuses unless the task is at :review and idle.")
+      assert has_element?(view, "#plan-card-1 [data-qa='document_comment']", "Idle how?")
+      assert has_element?(view, "#plan-card-1 [data-qa='document_comment_line']", "File 1, paragraph 1")
+      assert has_element?(view, "#plan-card-1 [data-qa='document_comment_form']")
+      assert has_element?(view, "#plan-card-1 [data-qa='document_comment_box_line']", "File 1, signature line 1")
+
+      # Its path still takes a comment.
+      view |> element("#plan-card-1 button[aria-label='Comment on File 1']") |> render_click()
+      view |> form("#plan-card-1 [data-qa='document_comment_form']", %{"body" => "Rename it."}) |> render_submit()
+      assert has_element?(view, "#plan-card-1 [data-qa='document_comment']", "Rename it.")
+    end
   end
 
   test "a plan saved before this change, diagrams and all, shows as lines that take a comment", %{

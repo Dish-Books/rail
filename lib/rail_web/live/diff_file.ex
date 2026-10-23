@@ -62,31 +62,14 @@ defmodule RailWeb.Live.DiffFile do
 
           <.diff_stat additions={@file.additions} deletions={@file.deletions} font_size={11} />
 
-          <button
-            type="button"
+          <.reviewed_toggle
+            reviewed={@viewed?}
             phx-click="toggle_viewed"
             phx-target={@target}
             phx-value-path={@file.path}
             phx-value-digest={@file.digest}
-            aria-pressed={to_string(@viewed?)}
             data-qa="diff-viewed-checkbox"
-            class={[
-              "inline-flex items-center gap-1.5 pl-1.5 pr-2.5 py-1 rounded-lg border text-xs font-semibold cursor-pointer",
-              @viewed? &&
-                "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-              not @viewed? &&
-                "border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
-            ]}
-          >
-            <span class={[
-              "size-4 grid place-items-center rounded border",
-              @viewed? && "border-emerald-500 bg-emerald-500 text-white",
-              not @viewed? && "border-slate-300 dark:border-slate-600"
-            ]}>
-              <.icon :if={@viewed?} name="pi-check" class="size-3" />
-            </span>
-            Reviewed
-          </button>
+          />
         </span>
       </div>
 

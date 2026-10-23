@@ -1,6 +1,6 @@
 defmodule Rail.Git.Actions.SetFileViewed do
   @moduledoc """
-  Marks one file of a task's diff read, or unread, for one person.
+  Marks one file of a task's diff, or one card of its plan, read or unread for one person.
 
   The digest is stored alongside, so the mark stands only for the file as it was
   read. A file the engineer touches again has a different digest and reads
@@ -14,12 +14,13 @@ defmodule Rail.Git.Actions.SetFileViewed do
   alias Rail.Scope
 
   @doc """
-  Sets whether `path` is read by the scope's user.
+  Sets whether `path` is read by the scope's user on `document`, `:diff` or `:plan`.
   """
-  def set_file_viewed(%Scope{user: %{id: user_id}}, %Task{id: task_id}, path, digest, true) do
+  def set_file_viewed(%Scope{user: %{id: user_id}}, %Task{id: task_id}, document, path, digest, true) do
     attrs = %{
       task_id: task_id,
       user_id: user_id,
+      document: document,
       path: path,
       digest: digest,
       viewed_at: DateTime.utc_now()
@@ -29,12 +30,12 @@ defmodule Rail.Git.Actions.SetFileViewed do
     |> ViewedFile.changeset(attrs)
     |> Repo.insert(
       on_conflict: [set: [digest: digest, viewed_at: attrs.viewed_at, updated_at: DateTime.utc_now()]],
-      conflict_target: [:task_id, :user_id, :path]
+      conflict_target: [:task_id, :user_id, :document, :path]
     )
   end
 
-  def set_file_viewed(%Scope{user: %{id: user_id}}, %Task{id: task_id}, path, _digest, false) do
-    case Repo.get_by(ViewedFile, task_id: task_id, user_id: user_id, path: path) do
+  def set_file_viewed(%Scope{user: %{id: user_id}}, %Task{id: task_id}, document, path, _digest, false) do
+    case Repo.get_by(ViewedFile, task_id: task_id, user_id: user_id, document: document, path: path) do
       %ViewedFile{} = viewed_file -> Repo.delete(viewed_file)
       nil -> {:ok, nil}
     end

@@ -499,7 +499,7 @@ defmodule Rail.Git.Actions.LoadDiffTest do
   test "a file that has not moved keeps the rows it was drawn with", %{scope: scope, task: task} do
     {:ok, files} = Git.load_diff(scope, task, :branch)
     shipped = Enum.find(files, &(&1.path == "shipped.ex"))
-    {:ok, _marked} = Git.set_file_viewed(scope, task, shipped.path, shipped.digest, true)
+    {:ok, _marked} = Git.set_file_viewed(scope, task, :diff, shipped.path, shipped.digest, true)
 
     kept =
       Enum.map(files, fn file ->
@@ -528,12 +528,12 @@ defmodule Rail.Git.Actions.LoadDiffTest do
     shipped = Enum.find(files, &(&1.path == "shipped.ex"))
     refute shipped.viewed?
 
-    {:ok, _marked} = Git.set_file_viewed(scope, task, shipped.path, shipped.digest, true)
+    {:ok, _marked} = Git.set_file_viewed(scope, task, :diff, shipped.path, shipped.digest, true)
 
     {:ok, files} = Git.load_diff(scope, task, :branch)
     assert Enum.find(files, &(&1.path == "shipped.ex")).viewed?
 
-    {:ok, _moved} = Git.set_file_viewed(scope, task, shipped.path, "a_stale_digest", true)
+    {:ok, _moved} = Git.set_file_viewed(scope, task, :diff, shipped.path, "a_stale_digest", true)
 
     {:ok, files} = Git.load_diff(scope, task, :branch)
     refute Enum.find(files, &(&1.path == "shipped.ex")).viewed?

@@ -44,6 +44,6 @@ defmodule Rail.Git do
   defdelegate expand_diff_gap(task, path, gap_index, start_line, end_line, revision \\ :worktree),
     to: Actions.ExpandDiffGap
 
-  defdelegate list_viewed_files(scope, task), to: Actions.ListViewedFiles
-  defdelegate set_file_viewed(scope, task, path, digest, viewed), to: Actions.SetFileViewed
+  defdelegate list_viewed_files(scope, task, document), to: Actions.ListViewedFiles
+  defdelegate set_file_viewed(scope, task, document, path, digest, viewed), to: Actions.SetFileViewed
 end

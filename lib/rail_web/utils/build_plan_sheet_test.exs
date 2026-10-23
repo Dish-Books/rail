@@ -171,6 +171,23 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
     assert first != second
   end
 
+  test "a card's digest moves when its own text changes, and not when another card's does" do
+    digests = fn plan -> plan |> build_plan_sheet() |> Map.fetch!(:cards) |> Map.new(&{&1.path, &1.digest}) end
+    before = digests.(sheet_plan())
+
+    after_revision =
+      sheet_plan()
+      |> String.replace("Adds the Send back button beside Send to QA.", "Adds the Send back button under the footer.")
+      |> digests.()
+
+    assert before["lib/rail_web/live/review_stage.ex"] != after_revision["lib/rail_web/live/review_stage.ex"]
+
+    assert Map.delete(before, "lib/rail_web/live/review_stage.ex") ==
+             Map.delete(after_revision, "lib/rail_web/live/review_stage.ex")
+
+    assert before |> Map.values() |> Enum.uniq() |> length() == map_size(before)
+  end
+
   test "a plan without Data changes, criteria or Verification has no such part, and one that does not lay out has none" do
     plan =
       sheet_plan()
