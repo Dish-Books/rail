@@ -62,6 +62,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate round_plan(assigns), to: Components.RoundPlan
   defdelegate review_send_card(assigns), to: Components.ReviewSendCard
   defdelegate review_status(assigns), to: Components.ReviewStatus
+  defdelegate reviewed_toggle(assigns), to: Components.ReviewedToggle
 
   defdelegate sandbox_meters(assigns), to: Components.SandboxMeters
   defdelegate sandbox_stats(assigns), to: Components.SandboxStats

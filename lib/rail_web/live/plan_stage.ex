@@ -39,6 +39,7 @@ defmodule RailWeb.Live.PlanStage do
       |> assign_new(:reported_changed, fn -> nil end)
       |> assign_new(:selected_key, fn -> nil end)
       |> load()
+      |> assign_reviewed()
       |> assign_default_paths()
 
     {:ok, socket}
@@ -116,6 +117,7 @@ defmodule RailWeb.Live.PlanStage do
               pending_text={@pending_text}
               criteria={@criteria}
               lines={@plan_lines}
+              reviewed={@reviewed}
               default_paths={@default_paths}
               project={@task.project}
               placed={@plan_comments.placed}
@@ -301,6 +303,19 @@ defmodule RailWeb.Live.PlanStage do
       # Another tab removed or sent it already.
       nil ->
         {:noreply, assign_comments(socket)}
+    end
+  end
+
+  # Only a card this page drew is marked, as the path comes from the page. The digest is the one the reader saw, so a
+  # click from a page drawn before a revision marks the version read, which then reads revised.
+  def handle_event("toggle_plan_file_reviewed", %{"path" => path, "digest" => digest, "reviewed" => reviewed}, socket) do
+    %{current_scope: scope, task: task, sheet: sheet} = socket.assigns
+
+    if sheet && Enum.any?(sheet.cards, &(&1.path == path)) do
+      {:ok, _mark} = Git.set_file_viewed(scope, task, :plan, path, digest, reviewed == "true")
+      {:noreply, assign(socket, :reviewed, Git.list_viewed_files(scope, task, :plan))}
+    else
+      {:noreply, socket}
     end
   end
 
@@ -693,6 +708,7 @@ defmodule RailWeb.Live.PlanStage do
   attr :pending_text, :string, required: true
   attr :criteria, :list, required: true, doc: "the ticket's acceptance criteria, for the plan's criteria table"
   attr :lines, :list, required: true, doc: "the plan's lines, read off its sheet or, without one, off its markdown"
+  attr :reviewed, :map, default: nil, doc: "the cards the reader marked reviewed, by path, with the digest each had"
   attr :default_paths, :any, required: true
   attr :project, :any, required: true
   attr :placed, :map, required: true
@@ -738,6 +754,7 @@ defmodule RailWeb.Live.PlanStage do
         default_paths={@default_paths}
         project={@project}
         target={@target}
+        reviewed={@reviewed}
         placed={@placed}
         changed={@changed}
         draft={@draft}
@@ -1072,6 +1089,13 @@ defmodule RailWeb.Live.PlanStage do
 
   defp sheet(plan, ticket_lines),
     do: build_plan_sheet(plan.content, ticket_lines |> criteria_lines() |> Enum.map(& &1.number))
+
+  # Offered on the task's own plan alone, not on the part a child was approved with.
+  defp assign_reviewed(%{assigns: %{sheet: nil}} = socket), do: assign(socket, :reviewed, nil)
+  defp assign_reviewed(%{assigns: %{child_of: %{}}} = socket), do: assign(socket, :reviewed, nil)
+
+  defp assign_reviewed(%{assigns: %{current_scope: scope, task: task}} = socket),
+    do: assign(socket, :reviewed, Git.list_viewed_files(scope, task, :plan))
 
   defp plan_lines(nil, _sheet), do: []
   defp plan_lines(_plan, %{lines: lines}), do: lines

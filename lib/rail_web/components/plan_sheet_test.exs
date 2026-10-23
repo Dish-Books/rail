@@ -240,6 +240,88 @@ defmodule RailWeb.Components.PlanSheetTest do
     assert [^id] = Floki.attribute(html, "#plan-card-2 [data-qa='plan_card_sketch']", "id")
   end
 
+  test "the Changes header and each group's header count the cards the reader marked reviewed", %{sheet: sheet} do
+    [first, second | _rest] = sheet.cards
+    reviewed = %{first.path => first.digest, second.path => "an older digest"}
+
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: sheet, reviewed: reviewed)
+      |> Floki.parse_fragment!()
+
+    assert Floki.text(Floki.find(html, "#plan-reviewed-count")) =~ ~r/1\s+of\s+5\s+reviewed/
+    assert Floki.text(Floki.find(html, "#plan-group-pipeline summary")) =~ ~r/3\s+files\s+·\s+1\s+of\s+3\s+reviewed/
+    assert Floki.text(Floki.find(html, "#plan-group-web summary")) =~ ~r/·\s+0\s+of\s+1\s+reviewed/
+
+    assert Floki.attribute(html, "#plan-card-1 [data-qa='plan_card_reviewed']", "aria-pressed") == ["true"]
+    assert Floki.attribute(html, "#plan-card-2 [data-qa='plan_card_reviewed']", "aria-pressed") == ["false"]
+    assert Floki.text(Floki.find(html, "#plan-card-2 [data-qa='plan_card_revised']")) =~ "Revised since you reviewed it."
+    assert Floki.find(html, "#plan-card-4 [data-qa='plan_card_revised']") == []
+  end
+
+  test "without the reader's marks, as on a split's part, no card takes one and nothing is counted", %{sheet: sheet} do
+    html = (&PlanSheet.plan_sheet/1) |> render_component(sheet: sheet) |> Floki.parse_fragment!()
+
+    assert Floki.find(html, "[data-qa='plan_card_reviewed']") == []
+    assert Floki.find(html, "[data-qa='plan_reviewed_count']") == []
+    assert Floki.find(html, "[data-qa='plan_group_reviewed']") == []
+  end
+
+  test "a reviewed card is its header alone, with its lines' comments and box under it, each naming its line", %{
+    sheet: sheet
+  } do
+    [
+      %{
+        path: path,
+        digest: digest,
+        line: file_line,
+        prose: [prose],
+        signatures: [signature],
+        sketch: [_first, sketched, _end]
+      }
+      | _rest
+    ] = sheet.cards
+
+    comment = fn id, line ->
+      %PlanComment{
+        id: id,
+        target: :plan,
+        element_kind: line.kind,
+        element_label: line.label,
+        element_text: line.text,
+        body: "About #{line.label}."
+      }
+    end
+
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(
+        sheet: sheet,
+        reviewed: %{path => digest},
+        offered: true,
+        placed: %{prose.key => [{comment.("pcm_p", prose), 1}], sketched.key => [{comment.("pcm_k", sketched), 2}]},
+        draft: %{doc: :plan, key: signature.key, label: signature.label, body: "Why"}
+      )
+      |> Floki.parse_fragment!()
+
+    [card] = Floki.find(html, "#plan-card-1")
+    refute Floki.text(card) =~ "Refuses unless the task is at :review and idle."
+    assert Floki.find(card, "[data-qa='plan_card_signatures']") == []
+    assert Floki.find(card, "[data-qa='plan_card_sketch']") == []
+    assert Floki.find(card, "#line-plan-#{prose.key}") == []
+
+    assert [_header_add] = Floki.find(card, "button[aria-label='Comment on #{file_line.label}']")
+    assert [_one_add] = Floki.find(card, "[data-qa='line_comment_add']")
+
+    assert ["File 1, paragraph 1", "File 1, sketch line 2"] =
+             card |> Floki.find("[data-qa='document_comment_line']") |> Enum.map(&String.trim(Floki.text(&1)))
+
+    assert [_box] = Floki.find(card, "#document-comment-form-#{signature.key}")
+
+    ids = Floki.attribute(html, "[id]", "id")
+    assert Enum.uniq(ids) == ids
+  end
+
   test "a criterion the plan names nothing for reads Not covered, and those around it keep their files and tests", %{
     sheet: sheet,
     criteria: criteria

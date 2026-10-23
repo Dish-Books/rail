@@ -28,6 +28,10 @@ defmodule RailWeb.Components.PlanSheet do
   attr :draft, :map, default: nil, doc: "the line the comment box is open under"
   attr :offered, :boolean, default: false, doc: "the reader can comment now"
 
+  attr :reviewed, :map,
+    default: nil,
+    doc: "the reader's marks, each card's path to the digest it had when marked; without them no card takes one"
+
   attr :default_paths, :any,
     default: nil,
     doc: "the cards' paths on the default branch, or nil when the clone could not say"
@@ -40,6 +44,7 @@ defmodule RailWeb.Components.PlanSheet do
       |> assign(:base, if(assigns.part, do: "plan-#{assigns.part}", else: "plan"))
       |> assign(:on, %{placed: assigns.placed, draft: assigns.draft, offered: assigns.offered, doc: :plan})
       |> assign(:rows, rows(assigns.sheet.criteria, assigns.criteria))
+      |> assign(:reviewed_count, reviewed_count(assigns.sheet.cards, assigns.reviewed))
       |> assign(:columns, @columns)
       |> assign(:groups, groups(assigns))
 
@@ -121,15 +126,25 @@ defmodule RailWeb.Components.PlanSheet do
 
       <section id="plan-changes">
         <.line line={@sheet.changes_title} on={@on} target={@target} class="mb-2">
-          <.heading
-            title="Changes"
-            subtitle={
-              if @default_paths,
-                do:
-                  "Grouped by where the code goes. Changed files link to #{@project.default_branch} on GitHub.",
-                else: "Grouped by where the code goes"
-            }
-          />
+          <div class="flex items-baseline gap-2">
+            <.heading
+              title="Changes"
+              subtitle={
+                if @default_paths,
+                  do:
+                    "Grouped by where the code goes. Changed files link to #{@project.default_branch} on GitHub.",
+                  else: "Grouped by where the code goes"
+              }
+            />
+            <span
+              :if={@reviewed}
+              id="plan-reviewed-count"
+              data-qa="plan_reviewed_count"
+              class="ml-auto shrink-0 text-[13px] font-semibold text-slate-900 dark:text-slate-100"
+            >
+              {@reviewed_count} of {length(@sheet.cards)} reviewed
+            </span>
+          </div>
         </.line>
         <details
           :for={group <- @groups}
@@ -155,9 +170,23 @@ defmodule RailWeb.Components.PlanSheet do
             >
               {group.count}
             </span>
+            <span
+              :if={@reviewed}
+              data-qa="plan_group_reviewed"
+              class="shrink-0 text-[12px] text-slate-500"
+            >
+              · {reviewed_count(group.cards, @reviewed)} of {length(group.cards)} reviewed
+            </span>
           </summary>
           <div class="space-y-2 px-2.5 pb-2.5">
-            <.card :for={card <- group.cards} card={card} base={@base} on={@on} target={@target} />
+            <.card
+              :for={card <- group.cards}
+              card={card}
+              state={state(card, @reviewed)}
+              base={@base}
+              on={@on}
+              target={@target}
+            />
           </div>
         </details>
       </section>
@@ -194,16 +223,23 @@ defmodule RailWeb.Components.PlanSheet do
   end
 
   attr :card, :map, required: true
+  attr :state, :atom, required: true, values: [nil, :unreviewed, :reviewed, :revised]
   attr :base, :string, required: true
   attr :on, :map, required: true
   attr :target, :any, required: true
 
+  # A reviewed card is its header alone, so the comments on its other lines are drawn under it, each naming its line.
   defp card(assigns) do
     ~H"""
     <div
       id={"#{@base}-card-#{@card.number}"}
       data-qa="plan_card"
-      class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+      data-state={@state}
+      class={[
+        "rounded-xl border bg-white dark:bg-slate-900",
+        @state == :revised && "border-amber-400 dark:border-amber-700/60",
+        @state != :revised && "border-slate-200 dark:border-slate-700"
+      ]}
     >
       <div class="px-4 py-1.5">
         <.line line={@card.line} on={@on} target={@target}>
@@ -228,13 +264,48 @@ defmodule RailWeb.Components.PlanSheet do
             >
               {@card.path}
             </span>
+            <span class="ml-auto" />
+            <.reviewed_toggle
+              :if={@state}
+              reviewed={@state == :reviewed}
+              phx-click="toggle_plan_file_reviewed"
+              phx-value-path={@card.path}
+              phx-value-digest={@card.digest}
+              phx-value-reviewed={to_string(@state != :reviewed)}
+              phx-target={@target}
+              data-qa="plan_card_reviewed"
+            />
           </div>
         </.line>
-        <.line :for={line <- @card.prose} line={line} on={@on} target={@target} />
+        <p
+          :if={@state == :revised}
+          data-qa="plan_card_revised"
+          class="mb-1.5 rounded-md border border-amber-300 dark:border-amber-600/60 bg-amber-50 dark:bg-amber-950/40 px-3 py-1.5 text-[12.5px] text-amber-800 dark:text-amber-200"
+        >
+          <b class="font-semibold">Revised since you reviewed it.</b>
+          Plan changed this file's part, so it's unmarked.
+        </p>
+        <.line
+          :for={line <- @card.prose}
+          :if={@state != :reviewed}
+          line={line}
+          on={@on}
+          target={@target}
+        />
       </div>
 
+      <.line
+        :for={line <- @card.prose ++ @card.signatures ++ @card.sketch}
+        :if={@state == :reviewed}
+        line={line}
+        layout={:away}
+        on={@on}
+        target={@target}
+        class="last:rounded-b-xl"
+      />
+
       <div
-        :if={@card.signatures != []}
+        :if={@card.signatures != [] and @state != :reviewed}
         data-qa="plan_card_signatures"
         class="py-1.5 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950/50 last:rounded-b-xl"
       >
@@ -249,7 +320,7 @@ defmodule RailWeb.Components.PlanSheet do
       </div>
 
       <details
-        :if={@card.sketch != []}
+        :if={@card.sketch != [] and @state != :reviewed}
         id={"#{@base}-sketch-#{@card.id}"}
         data-qa="plan_card_sketch"
         open={Enum.any?(@card.sketch, &Map.has_key?(@on.placed, &1.key))}
@@ -451,6 +522,20 @@ defmodule RailWeb.Components.PlanSheet do
       Map.merge(Map.fetch!(by_number, criterion.number), %{html: criterion.html, last?: index == last})
     end)
   end
+
+  # Read as the card read when it was marked, so a revision to it reads revised rather than reviewed.
+  defp state(_card, nil), do: nil
+
+  defp state(card, reviewed) do
+    case Map.fetch(reviewed, card.path) do
+      {:ok, digest} when digest == card.digest -> :reviewed
+      {:ok, _other_digest} -> :revised
+      :error -> :unreviewed
+    end
+  end
+
+  defp reviewed_count(_cards, nil), do: 0
+  defp reviewed_count(cards, reviewed), do: Enum.count(cards, &(state(&1, reviewed) == :reviewed))
 
   # Without the default branch's paths a card cannot tell New from Changed, so a group counts its files instead.
   defp groups(%{default_paths: nil, sheet: sheet}) do
