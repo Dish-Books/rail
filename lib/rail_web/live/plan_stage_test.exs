@@ -116,7 +116,121 @@ defmodule RailWeb.Live.PlanStageTest do
     assert has_element?(view, "#plan-section-ticket")
     assert has_element?(view, "#plan-section-design")
     assert has_element?(view, "#plan-section-plan #plan-plan")
+    assert has_element?(view, "#plan-tab-plan")
+    refute has_element?(view, "#plan-tab-split")
     refute has_element?(view, "#plan-section-split")
+
+    assert ["plan-tab-ticket", "plan-tab-design", "plan-tab-plan"] ==
+             view |> render() |> Floki.parse_document!() |> Floki.attribute("[data-qa='plan_tab']", "id")
+  end
+
+  test "every part is a panel on the page with only the opening one shown, and a tab switches in the browser alone", %{
+    conn: conn,
+    task: task
+  } do
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+    assert has_element?(view, "#plan-section-plan[role='tabpanel']:not(.hidden) #plan-plan")
+    assert has_element?(view, "#plan-section-ticket.hidden [data-qa='plan_ticket']")
+    assert has_element?(view, "#plan-section-design.hidden")
+    assert has_element?(view, "#plan-tab-plan[aria-selected='true']")
+    assert has_element?(view, "#plan-tab-ticket[aria-selected='false']")
+
+    doc = view |> render() |> Floki.parse_document!()
+
+    # Only these four on every tab, so nothing goes to the server.
+    for id <- ["ticket", "design", "plan"] do
+      [click] = Floki.attribute(doc, "#plan-tab-#{id}", "phx-click")
+      hidden = "#plan-panels-#{task.id} > [role='tabpanel']:not(#plan-section-#{id})"
+      section = "#plan-section-#{id}"
+      unselected = "#plan-tabs-#{task.id} > [role='tab']:not(#plan-tab-#{id})"
+      tab = "#plan-tab-#{id}"
+
+      assert [
+               ["hide", %{"to" => ^hidden}],
+               ["show", %{"to" => ^section, "display" => "block"}],
+               ["set_attr", %{"to" => ^unselected, "attr" => ["aria-selected", "false"]}],
+               ["set_attr", %{"to" => ^tab, "attr" => ["aria-selected", "true"]}]
+             ] = Jason.decode!(click)
+    end
+  end
+
+  test "after the first render the browser alone keeps which panel shows and which tab reads selected", %{
+    conn: conn,
+    task: task
+  } do
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+    doc = view |> render() |> Floki.parse_document!()
+
+    assert [_ticket, _design, _plan] =
+             panels = Floki.attribute(doc, "#plan-panels-#{task.id} > [role='tabpanel']", "phx-mounted")
+
+    assert Enum.all?(panels, &(Jason.decode!(&1) == [["ignore_attrs", %{"attrs" => ["class"]}]]))
+
+    assert [_ticket, _design, _plan] = tabs = Floki.attribute(doc, "#plan-tabs-#{task.id} > [role='tab']", "phx-mounted")
+    assert Enum.all?(tabs, &(Jason.decode!(&1) == [["ignore_attrs", %{"attrs" => ["aria-selected"]}]]))
+  end
+
+  test "the page opens on Ticket before a plan is saved, and a plan saved after leaves it there", %{
+    conn: conn,
+    task: task
+  } do
+    Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [plan: nil])
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+    assert has_element?(view, "#plan-section-ticket:not(.hidden)")
+    assert has_element?(view, "#plan-section-plan.hidden #plan-plan-pending")
+
+    {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan})
+    _settled = render(view)
+
+    assert has_element?(view, "#plan-section-plan.hidden #plan-plan")
+    assert has_element?(view, "#plan-section-ticket:not(.hidden)")
+    assert has_element?(view, "#plan-tab-ticket[aria-selected='true']")
+    assert has_element?(view, "#plan-tab-plan[aria-selected='false']")
+  end
+
+  test "while three options wait for a pick the page opens on Design, whose tab raises a hand through every save", %{
+    conn: conn,
+    task: task
+  } do
+    dir = Path.join(task.scratch_path, "design")
+    File.mkdir_p!(dir)
+
+    for key <- ["cards", "table", "timeline"] do
+      File.write!(Path.join(dir, "#{key}.html"), "<h1>#{key}</h1>")
+      File.write!(Path.join(dir, "#{key}.png"), "png bytes")
+      {:ok, _option} = Pipeline.save_design_option(task, %{key: key, title: key, summary: "#{key}."})
+    end
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+    assert has_element?(view, "#plan-section-design:not(.hidden) #design-options")
+    assert has_element?(view, "#plan-tab-design[aria-selected='true'] #plan-tab-design-waiting")
+    refute has_element?(view, "#plan-tab-ticket [data-qa='plan_tab_waiting']")
+    refute has_element?(view, "#plan-tab-plan [data-qa='plan_tab_waiting']")
+
+    {:ok, _plan} = Pipeline.save_plan(task, %{plan: String.replace(@plan, "All of it.", "Revised.")})
+    _settled = render(view)
+
+    assert has_element?(view, "#plan-section-plan.hidden #plan-plan", "Revised.")
+    assert has_element?(view, "#plan-section-design:not(.hidden)")
+    assert has_element?(view, "#plan-tab-design-waiting")
+
+    File.write!(Path.join(dir, "picked"), "table")
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+    refute has_element?(view, "#plan-tab-design-waiting")
+    assert has_element?(view, "#plan-section-plan:not(.hidden)")
+    assert has_element?(view, "#plan-section-design.hidden")
+  end
+
+  test "a tab Plan is writing carries a spinner and no hand", %{conn: conn, task: task, run: run} do
+    Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [ticket: nil, plan: nil])
+    {:ok, _working} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+    assert has_element?(view, "#plan-tab-ticket-working", "being written")
+    assert has_element?(view, "#plan-tab-design-working")
+    refute has_element?(view, "#plan-tab-plan-working")
+    refute has_element?(view, "[data-qa='plan_tab_waiting']")
   end
 
   test "a child's Plan tab shows its approved part as a sheet, under a notice naming every child it waits on", %{
