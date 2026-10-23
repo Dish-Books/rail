@@ -118,6 +118,80 @@ defmodule RailWeb.Live.PlanStageTest do
     refute has_element?(view, "#plan-section-split")
   end
 
+  test "a pull request handed over shows the issue's ticket and where it came from, with nothing to approve", %{
+    conn: conn,
+    user: user,
+    project: project
+  } do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_pst_pr", "identifier" => "PST-20", "title" => "Hosts on the Sandboxes page"}
+          }
+        }
+      })
+    end)
+
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Hosts on the Sandboxes page"})
+    {:ok, task} = Pipeline.create_task(issue, :review)
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+    {:ok, task} =
+      Pipeline.update_task(task, %{
+        worktree_name: "michael/pst-20-hosts-on-the-sandboxes-page-and-a-long-branch-name",
+        pr_number: 212,
+        pr_url: "https://github.com/example/test-seed/pull/212",
+        submitted_by_id: user.id,
+        submitted_at: DateTime.utc_now(),
+        submitted_head: "4e1c2a9f00d"
+      })
+
+    Repo.insert!(%Round{
+      task_id: task.id,
+      number: 1,
+      approved_at: DateTime.utc_now(),
+      approved_by_id: user.id,
+      ticket: %Round.Ticket{title: "Hosts on the Sandboxes page", description: "Each row names its host."}
+    })
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+    assert has_element?(view, "#review-item-plan[title='Plan: From PR #212, no plan']")
+    assert has_element?(view, "#plan-section-ticket-status", "From the issue")
+    assert has_element?(view, "#plan-ticket-title", "Hosts on the Sandboxes page")
+    assert has_element?(view, "#plan-section-design-status", "None")
+    assert has_element?(view, "#plan-design-submitted", "None. Submitted work has no design options.")
+    assert has_element?(view, "#plan-section-plan-status", "From a pull request")
+    assert has_element?(view, "#plan-submitted", "Handed to Rail by plan_stage")
+    assert has_element?(view, "#plan-submitted-pr[href='https://github.com/example/test-seed/pull/212']", "#212")
+
+    assert has_element?(
+             view,
+             "#plan-submitted-branch",
+             "michael/pst-20-hosts-on-the-sandboxes-page-and-a-long-branch-name"
+           )
+
+    assert has_element?(view, "#plan-submitted-head", "4e1c2a9")
+    assert has_element?(view, "#plan-submitted", "There is no plan, so the ticket is the whole specification.")
+    refute has_element?(view, "#plan-design-pending")
+    refute has_element?(view, "#plan-plan-pending")
+    refute render(view) =~ "Plan stopped"
+    refute has_element?(view, "#task-approve-plan")
+    refute has_element?(view, "#task-plan-unapproved")
+
+    {:ok, _named} = Users.update_user(system_scope(), user, %{name: "Michael Gutierrez"})
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+    assert has_element?(view, "#plan-submitted", "Handed to Rail by Michael Gutierrez,")
+
+    {:ok, _left} = Pipeline.update_task(task, %{submitted_by_id: nil})
+    Repo.insert!(%Round{task_id: task.id, number: 2, plan: "Fix it.", approved_at: DateTime.utc_now()})
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan&round=1")
+    assert has_element?(view, "#plan-round-select option[value='1']", "Round 1 · the pull request")
+    assert has_element?(view, "#plan-submitted", "Handed to Rail,")
+  end
+
   test "a child's Plan tab shows its approved part as a sheet, under a notice naming every child it waits on", %{
     conn: conn,
     project: project

@@ -39,7 +39,7 @@ defmodule Rail.Pipeline.Schemas.Task do
     # A block of ports on this machine, unique across every project's tasks.
     field :worktree_slot, :integer
     field :worktree_setup_at, :utc_datetime_usec
-    # The pull request Rail opened, as a draft, the first time the branch was pushed.
+    # The pull request Rail opened, as a draft, the first time the branch was pushed, or the one handed to it.
     field :pr_number, :integer
     field :pr_url, :string
     field :pr_is_draft, :boolean
@@ -58,10 +58,14 @@ defmodule Rail.Pipeline.Schemas.Task do
     field :merge_error, :string
     field :merge_error_at, :utc_datetime_usec
     field :merge_sha, :string
+    # A pull request opened outside Rail and handed to it: who handed it over, when, and the commit it was at.
+    field :submitted_at, :utc_datetime_usec
+    field :submitted_head, :string
 
     belongs_to :project, Project
     belongs_to :marked_ready_by, User
     belongs_to :merged_by, User
+    belongs_to :submitted_by, User
     belongs_to :issue, Issue
     belongs_to :parent_task, __MODULE__
 
@@ -99,7 +103,10 @@ defmodule Rail.Pipeline.Schemas.Task do
     :merge_sha,
     :base_behind,
     :base_conflicts,
-    :base_checked_at
+    :base_checked_at,
+    :submitted_by_id,
+    :submitted_at,
+    :submitted_head
   ]
 
   @required_fields [

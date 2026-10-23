@@ -18,7 +18,11 @@ defmodule RailWeb.IssueLive do
   @issue_events ["assign", "filter_assignees", "draft_comment", "comment"]
 
   def mount(_params, _session, socket) do
-    if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+      # A task started from another tab or page replaces Start at with its link.
+      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+    end
 
     socket =
       socket
@@ -28,6 +32,8 @@ defmodule RailWeb.IssueLive do
       |> assign(:assignees, [])
       |> assign(:assignee_query, "")
       |> assign(:comment_nonce, 0)
+      |> assign(:pull_request, "")
+      |> assign(:review_error, nil)
 
     {:ok, socket}
   end
@@ -53,6 +59,8 @@ defmodule RailWeb.IssueLive do
         assignees={@assignees}
         assignee_query={@assignee_query}
         comment_nonce={@comment_nonce}
+        pull_request={@pull_request}
+        review_error={@review_error}
         owner_editable={
           not match?(%{task: %Task{parent_task_id: parent_id}} when is_binary(parent_id), @issue)
         }
@@ -64,12 +72,36 @@ defmodule RailWeb.IssueLive do
   def handle_event("start_task", %{"stage" => stage}, socket) do
     {:ok, stage} = Task.cast_stage(stage)
 
-    case Pipeline.start_task(socket.assigns.issue, stage) do
+    case Pipeline.start_task(socket.assigns.current_scope, socket.assigns.issue, stage) do
       {:ok, task} ->
         {:noreply, push_navigate(socket, to: ~p"/tasks/#{task.id}")}
 
       {:error, reason} ->
         socket = socket |> put_flash(:error, start_error(reason)) |> load_issue(socket.assigns.issue.id)
+        {:noreply, socket}
+    end
+  end
+
+  # Held here, so a reload of the issue while it is typed keeps it.
+  def handle_event("draft_review", %{"pull_request" => reference}, socket) do
+    {:noreply, assign(socket, :pull_request, reference)}
+  end
+
+  # A refusal stays under the field with what was typed, so it can be corrected rather than typed again.
+  def handle_event("start_review", %{"pull_request" => reference}, socket) do
+    %{current_scope: scope, issue: issue} = socket.assigns
+
+    case Pipeline.start_task(scope, issue, :review, reference) do
+      {:ok, task} ->
+        {:noreply, push_navigate(socket, to: ~p"/tasks/#{task.id}")}
+
+      {:error, reason} ->
+        socket =
+          socket
+          |> assign(:pull_request, reference)
+          |> assign(:review_error, review_error(reason, issue.project))
+          |> load_issue(issue.id)
+
         {:noreply, socket}
     end
   end
@@ -100,6 +132,14 @@ defmodule RailWeb.IssueLive do
 
   def handle_info({:issue_created, _issue_id}, socket), do: {:noreply, socket}
 
+  # Any task could be this issue's new one while it has none; once it has one, only that task's changes show here.
+  def handle_info({:pipeline_changed, task_id}, %{assigns: %{issue: %{task: task} = issue}} = socket)
+      when is_nil(task) or task.id == task_id do
+    {:noreply, load_issue(socket, issue.id)}
+  end
+
+  def handle_info({:pipeline_changed, _other_task_id}, socket), do: {:noreply, socket}
+
   defp load_issue(socket, id) do
     preload = [
       :project,
@@ -126,4 +166,24 @@ defmodule RailWeb.IssueLive do
   defp start_error({:spawn_failed, reason, _run}), do: "Could not start the agent: #{inspect(reason)}"
   defp start_error(:dispatch_disabled), do: "Dispatch is switched off, so no agent was started."
   defp start_error(reason), do: "Could not start: #{inspect(reason)}"
+
+  defp review_error(:not_a_pull_request, _project), do: "Give the pull request's number, such as #212, or its link."
+  defp review_error({:other_repository, repo}, project), do: "That links to #{repo}, not #{project.github_repo}."
+  defp review_error({:no_pull_request, repo, number}, _project), do: "#{repo} has no pull request ##{number}."
+
+  defp review_error({:pull_request_merged, number}, _project),
+    do: "##{number} is merged, so there is nothing left to review."
+
+  defp review_error({:pull_request_closed, number}, _project),
+    do: "##{number} is closed, so there is nothing left to review."
+
+  defp review_error({:pull_request_from_fork, number}, _project),
+    do: "##{number} comes from a fork, so Rail could not push fixes to it."
+
+  defp review_error({:pull_request_into, number, base, default}, _project),
+    do: "##{number} merges into #{base}, not #{default}."
+
+  defp review_error({:pull_request_taken, number, identifier}, _project), do: "#{identifier} already works on ##{number}."
+  defp review_error({:branch_failed, output}, _project), do: "Could not check out the pull request's branch: #{output}"
+  defp review_error(reason, _project), do: "Could not start: #{inspect(reason)}"
 end

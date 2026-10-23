@@ -1,7 +1,8 @@
 defmodule RailWeb.Live.PlanStage do
   @moduledoc """
   The Plan step: the ticket, the design options and the plan, one under another on one page, each under a heading
-  saying where it stands, and the one Approve in the header. A child of a split shows only its approved part.
+  saying where it stands, and the one Approve in the header. A child of a split shows only its approved part, and a
+  pull request handed over its issue's ticket and where it came from.
 
   Everything here is read off scratch and the runs whenever the page reloads it, so a save shows
   the moment it lands. What waits on the human opens when the step opens, and only a click changes it after.
@@ -85,7 +86,15 @@ defmodule RailWeb.Live.PlanStage do
           </.plan_section>
 
           <.plan_section item={@items_by_id["design"]}>
+            <p
+              :if={@submitted}
+              id="plan-design-submitted"
+              class="text-sm text-slate-500 dark:text-slate-400"
+            >
+              None. Submitted work has no design options.
+            </p>
             <.design_pane
+              :if={!@submitted}
               task={@task}
               design={@design}
               option={@option}
@@ -103,7 +112,9 @@ defmodule RailWeb.Live.PlanStage do
           </.plan_section>
 
           <.plan_section item={@items_by_id["plan"]}>
+            <.submitted_pane :if={@submitted} task={@task} />
             <.plan_pane
+              :if={!@submitted}
               plan={@plan}
               sheet={@sheet}
               banner={@banner}
@@ -756,6 +767,48 @@ defmodule RailWeb.Live.PlanStage do
     """
   end
 
+  attr :task, Task, required: true
+
+  # A pull request handed over has no plan, so this says where the work came from in its place.
+  defp submitted_pane(assigns) do
+    ~H"""
+    <div
+      id="plan-submitted"
+      data-qa="plan_submitted"
+      class="max-w-3xl rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 flex items-start gap-3"
+    >
+      <.icon name="pi-upload-simple" class="size-5 mt-0.5 text-slate-500 dark:text-slate-300" />
+      <div class="min-w-0 text-sm">
+        <p class="font-semibold text-slate-900 dark:text-slate-100">
+          Handed to Rail{submitter(@task)},
+          <.local_time id="plan-submitted-at" at={@task.submitted_at} />
+        </p>
+        <p class="mt-1 text-slate-500 dark:text-slate-400">
+          Pull request
+          <a
+            href={@task.pr_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            id="plan-submitted-pr"
+            class="font-mono text-[12.5px] text-blue-600 dark:text-blue-400 hover:underline"
+          >#{@task.pr_number}</a>
+          from
+          <span
+            id="plan-submitted-branch"
+            class="font-mono text-[12.5px] text-slate-700 dark:text-slate-300 break-all"
+          >{@task.worktree_name}</span>
+          at <span
+            id="plan-submitted-head"
+            class="font-mono text-[12.5px] text-slate-700 dark:text-slate-300"
+          >
+            {String.slice(@task.submitted_head || "", 0, 7)}
+          </span>. There is no plan, so the ticket is the whole specification.
+        </p>
+      </div>
+    </div>
+    """
+  end
+
   attr :child_of, :map, required: true
   attr :plan, :any, required: true
   attr :sheet, :any, required: true
@@ -929,9 +982,9 @@ defmodule RailWeb.Live.PlanStage do
     selected_key = selected_key(design, socket.assigns.selected_key)
     ticket_lines = ticket_lines(ticket)
     sheet = sheet(plan, ticket_lines)
-    items = items(ticket, design, picked, plan, sheet, running)
 
     socket
+    |> assign_items(task, items(task, ticket, design, picked, plan, sheet, running))
     |> assign(:ticket, ticket)
     |> assign_ticket_lines(ticket_lines)
     |> assign(:design, design)
@@ -944,7 +997,6 @@ defmodule RailWeb.Live.PlanStage do
     |> assign_offered(ticket, plan, (can_chat and not approved) or amending)
     |> assign(:selected_key, selected_key)
     |> assign(:option, shown_option(design, selected_key))
-    |> assign(:items_by_id, Map.new(items, &{&1.id, &1}))
     |> assign(:banner, banner(plan, picked, running))
     |> assign(:pick_up, pick_up(run))
     |> assign(:pending_text, pending_text(running, pick_up(run)))
@@ -952,6 +1004,12 @@ defmodule RailWeb.Live.PlanStage do
     |> stop_commenting_unless_allowed()
     |> close_line_draft_unless_offered()
     |> assign_comments()
+  end
+
+  defp assign_items(socket, %Task{} = task, items) do
+    socket
+    |> assign(:submitted, is_struct(task.submitted_at, DateTime))
+    |> assign(:items_by_id, Map.new(items, &{&1.id, &1}))
   end
 
   # Numbered in round order, so a card on a line carries the number the tray gives it.
@@ -1121,7 +1179,16 @@ defmodule RailWeb.Live.PlanStage do
   # Clamped, so an element scrolled partly out of the frame cannot push the box out of it.
   defp percent(value, whole), do: (value / whole * 100) |> max(0.0) |> min(100.0) |> Float.round(3)
 
-  defp items(ticket, design, picked, plan, sheet, running) do
+  # Handed over with a pull request: the ticket is the issue's, and there is no design or plan to write.
+  defp items(%Task{submitted_at: %DateTime{}}, ticket, _design, _picked, _plan, _sheet, _running) do
+    [
+      %{ticket_item(ticket, false) | line: "From the issue"},
+      %{id: "design", label: "Design", icon: "pi-palette", line: "None", saved_at: nil, tone: :skipped},
+      %{id: "plan", label: "Plan", icon: "pi-list-checks", line: "From a pull request", saved_at: nil, tone: :done}
+    ]
+  end
+
+  defp items(%Task{}, ticket, design, picked, plan, sheet, running) do
     options = if design, do: design.options, else: []
 
     [
@@ -1258,6 +1325,11 @@ defmodule RailWeb.Live.PlanStage do
   defp mark(:stale), do: %{icon: "pi-warning-circle", class: "text-amber-500 dark:text-amber-300"}
   defp mark(:skipped), do: %{icon: "pi-minus-circle", class: "text-slate-400 dark:text-slate-500"}
   defp mark(:empty), do: %{icon: "pi-circle-dashed", class: "text-slate-400 dark:text-slate-500"}
+
+  # Nobody is named once the person who handed it over has left Rail.
+  defp submitter(%Task{submitted_by: %{name: name}}) when is_binary(name), do: " by #{name}"
+  defp submitter(%Task{submitted_by: %{login: login}}), do: " by #{login}"
+  defp submitter(%Task{}), do: ""
 
   defp respond({:ok, _run}, socket) do
     send(self(), :task_changed)

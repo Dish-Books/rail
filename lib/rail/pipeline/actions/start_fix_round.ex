@@ -111,12 +111,18 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
   defp sendable(%Task{}, true, _fix, []), do: {:error, :nothing_to_start}
   defp sendable(%Task{}, true, _fix, _comments), do: :ok
 
-  # A fix whose commit has not passed CI is still waiting on it, however it was ruled.
+  # A fix whose commit has not passed CI is still waiting on it, however it was ruled. A pull request handed over
+  # finishes as it was pushed: only what a round committed since waits on Rail's CI.
   defp sendable(%Task{project: %Project{ci_command: command}} = task, false, [], []) when command not in [nil, ""] do
-    if ci_passed?(task), do: :ok, else: {:error, :ci_not_passed}
+    if ci_passed?(task) or as_submitted?(task), do: :ok, else: {:error, :ci_not_passed}
   end
 
   defp sendable(%Task{}, false, _fix, _comments), do: :ok
+
+  defp as_submitted?(%Task{submitted_head: head} = task) when is_binary(head),
+    do: match?(%{head_sha: ^head}, Task.worktree_present?(task) && Git.branch_fingerprint(task.worktree_path))
+
+  defp as_submitted?(%Task{}), do: false
 
   # A Send that would finish the review waits until a person has ruled every finding, so none is left for nobody.
   defp ruled(false, [], [], findings) do

@@ -8,7 +8,7 @@ defmodule Rail.Pipeline.Actions.GetTask do
 
   @doc """
   Gets a single task by ID, with its project, issue and runs loaded, each run with its role and questions, and
-  who marked it ready and who merged it.
+  who marked it ready, who merged it and who handed it over.
 
   Artifacts are not loaded here. What a page shows is the page's business: the
   one that draws a design panel asks for the design.
@@ -17,7 +17,7 @@ defmodule Rail.Pipeline.Actions.GetTask do
     query =
       from(t in Task,
         where: t.id == ^id,
-        preload: [:project, :issue, :marked_ready_by, :merged_by, runs: [:role, :questions]]
+        preload: [:project, :issue, :marked_ready_by, :merged_by, :submitted_by, runs: [:role, :questions]]
       )
 
     case Repo.one(query) do

@@ -243,6 +243,32 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
     assert [%{finished_at: %DateTime{}}] = Pipeline.read_review(task)
   end
 
+  # Rail's CI never ran on what was handed over, and a review with nothing to fix does not wait for it.
+  test "on a project with CI, a pull request handed over finishes on its own commit, and on a later one once CI passed",
+       %{project: project, task: task, run: run, crash: crash, nit: nit} do
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+    {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
+    {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
+    handed = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
+    {:ok, task} = Pipeline.update_task(task, %{submitted_head: handed, submitted_at: DateTime.utc_now()})
+
+    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 1"])
+    assert {:error, :ci_not_passed} = Pipeline.start_fix_round(system_scope(), run)
+
+    git!(task.worktree_path, ["reset", "--hard", handed])
+
+    Req.Test.expect(Client, 3, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"POST", "/app/installations/1/access_tokens"} -> Req.Test.json(conn, %{"token" => "ghs_token"})
+        {"GET", "/repos/example/test-seed/pulls/9"} -> Req.Test.json(conn, %{"number" => 9, "node_id" => "PR_9"})
+        {"POST", "/graphql"} -> Req.Test.json(conn, %{"data" => %{"markPullRequestReadyForReview" => %{}}})
+      end
+    end)
+
+    assert {:ok, %Run{status: :finished}} = Pipeline.start_fix_round(system_scope(), run)
+    assert %Task{pr_is_draft: false, stage: :finalize} = Repo.reload!(task)
+  end
+
   test "a second start while the round it started works is refused", %{task: task, run: run, crash: crash, nit: nit} do
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :fix)

@@ -6,8 +6,8 @@ defmodule RailWeb.Components.IssueView do
   The issue page and the task page's first tab are the same view of the same
   thing, so both render this; the task page hides the section pointing at the
   task the reader is already on. The events it raises - `assign`,
-  `filter_assignees`, `comment`, `draft_comment`, `start_task` - belong
-  to whichever LiveView renders it.
+  `filter_assignees`, `comment`, `draft_comment`, `start_task`, `draft_review`,
+  `start_review` - belong to whichever LiveView renders it.
   """
   use RailWeb, :html
 
@@ -21,6 +21,9 @@ defmodule RailWeb.Components.IssueView do
   attr :show_task, :boolean, default: true
   # A child of a split is owned through its parent, so its owner is read here, not changed.
   attr :owner_editable, :boolean, default: true
+  # What was typed into Start at's pull request field, kept with the reason it was refused.
+  attr :pull_request, :string, default: ""
+  attr :review_error, :string, default: nil
 
   def issue_view(assigns) do
     ~H"""
@@ -134,6 +137,35 @@ defmodule RailWeb.Components.IssueView do
                   <span>{Task.stage_label(stage)}</span>
                 </button>
               </div>
+
+              <form
+                id="issue-start-review"
+                data-qa="issue-start-review"
+                phx-change="draft_review"
+                phx-submit="start_review"
+                class="mt-3 space-y-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 p-3"
+              >
+                <.input
+                  id="start-review-pr"
+                  name="pull_request"
+                  label="Or hand Rail a pull request"
+                  value={@pull_request}
+                  errors={if @review_error, do: [@review_error], else: []}
+                  size="small"
+                  placeholder="#212 or its link"
+                  autocomplete="off"
+                  class="min-w-0 font-mono text-[12px] text-ellipsis"
+                  container_class="min-w-0 wrap-anywhere"
+                />
+                <button
+                  type="submit"
+                  phx-disable-with="Starting…"
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg ring-1 ring-inset ring-slate-300 dark:ring-slate-600 text-slate-700 dark:text-slate-200 text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                >
+                  <.icon name="pi-play" class="h-3.5 w-3.5" />
+                  <span>Review</span>
+                </button>
+              </form>
             </div>
 
             <p

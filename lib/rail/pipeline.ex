@@ -9,6 +9,9 @@ defmodule Rail.Pipeline do
   builds it and commits it, keeping the branch up to date with the default branch
   itself; Rail pushes the commits a turn leaves and, once CI passes, sends them to Review.
 
+  A pull request opened outside Rail can be handed over instead: its issue's task starts at Review on the pull
+  request's branch as pushed, with no plan, and Rail works that pull request as its own from there.
+
   Review is one run led by a Review lead, with the code reviewer, QA explorers, an
   engineer and a demo recorder as its subagents. A round reads the code and drives
   the running application, the demo is recorded beside it, and the findings land in
@@ -98,7 +101,8 @@ defmodule Rail.Pipeline do
   defdelegate save_screen(task, attrs), to: Actions.SaveScreen
   defdelegate list_screens(task), to: Actions.ListScreens
 
-  defdelegate start_task(issue, stage), to: Actions.StartTask
+  defdelegate start_task(scope, issue, stage), to: Actions.StartTask
+  defdelegate start_task(scope, issue, stage, pull_request), to: Actions.StartTask
   defdelegate create_task(issue, stage), to: Actions.CreateTask
   defdelegate list_tasks(opts \\ []), to: Actions.ListTasks
   defdelegate update_task(task, attrs), to: Actions.UpdateTask

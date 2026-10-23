@@ -1154,7 +1154,7 @@ defmodule RailWeb.Live.TaskDetail do
     next? = fix_plan != nil and plan_state != :approved
 
     options =
-      Enum.map(rounds, &{to_string(&1.number), round_label(&1)}) ++
+      Enum.map(rounds, &{to_string(&1.number), round_label(&1, socket.assigns.task)}) ++
         if(next?, do: [{"next", "Round #{length(rounds) + 1} · waiting on approval"}], else: [])
 
     latest = if rounds == [], do: "1", else: to_string(List.last(rounds).number)
@@ -1167,8 +1167,9 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign(:shown_round, Enum.find(rounds, &(to_string(&1.number) == pick)))
   end
 
-  defp round_label(%Round{number: 1}), do: "Round 1 · the plan"
-  defp round_label(%Round{number: number}), do: "Round #{number}"
+  defp round_label(%Round{number: 1}, %Task{submitted_at: %DateTime{}}), do: "Round 1 · the pull request"
+  defp round_label(%Round{number: 1}, %Task{}), do: "Round 1 · the plan"
+  defp round_label(%Round{number: number}, %Task{}), do: "Round #{number}"
 
   defp waiting_plan?(%{fix_plan: %FixPlan{}, plan_state: state}), do: state != :approved
   defp waiting_plan?(_assigns), do: false
@@ -1324,6 +1325,9 @@ defmodule RailWeb.Live.TaskDetail do
   defp role_runs(%Task{runs: runs}) do
     for %Run{role: %Role{stage: stage}} = run <- runs, into: %{}, do: {stage, run}
   end
+
+  defp plan_label(%Task{submitted_at: %DateTime{}, pr_number: number}, _plan_run, _first),
+    do: "From PR ##{number}, no plan"
 
   defp plan_label(%Task{stage: :plan}, plan_run, _first),
     do: if(Run.running?(plan_run), do: "Plan is writing", else: "Not approved yet")
