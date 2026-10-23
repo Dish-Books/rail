@@ -130,8 +130,8 @@ defmodule RailWeb.Utils.BuildPlanSheet do
     {prose, counts} =
       card.prose |> build_document_blocks() |> Enum.map_reduce(counts, &number(%{&1 | label: within(file, &1.label)}, &2))
 
-    {signatures, counts} = code_lines(card.signatures, :signature, "#{file}, signature line", counts)
-    {sketch, counts} = code_lines(card.sketch, :code, "#{file}, sketch line", counts)
+    {signatures, counts} = code_lines(card.signatures, card.path, :signature, "#{file}, signature line", counts)
+    {sketch, counts} = code_lines(card.sketch, card.path, :code, "#{file}, sketch line", counts)
 
     # Keyed on the path, as a slug could fold two paths into one, so a sketch left open stays with its file.
     id = :erlang.phash2(card.path)
@@ -156,11 +156,12 @@ defmodule RailWeb.Utils.BuildPlanSheet do
     {card, counts}
   end
 
-  defp code_lines(nil, _kind, _label, counts), do: {[], counts}
+  defp code_lines(nil, _path, _kind, _label, counts), do: {[], counts}
 
-  defp code_lines(fenced, kind, label, counts) do
+  # Highlighted as the file's own language when the fence names none.
+  defp code_lines(fenced, path, kind, label, counts) do
     fenced
-    |> build_document_blocks()
+    |> build_document_blocks(path)
     |> Enum.map_reduce(counts, &number(%{&1 | kind: kind, label: "#{label} #{&1.number}"}, &2))
   end
 

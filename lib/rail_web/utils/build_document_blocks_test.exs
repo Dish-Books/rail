@@ -96,6 +96,17 @@ defmodule RailWeb.Utils.BuildDocumentBlocksTest do
     assert build_document_blocks("") == []
   end
 
+  test "a code line is highlighted in its fence's language, else the one passed in, else not at all" do
+    assert [%{text: "def a, do: 1", html: named}] = build_document_blocks("```elixir sketch\ndef a, do: 1\n```\n")
+    assert named =~ ~s(<span class="l-keyword-function">def</span>)
+
+    assert [%{html: passed}] = build_document_blocks("```\ndef a, do: 1\n```\n", "lib/a.ex")
+    assert passed == named
+
+    assert [%{html: nil}] = build_document_blocks("```\ndef a, do: 1\n```\n")
+    assert [%{html: nil}] = build_document_blocks("```sketch\ndef a, do: 1\n```\n", "notes.txt")
+  end
+
   test "words split by emphasis or a soft break read as written, and raw HTML is escaped" do
     assert [%{text: "Say bold now and next", html: html}, %{text: "<b>x</b>", html: block}] =
              build_document_blocks("Say **bold** now\nand next\n\n<b>x</b>\n")

@@ -81,11 +81,10 @@ defmodule RailWeb.Components.PlanSheetTest do
     html = (&PlanSheet.plan_sheet/1) |> render_component(sheet: sheet) |> Floki.parse_fragment!()
 
     [card] = Floki.find(html, "#plan-card-1")
-    text = Floki.text(card)
+    # Floki drops the spaces between highlighted tokens, which hold nothing else, so the text is read without spaces.
+    text = card |> Floki.text() |> String.replace(~r/\s/, "")
     assert text =~ "lib/rail/pipeline/actions/send_back_to_architect.ex"
-
-    assert text =~
-             ~r/Refuses unless the task is at :review and idle\..*def send_back_to_architect\(%Run\{\} = run, note\)/s
+    assert text =~ ~r/Refusesunlessthetaskisat:reviewandidle\..*defsend_back_to_architect\(%Run\{\}=run,note\)/s
 
     assert Floki.find(card, "[data-qa='plan_card_deleted']") == []
 
@@ -199,7 +198,8 @@ defmodule RailWeb.Components.PlanSheetTest do
     [sketch] = Floki.find(html, "#plan-sketch-#{id}")
     assert Floki.attribute(sketch, "open") == []
     assert Floki.text(Floki.find(sketch, "summary"), sep: " ") =~ ~r/Show code\s+Hide code/
-    assert Floki.text(sketch) =~ "enter_stage(task, :architect, %{sent_back_note: note})"
+    # Floki drops the spaces between highlighted tokens, which hold nothing else.
+    assert Floki.text(sketch) =~ "enter_stage(task,:architect,%{sent_back_note: note})"
 
     comment = %PlanComment{
       id: "pcm_s",

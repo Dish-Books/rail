@@ -104,6 +104,37 @@ defmodule RailWeb.Components.CommentableLineTest do
     assert Floki.text(Floki.find(commented, "[data-qa='document_comment_number']")) =~ "4"
   end
 
+  test "a code line draws its highlighted html, and its text when it has none", %{code: code} do
+    highlighted =
+      (&CommentableLine.commentable_line/1)
+      |> render_component(
+        line: %{code | html: ~s(<span class="l-keyword">one</span>)},
+        layout: :code,
+        doc: :plan,
+        placed: %{},
+        offered: false,
+        target: nil
+      )
+      |> Floki.parse_fragment!()
+
+    assert Floki.text(Floki.find(highlighted, "#line-plan-#{code.key} .l-keyword")) == "one"
+
+    plain =
+      (&CommentableLine.commentable_line/1)
+      |> render_component(
+        line: %{code | text: "<b>one</b>"},
+        layout: :code,
+        doc: :plan,
+        placed: %{},
+        offered: false,
+        target: nil
+      )
+      |> Floki.parse_fragment!()
+
+    assert Floki.find(plain, "#line-plan-#{code.key} b") == []
+    assert Floki.text(Floki.find(plain, "#line-plan-#{code.key}")) =~ "<b>one</b>"
+  end
+
   test "the priority row draws each value's + in the row's gutter, outlines the hovered value and names it on a card",
        %{comment: comment} do
     priority = %{key: "priority-1", kind: :priority, text: "Medium", label: "Priority", occurrence: 1}

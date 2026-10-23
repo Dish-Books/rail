@@ -53,6 +53,13 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
     assert %{line: %{label: "File 2"}} = groups |> hd() |> Map.fetch!(:cards) |> Enum.at(1)
   end
 
+  test "a card's signatures and sketch are highlighted" do
+    assert %{cards: [%{signatures: [signature], sketch: [first | _sketch]} | _cards]} = build_plan_sheet(sheet_plan())
+
+    assert signature.html =~ ~s(<span class="l-keyword-function">def</span>)
+    assert first.html =~ ~s(<span class="l-function">send_back_to_architect</span>)
+  end
+
   test "the lines hold every part in the order it is drawn, the sketch's included, each with a key of its own" do
     assert %{lines: lines} = build_plan_sheet(sheet_plan())
 

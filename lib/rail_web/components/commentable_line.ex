@@ -122,7 +122,7 @@ defmodule RailWeb.Components.CommentableLine do
         <span
           phx-no-format
           class="min-w-0 pl-2 pr-4 whitespace-pre-wrap wrap-anywhere text-slate-800 dark:text-slate-200"
-        >{@line.text}</span>
+        >{if @line.html, do: raw(@line.html), else: @line.text}</span>
       </div>
       <.under
         comments={@comments}
