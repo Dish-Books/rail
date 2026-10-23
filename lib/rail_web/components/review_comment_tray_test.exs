@@ -25,7 +25,7 @@ defmodule RailWeb.Components.ReviewCommentTrayTest do
       ],
       diff: [%DiffComment{id: "dcm_1", path: "lib/a/tray.ex", line: 61, body: "Keep one hint."}],
       screen: [%ScreenComment{id: "scm_1", key: "toolbar", label: "Toolbar", commit: "e52a0bd91", body: "It wraps."}],
-      gate: %{working: false, finished: false, ci_failed: false, saved: true, plan: false, undecided: 0}
+      gate: %{working: false, finished: false, ci_failed: false, saved: true, plan: false, emptied: false, undecided: 0}
     }
   end
 
@@ -110,7 +110,7 @@ defmodule RailWeb.Components.ReviewCommentTrayTest do
   end
 
   test "the working hint pulses green" do
-    gate = %{working: true, finished: false, ci_failed: false, saved: true, plan: false, undecided: 0}
+    gate = %{working: true, finished: false, ci_failed: false, saved: true, plan: false, emptied: false, undecided: 0}
 
     doc =
       (&ReviewCommentTray.review_comment_tray/1)
@@ -274,6 +274,48 @@ defmodule RailWeb.Components.ReviewCommentTrayTest do
 
       assert doc |> Floki.find("#review-send-tray-hint") |> Floki.text() =~
                "The fix plan is out of date. Send asks the lead to revise it."
+    end
+
+    # Send would finish such a review anyway, so the tray says so rather than promising a revised plan.
+    test "with the rulings leaving the plan nothing to fix it offers Finish review, which drops the plan", %{gate: gate} do
+      rulings = [%{key: "tray-count", title: "Tray count leaves out finding comments", was: :fix, now: :skip}]
+      emptied = %{gate | plan: true, emptied: true}
+
+      attrs = %{
+        fix: [],
+        rulings: rulings,
+        finding_comments: [],
+        diff_comments: [],
+        screen_comments: [],
+        gate: emptied,
+        target: nil
+      }
+
+      doc = (&ReviewCommentTray.review_comment_tray/1) |> render_component(attrs) |> Floki.parse_fragment!()
+
+      assert doc |> Floki.find("#review-tray-ruling-tray-count") |> Floki.text() =~ "Don't fix, was Fix"
+      assert [_finish] = Floki.find(doc, "#finish-review:not([disabled])")
+      assert Floki.find(doc, "#send-review-tray") == []
+
+      assert doc |> Floki.find("#review-send-tray-hint") |> Floki.text() =~
+               "Nothing is ruled Fix now. Finish review drops the fix plan and closes the review."
+
+      doc =
+        (&ReviewCommentTray.review_comment_tray/1)
+        |> render_component(%{attrs | rulings: [], gate: %{emptied | undecided: 1}})
+        |> Floki.parse_fragment!()
+
+      assert [_finish] = Floki.find(doc, "#finish-review[disabled]")
+      assert doc |> Floki.find("#review-send-tray-hint") |> Floki.text() =~ "1 still needs a ruling."
+
+      # A comment still asks for a revised plan.
+      doc =
+        (&ReviewCommentTray.review_comment_tray/1)
+        |> render_component(%{attrs | diff_comments: [%DiffComment{id: "dcm_1", path: "lib/a.ex", line: 3, body: "Hm."}]})
+        |> Floki.parse_fragment!()
+
+      assert Floki.find(doc, "#finish-review") == []
+      assert doc |> Floki.find("#send-review-tray") |> Floki.text() =~ "Send 2"
     end
 
     test "with nothing changed it says what a Send would do, and still offers no Finish review", %{gate: gate} do

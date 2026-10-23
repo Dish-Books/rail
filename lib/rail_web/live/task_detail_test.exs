@@ -1750,6 +1750,35 @@ defmodule RailWeb.Live.TaskDetailTest do
       assert has_element?(view, "#fix-plan-sheet")
     end
 
+    # Approving needs the whole task idle, so a check still running holds the button as it holds the approval.
+    test "Approve waits while QA still works on the round", %{
+      conn: conn,
+      project: project,
+      task: task,
+      run: run,
+      plan: plan
+    } do
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+      {:ok, role} = Roles.get_role(project_id: project.id, stage: :qa)
+
+      {:ok, qa} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: role.id,
+          status: :running,
+          conversation_id: "sess_rst_qa_approve",
+          started_at: DateTime.utc_now()
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=fix_plan")
+      refute has_element?(view, "#approve-fix-plan")
+
+      {:ok, _done} = Pipeline.update_run(qa, %{status: :finished, stage_outcome: :done})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=fix_plan")
+      assert has_element?(view, "#approve-fix-plan")
+    end
+
     test "a turn that stopped before a plan was saved leaves nothing to approve", %{conn: conn, task: task, run: run} do
       {:ok, _stopped} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished})
       {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=fix_plan")
@@ -1773,7 +1802,7 @@ defmodule RailWeb.Live.TaskDetailTest do
       assert has_element?(view, "#review-status[data-phase=waiting]", "Fix round 1 · Fix plan waiting on your approval")
       assert has_element?(view, "#decide-fix-view-only-send")
       assert has_element?(view, "#decide-skip-view-only-send")
-      assert has_element?(view, "#approve-fix-plan")
+      assert has_element?(view, "#approve-fix-plan", "Start fix round")
       assert has_element?(view, "#review-send-tray-hint", "saves a revised fix plan in place of this one")
       refute has_element?(view, "#finish-review")
 
@@ -2054,7 +2083,7 @@ defmodule RailWeb.Live.TaskDetailTest do
       view |> element("#approve-fix-plan") |> render_click(%{"version" => "1"})
 
       assert has_element?(view, "#review-error", "That fix plan was replaced at")
-      assert has_element?(view, "#review-error", "Nothing started. Read the plan on screen, then approve it.")
+      assert has_element?(view, "#review-error", "Nothing started. Read the plan on screen, then start the round.")
       assert %{status: :finished} = Repo.reload!(run)
     end
 

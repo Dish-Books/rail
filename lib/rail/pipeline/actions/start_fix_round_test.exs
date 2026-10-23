@@ -958,6 +958,26 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
       assert Pipeline.read_fix_plan(task) == nil
     end
 
+    test "a plan left with nothing to fix and no comment is finished by a Send, and its file goes", %{
+      task: task,
+      run: run,
+      crash: crash,
+      nit: nit,
+      ada: ada
+    } do
+      {:ok, _no_pr} = Pipeline.update_task(task, %{pr_number: nil})
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
+      path = Path.join([task.scratch_path, "fix_plans", "SFR-1.json"])
+      File.mkdir_p!(Path.dirname(path))
+      File.write!(path, Jason.encode!(%{round: 1, version: 1, plan: "Nothing to fix.", findings: [], comments: []}))
+      reject(Tools, :start_os_process, 2)
+
+      assert {:ok, %Run{status: :finished, stage_outcome: :done}} = Pipeline.start_fix_round(ada, run)
+      assert %Task{stage: :finalize} = Repo.reload!(task)
+      refute File.exists?(path)
+    end
+
     test "Finish review on a round with no fix plan writes none", %{task: task, run: run, crash: crash, nit: nit} do
       {:ok, _no_pr} = Pipeline.update_task(task, %{pr_number: nil})
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)

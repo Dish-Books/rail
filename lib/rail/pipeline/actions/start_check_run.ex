@@ -55,7 +55,7 @@ defmodule Rail.Pipeline.Actions.StartCheckRun do
     How your part works:
 
     1. #{checklist(task)}
-    2. Start the app server from the worktree and drive the app in your browser. #{browser("qa")}
+    2. Start the app server from the worktree and drive the app in your browser. #{browser("qa", scratch_path)}
     3. Run each check and mark it with `qa_check` as soon as you have run it, with one line on what you saw. Take a picture with `qa_shot` at the point a check asserts something on screen. `qa_shot` saves it under #{Path.join(scratch_path, "qa")} and returns its path. Write a log, query output or any other file that proves a check there yourself.
     4. Re-check every finding below that is not ruled Don't fix and can be seen in the app, and say for each whether it still fails.
     5. Save your report with `save_report` before you end your turn. For each thing that looks wrong: what it is in one line, the steps that reach it, what you saw against what should happen, the path of every file that shows it with a line saying what it shows, and how bad you think it is. Then one line for each finding you re-checked. Something you could not confirm is not left out: say what you saw and what you would check. A pass that found nothing says so.
@@ -92,7 +92,7 @@ defmodule Rail.Pipeline.Actions.StartCheckRun do
 
     1. Read the ticket, the plan and the diff, and name every screen state the change affects. Each has a lowercase hyphenated `key` and a `label` saying what it shows, such as `file-list-after-send`, "File list just after Send". A change with nothing on screen has none: say so in one line and end your turn.
     2. #{known_screens(task)}
-    3. Start the app server from the worktree and reach each state in your browser. #{browser("screens")}
+    3. Start the app server from the worktree and reach each state in your browser. #{browser("screens", scratch_path)}
     4. Take `save_screen` of each state once you have reached it. Every round every state is shot again, which replaces its last picture.
     5. Call `browser_close` as your last tool call, then end your turn with the states you saved and any you could not reach, and why.
 
@@ -109,7 +109,7 @@ defmodule Rail.Pipeline.Actions.StartCheckRun do
     How your part works:
 
     1. Write your shot list from the ticket's acceptance criteria: the fewest beats that show each one, in the order a person would meet them.
-    2. Start the app server from the worktree and drive the app in your browser. #{browser("demo")}
+    2. Start the app server from the worktree and drive the app in your browser. #{browser("demo", scratch_path)}
     3. Drive the whole walkthrough once off camera to find out how it behaves, and put any data you changed back.
     4. Call `demo_start`, then follow the shot list in order. Say each beat with `demo_say` straight before you do it: one line, written as the bullets below say, naming the acceptance criterion in `criterion` when the beat proves one. Rail speaks each sentence aloud as the demo's voice-over, word for word, starting it as the action after it lands and cutting the wait between beats, so write it in words only: no hyphens, slashes or other symbols, and no markup or paths. Scroll with the driver's `scroll`, never `evaluate`: a scroll the page makes itself is not seen as the action its line describes. Before you seed data, switch user, reload or wait for the next beat, call `demo_cut`: the video leaves out what the page does from it to your next caption. Never call it between a caption and its action. Record at the tab's own size: never call `resize` once `demo_start` has answered, since the tab then paints at two sizes and the picture jumps.
     5. Call `save_demo` straight after the last beat: saving is what stops the recording and has Rail encode it, so nothing after it is filmed, and a demo never saved is never seen. A shot you could not get goes in `not_shown`. Write `summary` plainly, saying what the demo shows in the words of someone who has never seen the codebase: it is read as text, not spoken.
@@ -127,8 +127,9 @@ defmodule Rail.Pipeline.Actions.StartCheckRun do
     "You never change it: no edits, no tests written, and no commit, push, merge or rebase. Nobody relays for you and you hand work to nobody. The worktree is #{worktree_path} and every path you touch is under it. Other agents share this repository, so never work in the main checkout and never touch another worktree. Nothing under #{scratch_path} is part of the change."
   end
 
-  defp browser(name) do
-    "Call `browser_connect` for it: yours is named `#{name}`, signed in as its own fresh account, and is the one every browser tool uses when you name none. Other agents drive the same app from browsers of their own at the same time: check whether it already answers at its address before you start a server, and leave the server running when you finish."
+  # Bash has no background tasks here, and a server run in the foreground holds the command until its timeout.
+  defp browser(name, scratch_path) do
+    "Call `browser_connect` for it: yours is named `#{name}`, signed in as its own fresh account, and is the one every browser tool uses when you name none. Other agents drive the same app from browsers of their own at the same time: check whether it already answers at its address before you start a server, and leave the server running when you finish. Start a server detached from your shell, in a foreground command such as `nohup pnpm dev > #{Path.join(scratch_path, "server.log")} 2>&1 &`, so the command returns while it keeps running."
   end
 
   defp pictures do

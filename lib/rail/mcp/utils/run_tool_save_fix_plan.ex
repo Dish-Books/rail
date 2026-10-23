@@ -23,6 +23,10 @@ defmodule Rail.Mcp.Utils.RunToolSaveFixPlan do
         {:refused,
          "Nothing saved: no fix plan is due. A plan is due once the round's review is saved, until the task merges."}
 
+      {:error, :nothing_to_fix} ->
+        {:refused,
+         "Nothing saved: nothing is ruled Fix, no comment asks for a change and the ticket and design stay as they are, so there is no round to plan. End your turn: the human finishes the review."}
+
       {:error, changeset} ->
         {:error, changeset}
     end

@@ -1226,6 +1226,48 @@ defmodule Rail.Tools.FollowerTest do
     refute Tools.os_process_alive?(pid)
   end
 
+  # A CLI that outlives its result is stuck on something the agent left behind, such as an app server.
+  test "an agent whose CLI outlives its result is ended after a short grace and settles as finished", %{
+    run: run,
+    tmp_dir: tmp_dir
+  } do
+    stream = Path.join(tmp_dir, "lingering_result.ndjson")
+    File.write!(stream, ~s({"type":"result","subtype":"success","is_error":false,"session_id":"sess-lingering"}\n))
+    File.write!("#{stream}.err", "")
+
+    port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, :exit_status, args: ["30"]])
+    {:os_pid, pid} = Port.info(port, :os_pid)
+
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
+        stream_path: stream,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+    {:ok, follower_pid} =
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run},
+        port: port,
+        tail_interval_ms: 10,
+        batch_interval_ms: 20,
+        result_grace_ms: 100
+      )
+
+    Sandbox.allow(Repo, self(), follower_pid)
+    Process.unlink(port)
+
+    assert_receive {:os_process_finished, %OsProcess{exit_code: 0, ended_reason: :finished}, %{exit_code: 0, error: nil}},
+                   5_000
+
+    refute Tools.os_process_alive?(pid)
+  end
+
   describe "a sandbox ending" do
     # Mimic in global mode, so the Follower's own process sees these too.
     setup :set_mimic_global

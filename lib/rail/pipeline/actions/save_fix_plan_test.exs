@@ -103,6 +103,19 @@ defmodule Rail.Pipeline.Actions.SaveFixPlanTest do
              Pipeline.save_fix_plan(%{task | stage: :finalize}, %{"plan" => plan, "description" => "A dot."})
   end
 
+  # Approving it would start an engineer on nothing, and while it waited Finish review was hidden.
+  test "an unasked plan with nothing to fix and no change to the ticket or design is refused", %{task: task, path: path} do
+    File.rm!(path)
+    reviews = Path.join([task.scratch_path, "reviews", "SFP-1.json"])
+    File.mkdir_p!(Path.dirname(reviews))
+    File.write!(reviews, ~s({"passes": [{"round": 1, "saved_at": "2026-10-14T10:00:00Z", "head": "abc"}]}))
+
+    nothing = "Nothing to fix. The task is ready to finalize.\n\n### What changes"
+
+    assert {:error, :nothing_to_fix} = Pipeline.save_fix_plan(task, %{"plan" => nothing, "design_changed" => false})
+    refute File.exists?(path)
+  end
+
   test "a plan says whether its round's screens are shot again and a demo recorded", %{task: task} do
     assert {:ok, %FixPlan{retake_screens: false, record_demo: false}} = Pipeline.save_fix_plan(task, %{"plan" => @plan})
 

@@ -32,4 +32,16 @@ defmodule Rail.Mcp.Utils.RunToolSaveFixPlanTest do
     assert {:refused, "Nothing saved: no fix plan is due." <> _rest} =
              run_tool_save_fix_plan(task, %{"plan" => @plan}, [])
   end
+
+  test "with nothing to fix it says to end the turn", %{task: task} do
+    File.mkdir_p!(Path.join(task.scratch_path, "reviews"))
+
+    File.write!(
+      Path.join([task.scratch_path, "reviews", "RTF-1.json"]),
+      ~s({"passes": [{"round": 1, "saved_at": "2026-10-14T10:00:00Z", "head": "abc"}]})
+    )
+
+    assert {:refused, "Nothing saved: nothing is ruled Fix" <> _rest} =
+             run_tool_save_fix_plan(task, %{"plan" => "Nothing to fix.\n\n### What changes"}, [])
+  end
 end
