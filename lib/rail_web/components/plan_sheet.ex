@@ -13,6 +13,12 @@ defmodule RailWeb.Components.PlanSheet do
 
   @columns "grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]"
 
+  @kinds [
+    new: {"New", "ring-emerald-500/50 text-emerald-700 dark:text-emerald-300"},
+    changed: {"Changed", "ring-sky-500/50 text-sky-700 dark:text-sky-300"},
+    deleted: {"Deleted", "ring-red-500/50 text-red-700 dark:text-red-300"}
+  ]
+
   attr :sheet, :map, required: true, doc: "what `build_plan_sheet/2` made of the plan"
   attr :criteria, :list, default: [], doc: "the ticket's acceptance criteria, each `%{number:, html:}`"
   attr :part, :integer, default: nil, doc: "the split child's number, when the plan is a child's part"
@@ -22,6 +28,12 @@ defmodule RailWeb.Components.PlanSheet do
   attr :draft, :map, default: nil, doc: "the line the comment box is open under"
   attr :offered, :boolean, default: false, doc: "the reader can comment now"
 
+  attr :default_paths, :any,
+    default: nil,
+    doc: "the cards' paths on the default branch, or nil when the clone could not say"
+
+  attr :project, :any, required: true, doc: "whose GitHub repository and default branch a path links to"
+
   def plan_sheet(assigns) do
     assigns =
       assigns
@@ -29,6 +41,7 @@ defmodule RailWeb.Components.PlanSheet do
       |> assign(:on, %{placed: assigns.placed, draft: assigns.draft, offered: assigns.offered, doc: :plan})
       |> assign(:rows, rows(assigns.sheet.criteria, assigns.criteria))
       |> assign(:columns, @columns)
+      |> assign(:groups, groups(assigns))
 
     ~H"""
     <div
@@ -108,10 +121,18 @@ defmodule RailWeb.Components.PlanSheet do
 
       <section id="plan-changes">
         <.line line={@sheet.changes_title} on={@on} target={@target} class="mb-2">
-          <.heading title="Changes" subtitle="Grouped by where the code goes" />
+          <.heading
+            title="Changes"
+            subtitle={
+              if @default_paths,
+                do:
+                  "Grouped by where the code goes. Changed files link to #{@project.default_branch} on GitHub.",
+                else: "Grouped by where the code goes"
+            }
+          />
         </.line>
         <details
-          :for={group <- @sheet.groups}
+          :for={group <- @groups}
           id={"#{@base}-group-#{group.slug}"}
           data-qa="plan_group"
           open
@@ -128,8 +149,11 @@ defmodule RailWeb.Components.PlanSheet do
               {group.name}
             </span>
             <span class="min-w-0 font-mono text-[12px] text-slate-500 truncate">{group.directory}</span>
-            <span class="ml-auto shrink-0 text-[12.5px] text-slate-600 dark:text-slate-300">
-              {length(group.cards)} {if length(group.cards) == 1, do: "file", else: "files"}
+            <span
+              data-qa="plan_group_count"
+              class="ml-auto shrink-0 text-[12.5px] text-slate-600 dark:text-slate-300"
+            >
+              {group.count}
             </span>
           </summary>
           <div class="space-y-2 px-2.5 pb-2.5">
@@ -184,14 +208,21 @@ defmodule RailWeb.Components.PlanSheet do
       <div class="px-4 py-1.5">
         <.line line={@card.line} on={@on} target={@target}>
           <div class="flex items-center gap-2.5 py-1">
-            <span
-              :if={@card.deleted?}
-              data-qa="plan_card_deleted"
-              class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset ring-red-500/50 text-red-700 dark:text-red-300"
+            <.kind_badge :if={@card.kind} kind={@card.kind} />
+            <a
+              :if={@card.link}
+              href={@card.link.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-qa="plan_card_link"
+              title={@card.link.title}
+              class="min-w-0 inline-flex items-center gap-1 font-mono text-[13px] font-semibold text-slate-900 dark:text-slate-100 hover:underline decoration-slate-500 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
             >
-              Deleted
-            </span>
+              <span class="truncate">{@card.path}</span>
+              <.icon name="pi-arrow-up-right-bold" class="shrink-0 size-[12px] text-slate-400" />
+            </a>
             <span
+              :if={!@card.link}
               class="min-w-0 truncate font-mono text-[13px] font-semibold text-slate-900 dark:text-slate-100"
               title={@card.path}
             >
@@ -370,6 +401,25 @@ defmodule RailWeb.Components.PlanSheet do
     """
   end
 
+  attr :kind, :atom, required: true
+
+  defp kind_badge(assigns) do
+    {label, color} = Keyword.fetch!(@kinds, assigns.kind)
+    assigns = assigns |> assign(:label, label) |> assign(:color, color)
+
+    ~H"""
+    <span
+      data-qa={"plan_card_#{@kind}"}
+      class={[
+        "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset",
+        @color
+      ]}
+    >
+      {@label}
+    </span>
+    """
+  end
+
   attr :html, :string, required: true
   attr :class, :any, default: nil
 
@@ -401,6 +451,55 @@ defmodule RailWeb.Components.PlanSheet do
       Map.merge(Map.fetch!(by_number, criterion.number), %{html: criterion.html, last?: index == last})
     end)
   end
+
+  # Without the default branch's paths a card cannot tell New from Changed, so a group counts its files instead.
+  defp groups(%{default_paths: nil, sheet: sheet}) do
+    Enum.map(sheet.groups, fn group ->
+      cards = Enum.map(group.cards, &Map.merge(&1, %{kind: if(&1.deleted?, do: :deleted), link: nil}))
+      Map.put(%{group | cards: cards}, :count, count_label(length(cards), "file", "files"))
+    end)
+  end
+
+  defp groups(%{default_paths: paths, sheet: sheet, project: project}) do
+    Enum.map(sheet.groups, fn group ->
+      cards = Enum.map(group.cards, &mark_card(&1, paths, project))
+
+      count =
+        @kinds
+        |> Enum.map(fn {kind, _badge} -> {kind, Enum.count(cards, &(&1.kind == kind))} end)
+        |> Enum.reject(fn {_kind, number} -> number == 0 end)
+        |> Enum.map_join(" · ", fn {kind, number} -> "#{number} #{kind}" end)
+
+      Map.put(%{group | cards: cards}, :count, count)
+    end)
+  end
+
+  defp mark_card(card, paths, project) do
+    on_branch = MapSet.member?(paths, card.path)
+
+    kind =
+      cond do
+        card.deleted? -> :deleted
+        on_branch -> :changed
+        true -> :new
+      end
+
+    link =
+      if on_branch do
+        %{
+          href: "https://github.com/#{project.github_repo}/blob/#{encode(project.default_branch)}/#{encode(card.path)}",
+          title: "Open #{card.path} on #{project.default_branch} in GitHub (new tab)"
+        }
+      end
+
+    Map.merge(card, %{kind: kind, link: link})
+  end
+
+  # A path is the plan's text, so a `#` or `?` in it stays part of the path rather than ending the URL's.
+  defp encode(path), do: URI.encode(path, &(&1 == ?/ or URI.char_unreserved?(&1)))
+
+  defp count_label(1, one, _many), do: "1 #{one}"
+  defp count_label(count, _one, many), do: "#{count} #{many}"
 
   defp layout(%{kind: kind}) when kind in [:code, :signature], do: :code
   defp layout(%{kind: :table_row}), do: :table_row
