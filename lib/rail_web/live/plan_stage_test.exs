@@ -380,6 +380,77 @@ defmodule RailWeb.Live.PlanStageTest do
     refute has_element?(view, "#plan-plan", "In this plan")
   end
 
+  test "the plan's cards read New or Changed off the default branch, which a load with the same paths does not ask again",
+       %{conn: conn, task: task} do
+    {:ok, _plan} = Pipeline.save_plan(task, %{plan: sheet_plan()})
+
+    # Once for the first render and once for the connected page; no later load asks again.
+    expect(Rail.Git, :list_default_branch_paths, 2, fn %{github_repo: "example/test-seed"}, paths ->
+      assert paths == [
+               "lib/rail/pipeline.ex",
+               "lib/rail/pipeline/actions/old_send_back.ex",
+               "lib/rail/pipeline/actions/send_back_to_architect.ex",
+               "lib/rail_web/live/review_stage.ex",
+               "priv/repo/migrations/20261022000000_add_sent_back_note.exs"
+             ]
+
+      MapSet.new(["lib/rail/pipeline.ex"])
+    end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+    assert has_element?(view, "#plan-card-1 [data-qa='plan_card_new']", "New")
+    assert has_element?(view, "#plan-card-2 [data-qa='plan_card_changed']", "Changed")
+
+    assert has_element?(
+             view,
+             "#plan-card-2 a[href='https://github.com/example/test-seed/blob/main/lib/rail/pipeline.ex']"
+           )
+
+    assert has_element?(view, "#plan-group-pipeline [data-qa='plan_group_count']", "1 new · 1 changed · 1 deleted")
+
+    {:ok, _ticket} =
+      Pipeline.save_plan(task, %{title: "Previews again", description: "## Acceptance criteria\n\n- One\n"})
+
+    _settled = render(view)
+    assert has_element?(view, "#plan-section-ticket", "Previews again")
+    assert has_element?(view, "#plan-card-2 [data-qa='plan_card_changed']")
+  end
+
+  test "opening a split part asks for its paths with the plan's, so its cards read New or Changed too", %{
+    conn: conn,
+    task: task,
+    child: child
+  } do
+    {:ok, _split} = Pipeline.save_split(task, %{"children" => [child.(1, "One", 1, []), child.(2, "Two", 1, [])]})
+    expect(Rail.Git, :list_default_branch_paths, 2, fn _project, ["lib/rail.ex"] -> MapSet.new(["lib/rail.ex"]) end)
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    expect(Rail.Git, :list_default_branch_paths, fn _project, paths ->
+      assert paths == ["lib/rail.ex", "lib/rail/part_2.ex", "lib/rail/part_2_more.ex"]
+      MapSet.new(["lib/rail.ex", "lib/rail/part_2_more.ex"])
+    end)
+
+    view |> element("#plan-split-child-2-open") |> render_click()
+
+    assert has_element?(view, "#split-part-2-card-1 [data-qa='plan_card_new']")
+    assert has_element?(view, "#split-part-2-card-2 [data-qa='plan_card_changed']")
+    assert has_element?(view, "#plan-card-1 [data-qa='plan_card_changed']")
+  end
+
+  test "when the clone cannot say, the cards read neither New nor Changed and the groups count their files", %{
+    conn: conn,
+    task: task
+  } do
+    expect(Rail.Git, :list_default_branch_paths, 2, fn _project, ["lib/rail.ex"] -> nil end)
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+    refute has_element?(view, "#plan-card-1 [data-qa='plan_card_new']")
+    refute has_element?(view, "#plan-card-1 [data-qa='plan_card_changed']")
+    refute has_element?(view, "#plan-card-1 [data-qa='plan_card_link']")
+    assert has_element?(view, "#plan-group-lib [data-qa='plan_group_count']", "1 file")
+  end
+
   test "a plan saved before its ticket still lays out, its criteria read by their numbers", %{conn: conn, task: task} do
     Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [ticket: nil])
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")

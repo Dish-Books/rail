@@ -16,6 +16,7 @@ defmodule RailWeb.Live.PlanStage do
   import RailWeb.Utils.BuildDocumentBlocks
   import RailWeb.Utils.CalculateDocumentComments
 
+  alias Rail.Git
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ImplementationPlan
@@ -41,6 +42,7 @@ defmodule RailWeb.Live.PlanStage do
       |> assign_new(:selected_key, fn -> nil end)
       |> assign_new(:open_child, fn -> nil end)
       |> load()
+      |> assign_default_paths()
 
     {:ok, socket}
   end
@@ -64,6 +66,8 @@ defmodule RailWeb.Live.PlanStage do
         plan={@plan}
         sheet={@sheet}
         criteria={@criteria}
+        default_paths={@default_paths}
+        project={@task.project}
         target={@myself}
       />
 
@@ -115,6 +119,8 @@ defmodule RailWeb.Live.PlanStage do
               pending_text={@pending_text}
               criteria={@criteria}
               lines={@plan_lines}
+              default_paths={@default_paths}
+              project={@task.project}
               placed={@plan_comments.placed}
               changed={@plan_comments.lifted}
               draft={@line_draft}
@@ -127,6 +133,8 @@ defmodule RailWeb.Live.PlanStage do
             <.split_pane
               split={@split}
               open_child={@open_child}
+              default_paths={@default_paths}
+              project={@task.project}
               target={@myself}
             />
           </.plan_section>
@@ -153,7 +161,13 @@ defmodule RailWeb.Live.PlanStage do
   # A card opens to its child's whole ticket and part of the plan; opening it again closes it.
   def handle_event("open_child", %{"number" => number}, socket) do
     number = String.to_integer(number)
-    {:noreply, assign(socket, :open_child, if(socket.assigns.open_child == number, do: nil, else: number))}
+
+    socket =
+      socket
+      |> assign(:open_child, if(socket.assigns.open_child == number, do: nil, else: number))
+      |> assign_default_paths()
+
+    {:noreply, socket}
   end
 
   def handle_event("toggle_commenting", _params, socket) do
@@ -704,6 +718,8 @@ defmodule RailWeb.Live.PlanStage do
   attr :pending_text, :string, required: true
   attr :criteria, :list, required: true, doc: "the ticket's acceptance criteria, for the plan's criteria table"
   attr :lines, :list, required: true, doc: "the plan's lines, read off its sheet or, without one, off its markdown"
+  attr :default_paths, :any, required: true
+  attr :project, :any, required: true
   attr :placed, :map, required: true
   attr :changed, :list, required: true
   attr :draft, :map, default: nil
@@ -744,6 +760,8 @@ defmodule RailWeb.Live.PlanStage do
         :if={@sheet}
         sheet={@sheet}
         criteria={@criteria}
+        default_paths={@default_paths}
+        project={@project}
         target={@target}
         placed={@placed}
         changed={@changed}
@@ -775,6 +793,8 @@ defmodule RailWeb.Live.PlanStage do
 
   attr :split, :map, required: true
   attr :open_child, :integer, default: nil
+  attr :default_paths, :any, required: true
+  attr :project, :any, required: true
   attr :target, :any, default: nil
 
   defp split_pane(assigns) do
@@ -893,6 +913,8 @@ defmodule RailWeb.Live.PlanStage do
             sheet={@open_sheet}
             criteria={@open_criteria}
             part={@open.number}
+            default_paths={@default_paths}
+            project={@project}
             target={@target}
             doc={:split_part}
           />
@@ -911,6 +933,8 @@ defmodule RailWeb.Live.PlanStage do
   attr :plan, :any, required: true
   attr :sheet, :any, required: true
   attr :criteria, :list, required: true
+  attr :default_paths, :any, required: true
+  attr :project, :any, required: true
   attr :target, :any, required: true
 
   # A child never runs Plan: its plan is the part of its parent's it was approved with.
@@ -952,6 +976,8 @@ defmodule RailWeb.Live.PlanStage do
           sheet={@sheet}
           criteria={@criteria}
           part={@child_of.position}
+          default_paths={@default_paths}
+          project={@project}
           target={@target}
         />
         <.markdown :if={@sheet == nil} content={@plan.content} class="text-[15px] leading-relaxed" />
@@ -1106,6 +1132,24 @@ defmodule RailWeb.Live.PlanStage do
     |> close_line_draft_unless_offered()
     |> assign_comments()
   end
+
+  # Git is asked once per set of paths the sheets show, so a comment or an unrelated update does not ask again.
+  defp assign_default_paths(socket) do
+    %{task: task, sheet: sheet, split: split, open_child: open_child} = socket.assigns
+    open = split && Enum.find(split.children, &(&1.number == open_child))
+    paths = Enum.sort(Enum.uniq(card_paths(sheet) ++ card_paths(open && build_plan_sheet(open.plan))))
+
+    if socket.assigns[:default_paths_of] == paths do
+      socket
+    else
+      socket
+      |> assign(:default_paths_of, paths)
+      |> assign(:default_paths, Git.list_default_branch_paths(task.project, paths))
+    end
+  end
+
+  defp card_paths(%{cards: cards}), do: Enum.map(cards, & &1.path)
+  defp card_paths(nil), do: []
 
   # Numbered in round order, so a card on a line carries the number the tray gives it.
   defp assign_comments(socket) do
