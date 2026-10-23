@@ -93,7 +93,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     - For example, not "`apply_discount/2` reads the stale `@cart.total` before `recalc/1`, so a second code renders the first's total." but "Changing the discount code a second time shows the wrong total. A $100 cart given SAVE10 and then SAVE20 still shows $90, the SAVE10 total, instead of $80. `apply_discount/2` reads the cart total before `recalc/1` updates it."
     - Before you save, read the title and the problem again as that teammate. If they could not say back what goes wrong, who hits it and when, rewrite them.
     - A save missing a field, over a limit or holding tool-call markup is refused naming the field: fix it and save it again in the same turn.
-    - A finding already on the task is saved again by its `key` with only its `status` (`fixed`, `not_fixed` or `open`), a `note` of at most 300 characters on what this round checked and saw, and any new `evidence`. What it said when raised never changes. A Fix finding still failing is carried into this round with its ruling, never raised again under a new key. One the human ruled Don't fix is not argued again.
+    - A finding already on the task is saved again by its `key` with only its `status` (`fixed`, `not_fixed` or `open`), a `note` of at most 300 characters on what this round checked and saw, and any new `evidence`. What it said when raised never changes. A Fix finding still failing is carried into this round with its ruling, never raised again under a new key. One fixed before is saved `not_fixed` when its fix stopped holding, and `open` when a later decision brings it back to be ruled again, which clears its ruling. One the human ruled Don't fix is not argued again.
 
     Questions:
 

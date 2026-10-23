@@ -431,6 +431,18 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
     assert [:raised, :ruling, :pass, :carried, :pass] = Enum.map(notes, & &1.kind)
   end
 
+  test "a Fix finding reopened after it was fixed loses its ruling and waits on a new one", %{task: task, attrs: attrs} do
+    {:ok, raised} = Pipeline.save_finding(task, attrs)
+    {:ok, ruled} = Pipeline.decide_finding(system_scope(), raised, :fix)
+    Repo.update!(change(ruled, status: :fixed))
+    reopened = %{"key" => "send-twice", "status" => "open", "note" => "A later decision brings it back."}
+
+    assert {:ok, %Finding{decision: nil, decided_by_id: nil, status: :open, carried_round: nil} = finding} =
+             Pipeline.save_finding(task, reopened)
+
+    assert Finding.undecided?(finding)
+  end
+
   describe "a Fix finding saved fixed" do
     setup %{task: task, attrs: attrs} do
       places = [%{"file" => "lib/send.ex", "line" => 3}, %{"file" => "lib/resend.ex", "line" => 9}]

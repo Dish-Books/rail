@@ -3,7 +3,8 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
   Saves what the Review lead says about one finding. A new key is raised in the current round against HEAD's
   commit and checked whole; a known key only gets a dated note in the round it is said in, and its status,
   so nothing it said when raised is ever rewritten. A Fix finding a pass finds still failing is carried into
-  that round with its ruling, and one ruled Don't fix is not argued again. A Fix finding saved fixed is the
+  that round with its ruling, and one ruled Don't fix is not argued again. A fixed finding saved open again, as a
+  later decision can reopen one, loses its ruling, so the human rules it afresh. A Fix finding saved fixed is the
   fix round's report on it, refused until it names every place covered or left, the test that failed first
   and the files it changed. A finding saved fixed names HEAD's commit as the one it was fixed in.
   """
@@ -93,6 +94,12 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
         end
 
       changeset = put_change(changeset, :fixed_in, fixed_in)
+
+      # Not fixed is a fix that stopped holding, carried with its ruling; open is a question for the human again.
+      changeset =
+        if finding.status == :fixed and get_field(changeset, :status) == :open,
+          do: change(changeset, decision: nil, decided_by_id: nil),
+          else: changeset
 
       carried? =
         finding.decision == :fix and get_field(changeset, :status) == :not_fixed and finding.carried_round != said.round
