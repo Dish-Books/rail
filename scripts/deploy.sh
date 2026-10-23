@@ -14,7 +14,11 @@ secret() { gcloud secrets versions access latest --project dishbooks-shared --se
     echo
     echo "TUNNEL_TOKEN=$(secret rail-tunnel-token)"
   } > .env
+
+  secret rail-devhub-tunnel-config > devhub-tunnel.json
 )
+# The tunnel image runs as 65532.
+chown 65532 devhub-tunnel.json
 
 if grep -q '^POSTHOG_API_KEY=.' .env; then export COMPOSE_PROFILES=posthog; fi
 
