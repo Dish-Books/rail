@@ -116,13 +116,13 @@ defmodule Rail.Pipeline.Actions.SaveFixPlanTest do
     refute File.exists?(path)
   end
 
-  test "a plan says whether its round's screens are shot again and a demo recorded", %{task: task} do
-    assert {:ok, %FixPlan{retake_screens: false, record_demo: false}} = Pipeline.save_fix_plan(task, %{"plan" => @plan})
+  test "a plan says whether its round's demo is recorded", %{task: task} do
+    assert {:ok, %FixPlan{record_demo: false}} = Pipeline.save_fix_plan(task, %{"plan" => @plan})
 
-    assert {:ok, %FixPlan{retake_screens: true, record_demo: true}} =
-             Pipeline.save_fix_plan(task, %{"plan" => @plan, "retake_screens" => true, "record_demo" => true})
+    assert {:ok, %FixPlan{record_demo: true}} =
+             Pipeline.save_fix_plan(task, %{"plan" => @plan, "record_demo" => true})
 
-    assert %FixPlan{retake_screens: true, record_demo: true} = Pipeline.read_fix_plan(task)
+    assert %FixPlan{record_demo: true} = Pipeline.read_fix_plan(task)
   end
 
   # A changed ticket is said where the person approving reads it, before anything is approved on it.

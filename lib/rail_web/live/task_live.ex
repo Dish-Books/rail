@@ -49,7 +49,7 @@ defmodule RailWeb.TaskLive do
   @items ["issue", "plan", "children", "findings", "fix_plan", "diff", "screens", "demo", "browser"]
 
   # The agents whose runs the conversation reads, in the order a task meets them.
-  @agents [:plan, :engineer, :qa, :review, :screens, :demo, :review_lead]
+  @agents [:plan, :engineer, :qa, :review, :demo, :review_lead]
 
   # What the Issue tab's owner menu and comments raise, handled as the issue page handles them.
   @issue_events ["assign", "filter_assignees", "draft_comment", "comment"]
@@ -874,7 +874,7 @@ defmodule RailWeb.TaskLive do
 
   # The header says where the task is: at Review, whichever agent is checking the round, else the review agent.
   defp stage_run(runs, %Task{stage: :review}) do
-    Enum.find_value([:qa, :review, :screens, :demo], &(Run.running?(runs[&1]) && runs[&1])) || runs[:review_lead]
+    Enum.find_value([:qa, :review, :demo], &(Run.running?(runs[&1]) && runs[&1])) || runs[:review_lead]
   end
 
   defp stage_run(runs, %Task{stage: stage}), do: runs[Task.role_stage(stage)]

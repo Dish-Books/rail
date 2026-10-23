@@ -391,7 +391,7 @@ defmodule RailWeb.Live.TaskActions do
 
   # A failed run of the step the task is at, which nothing else starts again.
   defp failed_run(%Task{runs: runs, stage: stage}) when is_list(runs) and stage in [:engineer, :review] do
-    retryable = if stage == :engineer, do: [:engineer], else: [:qa, :review, :screens, :demo, :review_lead]
+    retryable = if stage == :engineer, do: [:engineer], else: [:qa, :review, :demo, :review_lead]
     Enum.find(runs, &(&1.role.stage in retryable and Run.state(&1) == :failed))
   end
 

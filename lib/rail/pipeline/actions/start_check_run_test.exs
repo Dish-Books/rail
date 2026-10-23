@@ -15,7 +15,7 @@ defmodule Rail.Pipeline.Actions.StartCheckRunTest do
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     runs =
-      Map.new([:qa, :review, :screens, :demo], fn stage ->
+      Map.new([:qa, :review, :demo], fn stage ->
         {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
         {:ok, run} = Pipeline.start_or_resume_run(task, role, worktree, fresh: true)
         {stage, %{run | role: role}}
@@ -38,6 +38,7 @@ defmodule Rail.Pipeline.Actions.StartCheckRunTest do
       assert prompt =~ "Save your report with `save_report` before you end your turn."
       assert prompt =~ "<report from=\"engineer\">\nGuarded the nil in the action.\n</report>"
       assert prompt =~ "There is no approved plan for this round, so the ticket below is the whole specification."
+      assert prompt =~ "Keep the screen states current"
       {:ok, %OsProcess{run: spawned}}
     end)
 
@@ -154,32 +155,34 @@ defmodule Rail.Pipeline.Actions.StartCheckRunTest do
   end
 
   # The states keep their keys across rounds, so each one's pictures line up commit by commit.
-  test "the screenshots agent chooses the keys on the first round and shoots the same ones after", %{
+  # A state nothing has touched since its picture is left as it is, so a round off screen reshoots nothing.
+  test "QA shoots every state first, then only those a commit since each one's picture can alter", %{
     task: task,
     runs: runs
   } do
     expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
-      assert prompt =~ "You photograph every screen state the change below affects"
-      assert prompt =~ "No state has been shot yet, so the keys are yours to choose"
-      assert prompt =~ "yours is named `screens`"
+      assert prompt =~ "No state has been shot yet: shoot every state the change affects."
       {:ok, %OsProcess{run: spawned}}
     end)
 
-    assert {:ok, %OsProcess{}} = Pipeline.start_check_run(runs.screens)
+    assert {:ok, %OsProcess{}} = Pipeline.start_check_run(runs.qa)
 
     folder = Path.join([task.scratch_path, "qa", "screens", "file-list"])
     File.mkdir_p!(folder)
     File.write!(Path.join(folder, "1.jpg"), "jpeg")
-    {:ok, _shot} = Pipeline.save_screen(task, %{key: "file-list", label: "File list", file: "screens/file-list/1.jpg"})
+
+    {:ok, %{commit: commit}} =
+      Pipeline.save_screen(task, %{key: "file-list", label: "File list", file: "screens/file-list/1.jpg"})
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
-      assert prompt =~
-               "Shoot each again under the same `key`, and add any the change now affects: `file-list` (File list)."
+      assert prompt =~ "Read what changed since with `git diff <commit> HEAD`"
+      assert prompt =~ "Leave a state nothing has touched as it is."
+      assert prompt =~ "`file-list` (File list) on #{String.slice(commit, 0, 7)}."
 
       {:ok, %OsProcess{run: spawned}}
     end)
 
-    assert {:ok, %OsProcess{}} = Pipeline.start_check_run(runs.screens)
+    assert {:ok, %OsProcess{}} = Pipeline.start_check_run(runs.qa)
   end
 
   test "the demo recorder films one walkthrough in its own browser and saves it", %{runs: runs} do

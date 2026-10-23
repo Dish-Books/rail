@@ -350,11 +350,6 @@ defmodule Rail.Mcp.Utils.McpTools do
             "type" => "boolean",
             "description" => "True when the change has something on screen worth a recorded walkthrough once it is built."
           },
-          "retake_screens" => %{
-            "type" => "boolean",
-            "description" =>
-              "True when the change has something on screen, so each state it affects is photographed once it is built."
-          },
           "design" => %{
             "type" => "string",
             "description" =>
@@ -362,56 +357,6 @@ defmodule Rail.Mcp.Utils.McpTools do
                 "there are no options, or while the plan leaves the screen open before the pick."
           }
         }
-      }
-    },
-    %{
-      "name" => "save_split",
-      "description" =>
-        "Save a split of the work into child tickets, when it is too big for one. Each save replaces the whole " <>
-          "split, so save every child each time, in the order they should run. Every child needs its title, " <>
-          "its ticket and its part of the plan, or the save is refused naming the child and the field, and " <>
-          "the last good save stays. Save an empty list of children to remove the split.",
-      "inputSchema" => %{
-        "type" => "object",
-        "properties" => %{
-          "children" => %{
-            "type" => "array",
-            "description" =>
-              "Two or more children, in order. Approval makes each a Linear sub-issue with a task of its own.",
-            "items" => %{
-              "type" => "object",
-              "properties" => %{
-                "title" => %{"type" => "string", "description" => "The child's ticket title, one line."},
-                "ticket" => %{
-                  "type" => "string",
-                  "description" => "The child's ticket body in markdown, with its own acceptance criteria."
-                },
-                "estimate" => %{"type" => "integer", "description" => "Points, zero or more."},
-                "plan" => %{
-                  "type" => "string",
-                  "description" =>
-                    "The part of the plan this child builds, a complete plan in the same sections, opening " <>
-                      "with the `## Implementation plan` heading."
-                },
-                "builds_on" => %{
-                  "type" => "array",
-                  "items" => %{"type" => "integer"},
-                  "description" =>
-                    "The numbers of the earlier children, counted from 1, that must merge before this one starts. " <>
-                      "Empty when it can start at once."
-                },
-                "builds_screen" => %{
-                  "type" => "boolean",
-                  "description" =>
-                    "True for each child that builds the screen the approved design shows. Only those children " <>
-                      "get the design."
-                }
-              },
-              "required" => ["title", "ticket", "plan"]
-            }
-          }
-        },
-        "required" => ["children"]
       }
     }
   ]
@@ -575,10 +520,6 @@ defmodule Rail.Mcp.Utils.McpTools do
             "type" => "boolean",
             "description" => "True when a new demo should be recorded once this round is built."
           },
-          "retake_screens" => %{
-            "type" => "boolean",
-            "description" => "True when the screen states should be photographed again once this round is built."
-          },
           "title" => %{
             "type" => "string",
             "description" => "Only when a person asked to change the ticket: its whole new title."
@@ -698,18 +639,14 @@ defmodule Rail.Mcp.Utils.McpTools do
     }
   ]
 
-  @screen_tools Enum.filter(@qa_tools, &(&1["name"] == "save_screen"))
-  @check_tools @qa_tools -- @screen_tools
-
   @doc """
   The tools Rail serves this run itself: the save tools each agent hands its output over with, the browser for
-  the three that drive the app, `ask_questions` for the agents a person talks to, and the knowledge base for all.
+  the two that drive the app, `ask_questions` for the agents a person talks to, and the knowledge base for all.
   """
   def mcp_tools(%Role{stage: :plan}), do: @design_tools ++ @plan_tools ++ @question_tools ++ @knowledge_tools
   def mcp_tools(%Role{stage: :engineer}), do: @report_tools ++ @question_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :qa}), do: @browser_tools ++ @check_tools ++ @report_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :qa}), do: @browser_tools ++ @qa_tools ++ @report_tools ++ @knowledge_tools
   def mcp_tools(%Role{stage: :review}), do: @report_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :screens}), do: @browser_tools ++ @screen_tools ++ @knowledge_tools
 
   def mcp_tools(%Role{stage: :demo}), do: @browser_tools ++ @demo_tools ++ @demo_report_tools ++ @knowledge_tools
 

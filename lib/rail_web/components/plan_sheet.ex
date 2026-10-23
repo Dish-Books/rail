@@ -34,32 +34,24 @@ defmodule RailWeb.Components.PlanSheet do
 
   attr :project, :any, required: true, doc: "whose GitHub repository and default branch a path links to"
 
-  attr :doc, :atom,
-    default: :plan,
-    values: [:plan, :split_part],
-    doc: "the task's plan, or a split child's part of it drawn on the same page, which names its ids apart"
-
   def plan_sheet(assigns) do
-    prefix = if assigns.doc == :plan, do: "plan", else: "split-part"
-
     assigns =
       assigns
-      |> assign(:prefix, prefix)
-      |> assign(:base, if(assigns.part, do: "#{prefix}-#{assigns.part}", else: prefix))
-      |> assign(:on, %{placed: assigns.placed, draft: assigns.draft, offered: assigns.offered, doc: assigns.doc})
+      |> assign(:base, if(assigns.part, do: "plan-#{assigns.part}", else: "plan"))
+      |> assign(:on, %{placed: assigns.placed, draft: assigns.draft, offered: assigns.offered, doc: :plan})
       |> assign(:rows, rows(assigns.sheet.criteria, assigns.criteria))
       |> assign(:columns, @columns)
       |> assign(:groups, groups(assigns))
 
     ~H"""
     <div
-      id={"#{@prefix}-sheet"}
+      id="plan-sheet"
       data-qa="plan_sheet"
       class="max-w-[1120px] flex flex-col gap-7 wrap-anywhere"
     >
-      <.changed_comments id={"#{@prefix}-changed-comments"} comments={@changed} target={@target} />
+      <.changed_comments id="plan-changed-comments" comments={@changed} target={@target} />
 
-      <section :if={@sheet.approach} id={"#{@prefix}-approach"}>
+      <section :if={@sheet.approach} id="plan-approach">
         <.line line={@sheet.approach.title_line} on={@on} target={@target}>
           <p class="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
             Approach
@@ -70,7 +62,7 @@ defmodule RailWeb.Components.PlanSheet do
 
       <section
         :if={@sheet.data_changes}
-        id={"#{@prefix}-data-changes"}
+        id="plan-data-changes"
         class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
       >
         <div class="px-4 py-2.5 border-b border-slate-200 dark:border-slate-700">
@@ -99,7 +91,7 @@ defmodule RailWeb.Components.PlanSheet do
         </div>
       </section>
 
-      <section :if={@sheet.decisions} id={"#{@prefix}-decisions"}>
+      <section :if={@sheet.decisions} id="plan-decisions">
         <.line line={@sheet.decisions.title_line} on={@on} target={@target} class="mb-2">
           <.heading
             title="Decisions"
@@ -127,7 +119,7 @@ defmodule RailWeb.Components.PlanSheet do
         </ul>
       </section>
 
-      <section id={"#{@prefix}-changes"}>
+      <section id="plan-changes">
         <.line line={@sheet.changes_title} on={@on} target={@target} class="mb-2">
           <.heading
             title="Changes"
@@ -170,7 +162,7 @@ defmodule RailWeb.Components.PlanSheet do
         </details>
       </section>
 
-      <section :if={@rows != []} id={"#{@prefix}-criteria"}>
+      <section :if={@rows != []} id="plan-criteria">
         <.line line={@sheet.criteria.title_line} on={@on} target={@target} class="mb-2">
           <.heading title="Acceptance criteria" subtitle="What in the plan satisfies each one" />
         </.line>
@@ -191,7 +183,7 @@ defmodule RailWeb.Components.PlanSheet do
         />
       </section>
 
-      <section :if={@sheet.verification} id={"#{@prefix}-verification"}>
+      <section :if={@sheet.verification} id="plan-verification">
         <.line line={@sheet.verification.title_line} on={@on} target={@target} class="mb-2">
           <.heading title="Verification" subtitle="The tests that matter most" />
         </.line>

@@ -120,7 +120,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   # A turn that is over drives no browser, and the next one signs in again, so the one it left open is
   # closed rather than kept in the shared Chrome.
   defp end_turn(%Run{role: %Role{stage: stage}, task: %Task{} = task} = run, %OsProcess{kind: :agent})
-       when stage in [:qa, :screens, :demo] do
+       when stage in [:qa, :demo] do
     :ok = Tools.stop_browser_session(task, to_string(stage))
     run
   end
@@ -197,7 +197,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp finish_action(%Run{role: %Role{stage: :engineer}}), do: &engineer_run_finished/2
   defp finish_action(%Run{role: %Role{stage: :review_lead}}), do: &review_run_finished/2
 
-  defp finish_action(%Run{role: %Role{stage: stage}}) when stage in [:qa, :review, :screens], do: &check_run_finished/2
+  defp finish_action(%Run{role: %Role{stage: stage}}) when stage in [:qa, :review], do: &check_run_finished/2
 
   defp finish_action(%Run{}), do: fn run, _opts -> run end
 

@@ -82,10 +82,8 @@ defmodule Rail.Learnings.Schemas.Learning do
   def role_label(:engineer), do: "Engineer"
   def role_label(:review_lead), do: "Review lead"
   def role_label(:review), do: "Reviewer"
-  def role_label(:screens), do: "Screenshots"
   def role_label(:qa), do: "QA"
   def role_label(:demo), do: "Demo"
-  def role_label(:debugger), do: "Debugger"
   def role_label(:triage), do: "Triage"
 
   @doc "The roles a rule applies to, as a reader says them."

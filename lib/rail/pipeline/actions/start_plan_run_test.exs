@@ -23,33 +23,6 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
-  # The smallest part of a plan the structure allows, trimmed as a save trims it.
-  @part String.trim("""
-        ## Implementation plan
-
-        ### Approach
-
-        Build it.
-
-        ### Decisions
-
-        - Decision: one module changes.
-
-        ### Changes
-
-        #### `lib/rail.ex`
-
-        Builds it.
-
-        ### Acceptance criteria
-
-        - 1: `lib/rail.ex`
-
-        ### Verification
-
-        - `lib/rail_test.exs`: covers it.
-        """)
-
   # Its own project, because starting a run adds a worktree to a real clone.
   # The smallest plan the structure allows: one decision, one card and one criterion, and no data changes.
   @plan """
@@ -162,7 +135,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
       assert prompt =~ "skip them and say so in one line"
       assert prompt =~ "Never plan for all three."
       assert prompt =~ "which one you recommend and why"
-      assert prompt =~ "5. Have the plan checked before you end any turn that saved it"
+      assert prompt =~ "4. Have the plan checked before you end any turn that saved it"
       assert prompt =~ "Start one subagent on a clean context to read it against the code."
       assert prompt =~ "an acceptance criterion no step delivers"
       assert prompt =~ "One check a turn: what it revised is checked when the next turn saves the plan."
@@ -236,14 +209,6 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     File.write!(Path.join(design, "picked"), "rows")
     {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan, design: "rows"})
 
-    {:ok, _split} =
-      Pipeline.save_split(task, %{
-        "children" => [
-          %{"title" => "Deploys", "ticket" => "T1.", "plan" => @part},
-          %{"title" => "QA on them", "ticket" => "T2.", "plan" => @part, "builds_on" => [1]}
-        ]
-      })
-
     {:ok, %Run{id: run_id} = run} = Pipeline.start_or_resume_run(task, role, worktree_path)
 
     expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, ["-p", prompt | _rest] = argv ->
@@ -251,8 +216,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
       assert prompt =~ "- Design options: Rows (rows), Panel (panel)"
       assert prompt =~ "- The human picked rows."
       assert prompt =~ "- The plan, written for rows."
-      assert prompt =~ "- A split into 2: 1. Deploys; 2. QA on them."
-      assert prompt =~ "decide where it splits from the code and save it with `save_split`"
+      refute prompt =~ "save_split"
       refute "--agents" in argv
       {:ok, %OsProcess{run: spawned}}
     end)

@@ -30,8 +30,6 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
     field :covered_comments, :integer, default: 0
     # Whether the plan asks for a new demo once its round is built.
     field :record_demo, :boolean, default: false
-    # Whether the plan asks for the screen states to be shot again once its round is built.
-    field :retake_screens, :boolean, default: false
     # The ticket as a person asked it changed, whole, or nil where they asked for no change.
     field :title, :string
     field :description, :string
@@ -68,7 +66,6 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
       :covered_titles,
       :covered_comments,
       :record_demo,
-      :retake_screens,
       :title,
       :description,
       :design_changed,
@@ -89,7 +86,7 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
   """
   def save_changeset(%__MODULE__{} = fix_plan, attrs) do
     fix_plan
-    |> cast(attrs, [:plan, :record_demo, :retake_screens, :title, :description, :design_changed])
+    |> cast(attrs, [:plan, :record_demo, :title, :description, :design_changed])
     |> update_change(:plan, &String.trim/1)
     |> validate_required([:plan])
     |> validate_structure(fix_plan)
