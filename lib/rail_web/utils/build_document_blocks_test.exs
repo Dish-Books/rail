@@ -100,8 +100,7 @@ defmodule RailWeb.Utils.BuildDocumentBlocksTest do
     assert [%{text: "def a, do: 1", html: named}] = build_document_blocks("```elixir sketch\ndef a, do: 1\n```\n")
     assert named =~ ~s(<span class="l-keyword-function">def</span>)
 
-    assert [%{html: passed}] = build_document_blocks("```\ndef a, do: 1\n```\n", "lib/a.ex")
-    assert passed == named
+    assert [%{html: ^named}] = build_document_blocks("```\ndef a, do: 1\n```\n", "lib/a.ex")
 
     assert [%{html: nil}] = build_document_blocks("```\ndef a, do: 1\n```\n")
     assert [%{html: nil}] = build_document_blocks("```sketch\ndef a, do: 1\n```\n", "notes.txt")

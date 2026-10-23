@@ -54,10 +54,13 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
   end
 
   test "a card's signatures and sketch are highlighted" do
-    assert %{cards: [%{signatures: [signature], sketch: [first | _sketch]} | _cards]} = build_plan_sheet(sheet_plan())
+    def = ~s(<span class="l-keyword-function">def</span> <span class="l-function">send_back_to_architect</span>)
 
-    assert signature.html =~ ~s(<span class="l-keyword-function">def</span>)
-    assert first.html =~ ~s(<span class="l-function">send_back_to_architect</span>)
+    assert %{
+             cards: [
+               %{signatures: [%{html: ^def <> _signature}], sketch: [%{html: ^def <> _sketch} | _lines]} | _cards
+             ]
+           } = build_plan_sheet(sheet_plan())
   end
 
   test "the lines hold every part in the order it is drawn, the sketch's included, each with a key of its own" do
