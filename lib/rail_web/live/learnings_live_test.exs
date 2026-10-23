@@ -129,10 +129,10 @@ defmodule RailWeb.LearningsLiveTest do
     near = learning(project, %{rule: "Don't flag a missing @doc", kind: :calibration}, embedding: [0.9, 0.1])
     far_rule = learning(project, %{rule: "Copy says task", kind: :product}, embedding: [0.1, 0.9])
 
-    {:ok, view, _html} = live(conn, ~p"/learnings")
+    {:ok, view, _html} = live(conn, ~p"/learnings?status=active")
     view |> form("#learnings-search-form", %{q: "doc on components"}) |> render_change()
 
-    assert_patch(view, ~p"/learnings?q=doc+on+components&status=active")
+    assert_patch(view, ~p"/learnings?status=active&q=doc+on+components")
     assert has_element?(view, "#learnings-match-line", "2 matches, best first")
     html = view |> element("#learnings-list") |> render()
     assert [_before, after_near] = String.split(html, "learning-card-#{near.id}")
@@ -146,13 +146,35 @@ defmodule RailWeb.LearningsLiveTest do
     view |> form("#learnings-search-form", %{q: "components"}) |> render_change()
     assert_received {:embedded, "components", "RETRIEVAL_QUERY"}
 
-    {:ok, _view, _html} = live(conn, ~p"/learnings?status=review&q=components")
-    refute_received {:embedded, _text, _task_type}
-
     stub_vertex_down()
     {:ok, view, _html} = live(conn, ~p"/learnings?status=active&q=anything")
     assert has_element?(view, "#learnings-match-line", "Search is unavailable right now")
     refute has_element?(view, "[data-qa=learning-card]")
+  end
+
+  test "searching while reviewing ranks the proposals nearest first and stays on To review", %{
+    conn: conn,
+    project: project
+  } do
+    stub_vertex(%{"doc on components" => vector([1.0])})
+    near = learning(project, %{rule: "Don't flag a missing @doc", kind: :calibration}, embedding: [0.9, 0.1])
+    far_rule = learning(project, %{rule: "Copy says task", kind: :product}, embedding: [0.1, 0.9])
+    far_proposal = Repo.insert!(%LearningProposal{project_id: project.id, action: :retire, learning_id: far_rule.id})
+    near_proposal = Repo.insert!(%LearningProposal{project_id: project.id, action: :retire, learning_id: near.id})
+
+    {:ok, view, _html} = live(conn, ~p"/learnings")
+    view |> form("#learnings-search-form", %{q: "doc on components"}) |> render_change()
+
+    assert_patch(view, ~p"/learnings?status=review&q=doc+on+components")
+    assert has_element?(view, "#learnings-match-line", "2 matches, best first")
+    html = view |> element("#learnings-list") |> render()
+    assert [_before, after_near] = String.split(html, "proposal-card-#{near_proposal.id}")
+    assert after_near =~ "proposal-card-#{far_proposal.id}"
+
+    stub_vertex_down()
+    {:ok, view, _html} = live(conn, ~p"/learnings?status=review&q=anything")
+    assert has_element?(view, "#learnings-match-line", "Search is unavailable right now")
+    refute has_element?(view, "[data-qa=proposal-card]")
   end
 
   test "the kind and role menus and the two chips filter through the URL", %{conn: conn, project: project} do
@@ -206,6 +228,9 @@ defmodule RailWeb.LearningsLiveTest do
     stub_vertex()
     learning(project, %{rule: "Not embedded yet", kind: :convention})
     {:ok, view, _html} = live(conn, ~p"/learnings?status=active&q=storybook+snapshot")
+    assert has_element?(view, "#learnings-empty", "No rules match “storybook snapshot”")
+
+    {:ok, view, _html} = live(conn, ~p"/learnings?status=review&q=storybook+snapshot")
     assert has_element?(view, "#learnings-empty", "No rules match “storybook snapshot”")
 
     {:ok, view, _html} = live(conn, ~p"/learnings?status=retired")

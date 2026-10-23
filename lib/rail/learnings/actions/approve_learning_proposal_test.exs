@@ -195,4 +195,20 @@ defmodule Rail.Learnings.Actions.ApproveLearningProposalTest do
 
     assert {:error, :not_found} = Learnings.get_learning_proposal("lpr_none")
   end
+
+  test "a search ranks pending proposals nearest their rule first, leaving out a rule not embedded yet", %{
+    project: project,
+    project_id: project_id
+  } do
+    near = learning(project, %{rule: "Near", kind: :convention}, status: :provisional, embedding: [0.9, 0.1])
+    far_rule = learning(project, %{rule: "Far", kind: :convention}, status: :provisional, embedding: [0.1, 0.9])
+    unembedded = learning(project, %{rule: "Unembedded", kind: :convention}, status: :provisional)
+
+    %{id: far_id} = Repo.insert!(%LearningProposal{project_id: project_id, action: :retire, learning_id: far_rule.id})
+    %{id: near_id} = Repo.insert!(%LearningProposal{project_id: project_id, action: :retire, learning_id: near.id})
+    Repo.insert!(%LearningProposal{project_id: project_id, action: :retire, learning_id: unembedded.id})
+
+    assert [%LearningProposal{id: ^near_id}, %LearningProposal{id: ^far_id}] =
+             Learnings.list_learning_proposals(project_id: project_id, embedding: vector([1.0]))
+  end
 end
