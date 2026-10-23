@@ -144,8 +144,9 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
       assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
 
       plan =
-        "## Implementation plan\n\n### Approach\n\nExtend it.\n\nNo diagrams: one module changes.\n\n" <>
-          "### File-level changes\n\n- `lib/rail.ex`: extends it.\n\n### Verification\n\n- `lib/rail_test.exs`: covers it."
+        "## Implementation plan\n\n### Approach\n\nExtend it.\n\n### Decisions\n\n- Decision: one module changes.\n\n" <>
+          "### Changes\n\n#### `lib/rail.ex`\n\nExtends it.\n\n### Acceptance criteria\n\n- 1: `lib/rail.ex`\n\n" <>
+          "### Verification\n\n- `lib/rail_test.exs`: covers it."
 
       {:ok, _saved} = Pipeline.save_plan(task, %{title: "A ticket", description: "Body.", plan: plan, design: "table"})
       {:ok, _queued} = Pipeline.update_run(Repo.reload!(run), %{status: :finished, pending_chat: "And a migration"})

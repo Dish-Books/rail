@@ -104,7 +104,7 @@ defmodule Rail.Pipeline.Schemas.Finding do
     |> validate_format(:key, @key, message: "must be lowercase letters, digits and hyphens")
     |> validate_length(:key, max: 60)
     |> validate_length(:title, max: 90)
-    |> validate_length(:problem, max: 300)
+    |> validate_length(:problem, max: 500)
     |> validate_length(:fix, max: 300)
     |> validate_length(:why, max: 200)
     |> validate_length(:rule, max: 160)

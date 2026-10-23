@@ -2,7 +2,7 @@ defmodule RailWeb.Components.FixPlanSheet do
   @moduledoc """
   A fix round's plan laid out for approval: the changes to the ticket or the design a person asked for, called out
   first, its summary, What changes with an item per finding and comment the plan
-  covers, In this plan beside it, then File-level changes numbered as on the Plan tab, and Verification. While it
+  covers, In this plan beside it, then File-level changes, numbered, and Verification. While it
   waits on approval, any line of its text takes a comment through the + beside it, as the plan's do.
   """
   use RailWeb, :html

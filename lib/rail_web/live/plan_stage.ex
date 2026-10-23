@@ -37,7 +37,6 @@ defmodule RailWeb.Live.PlanStage do
       |> assign_new(:line_draft, fn -> nil end)
       |> assign_new(:reported_changed, fn -> nil end)
       |> assign_new(:selected_key, fn -> nil end)
-      |> assign_new(:diagram_views, fn -> %{change: :diagram, call_flow: :diagram} end)
       |> load()
 
     {:ok, socket}
@@ -61,7 +60,7 @@ defmodule RailWeb.Live.PlanStage do
         child_of={@child_of}
         plan={@plan}
         sheet={@sheet}
-        diagram_views={@diagram_views}
+        criteria={@criteria}
         target={@myself}
       />
 
@@ -111,7 +110,7 @@ defmodule RailWeb.Live.PlanStage do
               approved={@approved}
               running={@running}
               pending_text={@pending_text}
-              diagram_views={@diagram_views}
+              criteria={@criteria}
               lines={@plan_lines}
               placed={@plan_comments.placed}
               changed={@plan_comments.lifted}
@@ -297,14 +296,6 @@ defmodule RailWeb.Live.PlanStage do
       nil ->
         {:noreply, assign_comments(socket)}
     end
-  end
-
-  def handle_event("diagram_view", %{"view" => view}, socket) do
-    [diagram, shown] = String.split(view, ":")
-    diagram = if diagram == "call_flow", do: :call_flow, else: :change
-    shown = if shown == "source", do: :source, else: :diagram
-
-    {:noreply, update(socket, :diagram_views, &Map.put(&1, diagram, shown))}
   end
 
   # --- Panes ---
@@ -694,7 +685,7 @@ defmodule RailWeb.Live.PlanStage do
   attr :approved, :boolean, required: true
   attr :running, :boolean, required: true
   attr :pending_text, :string, required: true
-  attr :diagram_views, :map, required: true
+  attr :criteria, :list, required: true, doc: "the ticket's acceptance criteria, for the plan's criteria table"
   attr :lines, :list, required: true, doc: "the plan's lines, read off its sheet or, without one, off its markdown"
   attr :placed, :map, required: true
   attr :changed, :list, required: true
@@ -735,8 +726,7 @@ defmodule RailWeb.Live.PlanStage do
       <.plan_sheet
         :if={@sheet}
         sheet={@sheet}
-        diagram_views={@diagram_views}
-        event="diagram_view"
+        criteria={@criteria}
         target={@target}
         placed={@placed}
         changed={@changed}
@@ -769,7 +759,7 @@ defmodule RailWeb.Live.PlanStage do
   attr :child_of, :map, required: true
   attr :plan, :any, required: true
   attr :sheet, :any, required: true
-  attr :diagram_views, :map, required: true
+  attr :criteria, :list, required: true
   attr :target, :any, required: true
 
   # A child never runs Plan: its plan is the part of its parent's it was approved with.
@@ -809,8 +799,8 @@ defmodule RailWeb.Live.PlanStage do
         <.plan_sheet
           :if={@sheet}
           sheet={@sheet}
-          diagram_views={@diagram_views}
-          event="diagram_view"
+          criteria={@criteria}
+          part={@child_of.position}
           target={@target}
         />
         <.markdown :if={@sheet == nil} content={@plan.content} class="text-[15px] leading-relaxed" />
@@ -937,12 +927,13 @@ defmodule RailWeb.Live.PlanStage do
     amending = approved and task.stage in [:review, :finalize] and Run.can_chat?(socket.assigns[:chat_run])
     picked = design && Enum.find(design.options, &(&1.key == design.picked))
     selected_key = selected_key(design, socket.assigns.selected_key)
-    sheet = plan && build_plan_sheet(plan.content)
+    ticket_lines = ticket_lines(ticket)
+    sheet = sheet(plan, ticket_lines)
     items = items(ticket, design, picked, plan, sheet, running)
 
     socket
     |> assign(:ticket, ticket)
-    |> assign_ticket_lines(ticket)
+    |> assign_ticket_lines(ticket_lines)
     |> assign(:design, design)
     |> assign(:plan, plan)
     |> assign(:sheet, sheet)
@@ -1011,15 +1002,17 @@ defmodule RailWeb.Live.PlanStage do
   defp close_line_draft_unless_offered(socket), do: socket
 
   # The title, the priority and the estimate are lines of the ticket as much as its description's are.
-  defp assign_ticket_lines(socket, nil), do: socket |> assign(:ticket_lines, nil) |> assign(:ticket_line_list, [])
+  defp assign_ticket_lines(socket, nil),
+    do: socket |> assign(:ticket_lines, nil) |> assign(:ticket_line_list, []) |> assign(:criteria, [])
 
-  defp assign_ticket_lines(socket, ticket) do
-    lines = ticket_lines(ticket)
-
+  defp assign_ticket_lines(socket, lines) do
     socket
     |> assign(:ticket_lines, lines)
     |> assign(:ticket_line_list, [lines.title, lines.priority, lines.estimate | lines.description])
+    |> assign(:criteria, criteria_lines(lines))
   end
+
+  defp ticket_lines(nil), do: nil
 
   defp ticket_lines(ticket) do
     priority = (ticket.priority && Issue.priority_label(ticket.priority)) || "No priority"
@@ -1042,6 +1035,12 @@ defmodule RailWeb.Live.PlanStage do
   defp ticket_line(kind, text, label) do
     %{key: "#{kind}-#{:erlang.phash2({text, 1})}", kind: kind, text: text, occurrence: 1, label: label, depth: 0}
   end
+
+  # A row for each of the ticket's criteria, so one the plan leaves out takes a comment too.
+  defp sheet(nil, _ticket_lines), do: nil
+
+  defp sheet(plan, ticket_lines),
+    do: build_plan_sheet(plan.content, ticket_lines |> criteria_lines() |> Enum.map(& &1.number))
 
   defp plan_lines(nil, _sheet), do: []
   defp plan_lines(_plan, %{lines: lines}), do: lines
@@ -1182,8 +1181,20 @@ defmodule RailWeb.Live.PlanStage do
     %{id: "plan", label: "Plan", icon: "pi-list-checks", line: line, saved_at: saved_at, tone: tone}
   end
 
-  defp files(%{files: files}), do: "#{length(files)} #{if length(files) == 1, do: "file", else: "files"}"
+  defp count_label(count, one, many), do: "#{count} #{if count == 1, do: one, else: many}"
+
+  defp files(%{cards: cards}), do: count_label(length(cards), "file", "files")
   defp files(nil), do: nil
+
+  # The ticket's own acceptance criteria, as its lines name them, for the plan's criteria table to fill its rows from.
+  defp criteria_lines(nil), do: []
+  defp criteria_lines(%{description: lines}), do: criteria_lines(lines)
+
+  defp criteria_lines(lines) do
+    for %{label: "Criterion " <> number} = line <- lines,
+        {number, ""} <- [Integer.parse(number)],
+        do: %{number: number, html: line.html}
+  end
 
   # The acceptance criteria are the list under the heading that names them.
   defp criteria(description) do

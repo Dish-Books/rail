@@ -13,7 +13,7 @@ defmodule RailWeb.Live.PlanStageTest do
   alias Rail.Scope
   alias Rail.Users
 
-  # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
+  # The smallest plan the structure allows: one decision, one card and one criterion, and no data changes.
   @plan """
   ## Implementation plan
 
@@ -21,11 +21,19 @@ defmodule RailWeb.Live.PlanStageTest do
 
   All of it.
 
-  No diagrams: one module changes.
+  ### Decisions
 
-  ### File-level changes
+  - Decision: one module changes.
 
-  - `lib/rail.ex`: does all of it.
+  ### Changes
+
+  #### `lib/rail.ex`
+
+  Does all of it.
+
+  ### Acceptance criteria
+
+  - 1: `lib/rail.ex`
 
   ### Verification
 
@@ -164,6 +172,77 @@ defmodule RailWeb.Live.PlanStageTest do
 
     assert has_element?(view, "#child-plan-waiting", "Starts when PST-11 and PST-12 merge.")
     assert has_element?(view, "#child-plan-approved", "Approved in PST-10 · part 3 of 3")
-    assert has_element?(view, "#child-plan #plan-sheet")
+    assert has_element?(view, "#child-plan #plan-sheet #plan-3-group-pipeline")
+  end
+
+  test "a plan in the new sections has no diagrams and no In this plan box, and reads its criteria off the ticket", %{
+    conn: conn,
+    task: task
+  } do
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+    assert has_element?(view, "#plan-plan #plan-sheet #plan-group-lib #plan-card-1", "lib/rail.ex")
+    assert has_element?(view, "#plan-sheet [data-qa='plan_criterion']", "One")
+    refute has_element?(view, "#plan-plan figure")
+    refute has_element?(view, "#plan-summary")
+    refute has_element?(view, "#plan-plan", "In this plan")
+  end
+
+  test "a plan saved before its ticket still lays out, its criteria read by their numbers", %{conn: conn, task: task} do
+    Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [ticket: nil])
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+    assert has_element?(view, "#plan-sheet [data-qa='plan_criterion']", "Criterion 1")
+    refute has_element?(view, "#plan-sheet [data-qa='plan_criterion']", "Not covered")
+  end
+
+  test "the + on an Approach paragraph, a decision, a card's prose, a sketch line and a criterion opens the box under it",
+       %{conn: conn, task: task} do
+    {:ok, _ticket} =
+      Pipeline.save_plan(task, %{title: "Previews", description: "## Acceptance criteria\n\n- One\n- Two\n- Three\n"})
+
+    {:ok, _plan} = Pipeline.save_plan(task, %{plan: sheet_plan()})
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+    for {label, body} <- [
+          {"Approach, paragraph 1", "Why EnterStage?"},
+          {"Decisions, item 2", "Keep the history."},
+          {"File 1, paragraph 1", "Idle how?"},
+          {"File 1, sketch line 2", "Pass the note."},
+          {"Criterion 2", "Nothing covers this."},
+          {"Criterion 3", "Test it too."}
+        ] do
+      view |> element("#plan-sheet button[aria-label='Comment on #{label}']") |> render_click()
+      assert has_element?(view, "#plan-sheet [data-qa='line_comments'] form[data-qa='document_comment_form']")
+      view |> form("#plan-sheet [data-qa='document_comment_form']", %{"body" => body}) |> render_submit()
+
+      line =
+        view |> element("#plan-sheet button[aria-label='Comment on #{label}']") |> render() |> Floki.parse_fragment!()
+
+      [key] = Floki.attribute(line, "phx-value-key")
+      assert has_element?(view, "#line-plan-#{key} + [data-qa='line_comments'] [data-qa='document_comment']", body)
+    end
+
+    assert has_element?(view, "#plan-card-1 [data-qa='plan_card_sketch'][open]")
+    assert has_element?(view, "#plan-criteria [data-qa='plan_criterion']", "Not covered")
+  end
+
+  test "a plan saved before this change, diagrams and all, shows as lines that take a comment", %{
+    conn: conn,
+    task: task
+  } do
+    old =
+      "## Implementation plan\n\n### Approach\n\nExtend it.\n\n### Change diagram\n\n```mermaid\nflowchart LR\n  A --> B\n```\n\n" <>
+        "### File-level changes\n\n- `lib/rail.ex`: extends it.\n\n### Verification\n\n- Works."
+
+    Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [plan: old])
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+    refute has_element?(view, "#plan-sheet")
+    assert has_element?(view, "#plan-plan [data-kind='code']", "A --> B")
+
+    view |> element("#plan-plan button[aria-label='Comment on Code line 2']") |> render_click()
+    view |> form("#plan-plan [data-qa='document_comment_form']", %{"body" => "Which B?"}) |> render_submit()
+    assert has_element?(view, "#plan-plan [data-kind='code'] [data-qa='document_comment']", "Which B?")
   end
 end

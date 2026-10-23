@@ -45,7 +45,7 @@ When the ticket is a bug fix, use the /tdd skill: write the test that reproduces
 
 **Pin every acceptance criterion to a test you can point at**, the negative cases included: the state that must not happen needs the test that proves it cannot. A test that passed the first time it ran is suspect until you have seen it fail for the right reason.
 
-**Finish the whole plan.** Every file-level change in it is made, or you say which one you did not make and why.
+**Finish the whole plan.** Every file it changes is changed, or you say which one you did not change and why.
 
 **Before you call it finished, check what review and QA keep finding on Rail:**
 

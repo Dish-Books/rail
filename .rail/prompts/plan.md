@@ -165,7 +165,7 @@ The corrections humans make to implementation plans are nearly all the same one:
 - **Every state a page shows has a broadcast** after the write commits, from every writer, so open pages update without a reload.
 - **Anything that can be clicked twice, retried or raced** with a second tab, an agent turn ending or a webhook says what the second one does.
 
-Where you considered something bigger and rejected it, say so in a sentence.
+Where you considered something bigger and rejected it, say so in Decisions, as a `Ruled out:` bullet.
 
 ### What it says
 
@@ -173,52 +173,50 @@ One approach, chosen and argued for. Do not leave the engineer a menu.
 
 The body is the sections below, in this order, under exactly these `###` titles, and nothing else. Rail lays the plan out for review by these titles, so write each one word for word.
 
-**1. `### Approach`.** A short paragraph naming the shape of the change: which existing modules it extends, which boundary the new behavior sits behind, and why that is the right place given how the code is laid out today. Name the files you are following. Where the change turns on a decision an engineer could get wrong, state it here in one sentence.
+**1. `### Approach`.** A short paragraph naming the shape of the change: which existing modules it extends, which boundary the new behavior sits behind, and why that is the right place given how the code is laid out today. Name the files you are following.
 
-**2. `### Change diagram`.** A Mermaid `flowchart LR`, in a `mermaid` fenced block, of the modules the change touches and how they connect. Mark each changed module `:::changed` and each new one `:::new`, and end the diagram with these two lines exactly:
+**2. `### Data changes`.** Only when the change adds or changes tables or columns; leave the section out otherwise. A flat bullet per change, led by its kind, then the table or column in backticks, then what it holds:
 
-```
-  classDef new fill:#052e16,stroke:#34d399,stroke-width:1.5px,stroke-dasharray:5 3,color:#d1fae5
-  classDef changed fill:#172554,stroke:#60a5fa,stroke-width:1.5px,color:#dbeafe
-```
+- New column `users.slack_notifications`: boolean, not null, off by default.
 
-**3. `### Call flow`.** One sentence naming where the main path starts and where it ends, then a Mermaid `sequenceDiagram`, in a `mermaid` fenced block, from the entry point that starts it (a LiveView event, a controller, an MCP tool call, a webhook, an Oban job or a run finishing) through to the database and any broadcast.
+**3. `### Decisions`.** A short list of flat bullets, each starting with its kind:
 
-When the change has no meaningful call flow, such as a change to tests, docs or a prompt only, leave out both diagram sections. Approach then ends with a one-line paragraph of its own, starting `No diagrams:`, that gives the reason. Never include an empty diagram.
+- `Decision:` a choice an engineer could get wrong, in one sentence.
+- `Ruled out:` a bigger design you considered and rejected, and why, in one sentence.
+- `Assumption:` a default you took that a human might veto.
 
-**4. `### File-level changes`.** A human reads this section to see the shape of the change at a glance, so it reads as plain prose, not as code. Flat bullets, one per application file, each starting with `` `path/to/file.ex` ``, then one or two sentences: what this file does differently once the change is in, and why it is this file that changes. A new file says what it is for.
+**4. `### Changes`.** A card per application file, in the order the change would be built. Rail groups the cards by where the code goes, so write no groups of your own. Each card is:
 
-- Name a function or module only where the reader needs it to follow the change, and then by name alone, such as `pick_design_option/2`.
-- No code in the sentences: no option values, column types, return tuples, patterns, `@doc` wording or line numbers. The signatures go in Program design and the tests in Verification; the rest is the engineer's to write.
-- No sub-bullets. A file whose change takes more than two sentences is a sign the plan is too big or the file is doing two jobs; say which.
-- Test files are not listed here. Verification names them.
-- Order the bullets the way the change would be built.
+- a `####` heading holding the file's path in backticks, followed by `deleted` when the change deletes the file, such as `` #### `lib/rail/pipeline/actions/old_notify.ex` deleted ``;
+- a sentence or two of prose: what this file does differently once the change is in, and why it is this file that changes. A new file says what it is for, a deleted one why it goes. Name a function or module only where the reader needs it to follow the change, and then by name alone, such as `pick_design_option/2`. No code in the sentences: no option values, column types, return tuples, patterns, `@doc` wording or line numbers. A file whose change takes more than two sentences is a sign the plan is too big or the file is doing two jobs; say which.
+- then, when it adds or changes public functions, one fenced block of their signatures, without `@spec` (Rail does not use them), including the `defdelegate` line a context module gains for each new action;
+- then, when there is code the change turns on, one fenced block marked `sketch`, such as `` ```elixir sketch ``, holding only that code: the key function or the new clause, never the whole file. It is a sketch and need not compile. The reader opens it with Show code.
+
+Every name is real: an existing module or function exactly as the code defines it, a new one exactly as its card names it. Test files get no card; the criteria name them.
 
 Good:
 
-- `lib/rail/pipeline/actions/pick_design_option.ex`: after a pick is accepted, deletes the options not picked and rewrites the manifest to list only the picked one, so one option is refined and one is planned for. It is the one place Rail already writes into the design folder.
+#### `lib/rail/pipeline/actions/pick_design_option.ex`
+
+After a pick is accepted, deletes the options not picked and rewrites the manifest to list only the picked one, so one option is refined and one is planned for. It is the one place Rail already writes into the design folder.
 
 Bad:
 
-- `lib/rail/pipeline/actions/pick_design_option.ex`: after `Pipeline.send_message/2` returns `{:ok, _}`, re-read `manifest.json` with `File.read!` + `Jason.decode!`, keep the first `%{"key" => ^key}` entry, write it back with `Jason.encode!(..., pretty: true)`, and `File.rm/1` each other `<key>.html` and `<key>.png`, ignoring `{:error, :enoent}`.
+#### `lib/rail/pipeline/actions/pick_design_option.ex`
 
-**5. `### Program design`.** The public function signatures the change adds or changes, grouped by module. For each module:
+After `Pipeline.send_message/2` returns `{:ok, _}`, re-read `manifest.json` with `File.read!` + `Jason.decode!`, keep the first `%{"key" => ^key}` entry, write it back with `Jason.encode!(..., pretty: true)`, and `File.rm/1` each other `<key>.html` and `<key>.png`, ignoring `{:error, :enoent}`.
 
-- a `####` heading holding the module name in backticks, followed by `new` when the module is new, such as `` #### `Rail.Pipeline.Actions.ListFindings` new ``;
-- the module's file path in backticks on a line of its own, the same path its bullet in File-level changes starts with;
-- an `elixir` fenced block holding the public signatures added or changed, without `@spec` (Rail does not use them), including the `defdelegate` line the context module gains for each new action.
+**5. `### Acceptance criteria`.** A flat bullet per acceptance criterion of the ticket, led by the criterion's number in the ticket's list and a colon, then the path in backticks of each file and test that satisfies it:
 
-Every name is real: an existing module or function exactly as the code defines it, a new one exactly as File-level changes names it. Leave the section out when no application code changes.
+- 1: `lib/rail/pipeline/utils/notify_waiting.ex`, `lib/rail/pipeline/utils/notify_waiting_test.exs`
 
-**6. `### Verification`.** How anyone knows it works. A bullet per test file, starting with its path, then the behaviors its tests pin down, in plain words, one short sentence each, naming the acceptance criterion a test covers. The same rule as File-level changes: no code. Every acceptance criterion is covered by something named here. The commands are always `mise exec -- mix test <file>` while building and `mise run ci` to finish, so leave them out.
+Each bullet names at least one file or test in backticks. Rail shows each criterion beside what you name for it. A criterion nothing in the plan satisfies gets no bullet, so Rail shows it as Not covered. Give each number one bullet.
 
-One conditional section is allowed, **`### Assumptions`**, for defaults you took that a human might veto. Flat bullets, one line each.
+**6. `### Verification`.** The few tests that matter most, the ones that would catch the change going wrong: a flat bullet each, one plain sentence saying what it shows, with no code. Not every test file and not every behavior. The commands are always `mise exec -- mix test <file>` while building and `mise run ci` to finish, so leave them out.
 
 - Sized to the ticket. A one-file change gets a short plan; padding it out does not make it a better one.
 - Cite files and functions by path and name, not by description.
 - Do not restate the ticket. The reader has it.
-- Every module in Program design has its file in File-level changes.
-- Diagram labels are plain words in double quotes, such as `A["Pipeline"]`. No `%%{init}%%` directives and no `click` lines.
 
 ## Rules
 

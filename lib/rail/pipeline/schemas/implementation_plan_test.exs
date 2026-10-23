@@ -5,49 +5,275 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlanTest do
 
   alias Rail.Pipeline.Schemas.ImplementationPlan
 
-  # Prose only: Approach says there are no diagrams, and nothing else is needed.
-  @prose_only """
+  # A plan in the sections from before cards, which a saved plan may still be.
+  @old_plan """
   ## Implementation plan
 
   ### Approach
 
-  Only the architect prompt changes.
-  No diagrams: nothing but prose changes.
+  Extend `Rail.Invoices` with a vendor filter.
+
+  ### Change diagram
+
+  ```mermaid
+  flowchart LR
+    A --> B
+  ```
+
+  ### Call flow
+
+  ```mermaid
+  sequenceDiagram
+    A->>B: go
+  ```
 
   ### File-level changes
 
-  - `.rail/prompts/architect.md`: says more.
+  - `lib/rail/invoices/actions/list_invoices.ex`: filters by `vendor_id` when given.
+
+  ### Program design
+
+  #### `Rail.Invoices`
+
+  `lib/rail/invoices.ex`
+
+  ```elixir
+  def list_invoices(scope, filters)
+  ```
 
   ### Verification
 
-  - `lib/rail/pipeline/utils/plan_subagents_test.exs`: still passes.
+  - `lib/rail/invoices/actions/list_invoices_test.exs` pins the filter.
   """
 
+  setup_all do
+    %{
+      check: fn plan ->
+        {%{}, %{plan: :string}} |> cast(%{plan: plan}, [:plan]) |> ImplementationPlan.validate_structure(:plan)
+      end
+    }
+  end
+
   describe "validate_structure/2" do
-    test "refuses a No diagrams: line run into the paragraph above it, which the sheet could not lay out" do
-      changeset =
-        {%{}, %{plan: :string}} |> cast(%{plan: @prose_only}, [:plan]) |> ImplementationPlan.validate_structure(:plan)
-
-      assert %{plan: ["`No diagrams:` must start a paragraph of its own, after a blank line"]} = errors_on(changeset)
+    test "accepts a plan in the sections Rail lays out", %{check: check} do
+      assert check.(sheet_plan()).valid?
+      assert check.(String.replace(sheet_plan(), ~r/### Data changes\n.*?### Decisions/s, "### Decisions")).valid?
     end
 
-    test "accepts it as a paragraph of its own, and the plan then lays out as a sheet" do
-      plan = String.replace(@prose_only, "changes.\nNo diagrams:", "changes.\n\nNo diagrams:")
-      changeset = {%{}, %{plan: :string}} |> cast(%{plan: plan}, [:plan]) |> ImplementationPlan.validate_structure(:plan)
+    test "refuses a plan with diagrams, File-level changes or Program design, naming the sections it needs", %{
+      check: check
+    } do
+      assert %{plan: errors} = errors_on(check.(@old_plan))
 
-      assert changeset.valid?
-      assert %{files: [%{path: ".rail/prompts/architect.md"}]} = ImplementationPlan.build_sheet(plan)
+      assert ("has a `### Change diagram` section, but the sections are `### Approach`, `### Data changes`, " <>
+                "`### Decisions`, `### Changes`, `### Acceptance criteria`, `### Verification`, with exactly these titles") in errors
+
+      assert Enum.any?(errors, &(&1 =~ "has a `### File-level changes` section"))
+      assert Enum.any?(errors, &(&1 =~ "has a `### Program design` section"))
+      assert "is missing its `### Changes` section" in errors
+      assert "is missing its `### Decisions` section" in errors
     end
 
-    test "refuses whatever else the sheet cannot lay out, such as a code block among the file bullets" do
+    test "refuses sections out of order, twice over, or with text above them", %{check: check} do
+      swapped =
+        sheet_plan()
+        |> String.replace("### Decisions", "### Swap")
+        |> String.replace("### Data changes", "### Decisions")
+        |> String.replace("### Swap", "### Data changes")
+
+      assert %{plan: ["has its sections out of order; they go `### Approach`" <> _rest | _bodies]} =
+               errors_on(check.(swapped))
+
+      twice = sheet_plan() <> "\n### Verification\n\n- Again.\n"
+      assert %{plan: ["has `### Verification` more than once"]} = errors_on(check.(twice))
+
+      lead = String.replace(sheet_plan(), "### Approach", "A note first.\n\n### Approach")
+      assert %{plan: ["has text between `## Implementation plan` and `### Approach`" <> _rest]} = errors_on(check.(lead))
+    end
+
+    test "refuses a decision not led by its kind, and a data change with no name in backticks", %{check: check} do
+      plan = String.replace(sheet_plan(), "- Assumption: the note", "- We assume the note")
+
+      assert %{plan: ["has a line under `### Decisions` that is not a bullet starting `Decision:`" <> _rest]} =
+               errors_on(check.(plan))
+
+      plan = String.replace(sheet_plan(), "- New column `tasks.sent_back_note`:", "- New column tasks.sent_back_note:")
+
+      assert %{plan: ["has a line under `### Data changes` that is not a bullet giving the change's kind" <> _rest]} =
+               errors_on(check.(plan))
+
+      plan = String.replace(sheet_plan(), "- Ruled out: a table", "- Ruled out: a table\n  - of send-backs")
+      assert %{plan: ["has sub-bullets under `### Decisions`; it is one flat bullet per item"]} = errors_on(check.(plan))
+
+      plan = String.replace(sheet_plan(), ~r/(### Decisions\n\n).*?(\n### Changes)/s, "\\1\\2")
+      assert %{plan: ["has nothing under `### Decisions`" <> _rest]} = errors_on(check.(plan))
+    end
+
+    test "refuses a criteria bullet with no number, a number used twice, or naming no path", %{check: check} do
       plan =
-        @prose_only
-        |> String.replace("changes.\nNo diagrams:", "changes.\n\nNo diagrams:")
-        |> String.replace("says more.\n", "says more.\n\n```elixir\ndef more, do: :ok\n```\n")
+        String.replace(sheet_plan(), "- 3: `lib/rail_web/live/review_stage.ex`", "- `lib/rail_web/live/review_stage.ex`")
 
-      changeset = {%{}, %{plan: :string}} |> cast(%{plan: plan}, [:plan]) |> ImplementationPlan.validate_structure(:plan)
+      assert %{
+               plan: ["has a line under `### Acceptance criteria` that is not a bullet starting with the number" <> _rest]
+             } =
+               errors_on(check.(plan))
 
-      assert %{plan: ["does not lay out as a plan: " <> _how]} = errors_on(changeset)
+      plan = String.replace(sheet_plan(), "- 3: `lib/rail_web", "- 1: `lib/rail_web")
+
+      assert %{plan: ["has criterion 1 more than once under `### Acceptance criteria`; give each criterion one bullet"]} =
+               errors_on(check.(plan))
+
+      plan = String.replace(sheet_plan(), "- 3: `lib/rail_web", "- 2: handled by the existing flow\n- 3: `lib/rail_web")
+
+      assert %{
+               plan: [
+                 "has criterion 2 under `### Acceptance criteria` with no file or test in backticks; name what " <>
+                   "satisfies it, or leave the criterion out so it reads Not covered"
+               ]
+             } = errors_on(check.(plan))
+    end
+
+    test "refuses a card that names no path, a path listed twice, or two sketches on one card", %{check: check} do
+      plan = String.replace(sheet_plan(), "#### `lib/rail_web/live/review_stage.ex`", "#### The review stage")
+
+      assert %{plan: ["has a heading under `### Changes` that is not `#### `path/to/file``" <> _rest]} =
+               errors_on(check.(plan))
+
+      plan = String.replace(sheet_plan(), "#### `lib/rail_web/live/review_stage.ex`", "#### `lib/rail/pipeline.ex`")
+
+      assert %{plan: ["lists `lib/rail/pipeline.ex` more than once under `### Changes`; give each file one card"]} =
+               errors_on(check.(plan))
+
+      plan = String.replace(sheet_plan(), "### Changes\n", "### Changes\n\nFive files.\n")
+
+      assert %{plan: ["needs `### Changes` to be a `#### `path/to/file`` card for each file" <> _rest]} =
+               errors_on(check.(plan))
+
+      plan =
+        String.replace(
+          sheet_plan(),
+          "Adds the column.\n",
+          "Adds the column.\n\n```sql sketch\nA\n```\n\n```sketch\nB\n```\n"
+        )
+
+      assert %{plan: ["has more than one code block of a kind under `#### `priv/repo/migrations/" <> _rest]} =
+               errors_on(check.(plan))
+    end
+
+    test "refuses what passes the line checks but does not lay out, such as code among the decisions", %{
+      check: check
+    } do
+      plan =
+        String.replace(
+          sheet_plan(),
+          "- Assumption: the note is required.\n",
+          "- Assumption: the note is required.\n\n```\nnote\n```\n"
+        )
+
+      assert %{plan: ["does not lay out as a plan: " <> _how]} = errors_on(check.(plan))
+    end
+
+    test "leaves a plan already refused for its heading as it is" do
+      changeset =
+        {%{}, %{plan: :string}}
+        |> cast(%{plan: @old_plan}, [:plan])
+        |> add_error(:plan, "must start with `## Implementation plan`")
+        |> ImplementationPlan.validate_structure(:plan)
+
+      assert %{plan: ["must start with `## Implementation plan`"]} = errors_on(changeset)
+    end
+  end
+
+  describe "build_sheet/1" do
+    test "splits a plan into its data changes, decisions, cards and numbered criteria" do
+      assert %{
+               approach: "Sending a task back is a stage move" <> _approach,
+               data_changes: [
+                 %{
+                   kind: "New column",
+                   name: "tasks.sent_back_note",
+                   description: "text, null until a task is sent back.",
+                   markdown: "- New column `tasks.sent_back_note`: text, null until a task is sent back."
+                 }
+               ],
+               decisions: [
+                 %{kind: :decision, text: "the note is kept on the task, so the Architect reads it in its brief."},
+                 %{kind: :ruled_out, text: "a table of send-backs with their history."},
+                 %{kind: :assumption, text: "the note is required.", markdown: "- Assumption: the note is required."}
+               ],
+               cards: [
+                 %{
+                   path: "lib/rail/pipeline/actions/send_back_to_architect.ex",
+                   deleted?: false,
+                   prose: "New action. Refuses unless the task is at `:review` and idle.",
+                   signatures: "```elixir\ndef send_back_to_architect(%Run{} = run, note)\n```",
+                   sketch: "```elixir sketch\ndef send_back_to_architect" <> _sketch
+                 },
+                 %{path: "lib/rail_web/live/review_stage.ex", signatures: nil, sketch: nil},
+                 %{path: "lib/rail/pipeline.ex", signatures: "```elixir\ndefdelegate" <> _delegate},
+                 %{path: "priv/repo/migrations/20261022000000_add_sent_back_note.exs"},
+                 %{
+                   path: "lib/rail/pipeline/actions/old_send_back.ex",
+                   deleted?: true,
+                   prose: "The new action replaces it."
+                 }
+               ],
+               criteria: [
+                 %{
+                   number: 1,
+                   files: ["lib/rail/pipeline/actions/send_back_to_architect.ex"],
+                   tests: ["lib/rail/pipeline/actions/send_back_to_architect_test.exs"]
+                 },
+                 %{number: 3, files: ["lib/rail_web/live/review_stage.ex"], tests: []}
+               ],
+               verification: "- A task sent back from Review is at Architect with the note in its brief."
+             } = ImplementationPlan.build_sheet(sheet_plan())
+    end
+
+    test "orders the criteria by number, puts a JavaScript test under Test, and keeps a kind written around code" do
+      plan =
+        sheet_plan()
+        |> String.replace("- 3: `lib/rail_web/live/review_stage.ex`", "- 2: `assets/js/a.js` and `assets/test/a.test.js`")
+        |> String.replace("- 1: `lib/rail/pipeline/actions/send_back_to_architect.ex`", "- 4: `lib/b.ex`")
+        |> String.replace(
+          "- New column `tasks.sent_back_note`: text, null until a task is sent back.",
+          "- Dropped table `old_notes`"
+        )
+        |> String.replace("- Decision: the note", "- Decision: `note` and the note")
+
+      assert %{
+               criteria: [%{number: 2, files: ["assets/js/a.js"], tests: ["assets/test/a.test.js"]}, %{number: 4}],
+               data_changes: [%{kind: "Dropped table", name: "old_notes", description: ""}],
+               decisions: [%{kind: :decision, text: "`note` and the note" <> _rest} | _more]
+             } = ImplementationPlan.build_sheet(plan)
+    end
+
+    test "a plan saved before cards, diagrams and all, builds no sheet" do
+      assert ImplementationPlan.build_sheet(@old_plan) == nil
+      assert ImplementationPlan.build_sheet("Just prose, no sections at all.") == nil
+    end
+
+    test "a plan whose parts do not lay out builds no sheet" do
+      for {from, to} <- [
+            {"### Approach", "A note first.\n\n### Approach"},
+            {"### Verification", "### Rollout\n\nShip it.\n\n### Verification"},
+            {"### Verification", "### Approach\n\nAgain.\n\n### Verification"},
+            {"### Changes\n", "### Changes\n\nFive files.\n"},
+            {"#### `lib/rail_web/live/review_stage.ex`", "#### The review stage"},
+            {"#### `lib/rail_web/live/review_stage.ex`", "#### `lib/rail/pipeline.ex`"},
+            {"#### `lib/rail_web/live/review_stage.ex`", "#### `lib/rail_web/live/review_stage.ex` renamed"},
+            {"Adds the column.\n", "Adds the column.\n\n```sketch\nA\n```\n\n```sketch\nB\n```\n"},
+            {"- 3: `lib/rail_web", "- 1: `lib/rail_web"},
+            {"- 3: `lib/rail_web/live/review_stage.ex`", "- `lib/rail_web/live/review_stage.ex`"},
+            {"- 3: `lib/rail_web/live/review_stage.ex`", "- Three: `lib/rail_web/live/review_stage.ex`"},
+            {"- New column `tasks.sent_back_note`:", "- `tasks.sent_back_note`:"},
+            {"- New column `tasks.sent_back_note`:", "- New column tasks.sent_back_note:"},
+            {"- Assumption: the note", "- We assume the note"},
+            {"- Ruled out: a table", "- [ ] Ruled out: a table"},
+            {"- Assumption: the note is required.\n", "- Assumption: the note is required.\n\nAnd more.\n"}
+          ] do
+        assert ImplementationPlan.build_sheet(String.replace(sheet_plan(), from, to)) == nil, "#{from} -> #{to}"
+      end
     end
   end
 
@@ -96,6 +322,14 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlanTest do
 
       assert %{plan: ["has sub-bullets" <> _rest]} = errors_on(changeset)
 
+      empty = "### File-level changes\n\n### Verification\n\nRun it."
+
+      changeset =
+        {%{}, %{plan: :string}} |> cast(%{plan: empty}, [:plan]) |> ImplementationPlan.validate_file_changes(:plan)
+
+      assert %{plan: ["has nothing under `### File-level changes`" <> _rest]} = errors_on(changeset)
+      assert ImplementationPlan.build_file_changes("### File-level changes\n\n- [ ] `lib/a.ex`: guards it.\n") == nil
+
       none = "### What changes\n\nNothing."
 
       assert {%{}, %{plan: :string}}
@@ -105,257 +339,5 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlanTest do
 
       assert ImplementationPlan.build_file_changes(none) == nil
     end
-  end
-
-  test "a full plan yields both diagrams with their source exactly as fenced" do
-    change = """
-    flowchart LR
-      RS["ReviewStage"]:::changed --> P["Pipeline"]:::changed
-      P --> SB["SendBackToArchitect"]:::new
-      classDef new fill:#052e16,stroke:#34d399,stroke-width:1.5px,stroke-dasharray:5 3,color:#d1fae5
-      classDef changed fill:#172554,stroke:#60a5fa,stroke-width:1.5px,color:#dbeafe
-    """
-
-    assert %{
-             approach: approach,
-             no_diagrams: nil,
-             diagrams: [
-               %{kind: :change, type_label: "Flowchart", caption: "Flowchart", source: ^change},
-               %{
-                 kind: :call_flow,
-                 type_label: "Sequence diagram",
-                 caption: "From the Send back button to the tasks and runs tables",
-                 source: call_flow
-               }
-             ]
-           } = ImplementationPlan.build_sheet(sheet_plan())
-
-    assert approach =~ "Sending a task back is a stage move"
-    refute approach =~ "Implementation plan"
-
-    assert call_flow =~ ~s(sequenceDiagram\n  actor You\n)
-    assert call_flow =~ "RS->>SB: send_back_to_architect(run, note)\n"
-  end
-
-  test "each file comes out with its path, and each module with its name, path and whether it is new" do
-    action_signature = "```elixir\ndef send_back_to_architect(%Run{} = run, note)\n```"
-
-    assert %{
-             files: [
-               %{path: "lib/rail/pipeline/actions/send_back_to_architect.ex", description: new_action},
-               %{path: "lib/rail/pipeline.ex", description: delegate}
-             ],
-             modules: [
-               %{
-                 name: "Rail.Pipeline.Actions.SendBackToArchitect",
-                 new?: true,
-                 path: "lib/rail/pipeline/actions/send_back_to_architect.ex",
-                 listed?: true,
-                 signatures: ^action_signature
-               },
-               %{name: "Rail.Pipeline", new?: false, path: "lib/rail/pipeline.ex", listed?: true}
-             ],
-             verification: verification,
-             assumptions: assumptions,
-             rest: []
-           } = ImplementationPlan.build_sheet(sheet_plan())
-
-    assert String.starts_with?(new_action, "New action. Refuses unless the task is at `:review`")
-    assert String.starts_with?(delegate, "Delegates `send_back_to_architect/2`")
-    assert verification =~ "`lib/rail/pipeline/actions/send_back_to_architect_test.exs` pins"
-    assert assumptions =~ "The note is required"
-  end
-
-  test "a file named with nothing after it has no description, and a caption wrapped over lines reads as one" do
-    plan =
-      sheet_plan()
-      |> String.replace(
-        "`lib/rail/pipeline.ex`: Delegates `send_back_to_architect/2` beside `send_to_qa/1`.",
-        "`lib/rail/pipeline.ex`"
-      )
-      |> String.replace("From the Send back button to the tasks", "From the Send back button\nto the tasks")
-
-    assert %{
-             files: [_action, %{path: "lib/rail/pipeline.ex", description: ""}],
-             diagrams: [_change, %{caption: "From the Send back button to the tasks and runs tables"}]
-           } = ImplementationPlan.build_sheet(plan)
-  end
-
-  test "a module whose file is not in File-level changes is marked unlisted" do
-    plan =
-      String.replace(sheet_plan(), "### Verification", """
-      #### `Rail.Pipeline.Actions.EnterStage`
-
-      `lib/rail/pipeline/actions/enter_stage.ex`
-
-      ```elixir
-      def enter_stage(%Task{} = task, stage, opts \\\\ [])
-      ```
-
-      ### Verification
-      """)
-
-    assert %{modules: [%{listed?: true}, %{listed?: true}, %{name: "Rail.Pipeline.Actions.EnterStage", listed?: false}]} =
-             ImplementationPlan.build_sheet(plan)
-  end
-
-  test "a plan with no diagrams keeps the line saying why, and no Program design means no modules" do
-    plan = """
-    ## Implementation plan
-
-    ### Approach
-
-    The missing-worktree case in `Rail.Pipeline.Actions.CleanupTask` already returns `:ok`.
-
-    No diagrams: this plan only adds tests, so no application code or call path changes.
-
-    ### File-level changes
-
-    - `lib/rail/pipeline/actions/cleanup_task_test.exs`: adds a case for a task whose worktree was already deleted.
-
-    ### Verification
-
-    - Run `mix test`.
-    """
-
-    assert %{
-             approach: approach,
-             no_diagrams: "No diagrams: this plan only adds tests, so no application code or call path changes.",
-             diagrams: [],
-             modules: [],
-             files: [%{path: "lib/rail/pipeline/actions/cleanup_task_test.exs"}],
-             assumptions: nil
-           } = ImplementationPlan.build_sheet(plan)
-
-    refute approach =~ "No diagrams"
-  end
-
-  test "a Mermaid block outside the diagram sections stays markdown" do
-    plan =
-      String.replace(sheet_plan(), "### Assumptions", """
-      ```mermaid
-      flowchart LR
-        A --> B
-      ```
-
-      ### Assumptions
-      """)
-
-    assert %{diagrams: [%{kind: :change}, %{kind: :call_flow}], verification: verification} =
-             ImplementationPlan.build_sheet(plan)
-
-    assert verification =~ "```mermaid\nflowchart LR\n  A --> B\n```"
-  end
-
-  test "a diagram section with no Mermaid block is kept as an ordinary section" do
-    plan =
-      String.replace(sheet_plan(), ~r/### Call flow\n.*?```\n/s, "### Call flow\n\nIt is one function call.\n")
-
-    assert %{diagrams: [%{kind: :change}], rest: [%{title: "Call flow", body: "It is one function call."}]} =
-             ImplementationPlan.build_sheet(plan)
-  end
-
-  test "a section the sheet does not know is kept, in order, under its own title" do
-    plan =
-      sheet_plan()
-      |> String.replace("### Verification", "### Rollout\n\nShip it behind nothing.\n\n### Verification")
-      |> String.replace("### Assumptions", "### Risks\n\n| risk | odds |\n|---|---|\n| none | low |\n\n### Assumptions")
-
-    assert %{rest: [%{title: "Rollout", body: "Ship it behind nothing."}, %{title: "Risks", body: risks}]} =
-             ImplementationPlan.build_sheet(plan)
-
-    assert risks =~ "| risk | odds |"
-  end
-
-  test "a plan without the sections the sheet needs is not a sheet" do
-    assert ImplementationPlan.build_sheet("## Implementation plan\n\n### Approach\nExtend the invoices module.\n") == nil
-    assert ImplementationPlan.build_sheet("## Implementation plan\n\n### File-level changes\n\n- `lib/a.ex`: a.\n") == nil
-    assert ImplementationPlan.build_sheet("Just prose, no sections at all.") == nil
-  end
-
-  # The old prompt's three sections carry nothing that says whether code changes, so
-  # the sheet's summary would be guessing.
-  test "a plan in the old three-section format is not a sheet" do
-    plan = """
-    ## Implementation plan
-
-    ### Approach
-
-    Extend `Rail.Invoices` with a vendor filter.
-
-    ### File-level changes
-
-    - `lib/rail/invoices/actions/list_invoices.ex`: filters by `vendor_id` when given.
-    - `lib/rail_web/live/invoices_live.ex`: adds the vendor picker.
-
-    ### Verification
-
-    - `lib/rail/invoices/actions/list_invoices_test.exs` pins the filter.
-
-    ### Assumptions
-
-    - An empty vendor means every vendor.
-    """
-
-    assert ImplementationPlan.build_sheet(plan) == nil
-  end
-
-  test "an empty Program design is still the new format, with no modules" do
-    plan =
-      sheet_plan()
-      |> String.replace(~r/### Change diagram.*?### File-level changes/s, "### File-level changes")
-      |> String.replace(~r/### Program design.*?### Verification/s, "### Program design\n\n### Verification")
-
-    assert %{diagrams: [], no_diagrams: nil, modules: []} = sheet = ImplementationPlan.build_sheet(plan)
-    refute Map.has_key?(sheet, :program_design?)
-  end
-
-  test "File-level changes that are not a list of files is not a sheet" do
-    plan = String.replace(sheet_plan(), "### File-level changes\n", "### File-level changes\n\nTwo files change.\n")
-
-    assert ImplementationPlan.build_sheet(plan) == nil
-
-    plan = String.replace(sheet_plan(), "- `lib/rail/pipeline.ex`: Delegates", "- The context module delegates")
-
-    assert ImplementationPlan.build_sheet(plan) == nil
-  end
-
-  # A checkbox is state the sheet has no place for, so the plan keeps it as markdown.
-  test "File-level changes written as a task list is not a sheet" do
-    plan =
-      sheet_plan()
-      |> String.replace(
-        "- `lib/rail/pipeline/actions/send_back_to_architect.ex`:",
-        "- [ ] `lib/rail/pipeline/actions/send_back_to_architect.ex`:"
-      )
-      |> String.replace("- `lib/rail/pipeline.ex`:", "- [x] `lib/rail/pipeline.ex`:")
-
-    assert ImplementationPlan.build_sheet(plan) == nil
-  end
-
-  test "a Program design module is named by its heading even without a code span" do
-    plan = String.replace(sheet_plan(), "#### `Rail.Pipeline`\n", "#### The context module\n")
-
-    assert %{modules: [_action, %{name: "The context module", new?: false, path: "lib/rail/pipeline.ex"}]} =
-             ImplementationPlan.build_sheet(plan)
-  end
-
-  test "a module that names no file is unlisted" do
-    plan = String.replace(sheet_plan(), "`lib/rail/pipeline.ex`\n\n```elixir", "```elixir")
-
-    assert %{modules: [_action, %{name: "Rail.Pipeline", path: nil, listed?: false}]} =
-             ImplementationPlan.build_sheet(plan)
-  end
-
-  test "a Program design that is not one heading per module is not a sheet" do
-    plan = String.replace(sheet_plan(), "### Program design\n", "### Program design\n\nTwo modules change.\n")
-
-    assert ImplementationPlan.build_sheet(plan) == nil
-  end
-
-  test "anything written above the first section is kept, without a title" do
-    plan = String.replace(sheet_plan(), "### Approach", "A note before the plan.\n\n### Approach")
-
-    assert %{rest: [%{title: nil, body: "A note before the plan."}]} = ImplementationPlan.build_sheet(plan)
   end
 end

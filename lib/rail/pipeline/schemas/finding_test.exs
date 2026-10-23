@@ -51,7 +51,7 @@ defmodule Rail.Pipeline.Schemas.FindingTest do
   test "every field is held to its limit", %{attrs: attrs} do
     long = %{
       "title" => String.duplicate("t", 91),
-      "problem" => String.duplicate("p", 301),
+      "problem" => String.duplicate("p", 501),
       "fix" => String.duplicate("f", 301),
       "why" => String.duplicate("w", 201),
       "rule" => String.duplicate("r", 161)
@@ -59,7 +59,7 @@ defmodule Rail.Pipeline.Schemas.FindingTest do
 
     assert %{
              title: ["should be at most 90 character(s)"],
-             problem: ["should be at most 300 character(s)"],
+             problem: ["should be at most 500 character(s)"],
              fix: ["should be at most 300 character(s)"],
              why: ["should be at most 200 character(s)"],
              rule: ["should be at most 160 character(s)"]

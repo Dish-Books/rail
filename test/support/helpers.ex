@@ -36,8 +36,8 @@ defmodule RailTest.Helpers do
   end
 
   @doc """
-  An implementation plan in the section format the Architect prompt asks for, with
-  both diagrams and a Program design.
+  An implementation plan in the sections the Plan prompt asks for, with data changes, every kind of
+  decision, cards in several groups with signatures, a sketch and a deleted file, and criteria that skip one.
   """
   def sheet_plan, do: File.read!("test/support/fixtures/sheet_plan.md")
 
