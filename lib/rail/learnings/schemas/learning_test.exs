@@ -56,10 +56,8 @@ defmodule Rail.Learnings.Schemas.LearningTest do
                "Engineer",
                "QA",
                "Reviewer",
-               "Screenshots",
                "Demo",
                "Review lead",
-               "Debugger",
                "Triage"
              ]
   end

@@ -13,6 +13,12 @@ defmodule RailWeb.Components.PlanSheet do
 
   @columns "grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]"
 
+  @kinds [
+    new: {"New", "ring-emerald-500/50 text-emerald-700 dark:text-emerald-300"},
+    changed: {"Changed", "ring-sky-500/50 text-sky-700 dark:text-sky-300"},
+    deleted: {"Deleted", "ring-red-500/50 text-red-700 dark:text-red-300"}
+  ]
+
   attr :sheet, :map, required: true, doc: "what `build_plan_sheet/2` made of the plan"
   attr :criteria, :list, default: [], doc: "the ticket's acceptance criteria, each `%{number:, html:}`"
   attr :part, :integer, default: nil, doc: "the split child's number, when the plan is a child's part"
@@ -22,31 +28,35 @@ defmodule RailWeb.Components.PlanSheet do
   attr :draft, :map, default: nil, doc: "the line the comment box is open under"
   attr :offered, :boolean, default: false, doc: "the reader can comment now"
 
-  attr :doc, :atom,
-    default: :plan,
-    values: [:plan, :split_part],
-    doc: "the task's plan, or a split child's part of it drawn on the same page, which names its ids apart"
+  attr :reviewed, :map,
+    default: nil,
+    doc: "the reader's marks, each card's path to the digest it had when marked; without them no card takes one"
+
+  attr :default_paths, :any,
+    default: nil,
+    doc: "the cards' paths on the default branch, or nil when the clone could not say"
+
+  attr :project, :any, required: true, doc: "whose GitHub repository and default branch a path links to"
 
   def plan_sheet(assigns) do
-    prefix = if assigns.doc == :plan, do: "plan", else: "split-part"
-
     assigns =
       assigns
-      |> assign(:prefix, prefix)
-      |> assign(:base, if(assigns.part, do: "#{prefix}-#{assigns.part}", else: prefix))
-      |> assign(:on, %{placed: assigns.placed, draft: assigns.draft, offered: assigns.offered, doc: assigns.doc})
+      |> assign(:base, if(assigns.part, do: "plan-#{assigns.part}", else: "plan"))
+      |> assign(:on, %{placed: assigns.placed, draft: assigns.draft, offered: assigns.offered, doc: :plan})
       |> assign(:rows, rows(assigns.sheet.criteria, assigns.criteria))
+      |> assign(:reviewed_count, reviewed_count(assigns.sheet.cards, assigns.reviewed))
       |> assign(:columns, @columns)
+      |> assign(:groups, groups(assigns))
 
     ~H"""
     <div
-      id={"#{@prefix}-sheet"}
+      id="plan-sheet"
       data-qa="plan_sheet"
       class="max-w-[1120px] flex flex-col gap-7 wrap-anywhere"
     >
-      <.changed_comments id={"#{@prefix}-changed-comments"} comments={@changed} target={@target} />
+      <.changed_comments id="plan-changed-comments" comments={@changed} target={@target} />
 
-      <section :if={@sheet.approach} id={"#{@prefix}-approach"}>
+      <section :if={@sheet.approach} id="plan-approach">
         <.line line={@sheet.approach.title_line} on={@on} target={@target}>
           <p class="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
             Approach
@@ -57,7 +67,7 @@ defmodule RailWeb.Components.PlanSheet do
 
       <section
         :if={@sheet.data_changes}
-        id={"#{@prefix}-data-changes"}
+        id="plan-data-changes"
         class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
       >
         <div class="px-4 py-2.5 border-b border-slate-200 dark:border-slate-700">
@@ -86,7 +96,7 @@ defmodule RailWeb.Components.PlanSheet do
         </div>
       </section>
 
-      <section :if={@sheet.decisions} id={"#{@prefix}-decisions"}>
+      <section :if={@sheet.decisions} id="plan-decisions">
         <.line line={@sheet.decisions.title_line} on={@on} target={@target} class="mb-2">
           <.heading
             title="Decisions"
@@ -114,12 +124,30 @@ defmodule RailWeb.Components.PlanSheet do
         </ul>
       </section>
 
-      <section id={"#{@prefix}-changes"}>
+      <section id="plan-changes">
         <.line line={@sheet.changes_title} on={@on} target={@target} class="mb-2">
-          <.heading title="Changes" subtitle="Grouped by where the code goes" />
+          <div class="flex items-baseline gap-2">
+            <.heading
+              title="Changes"
+              subtitle={
+                if @default_paths,
+                  do:
+                    "Grouped by where the code goes. Changed files link to #{@project.default_branch} on GitHub.",
+                  else: "Grouped by where the code goes"
+              }
+            />
+            <span
+              :if={@reviewed}
+              id="plan-reviewed-count"
+              data-qa="plan_reviewed_count"
+              class="ml-auto shrink-0 text-[13px] font-semibold text-slate-900 dark:text-slate-100"
+            >
+              {@reviewed_count} of {length(@sheet.cards)} reviewed
+            </span>
+          </div>
         </.line>
         <details
-          :for={group <- @sheet.groups}
+          :for={group <- @groups}
           id={"#{@base}-group-#{group.slug}"}
           data-qa="plan_group"
           open
@@ -136,17 +164,34 @@ defmodule RailWeb.Components.PlanSheet do
               {group.name}
             </span>
             <span class="min-w-0 font-mono text-[12px] text-slate-500 truncate">{group.directory}</span>
-            <span class="ml-auto shrink-0 text-[12.5px] text-slate-600 dark:text-slate-300">
-              {length(group.cards)} {if length(group.cards) == 1, do: "file", else: "files"}
+            <span
+              data-qa="plan_group_count"
+              class="ml-auto shrink-0 text-[12.5px] text-slate-600 dark:text-slate-300"
+            >
+              {group.count}
+            </span>
+            <span
+              :if={@reviewed}
+              data-qa="plan_group_reviewed"
+              class="shrink-0 text-[12px] text-slate-500"
+            >
+              · {reviewed_count(group.cards, @reviewed)} of {length(group.cards)} reviewed
             </span>
           </summary>
           <div class="space-y-2 px-2.5 pb-2.5">
-            <.card :for={card <- group.cards} card={card} base={@base} on={@on} target={@target} />
+            <.card
+              :for={card <- group.cards}
+              card={card}
+              state={state(card, @reviewed)}
+              base={@base}
+              on={@on}
+              target={@target}
+            />
           </div>
         </details>
       </section>
 
-      <section :if={@rows != []} id={"#{@prefix}-criteria"}>
+      <section :if={@rows != []} id="plan-criteria">
         <.line line={@sheet.criteria.title_line} on={@on} target={@target} class="mb-2">
           <.heading title="Acceptance criteria" subtitle="What in the plan satisfies each one" />
         </.line>
@@ -167,7 +212,7 @@ defmodule RailWeb.Components.PlanSheet do
         />
       </section>
 
-      <section :if={@sheet.verification} id={"#{@prefix}-verification"}>
+      <section :if={@sheet.verification} id="plan-verification">
         <.line line={@sheet.verification.title_line} on={@on} target={@target} class="mb-2">
           <.heading title="Verification" subtitle="The tests that matter most" />
         </.line>
@@ -178,40 +223,89 @@ defmodule RailWeb.Components.PlanSheet do
   end
 
   attr :card, :map, required: true
+  attr :state, :atom, required: true, values: [nil, :unreviewed, :reviewed, :revised]
   attr :base, :string, required: true
   attr :on, :map, required: true
   attr :target, :any, required: true
 
+  # A reviewed card is its header alone, so the comments on its other lines are drawn under it, each naming its line.
   defp card(assigns) do
     ~H"""
     <div
       id={"#{@base}-card-#{@card.number}"}
       data-qa="plan_card"
-      class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+      data-state={@state}
+      class={[
+        "rounded-xl border bg-white dark:bg-slate-900",
+        @state == :revised && "border-amber-400 dark:border-amber-700/60",
+        @state != :revised && "border-slate-200 dark:border-slate-700"
+      ]}
     >
       <div class="px-4 py-1.5">
         <.line line={@card.line} on={@on} target={@target}>
           <div class="flex items-center gap-2.5 py-1">
-            <span
-              :if={@card.deleted?}
-              data-qa="plan_card_deleted"
-              class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset ring-red-500/50 text-red-700 dark:text-red-300"
+            <.kind_badge :if={@card.kind} kind={@card.kind} />
+            <a
+              :if={@card.link}
+              href={@card.link.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-qa="plan_card_link"
+              title={@card.link.title}
+              class="min-w-0 inline-flex items-center gap-1 font-mono text-[13px] font-semibold text-slate-900 dark:text-slate-100 hover:underline decoration-slate-500 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
             >
-              Deleted
-            </span>
+              <span class="truncate">{@card.path}</span>
+              <.icon name="pi-arrow-up-right-bold" class="shrink-0 size-[12px] text-slate-400" />
+            </a>
             <span
+              :if={!@card.link}
               class="min-w-0 truncate font-mono text-[13px] font-semibold text-slate-900 dark:text-slate-100"
               title={@card.path}
             >
               {@card.path}
             </span>
+            <span class="ml-auto" />
+            <.reviewed_toggle
+              :if={@state}
+              reviewed={@state == :reviewed}
+              phx-click="toggle_plan_file_reviewed"
+              phx-value-path={@card.path}
+              phx-value-digest={@card.digest}
+              phx-value-reviewed={to_string(@state != :reviewed)}
+              phx-target={@target}
+              data-qa="plan_card_reviewed"
+            />
           </div>
         </.line>
-        <.line :for={line <- @card.prose} line={line} on={@on} target={@target} />
+        <p
+          :if={@state == :revised}
+          data-qa="plan_card_revised"
+          class="mb-1.5 rounded-md border border-amber-300 dark:border-amber-600/60 bg-amber-50 dark:bg-amber-950/40 px-3 py-1.5 text-[12.5px] text-amber-800 dark:text-amber-200"
+        >
+          <b class="font-semibold">Revised since you reviewed it.</b>
+          Plan changed this file's part, so it's unmarked.
+        </p>
+        <.line
+          :for={line <- @card.prose}
+          :if={@state != :reviewed}
+          line={line}
+          on={@on}
+          target={@target}
+        />
       </div>
 
+      <.line
+        :for={line <- @card.prose ++ @card.signatures ++ @card.sketch}
+        :if={@state == :reviewed}
+        line={line}
+        layout={:away}
+        on={@on}
+        target={@target}
+        class="last:rounded-b-xl"
+      />
+
       <div
-        :if={@card.signatures != []}
+        :if={@card.signatures != [] and @state != :reviewed}
         data-qa="plan_card_signatures"
         class="py-1.5 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950/50 last:rounded-b-xl"
       >
@@ -226,7 +320,7 @@ defmodule RailWeb.Components.PlanSheet do
       </div>
 
       <details
-        :if={@card.sketch != []}
+        :if={@card.sketch != [] and @state != :reviewed}
         id={"#{@base}-sketch-#{@card.id}"}
         data-qa="plan_card_sketch"
         open={Enum.any?(@card.sketch, &Map.has_key?(@on.placed, &1.key))}
@@ -378,6 +472,25 @@ defmodule RailWeb.Components.PlanSheet do
     """
   end
 
+  attr :kind, :atom, required: true
+
+  defp kind_badge(assigns) do
+    {label, color} = Keyword.fetch!(@kinds, assigns.kind)
+    assigns = assigns |> assign(:label, label) |> assign(:color, color)
+
+    ~H"""
+    <span
+      data-qa={"plan_card_#{@kind}"}
+      class={[
+        "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset",
+        @color
+      ]}
+    >
+      {@label}
+    </span>
+    """
+  end
+
   attr :html, :string, required: true
   attr :class, :any, default: nil
 
@@ -409,6 +522,69 @@ defmodule RailWeb.Components.PlanSheet do
       Map.merge(Map.fetch!(by_number, criterion.number), %{html: criterion.html, last?: index == last})
     end)
   end
+
+  # Read as the card read when it was marked, so a revision to it reads revised rather than reviewed.
+  defp state(_card, nil), do: nil
+
+  defp state(card, reviewed) do
+    case Map.fetch(reviewed, card.path) do
+      {:ok, digest} when digest == card.digest -> :reviewed
+      {:ok, _other_digest} -> :revised
+      :error -> :unreviewed
+    end
+  end
+
+  defp reviewed_count(_cards, nil), do: 0
+  defp reviewed_count(cards, reviewed), do: Enum.count(cards, &(state(&1, reviewed) == :reviewed))
+
+  # Without the default branch's paths a card cannot tell New from Changed, so a group counts its files instead.
+  defp groups(%{default_paths: nil, sheet: sheet}) do
+    Enum.map(sheet.groups, fn group ->
+      cards = Enum.map(group.cards, &Map.merge(&1, %{kind: if(&1.deleted?, do: :deleted), link: nil}))
+      Map.put(%{group | cards: cards}, :count, count_label(length(cards), "file", "files"))
+    end)
+  end
+
+  defp groups(%{default_paths: paths, sheet: sheet, project: project}) do
+    Enum.map(sheet.groups, fn group ->
+      cards = Enum.map(group.cards, &mark_card(&1, paths, project))
+
+      count =
+        @kinds
+        |> Enum.map(fn {kind, _badge} -> {kind, Enum.count(cards, &(&1.kind == kind))} end)
+        |> Enum.reject(fn {_kind, number} -> number == 0 end)
+        |> Enum.map_join(" · ", fn {kind, number} -> "#{number} #{kind}" end)
+
+      Map.put(%{group | cards: cards}, :count, count)
+    end)
+  end
+
+  defp mark_card(card, paths, project) do
+    on_branch = MapSet.member?(paths, card.path)
+
+    kind =
+      cond do
+        card.deleted? -> :deleted
+        on_branch -> :changed
+        true -> :new
+      end
+
+    link =
+      if on_branch do
+        %{
+          href: "https://github.com/#{project.github_repo}/blob/#{encode(project.default_branch)}/#{encode(card.path)}",
+          title: "Open #{card.path} on #{project.default_branch} in GitHub (new tab)"
+        }
+      end
+
+    Map.merge(card, %{kind: kind, link: link})
+  end
+
+  # A path is the plan's text, so a `#` or `?` in it stays part of the path rather than ending the URL's.
+  defp encode(path), do: URI.encode(path, &(&1 == ?/ or URI.char_unreserved?(&1)))
+
+  defp count_label(1, one, _many), do: "1 #{one}"
+  defp count_label(count, _one, many), do: "#{count} #{many}"
 
   defp layout(%{kind: kind}) when kind in [:code, :signature], do: :code
   defp layout(%{kind: :table_row}), do: :table_row

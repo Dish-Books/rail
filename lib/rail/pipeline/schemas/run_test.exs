@@ -260,7 +260,7 @@ defmodule Rail.Pipeline.Schemas.RunTest do
              task: task
            })
 
-    assert Run.needs_attention?(%Run{status: :finished, role: %Role{stage: :screens}, task: task})
+    assert Run.needs_attention?(%Run{status: :finished, role: %Role{stage: :review}, task: task})
     refute Run.needs_attention?(%Run{status: :finished, stage_outcome: :done, role: %Role{stage: :review}, task: task})
     refute Run.needs_attention?(%Run{status: :finished, role: %Role{stage: :demo}, task: task})
     refute Run.needs_attention?(%Run{status: :finished, role: %Role{stage: :qa}, task: %{task | stage: :engineer}})
@@ -354,17 +354,6 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     }
 
     assert Run.needs_attention?(done)
-  end
-
-  test "a done run at a stage no human signs off needs nothing" do
-    done = %Run{
-      status: :finished,
-      stage_outcome: :done,
-      role: %Role{stage: :debugger},
-      task: %Task{stage: :debugger, merged_at: nil, issue: %Issue{}}
-    }
-
-    refute Run.needs_attention?(done)
   end
 
   test "a merged task needs nothing, however its run ended" do

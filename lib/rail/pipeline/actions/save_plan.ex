@@ -17,8 +17,8 @@ defmodule Rail.Pipeline.Actions.SavePlan do
 
   @doc """
   Saves `attrs` on `task`'s round: the ticket's `title`, `description`, `priority` and `estimate`, the `plan`, the
-  `design` option key the plan is written for, `record_demo`, whether the round should end with a demo, and
-  `retake_screens`, whether with its screen states shot again. A priority or estimate never saved is the issue's.
+  `design` option key the plan is written for, and `record_demo`, whether the round should end with a demo. A
+  priority or estimate never saved is the issue's.
   Returns `{:ok, round}`, `{:error, :round_approved}` once the plan is approved, or `{:error, changeset}`.
   """
   def save_plan(%Task{} = task, attrs) when is_map(attrs) do
@@ -36,7 +36,7 @@ defmodule Rail.Pipeline.Actions.SavePlan do
          {:ok, design} <- design(task, given),
          ticket = Map.merge(kept(round, issue), Map.take(given, @ticket)),
          attrs =
-           given |> Map.take(["plan", "record_demo", "retake_screens"]) |> Map.put("ticket", ticket) |> Map.merge(design),
+           given |> Map.take(["plan", "record_demo"]) |> Map.put("ticket", ticket) |> Map.merge(design),
          {:ok, saved} <- round |> Round.plan_changeset(attrs) |> Repo.insert_or_update() do
       Pipeline.broadcast_output_saved(task)
       {:ok, saved}

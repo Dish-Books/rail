@@ -2,6 +2,8 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  import Rail.Pipeline.Utils.BuildTask
+
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.AdvanceTrackerState
@@ -49,17 +51,12 @@ defmodule Rail.Pipeline.Workers.AdvanceSplitTest do
         attrs = %{title: "Child #{identifier}", parent: parent_issue}
         {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
 
-        part = %{
-          number: number,
-          title: "A part",
-          ticket: "Its criteria.",
-          estimate: 1,
-          builds_on: builds_on,
-          builds_screen: false,
-          plan: "## Implementation plan\n\nPart #{number}."
-        }
+        {:ok, child} =
+          issue.project
+          |> build_task(issue, %{stage: :engineer, split_position: number, builds_on: builds_on})
+          |> Ecto.Changeset.put_change(:parent_task_id, parent.id)
+          |> Repo.insert()
 
-        {:ok, child} = Pipeline.create_child_task(parent, issue, part)
         Repo.preload(child, [:issue, :project])
       end
 

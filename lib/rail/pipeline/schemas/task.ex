@@ -17,7 +17,6 @@ defmodule Rail.Pipeline.Schemas.Task do
   alias Rail.Users.Schemas.User
 
   # The linear pipeline, then stages a task can be parked in off that path.
-  # `:debugger` has no position in the sequence: nothing advances into or out of it.
   # `:split` is a parent whose children carry the work, and it waits there until they merge.
   # `:finalize` has no run of its own: the Review lead's run stays the task's while a person merges it.
   @stages [
@@ -26,7 +25,6 @@ defmodule Rail.Pipeline.Schemas.Task do
     :review,
     :finalize,
     :merged,
-    :debugger,
     :split
   ]
 
@@ -175,7 +173,7 @@ defmodule Rail.Pipeline.Schemas.Task do
   def role_stage(:finalize), do: :review_lead
   def role_stage(stage) when is_atom(stage), do: stage
 
-  @checks [:qa, :review, :screens]
+  @checks [:qa, :review]
 
   @doc "The stages of the runs that check a Review round and hold back the review agent, which the demo does not."
   def check_stages, do: @checks
@@ -245,7 +243,6 @@ defmodule Rail.Pipeline.Schemas.Task do
   def stage_label(:review), do: "Review"
   def stage_label(:finalize), do: "Finalize"
   def stage_label(:merged), do: "Merged"
-  def stage_label(:debugger), do: "Debugger"
   def stage_label(:split), do: "Split"
   def stage_label(_other), do: nil
 

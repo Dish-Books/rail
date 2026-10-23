@@ -36,6 +36,7 @@ defmodule Rail.Git do
   defdelegate ci_env(project, task), to: Actions.CiEnv
   defdelegate fetch_default_branch(project, worktree_path), to: Actions.FetchDefaultBranch
   defdelegate read_default_branch_file(project, path), to: Actions.ReadDefaultBranchFile
+  defdelegate list_default_branch_paths(project, paths), to: Actions.ListDefaultBranchPaths
 
   # `filter` is `:branch`, `:uncommitted`, or `{:commit, sha}` for one commit against its first parent.
   defdelegate load_diff(scope, task, filter \\ :branch, previous_files \\ []), to: Actions.LoadDiff
@@ -44,6 +45,6 @@ defmodule Rail.Git do
   defdelegate expand_diff_gap(task, path, gap_index, start_line, end_line, revision \\ :worktree),
     to: Actions.ExpandDiffGap
 
-  defdelegate list_viewed_files(scope, task), to: Actions.ListViewedFiles
-  defdelegate set_file_viewed(scope, task, path, digest, viewed), to: Actions.SetFileViewed
+  defdelegate list_viewed_files(scope, task, document), to: Actions.ListViewedFiles
+  defdelegate set_file_viewed(scope, task, document, path, digest, viewed), to: Actions.SetFileViewed
 end

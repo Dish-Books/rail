@@ -271,12 +271,13 @@ defmodule RailWeb.Components.CommentableLineTest do
     end
   end
 
-  test "a node draws nothing until it has a comment or the box, which name it under the figure", %{comment: comment} do
-    node = %{key: "node-1", kind: :node, text: "PS", label: "Change diagram node", occurrence: 1}
-
+  test "a line drawn away shows nothing until it has a comment or the box, each naming it, with no line and no +", %{
+    paragraph: paragraph,
+    comment: comment
+  } do
     assert render_component(&CommentableLine.commentable_line/1,
-             line: node,
-             layout: :node,
+             line: paragraph,
+             layout: :away,
              doc: :plan,
              placed: %{},
              offered: true,
@@ -286,16 +287,20 @@ defmodule RailWeb.Components.CommentableLineTest do
     html =
       (&CommentableLine.commentable_line/1)
       |> render_component(
-        line: node,
-        layout: :node,
+        line: paragraph,
+        layout: :away,
         doc: :plan,
-        placed: %{"node-1" => [{comment.("pcm_n", node), 1}]},
+        placed: %{paragraph.key => [{comment.("pcm_a", paragraph), 1}]},
+        draft: %{doc: :plan, key: paragraph.key, label: paragraph.label, body: ""},
         offered: true,
         target: nil
       )
       |> Floki.parse_fragment!()
 
-    assert Floki.text(Floki.find(html, "[data-qa='document_comment_line']")) =~ "Node PS"
+    assert Floki.text(Floki.find(html, "[data-qa='document_comment_line']")) =~ paragraph.label
+    assert [box] = Floki.find(html, "#document-comment-form-#{paragraph.key}")
+    assert Floki.text(Floki.find(box, "[data-qa='document_comment_box_line']")) =~ paragraph.label
+    assert Floki.find(html, "#line-plan-#{paragraph.key}") == []
     assert Floki.find(html, "[data-qa='line_comment_add']") == []
   end
 

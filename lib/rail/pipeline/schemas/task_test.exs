@@ -153,7 +153,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     assert :plan in Task.stages()
     refute :product in Task.stages()
     assert :merged in Task.stages()
-    assert :debugger in Task.stages()
+    refute :debugger in Task.stages()
   end
 
   test "stage_label/1 names each stage" do
@@ -163,7 +163,6 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
              "Review",
              "Finalize",
              "Merged",
-             "Debugger",
              "Split"
            ]
 
@@ -178,7 +177,6 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
              :review_lead,
              :review_lead,
              :merged,
-             :debugger,
              :split
            ]
   end
@@ -193,7 +191,6 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     {:ok, qa} = Roles.get_role(project_id: project.id, stage: :qa)
     {:ok, demo} = Roles.get_role(project_id: project.id, stage: :demo)
     {:ok, reviewer} = Roles.get_role(project_id: project.id, stage: :review)
-    {:ok, screens} = Roles.get_role(project_id: project.id, stage: :screens)
 
     {:ok, plan_run} =
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :finished, started_at: now})
@@ -217,10 +214,10 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     {:ok, checking} = Pipeline.create_run(%{task_id: task.id, role_id: qa.id, status: :running, started_at: now})
     {:ok, recording} = Pipeline.create_run(%{task_id: task.id, role_id: demo.id, status: :running, started_at: now})
     # Reopened when its round started, and not retaken since.
-    {:ok, earlier_screens} =
+    {:ok, earlier_review} =
       Pipeline.create_run(%{
         task_id: task.id,
-        role_id: screens.id,
+        role_id: reviewer.id,
         status: :finished,
         started_at: DateTime.shift(now, hour: -3)
       })
@@ -234,7 +231,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
         started_at: now
       })
 
-    runs = Repo.preload([plan_run, last_round, retried, recording, earlier_screens], :role)
+    runs = Repo.preload([plan_run, last_round, retried, recording, earlier_review], :role)
     [checking, failed] = Repo.preload([checking, failed], :role)
 
     assert Task.stage_run(%{task | runs: []}) == nil

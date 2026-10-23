@@ -136,8 +136,22 @@ defmodule RailWeb.Utils.BuildPlanSheet do
     # Keyed on the path, as a slug could fold two paths into one, so a sketch left open stays with its file.
     id = :erlang.phash2(card.path)
 
+    # Of the card's own text alone, so a reviewed mark lapses only when a revision changes this card.
+    digest =
+      :sha256
+      |> :crypto.hash(:erlang.term_to_binary({card.path, card.deleted?, card.prose, card.signatures, card.sketch}))
+      |> Base.encode16(case: :lower)
+
     card =
-      Map.merge(card, %{id: id, number: number, line: file_line, prose: prose, signatures: signatures, sketch: sketch})
+      Map.merge(card, %{
+        id: id,
+        digest: digest,
+        number: number,
+        line: file_line,
+        prose: prose,
+        signatures: signatures,
+        sketch: sketch
+      })
 
     {card, counts}
   end

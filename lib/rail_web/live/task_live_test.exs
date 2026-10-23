@@ -5,6 +5,7 @@ defmodule RailWeb.TaskLiveTest do
   import Ecto.Query
   import Mimic
   import Phoenix.LiveViewTest
+  import Rail.Pipeline.Utils.BuildTask
   import RailWeb.Utils.BuildDocumentBlocks
 
   alias Phoenix.Socket.Message
@@ -1403,19 +1404,19 @@ defmodule RailWeb.TaskLiveTest do
       task: task,
       project: project
     } do
-      {:ok, debugger} = Roles.get_role(project_id: project.id, stage: :debugger)
+      {:ok, qa} = Roles.get_role(project_id: project.id, stage: :qa)
 
       {:ok, _testing} =
         Pipeline.create_run(%{
           task_id: task.id,
-          role_id: debugger.id,
+          role_id: qa.id,
           status: :running,
           started_at: DateTime.utc_now()
         })
 
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan&agent=debugger")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan&agent=qa")
 
-      assert has_element?(view, "#conversation-role-#{debugger.id}")
+      assert has_element?(view, "#conversation-role-#{qa.id}")
       assert has_element?(view, "#conversation-closed", "This is a record of what this agent did.")
       refute has_element?(view, "#composer-root")
     end
@@ -3132,8 +3133,8 @@ defmodule RailWeb.TaskLiveTest do
 
       view |> element("[data-qa='diff-viewed-checkbox']") |> render_click()
 
-      assert %{"shipped.ex" => _digest} = Git.list_viewed_files(scope, task)
-      assert Git.list_viewed_files(user_scope(), task) == %{}
+      assert %{"shipped.ex" => _digest} = Git.list_viewed_files(scope, task, :diff)
+      assert Git.list_viewed_files(user_scope(), task, :diff) == %{}
 
       refute has_element?(view, "[data-qa='diff_line_row']")
 
@@ -5723,17 +5724,20 @@ defmodule RailWeb.TaskLiveTest do
           attrs = %{title: "Child #{identifier}", parent: parent_issue}
           {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
 
-          part = %{
-            number: number,
-            title: "A part",
-            ticket: "Its criteria.",
-            estimate: 1,
-            builds_on: builds_on,
-            builds_screen: false,
-            plan: "## Implementation plan\n\nPart #{number}."
-          }
+          {:ok, child} =
+            issue.project
+            |> build_task(issue, %{stage: :engineer, split_position: number, builds_on: builds_on})
+            |> Ecto.Changeset.put_change(:parent_task_id, parent.id)
+            |> Repo.insert()
 
-          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
+          Repo.insert!(%Round{
+            task_id: child.id,
+            number: 1,
+            plan: "## Implementation plan\n\nPart #{number}.",
+            approved_at: DateTime.utc_now(),
+            ticket: %Round.Ticket{title: "A part", description: "Its criteria."}
+          })
+
           Repo.preload(child, [:issue, :project])
         end
 
@@ -6235,7 +6239,7 @@ defmodule RailWeb.TaskLiveTest do
       first: first,
       project: project
     } do
-      for stage <- [:review_lead, :debugger] do
+      for stage <- [:review_lead, :qa] do
         {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
 
         {:ok, _run} =

@@ -16,7 +16,7 @@ Two halves, both required:
 ## What Rail is
 
 Rail is an Elixir/Phoenix LiveView app that takes Linear issues through a pipeline of AI agent
-stages (plan, then engineer, then a review of each round: QA, a code reviewer and a screenshots agent check the change, a review agent turns what they report into findings and the next round's plan, and a demo recorder records when the plan asks), each a CLI agent run in a sandbox on
+stages (plan, then engineer, then a review of each round: QA and a code reviewer check the change, QA also keeping each screen state's picture current, a review agent turns what they report into findings and the next round's plan, and a demo recorder records when the plan asks), each a CLI agent run in a sandbox on
 the task's own git worktree, plus a Slack triage agent. Its users are a small invited team who
 watch runs, answer agents' questions, approve plans and rule on findings. There is no tenancy:
 `Rail.Scope` is a user plus a system flag, and only the settings screens are admin-only.
@@ -147,6 +147,20 @@ it:
   a server restart, connection-refused errors from the tab left open are not findings.
 - **Looks like the rest of Rail.** Spacing, alignment, dark mode, button placement, capitalization,
   terminology (a screenshot is a still, a recording is video).
+
+## Screen states
+
+You also keep the screen states current with `save_screen`, so the human sees each one as the latest commit leaves
+it. Shoot a state again only when something changed since its last picture can alter it; a round that leaves the
+screens alone reshoots nothing. A good one is:
+
+- One state, whole: the screen as a person meets it, at the width they would, with realistic content in it. Not a
+  half-loaded page, a sign-in page or a cropped corner.
+- The state the label says. A label of "File list just after Send" is a picture taken just after Send, not of the
+  list at rest.
+- The same key every round, so a state's pictures line up from commit to commit.
+- Every state the change touches: the primary one, and the empty, error and edge states the ticket's acceptance
+  criteria name.
 
 ## What to look for in a screenshot
 

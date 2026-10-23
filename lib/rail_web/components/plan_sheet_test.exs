@@ -6,6 +6,7 @@ defmodule RailWeb.Components.PlanSheetTest do
   import RailWeb.Helpers, only: [build_plan_sheet: 1, build_plan_sheet: 2]
 
   alias Rail.Pipeline.Schemas.PlanComment
+  alias Rail.Projects.Schemas.Project
   alias RailWeb.Components.PlanSheet
 
   setup_all do
@@ -15,7 +16,11 @@ defmodule RailWeb.Components.PlanSheetTest do
       %{number: 3, html: "<p>Review shows Send back.</p>"}
     ]
 
-    %{sheet: build_plan_sheet(sheet_plan(), [1, 2, 3]), criteria: criteria}
+    %{
+      sheet: build_plan_sheet(sheet_plan(), [1, 2, 3]),
+      criteria: criteria,
+      project: %Project{github_repo: "example/rail", default_branch: "main"}
+    }
   end
 
   test "lays a plan out in one column with no diagrams and no In this plan box", %{sheet: sheet} do
@@ -63,13 +68,13 @@ defmodule RailWeb.Components.PlanSheetTest do
     ids =
       for part <- [1, 2] do
         (&PlanSheet.plan_sheet/1)
-        |> render_component(sheet: sheet, doc: :split_part, part: part)
+        |> render_component(sheet: sheet, part: part)
         |> Floki.parse_fragment!()
         |> Floki.attribute("details[data-qa='plan_group']", "id")
         |> hd()
       end
 
-    assert ids == ["split-part-1-group-pipeline", "split-part-2-group-pipeline"]
+    assert ids == ["plan-1-group-pipeline", "plan-2-group-pipeline"]
   end
 
   test "a card shows its path, its prose, then its signatures, and a Deleted badge only when deleted", %{sheet: sheet} do
@@ -87,6 +92,104 @@ defmodule RailWeb.Components.PlanSheetTest do
     assert Floki.text(Floki.find(html, "#plan-card-3 [data-qa='plan_card_deleted']")) =~ "Deleted"
     assert Floki.text(Floki.find(html, "#plan-card-3")) =~ "lib/rail/pipeline/actions/old_send_back.ex"
     assert Floki.find(html, "#plan-card-2 [data-qa='plan_card_sketch']") == []
+  end
+
+  test "a path on the default branch reads Changed and links to it on GitHub in a new tab, one off it reads New", %{
+    sheet: sheet,
+    project: project
+  } do
+    on_main = MapSet.new(["lib/rail/pipeline.ex", "lib/rail/pipeline/actions/old_send_back.ex"])
+
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: sheet, default_paths: on_main, project: project)
+      |> Floki.parse_fragment!()
+
+    assert Floki.text(Floki.find(html, "#plan-card-1 [data-qa='plan_card_new']")) =~ "New"
+    assert Floki.find(html, "#plan-card-1 [data-qa='plan_card_link']") == []
+    assert Floki.text(Floki.find(html, "#plan-card-1")) =~ "lib/rail/pipeline/actions/send_back_to_architect.ex"
+
+    assert Floki.text(Floki.find(html, "#plan-card-2 [data-qa='plan_card_changed']")) =~ "Changed"
+    assert [link] = Floki.find(html, "#plan-card-2 a[data-qa='plan_card_link']")
+    assert Floki.attribute(link, "href") == ["https://github.com/example/rail/blob/main/lib/rail/pipeline.ex"]
+    assert Floki.attribute(link, "target") == ["_blank"]
+    assert Floki.attribute(link, "rel") == ["noopener noreferrer"]
+    assert Floki.attribute(link, "title") == ["Open lib/rail/pipeline.ex on main in GitHub (new tab)"]
+    assert Floki.text(link) =~ "lib/rail/pipeline.ex"
+    assert Floki.find(link, "[class*='pi-arrow-up-right-bold']") != []
+
+    assert html |> Floki.find("#plan-changes h3 + span") |> Floki.text() =~ "Changed files link to main on GitHub."
+  end
+
+  test "a deleted card reads Deleted, and links to GitHub only while the default branch still has it", %{
+    sheet: sheet,
+    project: project
+  } do
+    render = fn paths ->
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: sheet, default_paths: paths, project: project)
+      |> Floki.parse_fragment!()
+      |> Floki.find("#plan-card-3")
+    end
+
+    on_main = render.(MapSet.new(["lib/rail/pipeline/actions/old_send_back.ex"]))
+    assert Floki.text(Floki.find(on_main, "[data-qa='plan_card_deleted']")) =~ "Deleted"
+    assert Floki.find(on_main, "[data-qa='plan_card_new'], [data-qa='plan_card_changed']") == []
+
+    assert Floki.attribute(on_main, "a[data-qa='plan_card_link']", "href") == [
+             "https://github.com/example/rail/blob/main/lib/rail/pipeline/actions/old_send_back.ex"
+           ]
+
+    off_main = render.(MapSet.new())
+    assert Floki.text(Floki.find(off_main, "[data-qa='plan_card_deleted']")) =~ "Deleted"
+    assert Floki.find(off_main, "[data-qa='plan_card_link']") == []
+  end
+
+  test "each group header counts its new, changed and deleted files in place of its file count", %{
+    sheet: sheet,
+    project: project
+  } do
+    on_main = MapSet.new(["lib/rail/pipeline.ex", "lib/rail_web/live/review_stage.ex"])
+
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: sheet, default_paths: on_main, project: project)
+      |> Floki.parse_fragment!()
+
+    counts = for group <- Floki.find(html, "[data-qa='plan_group_count']"), do: String.trim(Floki.text(group))
+    assert counts == ["1 new · 1 changed · 1 deleted", "1 changed", "1 new"]
+  end
+
+  test "without the default branch's paths a card reads neither New nor Changed and links nowhere", %{sheet: sheet} do
+    html = (&PlanSheet.plan_sheet/1) |> render_component(sheet: sheet) |> Floki.parse_fragment!()
+
+    assert Floki.find(html, "[data-qa='plan_card_new'], [data-qa='plan_card_changed']") == []
+    assert Floki.find(html, "[data-qa='plan_card_link']") == []
+    assert [_deleted] = Floki.find(html, "[data-qa='plan_card_deleted']")
+
+    counts = for group <- Floki.find(html, "[data-qa='plan_group_count']"), do: String.trim(Floki.text(group))
+    assert counts == ["3 files", "1 file", "1 file"]
+    refute Floki.text(Floki.find(html, "#plan-changes")) =~ "GitHub"
+  end
+
+  test "a path holding a # or a space links with them escaped, so GitHub opens the whole path", %{project: project} do
+    plan =
+      "## Implementation plan\n\n### Approach\n\nAll of it.\n\n### Decisions\n\n- Decision: one file.\n\n" <>
+        "### Changes\n\n#### `docs/notes #1.md`\n\nRewrites it.\n\n### Acceptance criteria\n\n- 1: `docs/notes #1.md`\n\n" <>
+        "### Verification\n\n- Reads well."
+
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(
+        sheet: build_plan_sheet(plan),
+        default_paths: MapSet.new(["docs/notes #1.md"]),
+        project: %{project | default_branch: "release/2026"}
+      )
+      |> Floki.parse_fragment!()
+
+    assert Floki.attribute(html, "a[data-qa='plan_card_link']", "href") == [
+             "https://github.com/example/rail/blob/release/2026/docs/notes%20%231.md"
+           ]
   end
 
   test "a sketch is drawn closed unless one of its lines has the reader's comment", %{sheet: sheet} do
@@ -135,6 +238,88 @@ defmodule RailWeb.Components.PlanSheetTest do
 
     assert Floki.text(Floki.find(html, "#plan-card-2")) =~ "send_back_to_architect.ex"
     assert [^id] = Floki.attribute(html, "#plan-card-2 [data-qa='plan_card_sketch']", "id")
+  end
+
+  test "the Changes header and each group's header count the cards the reader marked reviewed", %{sheet: sheet} do
+    [first, second | _rest] = sheet.cards
+    reviewed = %{first.path => first.digest, second.path => "an older digest"}
+
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: sheet, reviewed: reviewed)
+      |> Floki.parse_fragment!()
+
+    assert Floki.text(Floki.find(html, "#plan-reviewed-count")) =~ ~r/1\s+of\s+5\s+reviewed/
+    assert Floki.text(Floki.find(html, "#plan-group-pipeline summary")) =~ ~r/3\s+files\s+·\s+1\s+of\s+3\s+reviewed/
+    assert Floki.text(Floki.find(html, "#plan-group-web summary")) =~ ~r/·\s+0\s+of\s+1\s+reviewed/
+
+    assert Floki.attribute(html, "#plan-card-1 [data-qa='plan_card_reviewed']", "aria-pressed") == ["true"]
+    assert Floki.attribute(html, "#plan-card-2 [data-qa='plan_card_reviewed']", "aria-pressed") == ["false"]
+    assert Floki.text(Floki.find(html, "#plan-card-2 [data-qa='plan_card_revised']")) =~ "Revised since you reviewed it."
+    assert Floki.find(html, "#plan-card-4 [data-qa='plan_card_revised']") == []
+  end
+
+  test "without the reader's marks, as on a split's part, no card takes one and nothing is counted", %{sheet: sheet} do
+    html = (&PlanSheet.plan_sheet/1) |> render_component(sheet: sheet) |> Floki.parse_fragment!()
+
+    assert Floki.find(html, "[data-qa='plan_card_reviewed']") == []
+    assert Floki.find(html, "[data-qa='plan_reviewed_count']") == []
+    assert Floki.find(html, "[data-qa='plan_group_reviewed']") == []
+  end
+
+  test "a reviewed card is its header alone, with its lines' comments and box under it, each naming its line", %{
+    sheet: sheet
+  } do
+    [
+      %{
+        path: path,
+        digest: digest,
+        line: file_line,
+        prose: [prose],
+        signatures: [signature],
+        sketch: [_first, sketched, _end]
+      }
+      | _rest
+    ] = sheet.cards
+
+    comment = fn id, line ->
+      %PlanComment{
+        id: id,
+        target: :plan,
+        element_kind: line.kind,
+        element_label: line.label,
+        element_text: line.text,
+        body: "About #{line.label}."
+      }
+    end
+
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(
+        sheet: sheet,
+        reviewed: %{path => digest},
+        offered: true,
+        placed: %{prose.key => [{comment.("pcm_p", prose), 1}], sketched.key => [{comment.("pcm_k", sketched), 2}]},
+        draft: %{doc: :plan, key: signature.key, label: signature.label, body: "Why"}
+      )
+      |> Floki.parse_fragment!()
+
+    [card] = Floki.find(html, "#plan-card-1")
+    refute Floki.text(card) =~ "Refuses unless the task is at :review and idle."
+    assert Floki.find(card, "[data-qa='plan_card_signatures']") == []
+    assert Floki.find(card, "[data-qa='plan_card_sketch']") == []
+    assert Floki.find(card, "#line-plan-#{prose.key}") == []
+
+    assert [_header_add] = Floki.find(card, "button[aria-label='Comment on #{file_line.label}']")
+    assert [_one_add] = Floki.find(card, "[data-qa='line_comment_add']")
+
+    assert ["File 1, paragraph 1", "File 1, sketch line 2"] =
+             card |> Floki.find("[data-qa='document_comment_line']") |> Enum.map(&String.trim(Floki.text(&1)))
+
+    assert [_box] = Floki.find(card, "#document-comment-form-#{signature.key}")
+
+    ids = Floki.attribute(html, "[id]", "id")
+    assert Enum.uniq(ids) == ids
   end
 
   test "a criterion the plan names nothing for reads Not covered, and those around it keep their files and tests", %{

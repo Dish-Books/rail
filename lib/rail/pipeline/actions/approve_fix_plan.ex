@@ -90,7 +90,6 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlan do
         plan_version: fix_plan.version,
         plan_saved_at: fix_plan.saved_at,
         record_demo: fix_plan.record_demo,
-        retake_screens: fix_plan.retake_screens,
         base_head: fix_plan.head
       )
       |> amend(fix_plan)
