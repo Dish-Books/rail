@@ -1282,7 +1282,7 @@ defmodule RailWeb.Live.TaskDetail do
   # Where the round is, read off its runs: the engineer building it and its CI, the agents checking it, and the
   # review agent's plan for the next. Until that plan is approved, nothing changes the branch.
   defp phase(runs, %Task{} = task, passes, ci, plan_state) do
-    checking? = Enum.any?([:qa, :review, :screens, :review_lead], &Run.running?(runs[&1]))
+    checking? = Enum.any?([:qa, :review, :review_lead], &Run.running?(runs[&1]))
 
     cond do
       match?(%{state: :running}, ci) -> :ci
@@ -1467,9 +1467,8 @@ defmodule RailWeb.Live.TaskDetail do
   defp agents(runs) do
     for {stage, work} <- [
           engineer: "Builds the round",
-          qa: "Tests the running app",
+          qa: "Tests the running app and shoots each screen state",
           review: "Reads the diff",
-          screens: "Shoots each screen state",
           demo: "Records the demo",
           review_lead: "Turns the reports into findings and the next plan"
         ],

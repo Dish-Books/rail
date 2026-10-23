@@ -350,11 +350,6 @@ defmodule Rail.Mcp.Utils.McpTools do
             "type" => "boolean",
             "description" => "True when the change has something on screen worth a recorded walkthrough once it is built."
           },
-          "retake_screens" => %{
-            "type" => "boolean",
-            "description" =>
-              "True when the change has something on screen, so each state it affects is photographed once it is built."
-          },
           "design" => %{
             "type" => "string",
             "description" =>
@@ -575,10 +570,6 @@ defmodule Rail.Mcp.Utils.McpTools do
             "type" => "boolean",
             "description" => "True when a new demo should be recorded once this round is built."
           },
-          "retake_screens" => %{
-            "type" => "boolean",
-            "description" => "True when the screen states should be photographed again once this round is built."
-          },
           "title" => %{
             "type" => "string",
             "description" => "Only when a person asked to change the ticket: its whole new title."
@@ -698,18 +689,14 @@ defmodule Rail.Mcp.Utils.McpTools do
     }
   ]
 
-  @screen_tools Enum.filter(@qa_tools, &(&1["name"] == "save_screen"))
-  @check_tools @qa_tools -- @screen_tools
-
   @doc """
   The tools Rail serves this run itself: the save tools each agent hands its output over with, the browser for
-  the three that drive the app, `ask_questions` for the agents a person talks to, and the knowledge base for all.
+  the two that drive the app, `ask_questions` for the agents a person talks to, and the knowledge base for all.
   """
   def mcp_tools(%Role{stage: :plan}), do: @design_tools ++ @plan_tools ++ @question_tools ++ @knowledge_tools
   def mcp_tools(%Role{stage: :engineer}), do: @report_tools ++ @question_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :qa}), do: @browser_tools ++ @check_tools ++ @report_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :qa}), do: @browser_tools ++ @qa_tools ++ @report_tools ++ @knowledge_tools
   def mcp_tools(%Role{stage: :review}), do: @report_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :screens}), do: @browser_tools ++ @screen_tools ++ @knowledge_tools
 
   def mcp_tools(%Role{stage: :demo}), do: @browser_tools ++ @demo_tools ++ @demo_report_tools ++ @knowledge_tools
 

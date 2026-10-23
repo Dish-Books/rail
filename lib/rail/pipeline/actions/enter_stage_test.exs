@@ -62,7 +62,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 
-    assert {:ok, %Task{}} = Pipeline.enter_stage(task, :debugger, start: false)
+    assert {:ok, %Task{}} = Pipeline.enter_stage(task, :split, start: false)
     assert_received {:pipeline_changed, ^task_id}
 
     assert {:ok, %Run{}} = Pipeline.enter_stage(task, :review)
@@ -82,7 +82,6 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
   end
 
   test "a stage off the pipeline's path leaves the ticket's status alone", %{task: task} do
-    assert {:ok, %Task{stage: :debugger}} = Pipeline.enter_stage(task, :debugger, start: false)
     assert {:ok, %Task{stage: :split}} = Pipeline.enter_stage(task, :split, start: false)
 
     refute_enqueued(worker: AdvanceTrackerState)
@@ -119,19 +118,6 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     assert {:ok, %Run{role_id: ^review_lead_role_id, status: :running}} = Pipeline.enter_stage(task, :review)
   end
 
-  # Debugger has a role bound and no brief of its own, which is every stage Rail
-  # has not built yet: the role's own instructions are the whole of what it gets.
-  test "a stage with no brief of its own is spawned with the plain prompt", %{task: task, roles: roles} do
-    %{id: debugger_role_id} = roles[:debugger]
-
-    expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
-      refute prompt =~ task.scratch_path
-      {:ok, %OsProcess{run: spawned, task: task}}
-    end)
-
-    assert {:ok, %Run{role_id: ^debugger_role_id, status: :running}} = Pipeline.enter_stage(task, :debugger)
-  end
-
   test "an engineer starts with the prompt merged to its project's .rail/prompts, not the stored one", %{
     project: project,
     task: task
@@ -156,11 +142,11 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
 
   test "a stage with no prompt file in its repo starts with the stored prompt", %{task: task} do
     expect(Tools, :start_os_process, fn spawned, argv ->
-      assert ["--append-system-prompt", "You are the debugger agent."] in Enum.chunk_every(argv, 2, 1)
+      assert ["--append-system-prompt", "You are the engineer agent."] in Enum.chunk_every(argv, 2, 1)
       {:ok, %OsProcess{run: spawned, task: task}}
     end)
 
-    assert {:ok, %Run{status: :running}} = Pipeline.enter_stage(task, :debugger)
+    assert {:ok, %Run{status: :running}} = Pipeline.enter_stage(task, :engineer)
   end
 
   test "unlatches a run that had already concluded, so the stage can conclude again", %{

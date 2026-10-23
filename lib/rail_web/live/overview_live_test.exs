@@ -1380,13 +1380,13 @@ defmodule RailWeb.OverviewLiveTest do
           completed_at: DateTime.shift(now, hour: -4)
         })
 
-      # A stage no human signs off just finished; it did not hand anything over.
-      gate_task = task_for.("Gate work", %{stage: :debugger})
+      # A demo no human signs off just finished; it did not hand anything over.
+      gate_task = task_for.("Gate work", %{stage: :review})
 
       {:ok, gate} =
         Pipeline.create_run(%{
           task_id: gate_task.id,
-          role_id: roles[:debugger].id,
+          role_id: roles[:demo].id,
           status: :finished,
           stage_outcome: :done,
           started_at: DateTime.shift(now, hour: -5),

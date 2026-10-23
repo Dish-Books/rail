@@ -14,7 +14,6 @@ defmodule Rail.Pipeline.Utils.StartRoleRun do
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
-  alias Rail.Tools
 
   @doc """
   Starts `role`'s run on `task` and returns `{:ok, run}` as it now stands, running or failed on why it could not
@@ -60,34 +59,12 @@ defmodule Rail.Pipeline.Utils.StartRoleRun do
     run
   end
 
-  # A stage with a brief of its own spawns itself; the rest have nothing to add.
+  # Each stage spawns itself on a brief of its own.
   # The run carries its task and its role, so it is the whole of what a spawn needs.
   defp start_process(%Run{role: %Role{stage: :plan}} = run), do: Pipeline.start_plan_run(run)
   defp start_process(%Run{role: %Role{stage: :engineer}} = run), do: Pipeline.start_engineer_run(run)
   defp start_process(%Run{role: %Role{stage: :review_lead}} = run), do: Pipeline.start_review_run(run)
 
-  defp start_process(%Run{role: %Role{stage: stage}} = run) when stage in [:qa, :review, :screens, :demo],
+  defp start_process(%Run{role: %Role{stage: stage}} = run) when stage in [:qa, :review, :demo],
     do: Pipeline.start_check_run(run)
-
-  defp start_process(%Run{task: %Task{} = task, role: %Role{} = role} = run) do
-    prompt =
-      Pipeline.build_prompt(
-        task: task,
-        context_snippet: "",
-        pending_answer: run.pending_answer,
-        conversation_id: run.conversation_id
-      )
-
-    argv =
-      Tools.build_args(
-        prompt: prompt,
-        model: role.model,
-        reasoning_effort: role.reasoning_effort || "high",
-        system_prompt: role.system_prompt,
-        conversation_id: run.conversation_id,
-        work_dir: task.worktree_path
-      )
-
-    Tools.start_os_process(run, argv)
-  end
 end

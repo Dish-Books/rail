@@ -33,16 +33,18 @@ defmodule Rail.Roles.Schemas.RoleTest do
     %{project: project, role: role}
   end
 
-  test "canonical_stages/0 returns list of 10 stages" do
+  test "canonical_stages/0 returns list of 8 stages" do
     stages = Role.canonical_stages()
-    assert length(stages) == 10
+    assert length(stages) == 8
     assert :plan in stages
     assert :review_lead in stages
     assert :triage in stages
     assert :curator in stages
-    assert :debugger in stages
+    refute :debugger in stages
     assert :demo in stages
     refute :designer in stages
+    # QA shoots the screen states itself
+    refute :screens in stages
     # Rebase is an engineer action, not a stage a role can bind to
     refute :rebase in stages
   end

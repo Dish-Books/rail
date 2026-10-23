@@ -14,7 +14,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
     worktree = create_temp_git_repo()
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
-    {:ok, lead} = Roles.get_role(project_id: project.id, stage: :screens)
+    {:ok, qa} = Roles.get_role(project_id: project.id, stage: :qa)
 
     # A blank tab all one white, and Rail's Learnings with nothing to review, which is sparse but not blank.
     flat = File.read!("test/support/fixtures/flat_page.png")
@@ -27,7 +27,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
       _session, _method, _params -> {:ok, %{"data" => Base.encode64("jpeg bytes")}}
     end)
 
-    context = %RunContext{role: lead, os_process: %OsProcess{task_id: task.id}}
+    context = %RunContext{role: qa, os_process: %OsProcess{task_id: task.id}}
 
     %{
       task: task,

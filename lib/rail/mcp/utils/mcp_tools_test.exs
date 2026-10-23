@@ -6,7 +6,7 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
   alias Rail.Roles.Schemas.Role
 
   setup do
-    stages = [:plan, :engineer, :review_lead, :review, :qa, :screens, :demo, :triage]
+    stages = [:plan, :engineer, :review_lead, :review, :qa, :demo, :triage]
     %{names: Map.new(stages, fn stage -> {stage, %Role{stage: stage} |> mcp_tools() |> Enum.map(& &1["name"])} end)}
   end
 
@@ -53,13 +53,12 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
     end
   end
 
-  test "each agent that checks a round is offered its own tools, and the three that drive the app a browser",
+  test "each agent that checks a round is offered its own tools, and the two that drive the app a browser",
        %{names: names} do
     browser = ["browser_connect", "browser_problems", "browser_close"]
 
-    assert names[:qa] == browser ++ ["qa_plan", "qa_check", "qa_shot", "save_report", "knowledge_search"]
+    assert names[:qa] == browser ++ ["qa_plan", "qa_check", "qa_shot", "save_screen", "save_report", "knowledge_search"]
     assert names[:review] == ["save_report", "knowledge_search"]
-    assert names[:screens] == browser ++ ["save_screen", "knowledge_search"]
     assert names[:demo] == browser ++ ["demo_start", "demo_say", "demo_cut", "save_demo", "knowledge_search"]
   end
 
@@ -127,7 +126,7 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
                "properties" => %{"key" => %{"type" => "string"}, "label" => %{"type" => "string"}} = properties,
                "required" => ["key", "label"]
              }
-           } = %Role{stage: :screens} |> mcp_tools() |> Enum.find(&(&1["name"] == "save_screen"))
+           } = %Role{stage: :qa} |> mcp_tools() |> Enum.find(&(&1["name"] == "save_screen"))
 
     assert Map.keys(properties) == ["browser", "key", "label", "width"]
   end

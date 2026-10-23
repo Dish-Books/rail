@@ -14,8 +14,8 @@ defmodule Rail.Pipeline.Actions.RetryRun do
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
 
-  @retryable %{engineer: [:engineer], review: [:qa, :review, :screens, :demo, :review_lead]}
-  @checks [:qa, :review, :screens, :demo]
+  @retryable %{engineer: [:engineer], review: [:qa, :review, :demo, :review_lead]}
+  @checks [:qa, :review, :demo]
 
   @doc """
   Starts `run`'s role again on its task for the scope's user. Returns `{:ok, run}` as it now stands, or

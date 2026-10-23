@@ -19,8 +19,6 @@ defmodule Rail.Pipeline.Schemas.Round do
     field :plan_saved_at, :utc_datetime_usec
     # Whether the plan asks for a new demo once the round is reviewed.
     field :record_demo, :boolean, default: false
-    # Whether the round ends with its screen states shot again.
-    field :retake_screens, :boolean, default: false
     # When its plan was sent to a tech lead, which saving the plan again undoes.
     field :ready_at, :utc_datetime_usec
     field :approved_at, :utc_datetime_usec
@@ -81,7 +79,7 @@ defmodule Rail.Pipeline.Schemas.Round do
   """
   def plan_changeset(%__MODULE__{number: number} = round, attrs) do
     round
-    |> cast(attrs, [:plan, :record_demo, :retake_screens])
+    |> cast(attrs, [:plan, :record_demo])
     |> update_change(:plan, &trim/1)
     |> validate_plan_given()
     |> cast_embed(:ticket, with: &ticket_changeset/2, required: number == 1)
