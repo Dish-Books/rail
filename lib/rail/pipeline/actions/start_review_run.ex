@@ -77,12 +77,21 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
 
     - One finding is one broken rule, with every place it applies listed in `places`, each a `file` with its `line` and `end_line` and a short `label`, or a `screen` with its `steps`. Two symptoms of one cause are one finding.
     - `kind` is `code` for something in the diff and `screen` for something seen in the app. `raised_by` says who found it: `code_reviewer`, `explorer` or `review_lead`.
-    - `title` is at most 90 characters, written as what is wrong. `problem` is at most two plain sentences, 300 characters. `fix` is at most two sentences, 300 characters, pointing the way rather than writing the patch. `why` is at most 200 characters on why to fix it or leave it. `rule` is at most 160 characters: the rule the change breaks.
+    - `title` is at most 90 characters: the one thing that goes wrong, as the person it happens to would notice it. Name the screen, the button or the record in the app's own words, and leave function and module names to the places.
+    - `problem` is at most four plain sentences, 500 characters, the problem first and its cause after. First what goes wrong: who does what and where, what happens, and what should happen instead, with the real value when there is one, such as the amount shown against the amount charged. Then the cause: the code that makes it happen, named exactly.
+    - `fix` is at most two sentences, 300 characters, pointing the way rather than writing the patch. `why` is at most 200 characters on why to fix it or leave it. `rule` is at most 160 characters: the rule the change breaks.
     - Where it is: for `code`, its `file`, `line` and `end_line`; for `screen`, the `screen` and the `steps` that reach it.
     - `evidence` needs at least one entry: a `code` range in the worktree (`file`, `line`, `end_line`); a file under #{scratch_path}/qa, a picture `qa_shot` saved or a log or query output an explorer wrote there, cited by its `path` relative to that folder with the `browser` it came from, which Rail attaches to the finding; or a small `text`. A page that really renders blank is a finding with its URL and the steps that reach it as `text`, since Rail refuses a picture all one color.
     - `severity` is `blocker`, `major`, `minor` or `nit`. `recommendation` is `fix` or `skip`: your advice, beside which the human decides.
     - `key` is your own stable name for the problem, lowercase with hyphens, the same across rounds.
-    - Write each for someone who reads it once: the code or the screen named exactly, and no list of what was checked and found nothing.
+    - Write each the way you would explain it out loud to a teammate who has not read the ticket, the plan or the diff, so they understand it on one read:
+      - Start with what it costs a person: the wrong total they see, the work they lose, the button that does nothing, the test that fails once main is merged. The mechanism comes after, once they know why it matters.
+      - Walk through one concrete case: the click or the call that triggers it, the real values, what they get and what they should get.
+      - Keep to short sentences with one point each, in everyday words. Do not pack two claims into one sentence with "so" and "and", stack nouns into a label ("the refused-entry grid echo"), or shorten a phrase into shorthand.
+      - Use the words the app and the code use, never a name you made up for something. Say what an acceptance criterion, a pull request or a learned rule asks rather than citing only its number.
+      - Leave out what was checked and found nothing.
+    - For example, not "`apply_discount/2` reads the stale `@cart.total` before `recalc/1`, so a second code renders the first's total." but "Changing the discount code a second time shows the wrong total. A $100 cart given SAVE10 and then SAVE20 still shows $90, the SAVE10 total, instead of $80. `apply_discount/2` reads the cart total before `recalc/1` updates it."
+    - Before you save, read the title and the problem again as that teammate. If they could not say back what goes wrong, who hits it and when, rewrite them.
     - A save missing a field, over a limit or holding tool-call markup is refused naming the field: fix it and save it again in the same turn.
     - A finding already on the task is saved again by its `key` with only its `status` (`fixed`, `not_fixed` or `open`), a `note` of at most 300 characters on what this round checked and saw, and any new `evidence`. What it said when raised never changes. A Fix finding still failing is carried into this round with its ruling, never raised again under a new key. One the human ruled Don't fix is not argued again.
 

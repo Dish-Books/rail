@@ -439,8 +439,17 @@ defmodule Rail.Mcp.Utils.McpTools do
             "enum" => ["code_reviewer", "explorer", "review_lead"],
             "description" => "Who found it."
           },
-          "title" => %{"type" => "string", "description" => "What is wrong, in 90 characters or less."},
-          "problem" => %{"type" => "string", "description" => "At most two plain sentences, 300 characters."},
+          "title" => %{
+            "type" => "string",
+            "description" => "The one thing that goes wrong, as the person it happens to would notice it, 90 characters."
+          },
+          "problem" => %{
+            "type" => "string",
+            "description" =>
+              "What goes wrong first, then its cause: who does what and where, what happens and what should " <>
+                "happen instead, then the code that makes it happen. Short sentences in everyday words a teammate " <>
+                "who has not read the diff follows on one read. At most four sentences, 500 characters."
+          },
           "file" => @range["file"],
           "line" => @range["line"],
           "end_line" => @range["end_line"],
