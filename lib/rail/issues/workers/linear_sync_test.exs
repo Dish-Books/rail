@@ -2,6 +2,8 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  import Rail.Pipeline.Utils.BuildTask
+
   alias Rail.Issues
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
@@ -521,15 +523,10 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
       child_issue = insert.("lin_split_child", :todo)
 
       {:ok, %Task{id: child_id}} =
-        Pipeline.create_child_task(parent, child_issue, %{
-          number: 1,
-          title: "A part",
-          ticket: "Its criteria.",
-          estimate: 1,
-          builds_on: [],
-          builds_screen: false,
-          plan: "## Implementation plan"
-        })
+        child_issue.project
+        |> build_task(child_issue, %{stage: :engineer, split_position: 1, builds_on: []})
+        |> Ecto.Changeset.put_change(:parent_task_id, parent.id)
+        |> Repo.insert()
 
       started_at = DateTime.to_iso8601(DateTime.utc_now())
       last_page.([])

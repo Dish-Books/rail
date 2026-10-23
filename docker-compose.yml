@@ -101,6 +101,17 @@ services:
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN}
 
+  # Lets Devhub reach the db on localhost; databases only, no Kubernetes.
+  devhub-tunnel:
+    logging: *logging
+    image: ghcr.io/devhub-tools/devhub-tunnel:v2.44.3
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      DEVHUB_TUNNEL_KUBERNETES: "false"
+    volumes:
+      - ./devhub-tunnel.json:/etc/devhub-tunnel/config.json:ro
+
   # Only started when .env carries POSTHOG_API_KEY; scripts/deploy.sh turns the profile on.
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.161.0

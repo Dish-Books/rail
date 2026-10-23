@@ -57,7 +57,7 @@ defmodule Rail.Pipeline.Actions.RetryRunTest do
 
     assert {:error, :not_retryable} = Pipeline.retry_run(system_scope(), run.(:review, %{}))
     assert {:error, :not_retryable} = Pipeline.retry_run(system_scope(), run.(:engineer, %{error: "It broke."}))
-    assert {:error, :not_found} = Pipeline.retry_run(user_scope(), run.(:screens, %{error: "It broke."}))
+    assert {:error, :not_found} = Pipeline.retry_run(user_scope(), run.(:qa, %{error: "It broke."}))
 
     {:ok, _engineer} = Pipeline.update_task(task, %{stage: :engineer})
     _working = run.(:plan, %{status: :running})

@@ -68,8 +68,8 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
   end
 
   # Each that drives the app has a browser of its own, so none waits on another.
-  test "starts QA, the code reviewer, the screenshots agent and the demo recorder together", %{task: task, run: run} do
-    Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Filter.", retake_screens: true, record_demo: true})
+  test "starts QA, the code reviewer and the demo recorder together", %{task: task, run: run} do
+    Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Filter.", record_demo: true})
     test_pid = self()
 
     stub(Tools, :start_os_process, fn %Run{} = spawned, _argv ->
@@ -79,11 +79,11 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
 
     assert {:ok, %Run{}} = Pipeline.send_to_review(run)
 
-    for stage <- [:qa, :review, :screens, :demo], do: assert_received({:started, ^stage})
+    for stage <- [:qa, :review, :demo], do: assert_received({:started, ^stage})
     refute_received {:started, _stage}
   end
 
-  test "starts only QA and the code reviewer when the round's plan asks for no screens or demo", %{
+  test "starts only QA and the code reviewer when the round's plan asks for no demo", %{
     task: task,
     run: run
   } do

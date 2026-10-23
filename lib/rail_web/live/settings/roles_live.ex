@@ -1226,7 +1226,6 @@ defmodule RailWeb.Settings.RolesLive do
     review: "Reviewer",
     qa: "QA Engineer",
     demo: "Demo Recorder",
-    debugger: "Debugger",
     design: "Designer"
   }
 

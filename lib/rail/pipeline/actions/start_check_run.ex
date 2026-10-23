@@ -1,8 +1,8 @@
 defmodule Rail.Pipeline.Actions.StartCheckRun do
   @moduledoc """
-  Spawns one of the agents that check a round's change once it is pushed: QA, the code reviewer, the screenshots
-  agent or the demo recorder. Each is a run of its own that Rail starts, on a clean conversation, with a brief
-  saying how its part works. None of them changes the code or saves a finding: QA and the code reviewer save a
+  Spawns one of the agents that check a round's change once it is pushed: QA, which also shoots the screen states
+  the change has left out of date, the code reviewer or the demo recorder. Each is a run of its own that Rail starts, on
+  a clean conversation, with a brief saying how its part works. None of them changes the code or saves a finding: QA and the code reviewer save a
   report, and the review agent that follows them decides what is a finding.
   """
 
@@ -22,7 +22,7 @@ defmodule Rail.Pipeline.Actions.StartCheckRun do
   Spawns `run`'s role to check its task's change. Returns whatever `Tools.start_os_process/2` does.
   """
   def start_check_run(%Run{task: %Task{} = task, role: %Role{stage: stage} = role} = run)
-      when stage in [:qa, :review, :screens, :demo] do
+      when stage in [:qa, :review, :demo] do
     task = Repo.preload(task, [:project, issue: [comments: :replies]], force: true)
     File.mkdir_p!(Path.join([task.scratch_path, "qa", "evidence"]))
     File.mkdir_p!(Path.join(task.scratch_path, "demo"))
@@ -57,9 +57,10 @@ defmodule Rail.Pipeline.Actions.StartCheckRun do
     1. #{checklist(task)}
     2. Start the app server from the worktree and drive the app in your browser. #{browser("qa", scratch_path)}
     3. Run each check and mark it with `qa_check` as soon as you have run it, with one line on what you saw. Take a picture with `qa_shot` at the point a check asserts something on screen. `qa_shot` saves it under #{Path.join(scratch_path, "qa")} and returns its path. Write a log, query output or any other file that proves a check there yourself.
-    4. Re-check every finding below that is not ruled Don't fix and can be seen in the app, and say for each whether it still fails.
-    5. Save your report with `save_report` before you end your turn. For each thing that looks wrong: what goes wrong in one line, as the person using the screen would notice it, the steps that reach it, what you saw against what should happen, the path of every file that shows it with a line saying what it shows, and how bad you think it is. Write it the way you would tell a teammate who was not watching, in short sentences and everyday words, with the real values you saw. Then one line for each finding you re-checked. Something you could not confirm is not left out: say what you saw and what you would check. A pass that found nothing says so.
-    6. Call `browser_close` as your last tool call, then end your turn in a sentence or two.
+    4. #{screens(task)}
+    5. Re-check every finding below that is not ruled Don't fix and can be seen in the app, and say for each whether it still fails.
+    6. Save your report with `save_report` before you end your turn. For each thing that looks wrong: what goes wrong in one line, as the person using the screen would notice it, the steps that reach it, what you saw against what should happen, the path of every file that shows it with a line saying what it shows, and how bad you think it is. Write it the way you would tell a teammate who was not watching, in short sentences and everyday words, with the real values you saw. Then one line for each finding you re-checked, and the screen states you saved and any you could not reach, and why. Something you could not confirm is not left out: say what you saw and what you would check. A pass that found nothing says so.
+    7. Call `browser_close` as your last tool call, then end your turn in a sentence or two.
 
     - You never save a finding and never change a ruling: the review agent reads your report and decides.
     #{pictures()}
@@ -80,24 +81,6 @@ defmodule Rail.Pipeline.Actions.StartCheckRun do
     4. Save your report with `save_report` before you end your turn. Each proposed finding is one broken rule: a title of 90 characters or less saying the one thing that goes wrong, as the person it happens to would notice it, the rule in one sentence, every place it applies as a file and its line range with a short label each, the problem in at most four plain sentences, what goes wrong first (who does what and where, what happens, and what should happen instead) and then the code that causes it, a fix of at most two sentences that says where the change belongs rather than writing the patch, why to fix or leave it, a severity of blocker, major, minor or nit, and whether you would fix it. A rule broken in three files is one finding with three places, and two symptoms of one cause are one finding. Write each the way you would explain it out loud to a teammate who has not read the ticket or the diff: what it costs a person first, then one concrete case with its real values, in short sentences of one point each and everyday words, using the words the app and the code use and never a name you made up for something. Then one line for each existing finding you read. A read that found nothing says so.
 
     - You never save a finding and never change a ruling: the review agent reads your report and decides.
-    #{learnings_brief(run, [query(task)])}
-    """
-  end
-
-  defp brief(:screens, %Task{scratch_path: scratch_path} = task, %Run{} = run) do
-    """
-    You photograph every screen state the change below affects, so the human sees each one as the latest commit leaves it. #{rules(task)}
-
-    How your part works:
-
-    1. Read the ticket, the plan and the diff, and name every screen state the change affects. Each has a lowercase hyphenated `key` and a `label` saying what it shows, such as `file-list-after-send`, "File list just after Send". A change with nothing on screen has none: say so in one line and end your turn.
-    2. #{known_screens(task)}
-    3. Start the app server from the worktree and reach each state in your browser. #{browser("screens", scratch_path)}
-    4. Take `save_screen` of each state once you have reached it. Every round every state is shot again, which replaces its last picture.
-    5. Call `browser_close` as your last tool call, then end your turn with the states you saved and any you could not reach, and why.
-
-    #{pictures()}
-    - Keep the steps that reach each state as a script under #{scratch_path}, which survives between turns, so a retake is one command.
     #{learnings_brief(run, [query(task)])}
     """
   end
@@ -156,15 +139,22 @@ defmodule Rail.Pipeline.Actions.StartCheckRun do
     end
   end
 
+  # A state is shot again only when a commit since its picture can have changed it, so a round that leaves the
+  # screens alone reshoots nothing.
+  defp screens(%Task{} = task) do
+    "Keep the screen states current, so the human sees each one as the latest commit leaves it. A state is one screen as a person meets it, the primary one or an empty, error or edge state the acceptance criteria name, with a lowercase hyphenated `key` and a `label` saying what it shows, such as `file-list-after-send`, \"File list just after Send\". #{known_screens(task)} Take `save_screen` of each state you shoot once you have reached it: one state, whole, at the width a person would meet it, with realistic content. Each shot replaces the state's last picture. A change with nothing on screen has no states: take none and say so."
+  end
+
   # The states an earlier round shot keep their keys, so each one's pictures line up across commits.
   defp known_screens(%Task{} = task) do
     case Pipeline.list_screens(task) do
       [] ->
-        "No state has been shot yet, so the keys are yours to choose; later rounds keep them."
+        "No state has been shot yet: shoot every state the change affects. The keys are yours to choose; later rounds keep them."
 
       screens ->
-        "These states were shot in an earlier round. Shoot each again under the same `key`, and add any the change now affects: " <>
-          Enum.map_join(screens, "; ", &"`#{&1.key}` (#{&1.label})") <> "."
+        "These states were shot before, each on the commit named. Read what changed since with `git diff <commit> HEAD`, and shoot again, under the same `key`, only a state that change can alter: what it renders, the data it shows or the way to reach it. Leave a state nothing has touched as it is. Shoot any state the change now affects that has no key yet: " <>
+          Enum.map_join(screens, "; ", &"`#{&1.key}` (#{&1.label}) on #{String.slice(&1.commit || "no commit", 0, 7)}") <>
+          "."
     end
   end
 

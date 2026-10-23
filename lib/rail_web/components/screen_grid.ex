@@ -41,7 +41,7 @@ defmodule RailWeb.Components.ScreenGrid do
         data-qa="review_screens_none"
         class="p-5 text-sm text-slate-500 dark:text-slate-400"
       >
-        No screens yet. The explorers shoot every screen state the change affects each round, and they appear here.
+        No screens yet. QA shoots every screen state the change affects each round, and they appear here.
       </p>
 
       <div :if={@screens != []} class="p-5">

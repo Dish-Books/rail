@@ -3,6 +3,7 @@ defmodule RailWeb.Live.PlanStageTest do
 
   import Ecto.Query
   import Phoenix.LiveViewTest
+  import Rail.Pipeline.Utils.BuildTask
 
   alias Rail.Git
   alias Rail.Issues
@@ -79,61 +80,17 @@ defmodule RailWeb.Live.PlanStageTest do
     {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Previews", description: "## Acceptance criteria\n\n- One\n"})
     {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan})
 
-    child = fn number, title, estimate, builds_on ->
-      %{
-        "title" => title,
-        "ticket" => "#{title} for each branch.\n\nMore detail.\n\n## Acceptance criteria\n\n* First\n* Second\n",
-        "estimate" => estimate,
-        "plan" => """
-        ## Implementation plan
-
-        ### Approach
-
-        Part #{number}.
-
-        ### Decisions
-
-        - Decision: one module changes.
-
-        ### Changes
-
-        #### `lib/rail/part_#{number}.ex`
-
-        Does part #{number}.
-
-        ```elixir
-        def part(x)
-        ```
-
-        #### `lib/rail/part_#{number}_more.ex`
-
-        And the rest.
-
-        ### Acceptance criteria
-
-        - 1: `lib/rail/part_#{number}.ex`, `lib/rail/part_#{number}_test.exs`
-
-        ### Verification
-
-        - Part #{number} works.
-        """,
-        "builds_on" => builds_on
-      }
-    end
-
-    %{conn: log_in_user(conn, user), user: user, task: task, run: run, child: child}
+    %{conn: log_in_user(conn, user), user: user, task: task, run: run}
   end
 
   test "an approved plan reads as approved, its conversation readable but closed", %{
     conn: conn,
     user: user,
     task: task,
-    run: run,
-    child: child
+    run: run
   } do
     Pipeline.append_run_events(run.id, nil, ["[human:#{user.id}] Split the export from the import."])
 
-    {:ok, _split} = Pipeline.save_split(task, %{"children" => [child.(1, "One", 1, []), child.(2, "Two", 1, [1])]})
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
     assert has_element?(view, "#plan-chat textarea")
 
@@ -150,7 +107,7 @@ defmodule RailWeb.Live.PlanStageTest do
     refute Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "Use semicolons."))
   end
 
-  test "with no split the page has no Split section, only the ticket, the design and the plan", %{
+  test "the page has the ticket, the design and the plan, and no Split section", %{
     conn: conn,
     task: task
   } do
@@ -160,157 +117,6 @@ defmodule RailWeb.Live.PlanStageTest do
     assert has_element?(view, "#plan-section-design")
     assert has_element?(view, "#plan-section-plan #plan-plan")
     refute has_element?(view, "#plan-section-split")
-    refute has_element?(view, "#plan-split-none")
-  end
-
-  test "a saved split lays its children out in the rounds they start in", %{
-    conn: conn,
-    task: task,
-    child: child
-  } do
-    {:ok, _split} =
-      Pipeline.save_split(task, %{
-        "children" => [
-          child.(1, "Deploys start", 3, []),
-          child.(2, "QA drives them", 2, [1]),
-          child.(3, "Demo records them", 2, [1]),
-          child.(4, "Settings", 1, [2, 3])
-        ]
-      })
-
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-    assert has_element?(view, "#plan-section-split #plan-split")
-    assert has_element?(view, "#plan-section-split-status", "4 children · 8 points")
-    assert has_element?(view, "#plan-split", "Split into 4 children")
-    assert has_element?(view, "#plan-split", "8 points · 3 rounds")
-
-    assert ["Starts at once", "After 1", "After 2 and 3"] ==
-             view
-             |> render()
-             |> Floki.parse_document!()
-             |> Floki.find("[data-qa='plan_split_round'] > p")
-             |> Enum.map(&String.trim(Floki.text(&1)))
-
-    assert has_element?(view, "#plan-split-child-2", "QA drives them")
-    assert has_element?(view, "#plan-split-child-2", "QA drives them for each branch.")
-    refute has_element?(view, "#plan-split-child-2", "More detail.")
-    assert has_element?(view, "#plan-split-child-2", "2 criteria")
-    assert has_element?(view, "#plan-split-child-2", "lib/rail/part_2.ex")
-    assert has_element?(view, "#plan-split-child-2", "+ 1 more")
-  end
-
-  test "a card opens to its child's whole ticket and part of the plan, and closes again", %{
-    conn: conn,
-    task: task,
-    child: child
-  } do
-    {:ok, _split} = Pipeline.save_split(task, %{"children" => [child.(1, "One", 1, []), child.(2, "Two", 2, [1])]})
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-    refute has_element?(view, "#plan-split-child-detail")
-
-    view |> element("#plan-split-child-2-open") |> render_click()
-
-    assert has_element?(view, "#plan-split-child-2-open[aria-expanded='true']")
-    assert has_element?(view, "#plan-split-child-detail", "Two for each branch.")
-    assert has_element?(view, "#plan-split-child-detail", "More detail.")
-    assert has_element?(view, "#plan-split-child-detail li", "Second")
-    assert has_element?(view, "#plan-split-child-detail #split-part-sheet", "lib/rail/part_2_more.ex")
-
-    view |> element("#plan-split-child-2-open") |> render_click()
-    refute has_element?(view, "#plan-split-child-detail")
-  end
-
-  test "a part opens as a sheet of its child's own criteria, its ids named by the child's number", %{
-    conn: conn,
-    task: task,
-    child: child
-  } do
-    {:ok, _split} = Pipeline.save_split(task, %{"children" => [child.(1, "One", 1, []), child.(2, "Two", 1, [])]})
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-    view |> element("#plan-split-child-2-open") |> render_click()
-
-    assert has_element?(view, "#plan-split-child-detail #split-part-2-group-part-2 #split-part-2-card-1")
-    assert has_element?(view, "#plan-split-child-detail [data-qa='plan_criterion']", "First")
-    assert has_element?(view, "#plan-split-child-detail [data-qa='plan_criterion']", "part_2_test.exs")
-    assert has_element?(view, "#plan-split-child-detail [data-qa='plan_criterion']", "Not covered")
-  end
-
-  test "a part saved before cards still names its first file on its card and opens as markdown", %{
-    conn: conn,
-    task: task,
-    child: child
-  } do
-    {:ok, _split} = Pipeline.save_split(task, %{"children" => [child.(1, "One", 1, []), child.(2, "Two", 1, [])]})
-    path = Path.join([task.scratch_path, "splits", "PST-1.json"])
-    %{"children" => [first, second]} = path |> File.read!() |> Jason.decode!()
-
-    old =
-      "## Implementation plan\n\n### Approach\n\nOld.\n\nNo diagrams: one module.\n\n" <>
-        "### File-level changes\n\n- `lib/rail/old.ex`: does it.\n- `lib/rail/older.ex`: and more.\n\n" <>
-        "### Verification\n\n- Works."
-
-    bare = "## Implementation plan\n\nNothing laid out."
-    File.write!(path, Jason.encode!(%{"children" => [%{first | "plan" => bare}, %{second | "plan" => old}]}))
-
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-    assert has_element?(view, "#plan-split-child-2", "lib/rail/old.ex")
-    assert has_element?(view, "#plan-split-child-2", "+ 1 more")
-    refute has_element?(view, "#plan-split-child-1", "more")
-
-    view |> element("#plan-split-child-2-open") |> render_click()
-    refute has_element?(view, "#plan-split-child-detail #split-part-sheet")
-    assert has_element?(view, "#plan-split-child-detail h3", "File-level changes")
-    assert has_element?(view, "#plan-split-child-detail li", "and more.")
-  end
-
-  test "each card says what its own child builds on, which its lane alone would not", %{
-    conn: conn,
-    task: task,
-    child: child
-  } do
-    {:ok, _split} =
-      Pipeline.save_split(task, %{
-        "children" => [
-          child.(1, "One", 1, []),
-          child.(2, "Two", 1, []),
-          child.(3, "Three", 1, [1]),
-          child.(4, "Four", 1, [2])
-        ]
-      })
-
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-    assert has_element?(view, "[data-qa='plan_split_round']", "After 1 and 2")
-    assert has_element?(view, "#plan-split-child-1-order", "starts at once")
-    assert view |> element("#plan-split-child-3-order") |> render() =~ ~r/>\s*after 1\s*</
-    assert view |> element("#plan-split-child-4-order") |> render() =~ ~r/>\s*after 2\s*</
-  end
-
-  test "a new save shows in the lanes without a reload", %{conn: conn, task: task, child: child} do
-    {:ok, _split} = Pipeline.save_split(task, %{"children" => [child.(1, "One", 1, []), child.(2, "Two", 1, [])]})
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-    assert has_element?(view, "#plan-split", "1 round")
-
-    {:ok, _split} =
-      Pipeline.save_split(task, %{
-        "children" => [
-          child.(1, "One", 1, []),
-          child.(2, "Two", 1, [1]),
-          child.(3, "Three", nil, [])
-        ]
-      })
-
-    # The save reaches the pane as an update the page sends itself, after the first render it is asked for.
-    _settled = render(view)
-    assert has_element?(view, "#plan-split", "Split into 3 children")
-    assert has_element?(view, "#plan-split", "2 rounds")
-    assert has_element?(view, "#plan-split-child-3", "Three")
-    assert has_element?(view, "#plan-section-split-status", "3 children · 2 points")
-
-    view |> element("#plan-split-child-3-open") |> render_click()
-    assert has_element?(view, "#plan-split-child-detail", "lib/rail/part_3_more.ex")
   end
 
   test "a child's Plan tab shows its approved part as a sheet, under a notice naming every child it waits on", %{
@@ -344,22 +150,24 @@ defmodule RailWeb.Live.PlanStageTest do
         attrs = %{title: "Child #{identifier}", parent: parent_issue}
         {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
 
-        part = %{
-          number: number,
-          title: "A part",
-          ticket: "Its criteria.",
-          estimate: 1,
-          builds_on: builds_on,
-          builds_screen: false,
-          plan: "## Implementation plan\n\nPart #{number}."
-        }
+        {:ok, child} =
+          issue.project
+          |> build_task(issue, %{stage: :engineer, split_position: number, builds_on: builds_on})
+          |> Ecto.Changeset.put_change(:parent_task_id, parent.id)
+          |> Repo.insert()
 
-        {:ok, child} = Pipeline.create_child_task(parent, issue, part)
         Repo.preload(child, [:issue, :project])
       end
 
     on_exit(fn -> File.rm_rf(parent.scratch_path) end)
-    Repo.update_all(from(r in Round, where: r.task_id == ^third.id), set: [plan: sheet_plan()])
+
+    Repo.insert!(%Round{
+      task_id: third.id,
+      number: 1,
+      plan: sheet_plan(),
+      approved_at: DateTime.utc_now(),
+      ticket: %Round.Ticket{title: "A part", description: "Its criteria."}
+    })
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=PST-13&item=plan")
 
@@ -379,6 +187,56 @@ defmodule RailWeb.Live.PlanStageTest do
     refute has_element?(view, "#plan-plan figure")
     refute has_element?(view, "#plan-summary")
     refute has_element?(view, "#plan-plan", "In this plan")
+  end
+
+  test "the plan's cards read New or Changed off the default branch, which a load with the same paths does not ask again",
+       %{conn: conn, task: task} do
+    {:ok, _plan} = Pipeline.save_plan(task, %{plan: sheet_plan()})
+
+    # Once for the first render and once for the connected page; no later load asks again.
+    expect(Git, :list_default_branch_paths, 2, fn %{github_repo: "example/test-seed"}, paths ->
+      assert paths == [
+               "lib/rail/pipeline.ex",
+               "lib/rail/pipeline/actions/old_send_back.ex",
+               "lib/rail/pipeline/actions/send_back_to_architect.ex",
+               "lib/rail_web/live/review_stage.ex",
+               "priv/repo/migrations/20261022000000_add_sent_back_note.exs"
+             ]
+
+      MapSet.new(["lib/rail/pipeline.ex"])
+    end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+    assert has_element?(view, "#plan-card-1 [data-qa='plan_card_new']", "New")
+    assert has_element?(view, "#plan-card-2 [data-qa='plan_card_changed']", "Changed")
+
+    assert has_element?(
+             view,
+             "#plan-card-2 a[href='https://github.com/example/test-seed/blob/main/lib/rail/pipeline.ex']"
+           )
+
+    assert has_element?(view, "#plan-group-pipeline [data-qa='plan_group_count']", "1 new · 1 changed · 1 deleted")
+
+    {:ok, _ticket} =
+      Pipeline.save_plan(task, %{title: "Previews again", description: "## Acceptance criteria\n\n- One\n"})
+
+    _settled = render(view)
+    assert has_element?(view, "#plan-section-ticket", "Previews again")
+    assert has_element?(view, "#plan-card-2 [data-qa='plan_card_changed']")
+  end
+
+  test "when the clone cannot say, the cards read neither New nor Changed and the groups count their files", %{
+    conn: conn,
+    task: task
+  } do
+    expect(Git, :list_default_branch_paths, 2, fn _project, ["lib/rail.ex"] -> nil end)
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+    refute has_element?(view, "#plan-card-1 [data-qa='plan_card_new']")
+    refute has_element?(view, "#plan-card-1 [data-qa='plan_card_changed']")
+    refute has_element?(view, "#plan-card-1 [data-qa='plan_card_link']")
+    assert has_element?(view, "#plan-group-lib [data-qa='plan_group_count']", "1 file")
   end
 
   test "a plan saved before its ticket still lays out, its criteria read by their numbers", %{conn: conn, task: task} do

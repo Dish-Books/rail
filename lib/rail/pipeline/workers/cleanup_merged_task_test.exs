@@ -2,6 +2,8 @@ defmodule Rail.Pipeline.Workers.CleanupMergedTaskTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  import Rail.Pipeline.Utils.BuildTask
+
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -135,17 +137,12 @@ defmodule Rail.Pipeline.Workers.CleanupMergedTaskTest do
         for number <- [1, 2] do
           {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Child #{number}", parent: parent_issue})
 
-          part = %{
-            number: number,
-            title: "A part",
-            ticket: "Its criteria.",
-            estimate: 1,
-            builds_on: [],
-            builds_screen: false,
-            plan: "## Implementation plan\n\nPart."
-          }
+          {:ok, child} =
+            issue.project
+            |> build_task(issue, %{stage: :engineer, split_position: number, builds_on: []})
+            |> Ecto.Changeset.put_change(:parent_task_id, parent.id)
+            |> Repo.insert()
 
-          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
           Repo.preload(child, :issue)
         end
 

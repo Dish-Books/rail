@@ -2,6 +2,7 @@ defmodule RailWeb.OverviewLiveTest do
   use RailWeb.ConnCase, async: true
 
   import Phoenix.LiveViewTest
+  import Rail.Pipeline.Utils.BuildTask
 
   alias Rail.GitHub.Client
   alias Rail.Issues
@@ -580,17 +581,12 @@ defmodule RailWeb.OverviewLiveTest do
           attrs = %{title: "Child #{identifier}", parent: parent_issue, owner_user_id: user.id}
           {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
 
-          part = %{
-            number: number,
-            title: "A part",
-            ticket: "Its criteria.",
-            estimate: 1,
-            builds_on: builds_on,
-            builds_screen: false,
-            plan: "## Implementation plan\n\nPart #{number}."
-          }
+          {:ok, child} =
+            issue.project
+            |> build_task(issue, %{stage: :engineer, split_position: number, builds_on: builds_on})
+            |> Ecto.Changeset.put_change(:parent_task_id, parent.id)
+            |> Repo.insert()
 
-          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
           Repo.preload(child, [:issue, :project])
         end
 
@@ -639,17 +635,12 @@ defmodule RailWeb.OverviewLiveTest do
           attrs = %{title: "Child #{identifier}", parent: parent_issue, owner_user_id: rival.id}
           {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
 
-          part = %{
-            number: number,
-            title: "A part",
-            ticket: "Its criteria.",
-            estimate: 1,
-            builds_on: builds_on,
-            builds_screen: false,
-            plan: "## Implementation plan\n\nPart #{number}."
-          }
+          {:ok, child} =
+            issue.project
+            |> build_task(issue, %{stage: :engineer, split_position: number, builds_on: builds_on})
+            |> Ecto.Changeset.put_change(:parent_task_id, parent.id)
+            |> Repo.insert()
 
-          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
           Repo.preload(child, [:issue, :project])
         end
 
@@ -703,17 +694,12 @@ defmodule RailWeb.OverviewLiveTest do
           attrs = %{title: "Child #{identifier}", parent: parent_issue, owner_user_id: user.id}
           {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
 
-          part = %{
-            number: number,
-            title: "A part",
-            ticket: "Its criteria.",
-            estimate: 1,
-            builds_on: builds_on,
-            builds_screen: false,
-            plan: "## Implementation plan\n\nPart #{number}."
-          }
+          {:ok, child} =
+            issue.project
+            |> build_task(issue, %{stage: :engineer, split_position: number, builds_on: builds_on})
+            |> Ecto.Changeset.put_change(:parent_task_id, parent.id)
+            |> Repo.insert()
 
-          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
           Repo.preload(child, [:issue, :project])
         end
 
@@ -762,17 +748,12 @@ defmodule RailWeb.OverviewLiveTest do
           attrs = %{title: "Child #{identifier}", parent: parent_issue, owner_user_id: user.id}
           {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
 
-          part = %{
-            number: number,
-            title: "A part",
-            ticket: "Its criteria.",
-            estimate: 1,
-            builds_on: builds_on,
-            builds_screen: false,
-            plan: "## Implementation plan\n\nPart #{number}."
-          }
+          {:ok, child} =
+            issue.project
+            |> build_task(issue, %{stage: :engineer, split_position: number, builds_on: builds_on})
+            |> Ecto.Changeset.put_change(:parent_task_id, parent.id)
+            |> Repo.insert()
 
-          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
           Repo.preload(child, [:issue, :project])
         end
 
@@ -1380,13 +1361,13 @@ defmodule RailWeb.OverviewLiveTest do
           completed_at: DateTime.shift(now, hour: -4)
         })
 
-      # A stage no human signs off just finished; it did not hand anything over.
-      gate_task = task_for.("Gate work", %{stage: :debugger})
+      # A demo no human signs off just finished; it did not hand anything over.
+      gate_task = task_for.("Gate work", %{stage: :review})
 
       {:ok, gate} =
         Pipeline.create_run(%{
           task_id: gate_task.id,
-          role_id: roles[:debugger].id,
+          role_id: roles[:demo].id,
           status: :finished,
           stage_outcome: :done,
           started_at: DateTime.shift(now, hour: -5),

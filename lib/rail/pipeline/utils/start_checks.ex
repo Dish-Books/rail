@@ -1,8 +1,8 @@
 defmodule Rail.Pipeline.Utils.StartChecks do
   @moduledoc """
   Starts the agents that check a round's change once it is pushed, all together, each a run of its own on a clean
-  conversation: QA, the code reviewer, and the screenshots agent and the demo recorder when the round's plan asks
-  for them. Each that drives the app has a browser of its own on the worktree's one server. The review agent
+  conversation: QA, the code reviewer, and the demo recorder when the round's plan asks for it. Each that drives the
+  app has a browser of its own on the worktree's one server. The review agent
   follows them all but the demo.
   """
 
@@ -28,7 +28,7 @@ defmodule Rail.Pipeline.Utils.StartChecks do
     Repo.update_all(
       from(r in Run,
         join: role in assoc(r, :role),
-        where: r.task_id == ^task.id and role.stage in [:qa, :review, :screens, :review_lead]
+        where: r.task_id == ^task.id and role.stage in [:qa, :review, :review_lead]
       ),
       set: [stage_outcome: :in_progress]
     )
@@ -41,9 +41,7 @@ defmodule Rail.Pipeline.Utils.StartChecks do
     :ok
   end
 
-  # The screens are shot again and a demo recorded only when the round's plan asks.
-  defp asked(%Round{} = round),
-    do: for({stage, true} <- [screens: round.retake_screens, demo: round.record_demo], do: stage)
-
-  defp asked(nil), do: []
+  # A demo is recorded only when the round's plan asks.
+  defp asked(%Round{record_demo: true}), do: [:demo]
+  defp asked(_round), do: []
 end
