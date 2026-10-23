@@ -1226,6 +1226,100 @@ defmodule Rail.Tools.FollowerTest do
     refute Tools.os_process_alive?(pid)
   end
 
+  # The CLI waits on a server the agent started as a background task, for up to its hour-long ceiling.
+  test "a check run whose CLI outlives its result is ended after a short grace and settles as finished", %{
+    project: project,
+    task: task,
+    tmp_dir: tmp_dir
+  } do
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :review)
+
+    run =
+      %Run{}
+      |> Run.changeset(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
+      |> Repo.insert!()
+      |> Repo.preload(:role)
+
+    stream = Path.join(tmp_dir, "check_result.ndjson")
+    File.write!(stream, ~s({"type":"result","subtype":"success","is_error":false,"session_id":"sess-check"}\n))
+    File.write!("#{stream}.err", "")
+
+    port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, :exit_status, args: ["30"]])
+    {:os_pid, pid} = Port.info(port, :os_pid)
+
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: task.id,
+        stream_path: stream,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+    {:ok, follower_pid} =
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run},
+        port: port,
+        tail_interval_ms: 10,
+        batch_interval_ms: 20,
+        result_grace_ms: 100
+      )
+
+    Sandbox.allow(Repo, self(), follower_pid)
+    Process.unlink(port)
+
+    assert_receive {:os_process_finished, %OsProcess{exit_code: 0, ended_reason: :finished}, %{exit_code: 0, error: nil}},
+                   5_000
+
+    refute Tools.os_process_alive?(pid)
+  end
+
+  # A run that can start background subagents keeps the CLI's own wait for them.
+  test "a run that is not a check is still followed after its result while its CLI runs", %{
+    run: run,
+    tmp_dir: tmp_dir
+  } do
+    stream = Path.join(tmp_dir, "engineer_result.ndjson")
+    File.write!(stream, ~s({"type":"result","subtype":"success","is_error":false,"session_id":"sess-engineer"}\n))
+    File.write!("#{stream}.err", "")
+
+    port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, :exit_status, args: ["30"]])
+    {:os_pid, pid} = Port.info(port, :os_pid)
+
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
+        stream_path: stream,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+    {:ok, follower_pid} =
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run},
+        port: port,
+        tail_interval_ms: 10,
+        batch_interval_ms: 20,
+        result_grace_ms: 50
+      )
+
+    Sandbox.allow(Repo, self(), follower_pid)
+    Process.unlink(port)
+
+    refute_receive {:os_process_finished, _os_process, _outcome}, 300
+    assert Tools.os_process_alive?(pid)
+
+    FollowerSupervisor.stop_follower(follower_pid)
+    Tools.terminate_os_process(pid, grace_period: 50)
+  end
+
   describe "a sandbox ending" do
     # Mimic in global mode, so the Follower's own process sees these too.
     setup :set_mimic_global

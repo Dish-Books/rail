@@ -12,6 +12,10 @@ defmodule Rail.Tools.Follower do
   It is also what sees a Review subagent finish, and closes the browser that
   subagent drove: a tab left open for a round that is over is memory every other
   task's tabs share.
+
+  A check run is over once its turn's result is in: a CLI still running a short
+  grace later is waiting on something the agent left behind, such as an app
+  server, and its sandbox is ended so the run settles.
   """
   use GenServer, restart: :transient
 
@@ -50,6 +54,9 @@ defmodule Rail.Tools.Follower do
   @memory_top 3
   # Wrappers that say nothing about what a process belongs to.
   @plumbing ["sh", "bash", "dash", "zsh", "env", "timeout", "docker-init", "tini"]
+  # Check runs start no subagents, so nothing they leave running after their result is worth the CLI's wait.
+  @checks [:qa, :review, :screens, :demo]
+  @default_result_grace 10_000
 
   defstruct [
     :os_process_id,
@@ -70,6 +77,8 @@ defmodule Rail.Tools.Follower do
     :deadline_at,
     :memory_sample_interval_ms,
     :sampled_at,
+    :result_grace_ms,
+    :result_at,
     memory_top: [],
     file_offset: 0,
     logged_offset: 0,
@@ -79,6 +88,8 @@ defmodule Rail.Tools.Follower do
     stop_reason: :stopped,
     timed_out?: false,
     oom_killed?: false,
+    ends_on_result?: false,
+    ended_after_result?: false,
     partial_line: "",
     pending_events: []
   ]
@@ -116,7 +127,7 @@ defmodule Rail.Tools.Follower do
 
   @impl true
   def init({%OsProcess{} = os_process, opts}) do
-    %OsProcess{stream_path: stream_path, run: %Run{role: %Role{cli: cli}} = run} = os_process
+    %OsProcess{stream_path: stream_path, run: %Run{role: %Role{cli: cli, stage: stage}} = run} = os_process
 
     tail_interval_ms = Keyword.get(opts, :tail_interval_ms, @default_tail_interval)
     batch_interval_ms = Keyword.get(opts, :batch_interval_ms, @default_batch_interval)
@@ -138,6 +149,8 @@ defmodule Rail.Tools.Follower do
       port: Keyword.get(opts, :port),
       event_state: event_state,
       deadline_at: os_process.deadline_at,
+      ends_on_result?: os_process.kind == :agent and stage in @checks,
+      result_grace_ms: Keyword.get(opts, :result_grace_ms, @default_result_grace),
       tail_interval_ms: tail_interval_ms,
       batch_interval_ms: batch_interval_ms,
       memory_sample_interval_ms: Keyword.get(opts, :memory_sample_interval_ms, @default_memory_sample_interval),
@@ -189,12 +202,17 @@ defmodule Rail.Tools.Follower do
         pending_events: pending_events
     }
 
-    {alive?, updated_state} = check_alive(updated_state)
+    {alive?, updated_state} = updated_state |> note_result() |> check_alive()
 
     cond do
       alive? and past_deadline?(updated_state) ->
         updated_state |> sandbox() |> end_sandbox([])
         {_run, final_state} = do_child_exit(%{updated_state | timed_out?: true})
+        {:stop, :normal, final_state}
+
+      alive? and result_grace_over?(updated_state) ->
+        updated_state |> sandbox() |> end_sandbox([])
+        {_run, final_state} = do_child_exit(%{updated_state | ended_after_result?: true})
         {:stop, :normal, final_state}
 
       alive? ->
@@ -229,6 +247,18 @@ defmodule Rail.Tools.Follower do
   end
 
   defp past_deadline?(%__MODULE__{}), do: false
+
+  defp note_result(%__MODULE__{ends_on_result?: true, result_at: nil, event_state: %{saw_result: true}} = state) do
+    %{state | result_at: System.monotonic_time(:millisecond)}
+  end
+
+  defp note_result(%__MODULE__{} = state), do: state
+
+  defp result_grace_over?(%__MODULE__{result_at: result_at} = state) when is_integer(result_at) do
+    System.monotonic_time(:millisecond) - result_at >= state.result_grace_ms
+  end
+
+  defp result_grace_over?(%__MODULE__{}), do: false
 
   defp process_incoming_lines(lines, state) do
     Enum.reduce(lines, {state.event_state, state.pending_events}, fn line, {ev_state, pending} ->
@@ -462,6 +492,12 @@ defmodule Rail.Tools.Follower do
       top when is_binary(top) -> {137, "#{killed} Using the most when last seen: #{top}."}
       nil -> {137, killed}
     end
+  end
+
+  # Rail ended it once its result was in, so how the CLI was killed is not news.
+  defp settle_exit(%__MODULE__{ended_after_result?: true}, %OsProcess{}, event_state, raw_stderr) do
+    error = compute_error(event_state.result_error, raw_stderr, nil)
+    {compute_exit_code(nil, error, event_state.saw_result), error}
   end
 
   # A command's output is its log, not an error, so all it has to say about its
