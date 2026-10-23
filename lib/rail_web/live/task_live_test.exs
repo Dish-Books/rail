@@ -2710,7 +2710,12 @@ defmodule RailWeb.TaskLiveTest do
 
       _settled = render(two)
       assert has_element?(two, "#plan-sheet [data-qa='document_comment']", "Wait on page-loading-stop.")
-      assert has_element?(two, "#plan-card-1-sketch[open] [data-qa='document_comment']", "Through EnterStage?")
+
+      assert has_element?(
+               two,
+               "#plan-card-1 [data-qa='plan_card_sketch'][open] [data-qa='document_comment']",
+               "Through EnterStage?"
+             )
 
       one |> element("#send-plan-comments") |> render_click()
 

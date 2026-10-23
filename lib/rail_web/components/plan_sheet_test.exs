@@ -3,7 +3,7 @@ defmodule RailWeb.Components.PlanSheetTest do
 
   import Phoenix.LiveViewTest
   import RailTest.Helpers
-  import RailWeb.Helpers, only: [build_plan_sheet: 1]
+  import RailWeb.Helpers, only: [build_plan_sheet: 1, build_plan_sheet: 2]
 
   alias Rail.Pipeline.Schemas.PlanComment
   alias RailWeb.Components.PlanSheet
@@ -15,7 +15,7 @@ defmodule RailWeb.Components.PlanSheetTest do
       %{number: 3, html: "<p>Review shows Send back.</p>"}
     ]
 
-    %{sheet: build_plan_sheet(sheet_plan()), criteria: criteria}
+    %{sheet: build_plan_sheet(sheet_plan(), [1, 2, 3]), criteria: criteria}
   end
 
   test "lays a plan out in one column with no diagrams and no In this plan box", %{sheet: sheet} do
@@ -92,12 +92,11 @@ defmodule RailWeb.Components.PlanSheetTest do
   test "a sketch is drawn closed unless one of its lines has the reader's comment", %{sheet: sheet} do
     html = (&PlanSheet.plan_sheet/1) |> render_component(sheet: sheet) |> Floki.parse_fragment!()
 
-    [sketch] = Floki.find(html, "#plan-card-1-sketch")
+    [%{id: id, sketch: [_first, second, _end]}] = Enum.take(sheet.cards, 1)
+    [sketch] = Floki.find(html, "#plan-sketch-#{id}")
     assert Floki.attribute(sketch, "open") == []
     assert Floki.text(Floki.find(sketch, "summary"), sep: " ") =~ ~r/Show code\s+Hide code/
     assert Floki.text(sketch) =~ "enter_stage(task, :architect, %{sent_back_note: note})"
-
-    [_first, second, _end] = hd(sheet.cards).sketch
 
     comment = %PlanComment{
       id: "pcm_s",
@@ -113,8 +112,29 @@ defmodule RailWeb.Components.PlanSheetTest do
       |> render_component(sheet: sheet, placed: %{second.key => [{comment, 1}]})
       |> Floki.parse_fragment!()
 
-    assert Floki.attribute(html, "#plan-card-1-sketch", "open") == ["open"]
-    assert Floki.text(Floki.find(html, "#plan-card-1-sketch")) =~ "Through EnterStage?"
+    assert Floki.attribute(html, "#plan-sketch-#{id}", "open") == ["open"]
+    assert Floki.text(Floki.find(html, "#plan-sketch-#{id}")) =~ "Through EnterStage?"
+  end
+
+  test "a sketch keeps its id when a revision adds a card above its own", %{sheet: sheet} do
+    html = (&PlanSheet.plan_sheet/1) |> render_component(sheet: sheet) |> Floki.parse_fragment!()
+    assert [id] = Floki.attribute(html, "#plan-card-1 [data-qa='plan_card_sketch']", "id")
+
+    plan =
+      String.replace(
+        sheet_plan(),
+        "#### `lib/rail/pipeline/actions/send_back_to_architect.ex`",
+        "#### `lib/rail/pipeline/actions/enter_stage.ex`\n\nTakes the note.\n\n" <>
+          "#### `lib/rail/pipeline/actions/send_back_to_architect.ex`"
+      )
+
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: build_plan_sheet(plan, [1, 2, 3]))
+      |> Floki.parse_fragment!()
+
+    assert Floki.text(Floki.find(html, "#plan-card-2")) =~ "send_back_to_architect.ex"
+    assert [^id] = Floki.attribute(html, "#plan-card-2 [data-qa='plan_card_sketch']", "id")
   end
 
   test "a criterion the plan names nothing for reads Not covered, and those around it keep their files and tests", %{
@@ -135,13 +155,13 @@ defmodule RailWeb.Components.PlanSheetTest do
     assert Floki.text(third, sep: " ") =~ ~r/Covered:\s+Review shows Send back.\s+review_stage.ex/
   end
 
-  test "a criterion the ticket does not have is not drawn, and without the ticket's words a row reads by number", %{
+  test "a bullet for a criterion the ticket lacks is not drawn, and without the ticket's words a row reads by number", %{
     sheet: sheet,
     criteria: criteria
   } do
     html =
       (&PlanSheet.plan_sheet/1)
-      |> render_component(sheet: sheet, criteria: Enum.take(criteria, 1))
+      |> render_component(sheet: build_plan_sheet(sheet_plan(), [1]), criteria: Enum.take(criteria, 1))
       |> Floki.parse_fragment!()
 
     assert [only] = Floki.find(html, "[data-qa='plan_criterion']")
@@ -149,13 +169,38 @@ defmodule RailWeb.Components.PlanSheetTest do
 
     html = (&PlanSheet.plan_sheet/1) |> render_component(sheet: sheet) |> Floki.parse_fragment!()
 
-    assert [first, third] = Floki.find(html, "[data-qa='plan_criterion']")
+    assert [first, second, third] = Floki.find(html, "[data-qa='plan_criterion']")
     assert Floki.text(first, sep: " ") =~ ~r/\ACovered:\s+Criterion 1\s+send_back_to_architect.ex/
+    assert Floki.text(second, sep: " ") =~ ~r/\ANot covered:\s+Criterion 2\s+Not covered/
     assert Floki.text(third, sep: " ") =~ ~r/\ACovered:\s+Criterion 3\s+review_stage.ex/
 
     plan = String.replace(sheet_plan(), ~r/### Acceptance criteria\n.*?### Verification/s, "### Verification")
     html = render_component(&PlanSheet.plan_sheet/1, sheet: build_plan_sheet(plan), criteria: criteria)
     refute html =~ "plan-criteria"
+  end
+
+  test "a Not covered row takes a comment, and a saved row naming no path reads Not covered", %{
+    sheet: sheet,
+    criteria: criteria
+  } do
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: sheet, criteria: criteria, offered: true)
+      |> Floki.parse_fragment!()
+
+    assert [_first, second, _third] = Floki.find(html, "#plan-criteria [data-qa='plan_criterion']")
+    assert Floki.text(second, sep: " ") =~ ~r/Not covered:\s+The note reaches the brief.\s+Not covered/
+    assert [_add] = Floki.find(html, "#plan-criteria button[aria-label='Comment on Criterion 2']")
+
+    plan = String.replace(sheet_plan(), "- 3: `lib/rail_web", "- 2: handled by the existing flow\n- 3: `lib/rail_web")
+
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: build_plan_sheet(plan, [1, 2, 3]), criteria: criteria)
+      |> Floki.parse_fragment!()
+
+    assert [_first, second, _third] = Floki.find(html, "#plan-criteria [data-qa='plan_criterion']")
+    assert Floki.text(second, sep: " ") =~ ~r/Not covered:\s+The note reaches the brief.\s+Not covered/
   end
 
   test "every line of the sheet draws a + while commenting is offered, and the changed comments sit at the top", %{

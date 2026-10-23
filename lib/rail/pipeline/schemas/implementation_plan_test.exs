@@ -109,7 +109,7 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlanTest do
       assert %{plan: ["has nothing under `### Decisions`" <> _rest]} = errors_on(check.(plan))
     end
 
-    test "refuses a criteria bullet with no number, or a number used twice", %{check: check} do
+    test "refuses a criteria bullet with no number, a number used twice, or naming no path", %{check: check} do
       plan =
         String.replace(sheet_plan(), "- 3: `lib/rail_web/live/review_stage.ex`", "- `lib/rail_web/live/review_stage.ex`")
 
@@ -122,6 +122,15 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlanTest do
 
       assert %{plan: ["has criterion 1 more than once under `### Acceptance criteria`; give each criterion one bullet"]} =
                errors_on(check.(plan))
+
+      plan = String.replace(sheet_plan(), "- 3: `lib/rail_web", "- 2: handled by the existing flow\n- 3: `lib/rail_web")
+
+      assert %{
+               plan: [
+                 "has criterion 2 under `### Acceptance criteria` with no file or test in backticks; name what " <>
+                   "satisfies it, or leave the criterion out so it reads Not covered"
+               ]
+             } = errors_on(check.(plan))
     end
 
     test "refuses a card that names no path, a path listed twice, or two sketches on one card", %{check: check} do

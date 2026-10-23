@@ -781,12 +781,14 @@ defmodule RailWeb.Live.PlanStage do
     children = Enum.map(assigns.split.children, &Map.put(&1, :first_file, first_file(&1.plan)))
     open = Enum.find(assigns.split.children, &(&1.number == assigns.open_child))
 
+    open_criteria = open && open.ticket |> build_document_blocks() |> criteria_lines()
+
     assigns =
       assigns
       |> assign(:rounds, rounds(children))
       |> assign(:open, open)
-      |> assign(:open_sheet, open && build_plan_sheet(open.plan))
-      |> assign(:open_criteria, open && open.ticket |> build_document_blocks() |> criteria_lines())
+      |> assign(:open_criteria, open_criteria)
+      |> assign(:open_sheet, open && build_plan_sheet(open.plan, Enum.map(open_criteria, & &1.number)))
 
     ~H"""
     <div id="plan-split" data-qa="plan_split" class="@container">
@@ -1077,12 +1079,13 @@ defmodule RailWeb.Live.PlanStage do
     amending = approved and task.stage in [:review, :finalize] and Run.can_chat?(socket.assigns[:chat_run])
     picked = design && Enum.find(design.options, &(&1.key == design.picked))
     selected_key = selected_key(design, socket.assigns.selected_key)
-    sheet = plan && build_plan_sheet(plan.content)
+    ticket_lines = ticket_lines(ticket)
+    sheet = sheet(plan, ticket_lines)
     items = items(ticket, design, picked, plan, sheet, split, running)
 
     socket
     |> assign(:ticket, ticket)
-    |> assign_ticket_lines(ticket)
+    |> assign_ticket_lines(ticket_lines)
     |> assign(:design, design)
     |> assign(:plan, plan)
     |> assign(:split, split)
@@ -1155,14 +1158,14 @@ defmodule RailWeb.Live.PlanStage do
   defp assign_ticket_lines(socket, nil),
     do: socket |> assign(:ticket_lines, nil) |> assign(:ticket_line_list, []) |> assign(:criteria, [])
 
-  defp assign_ticket_lines(socket, ticket) do
-    lines = ticket_lines(ticket)
-
+  defp assign_ticket_lines(socket, lines) do
     socket
     |> assign(:ticket_lines, lines)
     |> assign(:ticket_line_list, [lines.title, lines.priority, lines.estimate | lines.description])
-    |> assign(:criteria, criteria_lines(lines.description))
+    |> assign(:criteria, criteria_lines(lines))
   end
+
+  defp ticket_lines(nil), do: nil
 
   defp ticket_lines(ticket) do
     priority = (ticket.priority && Issue.priority_label(ticket.priority)) || "No priority"
@@ -1185,6 +1188,12 @@ defmodule RailWeb.Live.PlanStage do
   defp ticket_line(kind, text, label) do
     %{key: "#{kind}-#{:erlang.phash2({text, 1})}", kind: kind, text: text, occurrence: 1, label: label, depth: 0}
   end
+
+  # A row for each of the ticket's criteria, so one the plan leaves out takes a comment too.
+  defp sheet(nil, _ticket_lines), do: nil
+
+  defp sheet(plan, ticket_lines),
+    do: build_plan_sheet(plan.content, ticket_lines |> criteria_lines() |> Enum.map(& &1.number))
 
   defp plan_lines(nil, _sheet), do: []
   defp plan_lines(_plan, %{lines: lines}), do: lines
@@ -1383,6 +1392,9 @@ defmodule RailWeb.Live.PlanStage do
   defp files(nil), do: nil
 
   # The ticket's own acceptance criteria, as its lines name them, for the plan's criteria table to fill its rows from.
+  defp criteria_lines(nil), do: []
+  defp criteria_lines(%{description: lines}), do: criteria_lines(lines)
+
   defp criteria_lines(lines) do
     for %{label: "Criterion " <> number} = line <- lines,
         {number, ""} <- [Integer.parse(number)],

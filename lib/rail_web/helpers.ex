@@ -10,7 +10,7 @@ defmodule RailWeb.Helpers do
 
   defdelegate browser_label(name), to: Utils.BrowserLabel
 
-  defdelegate build_plan_sheet(content), to: Utils.BuildPlanSheet
+  defdelegate build_plan_sheet(content, numbers \\ []), to: Utils.BuildPlanSheet
   defdelegate format_age(seconds), to: Utils.FormatAge
   defdelegate format_duration(seconds), to: Utils.FormatDuration
   defdelegate format_ordinal(position), to: Utils.FormatOrdinal

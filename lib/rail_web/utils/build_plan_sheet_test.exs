@@ -135,6 +135,31 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
     assert %{number: 3, line: %{text: "3 | review_stage.ex | ", cells: [_number, _files, ""], last?: true}} = last
   end
 
+  test "a criterion of the ticket the plan answers nothing for is an empty row in its numbered place" do
+    assert %{criteria: %{rows: [first, second, third]}, lines: lines} = build_plan_sheet(sheet_plan(), [1, 2, 3])
+
+    assert %{number: 1, line: %{first?: true, last?: false}} = first
+
+    assert %{
+             number: 2,
+             files: [],
+             tests: [],
+             line: %{
+               kind: :table_row,
+               label: "Criterion 2",
+               text: "2 |  | ",
+               cells: ["<p>2</p>", "", ""],
+               first?: false,
+               last?: false
+             }
+           } = second
+
+    assert %{number: 3, line: %{last?: true}} = third
+
+    assert ["Criterion 1", "Criterion 2", "Criterion 3"] =
+             for(%{kind: :table_row} = line <- lines, do: line.label)
+  end
+
   test "lines that read the same are told apart by the order they are drawn in" do
     plan = String.replace(sheet_plan(), "Adds the column.", "The new action replaces it.")
 

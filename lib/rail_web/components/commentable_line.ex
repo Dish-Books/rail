@@ -8,7 +8,7 @@ defmodule RailWeb.Components.CommentableLine do
 
   attr :line, :map,
     default: nil,
-    doc: "a line from `build_document_blocks/1`, `build_plan_sheet/1` or `build_fix_plan_lines/1`"
+    doc: "a line from `build_document_blocks/1`, `build_plan_sheet/2` or `build_fix_plan_lines/1`"
 
   attr :doc, :atom, required: true, values: [:ticket, :plan, :fix_plan, :split_part]
   attr :layout, :atom, default: :text, values: [:text, :code, :table_row, :node, :values]

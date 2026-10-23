@@ -13,7 +13,7 @@ defmodule RailWeb.Components.PlanSheet do
 
   @columns "grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]"
 
-  attr :sheet, :map, required: true, doc: "what `build_plan_sheet/1` made of the plan"
+  attr :sheet, :map, required: true, doc: "what `build_plan_sheet/2` made of the plan"
   attr :criteria, :list, default: [], doc: "the ticket's acceptance criteria, each `%{number:, html:}`"
   attr :part, :integer, default: nil, doc: "the split child's number, when the plan is a child's part"
   attr :target, :any, default: nil
@@ -227,7 +227,7 @@ defmodule RailWeb.Components.PlanSheet do
 
       <details
         :if={@card.sketch != []}
-        id={"#{@base}-card-#{@card.number}-sketch"}
+        id={"#{@base}-sketch-#{@card.id}"}
         data-qa="plan_card_sketch"
         open={Enum.any?(@card.sketch, &Map.has_key?(@on.placed, &1.key))}
         phx-mounted={JS.ignore_attributes(["open"])}
@@ -261,29 +261,10 @@ defmodule RailWeb.Components.PlanSheet do
   attr :on, :map, required: true
   attr :target, :any, required: true
 
-  defp criterion(%{row: %{line: nil}} = assigns) do
-    ~H"""
-    <div
-      data-qa="plan_criterion"
-      class={[
-        "border-x border-t border-slate-200 dark:border-slate-800",
-        @row.last? && "mb-2 rounded-b-lg border-b"
-      ]}
-    >
-      <div class={["grid text-[14px] text-slate-700 dark:text-slate-300", @columns]}>
-        <.criterion_text covered={false} html={@row.html} />
-        <div class="px-4 py-2">
-          <span class="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wider ring-1 ring-inset ring-rose-500/50 text-rose-700 dark:text-rose-300">
-            Not covered
-          </span>
-        </div>
-        <div />
-      </div>
-    </div>
-    """
-  end
-
+  # Covered by what the plan names for it, so a row with no paths reads Not covered too.
   defp criterion(assigns) do
+    assigns = assign(assigns, :covered, assigns.row.files != [] or assigns.row.tests != [])
+
     ~H"""
     <.line
       line={%{@row.line | first?: false, last?: @row.last?}}
@@ -292,9 +273,16 @@ defmodule RailWeb.Components.PlanSheet do
       target={@target}
     >
       <div data-qa="plan_criterion" class={["col-span-full grid", @columns]}>
-        <.criterion_text covered html={@row.html} />
+        <.criterion_text covered={@covered} html={@row.html} />
+        <div :if={!@covered} class="px-4 py-2">
+          <span class="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wider ring-1 ring-inset ring-rose-500/50 text-rose-700 dark:text-rose-300">
+            Not covered
+          </span>
+        </div>
+        <div :if={!@covered} />
         <div
           :for={cell <- tl(@row.line.cells)}
+          :if={@covered}
           class="min-w-0 px-4 py-2 font-mono text-[12.5px] wrap-anywhere prose prose-slate dark:prose-invert max-w-none [&_p]:my-0 prose-code:font-normal prose-code:before:content-none prose-code:after:content-none"
         >
           {raw(cell)}
@@ -404,21 +392,21 @@ defmodule RailWeb.Components.PlanSheet do
     """
   end
 
-  # The ticket's criteria in its order, each with the plan's row for it; a row for a criterion the ticket lacks is not
-  # drawn. Without the ticket's words, a row reads by its number.
+  # The ticket's criteria in its order, each with the sheet's row for it; a row for a criterion the ticket lacks is not
+  # drawn. Without the ticket's words, every row is drawn and reads by its number.
   defp rows(nil, _criteria), do: []
 
   defp rows(%{rows: rows}, []),
     do: rows(%{rows: rows}, Enum.map(rows, &%{number: &1.number, html: "Criterion #{&1.number}"}))
 
   defp rows(%{rows: rows}, criteria) do
-    by_number = Map.new(rows, &{&1.number, &1.line})
+    by_number = Map.new(rows, &{&1.number, &1})
     last = length(criteria) - 1
 
     criteria
     |> Enum.with_index()
     |> Enum.map(fn {criterion, index} ->
-      %{number: criterion.number, html: criterion.html, line: by_number[criterion.number], last?: index == last}
+      Map.merge(Map.fetch!(by_number, criterion.number), %{html: criterion.html, last?: index == last})
     end)
   end
 

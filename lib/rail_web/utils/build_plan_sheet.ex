@@ -27,17 +27,17 @@ defmodule RailWeb.Utils.BuildPlanSheet do
   }
 
   @doc """
-  Returns the plan's sheet with its cards in `groups`, or `nil` when it does not lay out as one. `lines` holds every
-  line in the order the page draws it, the lines of a folded group or a closed sketch included.
+  Returns the plan's sheet with its cards in `groups`, and a criteria row for each of the ticket's criterion `numbers`,
+  or `nil` when it does not lay out as one. `lines` holds every line in drawn order, folded and closed ones included.
   """
-  def build_plan_sheet(content) when is_binary(content) do
+  def build_plan_sheet(content, numbers \\ []) when is_binary(content) do
     case ImplementationPlan.build_sheet(content) do
-      %{} = sheet -> lay_out(sheet)
+      %{} = sheet -> lay_out(sheet, numbers)
       nil -> nil
     end
   end
 
-  defp lay_out(sheet) do
+  defp lay_out(sheet, numbers) do
     groups = sheet.cards |> Enum.group_by(&group/1) |> then(&order_groups(sheet.cards, &1))
     cards = groups |> Enum.flat_map(& &1.cards) |> Enum.with_index(1)
 
@@ -46,7 +46,7 @@ defmodule RailWeb.Utils.BuildPlanSheet do
     {decisions, counts} = items("Decisions", sheet.decisions, &"Decisions, item #{&1}", counts)
     {changes_title, counts} = number(line(:section_title, "Changes", "Changes"), counts)
     {cards, counts} = Enum.map_reduce(cards, counts, &card/2)
-    {criteria, counts} = criteria(sheet.criteria, counts)
+    {criteria, counts} = criteria(sheet.criteria, numbers, counts)
     {verification, _counts} = section("Verification", sheet.verification, counts)
 
     by_path = Map.new(cards, &{&1.path, &1})
@@ -133,7 +133,13 @@ defmodule RailWeb.Utils.BuildPlanSheet do
     {signatures, counts} = code_lines(card.signatures, :signature, "#{file}, signature line", counts)
     {sketch, counts} = code_lines(card.sketch, :code, "#{file}, sketch line", counts)
 
-    {Map.merge(card, %{number: number, line: file_line, prose: prose, signatures: signatures, sketch: sketch}), counts}
+    # Keyed on the path, as a slug could fold two paths into one, so a sketch left open stays with its file.
+    id = :erlang.phash2(card.path)
+
+    card =
+      Map.merge(card, %{id: id, number: number, line: file_line, prose: prose, signatures: signatures, sketch: sketch})
+
+    {card, counts}
   end
 
   defp code_lines(nil, _kind, _label, counts), do: {[], counts}
@@ -144,7 +150,13 @@ defmodule RailWeb.Utils.BuildPlanSheet do
     |> Enum.map_reduce(counts, &number(%{&1 | kind: kind, label: "#{label} #{&1.number}"}, &2))
   end
 
-  # A row per criterion the plan answers, its cells as a table's would be, the ticket's words for it drawn by the page.
+  # A row per criterion of the ticket or the plan, its cells as a table's would be, the ticket's words drawn by the page.
+  defp criteria(criteria, numbers, counts) do
+    answered = Enum.map(criteria, & &1.number)
+    unanswered = for number <- Enum.uniq(numbers), number not in answered, do: %{number: number, files: [], tests: []}
+    criteria(Enum.sort_by(criteria ++ unanswered, & &1.number), counts)
+  end
+
   defp criteria([], counts), do: {nil, counts}
 
   defp criteria(criteria, counts) do

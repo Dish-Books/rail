@@ -34,15 +34,7 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
           lead_errors(lead) ++
             title_errors(Enum.map(sections, &elem(&1, 0))) ++ Enum.flat_map(sections, &section_errors/1)
 
-        # The sheet is the last word, so nothing is saved that would show unlaid-out.
-        errors =
-          if errors == [] and build_sheet(plan) == nil,
-            do: [
-              "does not lay out as a plan: each section must be its own `###` block, each file under `### Changes` " <>
-                "a `#### `path`` card, and the data changes, decisions and criteria flat lists of bullets"
-            ],
-            else: errors
-
+        errors = if errors == [], do: sheet_errors(build_sheet(plan)), else: errors
         Enum.map(errors, &{field, &1})
       end)
     end
@@ -213,6 +205,21 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
   end
 
   defp section_errors({_title, _lines}), do: []
+
+  # The sheet is the last word, so nothing is saved that would show unlaid-out, or a criterion covered by nothing.
+  defp sheet_errors(nil) do
+    [
+      "does not lay out as a plan: each section must be its own `###` block, each file under `### Changes` " <>
+        "a `#### `path`` card, and the data changes, decisions and criteria flat lists of bullets"
+    ]
+  end
+
+  defp sheet_errors(sheet) do
+    for %{files: [], tests: [], number: number} <- sheet.criteria do
+      "has criterion #{number} under `### Acceptance criteria` with no file or test in backticks; name what " <>
+        "satisfies it, or leave the criterion out so it reads Not covered"
+    end
+  end
 
   defp card_errors({[heading], body}) do
     {blocks, _fenced} =

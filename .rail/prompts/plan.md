@@ -210,7 +210,7 @@ After `Pipeline.send_message/2` returns `{:ok, _}`, re-read `manifest.json` with
 
 - 1: `lib/rail/pipeline/utils/notify_waiting.ex`, `lib/rail/pipeline/utils/notify_waiting_test.exs`
 
-Rail shows each criterion beside what you name for it, and one you leave out as Not covered, so every criterion has its bullet. Give each number one bullet.
+Each bullet names at least one file or test in backticks. Rail shows each criterion beside what you name for it. A criterion nothing in the plan satisfies gets no bullet, so Rail shows it as Not covered. Give each number one bullet.
 
 **6. `### Verification`.** The few tests that matter most, the ones that would catch the change going wrong: a flat bullet each, one plain sentence saying what it shows, with no code. Not every test file and not every behavior. The commands are always `mise exec -- mix test <file>` while building and `mise run ci` to finish, so leave them out.
 

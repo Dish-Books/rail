@@ -380,6 +380,14 @@ defmodule RailWeb.Live.PlanStageTest do
     refute has_element?(view, "#plan-plan", "In this plan")
   end
 
+  test "a plan saved before its ticket still lays out, its criteria read by their numbers", %{conn: conn, task: task} do
+    Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [ticket: nil])
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+    assert has_element?(view, "#plan-sheet [data-qa='plan_criterion']", "Criterion 1")
+    refute has_element?(view, "#plan-sheet [data-qa='plan_criterion']", "Not covered")
+  end
+
   test "the + on an Approach paragraph, a decision, a card's prose, a sketch line and a criterion opens the box under it",
        %{conn: conn, task: task} do
     {:ok, _ticket} =
@@ -393,6 +401,7 @@ defmodule RailWeb.Live.PlanStageTest do
           {"Decisions, item 2", "Keep the history."},
           {"File 1, paragraph 1", "Idle how?"},
           {"File 1, sketch line 2", "Pass the note."},
+          {"Criterion 2", "Nothing covers this."},
           {"Criterion 3", "Test it too."}
         ] do
       view |> element("#plan-sheet button[aria-label='Comment on #{label}']") |> render_click()
@@ -406,7 +415,8 @@ defmodule RailWeb.Live.PlanStageTest do
       assert has_element?(view, "#line-plan-#{key} + [data-qa='line_comments'] [data-qa='document_comment']", body)
     end
 
-    assert has_element?(view, "#plan-card-1-sketch[open]")
+    assert has_element?(view, "#plan-card-1 [data-qa='plan_card_sketch'][open]")
+    assert has_element?(view, "#plan-criteria [data-qa='plan_criterion']", "Not covered")
   end
 
   test "a plan saved before this change, diagrams and all, shows as lines that take a comment", %{
