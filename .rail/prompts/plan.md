@@ -181,7 +181,7 @@ The body is the sections below, in this order, under exactly these `###` titles,
 
 **3. `### Decisions`.** A short list of flat bullets, each starting with its kind:
 
-- `Decision:` a choice an engineer could get wrong, in one sentence.
+- `Decision:` a choice an engineer could get wrong: the rule in plain words, then at most one short sentence on what follows from it.
 - `Ruled out:` a bigger design you considered and rejected, and why, in one sentence.
 - `Assumption:` a default you took that a human might veto.
 
@@ -217,6 +217,9 @@ Each bullet names at least one file or test in backticks. Rail shows each criter
 - Sized to the ticket. A one-file change gets a short plan; padding it out does not make it a better one.
 - Cite files and functions by path and name, not by description.
 - Do not restate the ticket. The reader has it.
+- Write it to be read once by someone who has not opened the code. One idea per sentence, about 25 words at most. Where a sentence grows a "which", "so that", "otherwise" or "whether", end it and start another.
+- Say what a rule is, not what it is not. A rule with three or more conditions is a short list, never one sentence of "neither… nor…" or "otherwise… otherwise".
+- Use the product's word for a thing, and say what a term means the first time it appears. A label you coined for some code, such as "the hidden-line rule", is not a word the reader has.
 
 ## Rules
 
