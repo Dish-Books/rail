@@ -3,7 +3,12 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-git pull --ff-only
+
+# Bash reads this file as it runs, so restart on the pulled copy for its changes to apply now.
+if [ -z "${RAIL_DEPLOY_PULLED:-}" ]; then
+  git pull --ff-only
+  RAIL_DEPLOY_PULLED=1 exec scripts/deploy.sh "$@"
+fi
 
 secret() { gcloud secrets versions access latest --project dishbooks-shared --secret "$1"; }
 
