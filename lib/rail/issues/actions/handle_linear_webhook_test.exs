@@ -2,6 +2,8 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  import Rail.Pipeline.Utils.BuildTask
+
   alias Rail.Issues
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
@@ -194,17 +196,12 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
         attrs = %{title: "Child #{identifier}", parent: parent_issue}
         {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
 
-        part = %{
-          number: number,
-          title: "A part",
-          ticket: "Its criteria.",
-          estimate: 1,
-          builds_on: builds_on,
-          builds_screen: false,
-          plan: "## Implementation plan\n\nPart #{number}."
-        }
+        {:ok, child} =
+          issue.project
+          |> build_task(issue, %{stage: :engineer, split_position: number, builds_on: builds_on})
+          |> Ecto.Changeset.put_change(:parent_task_id, parent.id)
+          |> Repo.insert()
 
-        {:ok, child} = Pipeline.create_child_task(parent, issue, part)
         Repo.preload(child, [:issue, :project])
       end
 
@@ -601,17 +598,12 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
         attrs = %{title: "Child #{identifier}", parent: parent_issue}
         {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
 
-        part = %{
-          number: number,
-          title: "A part",
-          ticket: "Its criteria.",
-          estimate: 1,
-          builds_on: builds_on,
-          builds_screen: false,
-          plan: "## Implementation plan\n\nPart #{number}."
-        }
+        {:ok, child} =
+          issue.project
+          |> build_task(issue, %{stage: :engineer, split_position: number, builds_on: builds_on})
+          |> Ecto.Changeset.put_change(:parent_task_id, parent.id)
+          |> Repo.insert()
 
-        {:ok, child} = Pipeline.create_child_task(parent, issue, part)
         Repo.preload(child, [:issue, :project])
       end
 
@@ -800,17 +792,12 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
           attrs = %{title: "Child #{identifier}", parent: parent_issue}
           {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
 
-          part = %{
-            number: number,
-            title: "A part",
-            ticket: "Its criteria.",
-            estimate: 1,
-            builds_on: builds_on,
-            builds_screen: false,
-            plan: "## Implementation plan\n\nPart #{number}."
-          }
+          {:ok, child} =
+            issue.project
+            |> build_task(issue, %{stage: :engineer, split_position: number, builds_on: builds_on})
+            |> Ecto.Changeset.put_change(:parent_task_id, parent.id)
+            |> Repo.insert()
 
-          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
           Repo.preload(child, [:issue, :project])
         end
 

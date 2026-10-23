@@ -5,6 +5,7 @@ defmodule RailWeb.TaskLiveTest do
   import Ecto.Query
   import Mimic
   import Phoenix.LiveViewTest
+  import Rail.Pipeline.Utils.BuildTask
   import RailWeb.Utils.BuildDocumentBlocks
 
   alias Phoenix.Socket.Message
@@ -5706,17 +5707,20 @@ defmodule RailWeb.TaskLiveTest do
           attrs = %{title: "Child #{identifier}", parent: parent_issue}
           {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
 
-          part = %{
-            number: number,
-            title: "A part",
-            ticket: "Its criteria.",
-            estimate: 1,
-            builds_on: builds_on,
-            builds_screen: false,
-            plan: "## Implementation plan\n\nPart #{number}."
-          }
+          {:ok, child} =
+            issue.project
+            |> build_task(issue, %{stage: :engineer, split_position: number, builds_on: builds_on})
+            |> Ecto.Changeset.put_change(:parent_task_id, parent.id)
+            |> Repo.insert()
 
-          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
+          Repo.insert!(%Round{
+            task_id: child.id,
+            number: 1,
+            plan: "## Implementation plan\n\nPart #{number}.",
+            approved_at: DateTime.utc_now(),
+            ticket: %Round.Ticket{title: "A part", description: "Its criteria."}
+          })
+
           Repo.preload(child, [:issue, :project])
         end
 

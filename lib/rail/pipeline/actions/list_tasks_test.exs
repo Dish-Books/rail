@@ -2,6 +2,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
   use Rail.DataCase, async: true
 
   import Ecto.Query
+  import Rail.Pipeline.Utils.BuildTask
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
@@ -267,15 +268,10 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Child", parent: owner.issue})
 
         {:ok, child} =
-          Pipeline.create_child_task(owner, issue, %{
-            number: number,
-            title: "A part",
-            ticket: "Its criteria.",
-            estimate: 1,
-            builds_on: [],
-            builds_screen: false,
-            plan: "## Implementation plan"
-          })
+          issue.project
+          |> build_task(issue, %{stage: :engineer, split_position: number, builds_on: []})
+          |> Ecto.Changeset.put_change(:parent_task_id, owner.id)
+          |> Repo.insert()
 
         child
       end

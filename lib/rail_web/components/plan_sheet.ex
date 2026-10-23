@@ -21,28 +21,22 @@ defmodule RailWeb.Components.PlanSheet do
   attr :draft, :map, default: nil, doc: "the line the comment box is open under"
   attr :offered, :boolean, default: false, doc: "the reader can comment now"
 
-  attr :doc, :atom,
-    default: :plan,
-    values: [:plan, :split_part],
-    doc: "the task's plan, or a split child's part of it drawn on the same page, which names its ids apart"
-
   def plan_sheet(%{sheet: sheet} = assigns) do
     assigns =
       assigns
       |> assign(:file_numbers, Map.new(sheet.files, &{&1.path, &1.number}))
-      |> assign(:prefix, if(assigns.doc == :plan, do: "plan", else: "split-part"))
-      |> assign(:on, %{placed: assigns.placed, draft: assigns.draft, offered: assigns.offered, doc: assigns.doc})
+      |> assign(:on, %{placed: assigns.placed, draft: assigns.draft, offered: assigns.offered, doc: :plan})
 
     ~H"""
     <div
-      id={"#{@prefix}-sheet"}
+      id="plan-sheet"
       data-qa="plan_sheet"
       class="@container flex flex-col gap-7 wrap-anywhere"
     >
-      <.changed_comments id={"#{@prefix}-changed-comments"} comments={@changed} target={@target} />
+      <.changed_comments id="plan-changed-comments" comments={@changed} target={@target} />
 
       <div class="grid gap-6 items-start @min-[900px]:grid-cols-[minmax(0,1fr)_280px] @min-[1300px]:grid-cols-[minmax(0,1fr)_340px] @min-[1300px]:gap-8">
-        <section id={"#{@prefix}-approach"} class="min-w-0 max-w-[900px]">
+        <section id="plan-approach" class="min-w-0 max-w-[900px]">
           <.section_lines lines={@sheet.approach_lines} on={@on} target={@target} />
           <.commentable_line
             :if={@sheet.no_diagrams_line}
@@ -55,7 +49,7 @@ defmodule RailWeb.Components.PlanSheet do
             class="mt-4"
           >
             <div
-              id={"#{@prefix}-no-diagrams"}
+              id="plan-no-diagrams"
               class="flex items-center gap-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 px-4 py-3 text-sm text-slate-600 dark:text-slate-300"
             >
               <.icon name="pi-flow-arrow" class="size-5 text-slate-400 dark:text-slate-500" />
@@ -65,7 +59,7 @@ defmodule RailWeb.Components.PlanSheet do
         </section>
 
         <aside
-          id={"#{@prefix}-summary"}
+          id="plan-summary"
           class="order-first @min-[900px]:order-none rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-4"
         >
           <p class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -114,11 +108,10 @@ defmodule RailWeb.Components.PlanSheet do
         placed={@on.placed}
         draft={@on.draft}
         offered={@on.offered}
-        doc={@on.doc}
       />
 
       <div
-        id={"#{@prefix}-files"}
+        id="plan-files"
         phx-hook="PlanLinks"
         class="grid grid-cols-1 gap-8 items-start @min-[900px]:grid-cols-2"
       >
@@ -139,7 +132,7 @@ defmodule RailWeb.Components.PlanSheet do
           <ol class="rounded-xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-200 dark:divide-slate-800">
             <li
               :for={file <- @sheet.files}
-              id={"#{@prefix}-file-#{file.number}"}
+              id={"plan-file-#{file.number}"}
               data-plan-file={file.path}
               class="px-2 py-1 scroll-mt-4 data-linked:bg-slate-100 dark:data-linked:bg-slate-800/50 target:bg-slate-100 dark:target:bg-slate-800/50"
             >
@@ -234,7 +227,7 @@ defmodule RailWeb.Components.PlanSheet do
                   >
                     <.icon name="pi-arrow-bend-down-left" class="size-3.5" />
                     <a
-                      href={"##{@prefix}-file-#{@file_numbers[module.path]}"}
+                      href={"#plan-file-#{@file_numbers[module.path]}"}
                       class="min-w-0 font-mono break-all hover:underline hover:text-slate-900 dark:hover:text-slate-200"
                     >
                       {module.path}
@@ -286,10 +279,10 @@ defmodule RailWeb.Components.PlanSheet do
         :if={@sheet.verification_lines || @sheet.assumptions_lines}
         class="grid grid-cols-1 gap-8 @min-[900px]:grid-cols-2"
       >
-        <section :if={@sheet.verification_lines} id={"#{@prefix}-verification"} class="min-w-0">
+        <section :if={@sheet.verification_lines} id="plan-verification" class="min-w-0">
           <.section_lines lines={@sheet.verification_lines} on={@on} target={@target} />
         </section>
-        <section :if={@sheet.assumptions_lines} id={"#{@prefix}-assumptions"} class="min-w-0">
+        <section :if={@sheet.assumptions_lines} id="plan-assumptions" class="min-w-0">
           <.section_lines lines={@sheet.assumptions_lines} on={@on} target={@target} />
         </section>
       </div>

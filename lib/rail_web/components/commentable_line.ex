@@ -10,7 +10,7 @@ defmodule RailWeb.Components.CommentableLine do
     default: nil,
     doc: "a line from `build_document_blocks/1`, `build_plan_sheet/1` or `build_fix_plan_lines/1`"
 
-  attr :doc, :atom, required: true, values: [:ticket, :plan, :fix_plan, :split_part]
+  attr :doc, :atom, required: true, values: [:ticket, :plan, :fix_plan]
   attr :layout, :atom, default: :text, values: [:text, :code, :table_row, :summary, :node, :values]
   attr :placed, :map, required: true, doc: "each line's comments with their tray numbers, by its key"
   attr :draft, :map, default: nil, doc: "the line the comment box is open under, with what is typed so far"
