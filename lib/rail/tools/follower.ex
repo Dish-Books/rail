@@ -13,9 +13,9 @@ defmodule Rail.Tools.Follower do
   subagent drove: a tab left open for a round that is over is memory every other
   task's tabs share.
 
-  A check run is over once its turn's result is in: a CLI still running a short
-  grace later is waiting on something the agent left behind, such as an app
-  server, and its sandbox is ended so the run settles.
+  An agent's turn is over once its result is in: a CLI still running a short
+  grace later is stuck on something the agent left behind, and its sandbox is
+  ended so the run settles.
   """
   use GenServer, restart: :transient
 
@@ -54,8 +54,6 @@ defmodule Rail.Tools.Follower do
   @memory_top 3
   # Wrappers that say nothing about what a process belongs to.
   @plumbing ["sh", "bash", "dash", "zsh", "env", "timeout", "docker-init", "tini"]
-  # Check runs start no subagents, so nothing they leave running after their result is worth the CLI's wait.
-  @checks [:qa, :review, :screens, :demo]
   @default_result_grace 10_000
 
   defstruct [
@@ -88,7 +86,6 @@ defmodule Rail.Tools.Follower do
     stop_reason: :stopped,
     timed_out?: false,
     oom_killed?: false,
-    ends_on_result?: false,
     ended_after_result?: false,
     partial_line: "",
     pending_events: []
@@ -127,7 +124,7 @@ defmodule Rail.Tools.Follower do
 
   @impl true
   def init({%OsProcess{} = os_process, opts}) do
-    %OsProcess{stream_path: stream_path, run: %Run{role: %Role{cli: cli, stage: stage}} = run} = os_process
+    %OsProcess{stream_path: stream_path, run: %Run{role: %Role{cli: cli}} = run} = os_process
 
     tail_interval_ms = Keyword.get(opts, :tail_interval_ms, @default_tail_interval)
     batch_interval_ms = Keyword.get(opts, :batch_interval_ms, @default_batch_interval)
@@ -149,7 +146,6 @@ defmodule Rail.Tools.Follower do
       port: Keyword.get(opts, :port),
       event_state: event_state,
       deadline_at: os_process.deadline_at,
-      ends_on_result?: os_process.kind == :agent and stage in @checks,
       result_grace_ms: Keyword.get(opts, :result_grace_ms, @default_result_grace),
       tail_interval_ms: tail_interval_ms,
       batch_interval_ms: batch_interval_ms,
@@ -248,7 +244,8 @@ defmodule Rail.Tools.Follower do
 
   defp past_deadline?(%__MODULE__{}), do: false
 
-  defp note_result(%__MODULE__{ends_on_result?: true, result_at: nil, event_state: %{saw_result: true}} = state) do
+  # Only an agent's stream has a result; a command's state never sees one.
+  defp note_result(%__MODULE__{result_at: nil, event_state: %{saw_result: true}} = state) do
     %{state | result_at: System.monotonic_time(:millisecond)}
   end
 

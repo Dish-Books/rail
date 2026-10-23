@@ -127,9 +127,9 @@ defmodule Rail.Pipeline.Actions.StartCheckRun do
     "You never change it: no edits, no tests written, and no commit, push, merge or rebase. Nobody relays for you and you hand work to nobody. The worktree is #{worktree_path} and every path you touch is under it. Other agents share this repository, so never work in the main checkout and never touch another worktree. Nothing under #{scratch_path} is part of the change."
   end
 
-  # A Bash background task holds the CLI open after the turn, so the server is detached from the shell instead.
+  # Bash has no background tasks here, and a server run in the foreground holds the command until its timeout.
   defp browser(name, scratch_path) do
-    "Call `browser_connect` for it: yours is named `#{name}`, signed in as its own fresh account, and is the one every browser tool uses when you name none. Other agents drive the same app from browsers of their own at the same time: check whether it already answers at its address before you start a server, and leave the server running when you finish. Start a server detached from your shell, in a foreground command such as `nohup pnpm dev > #{Path.join(scratch_path, "server.log")} 2>&1 &`, and never with the Bash tool's `run_in_background`."
+    "Call `browser_connect` for it: yours is named `#{name}`, signed in as its own fresh account, and is the one every browser tool uses when you name none. Other agents drive the same app from browsers of their own at the same time: check whether it already answers at its address before you start a server, and leave the server running when you finish. Start a server detached from your shell, in a foreground command such as `nohup pnpm dev > #{Path.join(scratch_path, "server.log")} 2>&1 &`, so the command returns while it keeps running."
   end
 
   defp pictures do
