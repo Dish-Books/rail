@@ -1544,15 +1544,14 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(one, "#plan-section-ticket-status", "Being written")
+      assert has_element?(one, "#plan-tab-ticket-working")
       assert has_element?(one, "#plan-ticket-pending", "Writing the ticket")
 
       save_ticket.()
 
       for view <- [one, two] do
         _settled = render(view)
-        assert has_element?(view, "#plan-section-ticket-status", "4 criteria · saved")
-        assert has_element?(view, "#plan-section-ticket-saved[phx-hook='LocalTime']")
+        refute has_element?(view, "#plan-tab-ticket-working")
         assert has_element?(view, "#plan-section-ticket [data-qa='plan_ticket']", "Slow.")
       end
 
@@ -1560,7 +1559,7 @@ defmodule RailWeb.TaskLiveTest do
 
       for view <- [one, two] do
         _settled = render(view)
-        assert has_element?(view, "#plan-section-design-status", "1 of 3 saved")
+        assert has_element?(view, "#plan-tab-design-working")
         assert has_element?(view, "#plan-section-ticket [data-qa='plan_ticket']", "Slow.")
         assert has_element?(view, "#plan-section-design #design-tab-cards", "Cards")
         assert has_element?(view, "#plan-section-design #design-tab-building-2", "Being built")
@@ -1571,7 +1570,6 @@ defmodule RailWeb.TaskLiveTest do
 
       for view <- [one, two] do
         _settled = render(view)
-        assert has_element?(view, "#plan-section-plan-status", "saved")
         assert has_element?(view, "#plan-section-plan [data-qa='plan_plan']")
         refute has_element?(view, "#task-approve-plan")
       end
@@ -1590,7 +1588,7 @@ defmodule RailWeb.TaskLiveTest do
 
       save_ticket.()
       _settled = render(view)
-      assert has_element?(view, "#plan-section-design-status", "Not saved yet")
+      assert has_element?(view, "#plan-tab-design-working")
       assert has_element?(view, "#plan-section-ticket [data-qa='plan_ticket']", "Slow.")
 
       {:ok, stopped} = Pipeline.update_run(working, %{status: :finished})
@@ -1624,7 +1622,7 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(view, "[data-qa='task_status_chip']", "Pick a design")
-      assert has_element?(view, "#plan-section-design-status", "Pick one of 3")
+      assert has_element?(view, "#plan-tab-design-waiting")
       refute has_element?(view, "#task-approve-plan")
 
       view |> element("#design-tab-table") |> render_click()
@@ -1634,7 +1632,7 @@ defmodule RailWeb.TaskLiveTest do
 
       assert File.read!(Path.join(dir, "picked")) == "table"
       assert Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ ~r/^\[human:[^\]]+\] I picked Table \(table\)\.$/))
-      assert has_element?(view, "#plan-section-design-status", "Picked: Table")
+      refute has_element?(view, "#plan-tab-design-waiting")
       assert has_element?(view, "#plan-section-design #design-option-table", "Picked")
       assert has_element?(view, "#design-costs", "Busy at 1280px")
       assert has_element?(view, "#design-assumptions", "Ten per page.")
@@ -1658,10 +1656,10 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("#pick-design-table") |> render_click()
 
       assert has_element?(view, "#plan-section-design #design-option-table", "Picked")
-      assert has_element?(view, "#plan-section-plan-status", "Revising for the pick")
+      assert has_element?(view, "#plan-tab-plan-working")
     end
 
-    test "the ticket, the design and the plan read one under another, and coming back to the Plan item shows them again",
+    test "the ticket, the design and the plan are tabs, and coming back to the Plan item shows them again",
          %{
            conn: conn,
            task: task,
@@ -1681,6 +1679,13 @@ defmodule RailWeb.TaskLiveTest do
                |> Floki.find("#plan-pane [data-qa='plan_section']")
                |> Floki.attribute("id")
 
+      assert ["plan-tab-ticket", "plan-tab-design", "plan-tab-plan"] =
+               view
+               |> render()
+               |> Floki.parse_document!()
+               |> Floki.find("#plan-pane [data-qa='plan_tab']")
+               |> Floki.attribute("id")
+
       assert has_element?(view, "#plan-section-ticket [data-qa='plan_ticket']", "Slow.")
       assert has_element?(view, "#plan-section-design #design-tab-cards", "Cards")
       assert has_element?(view, "#plan-section-plan #plan-plan-pending")
@@ -1690,7 +1695,7 @@ defmodule RailWeb.TaskLiveTest do
 
       view |> element("#review-item-plan") |> render_click()
       assert has_element?(view, "#plan-section-ticket [data-qa='plan_ticket']", "Slow.")
-      assert has_element?(view, "#plan-section-design-status", "Pick one of 3")
+      assert has_element?(view, "#plan-tab-design-waiting")
     end
 
     test "a pick of another option than the plan's says it is being revised, and offers no Approve", %{
@@ -1710,7 +1715,7 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      assert has_element?(view, "#plan-section-plan-status", "Revising for the pick")
+      assert has_element?(view, "#plan-tab-plan-working")
 
       assert has_element?(
                view,
@@ -1723,7 +1728,7 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, _stopped} = Pipeline.update_run(working, %{status: :finished})
       send(view.pid, :task_changed)
 
-      assert has_element?(view, "#plan-section-plan-status", "Written for Cards, not Table")
+      refute has_element?(view, "#plan-tab-plan-working")
       assert has_element?(view, "#plan-revising", "Not yet revised for Table. Below is the plan written for Cards.")
 
       # The header's Approve is offered on any saved plan, and says why this one cannot be approved.
@@ -1889,11 +1894,11 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "[data-qa='task_status_chip']", "Plan failed")
       assert has_element?(view, "[data-qa='task_error_card']", error)
-      assert has_element?(view, "#plan-section-design-status", "2 of 3 saved: needs 3")
+      refute has_element?(view, "#plan-tab-design-waiting")
       assert has_element?(view, "#plan-section-design #design-tab-missing-3", "Not saved")
       assert has_element?(view, "#pick-in-conversation", "Pick in the conversation.")
       refute has_element?(view, "#pick-design-cards")
-      assert has_element?(view, "#plan-section-plan-status", "Not saved yet")
+      assert has_element?(view, "#plan-section-plan #plan-plan-pending")
     end
 
     test "a stopped Plan run says how to pick it up: a message when it has a conversation, Retry when it has none", %{
@@ -1934,7 +1939,7 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "[data-qa='task_status_chip']", "Review the plan")
       assert has_element?(view, "#plan-section-ticket [data-qa='plan_ticket']", "Slow.")
-      assert has_element?(view, "#plan-section-design-status", "No screen in this change")
+      refute has_element?(view, "#plan-tab-design-waiting")
       assert has_element?(view, "#task-approve-plan")
       assert has_element?(view, "#plan-section-design #plan-design-none", "No screen in this change")
       assert has_element?(view, "#plan-section-plan [data-qa='plan_plan']", "For nobody.")
@@ -1966,7 +1971,7 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "[data-qa='subagent-transcript']")
     end
 
-    test "a plan in the sheet's sections lays out as cards with no diagrams, and the item counts its files", %{
+    test "a plan in the sheet's sections lays out as cards with no diagrams", %{
       conn: conn,
       task: task,
       save_ticket: save_ticket
@@ -1976,7 +1981,6 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      assert has_element?(view, "#plan-section-plan-status", "5 files · saved")
       assert has_element?(view, "#plan-plan #plan-sheet #plan-group-pipeline #plan-card-1")
       refute has_element?(view, "#plan-plan figure")
       refute has_element?(view, "#plan-plan button[phx-value-view]")
