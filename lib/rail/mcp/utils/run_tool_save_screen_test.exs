@@ -47,14 +47,22 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
     expect(Tools, :start_browser_session, fn _task, "explorer-1", [{:existing, true} | _opts] -> {:ok, self()} end)
     short = String.slice(head, 0, 7)
 
-    assert {:ok, %{"content" => [%{"text" => "Saved as screens/file-list/" <> said}]}} =
+    picture = Base.encode64("jpeg bytes")
+
+    assert {:ok,
+            %{
+              "content" => [
+                %{"type" => "text", "text" => "Saved as screens/file-list/" <> said},
+                %{"type" => "image", "data" => ^picture, "mimeType" => "image/jpeg"}
+              ]
+            }} =
              Mcp.call_run_tool(context, "save_screen", %{
                "key" => "file-list",
                "label" => " File list just after Send ",
                "browser" => "explorer-1"
              })
 
-    assert said =~ ".jpg, the image of file-list on #{short}."
+    assert said =~ ".jpg, the image of file-list on #{short}, and the picture is attached."
     refute said =~ "back at its own width"
 
     assert [%{key: "file-list", label: "File list just after Send", commit: ^head, browser: "explorer-1"}] =
@@ -67,7 +75,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
 
     assert {:ok, _first} = Mcp.call_run_tool(context, "save_screen", arguments)
 
-    assert {:ok, %{"content" => [%{"text" => "Saved as " <> said}]}} =
+    assert {:ok, %{"content" => [%{"text" => "Saved as " <> said}, _picture]}} =
              Mcp.call_run_tool(context, "save_screen", %{arguments | "label" => "File list again"})
 
     [file, _rest] = String.split(said, ", the image", parts: 2)
@@ -130,10 +138,10 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
     stub(Tools, :start_browser_session, fn _task, "explorer-1", _opts -> {:ok, self()} end)
 
     expect(Tools, :capture_browser_evidence, fn _session, _task, "File list", [key: "file-list", width: 390] ->
-      {:ok, "screens/file-list/1.jpg"}
+      {:ok, "screens/file-list/1.jpg", "jpeg bytes"}
     end)
 
-    assert {:ok, %{"content" => [%{"text" => "Saved as screens/file-list/1.jpg" <> said}]}} =
+    assert {:ok, %{"content" => [%{"text" => "Saved as screens/file-list/1.jpg" <> said}, _picture]}} =
              Mcp.call_run_tool(context, "save_screen", %{
                "key" => "file-list",
                "label" => "File list",
@@ -141,7 +149,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
                "width" => 390
              })
 
-    # Clearing Rail's width also ends one an explorer's script set, which the script then has to set again.
+    # Clearing Rail's width also ends one QA's script set, which the script then has to set again.
     assert said =~ "The tab is back at its own width now, so a script holding a resize has to set it again."
   end
 
@@ -149,10 +157,10 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
     stub(Tools, :start_browser_session, fn _task, "explorer-1", _opts -> {:ok, self()} end)
 
     expect(Tools, :capture_browser_evidence, fn _session, _task, "File list", [key: "file-list", width: nil] ->
-      {:ok, "screens/file-list/1.jpg"}
+      {:ok, "screens/file-list/1.jpg", "jpeg bytes"}
     end)
 
-    assert {:ok, %{"content" => [%{"text" => "Saved as screens/file-list/1.jpg" <> _rest}]}} =
+    assert {:ok, %{"content" => [%{"text" => "Saved as screens/file-list/1.jpg" <> _rest}, _picture]}} =
              Mcp.call_run_tool(context, "save_screen", %{
                "key" => "file-list",
                "label" => "File list",

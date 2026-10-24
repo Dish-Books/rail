@@ -345,11 +345,19 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     assert is_pid(Tools.get_browser_recording(task))
   end
 
-  # Rail names the file, so nothing arriving from a model becomes a path.
-  test "a screenshot is described rather than located", %{context: context, task: task} do
-    assert {:ok, %{"content" => [%{"text" => "Saved as shots/the-bill-total-as-rendered-" <> _rest}]}} =
+  # Rail names the file, so nothing arriving from a model becomes a path, and the picture comes back with
+  # the reply, so the agent checks it without a second call to read the file.
+  test "a screenshot is described rather than located, and attached", %{context: context, task: task} do
+    assert {:ok,
+            %{
+              "content" => [
+                %{"type" => "text", "text" => "Saved as shots/the-bill-total-as-rendered-" <> _rest},
+                %{"type" => "image", "mimeType" => "image/jpeg", "data" => data}
+              ]
+            }} =
              Mcp.call_run_tool(context, "qa_shot", %{"name" => "The bill total as rendered", "browser" => "explorer-1"})
 
+    assert {:ok, _jpeg} = Base.decode64(data)
     assert [_saved] = Path.wildcard(Path.join([task.scratch_path, "qa", "shots", "the-bill-total-as-rendered-*.jpg"]))
   end
 

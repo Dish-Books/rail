@@ -72,6 +72,15 @@ defmodule Rail.Pipeline.Utils.CheckRunFinishedTest do
     refute_received {:started, _stage, _resumed}
   end
 
+  # A round that changed nothing a person sees skipped QA, so the code reviewer is the last check.
+  test "the code reviewer's finish starts the review agent when QA was skipped", %{task: task, runs: runs} do
+    {:ok, _skipped} = Pipeline.update_run(runs.qa, %{stage_outcome: :skipped})
+    {:ok, _saved} = Pipeline.save_report(task, :review, "Nothing to report.")
+
+    assert %Run{stage_outcome: :done} = check_run_finished(runs.review, [])
+    assert_received {:started, :review_lead, false}
+  end
+
   # The demo started beside the others, and the review agent does not wait on it.
   test "a round whose plan asks for a demo starts the review agent without it", %{
     task: task,

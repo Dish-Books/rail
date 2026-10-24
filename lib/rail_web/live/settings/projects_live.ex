@@ -536,6 +536,25 @@ defmodule RailWeb.Settings.ProjectsLive do
                 </p>
               </div>
 
+              <div>
+                <label
+                  for="project-qa-skip-paths-input"
+                  class="block text-sm font-medium text-slate-900 dark:text-slate-100"
+                >
+                  Files Nobody Sees
+                </label>
+                <textarea
+                  name="project[qa_skip_paths]"
+                  id="project-qa-skip-paths-input"
+                  rows="4"
+                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm font-mono focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                >{Enum.join(Ecto.Changeset.get_field(@changeset, :qa_skip_paths) || [], "\n")}</textarea>
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  One glob to a line, from the repository's root, such as <code>**/*_test.exs</code>. A round after the first
+                  that changed only these files gets the code reviewer but no QA or demo. Leave empty to run them every round.
+                </p>
+              </div>
+
               <div class="flex items-center space-x-2 pt-2">
                 <input type="hidden" name="project[active]" value="false" />
                 <input

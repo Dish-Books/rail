@@ -27,6 +27,7 @@ defmodule Rail.Git do
   defdelegate load_branch_history(task, rounds \\ []), to: Actions.LoadBranchHistory
   defdelegate branch_unpushed?(worktree_path), to: Actions.BranchUnpushed
   defdelegate commits_since(worktree_path, sha), to: Actions.CommitsSince
+  defdelegate list_round_paths(task, round_change), to: Actions.ListRoundPaths
   defdelegate base_status(worktree_path, base_branch), to: Actions.BaseStatus
   defdelegate branch_changed?(task), to: Actions.BranchChanged
   defdelegate push_branch(scope, task), to: Actions.PushBranch

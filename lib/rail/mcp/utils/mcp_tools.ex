@@ -199,8 +199,8 @@ defmodule Rail.Mcp.Utils.McpTools do
       "name" => "qa_shot",
       "description" =>
         "Photograph the page and save it in the QA folder. Say what the picture is of; Rail names the file " <>
-          "and returns its path, which goes in your report for a finding's evidence: the path, never " <>
-          "the picture. Take it at the point a check asserts something on screen, not after every keystroke. A " <>
+          "and returns its path with the picture attached, so you check it in the same turn. The path goes in " <>
+          "your report for a finding's evidence: the path, never the picture. Take it at the point a check asserts something on screen, not after every keystroke. A " <>
           "picture all one color is refused and nothing is saved.",
       "inputSchema" => %{
         "type" => "object",
@@ -218,7 +218,7 @@ defmodule Rail.Mcp.Utils.McpTools do
         "Photograph one screen state the change affects and save it as that state's image for HEAD's commit. It " <>
           "replaces the state's earlier picture each round. Take it of the state as the change leaves it, under the " <>
           "same `key` every round. Refused while the worktree has uncommitted changes, and for a picture all one color, " <>
-          "which keeps the earlier one. Returns the path, which a finding can cite as evidence.",
+          "which keeps the earlier one. Returns the path, which a finding can cite as evidence, with the picture attached.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{

@@ -117,7 +117,7 @@ defmodule Rail.Pipeline.Actions.StartCheckRun do
 
   defp pictures do
     String.trim("""
-    - Read every picture you save before you rely on it. Write one line of what it shows first, then compare that line with its name or label: the screen, the state it is in and the width. Take one that does not match again, once: half loaded, a sign-in page, another screen or the wrong width.
+    - Every picture you save comes back attached to the tool's reply, so check it in that same turn, without reading the file. Write one line of what it shows first, then compare that line with its name or label: the screen, the state it is in and the width. Take one that does not match again, once: half loaded, a sign-in page, another screen or the wrong width.
     - Take a narrow picture by passing `width`, from 320 to 1920. A script's resize is gone once the script closes, and after a picture with a `width` the tab is back at its own width.
     - Rail refuses a picture all one color and saves nothing. A page that really renders blank is what you report, with its URL and the steps that reach it.
     """)

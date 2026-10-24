@@ -6,6 +6,7 @@ defmodule RailWeb.Live.TaskActions do
     it, also after its owner started it, while a "Plan not approved" chip says it has not been. At Plan, Approve
     waits on the lead's own unsent plan comments, which approving would delete;
   - a branch the default branch has moved past: Update, which merges it in as a round of its own;
+  - a round QA skipped as changing nothing a person sees: Run QA anyway;
   - a review with nothing left to fix: Ready for review, then a tech lead's Approve and Merge, none of them while
     the review agent works or its fix plan waits.
 
@@ -69,6 +70,18 @@ defmodule RailWeb.Live.TaskActions do
         title={@failed.error}
       >
         <.icon name="pi-arrow-clockwise" class="size-4" />Retry {@failed.role.name}
+      </.button>
+
+      <.button
+        :if={@skipped}
+        id="task-run-qa"
+        phx-click="retry"
+        phx-value-run={@skipped.id}
+        phx-target={@myself}
+        phx-disable-with="Starting…"
+        title="This round changed only files nobody sees in the app, so QA did not run on it."
+      >
+        <.icon name="pi-play" class="size-4" />Run QA anyway
       </.button>
 
       <span
@@ -378,6 +391,7 @@ defmodule RailWeb.Live.TaskActions do
     |> assign(:state, state)
     |> assign(:plan_run, plan_run(task))
     |> assign(:failed, failed_run(task))
+    |> assign(:skipped, skipped_run(task))
     |> assign(:plan, plan_actions(task, socket.assigns[:rounds] || Pipeline.list_rounds(task), scope, tech_lead))
     |> assign_unsent_comments()
     |> assign(:update, task.stage in [:review, :finalize] and task.base_behind and is_nil(task.cleaned_up_at))
@@ -404,6 +418,13 @@ defmodule RailWeb.Live.TaskActions do
   end
 
   defp failed_run(%Task{}), do: nil
+
+  # QA skipped on a round that changed nothing a person sees, which a person may still want walked.
+  defp skipped_run(%Task{runs: runs, stage: :review} = task) when is_list(runs) do
+    if not Task.running?(task), do: Enum.find(runs, &(&1.role.stage == :qa and &1.stage_outcome == :skipped))
+  end
+
+  defp skipped_run(%Task{}), do: nil
 
   # What the initial plan asks of this reader. Its owner sends it or starts it; a tech lead approves it once sent,
   # straight away when they own it, and later when the owner started it without approval.

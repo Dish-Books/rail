@@ -444,6 +444,37 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     assert %Project{account_seed_command: nil} = Repo.get!(Project, project_id)
   end
 
+  test "edits the files nobody sees one glob to a line, starting from tests and docs", %{
+    admin_conn: conn,
+    admin_user: admin
+  } do
+    assert {:ok,
+            %Project{id: project_id, qa_skip_paths: ["**/*_test.exs", "**/test/**", "**/*.test.{ts,tsx,js}", "**/*.md"]}} =
+             Projects.create_project(Scope.for_user(admin), %{
+               name: "Unseen App",
+               github_repo: "example/unseen-#{System.unique_integer([:positive])}",
+               github_installation_id: 337,
+               key: "UNS",
+               default_branch: "main",
+               clone_path: "/tmp/unseen"
+             })
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+    view |> element("#edit-project-#{project_id}") |> render_click()
+    assert view |> element("#project-qa-skip-paths-input") |> render() =~ "**/*_test.exs\n**/test/**"
+
+    view
+    |> form("#project-form", %{"project" => %{"qa_skip_paths" => " spec/**\n\n**/*.md \n"}})
+    |> render_submit()
+
+    assert %Project{qa_skip_paths: ["spec/**", "**/*.md"]} = Repo.get!(Project, project_id)
+
+    view |> element("#edit-project-#{project_id}") |> render_click()
+    view |> form("#project-form", %{"project" => %{"qa_skip_paths" => ""}}) |> render_submit()
+
+    assert %Project{qa_skip_paths: []} = Repo.get!(Project, project_id)
+  end
+
   test "links a project to a Linear workspace picked from the list", %{
     admin_conn: conn,
     admin_user: admin,

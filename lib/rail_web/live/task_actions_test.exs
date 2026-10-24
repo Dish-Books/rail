@@ -861,6 +861,30 @@ defmodule RailWeb.Live.TaskActionsTest do
     end
   end
 
+  describe "a round QA skipped" do
+    # The round changed only files nobody sees in the app, which a person may still want walked.
+    test "offers Run QA anyway, which starts it", %{conn: conn, project: project, task: task, dan: dan} do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+      {:ok, qa} = Roles.get_role(project_id: project.id, stage: :qa)
+
+      {:ok, %{id: run_id}} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: qa.id,
+          status: :finished,
+          stage_outcome: :skipped,
+          started_at: DateTime.utc_now()
+        })
+
+      expect(Pipeline, :retry_run, fn _scope, %{id: ^run_id} = run -> {:ok, run} end)
+
+      assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
+      refute has_element?(view, "#task-retry")
+
+      view |> element("#task-run-qa", "Run QA anyway") |> render_click()
+    end
+  end
+
   describe "the initial plan at Plan" do
     setup %{project: project, dan: dan} do
       task = learnings_task(project, "TAT-2", :plan)

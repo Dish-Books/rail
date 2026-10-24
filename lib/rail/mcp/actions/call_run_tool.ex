@@ -22,6 +22,9 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   `[qa]`, `[demo]` - so driving the page reads apart from reporting on it. A
   save or a round of questions is not logged at all: the transcript already shows the call.
 
+  A tool that photographs the page answers with the picture as an image block
+  beside its text.
+
   A refusal is the agent's to fix, so it comes back as one sentence naming each
   field; any other failure is Rail's own, and is said to be.
   """
@@ -106,6 +109,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
 
         case result do
           {:ok, text} -> {:ok, %{"content" => [%{"type" => "text", "text" => text}]}}
+          {:ok, text, picture} -> {:ok, %{"content" => [%{"type" => "text", "text" => text}, image(picture)]}}
           {:refused, text} -> {:error, {:refused, text}}
           {:error, reason} -> {:error, {:rail_failed, reason}}
         end
@@ -114,6 +118,9 @@ defmodule Rail.Mcp.Actions.CallRunTool do
         {:error, {:rail_failed, reason}}
     end
   end
+
+  # A picture rides in the reply itself, so the agent sees it without a second call to read the file.
+  defp image(jpeg), do: %{"type" => "image", "data" => Base.encode64(jpeg), "mimeType" => "image/jpeg"}
 
   defp refusal({:error, %Ecto.Changeset{} = changeset}), do: {:refused, sentence(changeset)}
   defp refusal(result), do: result
