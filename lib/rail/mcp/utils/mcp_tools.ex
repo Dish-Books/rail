@@ -505,9 +505,12 @@ defmodule Rail.Mcp.Utils.McpTools do
           "approves it in Rail, which starts an engineer on it. Markdown: a short summary, then `### What changes` " <>
           "with a `#### `key`` for each finding to fix, by its key in backticks, and a `#### Comment N` for each " <>
           "comment the human sent, by its " <>
-          "number, each saying what will change or why nothing will. Then `### File-level changes`, one bullet per " <>
-          "file starting with its path in backticks, each ending with the item it is " <>
-          "for: the finding's key in backticks or `comment N`. Then `### Verification`. Leave out the last two when " <>
+          "number, each saying what will change or why nothing will. Then `### File-level changes`, a card per file " <>
+          "as the first plan's `### Changes` has: a `#### `path`` heading, followed by `deleted` when the file goes; " <>
+          "a sentence or two on what changes in it, naming the item it is for by the finding's key in backticks or " <>
+          "`comment N`; then, when it adds or changes public functions, one fenced block of their signatures; then, " <>
+          "when there is code the fix turns on, one fenced block marked `sketch`, such as ```elixir sketch, holding " <>
+          "only that code. Then `### Verification`. Leave out the last two when " <>
           "nothing will change, but save no plan in which nothing changes: name the findings to rule Skip instead. " <>
           "A `### Changes to the plan` section comes first when the human asked to change the " <>
           "ticket, its criteria or the first plan. A plan that leaves out a finding to fix or a comment is refused " <>

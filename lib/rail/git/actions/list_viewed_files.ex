@@ -1,6 +1,6 @@
 defmodule Rail.Git.Actions.ListViewedFiles do
   @moduledoc """
-  The files this reader has marked read on a task's diff, or the cards on its plan.
+  The files this reader has marked read on a task's diff, or the cards on its plan or fix plan.
   """
 
   import Ecto.Query

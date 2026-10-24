@@ -278,7 +278,7 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlanTest do
   end
 
   describe "validate_file_changes/2 and build_file_changes/1" do
-    test "check and number the File-level changes of a fix plan as of an architect plan" do
+    test "read a fix plan's File-level changes as cards, as a plan's Changes" do
       fix_plan = """
       Two changes.
 
@@ -290,8 +290,21 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlanTest do
 
       ### File-level changes
 
-      - `lib/a.ex`: guards nil. For `nil-crash`.
-      - `lib/a_test.exs`
+      #### `lib/a.ex`
+
+      Guards nil. For `nil-crash`.
+
+      ```elixir
+      def guard(value)
+      ```
+
+      ```elixir sketch
+      def guard(nil), do: :error
+      ```
+
+      #### `lib/old.ex` deleted
+
+      Nothing calls it. For `nil-crash`.
       """
 
       changeset =
@@ -300,35 +313,59 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlanTest do
       assert changeset.valid?
 
       assert [
-               %{number: 1, path: "lib/a.ex", description: "guards nil. For `nil-crash`."},
-               %{number: 2, path: "lib/a_test.exs"}
-             ] =
-               ImplementationPlan.build_file_changes(fix_plan)
+               %{
+                 path: "lib/a.ex",
+                 deleted?: false,
+                 prose: "Guards nil. For `nil-crash`.",
+                 signatures: "```elixir\ndef guard(value)\n```",
+                 sketch: "```elixir sketch\ndef guard(nil), do: :error\n```"
+               },
+               %{path: "lib/old.ex", deleted?: true, signatures: nil, sketch: nil}
+             ] = ImplementationPlan.build_file_changes(fix_plan)
     end
 
-    test "refuse a list that does not lay out, and take markdown with no such section as it is" do
-      bad = "### File-level changes\n\n- `lib/a.ex`: guards it.\n\n```elixir\n:ok\n```\n"
+    test "read a fix plan saved as bullets before cards as a card of prose per bullet" do
+      bullets = "### File-level changes\n\n- `lib/a.ex`: guards nil. For `nil-crash`.\n- `lib/a_test.exs`\n"
+
+      assert [
+               %{path: "lib/a.ex", deleted?: false, prose: "guards nil. For `nil-crash`.", sketch: nil},
+               %{path: "lib/a_test.exs", prose: ""}
+             ] = ImplementationPlan.build_file_changes(bullets)
+
+      assert ImplementationPlan.build_file_changes("### File-level changes\n\n- [ ] `lib/a.ex`: guards it.\n") == nil
 
       changeset =
-        {%{}, %{plan: :string}} |> cast(%{plan: bad}, [:plan]) |> ImplementationPlan.validate_file_changes(:plan)
+        {%{}, %{plan: :string}} |> cast(%{plan: bullets}, [:plan]) |> ImplementationPlan.validate_file_changes(:plan)
 
-      assert %{plan: ["does not lay out its `### File-level changes`" <> _how]} = errors_on(changeset)
-      assert ImplementationPlan.build_file_changes(bad) == nil
+      assert %{plan: ["needs `### File-level changes` to be a `#### `path/to/file`` card" <> _rest]} =
+               errors_on(changeset)
+    end
 
-      sub = "### File-level changes\n\n- `lib/a.ex`: guards it.\n  - and more\n"
+    test "refuse cards that do not lay out, and take markdown with no such section as it is" do
+      two =
+        "### File-level changes\n\n#### `lib/a.ex`\n\nGuards it.\n\n```elixir sketch\n:ok\n```\n\n```elixir sketch\n:ok\n```\n"
 
       changeset =
-        {%{}, %{plan: :string}} |> cast(%{plan: sub}, [:plan]) |> ImplementationPlan.validate_file_changes(:plan)
+        {%{}, %{plan: :string}} |> cast(%{plan: two}, [:plan]) |> ImplementationPlan.validate_file_changes(:plan)
 
-      assert %{plan: ["has sub-bullets" <> _rest]} = errors_on(changeset)
+      assert %{plan: ["has more than one code block of a kind under `#### `lib/a.ex``" <> _rest]} = errors_on(changeset)
+
+      bare = "### File-level changes\n\n#### lib/a.ex\n\nGuards it.\n"
+
+      changeset =
+        {%{}, %{plan: :string}} |> cast(%{plan: bare}, [:plan]) |> ImplementationPlan.validate_file_changes(:plan)
+
+      assert %{plan: ["has a heading under `### File-level changes` that is not" <> _rest]} = errors_on(changeset)
 
       empty = "### File-level changes\n\n### Verification\n\nRun it."
 
       changeset =
         {%{}, %{plan: :string}} |> cast(%{plan: empty}, [:plan]) |> ImplementationPlan.validate_file_changes(:plan)
 
-      assert %{plan: ["has nothing under `### File-level changes`" <> _rest]} = errors_on(changeset)
-      assert ImplementationPlan.build_file_changes("### File-level changes\n\n- [ ] `lib/a.ex`: guards it.\n") == nil
+      assert %{plan: ["needs `### File-level changes` to be a `#### `path/to/file`` card" <> _rest]} =
+               errors_on(changeset)
+
+      assert ImplementationPlan.build_file_changes(empty) == nil
 
       none = "### What changes\n\nNothing."
 

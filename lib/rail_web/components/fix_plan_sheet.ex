@@ -2,8 +2,8 @@ defmodule RailWeb.Components.FixPlanSheet do
   @moduledoc """
   A fix round's plan laid out for approval: the changes to the ticket or the design a person asked for, called out
   first, its summary, What changes with an item per finding and comment the plan
-  covers, In this plan beside it, then File-level changes, numbered, and Verification. While it
-  waits on approval, any line of its text takes a comment through the + beside it, as the plan's do.
+  covers, In this plan beside it, then File-level changes as the plan's cards, and Verification. While it waits on
+  approval, any line of its text takes a comment through the + beside it, as the plan's do.
   """
   use RailWeb, :html
 
@@ -17,6 +17,22 @@ defmodule RailWeb.Components.FixPlanSheet do
   attr :offered, :boolean, default: false, doc: "the reader can comment now"
   attr :target, :any, default: nil
 
+  attr :reviewed, :map,
+    default: nil,
+    doc: "the reader's marks on this round's cards, each card's path to the digest it had when marked"
+
+  attr :default_paths, :any,
+    default: nil,
+    doc: "the cards' paths on the default branch, or nil when the clone could not say"
+
+  attr :diff_paths, :any,
+    default: nil,
+    doc: "the cards' paths the task's branch already changed, which open in the Diff item"
+
+  attr :project, :any,
+    default: nil,
+    doc: "whose GitHub repository and default branch a path links to, with `default_paths`"
+
   def fix_plan_sheet(assigns) do
     %{counts: counts} = assigns.sheet
 
@@ -24,6 +40,7 @@ defmodule RailWeb.Components.FixPlanSheet do
       assigns
       |> assign(:sheet, build_fix_plan_lines(assigns.sheet))
       |> assign(:comment_attrs, Map.take(assigns, [:placed, :draft, :offered, :target]))
+      |> assign(:on, %{placed: assigns.placed, draft: assigns.draft, offered: assigns.offered, doc: :fix_plan})
       |> assign(:covered, covered(counts, assigns.sheet.items))
       |> assign(:all_named, assigns.sheet.files != [])
 
@@ -110,11 +127,12 @@ defmodule RailWeb.Components.FixPlanSheet do
                   class="mt-1 text-[11.5px] text-slate-500 dark:text-slate-400"
                 >
                   {if length(item.files) == 1, do: "File", else: "Files"}
-                  <span :for={{number, index} <- Enum.with_index(item.files)}>{if index > 0,
+                  <span :for={{file, index} <- Enum.with_index(item.files)}>{if index > 0,
                     do: ", "}<a
-                    href={"#plan-file-#{number}"}
+                    href={"#fix-plan-card-#{file.number}"}
+                    title={file.path}
                     class="font-mono hover:underline text-blue-600 dark:text-blue-400"
-                  >{number}</a></span>
+                  >{Path.basename(file.path)}</a></span>
                 </p>
               </div>
             </li>
@@ -156,34 +174,27 @@ defmodule RailWeb.Components.FixPlanSheet do
         </aside>
       </div>
 
-      <section :if={@sheet.files != []} class="min-w-0">
-        <div class="mb-2">
-          <.sheet_heading count={length(@sheet.files)} one="file" many="files">
+      <.plan_cards
+        :if={@sheet.cards != []}
+        id="fix-plan-files"
+        base="fix-plan"
+        title_line={@sheet.files_title}
+        groups={@sheet.groups}
+        cards={@sheet.cards}
+        reviewed={@reviewed}
+        default_paths={@default_paths}
+        diff_paths={@diff_paths}
+        project={@project}
+        on={@on}
+        target={@target}
+      >
+        <:heading :let={subtitle}>
+          <.sheet_heading count={length(@sheet.cards)} one="file" many="files">
             File-level changes
           </.sheet_heading>
-        </div>
-        <ol class="rounded-xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-200 dark:divide-slate-800">
-          <li
-            :for={file <- @sheet.files}
-            id={"plan-file-#{file.number}"}
-            class="px-2 py-1 scroll-mt-4 target:bg-slate-100 dark:target:bg-slate-800/50"
-          >
-            <div class="flex gap-3 py-1.5">
-              <span class="w-4 shrink-0 pt-0.5 font-mono text-xs tabular-nums text-slate-400 dark:text-slate-500">
-                {file.number}
-              </span>
-              <div class="min-w-0">
-                <.commentable_line line={file.path_line} doc={:fix_plan} {@comment_attrs}>
-                  <code class="font-mono text-[13px] font-semibold break-all text-slate-900 dark:text-slate-100">
-                    {file.path}
-                  </code>
-                </.commentable_line>
-                <.lines lines={file.description_lines} {@comment_attrs} class="mt-0.5" />
-              </div>
-            </div>
-          </li>
-        </ol>
-      </section>
+          <span class="text-[12.5px] text-slate-500 dark:text-slate-400">{subtitle}</span>
+        </:heading>
+      </.plan_cards>
 
       <section :if={@sheet.verification} class="min-w-0">
         <div class="mb-2">

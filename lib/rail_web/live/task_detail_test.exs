@@ -4,6 +4,7 @@ defmodule RailWeb.Live.TaskDetailTest do
 
   import Phoenix.LiveViewTest
 
+  alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DemoBeat
   alias Rail.Pipeline.Schemas.Finding
@@ -1075,8 +1076,8 @@ defmodule RailWeb.Live.TaskDetailTest do
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
     # The page opened on one of the two, so only the other is read.
-    expect(Rail.Git, :load_diff_hunks, fn scope, task, ranges ->
-      call_original(Rail.Git, :load_diff_hunks, [scope, task, ranges])
+    expect(Git, :load_diff_hunks, fn scope, task, ranges ->
+      call_original(Git, :load_diff_hunks, [scope, task, ranges])
     end)
 
     view |> element("#finding-second") |> render_click()
@@ -1086,8 +1087,8 @@ defmodule RailWeb.Live.TaskDetailTest do
 
     git!(worktree, ["commit", "--allow-empty", "-m", "moved on"])
 
-    expect(Rail.Git, :load_diff_hunks, fn scope, task, ranges ->
-      call_original(Rail.Git, :load_diff_hunks, [scope, task, ranges])
+    expect(Git, :load_diff_hunks, fn scope, task, ranges ->
+      call_original(Git, :load_diff_hunks, [scope, task, ranges])
     end)
 
     view |> element("#finding-first") |> render_click()
@@ -1686,8 +1687,8 @@ defmodule RailWeb.Live.TaskDetailTest do
       plan =
         "Two fixes.\n\n### What changes\n\n#### `view-only-send`\n\nCheck the role.\n\n#### `send-twice`\n\n" <>
           "Disable Send.\n\n#### Comment 1\n\nNamed.\n\n### File-level changes\n\n" <>
-          "- `lib/rail/send.ex`: checks the role. For `view-only-send`.\n" <>
-          "- `lib/rail_web/tray.ex`: disables Send. For `send-twice` and comment 1."
+          "#### `lib/rail/send.ex`\n\nChecks the role. For `view-only-send`.\n\n" <>
+          "#### `lib/rail_web/tray.ex`\n\nDisables Send. For `send-twice` and comment 1."
 
       %{plan: plan, diff: diff, view_only: view_only, twice: twice}
     end
@@ -1810,8 +1811,45 @@ defmodule RailWeb.Live.TaskDetailTest do
       assert has_element?(view, "#review-pane[data-item=fix_plan] #fix-plan-item-view-only-send")
       assert has_element?(view, "#fix-plan-item-send-twice")
       assert has_element?(view, "#fix-plan-item-comment-1", "Name it.")
-      assert has_element?(view, "#plan-file-2", "lib/rail_web/tray.ex")
+      assert has_element?(view, "#fix-plan-group-web #fix-plan-card-2", "lib/rail_web/tray.ex")
+      assert has_element?(view, "#fix-plan-item-send-twice a[href='#fix-plan-card-2']", "tray.ex")
       assert_patch(view, ~p"/tasks/#{task.id}?item=fix_plan")
+    end
+
+    test "a card for a file the task already changed opens it in the Diff item",
+         %{conn: conn, task: task, run: run, plan: plan} do
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+      File.mkdir_p!(Path.join(task.worktree_path, "lib/rail"))
+      File.write!(Path.join(task.worktree_path, "lib/rail/send.ex"), "changed\n")
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=fix_plan")
+
+      assert has_element?(view, "#fix-plan-card-1 [data-qa=plan_card_diff]", "lib/rail/send.ex")
+      refute has_element?(view, "#fix-plan-card-2 [data-qa=plan_card_diff]")
+
+      view |> element("#fix-plan-card-1 [data-qa=plan_card_diff]") |> render_click()
+      assert has_element?(view, "#review-pane[data-item=diff]")
+    end
+
+    # A card's digest starts with its round, so a mark left on an earlier round's card for the same file reads unmarked.
+    test "a reader marks a card of the waiting plan reviewed, and a mark from another round does not stand",
+         %{conn: conn, task: task, run: run, plan: plan, user: user} do
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+      {:ok, _earlier} = Git.set_file_viewed(user_scope(user: user), task, :fix_plan, "lib/rail_web/tray.ex", "0-x", true)
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=fix_plan")
+
+      assert has_element?(view, "#fix-plan-reviewed-count", "0 of 2 reviewed")
+      assert has_element?(view, "#fix-plan-card-2[data-state=unreviewed]")
+
+      view |> element("#fix-plan-card-1 [data-qa=plan_card_reviewed]") |> render_click()
+
+      assert has_element?(view, "#fix-plan-reviewed-count", "1 of 2 reviewed")
+      assert has_element?(view, "#fix-plan-card-1[data-state=reviewed]")
+      assert %{"lib/rail/send.ex" => "1-" <> _digest} = Git.list_viewed_files(user_scope(user: user), task, :fix_plan)
+
+      view |> element("#fix-plan-card-1 [data-qa=plan_card_reviewed]") |> render_click()
+      assert has_element?(view, "#fix-plan-card-1[data-state=unreviewed]")
     end
 
     test "a line of the waiting plan takes a comment for the review agent, shown under it and in the tray, until removed",
@@ -1988,7 +2026,7 @@ defmodule RailWeb.Live.TaskDetailTest do
 
       {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=fix_plan")
 
-      assert has_element?(view, "#fix-plan-item-view-only-send", "File 1")
+      assert has_element?(view, "#fix-plan-item-view-only-send a[href='#fix-plan-card-1']", "send.ex")
       refute has_element?(view, "#fix-plan-item-comment-2")
       assert has_element?(view, "#plan-summary", "Both Fix findings and comment 1 covered, before the last Send")
     end

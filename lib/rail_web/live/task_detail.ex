@@ -372,6 +372,10 @@ defmodule RailWeb.Live.TaskDetail do
                         lifted={@fix_plan_comments.lifted}
                         draft={@fix_plan_draft}
                         offered={@fix_plan_offered}
+                        reviewed={@fix_plan_reviewed}
+                        default_paths={@fix_plan_default_paths}
+                        diff_paths={@fix_plan_diff_paths}
+                        project={@task.project}
                         target={@myself}
                       />
                     </div>
@@ -691,6 +695,19 @@ defmodule RailWeb.Live.TaskDetail do
     {:noreply, load(socket)}
   end
 
+  # Only a card this tab drew is marked, as the path comes from the page. The digest is the one the reader saw, so a
+  # click from a page drawn before a revision marks the version read, which then reads revised.
+  def handle_event("toggle_plan_file_reviewed", %{"path" => path, "digest" => digest, "reviewed" => reviewed}, socket) do
+    %{current_scope: scope, task: task, fix_plan_reviewed: marks, fix_plan_paths: paths} = socket.assigns
+
+    if marks && path in paths do
+      {:ok, _mark} = Git.set_file_viewed(scope, task, :fix_plan, path, digest, reviewed == "true")
+      {:noreply, assign_fix_plan_cards(socket)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   # The line is read off this tab's own copy of the plan by its key, so only a line it shows can be commented on.
   def handle_event("open_document_comment", %{"doc" => "fix_plan", "key" => key}, socket) do
     %{fix_plan_lines: lines, fix_plan_offered: offered} = socket.assigns
@@ -834,6 +851,7 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign(:plan_label, plan_label(task, runs[:plan], List.first(rounds)))
     |> assign_fix_plan(fix_plan, plan_state, findings)
     |> assign_fix_plan_comments()
+    |> assign_fix_plan_cards()
     |> assign(:findings, findings)
     |> assign(:phase, phase)
     |> assign(:round, round(phase, passes, fix_plan, latest))
@@ -900,6 +918,43 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign(:fix_plan_comments, placement)
     |> assign(:fix_plan_draft, if(offered, do: socket.assigns.fix_plan_draft))
     |> report_lifted(if(open?, do: Enum.map(placement.lifted, &elem(&1, 0).id)))
+  end
+
+  # The reader's marks on the round's cards, which of their files the default branch has and which the task already
+  # changed, read only while the plan is the item open. Git is asked once per set of paths and HEAD the round was sent
+  # on, so a comment or an unrelated update does not ask again.
+  defp assign_fix_plan_cards(socket) do
+    %{fix_plan: fix_plan, item: item, task: task, current_scope: scope} = socket.assigns
+
+    case item == :fix_plan && fix_plan && FixPlan.build_sheet(fix_plan) do
+      %{} = sheet ->
+        paths = sheet.files |> Enum.map(& &1.path) |> Enum.uniq() |> Enum.sort()
+        socket = assign(socket, :fix_plan_reviewed, fix_plan_marks(scope, task, sheet.round))
+
+        if socket.assigns[:fix_plan_paths_of] == {paths, fix_plan.head},
+          do: socket,
+          else:
+            socket
+            |> assign(:fix_plan_paths_of, {paths, fix_plan.head})
+            |> assign(:fix_plan_paths, paths)
+            |> assign(:fix_plan_default_paths, Git.list_default_branch_paths(task.project, paths))
+            |> assign(:fix_plan_diff_paths, if(is_nil(task.cleaned_up_at), do: Git.list_branch_paths(task, paths)))
+
+      _closed ->
+        socket
+        |> assign(:fix_plan_reviewed, nil)
+        |> assign(:fix_plan_paths_of, nil)
+        |> assign(:fix_plan_paths, [])
+        |> assign(:fix_plan_default_paths, nil)
+        |> assign(:fix_plan_diff_paths, nil)
+    end
+  end
+
+  # A card's digest starts with its round, so a mark on an earlier round's card for the same file does not stand.
+  defp fix_plan_marks(scope, task, round) do
+    scope
+    |> Git.list_viewed_files(task, :fix_plan)
+    |> Map.filter(fn {_path, digest} -> String.starts_with?(digest, "#{round}-") end)
   end
 
   # The conversation's tray marks the same comments changed, and hears of it only when they change.

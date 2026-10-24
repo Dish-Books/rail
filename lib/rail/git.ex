@@ -37,6 +37,7 @@ defmodule Rail.Git do
   defdelegate fetch_default_branch(project, worktree_path), to: Actions.FetchDefaultBranch
   defdelegate read_default_branch_file(project, path), to: Actions.ReadDefaultBranchFile
   defdelegate list_default_branch_paths(project, paths), to: Actions.ListDefaultBranchPaths
+  defdelegate list_branch_paths(task, paths), to: Actions.ListBranchPaths
 
   # `filter` is `:branch`, `:uncommitted`, or `{:commit, sha}` for one commit against its first parent.
   defdelegate load_diff(scope, task, filter \\ :branch, previous_files \\ []), to: Actions.LoadDiff

@@ -17,7 +17,7 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
   alias Rail.Users
 
   @plan "Guard nil.\n\n### What changes\n\n#### `nil-crash`\n\nGuard it at the caller.\n\n" <>
-          "### File-level changes\n\n- `lib/a.ex`: guards nil. For `nil-crash`."
+          "### File-level changes\n\n#### `lib/a.ex`\n\nGuards nil. For `nil-crash`."
 
   setup %{project: project} do
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)

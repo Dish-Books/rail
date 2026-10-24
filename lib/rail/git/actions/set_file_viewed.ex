@@ -1,6 +1,6 @@
 defmodule Rail.Git.Actions.SetFileViewed do
   @moduledoc """
-  Marks one file of a task's diff, or one card of its plan, read or unread for one person.
+  Marks one file of a task's diff, or one card of its plan or fix plan, read or unread for one person.
 
   The digest is stored alongside, so the mark stands only for the file as it was
   read. A file the engineer touches again has a different digest and reads
@@ -14,7 +14,7 @@ defmodule Rail.Git.Actions.SetFileViewed do
   alias Rail.Scope
 
   @doc """
-  Sets whether `path` is read by the scope's user on `document`, `:diff` or `:plan`.
+  Sets whether `path` is read by the scope's user on `document`, `:diff`, `:plan` or `:fix_plan`.
   """
   def set_file_viewed(%Scope{user: %{id: user_id}}, %Task{id: task_id}, document, path, digest, true) do
     attrs = %{

@@ -1,6 +1,6 @@
 defmodule Rail.Git.Schemas.ViewedFile do
   @moduledoc """
-  One file of a task's diff, or one card of its plan, marked read by one person.
+  One file of a task's diff, or one card of its plan or fix plan, marked read by one person.
 
   A row per person per file is what makes "have I read this" mean anything with
   more than one reviewer.
@@ -18,7 +18,7 @@ defmodule Rail.Git.Schemas.ViewedFile do
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "vwf"}
   schema "viewed_files" do
-    field :document, Ecto.Enum, values: [:diff, :plan]
+    field :document, Ecto.Enum, values: [:diff, :plan, :fix_plan]
     field :path, :string
     field :digest, :string
     field :viewed_at, :utc_datetime_usec

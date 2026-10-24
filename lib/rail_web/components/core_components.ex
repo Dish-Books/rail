@@ -52,6 +52,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate overview_stats(assigns), to: Components.OverviewStats
   defdelegate plan_comment_card(assigns), to: Components.PlanCommentCard
   defdelegate plan_comment_tray(assigns), to: Components.PlanCommentTray
+  defdelegate plan_cards(assigns), to: Components.PlanCards
   defdelegate plan_sheet(assigns), to: Components.PlanSheet
   defdelegate priority_icon(assigns), to: Components.IssueIcons
   defdelegate project_badge(assigns), to: Components.ProjectBadge

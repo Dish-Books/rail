@@ -13,7 +13,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
   alias Rail.Users
 
   @plan "Guard it.\n\n### What changes\n\n#### `unhandled-nil`\n\nGuard nil.\n\n" <>
-          "### File-level changes\n\n- `lib/a.ex`: guards nil. For `unhandled-nil`.\n\n### Verification\n\nRun it."
+          "### File-level changes\n\n#### `lib/a.ex`\n\nGuards nil. For `unhandled-nil`.\n\n### Verification\n\nRun it."
 
   setup %{project: project} do
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
