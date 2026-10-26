@@ -38,18 +38,21 @@ defmodule RailWeb.Utils.BuildPlanCards do
     {%{groups: groups, cards: cards}, counts}
   end
 
-  # Each context of `lib/rail` is a group, as are the web, migrations, prompts and assets; anything else goes by the
-  # first directory in its path.
+  # Each context of `lib/<app>` is a group, whatever the repo calls its app, as are the web, migrations, prompts and
+  # assets; anything else goes by the first directory in its path.
   defp group(%{path: path}) do
     case Path.split(path) do
-      ["lib", "rail", context | _rest] -> {Path.rootname(context), "lib/rail/#{Path.rootname(context)}"}
-      ["lib", "rail_web" | _rest] -> {"web", "lib/rail_web"}
+      ["lib", app, context | _rest] -> lib_group(app, Path.rootname(context))
       ["priv", "repo", "migrations" | _rest] -> {"migrations", "priv/repo/migrations"}
       [".rail", "prompts" | _rest] -> {"prompts", ".rail/prompts"}
       ["assets" | _rest] -> {"assets", "assets"}
       [_file] -> {"root", "."}
       [directory | _rest] -> {directory, directory}
     end
+  end
+
+  defp lib_group(app, context) do
+    if String.ends_with?(app, "_web"), do: {"web", "lib/#{app}"}, else: {context, "lib/#{app}/#{context}"}
   end
 
   # In the order each group first appears in the plan, and each group's cards in the plan's order.

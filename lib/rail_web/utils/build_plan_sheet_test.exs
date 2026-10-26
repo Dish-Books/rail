@@ -53,6 +53,33 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
     assert %{line: %{label: "File 2"}} = groups |> hd() |> Map.fetch!(:cards) |> Enum.at(1)
   end
 
+  test "a repo whose app is not rail groups its cards by its own contexts and web" do
+    plan =
+      String.replace(sheet_plan(), "### Acceptance criteria", """
+      #### `lib/dishbooks/recipes/actions/import_recipe.ex`
+
+      Imports it.
+
+      #### `lib/dishbooks_web/live/recipe_live.ex`
+
+      Shows it.
+
+      #### `lib/dishbooks/recipes.ex`
+
+      Delegates.
+
+      ### Acceptance criteria
+      """)
+
+    assert %{groups: groups} = build_plan_sheet(plan)
+
+    assert [
+             {"recipes", "lib/dishbooks/recipes",
+              ["lib/dishbooks/recipes/actions/import_recipe.ex", "lib/dishbooks/recipes.ex"]},
+             {"web", "lib/dishbooks_web", ["lib/dishbooks_web/live/recipe_live.ex"]}
+           ] = groups |> Enum.map(&{&1.name, &1.directory, Enum.map(&1.cards, fn card -> card.path end)}) |> Enum.take(-2)
+  end
+
   test "a card's signatures and sketch are highlighted" do
     def = ~s(<span class="l-keyword-function">def</span> <span class="l-function">send_back_to_architect</span>)
 
