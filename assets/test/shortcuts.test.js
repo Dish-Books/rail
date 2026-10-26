@@ -26,9 +26,9 @@ describe("formSubmitButton", () => {
 });
 
 describe("modalOpen", () => {
-  it("is true when the page shows a modal or dialog", () => {
+  it("is true when the page shows a modal overlay or dialog", () => {
     const doc = {
-      querySelector: (selector) => (selector === "[id$='-modal'], [role='dialog']" ? { id: "project-modal" } : null)
+      querySelector: (selector) => (selector === "div.fixed[id$='-modal'], [role='dialog']" ? { id: "project-modal" } : null)
     };
 
     assert.equal(modalOpen(doc), true);
