@@ -44,6 +44,7 @@ defmodule Rail.Git do
   # `filter` is `:branch`, `:uncommitted`, or `{:commit, sha}` for one commit against its first parent.
   defdelegate load_diff(scope, task, filter \\ :branch, previous_files \\ []), to: Actions.LoadDiff
   defdelegate load_diff_hunks(scope, task, ranges), to: Actions.LoadDiffHunks
+  defdelegate read_diff_image(task, path, side, filter), to: Actions.ReadDiffImage
 
   defdelegate expand_diff_gap(task, path, gap_index, start_line, end_line, revision \\ :worktree),
     to: Actions.ExpandDiffGap

@@ -429,6 +429,7 @@ defmodule RailWeb.Live.DiffView do
     %{
       files: assigns.files,
       filter: assigns.view,
+      task_id: assigns.task.id,
       picker: %{
         view: assigns.view,
         history: assigns.history,

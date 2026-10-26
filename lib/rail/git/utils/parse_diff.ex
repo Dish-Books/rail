@@ -13,6 +13,8 @@ defmodule Rail.Git.Utils.ParseDiff do
   readable fallback rather than taking the whole diff down.
   """
 
+  import Rail.Git.Utils.ImageType
+
   @hunk_header_regex ~r/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: ?(.*))?$/
   @binary_files_regex ~r/^Binary files ("?a\/.*?"?) and ("?b\/.*?"?) differ/
   @binary_file_regex ~r/^Binary file ("?.*?"?) differs/
@@ -107,6 +109,7 @@ defmodule Rail.Git.Utils.ParseDiff do
       status: status,
       digest: digest,
       binary?: is_binary,
+      image?: is_binary and image_type(path) != nil,
       additions: additions,
       deletions: deletions,
       rows: rows(path, hunks, is_binary)
@@ -124,6 +127,7 @@ defmodule Rail.Git.Utils.ParseDiff do
         status: :modified,
         digest: nil,
         binary?: false,
+        image?: false,
         additions: 0,
         deletions: 0,
         rows: []
