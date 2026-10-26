@@ -19,7 +19,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   setup %{project: project} do
     roles =
-      Map.new([:plan, :engineer, :qa, :review_lead, :debugger], fn stage ->
+      Map.new([:plan, :engineer, :qa, :review_lead, :demo], fn stage ->
         {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
 
         {stage, role}
@@ -250,13 +250,12 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
            ] = Repo.all(from s in BrowserSession, where: s.task_id == ^task.id, order_by: s.name)
   end
 
-  # The screenshots agent started beside QA, so QA's finish starts nothing while the others work.
+  # The code reviewer started beside QA, so QA's finish starts nothing while it works.
   test "a QA turn that saved its report latches done and starts nothing while the other checks work", %{
     task: task,
     exited: exited
   } do
     {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
-    Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [retake_screens: true])
     {:ok, _saved} = Pipeline.save_report(task, :qa, "Two rows.")
     {_run, os_process} = exited.(:qa, %{})
     reject(Tools, :start_os_process, 2)
@@ -324,11 +323,11 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     task: task,
     exited: exited
   } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :debugger})
-    {_run, os_process} = exited.(:debugger, %{})
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+    {_run, os_process} = exited.(:demo, %{})
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-    assert %Task{stage: :debugger} = Repo.reload!(task)
+    assert %Task{stage: :review} = Repo.reload!(task)
   end
 
   test "an engineer turn stopped part way hands nothing over", %{task: task, exited: exited} do
@@ -532,22 +531,22 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     roles: roles,
     exited: exited
   } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :debugger, worktree_path: create_temp_git_repo()})
-    {_run, os_process} = exited.(:debugger, %{})
+    {:ok, task} = Pipeline.update_task(task, %{stage: :plan, worktree_path: create_temp_git_repo()})
+    {_run, os_process} = exited.(:plan, %{})
     os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
-    %{id: debugger_role_id} = roles[:debugger]
+    %{id: plan_role_id} = roles[:plan]
 
     expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
-    assert {:ok, %Run{role_id: ^debugger_role_id, status: :running}} =
+    assert {:ok, %Run{role_id: ^plan_role_id, status: :running}} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
 
     assert %Task{worktree_setup_at: %DateTime{}} = Repo.reload!(task)
   end
 
   test "a worktree setup that failed says so on the run and starts nothing", %{task: task, exited: exited} do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :debugger})
-    {_run, os_process} = exited.(:debugger, %{})
+    {:ok, task} = Pipeline.update_task(task, %{stage: :plan})
+    {_run, os_process} = exited.(:plan, %{})
     os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
 
     reject(Tools, :start_os_process, 2)
@@ -562,8 +561,8 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     task: task,
     exited: exited
   } do
-    {:ok, _task} = Pipeline.update_task(task, %{stage: :debugger, worktree_path: create_temp_git_repo()})
-    {run, _agent_process} = exited.(:debugger, %{status: :finished, pending_chat: "Keep going"})
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :plan, worktree_path: create_temp_git_repo()})
+    {run, _agent_process} = exited.(:plan, %{status: :finished, pending_chat: "Keep going"})
 
     setup_process =
       %OsProcess{}
@@ -593,8 +592,8 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     task: task,
     exited: exited
   } do
-    {:ok, _task} = Pipeline.update_task(task, %{stage: :debugger, worktree_path: create_temp_git_repo()})
-    {run, os_process} = exited.(:debugger, %{pending_chat: "Also check the logs"})
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :plan, worktree_path: create_temp_git_repo()})
+    {run, os_process} = exited.(:plan, %{pending_chat: "Also check the logs"})
     os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
 
     expect(Tools, :start_os_process, fn spawned, argv ->
@@ -608,7 +607,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   test "a worktree set up for a stage the task has since left enters nothing", %{task: task, exited: exited} do
     {:ok, task} = Pipeline.update_task(task, %{stage: :review})
-    {_run, os_process} = exited.(:debugger, %{})
+    {_run, os_process} = exited.(:plan, %{})
     os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
 
     reject(Tools, :start_os_process, 2)

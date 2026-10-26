@@ -6,14 +6,16 @@ defmodule RailWeb.Components.FixPlanSheetTest do
 
   alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.PlanComment
+  alias Rail.Projects.Schemas.Project
   alias RailWeb.Components.FixPlanSheet
 
   setup do
     plan =
       "Two changes.\n\n### What changes\n\n#### `send-drops`\n\nReads screen comments.\n\n#### `tray-count`\n\nCounts them.\n\n" <>
         "#### Comment 1\n\nKept under its line.\n\n### File-level changes\n\n" <>
-        "- `lib/send.ex`: reads them. For `send-drops`.\n- `lib/tray.ex`: counts them. For `tray-count`.\n" <>
-        "- `lib/diff_comment.ex`: keeps it. For comment 1.\n- `lib/send_test.exs`: all three. For `send-drops`.\n\n" <>
+        "#### `lib/send.ex`\n\nReads them. For `send-drops`.\n\n```elixir sketch\ndef read(comments), do: comments\n```\n\n" <>
+        "#### `lib/tray.ex`\n\nCounts them. For `tray-count`.\n\n" <>
+        "#### `lib/diff_comment.ex`\n\nKeeps it. For comment 1.\n\n#### `lib/send_test.exs`\n\nAll three. For `send-drops`.\n\n" <>
         "### Verification\n\n`mix test lib/send_test.exs`."
 
     fix_plan =
@@ -37,15 +39,17 @@ defmodule RailWeb.Components.FixPlanSheetTest do
     %{fix_plan: fix_plan, sheet: FixPlan.build_sheet(fix_plan)}
   end
 
-  test "an item per finding key and comment number links its numbered files, with the plan's counts", %{sheet: sheet} do
+  test "an item per finding key and comment number links the cards of its files, with the plan's counts", %{sheet: sheet} do
     doc = (&FixPlanSheet.fix_plan_sheet/1) |> render_component(sheet: sheet) |> Floki.parse_fragment!()
 
     assert doc |> Floki.find("#fix-plan-item-send-drops") |> Floki.text() =~ "Send leaves screen comments out"
-    assert ["#plan-file-1", "#plan-file-4"] = doc |> Floki.find("#fix-plan-item-send-drops a") |> Floki.attribute("href")
+    links = Floki.find(doc, "#fix-plan-item-send-drops a")
+    assert ["#fix-plan-card-1", "#fix-plan-card-4"] = Floki.attribute(links, "href")
+    assert ["send.ex", "send_test.exs"] = Enum.map(links, &Floki.text/1)
     assert doc |> Floki.find("#fix-plan-item-comment-1") |> Floki.text() =~ "Comment 1 · Diff"
     assert doc |> Floki.find("#fix-plan-item-comment-1") |> Floki.text() =~ "Keep it under its line."
-    assert ["#plan-file-3"] = doc |> Floki.find("#fix-plan-item-comment-1 a") |> Floki.attribute("href")
-    assert doc |> Floki.find("#plan-file-2") |> Floki.text() =~ "lib/tray.ex"
+    assert ["#fix-plan-card-3"] = doc |> Floki.find("#fix-plan-item-comment-1 a") |> Floki.attribute("href")
+    assert doc |> Floki.find("#fix-plan-card-2") |> Floki.text() =~ "lib/tray.ex"
 
     counts = doc |> Floki.find("[data-qa=fix_plan_counts]") |> Floki.text() |> String.split() |> Enum.join(" ")
     assert counts == "2 findings · 1 comment · 4 files"
@@ -55,16 +59,94 @@ defmodule RailWeb.Components.FixPlanSheetTest do
     assert Floki.find(doc, "[data-qa=fix_plan_item_changed]") == []
   end
 
-  test "a code block and a table in its text draw as code lines and table rows", %{sheet: sheet} do
-    verification = "```\nmix test lib/send_test.exs\n```\n\n| Check | Result |\n|---|---|\n| Send | passes |"
+  test "its files are the plan's cards: grouped, marked New or Changed, and their code a click away", %{sheet: sheet} do
+    project = %Project{github_repo: "example/rail", default_branch: "main"}
 
     doc =
       (&FixPlanSheet.fix_plan_sheet/1)
-      |> render_component(sheet: %{sheet | verification: verification})
+      |> render_component(sheet: sheet, default_paths: MapSet.new(["lib/tray.ex"]), project: project)
+      |> Floki.parse_fragment!()
+
+    assert [_lib] = Floki.find(doc, "#fix-plan-group-lib")
+    assert doc |> Floki.find("#fix-plan-group-lib [data-qa=plan_group_count]") |> Floki.text() =~ "3 new · 1 changed"
+    assert [_new] = Floki.find(doc, "#fix-plan-card-1 [data-qa=plan_card_new]")
+
+    assert ["https://github.com/example/rail/blob/main/lib/tray.ex"] =
+             doc |> Floki.find("#fix-plan-card-2 [data-qa=plan_card_link]") |> Floki.attribute("href")
+
+    assert doc |> Floki.find("#fix-plan-card-1 [data-qa=plan_card_sketch]") |> Floki.text() =~ "Show code"
+    assert doc |> Floki.find("#fix-plan-card-1 [data-qa=plan_card_sketch]") |> Floki.text() =~ "read(comments)"
+    assert Floki.find(doc, "#fix-plan-card-2 [data-qa=plan_card_sketch]") == []
+    assert Floki.find(doc, "[data-qa=plan_card_reviewed]") == []
+  end
+
+  test "a file the task already changed opens in Diff rather than GitHub, new or on the default branch", %{sheet: sheet} do
+    project = %Project{github_repo: "example/rail", default_branch: "main"}
+
+    doc =
+      (&FixPlanSheet.fix_plan_sheet/1)
+      |> render_component(
+        sheet: sheet,
+        default_paths: MapSet.new(["lib/tray.ex", "lib/diff_comment.ex"]),
+        diff_paths: MapSet.new(["lib/send.ex", "lib/tray.ex"]),
+        project: project,
+        target: "#review-stage"
+      )
+      |> Floki.parse_fragment!()
+
+    for card <- ["#fix-plan-card-1", "#fix-plan-card-2"] do
+      [diff] = Floki.find(doc, "#{card} [data-qa=plan_card_diff]")
+      assert Floki.attribute(diff, "phx-click") == ["open_diff"]
+      assert Floki.attribute(diff, "phx-target") == ["#review-stage"]
+      assert Floki.find(doc, "#{card} [data-qa=plan_card_link]") == []
+    end
+
+    assert doc |> Floki.find("#fix-plan-card-2 [data-qa=plan_card_diff]") |> Floki.attribute("phx-value-file") == [
+             "lib/tray.ex"
+           ]
+
+    assert [_changed] = Floki.find(doc, "#fix-plan-card-2 [data-qa=plan_card_changed]")
+
+    assert ["https://github.com/example/rail/blob/main/lib/diff_comment.ex"] =
+             doc |> Floki.find("#fix-plan-card-3 [data-qa=plan_card_link]") |> Floki.attribute("href")
+
+    assert Floki.find(doc, "#fix-plan-card-4 [data-qa=plan_card_link], #fix-plan-card-4 [data-qa=plan_card_diff]") == []
+    assert Floki.text(doc) =~ "Files this task changed open in Diff, and others link to main on GitHub."
+  end
+
+  test "a reader's marks read on each card, and a card revised since its mark reads so", %{sheet: sheet} do
+    %{cards: [send, tray | _rest]} = build_fix_plan_lines(sheet)
+    reviewed = %{"lib/send.ex" => send.digest, "lib/tray.ex" => "1-earlier"}
+
+    doc =
+      (&FixPlanSheet.fix_plan_sheet/1)
+      |> render_component(sheet: sheet, reviewed: reviewed, target: "#review-stage")
+      |> Floki.parse_fragment!()
+
+    assert doc |> Floki.find("#fix-plan-reviewed-count") |> Floki.text() =~ "1 of 4 reviewed"
+    assert ["reviewed"] = doc |> Floki.find("#fix-plan-card-1") |> Floki.attribute("data-state")
+    assert ["revised"] = doc |> Floki.find("#fix-plan-card-2") |> Floki.attribute("data-state")
+    assert ["unreviewed"] = doc |> Floki.find("#fix-plan-card-3") |> Floki.attribute("data-state")
+
+    [toggle] = Floki.find(doc, "#fix-plan-card-2 [data-qa=plan_card_reviewed]")
+    assert ["toggle_plan_file_reviewed"] = Floki.attribute(toggle, "phx-click")
+    assert Floki.attribute(toggle, "phx-value-digest") == [tray.digest]
+    assert Floki.attribute(toggle, "phx-target") == ["#review-stage"]
+  end
+
+  test "a code block and a table in its text, or in a card's, draw as code lines and table rows", %{sheet: sheet} do
+    verification = "```\nmix test lib/send_test.exs\n```\n\n| Check | Result |\n|---|---|\n| Send | passes |"
+    [send | files] = sheet.files
+    files = [%{send | prose: "| Kind | Read |\n|---|---|\n| Screen | yes |"} | files]
+
+    doc =
+      (&FixPlanSheet.fix_plan_sheet/1)
+      |> render_component(sheet: %{sheet | verification: verification, files: files})
       |> Floki.parse_fragment!()
 
     assert doc |> Floki.find("[data-kind=code]") |> Floki.text() =~ "mix test lib/send_test.exs"
-    assert doc |> Floki.find("[data-kind=table_row]") |> length() == 2
+    assert doc |> Floki.find("[data-kind=table_row]") |> length() == 4
+    assert doc |> Floki.find("#fix-plan-card-1 [data-kind=table_row]") |> length() == 2
   end
 
   test "a covered finding now ruled Don't fix reads so at its entry", %{sheet: sheet} do
@@ -183,7 +265,7 @@ defmodule RailWeb.Components.FixPlanSheetTest do
 
   test "a comment is drawn under its line, the box opens under the line it is for, and a changed one sits at the top",
        %{sheet: sheet} do
-    %{files: [_first, %{path_line: path_line} | _files], verification_lines: [verification]} =
+    %{cards: [_first, %{line: path_line} | _cards], verification_lines: [verification]} =
       build_fix_plan_lines(sheet)
 
     placed = %PlanComment{

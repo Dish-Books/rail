@@ -305,7 +305,9 @@ export const DesignFrame = {
     if (this.el.dataset.comments !== "true") return;
     const commenting = this.el.dataset.commenting === "true";
 
-    if (action === "c" && !commenting) this.pushEventTo(this.el, "toggle_commenting", {});
+    // The Plan item's other tabs hide this one, and a key pressed there is not meant for it.
+    if (action === "c" && !commenting && this.el.checkVisibility?.() !== false)
+      this.pushEventTo(this.el, "toggle_commenting", {});
     if (action === "escape" && commenting) this.pushEventTo(this.el, "stop_commenting", {});
   },
 

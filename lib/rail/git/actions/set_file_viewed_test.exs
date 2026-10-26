@@ -43,36 +43,49 @@ defmodule Rail.Git.Actions.SetFileViewedTest do
   end
 
   test "marks a file read for the person who read it", %{task: task, ada: ada} do
-    {:ok, %ViewedFile{}} = Git.set_file_viewed(ada, task, "lib/rail/feature.ex", "digest_1", true)
+    {:ok, %ViewedFile{}} = Git.set_file_viewed(ada, task, :diff, "lib/rail/feature.ex", "digest_1", true)
 
-    assert Git.list_viewed_files(ada, task) == %{"lib/rail/feature.ex" => "digest_1"}
+    assert Git.list_viewed_files(ada, task, :diff) == %{"lib/rail/feature.ex" => "digest_1"}
   end
 
   test "one person's marks are not another's", %{task: task, ada: ada, grace: grace} do
-    {:ok, %ViewedFile{}} = Git.set_file_viewed(ada, task, "lib/rail/feature.ex", "digest_1", true)
+    {:ok, %ViewedFile{}} = Git.set_file_viewed(ada, task, :diff, "lib/rail/feature.ex", "digest_1", true)
 
-    assert Git.list_viewed_files(grace, task) == %{}
+    assert Git.list_viewed_files(grace, task, :diff) == %{}
   end
 
   test "re-reading a file that moved records the digest it has now", %{task: task, ada: ada} do
-    {:ok, %ViewedFile{}} = Git.set_file_viewed(ada, task, "lib/rail/feature.ex", "digest_1", true)
-    {:ok, %ViewedFile{}} = Git.set_file_viewed(ada, task, "lib/rail/feature.ex", "digest_2", true)
+    {:ok, %ViewedFile{}} = Git.set_file_viewed(ada, task, :diff, "lib/rail/feature.ex", "digest_1", true)
+    {:ok, %ViewedFile{}} = Git.set_file_viewed(ada, task, :diff, "lib/rail/feature.ex", "digest_2", true)
 
-    assert Git.list_viewed_files(ada, task) == %{"lib/rail/feature.ex" => "digest_2"}
+    assert Git.list_viewed_files(ada, task, :diff) == %{"lib/rail/feature.ex" => "digest_2"}
   end
 
   test "unmarking forgets the file", %{task: task, ada: ada} do
-    {:ok, %ViewedFile{}} = Git.set_file_viewed(ada, task, "lib/rail/feature.ex", "digest_1", true)
-    {:ok, %ViewedFile{}} = Git.set_file_viewed(ada, task, "lib/rail/feature.ex", "digest_1", false)
+    {:ok, %ViewedFile{}} = Git.set_file_viewed(ada, task, :diff, "lib/rail/feature.ex", "digest_1", true)
+    {:ok, %ViewedFile{}} = Git.set_file_viewed(ada, task, :diff, "lib/rail/feature.ex", "digest_1", false)
 
-    assert Git.list_viewed_files(ada, task) == %{}
+    assert Git.list_viewed_files(ada, task, :diff) == %{}
   end
 
   test "unmarking a file nobody marked changes nothing", %{task: task, ada: ada} do
-    assert {:ok, nil} = Git.set_file_viewed(ada, task, "lib/rail/feature.ex", "digest_1", false)
+    assert {:ok, nil} = Git.set_file_viewed(ada, task, :diff, "lib/rail/feature.ex", "digest_1", false)
+  end
+
+  test "a plan card's mark and the diff's on the same path are separate", %{task: task, ada: ada} do
+    {:ok, %ViewedFile{}} = Git.set_file_viewed(ada, task, :plan, "lib/rail/feature.ex", "card_digest", true)
+    {:ok, %ViewedFile{}} = Git.set_file_viewed(ada, task, :diff, "lib/rail/feature.ex", "diff_digest", true)
+
+    assert Git.list_viewed_files(ada, task, :plan) == %{"lib/rail/feature.ex" => "card_digest"}
+    assert Git.list_viewed_files(ada, task, :diff) == %{"lib/rail/feature.ex" => "diff_digest"}
+
+    {:ok, %ViewedFile{}} = Git.set_file_viewed(ada, task, :plan, "lib/rail/feature.ex", "card_digest", false)
+
+    assert Git.list_viewed_files(ada, task, :plan) == %{}
+    assert Git.list_viewed_files(ada, task, :diff) == %{"lib/rail/feature.ex" => "diff_digest"}
   end
 
   test "a scope with no user has read nothing", %{task: task} do
-    assert Git.list_viewed_files(system_scope(), task) == %{}
+    assert Git.list_viewed_files(system_scope(), task, :diff) == %{}
   end
 end

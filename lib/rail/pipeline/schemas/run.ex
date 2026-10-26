@@ -31,8 +31,9 @@ defmodule Rail.Pipeline.Schemas.Run do
 
   # Whether this run's stage has had its say. A run latches to `:done` when it
   # states a verdict, and `enter_stage/3` puts it back to `:in_progress` when a
-  # later stage sends the work here again.
-  @stage_outcomes [:in_progress, :done]
+  # later stage sends the work here again. A QA run is `:skipped` for a round that
+  # changed nothing a person sees, which is done for everything waiting on it.
+  @stage_outcomes [:in_progress, :done, :skipped]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "run"}
   schema "runs" do
@@ -138,7 +139,7 @@ defmodule Rail.Pipeline.Schemas.Run do
   def state(%__MODULE__{status: status}) when status in [:starting, :running], do: :running
   def state(%__MODULE__{status: status}) when status in [:waiting_for_resources, :waiting_for_usage], do: :waiting
   def state(%__MODULE__{status: :blocked_on_input}), do: :blocked
-  def state(%__MODULE__{stage_outcome: :done}), do: :done
+  def state(%__MODULE__{stage_outcome: outcome}) when outcome in [:done, :skipped], do: :done
   def state(%__MODULE__{error: error}) when is_binary(error), do: :failed
 
   def state(%__MODULE__{questions: questions}) when is_list(questions) do

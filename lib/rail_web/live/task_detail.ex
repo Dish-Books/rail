@@ -92,16 +92,6 @@ defmodule RailWeb.Live.TaskDetail do
         <:actions>
           {render_slot(@actions)}
 
-          <span
-            :if={@plan_state == :approved}
-            id="fix-plan-approved-header"
-            data-qa="fix_plan_approved"
-            class="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400"
-          >
-            <.icon name="pi-check-circle" class="size-4" /> Approved by {@fix_plan.approved_by} ·
-            <.local_time id="fix-plan-approved-at" at={@fix_plan.approved_at} />
-          </span>
-
           <button
             :if={@show_approve}
             type="button"
@@ -110,10 +100,11 @@ defmodule RailWeb.Live.TaskDetail do
             phx-click="approve_fix_plan"
             phx-value-version={@fix_plan.version}
             phx-target={@myself}
-            phx-disable-with="Approving…"
+            phx-disable-with="Starting…"
             class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
           >
-            <.icon name="pi-check-bold" class="size-4" /> Approve
+            <%!-- Not the PR's Approve, which sits in the same place at Finalize --%>
+            <.icon name="pi-play" class="size-4" /> Start fix round
           </button>
         </:actions>
 
@@ -125,7 +116,7 @@ defmodule RailWeb.Live.TaskDetail do
               <.local_time
                 id="review-error-replaced-at"
                 at={elem(@error, 1)}
-              />. Nothing started. Read the plan on screen, then approve it.
+              />. Nothing started. Read the plan on screen, then start the round.
             </span>
           </p>
         </:alerts>
@@ -381,6 +372,10 @@ defmodule RailWeb.Live.TaskDetail do
                         lifted={@fix_plan_comments.lifted}
                         draft={@fix_plan_draft}
                         offered={@fix_plan_offered}
+                        reviewed={@fix_plan_reviewed}
+                        default_paths={@fix_plan_default_paths}
+                        diff_paths={@fix_plan_diff_paths}
+                        project={@task.project}
                         target={@myself}
                       />
                     </div>
@@ -700,6 +695,19 @@ defmodule RailWeb.Live.TaskDetail do
     {:noreply, load(socket)}
   end
 
+  # Only a card this tab drew is marked, as the path comes from the page. The digest is the one the reader saw, so a
+  # click from a page drawn before a revision marks the version read, which then reads revised.
+  def handle_event("toggle_plan_file_reviewed", %{"path" => path, "digest" => digest, "reviewed" => reviewed}, socket) do
+    %{current_scope: scope, task: task, fix_plan_reviewed: marks, fix_plan_paths: paths} = socket.assigns
+
+    if marks && path in paths do
+      {:ok, _mark} = Git.set_file_viewed(scope, task, :fix_plan, path, digest, reviewed == "true")
+      {:noreply, assign_fix_plan_cards(socket)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   # The line is read off this tab's own copy of the plan by its key, so only a line it shows can be commented on.
   def handle_event("open_document_comment", %{"doc" => "fix_plan", "key" => key}, socket) do
     %{fix_plan_lines: lines, fix_plan_offered: offered} = socket.assigns
@@ -843,6 +851,7 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign(:plan_label, plan_label(task, runs[:plan], List.first(rounds)))
     |> assign_fix_plan(fix_plan, plan_state, findings)
     |> assign_fix_plan_comments()
+    |> assign_fix_plan_cards()
     |> assign(:findings, findings)
     |> assign(:phase, phase)
     |> assign(:round, round(phase, passes, fix_plan, latest))
@@ -884,7 +893,7 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign(:plan_state, plan_state)
     |> assign(:ruling_changes, ruling_changes)
     |> assign(:revising, revising(fix_plan, plan_state, run, ruling_changes))
-    |> assign(:show_approve, approve?(task, run, plan_state, scope))
+    |> assign(:show_approve, approve?(task, plan_state, scope))
   end
 
   # The reader's comments on the next round's plan, numbered as the tray numbers them, under the lines they were
@@ -911,6 +920,43 @@ defmodule RailWeb.Live.TaskDetail do
     |> report_lifted(if(open?, do: Enum.map(placement.lifted, &elem(&1, 0).id)))
   end
 
+  # The reader's marks on the round's cards, which of their files the default branch has and which the task already
+  # changed, read only while the plan is the item open. Git is asked once per set of paths and HEAD the round was sent
+  # on, so a comment or an unrelated update does not ask again.
+  defp assign_fix_plan_cards(socket) do
+    %{fix_plan: fix_plan, item: item, task: task, current_scope: scope} = socket.assigns
+
+    case item == :fix_plan && fix_plan && FixPlan.build_sheet(fix_plan) do
+      %{} = sheet ->
+        paths = sheet.files |> Enum.map(& &1.path) |> Enum.uniq() |> Enum.sort()
+        socket = assign(socket, :fix_plan_reviewed, fix_plan_marks(scope, task, sheet.round))
+
+        if socket.assigns[:fix_plan_paths_of] == {paths, fix_plan.head},
+          do: socket,
+          else:
+            socket
+            |> assign(:fix_plan_paths_of, {paths, fix_plan.head})
+            |> assign(:fix_plan_paths, paths)
+            |> assign(:fix_plan_default_paths, Git.list_default_branch_paths(task.project, paths))
+            |> assign(:fix_plan_diff_paths, if(is_nil(task.cleaned_up_at), do: Git.list_branch_paths(task, paths)))
+
+      _closed ->
+        socket
+        |> assign(:fix_plan_reviewed, nil)
+        |> assign(:fix_plan_paths_of, nil)
+        |> assign(:fix_plan_paths, [])
+        |> assign(:fix_plan_default_paths, nil)
+        |> assign(:fix_plan_diff_paths, nil)
+    end
+  end
+
+  # A card's digest starts with its round, so a mark on an earlier round's card for the same file does not stand.
+  defp fix_plan_marks(scope, task, round) do
+    scope
+    |> Git.list_viewed_files(task, :fix_plan)
+    |> Map.filter(fn {_path, digest} -> String.starts_with?(digest, "#{round}-") end)
+  end
+
   # The conversation's tray marks the same comments changed, and hears of it only when they change.
   defp report_lifted(%{assigns: %{reported_lifted: ids}} = socket, ids), do: socket
   defp report_lifted(socket, nil), do: socket
@@ -933,6 +979,10 @@ defmodule RailWeb.Live.TaskDetail do
       ci_failed: phase == :ci_failed,
       saved: passes != [],
       plan: plan,
+      # A waiting plan whose rulings now leave nothing to fix and no comment is finished, not revised, by a Send.
+      emptied:
+        plan and stage == :review and match?(%FixPlan{comments: []}, socket.assigns.fix_plan) and
+          not Enum.any?(findings, &Finding.outstanding?/1),
       undecided: if(stage == :review, do: Enum.count(findings, &Finding.undecided?/1), else: 0)
     }
 
@@ -1265,18 +1315,19 @@ defmodule RailWeb.Live.TaskDetail do
   defp ruling(:fix), do: "Fix"
   defp ruling(:skip), do: "Don't fix"
 
-  # Approve starts the engineer, so it is offered only on the latest plan while it waits and the lead is idle.
-  defp approve?(%Task{} = task, run, :waiting, scope) do
-    task.stage in [:review, :finalize, :merged] and is_nil(task.cleaned_up_at) and not Run.running?(run) and
+  # Approve starts the engineer, so it is offered only on the latest plan while it waits and nothing works on the
+  # task, the checks included, as the approval itself requires.
+  defp approve?(%Task{} = task, :waiting, scope) do
+    task.stage in [:review, :finalize, :merged] and is_nil(task.cleaned_up_at) and not Task.running?(task) and
       match?(%{user: %{}}, scope)
   end
 
-  defp approve?(%Task{}, _run, _plan_state, _scope), do: false
+  defp approve?(%Task{}, _plan_state, _scope), do: false
 
   # Where the round is, read off its runs: the engineer building it and its CI, the agents checking it, and the
   # review agent's plan for the next. Until that plan is approved, nothing changes the branch.
   defp phase(runs, %Task{} = task, passes, ci, plan_state) do
-    checking? = Enum.any?([:qa, :review, :screens, :review_lead], &Run.running?(runs[&1]))
+    checking? = Enum.any?([:qa, :review, :review_lead], &Run.running?(runs[&1]))
 
     cond do
       match?(%{state: :running}, ci) -> :ci
@@ -1461,9 +1512,8 @@ defmodule RailWeb.Live.TaskDetail do
   defp agents(runs) do
     for {stage, work} <- [
           engineer: "Builds the round",
-          qa: "Tests the running app",
+          qa: "Tests the running app and shoots each screen state",
           review: "Reads the diff",
-          screens: "Shoots each screen state",
           demo: "Records the demo",
           review_lead: "Turns the reports into findings and the next plan"
         ],

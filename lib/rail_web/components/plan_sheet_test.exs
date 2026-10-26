@@ -3,173 +3,394 @@ defmodule RailWeb.Components.PlanSheetTest do
 
   import Phoenix.LiveViewTest
   import RailTest.Helpers
-  import RailWeb.Helpers, only: [build_plan_sheet: 1]
+  import RailWeb.Helpers, only: [build_plan_sheet: 1, build_plan_sheet: 2]
 
   alias Rail.Pipeline.Schemas.PlanComment
+  alias Rail.Projects.Schemas.Project
   alias RailWeb.Components.PlanSheet
 
   setup_all do
-    %{views: %{change: :diagram, call_flow: :diagram}}
+    criteria = [
+      %{number: 1, html: "<p>A task sent back lands at Architect.</p>"},
+      %{number: 2, html: "<p>The note reaches the brief.</p>"},
+      %{number: 3, html: "<p>Review shows Send back.</p>"}
+    ]
+
+    %{
+      sheet: build_plan_sheet(sheet_plan(), [1, 2, 3]),
+      criteria: criteria,
+      project: %Project{github_repo: "example/rail", default_branch: "main"}
+    }
   end
 
-  test "lays out a full plan with its summary, diagrams, files and modules", %{views: views} do
-    html =
-      (&PlanSheet.plan_sheet/1)
-      |> render_component(sheet: build_plan_sheet(sheet_plan()), diagram_views: views, event: "diagram_view")
-      |> Floki.parse_fragment!()
+  test "lays a plan out in one column with no diagrams and no In this plan box", %{sheet: sheet} do
+    html = (&PlanSheet.plan_sheet/1) |> render_component(sheet: sheet) |> Floki.parse_fragment!()
 
-    summary = Floki.find(html, "#plan-summary")
-    assert Floki.text(summary) =~ ~r/2\s+files\s+·\s+2\s+modules\s+·\s+2\s+diagrams/
-    assert Floki.text(summary) =~ "Change diagram and call flow"
-    assert Floki.text(summary) =~ "Every module in Program design is in File-level changes"
-    refute Floki.text(summary) =~ "not in File-level changes"
+    assert [class] = Floki.attribute(html, "#plan-sheet", "class")
+    assert class =~ "max-w-[1120px]"
 
     assert Floki.text(Floki.find(html, "#plan-approach")) =~ "Sending a task back is a stage move"
-    assert length(Floki.find(html, "figure[phx-hook='PlanDiagram']")) == 2
-    assert Floki.find(html, "#plan-no-diagrams") == []
+    assert Floki.find(html, "figure") == []
+    assert Floki.find(html, "#plan-summary") == []
+    refute Floki.text(html) =~ "In this plan"
 
-    assert Floki.attribute(html, "#plan-files", "phx-hook") == ["PlanLinks"]
+    assert [change] = Floki.find(html, "#plan-data-changes [data-qa='plan_data_change']")
+    assert Floki.text(change) =~ ~r/New column\s+tasks.sent_back_note\s+text, null until a task is sent back./
 
-    assert Floki.attribute(html, "#plan-file-1", "data-plan-file") == [
-             "lib/rail/pipeline/actions/send_back_to_architect.ex"
+    assert [decision, ruled_out, assumption] = Floki.find(html, "#plan-decisions [data-qa='plan_decision']")
+    assert Floki.text(decision) =~ ~r/Decision\s+the note is kept on the task/
+    refute Floki.text(decision) =~ "Decision:"
+    assert Floki.text(ruled_out) =~ ~r/Ruled out\s+a table of send-backs/
+    assert Floki.text(assumption) =~ ~r/Assumption\s+the note is required/
+
+    assert Floki.text(Floki.find(html, "#plan-verification")) =~ "A task sent back from Review is at Architect"
+  end
+
+  test "a group is a block headed by its name, directory and file count, drawn open and left to the browser", %{
+    sheet: sheet
+  } do
+    html = (&PlanSheet.plan_sheet/1) |> render_component(sheet: sheet) |> Floki.parse_fragment!()
+
+    assert ["plan-group-pipeline", "plan-group-web", "plan-group-migrations"] =
+             Floki.attribute(html, "details[data-qa='plan_group']", "id")
+
+    [pipeline] = Floki.find(html, "#plan-group-pipeline")
+    assert Floki.attribute(pipeline, "open") == ["open"]
+    assert [mounted] = Floki.attribute(pipeline, "phx-mounted")
+    assert mounted =~ "ignore_attrs"
+    assert Floki.attribute(pipeline, "summary", "phx-click") == []
+
+    assert Floki.text(Floki.find(pipeline, "summary")) =~ ~r/pipeline\s+lib\/rail\/pipeline\s+3\s+files/
+    assert Floki.text(Floki.find(html, "#plan-group-web summary")) =~ ~r/web\s+lib\/rail_web\s+1\s+file\b/
+  end
+
+  test "two children's parts name the same group apart, so a fold stays with its own part", %{sheet: sheet} do
+    ids =
+      for part <- [1, 2] do
+        (&PlanSheet.plan_sheet/1)
+        |> render_component(sheet: sheet, part: part)
+        |> Floki.parse_fragment!()
+        |> Floki.attribute("details[data-qa='plan_group']", "id")
+        |> hd()
+      end
+
+    assert ids == ["plan-1-group-pipeline", "plan-2-group-pipeline"]
+  end
+
+  test "a card shows its path, its prose, then its signatures, and a Deleted badge only when deleted", %{sheet: sheet} do
+    html = (&PlanSheet.plan_sheet/1) |> render_component(sheet: sheet) |> Floki.parse_fragment!()
+
+    [card] = Floki.find(html, "#plan-card-1")
+    # Floki drops the spaces between highlighted tokens, which hold nothing else, so the text is read without spaces.
+    text = card |> Floki.text() |> String.replace(~r/\s/, "")
+    assert text =~ "lib/rail/pipeline/actions/send_back_to_architect.ex"
+    assert text =~ ~r/Refusesunlessthetaskisat:reviewandidle\..*defsend_back_to_architect\(%Run\{\}=run,note\)/s
+
+    assert Floki.find(card, "[data-qa='plan_card_deleted']") == []
+
+    assert Floki.text(Floki.find(html, "#plan-card-3 [data-qa='plan_card_deleted']")) =~ "Deleted"
+    assert Floki.text(Floki.find(html, "#plan-card-3")) =~ "lib/rail/pipeline/actions/old_send_back.ex"
+    assert Floki.find(html, "#plan-card-2 [data-qa='plan_card_sketch']") == []
+  end
+
+  test "a path on the default branch reads Changed and links to it on GitHub in a new tab, one off it reads New", %{
+    sheet: sheet,
+    project: project
+  } do
+    on_main = MapSet.new(["lib/rail/pipeline.ex", "lib/rail/pipeline/actions/old_send_back.ex"])
+
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: sheet, default_paths: on_main, project: project)
+      |> Floki.parse_fragment!()
+
+    assert Floki.text(Floki.find(html, "#plan-card-1 [data-qa='plan_card_new']")) =~ "New"
+    assert Floki.find(html, "#plan-card-1 [data-qa='plan_card_link']") == []
+    assert Floki.text(Floki.find(html, "#plan-card-1")) =~ "lib/rail/pipeline/actions/send_back_to_architect.ex"
+
+    assert Floki.text(Floki.find(html, "#plan-card-2 [data-qa='plan_card_changed']")) =~ "Changed"
+    assert [link] = Floki.find(html, "#plan-card-2 a[data-qa='plan_card_link']")
+    assert Floki.attribute(link, "href") == ["https://github.com/example/rail/blob/main/lib/rail/pipeline.ex"]
+    assert Floki.attribute(link, "target") == ["_blank"]
+    assert Floki.attribute(link, "rel") == ["noopener noreferrer"]
+    assert Floki.attribute(link, "title") == ["Open lib/rail/pipeline.ex on main in GitHub (new tab)"]
+    assert Floki.text(link) =~ "lib/rail/pipeline.ex"
+    assert Floki.find(link, "[class*='pi-arrow-up-right-bold']") != []
+
+    assert html |> Floki.find("#plan-changes h3 + span") |> Floki.text() =~ "Changed files link to main on GitHub."
+  end
+
+  test "a deleted card reads Deleted, and links to GitHub only while the default branch still has it", %{
+    sheet: sheet,
+    project: project
+  } do
+    render = fn paths ->
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: sheet, default_paths: paths, project: project)
+      |> Floki.parse_fragment!()
+      |> Floki.find("#plan-card-3")
+    end
+
+    on_main = render.(MapSet.new(["lib/rail/pipeline/actions/old_send_back.ex"]))
+    assert Floki.text(Floki.find(on_main, "[data-qa='plan_card_deleted']")) =~ "Deleted"
+    assert Floki.find(on_main, "[data-qa='plan_card_new'], [data-qa='plan_card_changed']") == []
+
+    assert Floki.attribute(on_main, "a[data-qa='plan_card_link']", "href") == [
+             "https://github.com/example/rail/blob/main/lib/rail/pipeline/actions/old_send_back.ex"
            ]
 
-    assert Floki.text(Floki.find(html, "#plan-file-2")) =~ "Delegates send_back_to_architect/2"
-
-    assert [action, context] = Floki.find(html, "[data-qa='plan_module']")
-    assert Floki.attribute(action, "data-plan-file") == ["lib/rail/pipeline/actions/send_back_to_architect.ex"]
-    assert Floki.text(action) =~ "Rail.Pipeline.Actions.SendBackToArchitect"
-    assert Floki.text(Floki.find(action, "[data-qa='plan_module_new']")) =~ "new"
-    assert Floki.attribute(action, "a", "href") == ["#plan-file-1"]
-
-    assert Floki.text(Floki.find(action, "[data-qa='plan_module_signatures']")) =~
-             "def send_back_to_architect(%Run{} = run, note)"
-
-    assert Floki.find(context, "[data-qa='plan_module_new']") == []
-    assert Floki.attribute(context, "a", "href") == ["#plan-file-2"]
-
-    assert Floki.text(Floki.find(html, "#plan-verification")) =~ "pins the move to :architect"
-    assert Floki.text(Floki.find(html, "#plan-assumptions")) =~ "The note is required"
+    off_main = render.(MapSet.new())
+    assert Floki.text(Floki.find(off_main, "[data-qa='plan_card_deleted']")) =~ "Deleted"
+    assert Floki.find(off_main, "[data-qa='plan_card_link']") == []
   end
 
-  test "a module missing from File-level changes is flagged on its card and in the summary", %{views: views} do
-    plan =
-      String.replace(sheet_plan(), "### Verification", """
-      #### `Rail.Pipeline.Actions.EnterStage`
-
-      `lib/rail/pipeline/actions/enter_stage.ex`
-
-      ### Verification
-      """)
+  test "each group header counts its new, changed and deleted files in place of its file count", %{
+    sheet: sheet,
+    project: project
+  } do
+    on_main = MapSet.new(["lib/rail/pipeline.ex", "lib/rail_web/live/review_stage.ex"])
 
     html =
       (&PlanSheet.plan_sheet/1)
-      |> render_component(sheet: build_plan_sheet(plan), diagram_views: views, event: "diagram_view")
+      |> render_component(sheet: sheet, default_paths: on_main, project: project)
       |> Floki.parse_fragment!()
 
-    assert Floki.text(Floki.find(html, "#plan-summary")) =~ "1 module in Program design is not in File-level changes"
-    refute Floki.text(Floki.find(html, "#plan-summary")) =~ "Every module"
-
-    assert [_action, _context, unlisted] = Floki.find(html, "[data-qa='plan_module']")
-    assert Floki.text(unlisted) =~ "lib/rail/pipeline/actions/enter_stage.ex"
-    assert Floki.text(unlisted) =~ "· not in File-level changes"
-    assert Floki.find(unlisted, "a") == []
-    assert [class] = Floki.attribute(unlisted, "class")
-    assert class =~ "border-amber"
+    counts = for group <- Floki.find(html, "[data-qa='plan_group_count']"), do: String.trim(Floki.text(group))
+    assert counts == ["1 new · 1 changed · 1 deleted", "1 changed", "1 new"]
   end
 
-  test "more than one unlisted module is counted as such", %{views: views} do
+  test "without the default branch's paths a card reads neither New nor Changed and links nowhere", %{sheet: sheet} do
+    html = (&PlanSheet.plan_sheet/1) |> render_component(sheet: sheet) |> Floki.parse_fragment!()
+
+    assert Floki.find(html, "[data-qa='plan_card_new'], [data-qa='plan_card_changed']") == []
+    assert Floki.find(html, "[data-qa='plan_card_link']") == []
+    assert [_deleted] = Floki.find(html, "[data-qa='plan_card_deleted']")
+
+    counts = for group <- Floki.find(html, "[data-qa='plan_group_count']"), do: String.trim(Floki.text(group))
+    assert counts == ["3 files", "1 file", "1 file"]
+    refute Floki.text(Floki.find(html, "#plan-changes")) =~ "GitHub"
+  end
+
+  test "a path holding a # or a space links with them escaped, so GitHub opens the whole path", %{project: project} do
     plan =
-      String.replace(
-        sheet_plan(),
-        ["`lib/rail/pipeline.ex`\n\n```elixir", "`lib/rail/pipeline/actions/send_back_to_architect.ex`\n\n```elixir"],
-        "```elixir"
-      )
+      "## Implementation plan\n\n### Approach\n\nAll of it.\n\n### Decisions\n\n- Decision: one file.\n\n" <>
+        "### Changes\n\n#### `docs/notes #1.md`\n\nRewrites it.\n\n### Acceptance criteria\n\n- 1: `docs/notes #1.md`\n\n" <>
+        "### Verification\n\n- Reads well."
 
-    html =
-      render_component(&PlanSheet.plan_sheet/1,
-        sheet: build_plan_sheet(plan),
-        diagram_views: views,
-        event: "diagram_view"
-      )
-
-    assert html =~ "2 modules in Program design are not in File-level changes"
-    assert html =~ "not in File-level changes"
-  end
-
-  test "a plan with no diagrams says why in one line, with no empty frames", %{views: views} do
-    plan = """
-    ## Implementation plan
-
-    ### Approach
-
-    The missing-worktree case in `Rail.Pipeline.Actions.CleanupTask` already returns `:ok`.
-
-    No diagrams: this plan only adds tests, so no application code or call path changes.
-
-    ### File-level changes
-
-    - `lib/rail/pipeline/actions/cleanup_task_test.exs`: adds a case for a task whose worktree was already deleted.
-    """
-
-    html =
-      (&PlanSheet.plan_sheet/1)
-      |> render_component(sheet: build_plan_sheet(plan), diagram_views: views, event: "diagram_view")
-      |> Floki.parse_fragment!()
-
-    assert Floki.text(Floki.find(html, "#plan-no-diagrams")) =~
-             "No diagrams: this plan only adds tests, so no application code or call path changes."
-
-    assert Floki.find(html, "figure") == []
-    summary = Floki.text(Floki.find(html, "#plan-summary"))
-    assert summary =~ ~r/1\s+file\s+·\s+0\s+modules\s+·\s+0\s+diagrams/
-    assert summary =~ "No diagrams, as the plan explains"
-    assert summary =~ "No program design: no application code changes"
-    refute summary =~ "Change diagram and call flow"
-    assert Floki.find(html, "[data-qa='plan_module']") == []
-    assert Floki.find(html, "#plan-verification") == []
-    assert Floki.find(html, "#plan-assumptions") == []
-  end
-
-  test "a section the sheet has no place for still renders, under its own title", %{views: views} do
-    plan =
-      sheet_plan()
-      |> String.replace("### Approach", "A note before the plan.\n\n### Approach")
-      |> String.replace("### Assumptions", "### Rollout\n\nShip it behind nothing.\n\n### Assumptions")
-
-    html =
-      (&PlanSheet.plan_sheet/1)
-      |> render_component(sheet: build_plan_sheet(plan), diagram_views: views, event: "diagram_view")
-      |> Floki.parse_fragment!()
-
-    assert [preamble, rollout] = Floki.find(html, "[data-qa='plan_section']")
-    assert Floki.find(preamble, "h3") == []
-    assert Floki.text(preamble) =~ "A note before the plan."
-    assert Floki.text(Floki.find(rollout, "h3")) =~ "Rollout"
-    assert Floki.text(rollout) =~ "Ship it behind nothing."
-  end
-
-  test "each diagram shows the view it was given", %{views: views} do
     html =
       (&PlanSheet.plan_sheet/1)
       |> render_component(
-        sheet: build_plan_sheet(sheet_plan()),
-        diagram_views: %{views | call_flow: :source},
-        event: "diagram_view",
-        target: "#architect-stage"
+        sheet: build_plan_sheet(plan),
+        default_paths: MapSet.new(["docs/notes #1.md"]),
+        project: %{project | default_branch: "release/2026"}
       )
       |> Floki.parse_fragment!()
 
-    assert Floki.attribute(html, "button[phx-value-view='change:diagram']", "aria-pressed") == ["true"]
-    assert Floki.attribute(html, "button[phx-value-view='call_flow:source']", "aria-pressed") == ["true"]
-    assert Floki.attribute(html, "button[phx-value-view='call_flow:source']", "phx-target") == ["#architect-stage"]
+    assert Floki.attribute(html, "a[data-qa='plan_card_link']", "href") == [
+             "https://github.com/example/rail/blob/release/2026/docs/notes%20%231.md"
+           ]
+  end
+
+  test "a sketch is drawn closed unless one of its lines has the reader's comment", %{sheet: sheet} do
+    html = (&PlanSheet.plan_sheet/1) |> render_component(sheet: sheet) |> Floki.parse_fragment!()
+
+    [%{id: id, sketch: [_first, second, _end]}] = Enum.take(sheet.cards, 1)
+    [sketch] = Floki.find(html, "#plan-sketch-#{id}")
+    assert Floki.attribute(sketch, "open") == []
+    assert Floki.text(Floki.find(sketch, "summary"), sep: " ") =~ ~r/Show code\s+Hide code/
+    # Floki drops the spaces between highlighted tokens, which hold nothing else.
+    assert Floki.text(sketch) =~ "enter_stage(task,:architect,%{sent_back_note: note})"
+
+    comment = %PlanComment{
+      id: "pcm_s",
+      target: :plan,
+      element_kind: :code,
+      element_label: second.label,
+      element_text: second.text,
+      body: "Through EnterStage?"
+    }
+
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: sheet, placed: %{second.key => [{comment, 1}]})
+      |> Floki.parse_fragment!()
+
+    assert Floki.attribute(html, "#plan-sketch-#{id}", "open") == ["open"]
+    assert Floki.text(Floki.find(html, "#plan-sketch-#{id}")) =~ "Through EnterStage?"
+  end
+
+  test "a sketch keeps its id when a revision adds a card above its own", %{sheet: sheet} do
+    html = (&PlanSheet.plan_sheet/1) |> render_component(sheet: sheet) |> Floki.parse_fragment!()
+    assert [id] = Floki.attribute(html, "#plan-card-1 [data-qa='plan_card_sketch']", "id")
+
+    plan =
+      String.replace(
+        sheet_plan(),
+        "#### `lib/rail/pipeline/actions/send_back_to_architect.ex`",
+        "#### `lib/rail/pipeline/actions/enter_stage.ex`\n\nTakes the note.\n\n" <>
+          "#### `lib/rail/pipeline/actions/send_back_to_architect.ex`"
+      )
+
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: build_plan_sheet(plan, [1, 2, 3]))
+      |> Floki.parse_fragment!()
+
+    assert Floki.text(Floki.find(html, "#plan-card-2")) =~ "send_back_to_architect.ex"
+    assert [^id] = Floki.attribute(html, "#plan-card-2 [data-qa='plan_card_sketch']", "id")
+  end
+
+  test "the Changes header and each group's header count the cards the reader marked reviewed", %{sheet: sheet} do
+    [first, second | _rest] = sheet.cards
+    reviewed = %{first.path => first.digest, second.path => "an older digest"}
+
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: sheet, reviewed: reviewed)
+      |> Floki.parse_fragment!()
+
+    assert Floki.text(Floki.find(html, "#plan-reviewed-count")) =~ ~r/1\s+of\s+5\s+reviewed/
+    assert Floki.text(Floki.find(html, "#plan-group-pipeline summary")) =~ ~r/3\s+files\s+·\s+1\s+of\s+3\s+reviewed/
+    assert Floki.text(Floki.find(html, "#plan-group-web summary")) =~ ~r/·\s+0\s+of\s+1\s+reviewed/
+
+    assert Floki.attribute(html, "#plan-card-1 [data-qa='plan_card_reviewed']", "aria-pressed") == ["true"]
+    assert Floki.attribute(html, "#plan-card-2 [data-qa='plan_card_reviewed']", "aria-pressed") == ["false"]
+    assert Floki.text(Floki.find(html, "#plan-card-2 [data-qa='plan_card_revised']")) =~ "Revised since you reviewed it."
+    assert Floki.find(html, "#plan-card-4 [data-qa='plan_card_revised']") == []
+  end
+
+  test "without the reader's marks, as on a split's part, no card takes one and nothing is counted", %{sheet: sheet} do
+    html = (&PlanSheet.plan_sheet/1) |> render_component(sheet: sheet) |> Floki.parse_fragment!()
+
+    assert Floki.find(html, "[data-qa='plan_card_reviewed']") == []
+    assert Floki.find(html, "[data-qa='plan_reviewed_count']") == []
+    assert Floki.find(html, "[data-qa='plan_group_reviewed']") == []
+  end
+
+  test "a reviewed card is its header alone, with its lines' comments and box under it, each naming its line", %{
+    sheet: sheet
+  } do
+    [
+      %{
+        path: path,
+        digest: digest,
+        line: file_line,
+        prose: [prose],
+        signatures: [signature],
+        sketch: [_first, sketched, _end]
+      }
+      | _rest
+    ] = sheet.cards
+
+    comment = fn id, line ->
+      %PlanComment{
+        id: id,
+        target: :plan,
+        element_kind: line.kind,
+        element_label: line.label,
+        element_text: line.text,
+        body: "About #{line.label}."
+      }
+    end
+
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(
+        sheet: sheet,
+        reviewed: %{path => digest},
+        offered: true,
+        placed: %{prose.key => [{comment.("pcm_p", prose), 1}], sketched.key => [{comment.("pcm_k", sketched), 2}]},
+        draft: %{doc: :plan, key: signature.key, label: signature.label, body: "Why"}
+      )
+      |> Floki.parse_fragment!()
+
+    [card] = Floki.find(html, "#plan-card-1")
+    refute Floki.text(card) =~ "Refuses unless the task is at :review and idle."
+    assert Floki.find(card, "[data-qa='plan_card_signatures']") == []
+    assert Floki.find(card, "[data-qa='plan_card_sketch']") == []
+    assert Floki.find(card, "#line-plan-#{prose.key}") == []
+
+    assert [_header_add] = Floki.find(card, "button[aria-label='Comment on #{file_line.label}']")
+    assert [_one_add] = Floki.find(card, "[data-qa='line_comment_add']")
+
+    assert ["File 1, paragraph 1", "File 1, sketch line 2"] =
+             card |> Floki.find("[data-qa='document_comment_line']") |> Enum.map(&String.trim(Floki.text(&1)))
+
+    assert [_box] = Floki.find(card, "#document-comment-form-#{signature.key}")
+
+    ids = Floki.attribute(html, "[id]", "id")
+    assert Enum.uniq(ids) == ids
+  end
+
+  test "a criterion the plan names nothing for reads Not covered, and those around it keep their files and tests", %{
+    sheet: sheet,
+    criteria: criteria
+  } do
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: sheet, criteria: criteria)
+      |> Floki.parse_fragment!()
+
+    assert [first, second, third] = Floki.find(html, "#plan-criteria [data-qa='plan_criterion']")
+
+    assert Floki.text(first, sep: " ") =~
+             ~r/Covered:\s+A task sent back lands at Architect.\s+send_back_to_architect.ex\s+send_back_to_architect_test.exs/
+
+    assert Floki.text(second, sep: " ") =~ ~r/Not covered:\s+The note reaches the brief.\s+Not covered/
+    assert Floki.text(third, sep: " ") =~ ~r/Covered:\s+Review shows Send back.\s+review_stage.ex/
+  end
+
+  test "a bullet for a criterion the ticket lacks is not drawn, and without the ticket's words a row reads by number", %{
+    sheet: sheet,
+    criteria: criteria
+  } do
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: build_plan_sheet(sheet_plan(), [1]), criteria: Enum.take(criteria, 1))
+      |> Floki.parse_fragment!()
+
+    assert [only] = Floki.find(html, "[data-qa='plan_criterion']")
+    assert Floki.text(only) =~ "A task sent back lands at Architect."
+
+    html = (&PlanSheet.plan_sheet/1) |> render_component(sheet: sheet) |> Floki.parse_fragment!()
+
+    assert [first, second, third] = Floki.find(html, "[data-qa='plan_criterion']")
+    assert Floki.text(first, sep: " ") =~ ~r/\ACovered:\s+Criterion 1\s+send_back_to_architect.ex/
+    assert Floki.text(second, sep: " ") =~ ~r/\ANot covered:\s+Criterion 2\s+Not covered/
+    assert Floki.text(third, sep: " ") =~ ~r/\ACovered:\s+Criterion 3\s+review_stage.ex/
+
+    plan = String.replace(sheet_plan(), ~r/### Acceptance criteria\n.*?### Verification/s, "### Verification")
+    html = render_component(&PlanSheet.plan_sheet/1, sheet: build_plan_sheet(plan), criteria: criteria)
+    refute html =~ "plan-criteria"
+  end
+
+  test "a Not covered row takes a comment, and a saved row naming no path reads Not covered", %{
+    sheet: sheet,
+    criteria: criteria
+  } do
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: sheet, criteria: criteria, offered: true)
+      |> Floki.parse_fragment!()
+
+    assert [_first, second, _third] = Floki.find(html, "#plan-criteria [data-qa='plan_criterion']")
+    assert Floki.text(second, sep: " ") =~ ~r/Not covered:\s+The note reaches the brief.\s+Not covered/
+    assert [_add] = Floki.find(html, "#plan-criteria button[aria-label='Comment on Criterion 2']")
+
+    plan = String.replace(sheet_plan(), "- 3: `lib/rail_web", "- 2: handled by the existing flow\n- 3: `lib/rail_web")
+
+    html =
+      (&PlanSheet.plan_sheet/1)
+      |> render_component(sheet: build_plan_sheet(plan, [1, 2, 3]), criteria: criteria)
+      |> Floki.parse_fragment!()
+
+    assert [_first, second, _third] = Floki.find(html, "#plan-criteria [data-qa='plan_criterion']")
+    assert Floki.text(second, sep: " ") =~ ~r/Not covered:\s+The note reaches the brief.\s+Not covered/
   end
 
   test "every line of the sheet draws a + while commenting is offered, and the changed comments sit at the top", %{
-    views: views
+    sheet: sheet
   } do
-    sheet = build_plan_sheet(sheet_plan())
-
     lifted = %PlanComment{
       id: "pcm_l",
       target: :plan,
@@ -181,50 +402,35 @@ defmodule RailWeb.Components.PlanSheetTest do
 
     html =
       (&PlanSheet.plan_sheet/1)
-      |> render_component(
-        sheet: sheet,
-        diagram_views: %{views | change: :source},
-        event: "diagram_view",
-        offered: true,
-        changed: [{lifted, 1}]
-      )
+      |> render_component(sheet: sheet, offered: true, changed: [{lifted, 1}])
       |> Floki.parse_fragment!()
 
     adds = html |> Floki.attribute("[data-qa='line_comment_add']", "phx-value-key") |> MapSet.new()
-    drawn = for line <- sheet.lines, line.kind != :node, into: MapSet.new(), do: line.key
 
-    assert drawn == adds
+    assert MapSet.new(sheet.lines, & &1.key) == adds
     assert [_lifted] = Floki.find(html, "#plan-changed-comments [data-lifted='true']")
 
-    quiet =
-      (&PlanSheet.plan_sheet/1)
-      |> render_component(sheet: sheet, diagram_views: views, event: "diagram_view")
-      |> Floki.parse_fragment!()
-
+    quiet = (&PlanSheet.plan_sheet/1) |> render_component(sheet: sheet) |> Floki.parse_fragment!()
     assert Floki.find(quiet, "[data-qa='line_comment_add']") == []
   end
 
-  test "prose under a module and a table in a section are lines of their own", %{views: views} do
+  test "a code block or a table in a section's prose draws as code and table lines that take comments" do
     plan =
       sheet_plan()
       |> String.replace(
-        "```elixir\ndef send_back_to_architect",
-        "Called by the stage.\n\n```elixir\ndef send_back_to_architect"
+        "the only thing that writes `task.stage`.",
+        "the only thing that writes `task.stage`.\n\n```\nenter_stage(task, :architect)\n```"
       )
-      |> String.replace("### Assumptions\n", "### Assumptions\n\n| Case | Then |\n|------|------|\n| Empty | Refused |\n")
+      |> String.replace(
+        "with the note in its brief.",
+        "with the note in its brief.\n\n| Stage | Then |\n|---|---|\n| Review | Architect |"
+      )
 
     sheet = build_plan_sheet(plan)
-    labels = Enum.map(sheet.lines, & &1.label)
+    html = (&PlanSheet.plan_sheet/1) |> render_component(sheet: sheet, offered: true) |> Floki.parse_fragment!()
 
-    assert "SendBackToArchitect, paragraph 1" in labels
-    assert "Assumptions, table row 1" in labels
-
-    html =
-      (&PlanSheet.plan_sheet/1)
-      |> render_component(sheet: sheet, diagram_views: views, event: "diagram_view", offered: true)
-      |> Floki.parse_fragment!()
-
-    assert Floki.text(Floki.find(html, "[data-qa='plan_module_signatures']")) =~ "Called by the stage."
-    assert [_header, _row] = Floki.find(html, "#plan-assumptions [data-kind='table_row']")
+    assert Floki.text(Floki.find(html, "#plan-approach [data-kind='code']")) =~ "enter_stage(task, :architect)"
+    assert [_header, _row] = Floki.find(html, "#plan-verification [data-kind='table_row']")
+    assert html |> Floki.attribute("[data-qa='line_comment_add']", "phx-value-key") |> length() == length(sheet.lines)
   end
 end

@@ -2,6 +2,8 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  import Rail.Pipeline.Utils.BuildTask
+
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Issues.Workers.AdvanceTrackerState
@@ -143,15 +145,10 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, child_issue} = Issues.create_issue(system_scope(), project, %{title: "Child", parent: parent_issue})
 
     {:ok, %Task{id: child_id} = child} =
-      Pipeline.create_child_task(Repo.preload(parent, [:issue, :project]), child_issue, %{
-        number: 1,
-        title: "A part",
-        ticket: "Its criteria.",
-        estimate: 1,
-        builds_on: [],
-        builds_screen: false,
-        plan: "## Implementation plan\n\nPart 1."
-      })
+      child_issue.project
+      |> build_task(child_issue, %{stage: :engineer, split_position: 1, builds_on: []})
+      |> Ecto.Changeset.put_change(:parent_task_id, parent.id)
+      |> Repo.insert()
 
     {:ok, child} =
       Pipeline.update_task(child, %{stage: :finalize, pr_number: 151, marked_ready_at: DateTime.utc_now()})

@@ -331,6 +331,30 @@ defmodule RailWeb.Live.DiffViewTest do
     assert view |> render() |> Floki.parse_document!() |> Floki.find(".diff-body .diff-code") == code
   end
 
+  test "marking a file reviewed on the diff leaves the plan's card for that path as it was, and the other way round", %{
+    conn: conn,
+    user: user,
+    task: task
+  } do
+    scope = user_scope(user: user)
+    {:ok, _card} = Git.set_file_viewed(scope, task, :plan, "rows.ex", "card_digest", true)
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    assert has_element?(view, "#diff-header-rows-ex [data-qa='diff-viewed-checkbox'][aria-pressed='false']")
+
+    view |> element("#diff-header-rows-ex [data-qa='diff-viewed-checkbox']") |> render_click()
+
+    assert has_element?(view, "#diff-header-rows-ex [data-qa='diff-viewed-checkbox'][aria-pressed='true']")
+    assert %{"rows.ex" => diff_digest} = Git.list_viewed_files(scope, task, :diff)
+    assert diff_digest != "card_digest"
+    assert Git.list_viewed_files(scope, task, :plan) == %{"rows.ex" => "card_digest"}
+
+    view |> element("#diff-header-rows-ex [data-qa='diff-viewed-checkbox']") |> render_click()
+
+    assert Git.list_viewed_files(scope, task, :diff) == %{}
+    assert Git.list_viewed_files(scope, task, :plan) == %{"rows.ex" => "card_digest"}
+  end
+
   describe "long lines" do
     test "scroll until the reader picks Wrap, which redraws no line", %{conn: conn, task: task} do
       {:ok, view, html} = live(conn, ~p"/tasks/#{task.id}")

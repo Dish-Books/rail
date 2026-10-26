@@ -204,6 +204,66 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     refute text =~ "Provisional since"
   end
 
+  test "a provisional rule proposed for retiring is deleted, also those waiting from earlier passes, while an active rule's retire waits",
+       %{project: project} do
+    provisional =
+      Repo.insert!(%Learning{project_id: project.id, status: :provisional, rule: "Old habit", kind: :convention})
+
+    earlier =
+      for n <- 1..10,
+          do: Repo.insert!(%Learning{project_id: project.id, status: :provisional, rule: "Stale #{n}", kind: :convention})
+
+    active = Repo.insert!(%Learning{project_id: project.id, status: :active, rule: "House rule", kind: :convention})
+
+    waiting =
+      for learning <- earlier,
+          do: Repo.insert!(%LearningProposal{project_id: project.id, action: :retire, learning_id: learning.id})
+
+    %{workspace: workspace, channel: channel} = connect_slack_channel(project)
+
+    {:ok, _project} =
+      Projects.update_project(system_scope(), project, %{
+        "learnings_slack_workspace_id" => workspace.id,
+        "learnings_channel_external_id" => channel.external_id
+      })
+
+    test = self()
+
+    Req.Test.stub(Rail.Slack, fn conn ->
+      case conn.request_path do
+        "/api/chat.postMessage" ->
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+          send(test, {:posted, Jason.decode!(body)["text"]})
+          Req.Test.json(conn, %{"ok" => true, "ts" => "1790000000.000903"})
+
+        "/api/chat.getPermalink" ->
+          Req.Test.json(conn, %{"ok" => true, "permalink" => "https://slack.example/p4"})
+      end
+    end)
+
+    expect(Tools, :run_agent, fn _role, _argv, opts ->
+      proposals = [
+        %{"action" => "retire", "learning" => provisional.id, "summary" => "code gone"},
+        %{"action" => "retire", "learning" => active.id, "summary" => "code gone"}
+      ]
+
+      File.write!(Path.join(opts[:cd], "result.json"), Jason.encode!(%{"proposals" => proposals}))
+      {:ok, ""}
+    end)
+
+    {:ok, _pass} = Learnings.curate_learnings(project)
+
+    refute Repo.reload(provisional)
+    refute Enum.any?(earlier, &Repo.reload/1)
+    refute Enum.any?(waiting, &Repo.reload/1)
+    assert %Learning{status: :active} = Repo.reload!(active)
+    assert %LearningProposal{status: :pending} = Repo.get_by!(LearningProposal, learning_id: active.id)
+    assert_received {:posted, text}
+    assert text =~ "*Deleted 11 provisional*"
+    assert text =~ "…and 1 more"
+    refute text =~ "• House rule"
+  end
+
   test "a later sighting linked to a pending add counts towards activating it", %{
     project: project,
     tasks: [one, two, three | _rest],

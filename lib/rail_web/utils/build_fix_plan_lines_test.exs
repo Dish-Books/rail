@@ -9,7 +9,8 @@ defmodule RailWeb.Utils.BuildFixPlanLinesTest do
     plan =
       "Guard nil.\n\n### Changes to the plan\n\n- Criterion 1: a dot.\n\nGuard nil.\n\n### What changes\n\n" <>
         "#### `nil-crash`\n\nGuard nil.\n\n#### Comment 1\n\nKept.\n\n```elixir\nx = 1\n```\n\n" <>
-        "### File-level changes\n\n- `lib/a.ex`: guards nil. For `nil-crash`.\n- `lib/b.ex`: Guard nil.\n\n" <>
+        "### File-level changes\n\n#### `lib/b.ex`\n\nGuard nil.\n\n#### `lib/rail/a.ex`\n\nGuards nil. For `nil-crash`.\n\n" <>
+        "```elixir sketch\ndef a(nil), do: :error\n```\n\n#### `lib/c.ex`\n\nAlso. For `nil-crash`.\n\n" <>
         "### Verification\n\n- Guard nil.\n"
 
     fix_plan = %FixPlan{
@@ -41,14 +42,18 @@ defmodule RailWeb.Utils.BuildFixPlanLinesTest do
                  ]
                }
              ],
-             files: [
+             files_title: %{kind: :section_title, label: "File-level changes", text: "File-level changes"},
+             cards: [
                %{
-                 path_line: %{kind: :file, label: "File 1", text: "lib/a.ex"},
-                 description_lines: [%{label: "File 1, paragraph 1", text: "guards nil. For nil-crash."}]
+                 line: %{kind: :file, label: "File 1", text: "lib/b.ex"},
+                 prose: [%{label: "File 1, paragraph 1", text: "Guard nil."}],
+                 sketch: []
                },
+               %{line: %{kind: :file, label: "File 2", text: "lib/c.ex"}},
                %{
-                 path_line: %{kind: :file, label: "File 2", text: "lib/b.ex"},
-                 description_lines: [%{label: "File 2, paragraph 1", text: "Guard nil."}]
+                 line: %{kind: :file, label: "File 3", text: "lib/rail/a.ex"},
+                 prose: [%{label: "File 3, paragraph 1", text: "Guards nil. For nil-crash."}],
+                 sketch: [%{kind: :code, label: "File 3, sketch line 1", text: "def a(nil), do: :error"}]
                }
              ],
              verification_lines: [%{kind: :list_item, label: "Verification, item 1", text: "Guard nil."}]
@@ -65,7 +70,7 @@ defmodule RailWeb.Utils.BuildFixPlanLinesTest do
              {"Changes to the plan, paragraph 1", 1},
              {"Summary, paragraph 1", 2},
              {"Fix finding nil-crash, paragraph 1", 3},
-             {"File 2, paragraph 1", 4}
+             {"File 1, paragraph 1", 4}
            ] =
              lines
              |> Enum.filter(&(&1.kind == :paragraph and &1.text == "Guard nil."))
@@ -76,7 +81,7 @@ defmodule RailWeb.Utils.BuildFixPlanLinesTest do
     assert Enum.all?(lines, &String.starts_with?(&1.key, "#{&1.kind}-"))
   end
 
-  test "lines run in reading order: changes, summary, each item, each file's path then description, Verification", %{
+  test "lines run in reading order: changes, summary, each item, each file's card in drawn order, Verification", %{
     sheet: sheet
   } do
     built = build_fix_plan_lines(sheet)
@@ -88,10 +93,14 @@ defmodule RailWeb.Utils.BuildFixPlanLinesTest do
              "Fix finding nil-crash, paragraph 1",
              "Comment 1, paragraph 1",
              "Comment 1, code line 1",
+             "File-level changes",
              "File 1",
              "File 1, paragraph 1",
              "File 2",
              "File 2, paragraph 1",
+             "File 3",
+             "File 3, paragraph 1",
+             "File 3, sketch line 1",
              "Verification, item 1"
            ]
 
@@ -99,7 +108,29 @@ defmodule RailWeb.Utils.BuildFixPlanLinesTest do
              built.changes_lines ++
                built.summary_lines ++
                Enum.flat_map(built.items, & &1.body_lines) ++
-               Enum.flat_map(built.files, &[&1.path_line | &1.description_lines]) ++ built.verification_lines
+               [built.files_title | Enum.flat_map(built.cards, &([&1.line] ++ &1.prose ++ &1.signatures ++ &1.sketch))] ++
+               built.verification_lines
+  end
+
+  test "cards group by where the code goes, numbered as drawn, and each item names its cards by number", %{sheet: sheet} do
+    assert %{
+             groups: [
+               %{name: "lib", cards: [%{path: "lib/b.ex"}, %{path: "lib/c.ex"}]},
+               %{name: "a", cards: [%{path: "lib/rail/a.ex"}]}
+             ],
+             items: [
+               %{key: "nil-crash", files: [%{number: 3, path: "lib/rail/a.ex"}, %{number: 2, path: "lib/c.ex"}]},
+               %{number: 1, files: []}
+             ]
+           } = build_fix_plan_lines(sheet)
+  end
+
+  test "a card's digest starts with its round, so a mark holds for its own round's card alone", %{sheet: sheet} do
+    %{cards: [card | _rest]} = build_fix_plan_lines(sheet)
+    %{cards: [next | _rest]} = build_fix_plan_lines(%{sheet | round: 2})
+
+    assert String.starts_with?(card.digest, "1-")
+    assert next.digest == "2-" <> String.trim_leading(card.digest, "1-")
   end
 
   test "the same text reads the same key on every build, so a comment finds its line again", %{sheet: sheet} do
@@ -109,7 +140,7 @@ defmodule RailWeb.Utils.BuildFixPlanLinesTest do
   test "a plan with no changes, summary, files or Verification has no lines for them" do
     sheet = FixPlan.build_sheet(%FixPlan{round: 1, plan: "### What changes\n\n#### Comment 1\n\nAnswered."})
 
-    assert %{changes_lines: [], summary_lines: [], files: [], verification_lines: [], lines: [], items: []} =
+    assert %{changes_lines: [], summary_lines: [], cards: [], verification_lines: [], lines: [], items: []} =
              build_fix_plan_lines(sheet)
 
     sheet =

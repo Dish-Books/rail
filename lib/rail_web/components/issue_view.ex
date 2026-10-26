@@ -6,7 +6,7 @@ defmodule RailWeb.Components.IssueView do
   The issue page and the task page's first tab are the same view of the same
   thing, so both render this; the task page hides the section pointing at the
   task the reader is already on. The events it raises - `assign`,
-  `filter_assignees`, `comment`, `draft_comment`, `start_task` - belong
+  `filter_assignees`, `comment`, `draft_comment`, `start_task`, `adopt_pull_request` - belong
   to whichever LiveView renders it.
   """
   use RailWeb, :html
@@ -19,6 +19,8 @@ defmodule RailWeb.Components.IssueView do
   attr :assignee_query, :string, required: true
   attr :comment_nonce, :integer, required: true
   attr :show_task, :boolean, default: true
+  # While GitHub is asked for a pull request the issue's work was opened as, which it would start at Review on.
+  attr :checking_pull_request, :boolean, default: false
   # A child of a split is owned through its parent, so its owner is read here, not changed.
   attr :owner_editable, :boolean, default: true
 
@@ -120,20 +122,51 @@ defmodule RailWeb.Components.IssueView do
               class="space-y-2"
             >
               <p class="text-xs text-slate-500 dark:text-slate-400">Start at</p>
-              <div class="flex gap-1.5">
+              <p
+                :if={@checking_pull_request}
+                id="issue-start-checking"
+                class="text-xs text-slate-400 dark:text-slate-500"
+              >
+                Looking for a pull request...
+              </p>
+              <div :if={not @checking_pull_request} class="flex gap-1.5">
                 <button
-                  :for={stage <- [:plan]}
+                  :if={is_nil(@issue.pr_number)}
                   type="button"
-                  id={"issue-start-#{stage}"}
-                  data-qa={"issue-start-#{stage}"}
+                  id="issue-start-plan"
+                  data-qa="issue-start-plan"
                   phx-click="start_task"
-                  phx-value-stage={stage}
+                  phx-value-stage="plan"
                   class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 cursor-pointer"
                 >
                   <.icon name="pi-play" class="h-3.5 w-3.5" />
-                  <span>{Task.stage_label(stage)}</span>
+                  <span>{Task.stage_label(:plan)}</span>
+                </button>
+                <button
+                  :if={@issue.pr_number}
+                  type="button"
+                  id="issue-start-review"
+                  data-qa="issue-start-review"
+                  phx-click="adopt_pull_request"
+                  phx-disable-with="Starting..."
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 cursor-pointer"
+                >
+                  <.icon name="pi-git-pull-request" class="h-3.5 w-3.5" />
+                  <span>{Task.stage_label(:review)}</span>
                 </button>
               </div>
+              <a
+                :if={@issue.pr_number}
+                href={@issue.pr_url}
+                target="_blank"
+                rel="noopener"
+                id="issue-pull-request"
+                data-qa="issue-pull-request"
+                class="flex items-baseline gap-1.5 text-xs text-slate-500 dark:text-slate-400 hover:underline"
+              >
+                <span class="font-mono">#{@issue.pr_number}</span>
+                <span class="truncate">{@issue.pr_title}</span>
+              </a>
             </div>
 
             <p

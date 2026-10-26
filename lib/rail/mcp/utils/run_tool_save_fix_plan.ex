@@ -13,7 +13,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveFixPlan do
   def run_tool_save_fix_plan(%Task{} = task, arguments, _opts) do
     case Pipeline.save_fix_plan(
            task,
-           Map.take(arguments, ["plan", "record_demo", "retake_screens", "title", "description", "design_changed"])
+           Map.take(arguments, ["plan", "record_demo", "title", "description", "design_changed"])
          ) do
       {:ok, fix_plan} ->
         {:ok,
@@ -22,6 +22,10 @@ defmodule Rail.Mcp.Utils.RunToolSaveFixPlan do
       {:error, :no_fix_plan} ->
         {:refused,
          "Nothing saved: no fix plan is due. A plan is due once the round's review is saved, until the task merges."}
+
+      {:error, :nothing_to_fix} ->
+        {:refused,
+         "Nothing saved: nothing is ruled Fix, no comment asks for a change and the ticket and design stay as they are, so there is no round to plan. End your turn: the human finishes the review."}
 
       {:error, changeset} ->
         {:error, changeset}

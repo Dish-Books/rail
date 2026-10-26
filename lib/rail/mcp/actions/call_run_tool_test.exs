@@ -13,26 +13,7 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
-  # The smallest part of a plan the structure allows, trimmed as a save trims it.
-  @part String.trim("""
-        ## Implementation plan
-
-        ### Approach
-
-        Build it.
-
-        No diagrams: one module changes.
-
-        ### File-level changes
-
-        - `lib/rail.ex`: builds it.
-
-        ### Verification
-
-        - `lib/rail_test.exs`: covers it.
-        """)
-
-  # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
+  # The smallest plan the structure allows: one decision, one card and one criterion, and no data changes.
   @plan """
   ## Implementation plan
 
@@ -40,11 +21,19 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
 
   Extend the module.
 
-  No diagrams: one module changes.
+  ### Decisions
 
-  ### File-level changes
+  - Decision: one module changes.
 
-  - `lib/rail.ex`: extends the module.
+  ### Changes
+
+  #### `lib/rail.ex`
+
+  Extends the module.
+
+  ### Acceptance criteria
+
+  - 1: `lib/rail.ex`
 
   ### Verification
 
@@ -307,19 +296,6 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
               }} =
                Mcp.call_run_tool(context.(:plan), "save_plan", %{"plan" => @plan})
 
-      children = [
-        %{"title" => "One", "ticket" => "T1.", "plan" => @part},
-        %{"title" => "Two", "ticket" => "T2.", "plan" => @part, "builds_on" => [1]}
-      ]
-
-      assert {:ok, %{"content" => [%{"text" => "Split saved into 2 children." <> _rest}]}} =
-               Mcp.call_run_tool(context.(:plan), "save_split", %{"children" => children})
-
-      assert {:error, {:refused, "Refused, nothing saved. children 2 plan: is required."}} =
-               Mcp.call_run_tool(context.(:plan), "save_split", %{
-                 "children" => [hd(children), Map.delete(List.last(children), "plan")]
-               })
-
       assert {:ok, %{"content" => [%{"text" => "Write-up saved: One round."}]}} =
                Mcp.call_run_tool(context.(:demo), "save_demo", %{"title" => "One round", "summary" => "Shown."})
 
@@ -338,7 +314,6 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
       saves = [
         {:plan, "save_design_option", :save_design_option},
         {:plan, "save_plan", :save_plan},
-        {:plan, "save_split", :save_split},
         {:review_lead, "save_finding", :save_finding},
         {:review_lead, "save_fix_plan", :save_fix_plan},
         {:demo, "save_demo", :save_demo}

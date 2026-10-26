@@ -6,7 +6,9 @@ defmodule RailWeb.Live.TaskActionsTest do
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Round
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles
@@ -77,6 +79,24 @@ defmodule RailWeb.Live.TaskActionsTest do
     stub(Pipeline, :list_approvals, fn _task -> {:ok, []} end)
 
     %{conn: conn, task: task, dan: dan, priya: priya, michael: michael}
+  end
+
+  test "nothing offers Ready for review while the review agent works or its fix plan waits", %{
+    conn: conn,
+    task: task,
+    dan: dan
+  } do
+    lead_run = Repo.get_by!(Run, conversation_id: "sess_tat_lead")
+    {:ok, running} = Pipeline.update_run(lead_run, %{status: :running, stage_outcome: :in_progress})
+    assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
+    refute has_element?(view, "#task-ready-for-review")
+
+    {:ok, _done} = Pipeline.update_run(running, %{status: :finished, stage_outcome: :done})
+    File.mkdir_p!(Path.join(task.scratch_path, "fix_plans"))
+    plan = %{"version" => 1, "round" => 1, "plan" => "### What changes\n\nRename the heading."}
+    File.write!(Path.join([task.scratch_path, "fix_plans", "TAT-1.json"]), Jason.encode!(plan))
+    assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
+    refute has_element?(view, "#task-ready-for-review")
   end
 
   test "Ready for review marks the task ready, and the header then waits on a tech lead", %{
@@ -841,6 +861,30 @@ defmodule RailWeb.Live.TaskActionsTest do
     end
   end
 
+  describe "a round QA skipped" do
+    # The round changed only files nobody sees in the app, which a person may still want walked.
+    test "offers Run QA anyway, which starts it", %{conn: conn, project: project, task: task, dan: dan} do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+      {:ok, qa} = Roles.get_role(project_id: project.id, stage: :qa)
+
+      {:ok, %{id: run_id}} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: qa.id,
+          status: :finished,
+          stage_outcome: :skipped,
+          started_at: DateTime.utc_now()
+        })
+
+      expect(Pipeline, :retry_run, fn _scope, %{id: ^run_id} = run -> {:ok, run} end)
+
+      assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
+      refute has_element?(view, "#task-retry")
+
+      view |> element("#task-run-qa", "Run QA anyway") |> render_click()
+    end
+  end
+
   describe "the initial plan at Plan" do
     setup %{project: project, dan: dan} do
       task = learnings_task(project, "TAT-2", :plan)
@@ -947,6 +991,41 @@ defmodule RailWeb.Live.TaskActionsTest do
              )
     end
 
+    test "a tech lead's own unsent comments hold Approve until they are sent or removed", %{
+      conn: conn,
+      plan_task: task,
+      priya: priya
+    } do
+      {:ok, _owner} = Issues.update_issue(task.issue, %{owner_user_id: priya.id})
+
+      comment =
+        Repo.insert!(%PlanComment{
+          task_id: task.id,
+          user_id: priya.id,
+          target: :plan,
+          body: "Why?",
+          element_kind: :section_title,
+          element_label: "Approach",
+          element_occurrence: 1,
+          element_text: "Approach"
+        })
+
+      assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
+
+      assert has_element?(
+               view,
+               "#task-approve-plan[disabled][title='Send or remove your unsent comment first.']",
+               "Approve plan"
+             )
+
+      Repo.delete!(comment)
+      send(view.pid, {:plan_comments_changed, task.id})
+      # The page hands the reload to the actions as an update of its own, which lands after this render.
+      _settled = render(view)
+
+      assert has_element?(view, "#task-approve-plan:not([disabled]):not([title])", "Approve plan")
+    end
+
     test "every refusal of the plan says in a sentence what stopped it", %{
       conn: conn,
       plan_task: task,
@@ -961,6 +1040,8 @@ defmodule RailWeb.Live.TaskActionsTest do
             {:already_approved, "The plan is already approved."},
             {{:unanswered_questions, 1}, "Answer or dismiss the open question first."},
             {{:unanswered_questions, 3}, "Answer or dismiss the 3 open questions first."},
+            {{:unsent_comments, 1}, "Send or remove your unsent comment first."},
+            {{:unsent_comments, 2}, "Send or remove your 2 unsent comments first."},
             {:not_owner, "Only the task's owner sends or starts its plan."},
             {:no_pull_request, "This task has no pull request yet."},
             {:no_ticket, "Plan has not saved a ticket yet."},

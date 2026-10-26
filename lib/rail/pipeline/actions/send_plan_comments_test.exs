@@ -18,11 +18,19 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
 
   - Group by project.
 
-  No diagrams: one module changes.
+  ### Decisions
 
-  ### File-level changes
+  - Decision: one module changes.
 
-  - `lib/rail.ex`: groups.
+  ### Changes
+
+  #### `lib/rail.ex`
+
+  Groups.
+
+  ### Acceptance criteria
+
+  - 1: `lib/rail.ex`
 
   ### Verification
 

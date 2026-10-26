@@ -3,15 +3,19 @@ defmodule RailWeb.Live.TaskActions do
   Every decision a person makes on a task, in the page's header, shown for where the task is and who is reading:
 
   - the initial plan: its owner sends it to the tech leads or starts without approval, and a tech lead approves
-    it, also after its owner started it, while a "Plan not approved" chip says it has not been;
+    it, also after its owner started it, while a "Plan not approved" chip says it has not been. At Plan, Approve
+    waits on the lead's own unsent plan comments, which approving would delete;
   - a branch the default branch has moved past: Update, which merges it in as a round of its own;
-  - a review with nothing left to fix: Ready for review, then a tech lead's Approve and Merge.
+  - a round QA skipped as changing nothing a person sees: Run QA anyway;
+  - a review with nothing left to fix: Ready for review, then a tech lead's Approve and Merge, none of them while
+    the review agent works or its fix plan waits.
 
   A later round's plan is approved where it is read, beside it, so it is not here.
   """
   use RailWeb, :live_component
 
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -68,6 +72,18 @@ defmodule RailWeb.Live.TaskActions do
         <.icon name="pi-arrow-clockwise" class="size-4" />Retry {@failed.role.name}
       </.button>
 
+      <.button
+        :if={@skipped}
+        id="task-run-qa"
+        phx-click="retry"
+        phx-value-run={@skipped.id}
+        phx-target={@myself}
+        phx-disable-with="Starting…"
+        title="This round changed only files nobody sees in the app, so QA did not run on it."
+      >
+        <.icon name="pi-play" class="size-4" />Run QA anyway
+      </.button>
+
       <span
         :if={@plan.unapproved}
         id="task-plan-unapproved"
@@ -113,6 +129,8 @@ defmodule RailWeb.Live.TaskActions do
         phx-click="approve_plan"
         phx-target={@myself}
         phx-disable-with="Approving…"
+        disabled={@unsent_comments > 0}
+        title={@unsent_comments > 0 && unsent(@unsent_comments)}
       >
         <.icon name="pi-check" class="size-4" />Approve plan
       </.button>
@@ -366,19 +384,27 @@ defmodule RailWeb.Live.TaskActions do
   defp load(socket) do
     %{task: task, current_scope: scope} = socket.assigns
     tech_lead = Scope.tech_lead?(scope)
-    state = if task.stage in [:finalize, :merged], do: Task.finalize_state(task)
+    state = if task.stage == :merged or (task.stage == :finalize and not revising?(task)), do: Task.finalize_state(task)
 
     socket
     |> assign(:tech_lead, tech_lead)
     |> assign(:state, state)
     |> assign(:plan_run, plan_run(task))
     |> assign(:failed, failed_run(task))
+    |> assign(:skipped, skipped_run(task))
     |> assign(:plan, plan_actions(task, socket.assigns[:rounds] || Pipeline.list_rounds(task), scope, tech_lead))
+    |> assign_unsent_comments()
     |> assign(:update, task.stage in [:review, :finalize] and task.base_behind and is_nil(task.cleaned_up_at))
     |> assign(
       :tech_leads,
       if(tech_lead or state in [nil, :not_ready, :merged], do: [], else: Users.list_tech_leads(task.project_id))
     )
+  end
+
+  # Changes are coming while the review agent works or its fix plan waits, so nothing is ready to review or merge.
+  defp revising?(%Task{runs: runs} = task) do
+    Enum.any?(runs, &(match?(%Run{role: %Role{stage: :review_lead}}, &1) and Run.running?(&1))) or
+      match?(%FixPlan{approved_at: nil}, Pipeline.read_fix_plan(task))
   end
 
   defp plan_run(%Task{runs: runs}) when is_list(runs), do: Enum.find(runs, &match?(%Run{role: %Role{stage: :plan}}, &1))
@@ -387,11 +413,18 @@ defmodule RailWeb.Live.TaskActions do
 
   # A failed run of the step the task is at, which nothing else starts again.
   defp failed_run(%Task{runs: runs, stage: stage}) when is_list(runs) and stage in [:engineer, :review] do
-    retryable = if stage == :engineer, do: [:engineer], else: [:qa, :review, :screens, :demo, :review_lead]
+    retryable = if stage == :engineer, do: [:engineer], else: [:qa, :review, :demo, :review_lead]
     Enum.find(runs, &(&1.role.stage in retryable and Run.state(&1) == :failed))
   end
 
   defp failed_run(%Task{}), do: nil
+
+  # QA skipped on a round that changed nothing a person sees, which a person may still want walked.
+  defp skipped_run(%Task{runs: runs, stage: :review} = task) when is_list(runs) do
+    if not Task.running?(task), do: Enum.find(runs, &(&1.role.stage == :qa and &1.stage_outcome == :skipped))
+  end
+
+  defp skipped_run(%Task{}), do: nil
 
   # What the initial plan asks of this reader. Its owner sends it or starts it; a tech lead approves it once sent,
   # straight away when they own it, and later when the owner started it without approval.
@@ -415,6 +448,14 @@ defmodule RailWeb.Live.TaskActions do
         none
     end
   end
+
+  # Only at Plan does approving delete the reader's unsent comments, so only there does Approve wait on them.
+  defp assign_unsent_comments(%{assigns: %{plan: %{approve: true}, task: %Task{stage: :plan}}} = socket) do
+    %{current_scope: scope, task: task} = socket.assigns
+    assign(socket, :unsent_comments, length(Pipeline.list_plan_comments(scope, task)))
+  end
+
+  defp assign_unsent_comments(socket), do: assign(socket, :unsent_comments, 0)
 
   # Nothing is offered while Plan works, since what would be sent or approved is still changing.
   defp initial_plan(none, _owner?, _lead?, _sent?, true), do: none
@@ -469,6 +510,9 @@ defmodule RailWeb.Live.TaskActions do
     {:noreply, assign(socket, :error, message(reason))}
   end
 
+  defp unsent(1), do: "Send or remove your unsent comment first."
+  defp unsent(count), do: "Send or remove your #{count} unsent comments first."
+
   defp conflicts([_one]), do: "Conflicts in 1 file"
   defp conflicts(paths), do: "Conflicts in #{length(paths)} files"
 
@@ -496,6 +540,7 @@ defmodule RailWeb.Live.TaskActions do
   defp message(:already_approved), do: "The plan is already approved."
   defp message({:unanswered_questions, 1}), do: "Answer or dismiss the open question first."
   defp message({:unanswered_questions, count}), do: "Answer or dismiss the #{count} open questions first."
+  defp message({:unsent_comments, count}), do: unsent(count)
   defp message(:not_owner), do: "Only the task's owner sends or starts its plan."
   defp message(:up_to_date), do: "The branch is already up to date."
   defp message(:not_retryable), do: "That run is not one to retry now."

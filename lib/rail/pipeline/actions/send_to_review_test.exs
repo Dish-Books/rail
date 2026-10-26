@@ -68,8 +68,8 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
   end
 
   # Each that drives the app has a browser of its own, so none waits on another.
-  test "starts QA, the code reviewer, the screenshots agent and the demo recorder together", %{task: task, run: run} do
-    Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Filter.", retake_screens: true, record_demo: true})
+  test "starts QA, the code reviewer and the demo recorder together", %{task: task, run: run} do
+    Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Filter.", record_demo: true})
     test_pid = self()
 
     stub(Tools, :start_os_process, fn %Run{} = spawned, _argv ->
@@ -79,11 +79,11 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
 
     assert {:ok, %Run{}} = Pipeline.send_to_review(run)
 
-    for stage <- [:qa, :review, :screens, :demo], do: assert_received({:started, ^stage})
+    for stage <- [:qa, :review, :demo], do: assert_received({:started, ^stage})
     refute_received {:started, _stage}
   end
 
-  test "starts only QA and the code reviewer when the round's plan asks for no screens or demo", %{
+  test "starts only QA and the code reviewer when the round's plan asks for no demo", %{
     task: task,
     run: run
   } do
@@ -99,6 +99,109 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
 
     for stage <- [:qa, :review], do: assert_received({:started, ^stage})
     refute_received {:started, _stage}
+  end
+
+  describe "a later round" do
+    setup %{project: project, task: task, worktree_path: repo} do
+      {:ok, qa} = Roles.get_role(project_id: project.id, stage: :qa)
+
+      {:ok, qa_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: qa.id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.utc_now()
+        })
+
+      base = repo |> git!(["rev-parse", "HEAD"]) |> String.trim()
+      Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Filter.", approved_at: DateTime.utc_now()})
+
+      Repo.insert!(%Round{
+        task_id: task.id,
+        number: 2,
+        plan: "Test the nil.",
+        base_head: base,
+        approved_at: DateTime.utc_now(),
+        record_demo: true
+      })
+
+      test_pid = self()
+
+      stub(Tools, :start_os_process, fn %Run{} = spawned, _argv ->
+        send(test_pid, {:started, Repo.preload(spawned, :role, force: true).role.stage})
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      commit = fn files ->
+        for {path, body} <- files do
+          File.mkdir_p!(Path.dirname(Path.join(repo, path)))
+          File.write!(Path.join(repo, path), body)
+        end
+
+        git!(repo, ["add", "."])
+        git!(repo, ["commit", "-m", "round 2"])
+        git!(repo, ["push", "origin", "main"])
+      end
+
+      %{qa_run: qa_run, commit: commit}
+    end
+
+    # Nothing a person sees moved, so walking the app again only spends QA's minutes.
+    test "that changed only tests and docs starts the code reviewer alone, and QA's report says why", %{
+      task: task,
+      run: run,
+      qa_run: qa_run,
+      commit: commit
+    } do
+      commit.([{"test/bill_test.exs", "test\n"}, {"README.md", "docs\n"}])
+
+      assert {:ok, %Run{}} = Pipeline.send_to_review(run)
+
+      assert_received {:started, :review}
+      refute_received {:started, _stage}
+
+      line = "Round 2 changed only files nobody sees in the app (README.md, test/bill_test.exs), so QA did not run."
+      assert [qa: ^line] = Pipeline.read_reports(task)
+      assert %Run{stage_outcome: :skipped} = Repo.reload!(qa_run)
+      assert ["[qa] " <> ^line] = qa_run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
+    end
+
+    test "that changed a file the app runs starts QA and the demo too", %{run: run, commit: commit} do
+      commit.([{"test/bill_test.exs", "test\n"}, {"lib/bill.ex", "code\n"}])
+
+      assert {:ok, %Run{}} = Pipeline.send_to_review(run)
+
+      for stage <- [:qa, :review, :demo], do: assert_received({:started, ^stage})
+    end
+
+    test "of a project that names no unseen files starts QA", %{project: project, run: run, commit: commit} do
+      {:ok, _project} = Projects.update_project(system_scope(), project, %{qa_skip_paths: []})
+      commit.([{"test/bill_test.exs", "test\n"}])
+
+      assert {:ok, %Run{}} = Pipeline.send_to_review(run)
+
+      assert_received {:started, :qa}
+    end
+  end
+
+  # The first round checks every acceptance criterion, whatever it changed.
+  test "round 1 starts QA though it changed only tests", %{task: task, run: run, worktree_path: repo} do
+    Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Test it.", approved_at: DateTime.utc_now()})
+    File.write!(Path.join(repo, "bill_test.exs"), "test\n")
+    git!(repo, ["add", "."])
+    git!(repo, ["commit", "-m", "round 1"])
+    git!(repo, ["push", "origin", "main"])
+    test_pid = self()
+
+    stub(Tools, :start_os_process, fn %Run{} = spawned, _argv ->
+      send(test_pid, {:started, Repo.preload(spawned, :role, force: true).role.stage})
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{}} = Pipeline.send_to_review(run)
+
+    assert_received {:started, :qa}
   end
 
   # The engineer commits its own work, so what it left uncommitted stays behind rather than holding Review up.

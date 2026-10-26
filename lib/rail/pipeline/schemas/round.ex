@@ -19,8 +19,6 @@ defmodule Rail.Pipeline.Schemas.Round do
     field :plan_saved_at, :utc_datetime_usec
     # Whether the plan asks for a new demo once the round is reviewed.
     field :record_demo, :boolean, default: false
-    # Whether the round ends with its screen states shot again.
-    field :retake_screens, :boolean, default: false
     # When its plan was sent to a tech lead, which saving the plan again undoes.
     field :ready_at, :utc_datetime_usec
     field :approved_at, :utc_datetime_usec
@@ -61,19 +59,6 @@ defmodule Rail.Pipeline.Schemas.Round do
   end
 
   @doc """
-  Builds a changeset for the first round of a split's `child` task: its ticket and its part of the parent's plan,
-  approved with the parent's.
-  """
-  def child_changeset(%Task{} = task, child) do
-    now = DateTime.utc_now()
-
-    task
-    |> changeset(nil)
-    |> change(plan: child.plan, plan_version: 1, plan_saved_at: now, approved_at: now)
-    |> put_embed(:ticket, %__MODULE__.Ticket{title: child.title, description: child.ticket, estimate: child.estimate})
-  end
-
-  @doc """
   Takes the round's next save from `attrs` as its next version: the `plan`, the `ticket`, the `design` option the
   plan is written for and whether it asks for a demo. A ticket field left out keeps what the last save set. Round 1
   needs its ticket and takes its plan when there is one, in the sections Rail lays a plan out by; a later round
@@ -81,7 +66,7 @@ defmodule Rail.Pipeline.Schemas.Round do
   """
   def plan_changeset(%__MODULE__{number: number} = round, attrs) do
     round
-    |> cast(attrs, [:plan, :record_demo, :retake_screens])
+    |> cast(attrs, [:plan, :record_demo])
     |> update_change(:plan, &trim/1)
     |> validate_plan_given()
     |> cast_embed(:ticket, with: &ticket_changeset/2, required: number == 1)

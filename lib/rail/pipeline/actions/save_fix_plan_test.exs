@@ -8,7 +8,7 @@ defmodule Rail.Pipeline.Actions.SaveFixPlanTest do
   alias Rail.Pipeline.Schemas.Task
 
   @plan "Guard it.\n\n### What changes\n\n#### `nil-crash`\n\nGuard nil.\n\n#### Comment 1\n\nKept.\n\n" <>
-          "### File-level changes\n\n- `lib/a.ex`: guards nil. For `nil-crash` and comment 1.\n\n### Verification\n\nRun it."
+          "### File-level changes\n\n#### `lib/a.ex`\n\nGuards nil. For `nil-crash` and comment 1.\n\n### Verification\n\nRun it."
 
   setup do
     scratch = Path.join(System.tmp_dir!(), "save_fix_plan_#{System.unique_integer([:positive])}")
@@ -97,19 +97,32 @@ defmodule Rail.Pipeline.Actions.SaveFixPlanTest do
 
     plan =
       "### Changes to the plan\n\n- Criterion 1: a dot.\n\n### What changes\n\n#### Changes to the plan\n\n" <>
-        "The heading takes a dot.\n\n### File-level changes\n\n- `lib/a.ex`: the dot. For the changes to the plan."
+        "The heading takes a dot.\n\n### File-level changes\n\n#### `lib/a.ex`\n\nThe dot. For the changes to the plan."
 
     assert {:ok, %FixPlan{version: 1, round: 1, head: "abc", findings: [], covered_keys: []}} =
              Pipeline.save_fix_plan(%{task | stage: :finalize}, %{"plan" => plan, "description" => "A dot."})
   end
 
-  test "a plan says whether its round's screens are shot again and a demo recorded", %{task: task} do
-    assert {:ok, %FixPlan{retake_screens: false, record_demo: false}} = Pipeline.save_fix_plan(task, %{"plan" => @plan})
+  # Approving it would start an engineer on nothing, and while it waited Finish review was hidden.
+  test "an unasked plan with nothing to fix and no change to the ticket or design is refused", %{task: task, path: path} do
+    File.rm!(path)
+    reviews = Path.join([task.scratch_path, "reviews", "SFP-1.json"])
+    File.mkdir_p!(Path.dirname(reviews))
+    File.write!(reviews, ~s({"passes": [{"round": 1, "saved_at": "2026-10-14T10:00:00Z", "head": "abc"}]}))
 
-    assert {:ok, %FixPlan{retake_screens: true, record_demo: true}} =
-             Pipeline.save_fix_plan(task, %{"plan" => @plan, "retake_screens" => true, "record_demo" => true})
+    nothing = "Nothing to fix. The task is ready to finalize.\n\n### What changes"
 
-    assert %FixPlan{retake_screens: true, record_demo: true} = Pipeline.read_fix_plan(task)
+    assert {:error, :nothing_to_fix} = Pipeline.save_fix_plan(task, %{"plan" => nothing, "design_changed" => false})
+    refute File.exists?(path)
+  end
+
+  test "a plan says whether its round's demo is recorded", %{task: task} do
+    assert {:ok, %FixPlan{record_demo: false}} = Pipeline.save_fix_plan(task, %{"plan" => @plan})
+
+    assert {:ok, %FixPlan{record_demo: true}} =
+             Pipeline.save_fix_plan(task, %{"plan" => @plan, "record_demo" => true})
+
+    assert %FixPlan{record_demo: true} = Pipeline.read_fix_plan(task)
   end
 
   # A changed ticket is said where the person approving reads it, before anything is approved on it.

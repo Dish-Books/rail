@@ -286,7 +286,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
              Roles.create_role(scope, project, %{
                name: "Bug Hunter",
                description: "Chases down defects",
-               stage: :debugger,
+               stage: :demo,
                cli: :claude,
                model: "claude-opus-5-5",
                reasoning_effort: :high,
@@ -297,7 +297,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
 
     view |> element("#edit-role-button-#{role_id}") |> render_click()
     assert has_element?(view, "#role-modal-title", "Bug Hunter")
-    assert has_element?(view, "#role-stage-pill", "stage: debugger")
+    assert has_element?(view, "#role-stage-pill", "stage: demo")
     assert has_element?(view, "#copy-role-identifier[data-copy-text='#{role_id}']")
     assert has_element?(view, "#role-unsaved-changes", "No unsaved changes")
 
@@ -344,7 +344,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     |> render_submit(%{
       "role" => %{
         "name" => "Bug Hunter",
-        "stage" => "debugger",
+        "stage" => "demo",
         "model_choice" => "claude:claude-opus-5-5",
         "system_prompt" => ""
       }
@@ -363,7 +363,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
       "role" => %{
         "name" => "Chief Bug Hunter",
         "description" => "Leads the hunt",
-        "stage" => "debugger",
+        "stage" => "demo",
         "model_choice" => "claude:claude-opus-5-5",
         "reasoning_effort" => "xhigh",
         "system_prompt" => "You are chief bug hunter.",
@@ -372,7 +372,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     })
 
     refute has_element?(view, "#role-editor-modal")
-    assert has_element?(view, "#bound-role-name-debugger", "Chief Bug Hunter")
+    assert has_element?(view, "#bound-role-name-demo", "Chief Bug Hunter")
 
     # Cancel modal button check
     view |> element("#edit-role-button-#{role_id}") |> render_click()
@@ -492,7 +492,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert {:ok, %Role{id: role_id}} =
              Roles.create_role(Rail.Scope.for_user(admin_user), project, %{
                name: "Bug Hunter",
-               stage: :debugger,
+               stage: :demo,
                cli: :claude,
                model: "claude-opus-5-5",
                reasoning_effort: :high,
@@ -501,7 +501,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
 
     assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
 
-    assert has_element?(view, "#bound-role-reservation-debugger", "1 CPU")
+    assert has_element?(view, "#bound-role-reservation-demo", "1 CPU")
 
     view |> element("#edit-role-button-#{role_id}") |> render_click()
     assert has_element?(view, "#role-cpus-input[value='1']")
@@ -551,7 +551,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     |> render_submit(%{
       "role" => %{
         "name" => "Bug Hunter",
-        "stage" => "debugger",
+        "stage" => "demo",
         "model_choice" => "claude:claude-opus-5-5",
         "system_prompt" => "You chase down defects.",
         "reserved_cpus" => "16"
@@ -577,7 +577,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     |> render_submit(%{
       "role" => %{
         "name" => "Bug Hunter",
-        "stage" => "debugger",
+        "stage" => "demo",
         "model_choice" => "claude:claude-opus-5-5",
         "system_prompt" => "You chase down defects.",
         "reserved_cpus" => "0.5"
@@ -585,7 +585,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     })
 
     assert {:ok, %Role{reserved_cpus: 0.5}} = Roles.get_role(id: role_id)
-    assert has_element?(view, "#bound-role-reservation-debugger", "0.5 CPUs")
+    assert has_element?(view, "#bound-role-reservation-demo", "0.5 CPUs")
   end
 
   test "a machine whose capacity cannot be read shows no preview, and the role still saves", %{
@@ -607,7 +607,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     {:ok, %Role{id: role_id}} =
       Roles.create_role(Rail.Scope.for_user(admin_user), project, %{
         name: "Bug Hunter",
-        stage: :debugger,
+        stage: :demo,
         cli: :claude,
         model: "claude-opus-5-5",
         system_prompt: "You chase down defects."

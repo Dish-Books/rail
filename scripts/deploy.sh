@@ -3,7 +3,12 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-git pull --ff-only
+
+# Bash reads this file as it runs, so restart on the pulled copy for its changes to apply now.
+if [ -z "${RAIL_DEPLOY_PULLED:-}" ]; then
+  git pull --ff-only
+  RAIL_DEPLOY_PULLED=1 exec scripts/deploy.sh "$@"
+fi
 
 secret() { gcloud secrets versions access latest --project dishbooks-shared --secret "$1"; }
 
@@ -14,7 +19,11 @@ secret() { gcloud secrets versions access latest --project dishbooks-shared --se
     echo
     echo "TUNNEL_TOKEN=$(secret rail-tunnel-token)"
   } > .env
+
+  secret rail-devhub-tunnel-config > devhub-tunnel.json
 )
+# The tunnel image runs as 65532.
+chown 65532 devhub-tunnel.json
 
 if grep -q '^POSTHOG_API_KEY=.' .env; then export COMPOSE_PROFILES=posthog; fi
 

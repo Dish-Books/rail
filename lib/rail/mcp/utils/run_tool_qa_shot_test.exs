@@ -26,13 +26,15 @@ defmodule Rail.Mcp.Utils.RunToolQaShotTest do
     %{task: %Task{id: "tsk_shot_#{unique}", scratch_path: scratch}, flat: flat, viewport: viewport}
   end
 
-  # The reply carries the path a finding cites, never the picture itself.
-  test "photographs the browser it names and says where it was saved", %{task: task} do
+  # The reply carries the path a report cites, and the picture itself, so checking it takes no second call.
+  test "photographs the browser it names and says where it was saved, with the picture", %{task: task} do
     expect(Tools, :start_browser_session, fn ^task, "explorer-1", [{:existing, true} | _opts] -> {:ok, self()} end)
 
-    assert {:ok, "Saved as shots/the-saved-bill-" <> said} =
+    assert {:ok, "Saved as shots/the-saved-bill-" <> said, "jpeg bytes"} =
              run_tool_qa_shot(task, %{"name" => "The saved bill", "browser" => "explorer-1"}, stage: :qa)
 
+    assert said =~ "the picture is attached"
+    assert said =~ "Cite the path in your report"
     refute said =~ "back at its own width"
 
     assert [saved] = Path.wildcard(Path.join([task.scratch_path, "qa", "shots", "the-saved-bill-*.jpg"]))
@@ -43,7 +45,8 @@ defmodule Rail.Mcp.Utils.RunToolQaShotTest do
   test "a shot that names no browser photographs QA's own", %{task: task} do
     expect(Tools, :start_browser_session, fn ^task, "qa", [{:existing, false} | _opts] -> {:ok, self()} end)
 
-    assert {:ok, "Saved as shots/signed-in-" <> _said} = run_tool_qa_shot(task, %{"name" => "Signed in"}, stage: :qa)
+    assert {:ok, "Saved as shots/signed-in-" <> _said, _picture} =
+             run_tool_qa_shot(task, %{"name" => "Signed in"}, stage: :qa)
   end
 
   # A blank picture from a browser nobody drove would read as evidence.
@@ -75,7 +78,7 @@ defmodule Rail.Mcp.Utils.RunToolQaShotTest do
              run_tool_qa_shot(task, %{"name" => "Blank", "browser" => "explorer-1"}, stage: :qa)
   end
 
-  # The explorer hears at once, so it retakes before the lead ever sees a blank picture.
+  # QA hears at once, so it retakes before its report ever cites a blank picture.
   test "a picture all one color is refused and nothing is saved", %{task: task, flat: flat, viewport: viewport} do
     stub(Tools, :start_browser_session, fn _task, _name, _opts -> {:ok, self()} end)
 
@@ -95,15 +98,15 @@ defmodule Rail.Mcp.Utils.RunToolQaShotTest do
     stub(Tools, :start_browser_session, fn _task, _name, _opts -> {:ok, self()} end)
 
     expect(Tools, :capture_browser_evidence, fn _session, ^task, "Bill list at 768", [width: 768] ->
-      {:ok, "shots/bill-list-at-768-1.jpg"}
+      {:ok, "shots/bill-list-at-768-1.jpg", "jpeg bytes"}
     end)
 
-    assert {:ok, "Saved as shots/bill-list-at-768-1.jpg. Read it now" <> said} =
+    assert {:ok, "Saved as shots/bill-list-at-768-1.jpg, and the picture is attached." <> said, "jpeg bytes"} =
              run_tool_qa_shot(task, %{"name" => "Bill list at 768", "browser" => "explorer-1", "width" => 768},
                stage: :qa
              )
 
-    # Clearing Rail's width also ends one an explorer's script set, which the script then has to set again.
+    # Clearing Rail's width also ends one QA's script set, which the script then has to set again.
     assert said =~ "The tab is back at its own width now, so a script holding a resize has to set it again."
   end
 
@@ -111,10 +114,10 @@ defmodule Rail.Mcp.Utils.RunToolQaShotTest do
     stub(Tools, :start_browser_session, fn _task, _name, _opts -> {:ok, self()} end)
 
     expect(Tools, :capture_browser_evidence, fn _session, ^task, "Bill list", [width: nil] ->
-      {:ok, "shots/bill-list-1.jpg"}
+      {:ok, "shots/bill-list-1.jpg", "jpeg bytes"}
     end)
 
-    assert {:ok, "Saved as shots/bill-list-1.jpg. Read it now" <> _rest} =
+    assert {:ok, "Saved as shots/bill-list-1.jpg, and the picture is attached." <> _rest, "jpeg bytes"} =
              run_tool_qa_shot(task, %{"name" => "Bill list", "browser" => "explorer-1", "width" => nil}, stage: :qa)
   end
 

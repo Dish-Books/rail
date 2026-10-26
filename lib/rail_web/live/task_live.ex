@@ -49,7 +49,7 @@ defmodule RailWeb.TaskLive do
   @items ["issue", "plan", "children", "findings", "fix_plan", "diff", "screens", "demo", "browser"]
 
   # The agents whose runs the conversation reads, in the order a task meets them.
-  @agents [:plan, :engineer, :qa, :review, :screens, :demo, :review_lead]
+  @agents [:plan, :engineer, :qa, :review, :demo, :review_lead]
 
   # What the Issue tab's owner menu and comments raise, handled as the issue page handles them.
   @issue_events ["assign", "filter_assignees", "draft_comment", "comment"]
@@ -384,13 +384,15 @@ defmodule RailWeb.TaskLive do
   end
 
   # The reader's unsent plan comments moved, in another tab or this one: the Plan stage, or the next round's plan,
-  # draws their markers and the conversation their tray, and each reads its own.
+  # draws their markers, the conversation their tray and the header whether Approve plan waits on them, and each
+  # reads its own.
   def handle_info({:plan_comments_changed, task_id}, socket) do
     # The conversation is drawn under every item, as its trays at least, so it always reads them.
     with %{task_id: ^task_id, open_item: item} <- socket.assigns do
       if item == :plan, do: send_update(PlanStage, id: "plan-stage", reload_comments: true)
       if item == :fix_plan, do: send_update(TaskDetail, id: "task-detail", reload: true)
       send_update(RunConversation, id: "run-conversation", reload_plan_comments: true)
+      send_update(TaskActions, id: "task-actions")
     end
 
     {:noreply, socket}
@@ -872,7 +874,7 @@ defmodule RailWeb.TaskLive do
 
   # The header says where the task is: at Review, whichever agent is checking the round, else the review agent.
   defp stage_run(runs, %Task{stage: :review}) do
-    Enum.find_value([:qa, :review, :screens, :demo], &(Run.running?(runs[&1]) && runs[&1])) || runs[:review_lead]
+    Enum.find_value([:qa, :review, :demo], &(Run.running?(runs[&1]) && runs[&1])) || runs[:review_lead]
   end
 
   defp stage_run(runs, %Task{stage: stage}), do: runs[Task.role_stage(stage)]

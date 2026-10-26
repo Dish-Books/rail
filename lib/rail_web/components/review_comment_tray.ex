@@ -4,7 +4,8 @@ defmodule RailWeb.Components.ReviewCommentTray do
   which every reader sees, then the reader's own unsent finding, diff and screen comments, numbered, with the gate's
   reason under them. Empty while the review is open and idle it offers Finish review; empty once finished it draws
   nothing. While a fix plan waits on approval it lists only what changed since the last Send: each ruling changed,
-  then new comments, and offers no Finish review.
+  then new comments, and offers no Finish review, unless the rulings have left the plan nothing to fix and no comment
+  is going, when Finish review drops the plan.
   """
   use RailWeb, :html
 
@@ -21,7 +22,7 @@ defmodule RailWeb.Components.ReviewCommentTray do
 
   attr :gate, :map,
     required: true,
-    doc: "`%{working:, finished:, ci_failed:, saved:, plan:, undecided:}`, as the Review stage works it out"
+    doc: "`%{working:, finished:, ci_failed:, saved:, plan:, emptied:, undecided:}`, as the Review stage works it out"
 
   attr :open, :boolean, default: true
   attr :error, :string, default: nil, doc: "why the last Send was refused"
@@ -32,18 +33,20 @@ defmodule RailWeb.Components.ReviewCommentTray do
     comments = Enum.map(finding, &{:finding, &1}) ++ Enum.map(diff, &{:diff, &1}) ++ Enum.map(screen, &{:screen, &1})
     count = length(fix) + length(assigns.rulings) + length(comments)
     {hint, working} = hint(gate, fix ++ assigns.rulings, comments, assigns.error)
+    finish = not gate.working and comments == [] and ((count == 0 and not gate.plan) or (gate.plan and gate.emptied))
 
     assigns =
       assigns
       |> assign(:count, count)
       |> assign(:show_tray, count > 0 or not gate.finished)
       |> assign(:empty, count == 0)
-      |> assign(:show_finish, count == 0 and not gate.working and not gate.plan)
+      |> assign(:show_finish, finish)
       |> assign(:mine, comments != [])
       |> assign(:show_rows, assigns.open and count > 0)
       |> assign(
         :can_send,
-        not gate.working and gate.saved and (count > 0 or (not gate.ci_failed and gate.undecided == 0))
+        not gate.working and gate.saved and
+          ((count > 0 and not finish) or (not gate.ci_failed and gate.undecided == 0))
       )
       |> assign(:comments, Enum.with_index(comments, 1))
       |> assign(:hint, hint)
@@ -86,7 +89,7 @@ defmodule RailWeb.Components.ReviewCommentTray do
         </span>
         <span class="ml-auto" />
         <button
-          :if={not @empty}
+          :if={not @empty and not @show_finish}
           type="button"
           id="send-review-tray"
           data-qa="send_review_tray"
@@ -291,6 +294,7 @@ defmodule RailWeb.Components.ReviewCommentTray do
       is_binary(error) -> {error, false}
       gate.working -> {"The Review lead is working. Send waits until it stops.", true}
       not gate.saved -> {"Send waits for the first round to finish.", false}
+      gate.plan and gate.emptied and comments == [] -> {emptied_hint(gate), false}
       gate.plan -> {plan_hint(fix ++ comments), false}
       fix == [] and comments == [] -> {empty_hint(gate), false}
       gate.finished -> {"The review is finished. Send reopens it with a fix round on your comments.", false}
@@ -301,6 +305,11 @@ defmodule RailWeb.Components.ReviewCommentTray do
 
   defp plan_hint([]), do: @plan_unchanged
   defp plan_hint(_changes), do: "The fix plan is out of date. Send asks the lead to revise it."
+
+  defp emptied_hint(%{ci_failed: false, undecided: 0}),
+    do: "Nothing is ruled Fix now. Finish review drops the fix plan and closes the review."
+
+  defp emptied_hint(gate), do: empty_hint(gate)
 
   defp empty_hint(%{ci_failed: true}), do: "CI failed on the fix commit"
 

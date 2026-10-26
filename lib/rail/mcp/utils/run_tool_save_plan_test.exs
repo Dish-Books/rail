@@ -7,7 +7,7 @@ defmodule Rail.Mcp.Utils.RunToolSavePlanTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
 
-  # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
+  # The smallest plan the structure allows: one decision, one card and one criterion, and no data changes.
   @plan """
   ## Implementation plan
 
@@ -15,11 +15,19 @@ defmodule Rail.Mcp.Utils.RunToolSavePlanTest do
 
   Extend the module.
 
-  No diagrams: one module changes.
+  ### Decisions
 
-  ### File-level changes
+  - Decision: one module changes.
 
-  - `lib/rail.ex`: extends the module.
+  ### Changes
+
+  #### `lib/rail.ex`
+
+  Extends the module.
+
+  ### Acceptance criteria
+
+  - 1: `lib/rail.ex`
 
   ### Verification
 

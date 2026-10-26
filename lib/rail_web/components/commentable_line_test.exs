@@ -3,7 +3,9 @@ defmodule RailWeb.Components.CommentableLineTest do
 
   import Phoenix.Component
   import Phoenix.LiveViewTest
+  import RailTest.Helpers
   import RailWeb.Utils.BuildDocumentBlocks
+  import RailWeb.Utils.BuildPlanSheet
 
   alias Rail.Pipeline.Schemas.PlanComment
   alias RailWeb.Components.CommentableLine
@@ -102,6 +104,37 @@ defmodule RailWeb.Components.CommentableLineTest do
     assert Floki.text(Floki.find(commented, "[data-qa='document_comment_number']")) =~ "4"
   end
 
+  test "a code line draws its highlighted html, and its text when it has none", %{code: code} do
+    highlighted =
+      (&CommentableLine.commentable_line/1)
+      |> render_component(
+        line: %{code | html: ~s(<span class="l-keyword">one</span>)},
+        layout: :code,
+        doc: :plan,
+        placed: %{},
+        offered: false,
+        target: nil
+      )
+      |> Floki.parse_fragment!()
+
+    assert Floki.text(Floki.find(highlighted, "#line-plan-#{code.key} .l-keyword")) == "one"
+
+    plain =
+      (&CommentableLine.commentable_line/1)
+      |> render_component(
+        line: %{code | text: "<b>one</b>"},
+        layout: :code,
+        doc: :plan,
+        placed: %{},
+        offered: false,
+        target: nil
+      )
+      |> Floki.parse_fragment!()
+
+    assert Floki.find(plain, "#line-plan-#{code.key} b") == []
+    assert Floki.text(Floki.find(plain, "#line-plan-#{code.key}")) =~ "<b>one</b>"
+  end
+
   test "the priority row draws each value's + in the row's gutter, outlines the hovered value and names it on a card",
        %{comment: comment} do
     priority = %{key: "priority-1", kind: :priority, text: "Medium", label: "Priority", occurrence: 1}
@@ -170,31 +203,57 @@ defmodule RailWeb.Components.CommentableLineTest do
     assert class =~ "-left-8"
   end
 
-  test "a summary line keeps its comments inside its card", %{comment: comment} do
-    line = %{key: "summary-1", kind: :summary, text: "2 files", label: "In this plan, line 1", occurrence: 1}
-    assigns = %{line: line, placed: %{"summary-1" => [{comment.("pcm_s", line), 1}]}}
+  test "a criterion row draws its cells, its borders and the comments under it, or what the page draws in them", %{
+    comment: comment
+  } do
+    %{criteria: %{rows: [%{line: row} | _rows]}} =
+      build_plan_sheet(sheet_plan())
+
+    assigns = %{line: row, placed: %{row.key => [{comment.("pcm_c", row), 1}]}}
 
     html =
       ~H"""
-      <div id="card">
-        <CommentableLine.commentable_line
-          line={@line}
-          layout={:summary}
-          doc={:plan}
-          placed={@placed}
-          offered
-          target={nil}
-        >
-          2 files
-        </CommentableLine.commentable_line>
-      </div>
+      <CommentableLine.commentable_line
+        line={@line}
+        layout={:table_row}
+        doc={:plan}
+        placed={@placed}
+        offered
+        target={nil}
+      />
       """
       |> rendered_to_string()
       |> Floki.parse_fragment!()
 
-    assert [_card] = Floki.find(html, "#card [data-qa='line_comments'] [data-qa='document_comment']")
-    assert [class] = Floki.attribute(html, "[data-qa='line_comment_add']", "class")
-    assert class =~ "-left-[26px]"
+    assert [class] = Floki.attribute(html, "[data-qa='commentable_line']", "class")
+    assert class =~ "rounded-t-lg"
+    assert class =~ "border-x"
+    assert [style] = Floki.attribute(html, "#line-plan-#{row.key}", "style")
+    assert style =~ "repeat(3, minmax(0, 1fr))"
+
+    assert ["1", "send_back_to_architect.ex", "send_back_to_architect_test.exs"] =
+             html |> Floki.find("#line-plan-#{row.key} > div") |> Enum.map(&String.trim(Floki.text(&1)))
+
+    assert [_card] = Floki.find(html, "[data-qa='line_comments'] [data-qa='document_comment']")
+    assert Floki.attribute(html, "[data-qa='line_comment_add']", "aria-label") == ["Comment on Criterion 1"]
+
+    html =
+      ~H"""
+      <CommentableLine.commentable_line
+        line={@line}
+        layout={:table_row}
+        doc={:plan}
+        placed={%{}}
+        offered
+        target={nil}
+      >
+        <div id="drawn">The ticket's words</div>
+      </CommentableLine.commentable_line>
+      """
+      |> rendered_to_string()
+      |> Floki.parse_fragment!()
+
+    assert ["The ticket's words"] = html |> Floki.find("#line-plan-#{row.key} > div") |> Enum.map(&Floki.text/1)
   end
 
   test "a line with two comments draws both, numbered in order, and still draws its +", %{
@@ -243,12 +302,13 @@ defmodule RailWeb.Components.CommentableLineTest do
     end
   end
 
-  test "a node draws nothing until it has a comment or the box, which name it under the figure", %{comment: comment} do
-    node = %{key: "node-1", kind: :node, text: "PS", label: "Change diagram node", occurrence: 1}
-
+  test "a line drawn away shows nothing until it has a comment or the box, each naming it, with no line and no +", %{
+    paragraph: paragraph,
+    comment: comment
+  } do
     assert render_component(&CommentableLine.commentable_line/1,
-             line: node,
-             layout: :node,
+             line: paragraph,
+             layout: :away,
              doc: :plan,
              placed: %{},
              offered: true,
@@ -258,16 +318,20 @@ defmodule RailWeb.Components.CommentableLineTest do
     html =
       (&CommentableLine.commentable_line/1)
       |> render_component(
-        line: node,
-        layout: :node,
+        line: paragraph,
+        layout: :away,
         doc: :plan,
-        placed: %{"node-1" => [{comment.("pcm_n", node), 1}]},
+        placed: %{paragraph.key => [{comment.("pcm_a", paragraph), 1}]},
+        draft: %{doc: :plan, key: paragraph.key, label: paragraph.label, body: ""},
         offered: true,
         target: nil
       )
       |> Floki.parse_fragment!()
 
-    assert Floki.text(Floki.find(html, "[data-qa='document_comment_line']")) =~ "Node PS"
+    assert Floki.text(Floki.find(html, "[data-qa='document_comment_line']")) =~ paragraph.label
+    assert [box] = Floki.find(html, "#document-comment-form-#{paragraph.key}")
+    assert Floki.text(Floki.find(box, "[data-qa='document_comment_box_line']")) =~ paragraph.label
+    assert Floki.find(html, "#line-plan-#{paragraph.key}") == []
     assert Floki.find(html, "[data-qa='line_comment_add']") == []
   end
 

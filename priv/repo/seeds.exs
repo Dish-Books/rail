@@ -117,18 +117,6 @@ default_roles = [
     position: 5
   },
   %{
-    stage: :screens,
-    name: "Screenshots",
-    description: "Photographs every screen state a round's change affects",
-    icon_name: "pi-eye",
-    cli: :claude,
-    model: "claude-opus-5-5",
-    reasoning_effort: :high,
-    system_prompt: read_prompt.("screens"),
-    max_concurrent: 1,
-    position: 5
-  },
-  %{
     stage: :demo,
     name: "Demo Presenter",
     description: "Records narrated walkthroughs of the finished change in the running application",

@@ -59,13 +59,14 @@ defmodule RailWeb.Utils.CalculateDocumentCommentsTest do
     assert Map.values(placed) == [[kept]]
   end
 
-  test "a comment on a diagram node stays while a node has its id" do
+  test "a comment on a line of a card's sketch stays while the sketch has that line" do
     %{lines: lines} = build_plan_sheet(sheet_plan())
 
-    node = %PlanComment{id: "pcm_n", target: :plan, element_kind: :node, element_text: "SB", element_occurrence: 1}
-    gone = %{node | id: "pcm_g", element_text: "Gone"}
+    sketch = %PlanComment{id: "pcm_s", target: :plan, element_kind: :code, element_text: "end", element_occurrence: 1}
+    gone = %{sketch | id: "pcm_g", element_text: "Gone"}
 
-    assert %{placed: placed, lifted: [{^gone, 2}]} = calculate_document_comments(lines, [{node, 1}, {gone, 2}])
-    assert [[{^node, 1}]] = Map.values(placed)
+    assert %{placed: placed, lifted: [{^gone, 2}]} = calculate_document_comments(lines, [{sketch, 1}, {gone, 2}])
+    assert [{key, [{^sketch, 1}]}] = Map.to_list(placed)
+    assert %{label: "File 1, sketch line 3"} = Enum.find(lines, &(&1.key == key))
   end
 end

@@ -32,6 +32,9 @@ defmodule RailWeb.IssueLiveTest do
 
     {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
 
+    # An issue with no task looks for a pull request to start at Review on, which no test here has unless it says.
+    stub(Issues, :link_pull_request, fn _scope, _issue -> {:ok, nil} end)
+
     %{conn: log_in_user(conn, user), user: user, project: project}
   end
 
@@ -250,6 +253,7 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-owner", "Unassigned")
     refute has_element?(view, "#issue-task-link")
 
+    render_async(view)
     view |> element("#issue-start-plan") |> render_click()
 
     assert %Task{id: task_id, stage: :plan} = Repo.get_by(Task, issue_id: issue.id)
@@ -274,6 +278,142 @@ defmodule RailWeb.IssueLiveTest do
     refute has_element?(view, "#issue-start-product")
     refute has_element?(view, "#issue-start-design")
     refute has_element?(view, "#issue-start-architect")
+  end
+
+  test "an issue whose work has a pull request links it, and offers Review in place of Plan", %{
+    conn: conn,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_adopt",
+        identifier: "IPG-30",
+        title: "Built by hand",
+        state: :in_progress
+      })
+      |> Repo.insert!()
+
+    expect(Issues, :link_pull_request, fn _scope, %Issue{id: issue_id} = found when issue_id == issue.id ->
+      attrs = %{pr_number: 41, pr_url: "https://github.com/org/app/pull/41", pr_title: "Vendor filter"}
+      found |> Issue.pull_request_changeset(attrs) |> Repo.update!()
+      {:ok, %{"number" => 41}}
+    end)
+
+    expect(Pipeline, :adopt_pull_request, fn _scope, %Issue{id: issue_id} = adopted when issue_id == issue.id ->
+      Pipeline.create_task(Repo.preload(adopted, :project), :review)
+    end)
+
+    assert {:ok, view, html} = live(conn, ~p"/issues/#{issue.identifier}")
+    allow(Pipeline, self(), view.pid)
+    assert html =~ "Looking for a pull request"
+
+    render_async(view)
+
+    refute has_element?(view, "#issue-start-checking")
+    refute has_element?(view, "#issue-start-plan")
+    assert has_element?(view, "#issue-pull-request[href='https://github.com/org/app/pull/41']", "#41")
+    assert has_element?(view, "#issue-pull-request", "Vendor filter")
+
+    view |> element("#issue-start-review") |> render_click()
+
+    assert %Task{id: task_id, stage: :review} = Repo.get_by(Task, issue_id: issue.id)
+    assert_redirect(view, ~p"/tasks/#{task_id}")
+  end
+
+  test "an issue with a linked pull request offers Review without asking GitHub again", %{
+    conn: conn,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_linked",
+        identifier: "IPG-33",
+        title: "Linked already",
+        state: :in_progress
+      })
+      |> Repo.insert!()
+      |> Issue.pull_request_changeset(%{pr_number: 42, pr_url: "https://github.com/org/app/pull/42", pr_title: "Linked"})
+      |> Repo.update!()
+
+    reject(Issues, :link_pull_request, 2)
+
+    assert {:ok, view, html} = live(conn, ~p"/issues/#{issue.identifier}")
+    refute html =~ "Looking for a pull request"
+
+    assert has_element?(view, "#issue-start-review")
+    assert has_element?(view, "#issue-pull-request", "Linked")
+    refute has_element?(view, "#issue-start-plan")
+  end
+
+  test "an issue offers Plan when GitHub has no pull request for it or cannot say", %{conn: conn, project: project} do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_no_pr",
+        identifier: "IPG-32",
+        title: "Not started",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    for found <- [{:ok, nil}, {:error, :github_down}] do
+      expect(Issues, :link_pull_request, fn _scope, _issue -> found end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+      render_async(view)
+
+      assert has_element?(view, "#issue-start-plan")
+      refute has_element?(view, "#issue-start-review")
+      refute has_element?(view, "#issue-pull-request")
+    end
+  end
+
+  test "a pull request that cannot be reviewed says why", %{conn: conn, project: project} do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_adopt_refused",
+        identifier: "IPG-31",
+        title: "Built elsewhere",
+        state: :in_progress
+      })
+      |> Repo.insert!()
+      |> Issue.pull_request_changeset(%{pr_number: 41, pr_url: "https://github.com/org/app/pull/41"})
+      |> Repo.update!()
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    allow(Pipeline, self(), view.pid)
+
+    for {reason, said} <- [
+          {:pull_request_from_fork, "That pull request comes from a fork, which Rail cannot push fixes to."},
+          {{:pull_request_base, "release"}, "That pull request merges into release, not the default branch."},
+          {:pull_request_taken, "Another task already works on that pull request's branch."},
+          {"no checkout", "Could not check out the pull request: no checkout"},
+          {:task_exists, "Could not start: :task_exists"}
+        ] do
+      expect(Pipeline, :adopt_pull_request, fn _scope, _issue -> {:error, reason} end)
+
+      view |> element("#issue-start-review") |> render_click()
+
+      assert has_element?(view, "#flash-error", said)
+    end
+
+    # Starting found it closed, which let the link go, so the page offers Plan again.
+    expect(Pipeline, :adopt_pull_request, fn _scope, adopted ->
+      adopted |> Issue.pull_request_changeset(%{pr_number: nil, pr_url: nil}) |> Repo.update!()
+      {:error, :no_pull_request}
+    end)
+
+    view |> element("#issue-start-review") |> render_click()
+
+    assert has_element?(view, "#flash-error", "The pull request is no longer open.")
+    assert has_element?(view, "#issue-start-plan")
   end
 
   test "a Duplicate issue reads as Duplicate and offers no start", %{conn: conn, project: project} do
@@ -358,6 +498,7 @@ defmodule RailWeb.IssueLiveTest do
     expect(Git, :get_or_create_worktree, fn _project, _task -> {:error, "no checkout"} end)
     allow(Git, self(), view.pid)
 
+    render_async(view)
     view |> element("#issue-start-plan") |> render_click()
 
     assert has_element?(view, "#flash-error", "Could not create the worktree: no checkout")
@@ -507,6 +648,7 @@ defmodule RailWeb.IssueLiveTest do
     allow(Git, self(), view.pid)
     allow(Tools, self(), view.pid)
 
+    render_async(view)
     view |> element("#issue-start-plan") |> render_click()
     assert has_element?(view, "#flash-error", "Could not create the worktree: no checkout")
 
@@ -517,6 +659,7 @@ defmodule RailWeb.IssueLiveTest do
     allow(Git, self(), dispatch_view.pid)
     allow(Tools, self(), dispatch_view.pid)
 
+    render_async(dispatch_view)
     dispatch_view |> element("#issue-start-plan") |> render_click()
     assert has_element?(dispatch_view, "#flash-error", "Dispatch is switched off, so no agent was started.")
 
@@ -524,6 +667,7 @@ defmodule RailWeb.IssueLiveTest do
     allow(Git, self(), other_view.pid)
     allow(Tools, self(), other_view.pid)
 
+    render_async(other_view)
     other_view |> element("#issue-start-plan") |> render_click()
     assert has_element?(other_view, "#flash-error", "Could not start: :unavailable")
   end

@@ -15,15 +15,7 @@ defmodule Rail.Pipeline.Utils.CheckRunFinishedTest do
     task = learnings_task(project, "CRF-1", :review)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
-    # A round whose plan asks for its screen states to be shot again.
-    round =
-      Repo.insert!(%Round{
-        task_id: task.id,
-        number: 1,
-        plan: "Filter.",
-        retake_screens: true,
-        approved_at: DateTime.utc_now()
-      })
+    round = Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Filter.", approved_at: DateTime.utc_now()})
 
     stub(Git, :get_or_create_worktree, fn _project, _task -> {:ok, task.worktree_path} end)
     test_pid = self()
@@ -35,7 +27,7 @@ defmodule Rail.Pipeline.Utils.CheckRunFinishedTest do
     end)
 
     runs =
-      Map.new([:qa, :review, :screens], fn stage ->
+      Map.new([:qa, :review], fn stage ->
         {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
 
         {:ok, run} =
@@ -68,20 +60,25 @@ defmodule Rail.Pipeline.Utils.CheckRunFinishedTest do
     refute_received {:started, _stage, _resumed}
   end
 
-  test "the last of QA, the code reviewer and the screenshots agent to finish starts the review agent", %{
-    task: task,
-    runs: runs
-  } do
+  test "the last of QA and the code reviewer to finish starts the review agent", %{task: task, runs: runs} do
     {:ok, _saved} = Pipeline.save_report(task, :qa, "Two rows.")
     {:ok, _saved} = Pipeline.save_report(task, :review, "Nothing to report.")
 
-    assert %Run{stage_outcome: :done} = check_run_finished(runs.screens, [])
     assert %Run{stage_outcome: :done} = check_run_finished(runs.review, [])
     refute_received {:started, _stage, _resumed}
 
     assert %Run{stage_outcome: :done} = check_run_finished(runs.qa, [])
     assert_received {:started, :review_lead, false}
     refute_received {:started, _stage, _resumed}
+  end
+
+  # A round that changed nothing a person sees skipped QA, so the code reviewer is the last check.
+  test "the code reviewer's finish starts the review agent when QA was skipped", %{task: task, runs: runs} do
+    {:ok, _skipped} = Pipeline.update_run(runs.qa, %{stage_outcome: :skipped})
+    {:ok, _saved} = Pipeline.save_report(task, :review, "Nothing to report.")
+
+    assert %Run{stage_outcome: :done} = check_run_finished(runs.review, [])
+    assert_received {:started, :review_lead, false}
   end
 
   # The demo started beside the others, and the review agent does not wait on it.
@@ -95,22 +92,14 @@ defmodule Rail.Pipeline.Utils.CheckRunFinishedTest do
     {:ok, _saved} = Pipeline.save_report(task, :review, "Nothing to report.")
     %Run{} = check_run_finished(runs.qa, [])
     %Run{} = check_run_finished(runs.review, [])
-    refute_received {:started, _stage, _resumed}
-
-    %Run{} = check_run_finished(runs.screens, [])
     assert_received {:started, :review_lead, false}
     refute_received {:started, _stage, _resumed}
   end
 
   # A role the project does not have checks nothing, so nothing waits on it.
-  test "with no screenshots role, QA and the code reviewer start the review agent alone", %{
-    task: task,
-    runs: runs
-  } do
-    Repo.delete!(runs.screens)
-    Repo.delete!(runs.screens.role)
-    {:ok, _saved} = Pipeline.save_report(task, :review, "Nothing to report.")
-    %Run{} = check_run_finished(runs.review, [])
+  test "with no code reviewer role, QA starts the review agent alone", %{task: task, runs: runs} do
+    Repo.delete!(runs.review)
+    Repo.delete!(runs.review.role)
     {:ok, _saved} = Pipeline.save_report(task, :qa, "Two rows.")
 
     assert %Run{stage_outcome: :done} = check_run_finished(runs.qa, [])
@@ -118,24 +107,7 @@ defmodule Rail.Pipeline.Utils.CheckRunFinishedTest do
     refute_received {:started, _stage, _resumed}
   end
 
-  # Screens and a demo are taken again only when the round's plan asks, as a demo is recorded.
-  test "a round whose plan asks for neither has QA and the code reviewer start the review agent alone", %{
-    task: task,
-    round: round,
-    runs: runs
-  } do
-    round |> Ecto.Changeset.change(retake_screens: false) |> Repo.update!()
-    {:ok, _saved} = Pipeline.save_report(task, :qa, "Two rows.")
-    %Run{} = check_run_finished(runs.qa, [])
-    refute_received {:started, _stage, _resumed}
-
-    {:ok, _saved} = Pipeline.save_report(task, :review, "Nothing to report.")
-    %Run{} = check_run_finished(runs.review, [])
-    assert_received {:started, :review_lead, false}
-    refute_received {:started, _stage, _resumed}
-  end
-
-  # A task sent to Engineer with no plan has nothing asking for screens or a demo.
+  # A task sent to Engineer with no plan has nothing asking for a demo.
   test "a task with no plan has QA and the code reviewer start the review agent alone", %{
     task: task,
     round: round,

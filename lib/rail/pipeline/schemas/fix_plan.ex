@@ -30,8 +30,6 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
     field :covered_comments, :integer, default: 0
     # Whether the plan asks for a new demo once its round is built.
     field :record_demo, :boolean, default: false
-    # Whether the plan asks for the screen states to be shot again once its round is built.
-    field :retake_screens, :boolean, default: false
     # The ticket as a person asked it changed, whole, or nil where they asked for no change.
     field :title, :string
     field :description, :string
@@ -68,7 +66,6 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
       :covered_titles,
       :covered_comments,
       :record_demo,
-      :retake_screens,
       :title,
       :description,
       :design_changed,
@@ -89,7 +86,7 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
   """
   def save_changeset(%__MODULE__{} = fix_plan, attrs) do
     fix_plan
-    |> cast(attrs, [:plan, :record_demo, :retake_screens, :title, :description, :design_changed])
+    |> cast(attrs, [:plan, :record_demo, :title, :description, :design_changed])
     |> update_change(:plan, &String.trim/1)
     |> validate_required([:plan])
     |> validate_structure(fix_plan)
@@ -142,9 +139,9 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
   end
 
   @doc """
-  Lays the plan out for the Review tab: its summary, the changes to the ticket or the design a person asked for, an
-  item per finding and comment it covers, each with the numbers of the files that name it, the numbered files,
-  Verification, the counts and whether it covers the round as sent. `nil` before a plan is saved.
+  Lays the plan out for the Review tab: its round, its summary, the changes to the ticket or the design a person asked for, an
+  item per finding and comment it covers, each with the paths of the files that name it, a card per file, as a plan's
+  `### Changes` has, Verification, the counts and whether it covers the round as sent. `nil` before a plan is saved.
   """
   def build_sheet(%__MODULE__{plan: nil}), do: nil
 
@@ -161,7 +158,7 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
           key: key,
           title: fix_plan.covered_titles[key],
           body: bodies |> Map.get({:finding, key}, "") |> String.trim(),
-          files: for(file <- files, names?(file.description, {:finding, key}), do: file.number)
+          files: for(file <- files, names?(file.prose, {:finding, key}), do: file.path)
         }
       end)
 
@@ -178,27 +175,20 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
           place: comment.place,
           text: comment.text,
           body: bodies |> Map.get({:comment, comment.number}, "") |> String.trim(),
-          files: for(file <- files, names?(file.description, {:comment, comment.number}), do: file.number)
+          files: for(file <- files, names?(file.prose, {:comment, comment.number}), do: file.path)
         }
       end)
 
     verification = sections |> List.keyfind("Verification", 0, {nil, []}) |> elem(1) |> Enum.join("\n") |> String.trim()
-    # What a person asked to change, to the ticket or the design, read first: the section and its item.
-    changes =
-      [
-        sections |> List.keyfind("Changes to the plan", 0, {nil, []}) |> elem(1) |> Enum.join("\n"),
-        bodies[@changes] || ""
-      ]
-      |> Enum.map(&String.trim/1)
-      |> Enum.reject(&(&1 == ""))
-      |> Enum.join("\n\n")
+    changes = asked_changes(sections, bodies)
 
     %{
+      round: fix_plan.round,
       summary: lead |> Enum.reject(&String.match?(&1, ~r/\A\#{1,2} /)) |> Enum.join("\n") |> String.trim(),
       items: findings ++ comments,
       files: files,
       verification: if(verification != "", do: verification),
-      changes: if(changes != "", do: changes),
+      changes: changes,
       counts: %{findings: length(findings), comments: length(comments), files: length(files)},
       covers_round:
         MapSet.new(fix_plan.covered_keys) == MapSet.new(fix_plan.findings, & &1.key) and
@@ -240,6 +230,21 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
   end
 
   def parse_note(_not_text), do: nil
+
+  # What a person asked to change, to the ticket or the design, read first: the section and its item.
+  defp asked_changes(sections, bodies) do
+    [
+      sections |> List.keyfind("Changes to the plan", 0, {nil, []}) |> elem(1) |> Enum.join("\n"),
+      bodies[@changes] || ""
+    ]
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n\n")
+    |> case do
+      "" -> nil
+      changes -> changes
+    end
+  end
 
   # Past Review nobody rules, so the round is what it sent.
   defp fix_now(%__MODULE__{}, %Task{stage: :review}, findings),
@@ -308,16 +313,16 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
           Enum.map(fix_plan.comments, &{:comment, &1.number})
 
       for file <- ImplementationPlan.build_file_changes(plan) || [],
-          not Enum.any?(items, &names?(file.description, &1)),
+          not Enum.any?(items, &names?(file.prose, &1)),
           do:
             {:plan,
-             "has `#{file.path}` under `### File-level changes` naming no item; end its bullet with the finding's key in backticks, `comment N` or `changes to the plan`"}
+             "has `#{file.path}` under `### File-level changes` naming no item; say in its card's prose which it is for: the finding's key in backticks, `comment N` or `changes to the plan`"}
     end)
   end
 
-  defp names?(description, {:finding, key}), do: String.contains?(description, "`#{key}`")
-  defp names?(description, {:comment, number}), do: Regex.match?(~r/\bcomment #{number}\b/i, description)
-  defp names?(description, @changes), do: Regex.match?(~r/\bchanges to the plan\b/i, description)
+  defp names?(prose, {:finding, key}), do: String.contains?(prose, "`#{key}`")
+  defp names?(prose, {:comment, number}), do: Regex.match?(~r/\bcomment #{number}\b/i, prose)
+  defp names?(prose, @changes), do: Regex.match?(~r/\bchanges to the plan\b/i, prose)
 
   defp item({:finding, key}), do: "`#{key}`"
   defp item({:comment, number}), do: "comment #{number}"

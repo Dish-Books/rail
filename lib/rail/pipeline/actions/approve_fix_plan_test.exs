@@ -17,7 +17,7 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
   alias Rail.Users
 
   @plan "Guard nil.\n\n### What changes\n\n#### `nil-crash`\n\nGuard it at the caller.\n\n" <>
-          "### File-level changes\n\n- `lib/a.ex`: guards nil. For `nil-crash`."
+          "### File-level changes\n\n#### `lib/a.ex`\n\nGuards nil. For `nil-crash`."
 
   setup %{project: project} do
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
@@ -96,7 +96,7 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
     ada: ada,
     ada_id: ada_id
   } do
-    {:ok, _resaved} = Pipeline.save_fix_plan(task, %{"plan" => @plan, "retake_screens" => true})
+    {:ok, _resaved} = Pipeline.save_fix_plan(task, %{"plan" => @plan, "record_demo" => true})
     {:ok, _marked} = Pipeline.update_task(task, %{marked_ready_at: DateTime.utc_now()})
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
     # The start is the job's, committed with the round, so it survives the page that approved.
@@ -106,7 +106,7 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
 
     assert [
              %Round{number: 1},
-             %Round{number: 2, plan: @plan, plan_version: 2, record_demo: false, retake_screens: true} = round
+             %Round{number: 2, plan: @plan, plan_version: 2, record_demo: true} = round
            ] =
              Pipeline.list_rounds(task)
 

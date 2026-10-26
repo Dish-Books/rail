@@ -1,8 +1,7 @@
 defmodule Rail.Pipeline.Utils.CheckRunFinished do
   @moduledoc """
-  Where a finished checking run leaves its round. QA and the code reviewer owe a report. All of them started
-  together, so the last of QA, the code reviewer and a screenshots agent the plan asked for to finish starts the
-  review agent, which does not wait on the demo.
+  Where a finished checking run leaves its round. QA and the code reviewer owe a report. Both started
+  together, so the last of them to finish starts the review agent, which does not wait on the demo.
 
   The run is latched done here, under the task's lock, so of two that finish together one sees the other done.
   """
@@ -11,20 +10,17 @@ defmodule Rail.Pipeline.Utils.CheckRunFinished do
   import Rail.Pipeline.Utils.StartRoleRun
 
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
 
-  @checks [:qa, :review, :screens]
+  @checks [:qa, :review]
 
-  @doc "Finishes `run` as QA's, the code reviewer's or the screenshots agent's."
+  @doc "Finishes `run` as QA's or the code reviewer's."
   def check_run_finished(%Run{role: %Role{stage: stage}, task: %Task{} = task} = run, _opts) when stage in @checks do
-    if stage in [:qa, :review] and not Keyword.has_key?(Pipeline.read_reports(task), stage) do
-      fail(run, "#{name(stage)} did not save its report.")
-    else
+    if Keyword.has_key?(Pipeline.read_reports(task), stage) do
       {:ok, {done, last?}} =
         Repo.transaction(fn ->
           Repo.one!(from t in Task, where: t.id == ^task.id, select: t.id, lock: "FOR UPDATE")
@@ -38,6 +34,8 @@ defmodule Rail.Pipeline.Utils.CheckRunFinished do
       end
 
       %{done | task: run.task, role: run.role}
+    else
+      fail(run, "#{name(stage)} did not save its report.")
     end
   end
 
@@ -48,17 +46,13 @@ defmodule Rail.Pipeline.Utils.CheckRunFinished do
       Repo.all(
         from r in Run,
           join: role in assoc(r, :role),
-          where: r.task_id == ^task.id and r.stage_outcome == :done,
+          where: r.task_id == ^task.id and r.stage_outcome in [:done, :skipped],
           select: role.stage
       )
 
     # A role the project does not have checks nothing, so nothing waits on it.
-    Enum.reject([:qa, :review | screens(Pipeline.read_plan(task))], &(&1 in done or &1 not in stages))
+    Enum.reject(@checks, &(&1 in done or &1 not in stages))
   end
-
-  # The screens are shot again only when the round's plan asks.
-  defp screens(%Round{retake_screens: true}), do: [:screens]
-  defp screens(_round), do: []
 
   defp name(:qa), do: "QA"
   defp name(:review), do: "The code reviewer"

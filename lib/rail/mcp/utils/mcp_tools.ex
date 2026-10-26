@@ -199,8 +199,8 @@ defmodule Rail.Mcp.Utils.McpTools do
       "name" => "qa_shot",
       "description" =>
         "Photograph the page and save it in the QA folder. Say what the picture is of; Rail names the file " <>
-          "and returns its path, which goes in your report for a finding's evidence: the path, never " <>
-          "the picture. Take it at the point a check asserts something on screen, not after every keystroke. A " <>
+          "and returns its path with the picture attached, so you check it in the same turn. The path goes in " <>
+          "your report for a finding's evidence: the path, never the picture. Take it at the point a check asserts something on screen, not after every keystroke. A " <>
           "picture all one color is refused and nothing is saved.",
       "inputSchema" => %{
         "type" => "object",
@@ -218,7 +218,7 @@ defmodule Rail.Mcp.Utils.McpTools do
         "Photograph one screen state the change affects and save it as that state's image for HEAD's commit. It " <>
           "replaces the state's earlier picture each round. Take it of the state as the change leaves it, under the " <>
           "same `key` every round. Refused while the worktree has uncommitted changes, and for a picture all one color, " <>
-          "which keeps the earlier one. Returns the path, which a finding can cite as evidence.",
+          "which keeps the earlier one. Returns the path, which a finding can cite as evidence, with the picture attached.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{
@@ -350,11 +350,6 @@ defmodule Rail.Mcp.Utils.McpTools do
             "type" => "boolean",
             "description" => "True when the change has something on screen worth a recorded walkthrough once it is built."
           },
-          "retake_screens" => %{
-            "type" => "boolean",
-            "description" =>
-              "True when the change has something on screen, so each state it affects is photographed once it is built."
-          },
           "design" => %{
             "type" => "string",
             "description" =>
@@ -362,56 +357,6 @@ defmodule Rail.Mcp.Utils.McpTools do
                 "there are no options, or while the plan leaves the screen open before the pick."
           }
         }
-      }
-    },
-    %{
-      "name" => "save_split",
-      "description" =>
-        "Save a split of the work into child tickets, when it is too big for one. Each save replaces the whole " <>
-          "split, so save every child each time, in the order they should run. Every child needs its title, " <>
-          "its ticket and its part of the plan, or the save is refused naming the child and the field, and " <>
-          "the last good save stays. Save an empty list of children to remove the split.",
-      "inputSchema" => %{
-        "type" => "object",
-        "properties" => %{
-          "children" => %{
-            "type" => "array",
-            "description" =>
-              "Two or more children, in order. Approval makes each a Linear sub-issue with a task of its own.",
-            "items" => %{
-              "type" => "object",
-              "properties" => %{
-                "title" => %{"type" => "string", "description" => "The child's ticket title, one line."},
-                "ticket" => %{
-                  "type" => "string",
-                  "description" => "The child's ticket body in markdown, with its own acceptance criteria."
-                },
-                "estimate" => %{"type" => "integer", "description" => "Points, zero or more."},
-                "plan" => %{
-                  "type" => "string",
-                  "description" =>
-                    "The part of the plan this child builds, a complete plan in the same sections, opening " <>
-                      "with the `## Implementation plan` heading."
-                },
-                "builds_on" => %{
-                  "type" => "array",
-                  "items" => %{"type" => "integer"},
-                  "description" =>
-                    "The numbers of the earlier children, counted from 1, that must merge before this one starts. " <>
-                      "Empty when it can start at once."
-                },
-                "builds_screen" => %{
-                  "type" => "boolean",
-                  "description" =>
-                    "True for each child that builds the screen the approved design shows. Only those children " <>
-                      "get the design."
-                }
-              },
-              "required" => ["title", "ticket", "plan"]
-            }
-          }
-        },
-        "required" => ["children"]
       }
     }
   ]
@@ -439,8 +384,17 @@ defmodule Rail.Mcp.Utils.McpTools do
             "enum" => ["code_reviewer", "explorer", "review_lead"],
             "description" => "Who found it."
           },
-          "title" => %{"type" => "string", "description" => "What is wrong, in 90 characters or less."},
-          "problem" => %{"type" => "string", "description" => "At most two plain sentences, 300 characters."},
+          "title" => %{
+            "type" => "string",
+            "description" => "The one thing that goes wrong, as the person it happens to would notice it, 90 characters."
+          },
+          "problem" => %{
+            "type" => "string",
+            "description" =>
+              "What goes wrong first, then its cause: who does what and where, what happens and what should " <>
+                "happen instead, then the code that makes it happen. Short sentences in everyday words a teammate " <>
+                "who has not read the diff follows on one read. At most four sentences, 500 characters."
+          },
           "file" => @range["file"],
           "line" => @range["line"],
           "end_line" => @range["end_line"],
@@ -551,10 +505,14 @@ defmodule Rail.Mcp.Utils.McpTools do
           "approves it in Rail, which starts an engineer on it. Markdown: a short summary, then `### What changes` " <>
           "with a `#### `key`` for each finding to fix, by its key in backticks, and a `#### Comment N` for each " <>
           "comment the human sent, by its " <>
-          "number, each saying what will change or why nothing will. Then `### File-level changes`, one bullet per " <>
-          "file starting with its path in backticks, as in the implementation plan, each ending with the item it is " <>
-          "for: the finding's key in backticks or `comment N`. Then `### Verification`. Leave out the last two when " <>
-          "nothing will change. A `### Changes to the plan` section comes first when the human asked to change the " <>
+          "number, each saying what will change or why nothing will. Then `### File-level changes`, a card per file " <>
+          "as the first plan's `### Changes` has: a `#### `path`` heading, followed by `deleted` when the file goes; " <>
+          "a sentence or two on what changes in it, naming the item it is for by the finding's key in backticks or " <>
+          "`comment N`; then, when it adds or changes public functions, one fenced block of their signatures; then, " <>
+          "when there is code the fix turns on, one fenced block marked `sketch`, such as ```elixir sketch, holding " <>
+          "only that code. Then `### Verification`. Leave out the last two when " <>
+          "nothing will change, but save no plan in which nothing changes: name the findings to rule Skip instead. " <>
+          "A `### Changes to the plan` section comes first when the human asked to change the " <>
           "ticket, its criteria or the first plan. A plan that leaves out a finding to fix or a comment is refused " <>
           "with what to fix.",
       "inputSchema" => %{
@@ -564,10 +522,6 @@ defmodule Rail.Mcp.Utils.McpTools do
           "record_demo" => %{
             "type" => "boolean",
             "description" => "True when a new demo should be recorded once this round is built."
-          },
-          "retake_screens" => %{
-            "type" => "boolean",
-            "description" => "True when the screen states should be photographed again once this round is built."
           },
           "title" => %{
             "type" => "string",
@@ -688,18 +642,14 @@ defmodule Rail.Mcp.Utils.McpTools do
     }
   ]
 
-  @screen_tools Enum.filter(@qa_tools, &(&1["name"] == "save_screen"))
-  @check_tools @qa_tools -- @screen_tools
-
   @doc """
   The tools Rail serves this run itself: the save tools each agent hands its output over with, the browser for
-  the three that drive the app, `ask_questions` for the agents a person talks to, and the knowledge base for all.
+  the two that drive the app, `ask_questions` for the agents a person talks to, and the knowledge base for all.
   """
   def mcp_tools(%Role{stage: :plan}), do: @design_tools ++ @plan_tools ++ @question_tools ++ @knowledge_tools
   def mcp_tools(%Role{stage: :engineer}), do: @report_tools ++ @question_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :qa}), do: @browser_tools ++ @check_tools ++ @report_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :qa}), do: @browser_tools ++ @qa_tools ++ @report_tools ++ @knowledge_tools
   def mcp_tools(%Role{stage: :review}), do: @report_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :screens}), do: @browser_tools ++ @screen_tools ++ @knowledge_tools
 
   def mcp_tools(%Role{stage: :demo}), do: @browser_tools ++ @demo_tools ++ @demo_report_tools ++ @knowledge_tools
 

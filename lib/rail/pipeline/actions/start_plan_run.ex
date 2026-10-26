@@ -108,9 +108,8 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     1. The ticket first. Save it with `save_plan`, giving its `title` and `description`, as soon as you have a draft, so the human can read it while you work.
     2. Then the design, only when the change has a screen: three options, each saved with `save_design_option`. When nothing anyone sees changes there are no options: skip them and say so in one line.
     3. Then the implementation plan, saved with `save_plan` as `plan`. Write everything that does not hang on the screen first. Once the options are saved, either write the screen-specific details for the option you recommend, naming it as `design` when you save, or leave them until the pick. Never plan for all three.
-    4. When the work is too big for one ticket, or the human asks for a split, decide where it splits from the code and save it with `save_split`. The ticket you saved stays the parent's, whole, and each child carries its own estimate: on approval the parent's is cleared, since its points are its children's.
-    5. Have the plan checked before you end any turn that saved it, so the human reads a plan with nothing missing. Start one subagent on a clean context to read it against the code. It sees only what you write it, so give it the worktree path, the ticket and the implementation plan word for word as saved, the split when one is saved, and the path of the page of the option the plan is written for. Ask it to report, each point with the file and line it rests on, what is missing: an acceptance criterion no step delivers, a caller, sibling or test of a changed function the plan leaves out, a migration, schema field, permission check or screen state the change needs and no step names. And what is likely wrong: a step that contradicts the code as it is, a file or function that does not exist, an approach that breaks the project's written standards or a rule you handed it, a test that would pass without the change. It changes nothing and saves nothing. Fix every point that holds, carrying it to the ticket and the split where it reaches, save again, and drop each that does not. One check a turn: what it revised is checked when the next turn saves the plan.
-    6. End the turn by saying what is saved, what the check changed in a line each, and, when there are options, which one you recommend and why, in a sentence or two. The human picks in Rail, not in the chat.
+    4. Have the plan checked before you end any turn that saved it, so the human reads a plan with nothing missing. Start one subagent on a clean context to read it against the code. It sees only what you write it, so give it the worktree path, the ticket and the implementation plan word for word as saved, and the path of the page of the option the plan is written for. Ask it to report, each point with the file and line it rests on, what is missing: an acceptance criterion no step delivers, a caller, sibling or test of a changed function the plan leaves out, a migration, schema field, permission check or screen state the change needs and no step names. And what is likely wrong: a step that contradicts the code as it is, a file or function that does not exist, an approach that breaks the project's written standards or a rule you handed it, a test that would pass without the change. It changes nothing and saves nothing. Fix every point that holds, carrying it to the ticket where it reaches, save again, and drop each that does not. One check a turn: what it revised is checked when the next turn saves the plan.
+    5. End the turn by saying what is saved, what the check changed in a line each, and, when there are options, which one you recommend and why, in a sentence or two. The human picks in Rail, not in the chat.
 
     Saving:
 
@@ -140,15 +139,6 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     - Rail records the pick in #{Path.join(dir, "picked")} and deletes the options not picked; never write that file. After the pick only the picked option can be saved.
     - Comments arrive as one message before approval, grouped by what they are on. Those on the design name each element of the picked option by its CSS selector with what it says and the comment: find the element, change the page, retake the screenshot and save under the same key, keeping the ids and structure of elements nobody commented on. Those "On the ticket:" and "On the plan:" each name a line by its label and quote it as it read when the comment was written: answer by changing that line, and leave every line nobody commented on reading exactly as it did, so the other comments stay under their lines. A fix the plan check brings is the one change a line nobody commented on can take.
 
-    A split:
-
-    - Two or more children in the order they run, each a ticket of its own with its own branch and pull request: its `title`, its `ticket`, its `estimate`, its part of the plan as `plan`, `builds_on`, the numbers of the earlier children it needs merged first, and `builds_screen`, true for each child that builds the approved design's screen, since only those children get the design. Your implementation plan still covers the whole change, so the human can read it in one place. With a split saved, approval makes each child a sub-issue with a task of its own.
-    - Plan the split on purpose, before you write the parts, as vertical slices: each child ships a whole, working piece of the change through every layer it touches, and merges on its own with the default branch working and its tests passing.
-    - Order and cut the children so none is reworked by a later one, and none carries a temporary stand-in to tide it over until a sibling lands: no stubs, shims, placeholder screens, flags or half-wired states. Where a cut would need one, cut elsewhere or keep that work in one child.
-    - A child builds on another only where it truly needs that work merged first. It starts when that one merges, so every needless dependency is time the children spend waiting.
-    - Each child's ticket has its own acceptance criteria, taken from the parent's. Its part is a complete plan in the same sections as yours, opening with the `## Implementation plan` heading, since the child's engineer reads nothing else of the plan.
-    - Each `save_split` replaces the whole split, so every save carries every child complete. Save an empty list to remove the split.
-
     Questions:
 
     - One round per turn. Collect every question you could not close and ask them all in one `ask_questions` call before you end your turn, each with its options, your recommended answer first. Leave the options out where the answer is free text. The human sees the round when your turn ends and answers the lot in a single pass. A question you can settle from the docs, the code or a named assumption is not a question.
@@ -168,7 +158,6 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
   defp saved(%Task{} = task) do
     design = Pipeline.read_design(task, pages: false)
     round = Pipeline.read_plan(task)
-    split = Pipeline.read_split(task)
 
     lines =
       Enum.filter(
@@ -178,9 +167,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
             "- Design options: #{Enum.map_join(design.options, ", ", &"#{&1.title} (#{&1.key})")}",
           design && design.picked && "- The human picked #{design.picked}.",
           round && round.plan &&
-            "- The plan, written for #{if round.design, do: round.design.key, else: "no design option"}.",
-          split &&
-            "- A split into #{length(split.children)}: #{Enum.map_join(split.children, "; ", &"#{&1.number}. #{&1.title}")}."
+            "- The plan, written for #{if round.design, do: round.design.key, else: "no design option"}."
         ],
         &is_binary/1
       )

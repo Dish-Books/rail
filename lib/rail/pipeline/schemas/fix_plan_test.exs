@@ -24,10 +24,21 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
 
         ### File-level changes
 
-        - `lib/rail/send.ex`: reads screen comments. For `send-drops-screen-comments`.
-        - `lib/rail_web/tray.ex`: counts finding comments. For `tray-count-skips-finding-comments`.
-        - `lib/rail_web/diff_comment.ex`: draws a sent comment. For comment 1.
-        - `lib/rail/send_test.exs`: one Send lists all three. For `send-drops-screen-comments`.
+        #### `lib/rail/send.ex`
+
+        Reads screen comments. For `send-drops-screen-comments`.
+
+        #### `lib/rail_web/tray.ex`
+
+        Counts finding comments. For `tray-count-skips-finding-comments`.
+
+        #### `lib/rail_web/diff_comment.ex`
+
+        Draws a sent comment. For comment 1.
+
+        #### `lib/rail/send_test.exs`
+
+        One Send lists all three. For `send-drops-screen-comments`.
 
         ### Verification
 
@@ -99,17 +110,17 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
     end
 
     test "a file naming no item is refused naming its path", %{fix_plan: fix_plan} do
-      plan = String.replace(@plan, "draws a sent comment. For comment 1.", "draws a sent comment.")
+      plan = String.replace(@plan, "Draws a sent comment. For comment 1.", "Draws a sent comment.")
 
       assert %{plan: [error]} = fix_plan |> FixPlan.save_changeset(%{"plan" => plan}) |> errors_on()
       assert error =~ "`lib/rail_web/diff_comment.ex` under `### File-level changes` naming no item"
     end
 
     test "File-level changes are held to the Plan tab's rules", %{fix_plan: fix_plan} do
-      plan = String.replace(@plan, "- `lib/rail/send.ex`:", "- lib/rail/send.ex:")
+      plan = String.replace(@plan, "#### `lib/rail/send.ex`", "#### lib/rail/send.ex")
 
       assert %{plan: [error]} = fix_plan |> FixPlan.save_changeset(%{"plan" => plan}) |> errors_on()
-      assert error =~ "not a bullet starting with a file path in backticks"
+      assert error =~ "has a heading under `### File-level changes` that is not `#### `path/to/file``"
     end
 
     test "a plan without What changes, with an unknown section or a stray heading is refused", %{fix_plan: fix_plan} do
@@ -135,7 +146,7 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
       plan =
         "### Changes to the plan\n\n- Criterion 1: a dot, not parentheses.\n\n### What changes\n\n" <>
           "#### Changes to the plan\n\nThe heading takes a dot.\n\n" <>
-          "### File-level changes\n\n- `lib/heading.ex`: the dot. For the changes to the plan."
+          "### File-level changes\n\n#### `lib/heading.ex`\n\nThe dot. For the changes to the plan."
 
       fix_plan = %{fix_plan | findings: [], comments: []}
 
@@ -256,13 +267,21 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
                  %{
                    kind: :finding,
                    key: "send-drops-screen-comments",
-                   files: [1, 4],
+                   files: ["lib/rail/send.ex", "lib/rail/send_test.exs"],
                    body: "`SendReviewRound.run/2` reads screen comments too."
                  },
-                 %{kind: :finding, key: "tray-count-skips-finding-comments", files: [2]},
-                 %{kind: :comment, number: 1, comment_kind: :diff, place: "diff_comment.ex:58", files: [3]}
+                 %{kind: :finding, key: "tray-count-skips-finding-comments", files: ["lib/rail_web/tray.ex"]},
+                 %{
+                   kind: :comment,
+                   number: 1,
+                   comment_kind: :diff,
+                   place: "diff_comment.ex:58",
+                   files: ["lib/rail_web/diff_comment.ex"]
+                 }
                ],
-               files: [%{number: 1, path: "lib/rail/send.ex"} | _rest],
+               files: [
+                 %{path: "lib/rail/send.ex", prose: "Reads screen comments. For `send-drops-screen-comments`."} | _rest
+               ],
                verification: "`mix test lib/rail/send_test.exs`.",
                counts: %{findings: 2, comments: 1, files: 4}
              } = FixPlan.build_sheet(saved)
@@ -284,7 +303,11 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
 
       assert %{
                items: [
-                 %{key: "send-drops-screen-comments", title: "Send leaves screen comments out", files: [1, 4]},
+                 %{
+                   key: "send-drops-screen-comments",
+                   title: "Send leaves screen comments out",
+                   files: ["lib/rail/send.ex", "lib/rail/send_test.exs"]
+                 },
                  %{key: "tray-count-skips-finding-comments"},
                  %{kind: :comment, number: 1}
                ],
@@ -310,7 +333,7 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
       plan =
         "### Changes to the plan\n\n- Criterion 1: a dot.\n\n### What changes\n\n" <>
           "#### Changes to the plan\n\nThe heading takes a dot.\n\n### File-level changes\n\n" <>
-          "- `lib/heading.ex`: the dot. For the changes to the plan."
+          "#### `lib/heading.ex`\n\nThe dot. For the changes to the plan."
 
       {:ok, saved} =
         %{fix_plan | findings: [], comments: []} |> FixPlan.save_changeset(%{"plan" => plan}) |> apply_action(:update)

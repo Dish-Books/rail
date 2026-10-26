@@ -40,6 +40,17 @@ defmodule Rail.Pipeline.Actions.RetryRunTest do
     assert {:ok, %Run{id: ^qa_id}} = Pipeline.retry_run(system_scope(), qa)
   end
 
+  # A round that changed nothing a person sees skipped QA, and a person may still want it walked.
+  test "QA skipped on its round starts on a clean conversation", %{run: run} do
+    %Run{id: qa_id} = qa = run.(:qa, %{stage_outcome: :skipped, conversation_id: "sess_qa"})
+
+    expect(Tools, :start_os_process, fn %Run{id: ^qa_id, conversation_id: nil} = spawned, _argv ->
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{id: ^qa_id, stage_outcome: :in_progress}} = Pipeline.retry_run(system_scope(), qa)
+  end
+
   test "the review agent picks its conversation up again", %{run: run} do
     %Run{id: lead_id} =
       lead = run.(:review_lead, %{error: "The review agent did not save its review.", conversation_id: "sess_lead"})
@@ -57,7 +68,7 @@ defmodule Rail.Pipeline.Actions.RetryRunTest do
 
     assert {:error, :not_retryable} = Pipeline.retry_run(system_scope(), run.(:review, %{}))
     assert {:error, :not_retryable} = Pipeline.retry_run(system_scope(), run.(:engineer, %{error: "It broke."}))
-    assert {:error, :not_found} = Pipeline.retry_run(user_scope(), run.(:screens, %{error: "It broke."}))
+    assert {:error, :not_found} = Pipeline.retry_run(user_scope(), run.(:qa, %{error: "It broke."}))
 
     {:ok, _engineer} = Pipeline.update_task(task, %{stage: :engineer})
     _working = run.(:plan, %{status: :running})

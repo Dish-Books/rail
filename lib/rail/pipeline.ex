@@ -18,8 +18,8 @@ defmodule Rail.Pipeline do
   what the turn committed. A task never goes back to Engineer, and it waits at
   Review, ready to merge, once nothing is left to rule or fix.
 
-  Plan can also end with a split: approval then makes each child an issue and a task of its own at
-  Engineer, and parks the parent at Split until the last child merges.
+  A task split before splitting was retired waits at Split, its children each an issue and a task of their own,
+  until the last child merges.
 
   A finished review moves the task on to Finalize, which has no run of its own: a teammate marks it ready
   for a tech lead, a tech lead's Approve approves its pull request on GitHub as that lead, and a tech lead's
@@ -45,9 +45,6 @@ defmodule Rail.Pipeline do
   defdelegate pick_design_option(scope, run, key), to: Actions.PickDesignOption
   defdelegate read_plan(task), to: Actions.ReadPlan
   defdelegate save_plan(task, attrs), to: Actions.SavePlan
-  defdelegate read_split(task), to: Actions.ReadSplit
-  defdelegate save_split(task, attrs), to: Actions.SaveSplit
-  defdelegate create_child_task(parent, issue, child), to: Actions.CreateChildTask
   defdelegate handle_issue_finished(issue), to: Actions.HandleIssueFinished
   defdelegate share_owner_with_children(issue), to: Actions.ShareOwnerWithChildren
 
@@ -102,6 +99,7 @@ defmodule Rail.Pipeline do
   defdelegate list_screens(task), to: Actions.ListScreens
 
   defdelegate start_task(issue, stage), to: Actions.StartTask
+  defdelegate adopt_pull_request(scope, issue), to: Actions.AdoptPullRequest
   defdelegate create_task(issue, stage), to: Actions.CreateTask
   defdelegate list_tasks(opts \\ []), to: Actions.ListTasks
   defdelegate update_task(task, attrs), to: Actions.UpdateTask
