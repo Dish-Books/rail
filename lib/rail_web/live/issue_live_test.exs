@@ -14,6 +14,7 @@ defmodule RailWeb.IssueLiveTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Workers.StartReviewChecks
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
@@ -66,6 +67,31 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-project", "Test Project")
     assert has_element?(view, "#issue-tracker-link[href='https://linear.app/issue/IPG-7']")
     assert has_element?(view, "#issue-branch[phx-hook='CopyText'][data-copy-text='ipg-7-ap-aging']")
+  end
+
+  test "the branch link of an issue whose task took a pull request over names the pull request's branch", %{
+    conn: conn,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_pr_branch",
+        identifier: "IPG-34",
+        title: "Built locally",
+        state: :in_progress,
+        branch_name: "ipg-34-built-locally"
+      })
+      |> Repo.insert!()
+      |> Repo.preload(:project)
+
+    {:ok, task} = Pipeline.create_task(issue, :review)
+    {:ok, _task} = Pipeline.update_task(task, %{worktree_name: "michael/hosts-on-sandboxes"})
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    assert has_element?(view, "#issue-branch[data-copy-text='michael/hosts-on-sandboxes']", "michael/hosts-on-sandboxes")
   end
 
   test "a GitHub issue opens from its key#number identifier, and anyone can own it", %{
@@ -349,7 +375,10 @@ defmodule RailWeb.IssueLiveTest do
           {{:pull_request_into, 205, "release/2026-10", "main"}, "#205 merges into release/2026-10, not main."},
           {{:pull_request_taken, 209, "RAIL-118"}, "RAIL-118 already works on #209."},
           {{:branch_failed, "no such ref"}, "Could not check out the pull request's branch: no such ref"},
-          {{:github_api_error, 500, %{}}, "Could not start: {:github_api_error, 500, %{}}"}
+          {{:github_api_error, 500, %{}}, "GitHub answered 500, so Rail could not take the pull request. Try again."},
+          {%Req.TransportError{reason: :timeout},
+           "Could not reach GitHub, so Rail could not take the pull request. Try again."},
+          {:boom, "Could not start: :boom"}
         ] do
       expect(Pipeline, :start_task, fn _scope, %Issue{}, :review, "#1" -> {:error, reason} end)
       allow(Pipeline, self(), view.pid)
@@ -388,6 +417,35 @@ defmodule RailWeb.IssueLiveTest do
     # Another task's change says nothing about this issue, which keeps its link.
     send(view.pid, {:pipeline_changed, "tsk_another"})
     assert has_element?(view, "a#issue-task-link[href='/tasks/#{task.id}']")
+  end
+
+  test "an open page reads Review running once a hand-over's checks start, without a reload", %{
+    conn: conn,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_pr_checks",
+        identifier: "IPG-35",
+        title: "Handed over",
+        state: :todo
+      })
+      |> Repo.insert!()
+      |> Repo.preload(:project)
+
+    {:ok, task} = Pipeline.create_task(issue, :review)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    assert has_element?(view, "#issue-task-link", "Queued for Review")
+
+    stub(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+    assert :ok = perform_job(StartReviewChecks, %{task_id: task.id})
+
+    assert has_element?(view, "#issue-task-link", "Review running")
   end
 
   test "an issue offers one Start at Plan button, where every task begins", %{conn: conn, project: project} do
@@ -718,6 +776,9 @@ defmodule RailWeb.IssueLiveTest do
         state: :todo
       })
       |> Repo.insert!()
+
+    # With no task the page reloads on any task's change, which another test's broadcast would set off.
+    {:ok, _task} = Pipeline.create_task(Repo.preload(issue, :project), :plan)
 
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
 

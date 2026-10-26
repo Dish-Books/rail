@@ -26,6 +26,17 @@ defmodule RailWeb.Components.IssueView do
   attr :review_error, :string, default: nil
 
   def issue_view(assigns) do
+    # A task works on a branch of its own, which a pull request handed over names rather than the tracker.
+    assigns =
+      assign(
+        assigns,
+        :branch,
+        case assigns.issue.task do
+          %Task{worktree_name: name} when is_binary(name) -> name
+          _no_task -> assigns.issue.branch_name
+        end
+      )
+
     ~H"""
     <div id="issue-page" data-qa="issue-page" class="max-w-5xl mx-auto space-y-6">
       <nav class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
@@ -286,7 +297,7 @@ defmodule RailWeb.Components.IssueView do
             <p id="issue-project">{@issue.project.name}</p>
           </section>
 
-          <section :if={@issue.url not in [nil, ""] or @issue.branch_name} class="space-y-3">
+          <section :if={@issue.url not in [nil, ""] or @branch} class="space-y-3">
             <h2 class="text-xs font-medium text-slate-500 dark:text-slate-400">Links</h2>
 
             <a
@@ -303,17 +314,17 @@ defmodule RailWeb.Components.IssueView do
             </a>
 
             <button
-              :if={@issue.branch_name}
+              :if={@branch}
               type="button"
               id="issue-branch"
               phx-hook="CopyText"
-              data-copy-text={@issue.branch_name}
+              data-copy-text={@branch}
               title="Copy branch name"
               class="group w-full flex items-center gap-2.5 text-left text-slate-900 dark:text-slate-100 cursor-pointer"
             >
               <.icon name="pi-git-branch" class="h-4 w-4 text-slate-500 dark:text-slate-400" />
               <span class="flex-1 min-w-0 font-mono text-xs truncate group-hover:underline">
-                {@issue.branch_name}
+                {@branch}
               </span>
               <.icon name="pi-copy" class="h-4 w-4 text-slate-400 group-data-[copied=true]:hidden" />
               <.icon

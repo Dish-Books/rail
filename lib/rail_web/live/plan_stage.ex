@@ -800,9 +800,7 @@ defmodule RailWeb.Live.PlanStage do
           at <span
             id="plan-submitted-head"
             class="font-mono text-[12.5px] text-slate-700 dark:text-slate-300"
-          >
-            {String.slice(@task.submitted_head || "", 0, 7)}
-          </span>. There is no plan, so the ticket is the whole specification.
+          >{String.slice(@task.submitted_head || "", 0, 7)}</span>. There is no plan, so the ticket is the whole specification.
         </p>
       </div>
     </div>

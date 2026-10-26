@@ -1,9 +1,10 @@
 defmodule Rail.Git.Actions.LoadBranchHistory do
   @moduledoc """
-  The branch's own commits along its first parent, newest first, each labeled by what made it: a merge
-  of the default branch or of what was pushed to the branch itself, the engineer's work before Review's first
-  round read it, or the fix round whose commits came after that round's read. Each carries its stat against its first parent, so a merge's is
-  what main brought in, and a merge the conflicts git met in it.
+  The branch's own commits along its first parent, newest first, each labeled by what made it: a merge of the
+  default branch or of what was pushed to the branch itself, the engineer's work before Review's first round read
+  it, which on a task handed over is the pull request's, or the fix round whose commits came after that round's
+  read. Each carries its stat against its first parent, so a merge's is what main brought in, and a merge the
+  conflicts git met in it.
   """
 
   alias Rail.Pipeline.Schemas.Task
@@ -38,7 +39,13 @@ defmodule Rail.Git.Actions.LoadBranchHistory do
     with {log, 0} <- Tools.run("git", args, cd: worktree_path, stderr_to_stdout: true),
          {stat, 0} <- Tools.run("git", ["diff", "--numstat", "origin/#{base}...HEAD"], cd: worktree_path),
          {head, 0} <- Tools.run("git", ["rev-parse", "--short", "HEAD"], cd: worktree_path, stderr_to_stdout: true) do
-      branch = %{worktree_path: worktree_path, base: base, name: task.worktree_name}
+      branch = %{
+        worktree_path: worktree_path,
+        base: base,
+        name: task.worktree_name,
+        submitted?: is_struct(task.submitted_at, DateTime)
+      }
+
       read = Enum.map(rounds, &read_by(worktree_path, base, &1))
       commits = log |> String.split(@record, trim: true) |> Enum.flat_map(&commit(&1, branch, read))
 
@@ -103,15 +110,17 @@ defmodule Rail.Git.Actions.LoadBranchHistory do
   defp label(_sha, [_first, _second | _more], true, _branch, _read), do: "Merge main"
   defp label(_sha, [_first, _second | _more], false, %{name: name}, _read), do: "Merge origin/#{name}"
 
-  # The first round to read a commit is the one it was made before: none is the engineer's, round N's the
-  # fix round N led to; one no round has read yet is the fix round under way.
-  defp label(sha, _parents, _main?, _branch, read),
-    do: read |> Enum.find_index(&MapSet.member?(&1, sha)) |> round_label(length(read))
+  # The first round to read a commit is the one it was made before: none is the engineer's, or the pull request's
+  # on a task handed over, round N's the fix round N led to; one no round has read yet is the fix round under way.
+  defp label(sha, _parents, _main?, %{submitted?: submitted?}, read),
+    do: read |> Enum.find_index(&MapSet.member?(&1, sha)) |> round_label(length(read), submitted?)
 
-  defp round_label(0, _rounds), do: "Implement"
-  defp round_label(nil, 0), do: "Implement"
-  defp round_label(nil, rounds), do: "Fix round #{rounds}"
-  defp round_label(round, _rounds), do: "Fix round #{round}"
+  defp round_label(0, _rounds, true), do: "Pull request"
+  defp round_label(nil, 0, true), do: "Pull request"
+  defp round_label(0, _rounds, false), do: "Implement"
+  defp round_label(nil, 0, false), do: "Implement"
+  defp round_label(nil, rounds, _submitted?), do: "Fix round #{rounds}"
+  defp round_label(round, _rounds, _submitted?), do: "Fix round #{round}"
 
   # Git says which files the two sides changed apart; a merge with none had nothing to resolve.
   defp conflicts(worktree_path, [first, second]) do

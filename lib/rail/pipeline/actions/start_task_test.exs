@@ -1,5 +1,6 @@
 defmodule Rail.Pipeline.Actions.StartTaskTest do
   use Rail.DataCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
   import Ecto.Query
 
@@ -10,6 +11,7 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Workers.StartReviewChecks
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
@@ -116,13 +118,14 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
       %{project: project, remote: remote, clone: clone, head: head, scope: scope, user_id: user_id}
     end
 
-    test "takes the pull request over at Review on its branch as pushed, with QA and the code reviewer started", %{
-      issue: issue,
-      clone: clone,
-      head: head,
-      scope: scope,
-      user_id: user_id
-    } do
+    test "takes the pull request over at Review on its branch as pushed, with a job that starts QA and the code reviewer",
+         %{
+           issue: issue,
+           clone: clone,
+           head: head,
+           scope: scope,
+           user_id: user_id
+         } do
       pull_request = put_in(@pull_request, ["head", "sha"], head)
 
       Req.Test.stub(Client, fn conn ->
@@ -154,6 +157,11 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
                 submitted_at: %DateTime{},
                 submitted_head: ^head
               }} = Pipeline.start_task(scope, issue, :review, "https://github.com/example/test-seed/pull/212/files")
+
+      assert_enqueued(worker: StartReviewChecks, args: %{task_id: task_id})
+      refute_received {:started, _before_the_job}
+
+      assert :ok = perform_job(StartReviewChecks, %{task_id: task_id})
 
       assert_received {:started, :qa}
       assert_received {:started, :review}
@@ -203,6 +211,27 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
                Pipeline.start_task(scope, issue, :review, "#212")
 
       assert [%Task{id: ^task_id}] = Repo.all(from t in Task, where: t.issue_id == ^issue.id)
+      refute_enqueued(worker: StartReviewChecks)
+    end
+
+    # By the time the slower tab fetches, the other's job may hold the branch checked out, which git refuses to move.
+    test "opens the task another tab started when the branch then cannot be fetched", %{issue: issue, scope: scope} do
+      Req.Test.stub(Client, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"POST", "/app/installations/1/access_tokens"} ->
+            Req.Test.json(conn, %{"token" => "ghs_token"})
+
+          {"GET", "/repos/example/test-seed/pulls/212"} ->
+            {:ok, _first} = Pipeline.create_task(Repo.preload(issue, :project), :review)
+            Req.Test.json(conn, put_in(@pull_request, ["head", "ref"], "gone"))
+        end
+      end)
+
+      assert {:ok, %Task{id: task_id, stage: :review, pr_number: nil}} =
+               Pipeline.start_task(scope, issue, :review, "#212")
+
+      assert [%Task{id: ^task_id}] = Repo.all(from t in Task, where: t.issue_id == ^issue.id)
+      refute_enqueued(worker: StartReviewChecks)
     end
 
     test "refuses what is not a pull request of the project's repository without asking GitHub", %{
@@ -301,6 +330,7 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
       assert {:error, {:branch_failed, output}} = Pipeline.start_task(scope, issue, :review, "#212")
       assert output =~ "couldn't find remote ref"
       refute Repo.exists?(from t in Task, where: t.issue_id == ^issue.id)
+      refute_enqueued(worker: StartReviewChecks)
     end
 
     test "says so when GitHub cannot be asked, before or after the pull request is read, and makes no task", %{
@@ -321,6 +351,7 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
       assert {:error, {:github_api_error, 500, _body}} = Pipeline.start_task(scope, issue, :review, "#212")
 
       refute Repo.exists?(from t in Task, where: t.issue_id == ^issue.id)
+      refute_enqueued(worker: StartReviewChecks)
     end
 
     test "refuses someone who cannot open the issue's project", %{issue: issue} do

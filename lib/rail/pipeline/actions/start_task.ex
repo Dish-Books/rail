@@ -2,12 +2,13 @@ defmodule Rail.Pipeline.Actions.StartTask do
   @moduledoc """
   Starts an issue's task: at Plan, where Rail cuts its own branch, or at Review on an open pull request a person
   hands over, whose branch Rail then works as pushed and never opens a second pull request for. An issue that
-  already has its task gets that one back, so a second click or a second tab starts nothing.
+  already has its task gets that one back, so a second click or a second tab starts nothing. A hand-over's checks
+  start from a job committed with its task, so they start even when the page that clicked is gone.
   """
 
   import Ecto.Query
+  import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.BuildTask
-  import Rail.Pipeline.Utils.StartChecks
 
   alias Rail.Git
   alias Rail.GitHub.Client, as: GitHub
@@ -15,6 +16,7 @@ defmodule Rail.Pipeline.Actions.StartTask do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Workers.StartReviewChecks
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Scope
@@ -36,8 +38,9 @@ defmodule Rail.Pipeline.Actions.StartTask do
 
   @doc """
   Creates the task for `issue` at Review on the open pull request `reference` names, by its number or its link, as
-  the scope's user, and starts QA and the code reviewer on its latest commit. Returns `{:ok, task}`, the issue's task
-  when it has one, or `{:error, reason}` naming why the pull request cannot be taken, with no task made.
+  the scope's user, with the job that starts QA and the code reviewer on its latest commit, retried if it dies part
+  way. Returns `{:ok, task}`, the issue's task when it has one, or `{:error, reason}` naming why the pull request
+  cannot be taken, with no task made.
   """
   def start_task(%Scope{} = scope, %Issue{} = issue, :review, reference) when is_binary(reference) do
     %Issue{project: %Project{} = project} = issue = Repo.preload(issue, :project)
@@ -48,14 +51,21 @@ defmodule Rail.Pipeline.Actions.StartTask do
          {:ok, token} <- GitHub.installation_token(project.github_installation_id),
          {:ok, pull_request} <- read(token, project, number),
          :ok <- takeable(pull_request, project),
+         :ok <- fetch(project, pull_request),
          {:ok, task} <- insert(scope, issue, project, pull_request) do
-      {:ok, task} = Pipeline.enter_stage(task, :review, start: false)
-      :ok = start_checks(task)
-      {:ok, _checked} = Pipeline.check_base(task)
+      # Open issue pages and the overview swap to the task now, not once its checks start.
+      broadcast_pipeline_changed(task)
       Pipeline.get_task(task.id)
     else
-      %Task{id: task_id} -> Pipeline.get_task(task_id)
-      {:error, reason} -> {:error, reason}
+      %Task{id: task_id} ->
+        Pipeline.get_task(task_id)
+
+      # A tab that lost the race fetches after the winner's job checked the branch out, which git then refuses.
+      {:error, {:branch_failed, _output} = reason} ->
+        if task = current_task(issue), do: Pipeline.get_task(task.id), else: {:error, reason}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -138,8 +148,19 @@ defmodule Rail.Pipeline.Actions.StartTask do
     )
   end
 
-  # The task, its first round and the branch land together or not at all. Of two tabs handing over at once the
-  # second's insert waits on the first's, then finds the issue's task taken and opens that one.
+  # Git runs outside the transaction, which may be held only for the pool's timeout.
+  defp fetch(%Project{} = project, %{"head" => head}) do
+    with :ok <- Git.fetch_default_branch(project, project.clone_path),
+         :ok <- Git.track_remote_branch(project, head["ref"]) do
+      :ok
+    else
+      {:error, output} when is_binary(output) -> {:error, {:branch_failed, output}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # The task, its first round and the job that starts its checks land together or not at all. Of two tabs handing
+  # over at once the second's insert waits on the first's, then finds the issue's task taken and opens that one.
   defp insert(%Scope{user: user}, %Issue{} = issue, %Project{} = project, %{"head" => head} = pull_request) do
     user_id = user && user.id
 
@@ -165,13 +186,10 @@ defmodule Rail.Pipeline.Actions.StartTask do
                |> Round.approve_changeset(user_id)
                |> Ecto.Changeset.put_embed(:ticket, ticket(issue))
                |> Repo.update(),
-             :ok <- Git.fetch_default_branch(project, project.clone_path),
-             :ok <- Git.track_remote_branch(project, head["ref"]) do
+             {:ok, _job} <- %{task_id: task.id} |> StartReviewChecks.new() |> Oban.insert() do
           task
         else
           {:error, %Ecto.Changeset{errors: [issue_id: _taken]}} -> Repo.rollback(:started)
-          {:error, output} when is_binary(output) -> Repo.rollback({:branch_failed, output})
-          {:error, reason} -> Repo.rollback(reason)
         end
       end)
 

@@ -185,5 +185,12 @@ defmodule RailWeb.IssueLive do
 
   defp review_error({:pull_request_taken, number, identifier}, _project), do: "#{identifier} already works on ##{number}."
   defp review_error({:branch_failed, output}, _project), do: "Could not check out the pull request's branch: #{output}"
+  # Reading the pull request and the token for its branch's fetch both ask GitHub, so these words fit either.
+  defp review_error({:github_api_error, status, _body}, _project),
+    do: "GitHub answered #{status}, so Rail could not take the pull request. Try again."
+
+  defp review_error(exception, _project) when is_exception(exception),
+    do: "Could not reach GitHub, so Rail could not take the pull request. Try again."
+
   defp review_error(reason, _project), do: "Could not start: #{inspect(reason)}"
 end

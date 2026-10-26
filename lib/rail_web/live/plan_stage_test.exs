@@ -173,7 +173,8 @@ defmodule RailWeb.Live.PlanStageTest do
              "michael/pst-20-hosts-on-the-sandboxes-page-and-a-long-branch-name"
            )
 
-    assert has_element?(view, "#plan-submitted-head", "4e1c2a9")
+    # Nothing between the sha and its full stop.
+    assert view |> element("#plan-submitted-head") |> render() =~ ~r{>4e1c2a9</span>\z}
     assert has_element?(view, "#plan-submitted", "There is no plan, so the ticket is the whole specification.")
     refute has_element?(view, "#plan-design-pending")
     refute has_element?(view, "#plan-plan-pending")
