@@ -99,6 +99,7 @@ defmodule Rail.Pipeline do
   defdelegate list_screens(task), to: Actions.ListScreens
 
   defdelegate start_task(issue, stage), to: Actions.StartTask
+  defdelegate adopt_pull_request(scope, issue), to: Actions.AdoptPullRequest
   defdelegate create_task(issue, stage), to: Actions.CreateTask
   defdelegate list_tasks(opts \\ []), to: Actions.ListTasks
   defdelegate update_task(task, attrs), to: Actions.UpdateTask

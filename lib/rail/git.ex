@@ -36,6 +36,7 @@ defmodule Rail.Git do
   defdelegate credential_env(project), to: Actions.CredentialEnv
   defdelegate ci_env(project, task), to: Actions.CiEnv
   defdelegate fetch_default_branch(project, worktree_path), to: Actions.FetchDefaultBranch
+  defdelegate fetch_branch(project, branch), to: Actions.FetchBranch
   defdelegate read_default_branch_file(project, path), to: Actions.ReadDefaultBranchFile
   defdelegate list_default_branch_paths(project, paths), to: Actions.ListDefaultBranchPaths
   defdelegate list_branch_paths(task, paths), to: Actions.ListBranchPaths

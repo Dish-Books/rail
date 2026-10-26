@@ -54,12 +54,19 @@ defmodule Rail.Pipeline.Utils.StartChecks do
           [:qa, :review | asked(Pipeline.read_plan(task))]
       end
 
-    for stage <- stages, {:ok, %Role{} = role} <- [Roles.get_role(project_id: task.project_id, stage: stage)] do
+    roles =
+      for stage <- stages, {:ok, %Role{} = role} <- [Roles.get_role(project_id: task.project_id, stage: stage)], do: role
+
+    # A worktree not set up yet holds every check back: the first sets it up, and the setup's finish starts them all.
+    for role <- if(set_up?(task), do: roles, else: Enum.take(roles, 1)) do
       {:ok, %Run{}} = start_role_run(task, role, fresh: true)
     end
 
     :ok
   end
+
+  defp set_up?(%Task{worktree_setup_at: %DateTime{}}), do: true
+  defp set_up?(%Task{project_id: project_id}), do: Repo.get!(Project, project_id).worktree_setup_script in [nil, ""]
 
   # A demo is recorded only when the round's plan asks.
   defp asked(%Round{record_demo: true}), do: [:demo]
