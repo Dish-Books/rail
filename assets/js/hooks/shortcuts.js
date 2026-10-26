@@ -1,3 +1,9 @@
+// A modal can hold several forms, so ⌘Enter submits only the one the cursor is in.
+export const formSubmitButton = (target) => target.form?.querySelector("button[type='submit']") ?? null;
+
+// A page's own modal overlay paints over New Issue, so ⌘N waits until it is closed; a button whose key ends in "-modal" is no overlay.
+export const modalOpen = (doc) => doc.querySelector("div.fixed[id$='-modal'], [role='dialog']") !== null;
+
 export const Shortcuts = {
   mounted() {
     this.handleKeyDown = (e) => {
@@ -7,6 +13,7 @@ export const Shortcuts = {
       if ((e.metaKey || e.ctrlKey) && (e.key === "n" || e.key === "N")) {
         if (!isInput) {
           e.preventDefault();
+          if (modalOpen(document)) return;
           const button = document.querySelector("[data-qa='global_capture_idea_button']");
           if (button) {
             button.click();
@@ -21,10 +28,7 @@ export const Shortcuts = {
         const modal = document.querySelector("[data-qa='capture_dialog'], #new-issue-modal, #project-modal");
         if (modal?.contains(e.target)) {
           e.preventDefault();
-          const submitBtn = modal.querySelector("button[type='submit']");
-          if (submitBtn) {
-            submitBtn.click();
-          }
+          formSubmitButton(e.target)?.click();
         }
       }
     };

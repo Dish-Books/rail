@@ -105,6 +105,7 @@ defmodule RailWeb.Components.NavTest do
       )
 
     assert html =~ "id=\"top-app-bar\""
+    assert html =~ "phx-hook=\"Shortcuts\""
     assert html =~ "id=\"section-title\""
     assert html =~ "Overview"
     assert html =~ "All projects"

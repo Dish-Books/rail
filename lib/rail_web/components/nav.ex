@@ -179,6 +179,7 @@ defmodule RailWeb.Components.Nav do
     <header
       id="top-app-bar"
       data-qa="top_app_bar"
+      phx-hook="Shortcuts"
       class="h-11 px-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shrink-0 z-20"
     >
       <!-- Left Group: Section Title & Project Filter -->
