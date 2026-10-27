@@ -172,7 +172,7 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
                 id: rule_id,
                 status: :provisional,
                 kind: :design,
-                roles: [:design],
+                roles: [:plan],
                 rule: "Say how long the oldest one has waited.",
                 why: ^why
               }
@@ -245,7 +245,7 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
               %Learning{
                 status: :provisional,
                 kind: :product,
-                roles: [:product],
+                roles: [:plan],
                 rule: "Make it 5 seconds.",
                 why:
                   "From a ticket comment on Criterion 2:\n\n> A page that never goes idle starts recording after 10 seconds."
@@ -253,7 +253,7 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
               %Learning{
                 status: :provisional,
                 kind: :convention,
-                roles: [:architect],
+                roles: [:plan],
                 rule: "Wait on page-loading-stop.",
                 why: "From a plan comment on File 1:\n\n> lib/rail/qa/actions/start_recording.ex"
               }
@@ -263,6 +263,46 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
              %Observation{source_kind: :plan_comment, excerpt: "lib/rail/qa/actions/start_recording.ex"},
              %Observation{source_kind: :ticket_comment, source_id: "pcm_rc_ticket", actor_id: ^user_id}
            ] = Repo.all(from o in Observation, where: o.task_id == ^task_id, order_by: o.source_kind)
+  end
+
+  # The review agent writes the next round's plan, so a comment on it corrects the review agent, not Plan.
+  test "a comment on the next round's plan becomes a rule for the review agent quoting its line", %{
+    task: %{id: task_id} = task,
+    user_id: user_id
+  } do
+    comment = %PlanComment{
+      id: "pcm_rc_fix_plan",
+      target: :fix_plan,
+      user_id: user_id,
+      element_kind: :paragraph,
+      element_label: "Fix finding nil-crash, paragraph 1",
+      element_occurrence: 1,
+      element_text: "Guard it at the caller.\nAnd in the action.",
+      body: "Guard nil where the map is read."
+    }
+
+    assert {:ok,
+            [
+              %Learning{
+                status: :provisional,
+                kind: :convention,
+                roles: [:review_lead],
+                rule: "Guard nil where the map is read.",
+                why:
+                  "From a fix round's plan comment on Fix finding nil-crash, paragraph 1:\n\n> Guard it at the caller.\n> And in the action."
+              }
+            ]} = Learnings.record_corrections(task, [comment])
+
+    assert [
+             %Observation{
+               source_kind: :plan_comment,
+               source_id: "pcm_rc_fix_plan",
+               actor_id: ^user_id,
+               excerpt: "Guard it at the caller.\nAnd in the action."
+             }
+           ] = Repo.all(from o in Observation, where: o.task_id == ^task_id)
+
+    assert {:ok, []} = Learnings.record_corrections(task, [comment])
   end
 
   test "a comment saved before blocks were kept is quoted by its line", %{task: task} do

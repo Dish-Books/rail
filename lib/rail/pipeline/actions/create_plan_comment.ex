@@ -1,14 +1,16 @@
 defmodule Rail.Pipeline.Actions.CreatePlanComment do
   @moduledoc """
   Saves a comment on the Plan step's output, unsent, for the person writing it. A design comment is only for the
-  picked option, a ticket or plan comment only once that document is saved, and any comment only while the Plan run
-  can take a message, as typing in its chat can.
+  picked option, a ticket or plan comment only once that document is saved, one on the next round's plan only while
+  it waits on approval, and any comment only while the run can take a message, as typing in its chat can.
   """
 
   import Rail.Pipeline.Utils.BroadcastPlanComments
 
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.PlanComment
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -38,9 +40,20 @@ defmodule Rail.Pipeline.Actions.CreatePlanComment do
 
   defp validate_target(%Task{} = task, %Ecto.Changeset{valid?: true} = changeset) do
     case Ecto.Changeset.get_field(changeset, :target) do
-      :design -> validate_pick(task, Ecto.Changeset.get_field(changeset, :option_key))
-      :ticket -> if Pipeline.read_ticket(task), do: :ok, else: {:error, :no_ticket}
-      :plan -> if Pipeline.read_plan(task), do: :ok, else: {:error, :no_plan}
+      :design ->
+        validate_pick(task, Ecto.Changeset.get_field(changeset, :option_key))
+
+      :ticket ->
+        if Pipeline.read_plan(task), do: :ok, else: {:error, :no_ticket}
+
+      :plan ->
+        if match?(%Round{plan: plan} when is_binary(plan), Pipeline.read_plan(task)), do: :ok, else: {:error, :no_plan}
+
+      # The next round's plan takes comments only while it is saved and waits on approval.
+      :fix_plan ->
+        if match?(%FixPlan{plan: plan, approved_at: nil} when is_binary(plan), Pipeline.read_fix_plan(task)),
+          do: :ok,
+          else: {:error, :no_fix_plan}
     end
   end
 

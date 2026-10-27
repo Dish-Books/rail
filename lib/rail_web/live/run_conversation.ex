@@ -13,7 +13,9 @@ defmodule RailWeb.Live.RunConversation do
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.PlanComment
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Turn
@@ -21,6 +23,7 @@ defmodule RailWeb.Live.RunConversation do
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
+  alias RailWeb.Live.QuestionCard
 
   @doc """
   Takes the task and its runs; everything else the conversation decides itself.
@@ -28,6 +31,9 @@ defmodule RailWeb.Live.RunConversation do
   `stage_run` is the run the page's tab picked out, and it is what is read here;
   a tab whose role has not run passes `nil`. Rendered without the key at all, the
   most recent run is read.
+
+  `questions` are every question the run asked, which a sent round's message reads back from, and
+  `round_questions` its unsent round with the past answers matched to it in `suggestions`.
 
   `appended_events` may arrive on their own from the page's `run:<id>`
   subscriptions, tagged with the run they belong to, in which case only the log
@@ -71,7 +77,7 @@ defmodule RailWeb.Live.RunConversation do
   end
 
   def update(assigns, socket) do
-    socket = assign_defaults(socket)
+    socket = socket |> assign_defaults() |> assign_new(:compact, fn -> false end)
     runs = sort_runs(assigns.runs)
     selected_run = pick_run(runs, Map.fetch(assigns, :stage_run))
 
@@ -80,6 +86,7 @@ defmodule RailWeb.Live.RunConversation do
       |> assign(assigns)
       |> assign(:runs, runs)
       |> assign(:selected_run, selected_run)
+      |> assign(:round_questions, round_of(Map.get(assigns, :round_questions, []), selected_run))
       |> assign_line(selected_run)
       |> assign_run_events(load_run_events(selected_run))
       |> assign_plan_comments()
@@ -100,185 +107,227 @@ defmodule RailWeb.Live.RunConversation do
 
     ~H"""
     <div
-      id="conversation-tab-root"
-      data-qa="conversation-tab"
-      class="flex flex-col flex-1 min-h-0"
+      id={if @compact, do: "conversation-tray", else: "conversation-tab-root"}
+      data-qa={if @compact, do: "conversation_tray", else: "conversation-tab"}
+      class={if @compact, do: "shrink-0", else: "flex flex-col flex-1 min-h-0"}
     >
-      <%= if not @has_runs do %>
-        <!-- 4.1 Empty State: the role on the tab has not run this task -->
-        <div
-          id="conversation-empty-state"
-          data-qa="conversation_empty_state"
-          class="flex flex-1 items-center justify-center min-h-[300px] text-center p-8"
-        >
-          <p class="text-sm font-medium text-slate-500 dark:text-slate-400">
-            This role has not run on the task yet.
-          </p>
-        </div>
+      <%= if @compact do %>
+        <.plan_comment_tray
+          :if={@has_runs and not @closed}
+          comments={@plan_comments}
+          missing={@missing_anchors}
+          changed={@lifted_comments}
+          open={@tray_open}
+          can_send={Run.can_chat?(@selected_run)}
+          plan_running={Run.running?(@selected_run)}
+          agent={if review_run?(assigns), do: "The review agent", else: "Plan"}
+          target={@myself}
+        />
+
+        <.review_comment_tray
+          :if={@show_review_tray}
+          fix={@review_tray.fix}
+          finding_comments={@review_finding_comments}
+          diff_comments={@review_diff_comments}
+          screen_comments={@review_screen_comments}
+          rulings={@review_tray.rulings}
+          gate={@review_tray.gate}
+          open={@tray_open}
+          error={@tray_error}
+          target={@myself}
+        />
       <% else %>
-        <div class="flex flex-col flex-1 min-h-0">
-          <!-- 4.3 Role Row: who is being read, and for how long -->
+        <%= if not @has_runs do %>
+          <!-- 4.1 Empty State: the role on the tab has not run this task -->
           <div
-            id="role-selector-row"
-            data-qa="role-selector-row"
-            class="flex items-center gap-x-3 gap-y-2 px-5 py-4 border-b border-slate-200 dark:border-slate-700"
+            id="conversation-empty-state"
+            data-qa="conversation_empty_state"
+            class="flex flex-1 items-center justify-center min-h-[300px] text-center p-8"
           >
-            <% role = selected_role(@selected_run, @roles_map) %>
-            <% state = Run.state(@selected_run) %>
-            <% usage? = @selected_run.status == :waiting_for_usage %>
-            <span
-              data-qa="conversation-state-dot"
-              data-state={if usage?, do: :waiting_for_usage, else: state}
-              class={[
-                "h-2 w-2 rounded-full shrink-0",
-                state == :running && "bg-green-500",
-                (state == :waiting and not usage?) && "ring-2 ring-inset ring-violet-400",
-                usage? && "border-2 border-dashed border-violet-400",
-                state not in [:running, :waiting] && "bg-slate-400 dark:bg-slate-500"
-              ]}
-            />
-            <span
-              id={"conversation-role-#{role.id}"}
-              data-qa="conversation-role"
-              class="shrink-0 max-w-[40%] text-sm font-semibold text-slate-900 dark:text-slate-100 truncate"
-            >
-              {role.name}
-            </span>
-            <span
-              :if={role.model}
-              id="conversation-model"
-              data-qa="conversation-model"
-              class="min-w-0 shrink-[4] font-mono text-[11px] text-slate-500 dark:text-slate-400 truncate"
-            >
-              {role.model}
-            </span>
-
-            <.account_chip account={@account} model={role.model} />
-
-            <!-- Every turn the agent has taken on this run, added up: the run's own
-            started_at is reset by each one and says nothing about the rest. -->
-            <span
-              id={"elapsed-run-#{@selected_run.id}"}
-              phx-hook="Elapsed"
-              data-started-at={format_started_at(@running_since)}
-              data-elapsed-seconds={@settled_seconds}
-              data-qa="elapsed-text"
-              title="Total time the agent has spent on this run"
-              class="shrink-0 font-mono text-xs text-slate-500 dark:text-slate-400"
-            >
-              {format_duration(@elapsed_seconds)}
-            </span>
+            <p class="text-sm font-medium text-slate-500 dark:text-slate-400">
+              This role has not run on the task yet.
+            </p>
           </div>
-
-          <!-- Transcript Area: Raw Log vs ChatPane -->
+        <% else %>
           <div class="flex flex-col flex-1 min-h-0">
-            <%= if @show_raw_log do %>
-              <!-- 4.13 Raw Log View -->
-              <.raw_log_view
-                run={@selected_run}
-                log_lines={@log_lines}
-                runs={@runs}
-                roles_map={@roles_map}
-                target={@myself}
-              />
-            <% else %>
-              <!-- 4.7 - 4.12 ChatPane Layout & Composer -->
-              <.chat_pane
-                task={@task}
-                run={@selected_run}
-                role={selected_role(@selected_run, @roles_map)}
-                turns={@turns}
-                reader_id={reader_id(@current_scope)}
-                senders={@senders}
-                expanded_activities={@expanded_activities}
-                runs={@runs}
-                roles_map={@roles_map}
-                usage_wait={@usage_wait}
-                target={@myself}
-              />
-            <% end %>
-          </div>
-
-          <!-- 4.4 Run Metadata Row -->
-          <div
-            id="run-metadata-row"
-            data-qa="run-metadata-row"
-            class="flex items-center flex-wrap gap-x-1.5 gap-y-1 px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400"
-          >
-            <span :if={@selected_run} id="metadata-run-status">
-              {format_run_status(@selected_run.status)} ·
-            </span>
-
-            <span :if={@selected_run && Run.usage(@selected_run)} id="metadata-run-usage">
-              {Run.usage(@selected_run)} ·
-            </span>
-
-            <span
-              :if={@selected_run && @selected_run.conversation_id not in [nil, ""]}
-              id="metadata-run-conversation-id"
-              title={@selected_run.conversation_id}
-              class="select-text truncate max-w-[10rem]"
+            <!-- 4.3 Role Row: who is being read, and for how long -->
+            <div
+              id="role-selector-row"
+              data-qa="role-selector-row"
+              class="flex items-center gap-x-3 gap-y-2 px-5 py-4 border-b border-slate-200 dark:border-slate-700"
             >
-              {"conversation #{@selected_run.conversation_id}"} ·
-            </span>
+              <% role = selected_role(@selected_run, @roles_map) %>
+              <% state = Run.state(@selected_run) %>
+              <% usage? = @selected_run.status == :waiting_for_usage %>
+              <span
+                data-qa="conversation-state-dot"
+                data-state={if usage?, do: :waiting_for_usage, else: state}
+                class={[
+                  "h-2 w-2 rounded-full shrink-0",
+                  state == :running && "bg-green-500",
+                  (state == :waiting and not usage?) && "ring-2 ring-inset ring-violet-400",
+                  usage? && "border-2 border-dashed border-violet-400",
+                  state not in [:running, :waiting] && "bg-slate-400 dark:bg-slate-500"
+                ]}
+              />
+              <span
+                id={"conversation-role-#{role.id}"}
+                data-qa="conversation-role"
+                class="shrink-0 max-w-[40%] text-sm font-semibold text-slate-900 dark:text-slate-100 truncate"
+              >
+                {role.name}
+              </span>
+              <span
+                :if={role.model}
+                id="conversation-model"
+                data-qa="conversation-model"
+                class="min-w-0 shrink-[4] font-mono text-[11px] text-slate-500 dark:text-slate-400 truncate"
+              >
+                {role.model}
+              </span>
 
-            <button
-              type="button"
-              id="toggle-raw-log"
-              data-qa="toggle-raw-log"
-              phx-click="toggle_raw_log"
-              phx-target={@myself}
-              class="font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+              <.account_chip account={@account} model={role.model} />
+
+              <!-- Every turn the agent has taken on this run, added up: the run's own
+            started_at is reset by each one and says nothing about the rest. -->
+              <span
+                id={"elapsed-run-#{@selected_run.id}"}
+                phx-hook="Elapsed"
+                data-started-at={format_started_at(@running_since)}
+                data-elapsed-seconds={@settled_seconds}
+                data-qa="elapsed-text"
+                title="Total time the agent has spent on this run"
+                class="shrink-0 font-mono text-xs text-slate-500 dark:text-slate-400"
+              >
+                {format_duration(@elapsed_seconds)}
+              </span>
+            </div>
+
+            <!-- Transcript Area: Raw Log vs ChatPane -->
+            <div class="flex flex-col flex-1 min-h-0">
+              <%= if @show_raw_log do %>
+                <!-- 4.13 Raw Log View -->
+                <.raw_log_view
+                  run={@selected_run}
+                  log_lines={@log_lines}
+                  runs={@runs}
+                  roles_map={@roles_map}
+                  target={@myself}
+                />
+              <% else %>
+                <!-- 4.7 - 4.12 ChatPane Layout & Composer -->
+                <.chat_pane
+                  task={@task}
+                  run={@selected_run}
+                  role={selected_role(@selected_run, @roles_map)}
+                  turns={@turns}
+                  reader_id={reader_id(@current_scope)}
+                  senders={@senders}
+                  expanded_activities={@expanded_activities}
+                  runs={@runs}
+                  roles_map={@roles_map}
+                  usage_wait={@usage_wait}
+                  questions={@questions}
+                  target={@myself}
+                />
+              <% end %>
+            </div>
+
+            <!-- 4.4 Run Metadata Row -->
+            <div
+              id="run-metadata-row"
+              data-qa="run-metadata-row"
+              class="flex items-center flex-wrap gap-x-1.5 gap-y-1 px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400"
             >
-              {if @show_raw_log, do: "Show chat", else: "Raw log"}
-            </button>
+              <span :if={@selected_run} id="metadata-run-status">
+                {format_run_status(@selected_run.status)} ·
+              </span>
+
+              <span :if={@selected_run && Run.usage(@selected_run)} id="metadata-run-usage">
+                {Run.usage(@selected_run)} ·
+              </span>
+
+              <span
+                :if={@selected_run && @selected_run.conversation_id not in [nil, ""]}
+                id="metadata-run-conversation-id"
+                title={@selected_run.conversation_id}
+                class="select-text truncate max-w-[10rem]"
+              >
+                {"conversation #{@selected_run.conversation_id}"} ·
+              </span>
+
+              <button
+                type="button"
+                id="toggle-raw-log"
+                data-qa="toggle-raw-log"
+                phx-click="toggle_raw_log"
+                phx-target={@myself}
+                class="font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+              >
+                {if @show_raw_log, do: "Show chat", else: "Raw log"}
+              </button>
+            </div>
+
+            <p
+              :if={@closed and not @show_raw_log and @round_questions == []}
+              id="conversation-closed"
+              data-qa="conversation_closed"
+              class="shrink-0 px-5 py-4 border-t border-slate-200 dark:border-slate-700 text-[13px] text-slate-500 dark:text-slate-400"
+            >
+              {@closed_reason}
+            </p>
+
+            <.plan_comment_tray
+              :if={not @show_raw_log and not @closed}
+              comments={@plan_comments}
+              missing={@missing_anchors}
+              changed={@lifted_comments}
+              open={@tray_open}
+              can_send={Run.can_chat?(@selected_run)}
+              plan_running={Run.running?(@selected_run)}
+              agent={if review_run?(assigns), do: "The review agent", else: "Plan"}
+              target={@myself}
+            />
+
+            <.review_comment_tray
+              :if={@show_review_tray}
+              fix={@review_tray.fix}
+              finding_comments={@review_finding_comments}
+              diff_comments={@review_diff_comments}
+              screen_comments={@review_screen_comments}
+              rulings={@review_tray.rulings}
+              gate={@review_tray.gate}
+              open={@tray_open}
+              error={@tray_error}
+              target={@myself}
+            />
+
+            <!-- An open round takes the composer's place until it is sent or dismissed, and hides with it, keeping what was typed. -->
+            <.live_component
+              :if={@round_questions != []}
+              module={QuestionCard}
+              id={"question-card-#{@selected_run.id}"}
+              questions={@round_questions}
+              suggestions={@suggestions}
+              run={@selected_run}
+              current_scope={@current_scope}
+              hidden={@show_raw_log}
+            />
+
+            <.composer
+              :if={not @show_raw_log and not @closed and @round_questions == []}
+              task={@task}
+              run={@selected_run}
+              role={selected_role(@selected_run, @roles_map)}
+              chat_input={@chat_input}
+              chat_sending={@chat_sending}
+              can_retry={retryable?(@selected_run, @task, @roles_map)}
+              line={@line}
+              usage_wait={@usage_wait}
+              target={@myself}
+            />
           </div>
-
-          <p
-            :if={@closed and not @show_raw_log}
-            id="conversation-closed"
-            data-qa="conversation_closed"
-            class="shrink-0 px-5 py-4 border-t border-slate-200 dark:border-slate-700 text-[13px] text-slate-500 dark:text-slate-400"
-          >
-            {@closed_reason}
-          </p>
-
-          <.plan_comment_tray
-            :if={not @show_raw_log and not @closed}
-            comments={@plan_comments}
-            missing={@missing_anchors}
-            changed={@lifted_comments}
-            open={@tray_open}
-            can_send={Run.can_chat?(@selected_run)}
-            plan_running={Run.running?(@selected_run)}
-            target={@myself}
-          />
-
-          <.review_comment_tray
-            :if={@show_review_tray}
-            fix={@review_tray.fix}
-            finding_comments={@review_finding_comments}
-            diff_comments={@review_diff_comments}
-            screen_comments={@review_screen_comments}
-            gate={@review_tray.gate}
-            open={@tray_open}
-            error={@tray_error}
-            target={@myself}
-          />
-
-          <.composer
-            :if={not @show_raw_log and not @closed}
-            task={@task}
-            run={@selected_run}
-            role={selected_role(@selected_run, @roles_map)}
-            chat_input={@chat_input}
-            chat_sending={@chat_sending}
-            can_retry={retryable?(@selected_run, @task, @roles_map)}
-            line={@line}
-            usage_wait={@usage_wait}
-            target={@myself}
-          />
-        </div>
+        <% end %>
       <% end %>
     </div>
     """
@@ -296,6 +345,7 @@ defmodule RailWeb.Live.RunConversation do
   attr :runs, :list, default: []
   attr :roles_map, :map, default: %{}
   attr :usage_wait, :map, default: nil
+  attr :questions, :list, default: [], doc: "every question the run asked, which a sent round reads back from"
   attr :target, :any, required: true
 
   def chat_pane(assigns) do
@@ -339,6 +389,7 @@ defmodule RailWeb.Live.RunConversation do
               worktree_path={@task.worktree_path}
               identifier={@identifier}
               usage_wait={@usage_wait}
+              questions={@questions}
               target={@target}
             />
           <% end %>
@@ -360,6 +411,7 @@ defmodule RailWeb.Live.RunConversation do
   attr :worktree_path, :string, required: true
   attr :identifier, :string, default: nil, doc: "the issue's identifier, which a round's ticket section shows"
   attr :usage_wait, :map, default: nil
+  attr :questions, :list, default: []
   attr :target, :any, required: true
 
   def message_item(assigns) do
@@ -376,6 +428,8 @@ defmodule RailWeb.Live.RunConversation do
       |> assign(:account, if(not usage_waiting?, do: turn_account(msg.process)))
       |> assign(:show_usage_card, usage_waiting? and match?(%{os_process: %{id: ^process_id}}, assigns.usage_wait))
       |> assign(:round, msg.author == :human && PlanComment.parse_message(msg.content || ""))
+      |> assign(:review_send, msg.author == :human && FixPlan.parse_note(msg.content || ""))
+      |> assign(:answers, answers(msg, assigns.questions))
 
     ~H"""
     <%= case @author do %>
@@ -432,9 +486,19 @@ defmodule RailWeb.Live.RunConversation do
           round={@round}
           identifier={@identifier}
         />
+        <%!-- A Send from the Review tray reads back into what it sent. --%>
+        <.review_send_card :if={@review_send} id={"msg-#{@idx}"} sender={@sender} sent={@review_send} />
+        <%!-- A sent round of answers reads back into each question beside its answer. --%>
+        <.answers_card
+          :if={@answers}
+          id={"msg-#{@idx}"}
+          sender={@sender}
+          from={:person}
+          items={@answers}
+        />
         <!-- 4.8 _HumanBubble (right-aligned, plain selectable text, NOT markdown) -->
         <div
-          :if={!@round}
+          :if={!@round and !@review_send and !@answers}
           id={"msg-#{@idx}"}
           data-qa="human-bubble"
           class="w-fit max-w-[85%] ml-auto mt-3.5 px-3 py-2 rounded-xl rounded-br-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 space-y-1"
@@ -450,9 +514,11 @@ defmodule RailWeb.Live.RunConversation do
           >{String.trim(@text)}</div>
         </div>
       <% :reminder -> %>
+        <.answers_card :if={@answers} id={"msg-#{@idx}"} sender="Rail" from={:rail} items={@answers} />
         <!-- What Rail sent the agent on its own: the human bubble's shape, because
         it is a message to the agent, but saying it was Rail and which reminder. -->
         <div
+          :if={!@answers}
           id={"msg-#{@idx}"}
           data-qa="reminder-bubble"
           class="w-fit max-w-[85%] ml-auto mt-3.5 px-3 py-2 rounded-xl rounded-br-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 space-y-1"
@@ -680,7 +746,7 @@ defmodule RailWeb.Live.RunConversation do
     %Turn{status: status, turns: turns, label: label, content: content} = assigns.msg
     key = "sub-#{assigns.idx}"
     saved = subagent_saved(assigns.msg)
-    {name, work} = subagent_name(label, content) || {plan_subagent_name(label, assigns.roles_map), content}
+    {name, work} = subagent_name(label, content) || {plan_subagent_name(label), content}
 
     assigns =
       assigns
@@ -1077,6 +1143,7 @@ defmodule RailWeb.Live.RunConversation do
           disabled={@is_unavailable or @chat_sending}
           autocomplete="off"
           phx-hook="ChatComposer"
+          data-draft-key={"rail:draft:#{@run && @run.id}"}
           phx-debounce="300"
           phx-no-format
           class="flex-1 resize-none px-3 py-2 text-xs sm:text-sm rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1385,7 +1452,7 @@ defmodule RailWeb.Live.RunConversation do
     |> assign_new(:plan_comments, fn -> [] end)
     |> assign_new(:missing_anchors, fn -> [] end)
     |> assign_new(:lifted_comments, fn -> [] end)
-    |> assign_new(:tray_open, fn -> true end)
+    |> assign_new(:tray_open, fn -> false end)
     |> assign_new(:review_tray, fn -> nil end)
     |> assign_new(:review_pane, fn -> false end)
     |> assign_new(:review_finding_comments, fn -> [] end)
@@ -1393,15 +1460,30 @@ defmodule RailWeb.Live.RunConversation do
     |> assign_new(:review_screen_comments, fn -> [] end)
     |> assign_new(:tray_error, fn -> nil end)
     |> assign_new(:closed, fn -> false end)
+    |> assign_new(:questions, fn -> [] end)
+    |> assign_new(:suggestions, fn -> %{} end)
     |> assign_new(:closed_reason, fn -> "The plan is approved, so this conversation is closed." end)
   end
+
+  # The round is the conversation's own run's, so a page drawn for another run never shows its card here.
+  defp round_of(round, %Run{id: run_id}), do: Enum.filter(round, &(&1.run_id == run_id))
+  defp round_of(_round, nil), do: []
+
+  # A person's turn, or Rail's past-answers reminder, may be a round going back; a human turn holding a plan round is not.
+  defp answers(%Turn{author: :human, content: content}, questions), do: Question.parse_answers_message(content, questions)
+
+  defp answers(%Turn{author: :reminder, label: "answered from past answers", content: content}, questions),
+    do: Question.parse_answers_message(content, questions)
+
+  defp answers(_msg, _questions), do: nil
 
   defp identifier(%{issue: %Issue{identifier: identifier}}), do: identifier
   defp identifier(_no_issue), do: nil
 
   # Only the Plan run's conversation is where plan comments wait to be sent.
+  # Plan takes the reader's ticket, design and plan comments, and once the work started the review agent does.
   defp assign_plan_comments(%{assigns: %{current_scope: %{user: %{}} = scope, task: task}} = socket) do
-    if plan_run?(socket.assigns),
+    if plan_run?(socket.assigns) or review_run?(socket.assigns),
       do: assign(socket, :plan_comments, Pipeline.list_plan_comments(scope, task)),
       else: assign(socket, :plan_comments, [])
   end
@@ -1435,10 +1517,17 @@ defmodule RailWeb.Live.RunConversation do
   defp review_run?(_assigns), do: false
 
   defp tray_message(:stage_running), do: "The Review lead is working. Send waits until it stops."
-  defp tray_message(:findings_undecided), do: "Some findings have no ruling yet. Rule on every one first."
+
+  defp tray_message(:fix_plan_waiting),
+    do: "Nothing changed since the fix plan was saved. Approve the plan, change a ruling or add a comment."
+
   defp tray_message(:nothing_to_start), do: "There is nothing to send: the review is finished."
   defp tray_message(:dispatch_disabled), do: "Dispatch is off, so the Review lead was not resumed."
   defp tray_message(:ci_not_passed), do: "CI has not passed on the fix commit, so the review cannot finish yet."
+
+  defp tray_message({:undecided_findings, count}),
+    do: "#{count} #{if count == 1, do: "finding needs", else: "findings need"} a ruling before the review can finish."
+
   defp tray_message(:cleaned_up), do: "This task is cleaned up, so nothing more can be sent."
   defp tray_message({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not Review."
 
@@ -1517,14 +1606,9 @@ defmodule RailWeb.Live.RunConversation do
     end
   end
 
-  defp plan_subagent_name(label, roles_map) do
-    stage = %{"product" => :product, "designer" => :design, "architect" => :architect}[label]
-
-    case Enum.find(Map.values(roles_map), &(stage != nil and &1.stage == stage)) do
-      %{name: name} -> name
-      nil -> label |> String.split(~r/[-_\s]+/, trim: true) |> Enum.map_join(" ", &String.capitalize/1)
-    end
-  end
+  # A conversation from before Plan worked alone still names the subagents it led.
+  defp plan_subagent_name(label),
+    do: label |> String.split(~r/[-_\s]+/, trim: true) |> Enum.map_join(" ", &String.capitalize/1)
 
   # What the subagent's saves came to, read off its own tool calls: a refused save saved nothing.
   defp subagent_saved(%Turn{status: :skipped}), do: "skipped"

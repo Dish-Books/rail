@@ -27,6 +27,7 @@ rail-*.tar
 
 # Ignore assets that are produced by build tools.
 /priv/static/assets/
+/priv/static/design-kit/
 
 # Ignore digested assets cache.
 /priv/static/cache_manifest.json
@@ -40,6 +41,7 @@ npm-debug.log
 node_modules/
 
 .env
+/devhub-tunnel.json
 
 *.pem
 !test/support/fixtures/*.pem

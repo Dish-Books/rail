@@ -165,3 +165,14 @@
 .diff-line[data-kind="deleted"]:has(+ .diff-comment-row) .diff-num:first-child {
   @apply font-bold text-amber-700 dark:text-amber-300;
 }
+
+/* A picture the diff changed sits on a checkerboard, so a transparent one's edges still show. */
+.diff-image {
+  --checker: var(--color-slate-100);
+  background-image:
+    linear-gradient(45deg, var(--checker) 25%, transparent 25%, transparent 75%, var(--checker) 75%),
+    linear-gradient(45deg, var(--checker) 25%, transparent 25%, transparent 75%, var(--checker) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+  @apply dark:[--checker:var(--color-slate-800)];
+}

@@ -180,19 +180,24 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
   defp rule(%PlanComment{target: :design} = comment, _observation) do
     %{
       kind: :design,
-      roles: [:design],
+      roles: [:plan],
       rule: clip(comment.body),
       why: "From a design comment on #{comment.option_key}, #{element_line(comment)}:\n\n#{element_block(comment)}"
     }
   end
 
-  # A ticket comment teaches Product, which writes the ticket, as a plan comment teaches Architect.
+  # Every plan comment teaches Plan, which writes the ticket, the design and the plan; its kind says which.
   defp rule(%PlanComment{target: :ticket} = comment, _observation) do
-    %{kind: :product, roles: [:product], rule: clip(comment.body), why: line_why("a ticket", comment)}
+    %{kind: :product, roles: [:plan], rule: clip(comment.body), why: line_why("a ticket", comment)}
   end
 
   defp rule(%PlanComment{target: :plan} = comment, _observation) do
-    %{kind: :convention, roles: [:architect], rule: clip(comment.body), why: line_why("a plan", comment)}
+    %{kind: :convention, roles: [:plan], rule: clip(comment.body), why: line_why("a plan", comment)}
+  end
+
+  # The review agent writes the next round's plan, so a comment on one teaches it.
+  defp rule(%PlanComment{target: :fix_plan} = comment, _observation) do
+    %{kind: :convention, roles: [:review_lead], rule: clip(comment.body), why: line_why("a fix round's plan", comment)}
   end
 
   defp rule(%Finding{kind: :screen} = finding, _observation) do

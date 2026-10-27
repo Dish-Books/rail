@@ -31,8 +31,9 @@ defmodule Rail.Pipeline.Schemas.Run do
 
   # Whether this run's stage has had its say. A run latches to `:done` when it
   # states a verdict, and `enter_stage/3` puts it back to `:in_progress` when a
-  # later stage sends the work here again.
-  @stage_outcomes [:in_progress, :done]
+  # later stage sends the work here again. A QA run is `:skipped` for a round that
+  # changed nothing a person sees, which is done for everything waiting on it.
+  @stage_outcomes [:in_progress, :done, :skipped]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "run"}
   schema "runs" do
@@ -138,7 +139,7 @@ defmodule Rail.Pipeline.Schemas.Run do
   def state(%__MODULE__{status: status}) when status in [:starting, :running], do: :running
   def state(%__MODULE__{status: status}) when status in [:waiting_for_resources, :waiting_for_usage], do: :waiting
   def state(%__MODULE__{status: :blocked_on_input}), do: :blocked
-  def state(%__MODULE__{stage_outcome: :done}), do: :done
+  def state(%__MODULE__{stage_outcome: outcome}) when outcome in [:done, :skipped], do: :done
   def state(%__MODULE__{error: error}) when is_binary(error), do: :failed
 
   def state(%__MODULE__{questions: questions}) when is_list(questions) do
@@ -206,15 +207,15 @@ defmodule Rail.Pipeline.Schemas.Run do
 
   A run that failed or stopped is waiting too, and on the same person. Neither
   moves on its own - a failure is fixed by a message and a stopped run is resumed
-  by one - so leaving them out is how a stage goes quiet with nobody told.
+  by one - so leaving them out is how a stage goes quiet with nobody told. At Review
+  that goes for a check run too, since the review agent waits on it.
 
   A task whose issue its tracker completed has shipped, so it waits on nobody either, and nor does one whose
   issue its tracker canceled or marked a duplicate, since nobody will work on it again.
   """
   def needs_attention?(%__MODULE__{role: %Role{} = role, task: %Task{issue: %Issue{} = issue} = task} = run) do
     task.stage != :merged and is_nil(task.merged_at) and is_nil(issue.completed_at) and
-      issue.state not in [:canceled, :duplicate] and role.stage == Task.role_stage(task.stage) and
-      waiting_state?(state(run), task)
+      issue.state not in [:canceled, :duplicate] and waiting_state?(state(run), role.stage, task)
   end
 
   # A run read as its issue was deleted has no issue left to wait on anyone for.
@@ -265,6 +266,14 @@ defmodule Rail.Pipeline.Schemas.Run do
   end
 
   def can_chat?(_other), do: false
+
+  defp waiting_state?(state, stage, %Task{} = task) do
+    cond do
+      task.stage == :review and stage in Task.check_stages() -> state in [:failed, :stopped]
+      stage == Task.role_stage(task.stage) -> waiting_state?(state, task)
+      true -> false
+    end
+  end
 
   defp waiting_state?(:blocked, _task), do: true
   defp waiting_state?(:failed, _task), do: true

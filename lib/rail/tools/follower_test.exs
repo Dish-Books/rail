@@ -243,71 +243,6 @@ defmodule Rail.Tools.FollowerTest do
     Tools.terminate_os_process(pid, grace_period: 50)
   end
 
-  # A round's explorers finish minutes apart, and each one's tab is memory every other task's tabs
-  # share for as long as it stays open. So it closes when its explorer answers, not when the turn ends.
-  test "a subagent that answers has its browser closed, and no other", %{
-    run: run,
-    task: task,
-    os_process: os_process,
-    stream_path: stream_path
-  } do
-    for name <- ["explorer-1", "explorer-2"] do
-      %BrowserSession{}
-      |> BrowserSession.changeset(%{task_id: task.id, name: name, status: :running})
-      |> Repo.insert!()
-    end
-
-    port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["10"]])
-    {:os_pid, pid} = Port.info(port, :os_pid)
-
-    {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run},
-        tail_interval_ms: 30,
-        batch_interval_ms: 50
-      )
-
-    Sandbox.allow(Repo, self(), follower_pid)
-
-    call = fn id, type, description ->
-      Jason.encode!(%{
-        type: "assistant",
-        message: %{
-          content: [%{type: "tool_use", id: id, name: "Agent", input: %{subagent_type: type, description: description}}]
-        }
-      })
-    end
-
-    answer = fn id ->
-      Jason.encode!(%{type: "user", message: %{content: [%{type: "tool_result", tool_use_id: id, content: "Done."}]}})
-    end
-
-    File.write!(
-      stream_path,
-      Enum.map_join(
-        [
-          call.("toolu_1", "explorer", "explorer-1: Checks 1 and 2"),
-          call.("toolu_2", "explorer", "explorer-2: Check 3"),
-          call.("toolu_3", "code-reviewer", "Read the diff"),
-          answer.("toolu_3"),
-          answer.("toolu_1")
-        ],
-        &(&1 <> "\n")
-      )
-    )
-
-    eventually(fn ->
-      assert [
-               %BrowserSession{name: "explorer-1", status: :finished, ended_reason: :closed},
-               %BrowserSession{name: "explorer-2", status: :running}
-             ] = Repo.all(from s in BrowserSession, where: s.task_id == ^task.id, order_by: s.name)
-    end)
-
-    assert %{event_state: %{ended_subagents: []}} = :sys.get_state(follower_pid)
-
-    FollowerSupervisor.stop_follower(follower_pid)
-    Tools.terminate_os_process(pid, grace_period: 50)
-  end
-
   # A Follower that comes back replays what the last one saw. An explorer that answered before then
   # had its browser closed then, and the name may be a later explorer's by now.
   test "a Follower that comes back closes nothing for a subagent that answered before it", %{
@@ -892,7 +827,7 @@ defmodule Rail.Tools.FollowerTest do
     assert is_nil(outcome.error)
   end
 
-  test "detects question in stream and registers it to block task", %{
+  test "questions asked through the tool become the round, and park the run, when its process exits", %{
     tmp_dir: tmp_dir,
     project: %{linear_workspace_id: workspace_id}
   } do
@@ -977,13 +912,12 @@ defmodule Rail.Tools.FollowerTest do
         started_at: DateTime.utc_now()
       })
 
-    # The agent ends its step by asking, so both questions are in the log the
-    # process leaves behind rather than read off the stream as it runs.
-    File.write!(
-      stream,
-      ~s({"type":"assistant","message":{"content":[{"type":"text","text":"[QUESTION: Which db to choose?] [OPTIONS: PG, MySQL]"}]}}\n) <>
-        ~s({"type":"assistant","message":{"content":[{"type":"text","text":"[QUESTION: Ship behind a flag?]"}]}}\n)
-    )
+    # The agent asks mid-turn, and the round is filed only when its process exits.
+    {:ok, _asked} =
+      Pipeline.ask_questions(run, [
+        %{"prompt" => "Which db to choose?", "options" => ["PG", "MySQL"]},
+        %{"prompt" => "Ship behind a flag?"}
+      ])
 
     port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["0.1"]])
     {:os_pid, pid} = Port.info(port, :os_pid)
@@ -1287,6 +1221,48 @@ defmodule Rail.Tools.FollowerTest do
 
     assert_receive {:os_process_finished, %OsProcess{exit_code: 124, ended_reason: :timed_out},
                     %{error: "Timed out, so it was stopped."}},
+                   5_000
+
+    refute Tools.os_process_alive?(pid)
+  end
+
+  # A CLI that outlives its result is stuck on something the agent left behind, such as an app server.
+  test "an agent whose CLI outlives its result is ended after a short grace and settles as finished", %{
+    run: run,
+    tmp_dir: tmp_dir
+  } do
+    stream = Path.join(tmp_dir, "lingering_result.ndjson")
+    File.write!(stream, ~s({"type":"result","subtype":"success","is_error":false,"session_id":"sess-lingering"}\n))
+    File.write!("#{stream}.err", "")
+
+    port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, :exit_status, args: ["30"]])
+    {:os_pid, pid} = Port.info(port, :os_pid)
+
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
+        stream_path: stream,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+    {:ok, follower_pid} =
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run},
+        port: port,
+        tail_interval_ms: 10,
+        batch_interval_ms: 20,
+        result_grace_ms: 100
+      )
+
+    Sandbox.allow(Repo, self(), follower_pid)
+    Process.unlink(port)
+
+    assert_receive {:os_process_finished, %OsProcess{exit_code: 0, ended_reason: :finished}, %{exit_code: 0, error: nil}},
                    5_000
 
     refute Tools.os_process_alive?(pid)

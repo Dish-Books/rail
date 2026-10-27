@@ -16,6 +16,14 @@ config :esbuild,
       ~w(js/hooks/design_frame.js --bundle --format=iife --target=es2020 --outfile=../priv/static/assets/design_overlay.js),
     cd: Path.expand("../assets", __DIR__),
     env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
+  ],
+  # Design pages load Tailwind and the icon font from Rail, so a CDN that fails can't leave them bare text.
+  # The woff2 fonts travel inside phosphor.css, since a sandboxed page's font requests carry no sign-in.
+  design_kit: [
+    args:
+      ~w(tailwind=@tailwindcss/browser phosphor=css/design_kit.css --bundle --format=iife --target=es2020 --loader:.woff2=dataurl --loader:.woff=file --loader:.ttf=file --loader:.svg=file --asset-names=[name] --outdir=../priv/static/design-kit),
+    cd: Path.expand("../assets", __DIR__),
+    env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
   ]
 
 config :logger, :default_formatter,
@@ -42,6 +50,7 @@ config :rail, Oban,
        {"* * * * *", Rail.Workflows.Workers.StartDueWorkflows},
        {"*/5 * * * *", Rail.Tools.Workers.RefreshUsage},
        {"*/15 * * * *", Rail.Git.Workers.FetchDefaultBranches},
+       {"5-59/15 * * * *", Rail.Pipeline.Workers.CheckBases},
        {"0 6 * * *", Rail.Learnings.Workers.ScheduleCurators},
        {"15 * * * *", Rail.Learnings.Workers.EmbedPending}
      ]}

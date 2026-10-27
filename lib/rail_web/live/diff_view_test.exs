@@ -1,6 +1,7 @@
 defmodule RailWeb.Live.DiffViewTest do
   use RailWeb.ConnCase, async: true
 
+  import Ecto.Query
   import Phoenix.LiveViewTest
 
   alias Rail.Git
@@ -8,8 +9,6 @@ defmodule RailWeb.Live.DiffViewTest do
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Repo
   alias Rail.Roles
-  alias Rail.Tools
-  alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
   alias RailWeb.Live.DiffView
 
@@ -26,7 +25,6 @@ defmodule RailWeb.Live.DiffViewTest do
       })
 
     {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
     remote = create_temp_git_repo(prefix: "rail_dvw_remote", initial_commit: false)
     git!(remote, ["config", "receive.denyCurrentBranch", "ignore"])
@@ -59,21 +57,10 @@ defmodule RailWeb.Live.DiffViewTest do
     fix = repo |> git!(["rev-parse", "HEAD"]) |> String.trim()
     git!(repo, ["push", "--set-upstream", "origin", "feature"])
 
-    {:ok, run} =
-      Pipeline.create_run(%{
-        task_id: task.id,
-        role_id: role.id,
-        status: :finished,
-        stage_outcome: :done,
-        conversation_id: "sess_dvw",
-        started_at: DateTime.utc_now()
-      })
-
     %{
       conn: log_in_user(conn, user),
       user: user,
       task: task,
-      run: run,
       repo: repo,
       engineer: engineer,
       merge: merge,
@@ -163,31 +150,14 @@ defmodule RailWeb.Live.DiffViewTest do
     assert has_element?(view, "[data-qa='diff_comments_lifted'] [data-qa='diff_comment']", "Name the third.")
   end
 
-  test "a merge's view shows what main brought in, takes no comment and offers no Send", %{
-    conn: conn,
-    user: user,
-    task: task,
-    merge: merge
-  } do
-    {:ok, _comment} =
-      Pipeline.create_diff_comment(user_scope(user: user), task, %{
-        path: "rows.ex",
-        line_kind: :added,
-        line: 1,
-        line_text: "line 1",
-        filter: :branch,
-        body: "Waiting to go."
-      })
-
+  test "a merge's view shows what main brought in and takes no comment", %{conn: conn, task: task, merge: merge} do
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-    assert has_element?(view, "#send-diff-comments")
 
     view |> element("#diff-commit-option-#{String.slice(merge, 0, 7)}") |> render_click()
 
     assert has_element?(view, "[data-qa='diff_file_section'][data-path='upstream.ex']")
     refute has_element?(view, "[data-qa='diff_file_section'][data-path='rows.ex'] .diff-body")
     refute has_element?(view, "[data-qa='diff_comment_add']")
-    refute has_element?(view, "#send-diff-comments")
     assert has_element?(view, "[data-qa='diff_no_comments']", "No comments on a merge")
 
     render_click(with_target(view, "#diff-view"), "open_diff_comment", %{
@@ -200,48 +170,18 @@ defmodule RailWeb.Live.DiffViewTest do
     refute has_element?(view, "[data-qa='diff_comment_form']")
   end
 
-  # RAIL-53: the reply to the click is what draws them Sent, so nothing in between draws them unsent again.
-  test "sent comments read Sent in the click's own reply, and Sending until it lands", %{conn: conn, task: task} do
-    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-    for line <- ["3", "8"] do
-      render_click(with_target(view, "#diff-view"), "open_diff_comment", %{
-        "path" => "rows.ex",
-        "kind" => "added",
-        "old_line" => "",
-        "new_line" => line
-      })
-
-      view |> form("[data-qa='diff_comment_form']", %{"body" => "On line #{line}."}) |> render_submit()
-    end
-
-    unsent = view |> render() |> Floki.parse_document!() |> Floki.find("[data-qa='diff_comment']")
-    assert length(unsent) == 2
-    assert Enum.all?(unsent, &(Floki.find(&1, "[data-qa='diff_comment_sending']") != []))
-
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-    reply = view |> element("#send-diff-comments") |> render_click()
-
-    comments = reply |> Floki.parse_document!() |> Floki.find("[data-qa='diff_comment']")
-    assert length(comments) == 2
-    assert Enum.all?(comments, &(Floki.text(&1) =~ "Sent"))
-    refute reply =~ "Not sent"
-    refute reply =~ "send-diff-comments"
-  end
-
-  # Review's tray sends the reader's comments, so its diff has no Send; a sent one keeps Resolve.
-  test "in Review the diff has no Send, and a sent comment stays under its line with Resolve", %{
+  # Review's tray sends the reader's comments; a sent one stays under its line with Resolve.
+  test "in Review a sent comment stays under its line with Resolve, and an unsent one reads Not sent", %{
     conn: conn,
     user: user,
     task: task,
-    run: run,
     project: project
   } do
     scope = user_scope(user: user)
     comment = %{path: "rows.ex", line_kind: :added, line: 3, line_text: "line 3", filter: :branch}
     {:ok, _sent} = Pipeline.create_diff_comment(scope, task, Map.put(comment, :body, "Sent before Review."))
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-    {:ok, :sent, _run} = Pipeline.send_diff_comments(scope, run)
+    # As the Review tray's Send leaves them.
+    Repo.update_all(from(c in DiffComment, where: c.task_id == ^task.id and c.status == :unsent), set: [status: :sent])
     {:ok, _unsent} = Pipeline.create_diff_comment(scope, task, Map.put(comment, :body, "Waits in the tray."))
     {:ok, _review} = Pipeline.update_task(task, %{stage: :review})
     {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
@@ -262,38 +202,6 @@ defmodule RailWeb.Live.DiffViewTest do
     assert has_element?(view, "[data-qa=diff_comment]", "Sent before Review.")
     assert has_element?(view, "[data-qa=diff_comment_resolve]")
     assert has_element?(view, "[data-qa=diff_comment] [data-qa=diff_comment_unsent]")
-    refute has_element?(view, "#send-diff-comments")
-    refute has_element?(view, "[data-qa=diff_comments_hint]")
-
-    render_click(with_target(view, "#diff-view"), "send_diff_comments", %{})
-    assert has_element?(view, "[data-qa=diff_comment_unsent]")
-  end
-
-  test "a send the agent cannot take says why, and the comments stay unsent", %{conn: conn, task: task} do
-    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-    render_click(with_target(view, "#diff-view"), "open_diff_comment", %{
-      "path" => "rows.ex",
-      "kind" => "added",
-      "old_line" => "",
-      "new_line" => "3"
-    })
-
-    view |> form("[data-qa='diff_comment_form']", %{"body" => "Hold on."}) |> render_submit()
-
-    for {reason, said} <- [
-          {:chat_unavailable, "The engineer has no conversation to send these to yet."},
-          {{:invalid_stage, :merged}, "This conversation is closed now that the task is at Merged."},
-          {:locked, "Could not send these: :locked"}
-        ] do
-      expect(Pipeline, :send_diff_comments, fn _scope, _run -> {:error, reason} end)
-
-      view |> element("#send-diff-comments") |> render_click()
-
-      assert has_element?(view, "#diff-error", said)
-    end
-
-    assert has_element?(view, "[data-qa='diff_comment']", "Not sent")
   end
 
   test "a commit's gap is read as the file was at that commit", %{conn: conn, task: task, repo: repo, fix: fix} do
@@ -413,11 +321,38 @@ defmodule RailWeb.Live.DiffViewTest do
 
     assert view |> render() |> Floki.parse_document!() |> Floki.find(".diff-body .diff-code") == code
 
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-    view |> element("#send-diff-comments") |> render_click()
+    # As the Review tray's Send leaves them, and tells the page.
+    Repo.update_all(from(c in DiffComment, where: c.task_id == ^task.id and c.status == :unsent), set: [status: :sent])
+    send(view.pid, {:diff_comments_changed, task.id})
+    # The page hands the pane its comments through send_update, which queues behind the first render.
+    _settled = render(view)
 
     assert has_element?(view, "[data-qa='diff_comment']", "Sent")
     assert view |> render() |> Floki.parse_document!() |> Floki.find(".diff-body .diff-code") == code
+  end
+
+  test "marking a file reviewed on the diff leaves the plan's card for that path as it was, and the other way round", %{
+    conn: conn,
+    user: user,
+    task: task
+  } do
+    scope = user_scope(user: user)
+    {:ok, _card} = Git.set_file_viewed(scope, task, :plan, "rows.ex", "card_digest", true)
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    assert has_element?(view, "#diff-header-rows-ex [data-qa='diff-viewed-checkbox'][aria-pressed='false']")
+
+    view |> element("#diff-header-rows-ex [data-qa='diff-viewed-checkbox']") |> render_click()
+
+    assert has_element?(view, "#diff-header-rows-ex [data-qa='diff-viewed-checkbox'][aria-pressed='true']")
+    assert %{"rows.ex" => diff_digest} = Git.list_viewed_files(scope, task, :diff)
+    assert diff_digest != "card_digest"
+    assert Git.list_viewed_files(scope, task, :plan) == %{"rows.ex" => "card_digest"}
+
+    view |> element("#diff-header-rows-ex [data-qa='diff-viewed-checkbox']") |> render_click()
+
+    assert Git.list_viewed_files(scope, task, :diff) == %{}
+    assert Git.list_viewed_files(scope, task, :plan) == %{"rows.ex" => "card_digest"}
   end
 
   describe "long lines" do

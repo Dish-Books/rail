@@ -51,7 +51,6 @@ defmodule RailWeb.IssuesLive do
       flash={@flash}
       current_section={@current_section}
       current_scope={@current_scope}
-      is_rail_extended={@is_rail_extended}
       attention_count={@attention_count}
       triage_count={@triage_count}
       current_project_id={@current_project_id}
@@ -360,14 +359,8 @@ defmodule RailWeb.IssuesLive do
 
   def handle_info({:workflows_changed, _project_id}, socket), do: {:noreply, reload_data(socket)}
 
-  # Where a task got to is what the latest run at the stage it sits at says, picked out
-  # of the runs already loaded rather than queried per row.
-  defp stage_run(%{runs: runs, stage: stage}) when is_list(runs) do
-    runs
-    |> Enum.filter(&(&1.role != nil and &1.role.stage == Task.role_stage(stage)))
-    |> Enum.max_by(&(&1.started_at || &1.inserted_at), DateTime, fn -> nil end)
-  end
-
+  # Picked out of the runs already loaded rather than queried per row.
+  defp stage_run(%Task{} = task), do: Task.stage_run(task)
   defp stage_run(nil), do: nil
 
   defp project_subtitle(nil), do: "Issues across all projects"

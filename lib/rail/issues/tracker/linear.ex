@@ -51,7 +51,7 @@ defmodule Rail.Issues.Tracker.Linear do
   end
 
   # Linear names things its own way: a workflow state by its id, a priority by its number, an
-  # assignee by their Linear user id. Unassigning is the one change sent as a null. An estimate
+  # assignee by their Linear user id. Unassigning and clearing the estimate are the changes sent as a null. An estimate
   # goes in a mutation of its own after the rest, since a team whose scale refuses it, or that
   # has estimates off, would otherwise refuse the whole change.
   @impl true
@@ -64,7 +64,7 @@ defmodule Rail.Issues.Tracker.Linear do
         :owner_user_id -> {"assigneeId", issue.owner_user && issue.owner_user.linear_user_id}
         field -> {to_string(field), Map.fetch!(issue, field)}
       end)
-      |> Map.reject(fn {field, value} -> is_nil(value) and field != "assigneeId" end)
+      |> Map.reject(fn {field, value} -> is_nil(value) and field not in ["assigneeId", "estimate"] end)
       |> Map.split(["estimate"])
 
     with :ok <- update_linear(project, issue, rest), do: update_linear(project, issue, estimate)

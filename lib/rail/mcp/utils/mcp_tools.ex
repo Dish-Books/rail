@@ -40,6 +40,8 @@ defmodule Rail.Mcp.Utils.McpTools do
   called. The Review lead's subagents inherit its tools, so the one register is
   theirs too: that only the lead saves a finding is its brief's rule.
 
+  `@question_tools` are how a lead asks the human: the round it asks in a turn is shown when the turn ends.
+
   `@knowledge_tools` are offered to every role: `knowledge_search` reads the
   rules the project has learned, which no stage should have to guess at.
 
@@ -48,7 +50,8 @@ defmodule Rail.Mcp.Utils.McpTools do
   an agent working out how the application behaves, which is not the demo. So the
   rehearsal happens off camera and the take is what gets recorded. `demo_say` is
   how the agent narrates what it is about to do, stamped against the recording's
-  own clock so the caption is up while the thing happens.
+  own clock so the caption is up while the thing happens. `demo_cut` marks where
+  setup between beats starts, so the voiced video leaves it out.
   """
 
   alias Rail.Roles.Schemas.Role
@@ -76,9 +79,10 @@ defmodule Rail.Mcp.Utils.McpTools do
       "description" =>
         "Get your tab in Rail's headless Chrome and the driver to drive it with. Returns the tab's " <>
           "DevTools websocket and the path of `driver.mjs`, a zero-dependency Node module: " <>
-          "`openBrowser(url)` gives you click, hover, type, press, select, typeDate, upload, goto, " <>
-          "evaluate, expect, until, text, shot, resize and drainProblems, all as trusted input " <>
-          "events so LiveView sees what a person's would produce. Write a script per check and run " <>
+          "`openBrowser(url)` gives you click, hover, scroll, type, press, select, typeDate, upload, " <>
+          "goto, evaluate, expect, until, text, shot, resize and drainProblems. Its clicks, key presses " <>
+          "and scrolls are trusted input events, so LiveView sees what a person's would produce and a " <>
+          "demo shows each as an action: scroll with `scroll`, never `evaluate`. Write a script per check and run " <>
           "it with `node`; the tab stays where each script leaves it, signed in. Rail watches the " <>
           "same tab, so the panel and a demo recording show what you do. Each `browser` name is a " <>
           "context and tab of its own; the first call for a name signs it in as a fresh account the " <>
@@ -94,8 +98,8 @@ defmodule Rail.Mcp.Utils.McpTools do
           "browser" => %{
             "type" => "string",
             "description" =>
-              "A name for this browser, a few letters, digits, spaces or dashes: the one the lead gave you, such " <>
-                "as `explorer-1` or `demo`. Another name is another browser signed in as another account."
+              "A name for this browser, a few letters, digits, spaces or dashes. Leave it out: yours is named for " <>
+                "your part, `qa`, `screens` or `demo`, and another name is another browser signed in as another account."
           },
           "account" => %{
             "type" => "string",
@@ -195,8 +199,8 @@ defmodule Rail.Mcp.Utils.McpTools do
       "name" => "qa_shot",
       "description" =>
         "Photograph the page and save it in the QA folder. Say what the picture is of; Rail names the file " <>
-          "and returns its path, which goes to the lead to cite in a finding's evidence: the path, never " <>
-          "the picture. Take it at the point a check asserts something on screen, not after every keystroke. A " <>
+          "and returns its path with the picture attached, so you check it in the same turn. The path goes in " <>
+          "your report for a finding's evidence: the path, never the picture. Take it at the point a check asserts something on screen, not after every keystroke. A " <>
           "picture all one color is refused and nothing is saved.",
       "inputSchema" => %{
         "type" => "object",
@@ -211,17 +215,16 @@ defmodule Rail.Mcp.Utils.McpTools do
     %{
       "name" => "save_screen",
       "description" =>
-        "Photograph one screen state the lead named and save it as that state's image for HEAD's commit. It " <>
+        "Photograph one screen state the change affects and save it as that state's image for HEAD's commit. It " <>
           "replaces the state's earlier picture each round. Take it of the state as the change leaves it, under the " <>
           "same `key` every round. Refused while the worktree has uncommitted changes, and for a picture all one color, " <>
-          "which keeps the earlier one. Returns the path, which a finding can cite as evidence.",
+          "which keeps the earlier one. Returns the path, which a finding can cite as evidence, with the picture attached.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{
           "key" => %{
             "type" => "string",
-            "description" =>
-              "The state's name the lead gave you, lowercase letters, digits and dashes, the same every round."
+            "description" => "The state's name, lowercase letters, digits and dashes, the same every round."
           },
           "label" => %{
             "type" => "string",
@@ -252,15 +255,18 @@ defmodule Rail.Mcp.Utils.McpTools do
       "description" =>
         "Narrate the next beat of the walkthrough. Say it immediately before you do the thing, " <>
           "not after: Rail stamps it against the recording's clock and the caption goes up while " <>
-          "the action happens. One sentence, in the words someone who has never seen this codebase " <>
+          "the action happens. One sentence, spoken to the person watching as a presenter would say it, " <>
+          "in the words someone who has never seen this codebase " <>
           "would use - what is about to happen and why it matters, never the mechanics of how you " <>
           "are clicking it. Name the acceptance criterion in `criterion` when the beat is what " <>
           "proves one; that is what says the walkthrough covered the ticket rather than wandered " <>
-          "around the application.",
+          "around the application. Rail speaks the caption aloud as the voice-over, word for word, so " <>
+          "write it in words: letters, numbers and sentence punctuation, with no hyphens, slashes or " <>
+          "other symbols. A caption with any is refused.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{
-          "text" => %{"type" => "string", "description" => "The caption, one sentence."},
+          "text" => %{"type" => "string", "description" => "The caption, one sentence in words only."},
           "criterion" => %{
             "type" => "string",
             "description" => "The acceptance criterion this beat proves, quoted from the ticket."
@@ -268,6 +274,14 @@ defmodule Rail.Mcp.Utils.McpTools do
         },
         "required" => ["text"]
       }
+    },
+    %{
+      "name" => "demo_cut",
+      "description" =>
+        "Mark where you start setting up for the next beat. Call it before you seed data, switch user, reload " <>
+          "or wait between beats: the video leaves out what the page does from here to your next caption. Never " <>
+          "call it between a caption and the action it describes.",
+      "inputSchema" => %{"type" => "object", "properties" => %{}}
     }
   ]
 
@@ -277,31 +291,8 @@ defmodule Rail.Mcp.Utils.McpTools do
     "end_line" => %{"type" => "integer", "description" => "The last line, when it spans more than one."}
   }
 
-  @plan_tools [
-    %{
-      "name" => "save_ticket",
-      "description" =>
-        "Save the ticket. The panel shows it to the human as soon as it is saved, so save a first draft as " <>
-          "soon as you have one and save again after every change: each save replaces the ticket in full. " <>
-          "A save in the wrong shape is refused naming each field, and the last good save stays.",
-      "inputSchema" => %{
-        "type" => "object",
-        "properties" => %{
-          "title" => %{"type" => "string", "description" => "The ticket title, one line."},
-          "description" => %{"type" => "string", "description" => "The ticket body, in markdown, verbatim."},
-          "priority" => %{
-            "type" => "string",
-            "enum" => ["urgent", "high", "medium", "low"],
-            "description" => "Left out, the issue's own priority stays."
-          },
-          "estimate" => %{
-            "type" => "integer",
-            "description" => "Points, zero or more. Left out, the issue's own estimate stays."
-          }
-        },
-        "required" => ["title", "description"]
-      }
-    },
+  # Plan's, and the review agent's once a person asks for the picked design to change.
+  @design_tools [
     %{
       "name" => "save_design_option",
       "description" =>
@@ -326,77 +317,46 @@ defmodule Rail.Mcp.Utils.McpTools do
         },
         "required" => ["key", "title", "summary"]
       }
-    },
+    }
+  ]
+
+  @plan_tools [
     %{
       "name" => "save_plan",
       "description" =>
-        "Save the implementation plan. The panel shows it as soon as it is saved, so save from the first " <>
-          "draft and again after every review comment: each save replaces the plan in full. It must open with " <>
-          "the `## Implementation plan` heading and hold the `###` sections your brief lists, in order; a save " <>
-          "whose sections are off is refused with what to fix. Name the design option it is written for; approval needs " <>
-          "the plan saved for the option the human picked.",
+        "Save the plan: the ticket and the implementation plan, with the design option the plan is written for. " <>
+          "The panel shows each save at once, so save the ticket as soon as you have a draft, before the " <>
+          "implementation plan exists, and save again after every change. A part you leave out stays as the last " <>
+          "save left it, and a part you give replaces it in full. `plan` must open with the `## Implementation " <>
+          "plan` heading and hold the `###` sections your brief lists, in order. A save in the wrong shape is " <>
+          "refused naming what to fix, and the last good save stays. Approval needs the plan saved for the option " <>
+          "the human picked.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{
-          "plan" => %{"type" => "string", "description" => "The whole plan, in markdown."},
+          "title" => %{"type" => "string", "description" => "The ticket title, one line."},
+          "description" => %{"type" => "string", "description" => "The ticket body, in markdown, verbatim."},
+          "priority" => %{
+            "type" => "string",
+            "enum" => ["urgent", "high", "medium", "low"],
+            "description" => "Never saved, the issue's own priority stays."
+          },
+          "estimate" => %{
+            "type" => "integer",
+            "description" => "Points, zero or more. Never saved, the issue's own estimate stays."
+          },
+          "plan" => %{"type" => "string", "description" => "The whole implementation plan, in markdown."},
+          "record_demo" => %{
+            "type" => "boolean",
+            "description" => "True when the change has something on screen worth a recorded walkthrough once it is built."
+          },
           "design" => %{
             "type" => "string",
             "description" =>
-              "The key of the saved design option this plan is written for. Leave it out when there are no " <>
-                "options, or while the plan leaves the screen open before the pick."
+              "The key of the saved design option the implementation plan is written for. Leave it out when " <>
+                "there are no options, or while the plan leaves the screen open before the pick."
           }
-        },
-        "required" => ["plan"]
-      }
-    },
-    %{
-      "name" => "save_split",
-      "description" =>
-        "Save a split of the work into child tickets, when it is too big for one. Each save replaces the whole " <>
-          "split, so save every child each time, in the order they should run. Every child needs its title, " <>
-          "its ticket and its part of the plan, or the save is refused naming the child and the field, and " <>
-          "the last good save stays. Save an empty list of children to remove the split.",
-      "inputSchema" => %{
-        "type" => "object",
-        "properties" => %{
-          "children" => %{
-            "type" => "array",
-            "description" =>
-              "Two or more children, in order. Approval makes each a Linear sub-issue with a task of its own.",
-            "items" => %{
-              "type" => "object",
-              "properties" => %{
-                "title" => %{"type" => "string", "description" => "The child's ticket title, one line."},
-                "ticket" => %{
-                  "type" => "string",
-                  "description" => "The child's ticket body in markdown, with its own acceptance criteria."
-                },
-                "estimate" => %{"type" => "integer", "description" => "Points, zero or more."},
-                "plan" => %{
-                  "type" => "string",
-                  "description" =>
-                    "The part of the plan this child builds, a complete plan in the same sections, opening " <>
-                      "with the `## Implementation plan` heading."
-                },
-                "builds_on" => %{
-                  "type" => "array",
-                  "items" => %{"type" => "integer"},
-                  "description" =>
-                    "The numbers of the earlier children, counted from 1, that must merge before this one starts. " <>
-                      "Empty when it can start at once."
-                },
-                "builds_screen" => %{
-                  "type" => "boolean",
-                  "description" =>
-                    "True for each child that builds the screen the approved design shows. Only those children " <>
-                      "get the design."
-                }
-              },
-              "required" => ["title", "ticket", "plan"]
-            }
-          }
-        },
-        "required" => ["children"]
+        }
       }
     }
   ]
@@ -424,8 +384,17 @@ defmodule Rail.Mcp.Utils.McpTools do
             "enum" => ["code_reviewer", "explorer", "review_lead"],
             "description" => "Who found it."
           },
-          "title" => %{"type" => "string", "description" => "What is wrong, in 90 characters or less."},
-          "problem" => %{"type" => "string", "description" => "At most two plain sentences, 300 characters."},
+          "title" => %{
+            "type" => "string",
+            "description" => "The one thing that goes wrong, as the person it happens to would notice it, 90 characters."
+          },
+          "problem" => %{
+            "type" => "string",
+            "description" =>
+              "What goes wrong first, then its cause: who does what and where, what happens and what should " <>
+                "happen instead, then the code that makes it happen. Short sentences in everyday words a teammate " <>
+                "who has not read the diff follows on one read. At most four sentences, 500 characters."
+          },
           "file" => @range["file"],
           "line" => @range["line"],
           "end_line" => @range["end_line"],
@@ -530,6 +499,51 @@ defmodule Rail.Mcp.Utils.McpTools do
       }
     },
     %{
+      "name" => "save_fix_plan",
+      "description" =>
+        "Save the plan for the next round, once the review is saved; each save replaces the last, and the human " <>
+          "approves it in Rail, which starts an engineer on it. Markdown: a short summary, then `### What changes` " <>
+          "with a `#### `key`` for each finding to fix, by its key in backticks, and a `#### Comment N` for each " <>
+          "comment the human sent, by its " <>
+          "number, each saying what will change or why nothing will. Then `### File-level changes`, a card per file " <>
+          "as the first plan's `### Changes` has: a `#### `path`` heading, followed by `deleted` when the file goes; " <>
+          "a sentence or two on what changes in it, naming the item it is for by the finding's key in backticks or " <>
+          "`comment N`; then, when it adds or changes public functions, one fenced block of their signatures; then, " <>
+          "when there is code the fix turns on, one fenced block marked `sketch`, such as ```elixir sketch, holding " <>
+          "only that code. Then `### Verification`. Leave out the last two when " <>
+          "nothing will change, but save no plan in which nothing changes: name the findings to rule Skip instead. " <>
+          "A `### Changes to the plan` section comes first when the human asked to change the " <>
+          "ticket, its criteria or the first plan. A plan that leaves out a finding to fix or a comment is refused " <>
+          "with what to fix.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{
+          "plan" => %{"type" => "string", "description" => "The whole plan, in markdown."},
+          "record_demo" => %{
+            "type" => "boolean",
+            "description" => "True when a new demo should be recorded once this round is built."
+          },
+          "title" => %{
+            "type" => "string",
+            "description" => "Only when a person asked to change the ticket: its whole new title."
+          },
+          "description" => %{
+            "type" => "string",
+            "description" =>
+              "Only when a person asked to change the ticket or its acceptance criteria: its whole new description, " <>
+                "criteria included. The ticket is updated when the plan is approved."
+          },
+          "design_changed" => %{
+            "type" => "boolean",
+            "description" =>
+              "True when, as a person asked, you saved the picked design again with `save_design_option`. Its " <>
+                "picture on the ticket is replaced when the plan is approved."
+          }
+        },
+        "required" => ["plan"]
+      }
+    },
+    %{
       "name" => "save_review",
       "description" =>
         "Say the round is finished, once every finding is saved and every check settled. Call it last, and " <>
@@ -562,6 +576,54 @@ defmodule Rail.Mcp.Utils.McpTools do
     }
   ]
 
+  @report_tools [
+    %{
+      "name" => "save_report",
+      "description" =>
+        "Save your report for this round: what you changed, saw or read, as your brief asks. Nobody relays for " <>
+          "you, so this is how the agents after you hear it. Each save replaces the last, so save the whole of " <>
+          "it, before you end your turn.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{"report" => %{"type" => "string", "description" => "The whole report, in markdown."}},
+        "required" => ["report"]
+      }
+    }
+  ]
+
+  @question_tools [
+    %{
+      "name" => "ask_questions",
+      "description" =>
+        "Ask the human what you could not settle yourself, the whole round in one call, before you end your turn. " <>
+          "The human sees the round when your turn ends and the answers come back as one message. A second call in " <>
+          "the same turn adds to the same round, and a question already asked is not asked twice.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{
+          "questions" => %{
+            "type" => "array",
+            "description" => "Every question you could not close, in the order the human should answer them.",
+            "items" => %{
+              "type" => "object",
+              "properties" => %{
+                "prompt" => %{"type" => "string", "description" => "The question, in a sentence or two."},
+                "options" => %{
+                  "type" => "array",
+                  "items" => %{"type" => "string"},
+                  "description" =>
+                    "The answers to pick from, your recommended one first. Leave it out when the answer is free text."
+                }
+              },
+              "required" => ["prompt"]
+            }
+          }
+        },
+        "required" => ["questions"]
+      }
+    }
+  ]
+
   @knowledge_tools [
     %{
       "name" => "knowledge_search",
@@ -581,15 +643,18 @@ defmodule Rail.Mcp.Utils.McpTools do
   ]
 
   @doc """
-  The tools Rail serves this run itself: the browser for the Review lead, whose
-  explorers and demo recorder drive one, the save tools each lead hands its
-  output over with, and the knowledge base for all.
+  The tools Rail serves this run itself: the save tools each agent hands its output over with, the browser for
+  the two that drive the app, `ask_questions` for the agents a person talks to, and the knowledge base for all.
   """
-  def mcp_tools(%Role{stage: :plan}), do: @plan_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :engineer}), do: @knowledge_tools
+  def mcp_tools(%Role{stage: :plan}), do: @design_tools ++ @plan_tools ++ @question_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :engineer}), do: @report_tools ++ @question_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :qa}), do: @browser_tools ++ @qa_tools ++ @report_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :review}), do: @report_tools ++ @knowledge_tools
+
+  def mcp_tools(%Role{stage: :demo}), do: @browser_tools ++ @demo_tools ++ @demo_report_tools ++ @knowledge_tools
 
   def mcp_tools(%Role{stage: :review_lead}),
-    do: @browser_tools ++ @qa_tools ++ @demo_tools ++ @review_lead_tools ++ @demo_report_tools ++ @knowledge_tools
+    do: @review_lead_tools ++ @design_tools ++ @question_tools ++ @knowledge_tools
 
   def mcp_tools(%Role{}), do: @knowledge_tools
 end

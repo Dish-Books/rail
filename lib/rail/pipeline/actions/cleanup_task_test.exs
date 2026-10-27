@@ -1,6 +1,8 @@
 defmodule Rail.Pipeline.Actions.CleanupTaskTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.BuildTask
+
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
@@ -77,14 +79,12 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
           attrs = %{title: "Child #{identifier}", parent: parent_issue}
           {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
 
-          part = %{
-            number: number,
-            builds_on: builds_on,
-            builds_screen: false,
-            plan: "## Implementation plan\n\nPart #{number}."
-          }
+          {:ok, child} =
+            issue.project
+            |> build_task(issue, %{stage: :engineer, split_position: number, builds_on: builds_on})
+            |> Ecto.Changeset.put_change(:parent_task_id, parent.id)
+            |> Repo.insert()
 
-          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
           Repo.preload(child, [:issue, :project])
         end
 
@@ -107,7 +107,13 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
       parent: parent,
       children: [first, _second]
     } do
-      {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_clt_ada", login: "ada", email: "ada@example.com"})
+      {:ok, ada} =
+        Users.register_oauth_user(%{
+          github_id: "gh_clt_ada",
+          login: "ada-cleanup-task",
+          email: "ada-cleanup-task@example.com"
+        })
+
       ada = user_scope(user: ada)
       {:ok, %{id: first_id} = first} = Pipeline.update_task(first, %{stage: :review})
       File.mkdir_p!(Path.join([first.scratch_path, "qa", "screens", "toolbar"]))

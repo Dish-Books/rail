@@ -107,16 +107,62 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
   end
 
-  test "a message to a Plan run spawns with Product, Designer and Architect as subagents", %{run: run} do
+  describe "a design picked while Plan was working" do
+    setup %{task: task} do
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+      dir = Path.join(task.scratch_path, "design")
+      File.mkdir_p!(dir)
+      File.write!(Path.join(dir, "manifest.json"), ~s({"options": [{"key": "table", "title": "Table"}]}))
+      File.write!(Path.join(dir, "picked"), "table")
+      :ok
+    end
+
+    test "goes out ahead of the next message, and the conversation says so", %{run: run, run_id: run_id} do
+      expect(Tools, :start_os_process, fn spawned, argv ->
+        assert "I picked Table (table).\n\nPlease also add a test" in argv
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
+
+      assert Repo.exists?(
+               from e in RunEvent, where: e.run_id == ^run_id and e.line == "[rail] Sent with the pick: Table (table)."
+             )
+    end
+
+    test "is not repeated once the plan is saved for it, or when the message is the pick itself", %{
+      task: task,
+      run: run
+    } do
+      {:ok, _picked} = Pipeline.update_run(run, %{pending_chat: "I picked Table (table)."})
+
+      expect(Tools, :start_os_process, fn spawned, argv ->
+        assert "I picked Table (table)." in argv
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
+
+      plan =
+        "## Implementation plan\n\n### Approach\n\nExtend it.\n\n### Decisions\n\n- Decision: one module changes.\n\n" <>
+          "### Changes\n\n#### `lib/rail.ex`\n\nExtends it.\n\n### Acceptance criteria\n\n- 1: `lib/rail.ex`\n\n" <>
+          "### Verification\n\n- `lib/rail_test.exs`: covers it."
+
+      {:ok, _saved} = Pipeline.save_plan(task, %{title: "A ticket", description: "Body.", plan: plan, design: "table"})
+      {:ok, _queued} = Pipeline.update_run(Repo.reload!(run), %{status: :finished, pending_chat: "And a migration"})
+
+      expect(Tools, :start_os_process, fn spawned, argv ->
+        assert "And a migration" in argv
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
+    end
+  end
+
+  test "a message to a Plan run spawns the one agent, with no subagents", %{run: run} do
     expect(Tools, :start_os_process, fn spawned, argv ->
-      [json] = for ["--agents", json] <- Enum.chunk_every(argv, 2, 1), do: json
-
-      assert %{
-               "product" => %{"prompt" => "You are the product agent." <> _product_rules},
-               "designer" => %{"prompt" => "You are the design agent." <> _design_rules},
-               "architect" => %{"prompt" => "You are the architect agent." <> _architect_rules}
-             } = Jason.decode!(json)
-
+      refute "--agents" in argv
       {:ok, %OsProcess{run: spawned}}
     end)
 
@@ -143,8 +189,8 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     assert %Run{error: nil, exit_code: nil} = Repo.reload!(failed)
   end
 
-  # Subagents are a spawn flag, not part of the saved session, so the lead's every turn passes them again.
-  test "a message to the Review lead spawns with the code reviewer, explorer, engineer and demo recorder", %{
+  # The review agent commits nothing, so its turn readies no branch, and it leads nobody.
+  test "a message to the review agent spawns it alone, with no subagents and no branch to bring up to date", %{
     project: project,
     task: %Task{id: task_id} = task
   } do
@@ -162,20 +208,21 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
       })
 
     expect(Tools, :start_os_process, fn spawned, argv ->
-      [json] = for ["--agents", json] <- Enum.chunk_every(argv, 2, 1), do: json
-
-      assert %{"code-reviewer" => %{}, "explorer" => %{}, "engineer" => %{}, "demo-recorder" => %{}} =
-               Jason.decode!(json)
+      refute "--agents" in argv
+      assert "Check the empty state too" in argv
 
       {:ok, %OsProcess{run: spawned}}
     end)
 
     assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
-    assert_received {:prepared, ^task_id}
+    refute_received {:prepared, ^task_id}
   end
 
   # The engineer's turn starts on a fresh default branch, committing as the ticket's owner.
-  test "a message to a run that leads nobody spawns with no subagents", %{project: project, task: task} do
+  test "a message to the engineer spawns it with no subagents, on a branch brought up to date", %{
+    project: project,
+    task: task
+  } do
     {:ok, %Task{id: task_id} = task} = Pipeline.update_task(task, %{stage: :engineer})
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 

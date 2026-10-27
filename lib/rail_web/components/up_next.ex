@@ -6,7 +6,7 @@ defmodule RailWeb.Components.UpNext do
   run: what the human does next — reading a ticket, answering a question — needs
   the task in front of them, so every entry is only a way there. A task whose
   review finished and that nobody has marked ready is a Finalize row, opening on
-  Finalize.
+  Finalize, unless its fix round's plan waits on approval, which opens the plan.
   """
   use RailWeb, :html
 
@@ -30,15 +30,23 @@ defmodule RailWeb.Components.UpNext do
           into: MapSet.new(),
           do: run.id
 
+    # Read once per render too: a fix round's plan waiting on approval is a file on disk.
+    fix_plans =
+      for %Run{role: %Role{stage: :review_lead}, task: %Task{stage: stage} = task} = run <- assigns.runs,
+          stage in [:review, :finalize] and Run.state(run) == :done and fix_plan_waiting?(task),
+          into: MapSet.new(),
+          do: run.id
+
     # Marking ready is one click, not something to read, so it is never the card that leads.
-    featured = Enum.find(assigns.runs, &(not finalizing?(&1)))
+    featured = Enum.find(assigns.runs, &(not finalizing?(&1) or MapSet.member?(fix_plans, &1.id)))
 
     assigns =
       assigns
       |> assign(:featured, featured)
       |> assign(:rest, List.delete(assigns.runs, featured))
       |> assign(:picking, picking)
-      |> assign(:featured_icon, featured_icon(featured))
+      |> assign(:fix_plans, fix_plans)
+      |> assign(:featured_icon, featured_icon(featured, fix_plans))
 
     ~H"""
     <div id="up-next" data-qa="up-next" class="space-y-3">
@@ -52,7 +60,7 @@ defmodule RailWeb.Components.UpNext do
 
       <.link
         :if={@featured}
-        {destination(@featured)}
+        {destination(@featured, @fix_plans)}
         id={"up-next-featured-#{@featured.id}"}
         data-qa="up-next-featured"
         class="@container group block rounded-xl border border-amber-300 dark:border-amber-800/70 bg-amber-50 dark:bg-amber-950/30 px-5 py-4 transition-colors hover:bg-amber-100/70 dark:hover:bg-amber-950/50"
@@ -84,7 +92,7 @@ defmodule RailWeb.Components.UpNext do
             </h3>
 
             <p data-qa="up-next-summary" class="mt-1 text-sm text-slate-600 dark:text-slate-400">
-              {summary(@featured, @picking)}
+              {summary(@featured, @picking, @fix_plans)}
             </p>
           </div>
 
@@ -97,7 +105,8 @@ defmodule RailWeb.Components.UpNext do
           >
             <.icon :if={@featured_icon} name={@featured_icon} class="size-[15px] mr-1.5" />{verb(
               @featured,
-              @picking
+              @picking,
+              @fix_plans
             )}
           </span>
         </div>
@@ -105,7 +114,7 @@ defmodule RailWeb.Components.UpNext do
 
       <.link
         :for={run <- @rest}
-        {destination(run)}
+        {destination(run, @fix_plans)}
         id={if finalizing?(run), do: "up-next-finalize-row-#{run.id}", else: "up-next-row-#{run.id}"}
         data-qa="up-next-row"
         class="group flex items-center gap-4 rounded-xl border border-slate-200 dark:border-slate-700/70 bg-white dark:bg-slate-800/40 px-5 py-3.5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/70"
@@ -115,7 +124,7 @@ defmodule RailWeb.Components.UpNext do
         </span>
         <span class="min-w-0 flex-1 truncate text-sm text-slate-900 dark:text-slate-100">
           {run.task.issue.title} ·
-          <span class="text-slate-500 dark:text-slate-400">{detail(run, @picking)}</span>
+          <span class="text-slate-500 dark:text-slate-400">{detail(run, @picking, @fix_plans)}</span>
         </span>
         <span
           :if={parent_identifier(run)}
@@ -125,7 +134,7 @@ defmodule RailWeb.Components.UpNext do
           in {parent_identifier(run)}
         </span>
         <span class="shrink-0 text-sm font-semibold text-blue-600 dark:text-blue-400 group-hover:underline">
-          {verb(run, @picking)}
+          {verb(run, @picking, @fix_plans)}
         </span>
       </.link>
 
@@ -158,25 +167,45 @@ defmodule RailWeb.Components.UpNext do
   defp parent_identifier(%Run{task: %Task{parent_task: %Task{issue: %{identifier: identifier}}}}), do: identifier
   defp parent_identifier(%Run{}), do: nil
 
-  # Review is what the merge is decided on, so a change ready for it opens there, and one at Finalize on Finalize.
-  defp destination(run) do
+  # Review is what the merge is decided on, so a change ready for it opens on its findings, and one at Finalize on
+  # the task, whose header merges it. A question is answered in its agent's conversation, beside the plan, which the
+  # task opens on by itself only for the agent taking messages: Plan at Plan, the review agent after.
+  defp destination(run, fix_plans) do
     cond do
-      finalizing?(run) -> [navigate: ~p"/tasks/#{run.task_id}?tab=finalize"]
-      ready_to_merge?(run) -> [navigate: ~p"/tasks/#{run.task_id}?tab=#{run.role_id}"]
-      true -> [navigate: ~p"/tasks/#{run.task_id}"]
+      MapSet.member?(fix_plans, run.id) ->
+        [navigate: ~p"/tasks/#{run.task_id}?item=fix_plan"]
+
+      finalizing?(run) ->
+        [navigate: ~p"/tasks/#{run.task_id}"]
+
+      ready_to_merge?(run) ->
+        [navigate: ~p"/tasks/#{run.task_id}?item=findings"]
+
+      Run.state(run) == :blocked and not chat_run?(run) ->
+        [navigate: ~p"/tasks/#{run.task_id}?item=plan&agent=#{run.role.stage}"]
+
+      true ->
+        [navigate: ~p"/tasks/#{run.task_id}"]
     end
   end
+
+  defp chat_run?(%Run{role: %Role{stage: stage}, task: %Task{stage: :plan}}), do: stage == :plan
+  defp chat_run?(%Run{role: %Role{stage: stage}}), do: stage == :review_lead
 
   # The Review run of a task at Finalize waits only on someone marking it ready.
   defp finalizing?(%Run{task: %Task{stage: :finalize}} = run), do: Run.state(run) == :done
   defp finalizing?(%Run{}), do: false
 
-  # A Review round waiting on a person carries the Review screen's Findings icon; every other card is words alone.
-  defp featured_icon(%Run{task: %Task{} = task} = run) do
-    if review_waiting?(task, run), do: run_state_style(run, task).icon
+  # A Review round or fix plan waiting on a person carries the Review screen's Findings icon; every other card is words alone.
+  defp featured_icon(%Run{task: %Task{} = task} = run, fix_plans) do
+    cond do
+      review_waiting?(task, run) -> run_state_style(run, task).icon
+      MapSet.member?(fix_plans, run.id) -> "pi-list-checks"
+      true -> nil
+    end
   end
 
-  defp featured_icon(nil), do: nil
+  defp featured_icon(nil, _fix_plans), do: nil
 
   # A finished Review with a pull request to merge has nothing left to wait on but the merge.
   defp ready_to_merge?(%Run{role: %Role{stage: :review_lead}, task: %Task{pr_url: pr_url} = task} = run)
@@ -198,10 +227,11 @@ defmodule RailWeb.Components.UpNext do
     end
   end
 
-  defp verb(run, picking) do
+  defp verb(run, picking, fix_plans) do
     case Run.state(run) do
       :done ->
         cond do
+          MapSet.member?(fix_plans, run.id) -> "Review"
           finalizing?(run) -> "Finalize"
           ready_to_merge?(run) -> "Ready to merge"
           MapSet.member?(picking, run.id) -> "Pick"
@@ -216,10 +246,11 @@ defmodule RailWeb.Components.UpNext do
     end
   end
 
-  defp summary(run, picking) do
+  defp summary(run, picking, fix_plans) do
     case Run.state(run) do
       :done ->
         cond do
+          MapSet.member?(fix_plans, run.id) -> "Waiting on you to approve the fix plan."
           ready_to_merge?(run) -> "The review is finished, and the pull request is waiting on you to merge it."
           MapSet.member?(picking, run.id) -> "Waiting on you to pick a design."
           true -> "Waiting on you to read the #{work(run)}."
@@ -233,10 +264,11 @@ defmodule RailWeb.Components.UpNext do
     end
   end
 
-  defp detail(run, picking) do
+  defp detail(run, picking, fix_plans) do
     case Run.state(run) do
       :done ->
         cond do
+          MapSet.member?(fix_plans, run.id) -> "fix plan to approve"
           finalizing?(run) or ready_to_merge?(run) -> "review finished"
           MapSet.member?(picking, run.id) -> "pick a design"
           true -> "#{work(run)} ready for review"

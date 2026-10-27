@@ -5,6 +5,7 @@ defmodule RailWeb.Utils.BuildDocumentBlocks do
   of its own and editing it never moves a comment on its parent.
   """
 
+  import Rail.Git.Utils.HighlightLines
   import RailWeb.Utils.RenderMarkdown
 
   @extension [autolink: true, strikethrough: true, table: true, tasklist: true]
@@ -30,12 +31,15 @@ defmodule RailWeb.Utils.BuildDocumentBlocks do
   Returns the lines of `markdown`, each with its `key`, `kind`, anchor `text`, `occurrence` among lines of its kind
   that read the same, readable `label`, and what the page draws it from: its `html`, or a code line's `number`, a
   list item's `depth` and `marker`, a table row's `cells`.
+
+  A code line's `html` is its highlighted code, in the language its fence names or else the one `language` does, a
+  language or a path, and `nil` when neither names one the highlighter knows.
   """
-  def build_document_blocks(markdown) when is_binary(markdown) do
+  def build_document_blocks(markdown, language \\ nil) when is_binary(markdown) do
     markdown
     |> MDEx.parse_document!(extension: @extension)
     |> Map.fetch!(:nodes)
-    |> Enum.reduce(%{lines: [], section: nil, counts: %{}}, &block/2)
+    |> Enum.reduce(%{lines: [], section: nil, counts: %{}, language: language}, &block/2)
     |> Map.fetch!(:lines)
     |> Enum.reverse()
     |> number_lines()
@@ -73,19 +77,23 @@ defmodule RailWeb.Utils.BuildDocumentBlocks do
     end)
   end
 
-  defp block(%MDEx.CodeBlock{literal: literal}, state) do
+  defp block(%MDEx.CodeBlock{literal: literal, info: info}, state) do
     {block, state} = count(state, :code)
     lines = literal |> String.trim_trailing("\n") |> String.split("\n")
     last = length(lines)
     prefix = if block == 1, do: "Code line", else: "Code block #{block}, line"
+    # A plan marks its sketch in the fence, beside the language or in place of it.
+    language = List.first(String.split(info || "") -- ["sketch"]) || state.language
 
     lines
+    |> Enum.zip(highlight_lines(lines, language))
     |> Enum.with_index(1)
-    |> Enum.reduce(state, fn {line, number}, state ->
+    |> Enum.reduce(state, fn {{line, html}, number}, state ->
       add(state, %{
         kind: :code,
         text: line,
         label: "#{prefix} #{number}",
+        html: html,
         number: number,
         first?: number == 1,
         last?: number == last

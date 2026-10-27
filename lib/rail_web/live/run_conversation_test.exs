@@ -7,6 +7,7 @@ defmodule RailWeb.Live.RunConversationTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Tools
@@ -17,7 +18,7 @@ defmodule RailWeb.Live.RunConversationTest do
 
   setup %{project: project} do
     roles =
-      Map.new([:plan, :product, :design, :architect, :engineer, :review_lead], fn stage ->
+      Map.new([:plan, :engineer, :review_lead], fn stage ->
         {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
         {stage, role}
       end)
@@ -86,7 +87,7 @@ defmodule RailWeb.Live.RunConversationTest do
     {:ok, architect} =
       Pipeline.create_run(%{
         task_id: task.id,
-        role_id: roles[:architect].id,
+        role_id: roles[:plan].id,
         status: :finished,
         started_at: ~U[2026-09-09 09:00:00.000000Z],
         completed_at: ~U[2026-09-09 09:05:00.000000Z]
@@ -120,7 +121,7 @@ defmodule RailWeb.Live.RunConversationTest do
     {:ok, architect} =
       Pipeline.create_run(%{
         task_id: task.id,
-        role_id: roles[:architect].id,
+        role_id: roles[:plan].id,
         status: :finished,
         started_at: ~U[2026-09-09 09:00:00.000000Z]
       })
@@ -278,6 +279,105 @@ defmodule RailWeb.Live.RunConversationTest do
     assert Floki.text(bubble) =~ ~r/Rail, automatically\s*· answered from past answers/
     assert Floki.text(bubble) =~ "Answered by Rail from Dana's answer on RAIL-65, Oct 3: Postgres."
     refute html =~ ~s(data-qa="human-bubble")
+  end
+
+  describe "questions" do
+    setup %{task: task, roles: roles} do
+      {:ok, run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:engineer].id,
+          status: :blocked_on_input,
+          conversation_id: "conv_questions",
+          started_at: ~U[2026-09-09 10:00:00.000000Z]
+        })
+
+      run = Repo.preload(run, task: :issue)
+
+      first =
+        Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?", options: ["Postgres"]})
+
+      second = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which region?"})
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      {:ok, reader} =
+        Users.register_oauth_user(%{github_id: "gh_cnv_qst", login: "nell", name: "Nell", email: "n@example.com"})
+
+      %{run: run, round: [first, second], scope: user_scope(user: reader)}
+    end
+
+    test "an open round takes the composer's place, even in a closed conversation, and without one the composer is back",
+         %{task: task, roles_map: roles_map, run: run, round: round, scope: scope} do
+      conversation = [
+        round_questions: round,
+        id: "conv",
+        task: task,
+        runs: [run],
+        roles_map: roles_map,
+        current_scope: scope
+      ]
+
+      open = render_component(RunConversation, conversation)
+      assert open =~ ~s(data-qa="question-card")
+      assert open =~ "Which database?"
+      refute open =~ ~s(id="composer-root")
+
+      closed = render_component(RunConversation, [closed: true] ++ conversation)
+      assert closed =~ ~s(data-qa="question-card")
+      refute closed =~ ~s(id="conversation-closed")
+
+      none = render_component(RunConversation, Keyword.put(conversation, :round_questions, []))
+      assert none =~ ~s(id="composer-root")
+      refute none =~ ~s(data-qa="question-card")
+    end
+
+    test "a sent round reads as the sender's answers card, Rail's whole round as Rail's, and a typed message as a bubble",
+         %{task: task, roles_map: roles_map, run: run, round: [first, second], scope: scope} do
+      {:ok, _answered} = Pipeline.answer_question(scope, first, "Postgres")
+      {:ok, _dismissed} = Pipeline.dismiss_question(second)
+      {:ok, _sent, _run} = Pipeline.send_answers(scope, Repo.reload!(run))
+
+      Pipeline.append_run_events(run.id, nil, [
+        "[rail] ok",
+        "[human:#{scope.user.id}] You asked: why group by file? Because the tray reads that way."
+      ])
+
+      blocked = run |> Repo.reload!() |> Repo.preload(task: :issue)
+      third = Repo.insert!(%Question{task_id: blocked.task_id, run_id: blocked.id, prompt: "Behind a flag?"})
+
+      {:ok, _by_rail} =
+        third |> Question.changeset(%{answer: "Yes.", status: :answered, answered_by_rail: true}) |> Repo.update()
+
+      {:ok, _sent, _run} = Pipeline.send_answers(system_scope(), Repo.reload!(run))
+
+      html =
+        render_component(RunConversation,
+          id: "conv",
+          task: task,
+          runs: [Repo.reload!(run)],
+          roles_map: roles_map,
+          current_scope: scope,
+          questions: Pipeline.list_questions(task, order_by: [asc: :inserted_at, asc: :id])
+        )
+
+      doc = Floki.parse_fragment!(html)
+
+      assert [person] = Floki.find(doc, "[data-qa='answers-card'][data-from='person']")
+      assert person |> Floki.find("[data-qa='human-bubble-sender']") |> Floki.text() == "You"
+
+      assert ["Which database?", "Which region?"] =
+               person |> Floki.find("[data-qa='answers-card-item'] p[title]") |> Floki.attribute("title")
+
+      assert [_dismissed] = Floki.find(person, "[data-qa='answers-card-dismissed']")
+
+      assert [rail] = Floki.find(doc, "[data-qa='answers-card'][data-from='rail']")
+      assert Floki.text(rail) =~ "Behind a flag?"
+      assert rail |> Floki.find("[data-qa='answers-card-citation']") |> Floki.text() =~ "a past answer"
+
+      assert [bubble] = Floki.find(doc, "[data-qa='human-bubble']")
+      assert Floki.text(bubble) =~ "You asked: why group by file?"
+      refute html =~ ~s(data-qa="reminder-bubble")
+    end
   end
 
   test "reads the agent's stream as a conversation, not as JSON", %{task: task, roles: roles, roles_map: roles_map} do
@@ -1113,7 +1213,7 @@ defmodule RailWeb.Live.RunConversationTest do
     {:ok, planning} =
       Pipeline.create_run(%{
         task_id: task.id,
-        role_id: roles[:architect].id,
+        role_id: roles[:plan].id,
         status: :finished,
         started_at: DateTime.utc_now()
       })
@@ -1183,11 +1283,11 @@ defmodule RailWeb.Live.RunConversationTest do
     html = render_component(RunConversation, id: "conv", task: task, runs: [run], stage_run: run, roles_map: roles_map)
 
     assert html =~
-             ~r/id="subagent-[^"]+" data-qa="subagent-block" data-status="done".*product role.*wrote the ticket.*ticket saved/s
+             ~r/id="subagent-[^"]+" data-qa="subagent-block" data-status="done".*Product.*wrote the ticket.*ticket saved/s
 
     # Plan is still working, so the Designer may yet be handed its part: nothing reads as skipped.
     refute html =~ ~s(data-status="skipped")
-    assert html =~ ~r/data-status="running".*architect role.*plan from the ticket/s
+    assert html =~ ~r/data-status="running".*Architect.*plan from the ticket/s
 
     # The finished Product line is closed; the Architect still working is open on its own transcript.
     refute html =~ "Reading the issue."
@@ -1218,7 +1318,7 @@ defmodule RailWeb.Live.RunConversationTest do
 
     html = render_component(RunConversation, id: "conv", task: task, runs: [run], stage_run: run, roles_map: roles_map)
 
-    assert html =~ ~r/product role.*data-status="skipped".*design role.*no screen changes in this task.*architect role/s
+    assert html =~ ~r/Product.*data-status="skipped".*Designer.*no screen changes in this task.*Architect/s
   end
 
   test "an Architect handed its part before the Designer does not make the design read as skipped", %{
@@ -1248,7 +1348,7 @@ defmodule RailWeb.Live.RunConversationTest do
 
     html = render_component(RunConversation, id: "conv", task: task, runs: [run], stage_run: run, roles_map: roles_map)
 
-    assert html =~ ~r/architect role.*design role.*three options/s
+    assert html =~ ~r/Architect.*Designer.*three options/s
     refute html =~ ~s(data-status="skipped")
   end
 
@@ -1366,7 +1466,7 @@ defmodule RailWeb.Live.RunConversationTest do
     assert html =~ ~r/data-status="failed".*General Purpose.*look around/s
 
     # A Designer line before the Architect's means there was a screen, so none is marked skipped; a re-save is one option.
-    assert html =~ ~r/data-status="done".*design role.*three options.*1 option/s
+    assert html =~ ~r/data-status="done".*Designer.*three options.*1 option/s
     refute html =~ "skipped"
   end
 
@@ -1450,9 +1550,25 @@ defmodule RailWeb.Live.RunConversationTest do
 
       doc = Floki.parse_fragment!(html)
 
-      assert doc |> Floki.find("#plan-comment-tray") |> Floki.text() =~ "Turn this on by default."
+      # The tray opens folded: its count and Send show, and its rows wait for the fold.
+      assert doc |> Floki.find("#plan-comment-tray-fold[aria-expanded='false']") |> length() == 1
+      assert doc |> Floki.find("#plan-comment-tray-count") |> Floki.text() == "1"
       assert doc |> Floki.find("#send-plan-comments") |> Floki.text() =~ "Send 1"
+      assert Floki.find(doc, "[data-qa='plan_comment_row']") == []
       assert :binary.match(html, "plan-comment-tray") < :binary.match(html, "composer-root")
+
+      html =
+        render_component(RunConversation,
+          id: "conv",
+          task: task,
+          runs: [plan],
+          roles_map: roles_map,
+          current_scope: scope,
+          tray_open: true
+        )
+
+      assert html |> Floki.parse_fragment!() |> Floki.find("#plan-comment-tray") |> Floki.text() =~
+               "Turn this on by default."
 
       {:ok, engineer} =
         Pipeline.create_run(%{
@@ -1526,7 +1642,8 @@ defmodule RailWeb.Live.RunConversationTest do
           task: task,
           runs: [plan],
           roles_map: roles_map,
-          current_scope: scope
+          current_scope: scope,
+          tray_open: true
         )
 
       assert html =~ "Turn this on by default."
@@ -1555,7 +1672,11 @@ defmodule RailWeb.Live.RunConversationTest do
       [ada, grace] =
         for name <- ["ada", "grace"] do
           {:ok, user} =
-            Users.register_oauth_user(%{github_id: "gh_rct_#{name}", login: name, email: "#{name}@rct.example"})
+            Users.register_oauth_user(%{
+              github_id: "gh_rct_#{name}_run-conversation",
+              login: "#{name}-run-conversation",
+              email: "#{name}-run-conversation@rct.example"
+            })
 
           {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
           user
@@ -1612,6 +1733,7 @@ defmodule RailWeb.Live.RunConversationTest do
       {:ok, grace_view, _html} = live(grace_conn, ~p"/tasks/#{task.id}")
 
       for view <- [ada_view, grace_view] do
+        view |> element("#review-send-tray-fold") |> render_click()
         assert has_element?(view, "#review-tray-finding-nil-crash", "Nil crashes the page")
         refute has_element?(view, "#review-tray-finding-a-nit")
       end
@@ -1653,6 +1775,7 @@ defmodule RailWeb.Live.RunConversationTest do
       _settled = render(grace_view)
       _settled = render(grace_view)
 
+      grace_view |> element("#review-send-tray-fold") |> render_click()
       assert has_element?(grace_view, "#review-tray-finding-a-nit")
     end
 
@@ -1664,6 +1787,7 @@ defmodule RailWeb.Live.RunConversationTest do
       {:ok, _mine} = Pipeline.create_screen_comment(ada, task, %{"key" => "toolbar", "body" => "Fold it."})
       {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
       view |> element("#review-item-screens") |> render_click()
+      view |> element("#review-send-tray-fold") |> render_click()
 
       view |> element("#review-tray-finding-nil-crash") |> render_click()
       _settled = render(view)
@@ -1690,6 +1814,7 @@ defmodule RailWeb.Live.RunConversationTest do
       {:ok, comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "From another tab."))
       _settled = render(view)
 
+      view |> element("#review-send-tray-fold") |> render_click()
       assert has_element?(view, "#review-tray-diff-#{comment.id}", "From another tab.")
 
       {:ok, screen} = Pipeline.create_screen_comment(ada, task, %{"key" => "toolbar", "body" => "Fold it."})
@@ -1701,8 +1826,9 @@ defmodule RailWeb.Live.RunConversationTest do
       refute has_element?(view, "[data-qa=review_tray_comment]")
       assert Pipeline.list_diff_comments(ada, task, unsent: true) == []
 
+      # Under Findings the conversation is only its trays.
       view
-      |> with_target("#conversation-tab-root")
+      |> with_target("#conversation-tray")
       |> render_click("remove_review_tray_comment", %{"kind" => "diff", "id" => "x"})
 
       refute has_element?(view, "[data-qa=review_tray_comment]")
@@ -1722,6 +1848,7 @@ defmodule RailWeb.Live.RunConversationTest do
 
       _settled = render(view)
 
+      view |> element("#review-send-tray-fold") |> render_click()
       assert has_element?(view, "#review-tray-finding-#{comment_id}", "A nit")
       assert has_element?(view, "#review-tray-finding-#{comment_id}", "Rule")
       refute has_element?(view, "#review-send-tray", "Grace's.")
@@ -1741,13 +1868,22 @@ defmodule RailWeb.Live.RunConversationTest do
       assert Pipeline.list_finding_comments(ada, task) == []
     end
 
-    test "the tray folds, and a Send refused says why in its hint", %{task: task, ada_conn: ada_conn} do
+    test "the tray opens folded and unfolds and folds again, and a Send refused says why in its hint", %{
+      task: task,
+      ada_conn: ada_conn
+    } do
       {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
 
+      assert has_element?(view, "#review-send-tray-fold[aria-expanded='false']")
+      assert has_element?(view, "#review-send-tray-count", "1")
+      assert has_element?(view, "#send-review-tray")
+      refute has_element?(view, "#review-tray-finding-nil-crash")
+
+      view |> element("#review-send-tray-fold") |> render_click()
+      assert has_element?(view, "#review-send-tray-fold[aria-expanded='true']")
+      assert has_element?(view, "#review-tray-finding-nil-crash")
       view |> element("#review-send-tray-fold") |> render_click()
       refute has_element?(view, "#review-tray-finding-nil-crash")
-      view |> element("#review-send-tray-fold") |> render_click()
-      assert has_element?(view, "#review-tray-finding-nil-crash")
 
       expect(Tools, :start_os_process, fn _spawned, _argv -> {:error, :dispatch_disabled} end)
       view |> element("#send-review-tray") |> render_click()
@@ -1810,7 +1946,7 @@ defmodule RailWeb.Live.RunConversationTest do
       diff: diff
     } do
       Repo.update_all(from(f in Finding, where: f.task_id == ^task.id), set: [decision: :skip])
-      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
+      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}?item=plan")
 
       view |> element("#finish-review") |> render_click()
       _settled = render(view)
@@ -1818,8 +1954,7 @@ defmodule RailWeb.Live.RunConversationTest do
       refute has_element?(view, "#review-send-tray")
       assert has_element?(view, "#composer-root")
 
-      # The page followed the task on to Finalize; its Review tab is where comments are sent from.
-      view |> element("#task-tab-#{run.role_id}") |> render_click()
+      # At Finalize the conversation still talks to the review agent, whose tray is where comments are sent from.
       {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "One more thing."))
       _settled = render(view)
 
@@ -1832,6 +1967,40 @@ defmodule RailWeb.Live.RunConversationTest do
 
       assert %{status: :running} = Repo.reload!(run)
       assert %{stage: :finalize} = Repo.reload!(task)
+    end
+
+    test "a Send reads back as the card of what it sent, and one refused while a plan waits says what to do", %{
+      task: task,
+      run: run,
+      ada: ada,
+      ada_conn: ada_conn,
+      diff: diff
+    } do
+      {:ok, _mine} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "Name it."))
+      # The card is a message in the conversation, which only the Plan item shows in full, beside it.
+      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}?item=plan")
+
+      expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: %{spawned | status: :running}}} end)
+      view |> element("#send-review-tray", "Send 2") |> render_click()
+      _settled = render(view)
+
+      assert has_element?(view, "[data-qa=review_send_card]", "sent 1 finding and 1 comment")
+      assert has_element?(view, "[data-qa=review_send_card_row]", "Nil crashes the page")
+      assert has_element?(view, "[data-qa=review_send_card_row]", "Name it.")
+      refute has_element?(view, "[data-qa=human-bubble]", "Sent 1 finding")
+
+      {:ok, _again} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "And this."))
+      {:ok, _idle} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}?item=plan")
+
+      expect(Pipeline, :start_fix_round, fn _scope, _run -> {:error, :fix_plan_waiting} end)
+      view |> element("#send-review-tray", "Send 1") |> render_click()
+
+      assert has_element?(
+               view,
+               "#review-send-tray-hint",
+               "Nothing changed since the fix plan was saved. Approve the plan, change a ruling or add a comment."
+             )
     end
   end
 end

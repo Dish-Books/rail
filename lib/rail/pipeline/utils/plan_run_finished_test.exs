@@ -9,7 +9,7 @@ defmodule Rail.Pipeline.Utils.PlanRunFinishedTest do
   alias Rail.Repo
   alias Rail.Roles
 
-  # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
+  # The smallest plan the structure allows: one decision, one card and one criterion, and no data changes.
   @plan """
   ## Implementation plan
 
@@ -17,11 +17,19 @@ defmodule Rail.Pipeline.Utils.PlanRunFinishedTest do
 
   Extend the module.
 
-  No diagrams: one module changes.
+  ### Decisions
 
-  ### File-level changes
+  - Decision: one module changes.
 
-  - `lib/rail.ex`: extends the module.
+  ### Changes
+
+  #### `lib/rail.ex`
+
+  Extends the module.
+
+  ### Acceptance criteria
+
+  - 1: `lib/rail.ex`
 
   ### Verification
 
@@ -66,14 +74,13 @@ defmodule Rail.Pipeline.Utils.PlanRunFinishedTest do
       end
     end
 
-    ticket = fn -> {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Plan Finished", description: "Body."}) end
+    ticket = fn -> {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Plan Finished", description: "Body."}) end
     plan = fn -> {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan}) end
 
     %{run: Repo.preload(run, [:task, :role]), options: options, ticket: ticket, plan: plan, design_dir: design_dir}
   end
 
-  test "a turn that saved no ticket records that first", %{run: run, plan: plan} do
-    plan.()
+  test "a turn that saved nothing records the missing ticket first", %{run: run} do
     assert %Run{error: "The Plan agent did not save a ticket."} = plan_run_finished(run, [])
   end
 

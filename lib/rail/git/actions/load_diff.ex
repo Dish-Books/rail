@@ -16,7 +16,7 @@ defmodule Rail.Git.Actions.LoadDiff do
   since `previous_files` keeps the rows it was highlighted into there.
   """
 
-  import Rail.Git.Utils.BranchBase
+  import Rail.Git.Utils.DiffSides
   import Rail.Git.Utils.FileLines
   import Rail.Git.Utils.HighlightLines
   import Rail.Git.Utils.ParseDiff
@@ -37,9 +37,9 @@ defmodule Rail.Git.Actions.LoadDiff do
   """
   def load_diff(%Scope{} = scope, %Task{} = task, filter \\ :branch, previous_files \\ []) do
     if Task.worktree_present?(task) do
-      viewed = Git.list_viewed_files(scope, task)
+      viewed = Git.list_viewed_files(scope, task, :diff)
       drawn = Map.new(previous_files, &{{&1.path, &1.digest}, &1.rows})
-      sides = sides(task, filter)
+      sides = diff_sides(task, filter)
       parsed = task |> raw_diff(filter, sides) |> parse_diff()
 
       highlighted =
@@ -119,11 +119,6 @@ defmodule Rail.Git.Actions.LoadDiff do
   defp stamp(%{kind: :line, line_kind: :deleted, old_line: line} = row, old, _new), do: Map.put(row, :html, old[line])
   defp stamp(%{kind: :line, new_line: line} = row, _old, new), do: Map.put(row, :html, new[line])
   defp stamp(row, _old, _new), do: row
-
-  # The revision each side is read at: the diff's base, and the worktree or the commit itself.
-  defp sides(%Task{}, :uncommitted), do: {"HEAD", :worktree}
-  defp sides(%Task{} = task, :branch), do: {branch_base(task), :worktree}
-  defp sides(%Task{}, {:commit, sha}), do: {"#{sha}^1", sha}
 
   # The sha comes from a page, so only a commit name, never an option, reaches git.
   defp raw_diff(%Task{worktree_path: worktree_path}, {:commit, sha}, {base, sha}) do

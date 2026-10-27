@@ -8,6 +8,9 @@ defmodule RailWeb.DesignController do
   Rail's. Nothing is kept, so a revision is never shadowed by an earlier one.
 
   Rail's own frame asks with `comments=1`, which adds the overlay that comments on elements; Open never does.
+
+  Pages link Rail's kit by its local address so the agent's screenshot reaches it, and are served with that
+  address pointing at Rail's own origin instead.
   """
   use RailWeb, :controller
 
@@ -17,6 +20,7 @@ defmodule RailWeb.DesignController do
   def show(conn, %{"task_id" => task_id, "key" => key} = params) do
     case option(conn, task_id, key) do
       %{html: html} when is_binary(html) ->
+        html = String.replace(html, "http://localhost:#{RailWeb.Endpoint.config(:http)[:port]}/design-kit", "/design-kit")
         html = if params["comments"] == "1", do: html <> overlay_tag(), else: html
 
         conn

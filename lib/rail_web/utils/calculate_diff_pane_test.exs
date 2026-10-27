@@ -38,9 +38,6 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
         selected_comment: nil,
         draft: nil,
         picker: %{view: :branch, history: %{commits: []}, dirty?: false, parent: nil},
-        running?: false,
-        agent: "Engineer",
-        sends?: true,
         commentable?: true
       }
     }
@@ -70,6 +67,45 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
              calculate_diff_pane(%{assigns | collapsed: [diff.path], expanded_gaps: gaps})
 
     assert Map.keys(expanded) == ["lib/filter.ex:0"]
+  end
+
+  test "a file that is not a picture has no image", %{assigns: assigns} do
+    assert %{sections: [{_id, %{image: nil}}]} = calculate_diff_pane(assigns)
+  end
+
+  # The digest moves when the picture does, so the browser fetches it again.
+  test "a picture carries the address of each side it has, in the view it is read in", %{assigns: assigns} do
+    picture = %{path: "assets/new.png", old_path: "assets/old.png", status: :renamed, digest: "d1", image?: true}
+    added = %{path: "assets/add.png", old_path: nil, status: :added, digest: "d2", image?: true}
+    deleted = %{path: "assets/gone.png", old_path: "assets/gone.png", status: :deleted, digest: "d3", image?: true}
+
+    files =
+      Enum.map(
+        [picture, added, deleted],
+        &Map.merge(%{display_path: &1.path, additions: 0, deletions: 0, viewed?: false, rows: []}, &1)
+      )
+
+    assigns = Map.merge(assigns, %{files: files, task_id: "tsk_1", filter: {:commit, "abc1234"}})
+
+    assert %{
+             sections: [
+               {_renamed,
+                %{
+                  image: %{
+                    old: "/tasks/tsk_1/diff/old?path=assets%2Fold.png&view=abc1234&v=d1",
+                    new: "/tasks/tsk_1/diff/new?path=assets%2Fnew.png&view=abc1234&v=d1"
+                  }
+                }},
+               {_added, %{image: %{old: nil, new: "/tasks/tsk_1/diff/new?path=assets%2Fadd.png&view=abc1234&v=d2"}}},
+               {_deleted, %{image: %{old: "/tasks/tsk_1/diff/old?path=assets%2Fgone.png&view=abc1234&v=d3", new: nil}}}
+             ]
+           } = calculate_diff_pane(assigns)
+
+    assert %{sections: [{_added, %{image: %{new: "/tasks/tsk_1/diff/new?path=assets%2Fadd.png&v=d2"}}}]} =
+             calculate_diff_pane(%{assigns | files: [Enum.at(files, 1)], filter: :branch})
+
+    assert %{sections: [{_added, %{image: %{new: "/tasks/tsk_1/diff/new?path=assets%2Fadd.png&view=uncommitted&v=d2"}}}]} =
+             calculate_diff_pane(%{assigns | files: [Enum.at(files, 1)], filter: :uncommitted})
   end
 
   test "counts the whole diff while showing only what the query leaves", %{assigns: assigns, diff: diff} do
@@ -259,10 +295,10 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
       ]
 
       assert %{
-               toolbar: %{unsent: 4, running?: true, agent: "Engineer"},
+               toolbar: %{unsent: 4},
                tree: %{rows: [%{unsent: 1}, %{unsent: 2}]},
                sections: [{_filter, %{unsent: 1}}, {_mix, %{unsent: 2}}]
-             } = calculate_diff_pane(%{assigns | files: [diff, other], comments: comments, running?: true})
+             } = calculate_diff_pane(%{assigns | files: [diff, other], comments: comments})
     end
 
     # Line changed is said of every comment, but the notice is about what Send sends.

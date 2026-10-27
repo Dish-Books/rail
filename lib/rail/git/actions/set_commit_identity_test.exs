@@ -49,7 +49,12 @@ defmodule Rail.Git.Actions.SetCommitIdentityTest do
   } do
     {:ok, user} =
       %User{}
-      |> User.changeset(%{github_id: "gh_sci", login: "ada", name: "Ada Lovelace", email: "ada@example.com"})
+      |> User.changeset(%{
+        github_id: "gh_sci",
+        login: "ada-set-commit-identity",
+        name: "Ada Lovelace",
+        email: "ada-set-commit-identity@example.com"
+      })
       |> Repo.insert()
 
     {:ok, _assigned} = Issues.update_issue(issue, %{owner_user_id: user.id})
@@ -59,7 +64,7 @@ defmodule Rail.Git.Actions.SetCommitIdentityTest do
     commit.(worktree, "SCI-1: the work")
 
     assert git!(worktree, ["log", "-1", "--pretty=%an <%ae>|%cn <%ce>"]) ==
-             "Ada Lovelace <ada@example.com>|Ada Lovelace <ada@example.com>\n"
+             "Ada Lovelace <ada-set-commit-identity@example.com>|Ada Lovelace <ada-set-commit-identity@example.com>\n"
 
     assert git!(worktree, ["cat-file", "commit", "HEAD"]) =~ "\n\nSCI-1: the work"
     refute git!(worktree, ["cat-file", "commit", "HEAD"]) =~ "SSH SIGNATURE"
@@ -91,14 +96,16 @@ defmodule Rail.Git.Actions.SetCommitIdentityTest do
     on_exit(fn -> File.rm_rf(key) && File.rm_rf(key <> ".pub") end)
 
     {_output, 0} =
-      Tools.run("ssh-keygen", ["-t", "ed25519", "-N", "", "-C", "ada@example.com", "-f", key], stderr_to_stdout: true)
+      Tools.run("ssh-keygen", ["-t", "ed25519", "-N", "", "-C", "ada-set-commit-identity@example.com", "-f", key],
+        stderr_to_stdout: true
+      )
 
     {:ok, user} =
       %User{}
       |> User.changeset(%{
         github_id: "gh_sci_signing",
-        login: "ada",
-        email: "ada@example.com",
+        login: "ada-set-commit-identity",
+        email: "ada-set-commit-identity@example.com",
         signing_key: File.read!(key),
         signing_public_key: String.trim(File.read!(key <> ".pub"))
       })

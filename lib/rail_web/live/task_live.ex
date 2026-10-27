@@ -1,27 +1,21 @@
 defmodule RailWeb.TaskLive do
   @moduledoc """
-  One task, read a tab at a time: the issue it came from, then a tab per role
-  with that role's work on the left and its conversation on the right.
+  One task on one page: a header with every decision a person makes on it, a rail of the task's items, and the
+  item picked beside it. The items are the issue, the plan with the conversation beside it and, once there is
+  something of each to read, the findings, the next round's plan, the diff, the screens, the demo and the browser; a split adds its
+  children. The item, the agent the conversation reads and a split's child are in the URL, so a refresh comes
+  back to them.
 
-  A tab is the whole page - the work and the conversation move together - and it
-  is in the URL with the Review item open on it, so a refresh comes back to both.
-  The role a human picks stays picked until the task moves to another stage, when
-  the role for the new stage takes the page over. A role that has not run has
-  nothing to read, so it has no tab until it does.
+  The conversation takes messages for Plan until its plan is approved, then for the review agent; every other
+  agent's run is read there as the record of what it did.
 
-  A split parent's page adds a Children tab, a board of its children, right after Plan. A child is shown
-  on its parent's page, named in the URL, with the same tab and a switcher to its siblings. A task Review
-  finished adds a Finalize tab after Review, beside the Review conversation, and keeps it once merged.
-
-  The page owns what the components cannot: the subscriptions. A LiveComponent
-  may not subscribe, so log lines arrive here and are forwarded to the
-  conversation, and a saved output to the open stage, with `send_update/2`.
+  The page owns what the components cannot: the subscriptions. A LiveComponent may not subscribe, so log lines
+  arrive here and are forwarded to the conversation, and a saved output to the open item, with `send_update/2`.
   """
   use RailWeb, :live_view
 
   import RailWeb.Utils.ChildStatus
   import RailWeb.Utils.HandleIssueEvent
-  import RailWeb.Utils.StageLabel, only: [finalize_label: 1, review_waiting?: 2]
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
@@ -29,7 +23,6 @@ defmodule RailWeb.TaskLive do
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
@@ -37,12 +30,10 @@ defmodule RailWeb.TaskLive do
   alias Rail.Tools
   alias Rail.Users
   alias RailWeb.Live.DiffView
-  alias RailWeb.Live.EngineerStage
-  alias RailWeb.Live.FinalizeStage
   alias RailWeb.Live.PlanStage
-  alias RailWeb.Live.QuestionCard
-  alias RailWeb.Live.ReviewStage
   alias RailWeb.Live.RunConversation
+  alias RailWeb.Live.TaskActions
+  alias RailWeb.Live.TaskDetail
 
   # The engineer writes files as it works and the pane reads them off disk, so a
   # reader watching a run wants the diff to keep up. Re-reading on every batch of
@@ -54,9 +45,11 @@ defmodule RailWeb.TaskLive do
   # picture but a load any viewer's connection can keep up with.
   @frame_interval_ms 250
 
-  @issue_tab "issue"
-  @children_tab "children"
-  @finalize_tab "finalize"
+  # The items the URL can name; any other opens what the task is waiting on.
+  @items ["issue", "plan", "children", "findings", "fix_plan", "diff", "screens", "demo", "browser"]
+
+  # The agents whose runs the conversation reads, in the order a task meets them.
+  @agents [:plan, :engineer, :qa, :review, :demo, :review_lead]
 
   # What the Issue tab's owner menu and comments raise, handled as the issue page handles them.
   @issue_events ["assign", "filter_assignees", "draft_comment", "comment"]
@@ -68,18 +61,20 @@ defmodule RailWeb.TaskLive do
       |> assign(:task_id, nil)
       |> assign(:page_title, "Task")
       |> assign(:current_section, :tasks)
-      |> assign(:selected_tab, nil)
-      |> assign(:url_tab, nil)
-      |> assign(:tab_stage, nil)
-      |> assign(:selected_role, nil)
-      |> assign(:selected_run, nil)
+      |> assign(:item, nil)
+      |> assign(:agent, nil)
+      |> assign(:round, nil)
+      |> assign(:plan_run, nil)
+      |> assign(:rounds, [])
+      |> assign(:review_run, nil)
+      |> assign(:chat_run, nil)
+      |> assign(:chat_questions, 0)
+      |> assign(:agents, [])
       |> assign(:stage_run, nil)
       |> assign(:line, nil)
       |> assign(:conversation_run, nil)
-      |> assign(:pane, :issue)
       |> assign(:diff_refreshed_at, nil)
       |> assign(:approvable, false)
-      |> assign(:tabs, [])
       |> assign(:issue, nil)
       |> assign(:assignees, [])
       |> assign(:assignee_query, "")
@@ -94,10 +89,10 @@ defmodule RailWeb.TaskLive do
       |> assign(:awaited_frame, nil)
       |> assign(:roles_map, %{})
       |> assign(:round_questions, [])
+      |> assign(:conversation_questions, [])
       |> assign(:suggestions, %{})
       |> assign(:cleaning_up, false)
       |> assign(:focus_file, nil)
-      |> assign(:review_item, nil)
       |> assign(:url_id, nil)
       |> assign(:child, nil)
       |> assign(:parent, nil)
@@ -119,24 +114,26 @@ defmodule RailWeb.TaskLive do
   end
 
   def handle_params(%{"id" => task_id} = params, _uri, socket) do
-    # The board is the parent's, so a child named beside it is left for the board.
-    child = if params["tab"] != @children_tab, do: params["child"]
-    url = %{url_id: task_id, child: child, selected_tab: params["tab"], focus_file: params["file"]}
+    url = %{url_id: task_id, child: params["child"], focus_file: params["file"]}
 
-    # The stage naming its item, or sync_tab_url catching the URL up, reads nothing again. A stale item is safe: the
-    # stage reads it only on mount or a new task, and the page clears it when it leaves a tab the URL named.
+    # The stage naming its item, or the conversation its agent, reads nothing again. A stale item is safe: the
+    # stage reads it only on mount or a new task.
     socket =
       if socket.assigns.task != nil and Map.take(socket.assigns, Map.keys(url)) == url do
-        assign(socket, :url_tab, params["tab"])
+        socket
+        |> assign(:item, params["item"])
+        |> assign(:agent, params["agent"])
+        |> assign(:round, params["round"])
+        |> apply_task(socket.assigns.task)
       else
         socket
         |> assign(:url_id, task_id)
         |> assign(:task_id, task_id)
-        |> assign(:child, child)
-        |> assign(:url_tab, params["tab"])
-        |> assign(:selected_tab, params["tab"])
+        |> assign(:child, params["child"])
+        |> assign(:item, params["item"])
+        |> assign(:agent, params["agent"])
+        |> assign(:round, params["round"])
         |> assign(:focus_file, params["file"])
-        |> assign(:review_item, params["item"])
         |> refresh_task()
       end
 
@@ -151,7 +148,6 @@ defmodule RailWeb.TaskLive do
       flash={@flash}
       current_section={@current_section}
       current_scope={@current_scope}
-      is_rail_extended={@is_rail_extended}
       attention_count={@attention_count}
       triage_count={@triage_count}
       current_project_id={@current_project_id}
@@ -173,55 +169,22 @@ defmodule RailWeb.TaskLive do
         </div>
 
         <.live_component
-          :if={@task != nil and @pane == :plan}
-          module={PlanStage}
-          id={stage_component_id(@selected_role)}
-          current_scope={@current_scope}
+          :if={@task != nil}
+          module={TaskDetail}
+          id="task-detail"
           task={@task}
-          run={@selected_run}
+          run={@review_run}
           stage_run={@stage_run}
           line={@line}
+          status={@header_status}
           approvable={@approvable}
-          status={@header_status}
-          child_of={@child_of}
-        >
-          <:breadcrumb :if={@show_switcher}>
-            <.child_switcher
-              statuses={@statuses}
-              current_id={@task.id}
-              parent={@parent}
-              viewer_owns={@viewer_owns}
-            />
-          </:breadcrumb>
-          <:tabs><.task_tabs tabs={@tabs} /></:tabs>
-          <:actions>
-            <.claim_button task={@task} />
-            <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
-          </:actions>
-          <:sidebar>
-            <.conversation_sidebar
-              task={@task}
-              current_scope={@current_scope}
-              roles_map={@roles_map}
-              round_questions={@round_questions}
-              suggestions={@suggestions}
-              conversation_run={@conversation_run}
-              closed={@task.stage != :plan}
-            />
-          </:sidebar>
-        </.live_component>
-
-        <.live_component
-          :if={@task != nil and @pane == :engineer}
-          module={EngineerStage}
-          id={stage_component_id(@selected_role)}
-          task={@task}
-          run={@selected_run}
-          stage_run={@stage_run}
-          line={@line}
-          approvable={@approvable}
+          questions={@chat_questions}
+          split={@parent != nil}
+          split_parent={@parent != nil and @parent.id == @task.id}
           current_scope={@current_scope}
-          focus_file={@focus_file}
+          url_item={@item}
+          url_round={@round}
+          url_file={@focus_file}
         >
           <:breadcrumb :if={@show_switcher}>
             <.child_switcher
@@ -231,190 +194,85 @@ defmodule RailWeb.TaskLive do
               viewer_owns={@viewer_owns}
             />
           </:breadcrumb>
-          <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
+            <span
+              :if={@split_points}
+              id="split-points"
+              class="text-sm text-slate-500 dark:text-slate-400"
+            >
+              {@split_points}
+            </span>
             <.claim_button task={@task} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
+            <.live_component
+              module={TaskActions}
+              id="task-actions"
+              task={@task}
+              rounds={@rounds}
+              current_scope={@current_scope}
+            />
           </:actions>
-          <:sidebar>
+          <:issue>
+            <.issue_view
+              :if={@issue != nil}
+              issue={@issue}
+              assignees={@assignees}
+              assignee_query={@assignee_query}
+              comment_nonce={@comment_nonce}
+              show_task={false}
+              owner_editable={@task.parent_task_id == nil}
+            />
+          </:issue>
+          <:plan>
+            <.live_component
+              module={PlanStage}
+              id="plan-stage"
+              current_scope={@current_scope}
+              task={@task}
+              run={@plan_run}
+              chat_run={@chat_run}
+              stage_run={@stage_run}
+              line={@line}
+              approvable={@task.stage == :plan and not Run.running?(@plan_run)}
+              status={@header_status}
+              child_of={@child_of}
+            />
+          </:plan>
+          <:conversation>
+            <.agent_picker
+              :if={@open_item in [:plan, :fix_plan]}
+              agents={@agents}
+              picked={@conversation_run}
+              chat_run={@chat_run}
+            />
             <.conversation_sidebar
+              compact={@open_item not in [:plan, :fix_plan]}
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
+              questions={@conversation_questions}
               round_questions={@round_questions}
               suggestions={@suggestions}
-              conversation_run={@conversation_run}
-              closed={@task.stage != :engineer}
-              closed_reason="The work is in Review now, so this conversation is closed: the Review lead's engineer makes its fixes."
+              conversation_run={
+                if @open_item in [:plan, :fix_plan], do: @conversation_run, else: @chat_run
+              }
+              closed={
+                @open_item in [:plan, :fix_plan] and @conversation_run != nil and
+                  @conversation_run != @chat_run
+              }
+              closed_reason="Only Plan, and then the review agent, take messages. This is a record of what this agent did."
+              review_pane={
+                match?(
+                  %Run{role: %Role{stage: :review_lead}},
+                  if(@open_item in [:plan, :fix_plan], do: @conversation_run, else: @chat_run)
+                )
+              }
             />
-          </:sidebar>
+          </:conversation>
+          <:children>
+            <.split_board :if={@parent} statuses={@statuses} parent_id={@parent.id} />
+          </:children>
         </.live_component>
-
-        <.live_component
-          :if={@task != nil and @pane == :review}
-          module={ReviewStage}
-          id={stage_component_id(@selected_role)}
-          task={@task}
-          run={@selected_run}
-          stage_run={@stage_run}
-          line={@line}
-          approvable={@approvable}
-          current_scope={@current_scope}
-          url_item={@review_item}
-        >
-          <:breadcrumb :if={@show_switcher}>
-            <.child_switcher
-              statuses={@statuses}
-              current_id={@task.id}
-              parent={@parent}
-              viewer_owns={@viewer_owns}
-            />
-          </:breadcrumb>
-          <:tabs><.task_tabs tabs={@tabs} /></:tabs>
-          <:actions>
-            <.claim_button task={@task} />
-            <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
-          </:actions>
-          <:sidebar>
-            <.conversation_sidebar
-              task={@task}
-              current_scope={@current_scope}
-              roles_map={@roles_map}
-              round_questions={@round_questions}
-              suggestions={@suggestions}
-              conversation_run={@conversation_run}
-              review_pane
-            />
-          </:sidebar>
-        </.live_component>
-
-        <.live_component
-          :if={@task != nil and @pane == :finalize}
-          module={FinalizeStage}
-          id="stage-finalize"
-          task={@task}
-          run={@selected_run}
-          stage_run={@stage_run}
-          line={@line}
-          current_scope={@current_scope}
-        >
-          <:breadcrumb :if={@show_switcher}>
-            <.child_switcher
-              statuses={@statuses}
-              current_id={@task.id}
-              parent={@parent}
-              viewer_owns={@viewer_owns}
-            />
-          </:breadcrumb>
-          <:tabs><.task_tabs tabs={@tabs} /></:tabs>
-          <:actions>
-            <.claim_button task={@task} />
-            <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
-          </:actions>
-          <:sidebar>
-            <.conversation_sidebar
-              task={@task}
-              current_scope={@current_scope}
-              roles_map={@roles_map}
-              round_questions={@round_questions}
-              suggestions={@suggestions}
-              conversation_run={@conversation_run}
-            />
-          </:sidebar>
-        </.live_component>
-
-        <!-- The issue is the same view the issue page shows, and it is read on its
-        own: there is no one role whose conversation belongs beside it. -->
-        <.task_layout
-          :if={@task != nil and @pane == :issue and @issue != nil}
-          task={@task}
-          stage_run={@stage_run}
-          line={@line}
-          title={@task.issue.title}
-          status={@header_status}
-        >
-          <:breadcrumb :if={@show_switcher}>
-            <.child_switcher
-              statuses={@statuses}
-              current_id={@task.id}
-              parent={@parent}
-              viewer_owns={@viewer_owns}
-            />
-          </:breadcrumb>
-          <:tabs><.task_tabs tabs={@tabs} /></:tabs>
-          <:actions>
-            <.claim_button task={@task} />
-            <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
-          </:actions>
-          <.issue_view
-            issue={@issue}
-            assignees={@assignees}
-            assignee_query={@assignee_query}
-            comment_nonce={@comment_nonce}
-            show_task={false}
-            owner_editable={@task.parent_task_id == nil}
-          />
-        </.task_layout>
-
-        <.task_layout
-          :if={@task != nil and @pane == :children}
-          task={@task}
-          stage_run={@stage_run}
-          line={@line}
-          title={@task.issue.title}
-          status={@header_status}
-        >
-          <:tabs><.task_tabs tabs={@tabs} /></:tabs>
-          <:meta>
-            <span :if={@split_points} id="split-points">{@split_points}</span>
-          </:meta>
-          <:actions>
-            <.claim_button task={@task} />
-            <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
-          </:actions>
-          <.split_board statuses={@statuses} parent_id={@parent.id} />
-        </.task_layout>
-
-        <.task_layout
-          :if={@task != nil and @pane == :none}
-          task={@task}
-          run={@selected_run}
-          stage_run={@stage_run}
-          line={@line}
-          title={@task.issue.title}
-          status={@header_status}
-        >
-          <:breadcrumb :if={@show_switcher}>
-            <.child_switcher
-              statuses={@statuses}
-              current_id={@task.id}
-              parent={@parent}
-              viewer_owns={@viewer_owns}
-            />
-          </:breadcrumb>
-          <:tabs><.task_tabs tabs={@tabs} /></:tabs>
-          <:actions>
-            <.claim_button task={@task} />
-            <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
-          </:actions>
-          <div
-            id="role-no-work"
-            data-qa="role_no_work"
-            class="max-w-3xl mx-auto text-sm text-slate-500 dark:text-slate-400"
-          >
-            This role has nothing to show here. Its conversation is on the right.
-          </div>
-          <:sidebar>
-            <.conversation_sidebar
-              task={@task}
-              current_scope={@current_scope}
-              roles_map={@roles_map}
-              round_questions={@round_questions}
-              suggestions={@suggestions}
-              conversation_run={@conversation_run}
-            />
-          </:sidebar>
-        </.task_layout>
       </div>
     </Layouts.app>
     """
@@ -424,16 +282,9 @@ defmodule RailWeb.TaskLive do
     {:noreply, handle_issue_event(event, params, socket, &refresh_task/1)}
   end
 
-  # The tab already open stays as it is, with the Review item it shows.
-  def handle_event("select_tab", %{"tab" => tab}, %{assigns: %{selected_tab: tab}} = socket), do: {:noreply, socket}
-
-  # The board is the parent's, so a child's Children tab goes back to it.
-  def handle_event("select_tab", %{"tab" => @children_tab}, socket) do
-    {:noreply, push_patch(socket, to: ~p"/tasks/#{socket.assigns.parent.id}?tab=#{@children_tab}")}
-  end
-
-  def handle_event("select_tab", %{"tab" => tab}, socket) do
-    {:noreply, push_patch(socket, to: task_path(socket, tab, nil))}
+  # The Plan item's conversation reads any agent's run; only the one taking messages has a composer.
+  def handle_event("pick_agent", %{"stage" => stage}, socket) do
+    {:noreply, push_patch(socket, to: task_path(socket, item: "plan", agent: stage))}
   end
 
   def handle_event("cleanup", _params, socket) do
@@ -489,6 +340,9 @@ defmodule RailWeb.TaskLive do
       else: {:noreply, socket}
   end
 
+  # The demo recording is what reads the page's actions, and the page has no use for them.
+  def handle_info({:browser_action, _task_id, _name, _kind}, socket), do: {:noreply, socket}
+
   def handle_info(:frame_window_closed, socket) do
     case socket.assigns.held_frame do
       data when is_binary(data) -> {:noreply, push_frame(assign(socket, :held_frame, nil), data)}
@@ -497,10 +351,9 @@ defmodule RailWeb.TaskLive do
   end
 
   # Comments the reader sees moved, in another tab or this one. Only the comments
-  # are read again: the diff under them has not moved. The Review tab draws the diff
-  # only while its Diff item is open, and an update to a diff not drawn goes nowhere.
+  # are read again: the diff under them has not moved, and is drawn only while its item is open.
   def handle_info({:diff_comments_changed, task_id}, socket) do
-    with %{pane: pane, task_id: ^task_id} when pane in [:engineer, :review] <- socket.assigns do
+    with %{open_item: :diff, task_id: ^task_id} <- socket.assigns do
       send_update(DiffView, id: "diff-view", reload_comments: true)
     end
 
@@ -523,20 +376,23 @@ defmodule RailWeb.TaskLive do
     {:noreply, socket}
   end
 
-  # The tray, which only the Review tab draws, opens a finding or a screen state in the Review stage beside it.
-  def handle_info({event, key}, %{assigns: %{selected_role: %Role{} = role}} = socket)
-      when event in [:open_review_finding, :open_review_screen] do
+  # The tray, which only the review agent's conversation draws, opens a finding or a screen state.
+  def handle_info({event, key}, socket) when event in [:open_review_finding, :open_review_screen] do
     opened = if event == :open_review_finding, do: [open_finding: key], else: [open_screen: key]
-    send_update(ReviewStage, [id: stage_component_id(role)] ++ opened)
+    send_update(TaskDetail, [id: "task-detail"] ++ opened)
     {:noreply, socket}
   end
 
-  # The reader's unsent plan comments moved, in another tab or this one: the Plan stage
-  # draws their markers and the conversation their tray, and each reads its own.
+  # The reader's unsent plan comments moved, in another tab or this one: the Plan stage, or the next round's plan,
+  # draws their markers, the conversation their tray and the header whether Approve plan waits on them, and each
+  # reads its own.
   def handle_info({:plan_comments_changed, task_id}, socket) do
-    with %{pane: :plan, task_id: ^task_id, selected_role: %Role{} = role} <- socket.assigns do
-      send_update(PlanStage, id: stage_component_id(role), reload_comments: true)
+    # The conversation is drawn under every item, as its trays at least, so it always reads them.
+    with %{task_id: ^task_id, open_item: item} <- socket.assigns do
+      if item == :plan, do: send_update(PlanStage, id: "plan-stage", reload_comments: true)
+      if item == :fix_plan, do: send_update(TaskDetail, id: "task-detail", reload: true)
       send_update(RunConversation, id: "run-conversation", reload_plan_comments: true)
+      send_update(TaskActions, id: "task-actions")
     end
 
     {:noreply, socket}
@@ -548,18 +404,23 @@ defmodule RailWeb.TaskLive do
     {:noreply, socket}
   end
 
-  # The Review stage opened another item, which the URL names in place for a reload; Findings, the default, goes unnamed.
-  def handle_info({:review_item, item}, %{assigns: %{pane: :review, selected_tab: tab}} = socket) do
-    item = if item != :findings, do: Atom.to_string(item)
-    {:noreply, push_patch(socket, to: task_path(socket, tab, item), replace: true)}
+  # The Plan item opened another round, which the URL names in place for a reload, beside the same agent's run.
+  def handle_info({:plan_round, round}, socket) do
+    path = task_path(socket, item: "plan", round: round, agent: socket.assigns.agent)
+    {:noreply, push_patch(socket, to: path, replace: true)}
   end
 
-  def handle_info({:review_item, _item}, socket), do: {:noreply, socket}
+  # The stage opened another item, which the URL names in place for a reload; the Plan item keeps the agent its
+  # conversation reads.
+  def handle_info({:review_item, item}, socket) do
+    agent = if item in [:plan, :fix_plan], do: socket.assigns.agent
+    {:noreply, push_patch(socket, to: task_path(socket, item: Atom.to_string(item), agent: agent), replace: true)}
+  end
 
-  # The Review tab's Browser item is open on this browser, or on none; only the subscription moves.
+  # The Browser item is open on this browser, or on none; only the subscription moves.
   def handle_info({:watch_browser, name}, socket) do
     socket = assign(socket, :review_browser, name)
-    {:noreply, watch_browser(socket, socket.assigns.task, socket.assigns.pane)}
+    {:noreply, watch_browser(socket, socket.assigns.task, socket.assigns.open_item)}
   end
 
   # The browser the page shows closed, so the Review stage reads its browsers again and stops offering it.
@@ -612,10 +473,10 @@ defmodule RailWeb.TaskLive do
     {:noreply, socket}
   end
 
-  # A tech lead approved the task's pull request, in this tab or another; only an open Finalize pane shows approvals.
+  # A tech lead approved the task's pull request, in this tab or another; the header says whose approval is in.
   def handle_info({:approvals_changed, task_id}, socket) do
-    with %{pane: :finalize, task_id: ^task_id} <- socket.assigns do
-      send_update(FinalizeStage, id: "stage-finalize", reload_approvals: true)
+    with %{task_id: ^task_id, task: %Task{}} <- socket.assigns do
+      send_update(TaskActions, id: "task-actions", reload_approvals: true)
     end
 
     {:noreply, socket}
@@ -711,8 +572,50 @@ defmodule RailWeb.TaskLive do
     """
   end
 
+  attr :agents, :list, required: true, doc: "each agent's latest run on the task, in the order a task meets them"
+  attr :picked, :any, required: true
+  attr :chat_run, :any, required: true
+
+  # Every agent's run is read here; the one taking messages is marked.
+  defp agent_picker(assigns) do
+    ~H"""
+    <nav
+      :if={length(@agents) > 1}
+      id="conversation-agents"
+      aria-label="Agents"
+      class="flex items-center gap-1 overflow-x-auto px-4 py-2 border-b border-slate-200 dark:border-slate-700"
+    >
+      <button
+        :for={run <- @agents}
+        type="button"
+        id={"conversation-agent-#{run.role.stage}"}
+        data-qa="conversation_agent"
+        aria-current={to_string(@picked != nil and run.id == @picked.id)}
+        phx-click="pick_agent"
+        phx-value-stage={run.role.stage}
+        class={[
+          "shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold cursor-pointer",
+          (@picked != nil and run.id == @picked.id) &&
+            "bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-200 ring-1 ring-blue-200 dark:ring-blue-800",
+          (@picked == nil or run.id != @picked.id) &&
+            "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+        ]}
+      >
+        <span
+          :if={Run.running?(run)}
+          data-qa="conversation_agent_running"
+          class="size-1.5 rounded-full bg-green-500 motion-safe:animate-pulse"
+        />
+        {run.role.name}
+        <.icon :if={@chat_run != nil and run.id == @chat_run.id} name="pi-chat-text" class="size-3.5" />
+      </button>
+    </nav>
+    """
+  end
+
   attr :task, :any, required: true
   attr :roles_map, :map, required: true
+  attr :questions, :list, required: true, doc: "every question the conversation's run asked"
   attr :round_questions, :list, required: true
   attr :suggestions, :map, required: true
   attr :conversation_run, :any, required: true
@@ -721,24 +624,15 @@ defmodule RailWeb.TaskLive do
   # and the engineer's once the task has left Engineer.
   attr :closed, :boolean, default: false
   attr :closed_reason, :string, default: "The plan is approved, so this conversation is closed."
-  # Only the Review tab draws its tray: the Finalize tab shares the lead's conversation, and the tray it last had.
+  # Only the review agent's conversation draws the Review tray.
   attr :review_pane, :boolean, default: false
+  # Under any other item, only the trays of comments waiting to be sent show.
+  attr :compact, :boolean, default: false
 
-  # Questions sit above the conversation they came out of. Answering only records:
+  # An open round takes the composer's place in the conversation it came out of. Answering only records:
   # the round reaches the agent when the human says it is done.
   defp conversation_sidebar(assigns) do
     ~H"""
-    <.live_component
-      :if={@round_questions != []}
-      module={QuestionCard}
-      id={"question-card-#{@conversation_run.id}"}
-      questions={@round_questions}
-      suggestions={@suggestions}
-      run={@conversation_run}
-      role_name={@roles_map[@conversation_run.role_id].name}
-      current_scope={@current_scope}
-    />
-
     <.live_component
       module={RunConversation}
       id="run-conversation"
@@ -750,47 +644,40 @@ defmodule RailWeb.TaskLive do
       closed={@closed}
       closed_reason={@closed_reason}
       review_pane={@review_pane}
+      compact={@compact}
+      questions={@questions}
+      round_questions={@round_questions}
+      suggestions={@suggestions}
     />
     """
   end
 
   defp reload_review_comments(socket, task_id) do
-    with %{pane: :review, task_id: ^task_id, task: task, selected_role: %Role{} = role} <- socket.assigns do
-      send_update(ReviewStage, id: stage_component_id(role), task: task)
+    # The stage reads the task it already holds: one handed over here could be older than the page's next render.
+    with %{task_id: ^task_id, task: %Task{}} <- socket.assigns do
+      send_update(TaskDetail, id: "task-detail", reload: true)
       send_update(RunConversation, id: "run-conversation", reload_review_comments: true)
     end
 
     socket
   end
 
-  # Whatever the open stage shows is read off disk or the rows again.
+  # Whatever the open item shows is read off disk or the rows again.
+  # A task cleaned up underneath the page has nothing on disk to read.
   defp reload_stage(socket) do
-    case socket.assigns do
-      %{pane: :plan, task: task, selected_role: role} ->
-        send_update(PlanStage, id: stage_component_id(role), task: task)
-
-      %{pane: :engineer, task: task, selected_role: role} ->
-        send_update(EngineerStage, id: stage_component_id(role), task: task)
-        send_update(DiffView, id: "diff-view", reload: true)
-
-      %{pane: :review, task: task, selected_role: role} ->
-        send_update(ReviewStage, id: stage_component_id(role), task: task)
-        send_update(DiffView, id: "diff-view", reload: true)
-
-      %{pane: :finalize, task: task} ->
-        send_update(FinalizeStage, id: "stage-finalize", task: task)
-
-      _no_stage_on_disk ->
-        :ok
+    with %{task: %Task{} = task, open_item: item} <- socket.assigns do
+      send_update(TaskDetail, id: "task-detail", reload: true)
+      if item == :plan, do: send_update(PlanStage, id: "plan-stage", task: task)
+      if item == :diff, do: send_update(DiffView, id: "diff-view", reload: true)
     end
+
+    :ok
   end
 
-  defp refresh_diff(%{assigns: %{pane: pane, selected_role: %Role{} = role, task: %Task{} = task}} = socket)
-       when pane in [:engineer, :review] do
+  defp refresh_diff(%{assigns: %{open_item: :diff, task: %Task{}}} = socket) do
     now = System.monotonic_time(:millisecond)
 
     if due?(socket.assigns.diff_refreshed_at, now) do
-      if pane == :engineer, do: send_update(EngineerStage, id: stage_component_id(role), task: task)
       send_update(DiffView, id: "diff-view", reload: true)
       assign(socket, :diff_refreshed_at, now)
     else
@@ -827,9 +714,10 @@ defmodule RailWeb.TaskLive do
   defp show_task(socket, %Task{parent_task_id: parent_id, issue: issue}) when is_binary(parent_id) do
     params = [
       child: issue.identifier,
-      tab: socket.assigns.url_tab,
-      file: socket.assigns.focus_file,
-      item: socket.assigns.review_item
+      item: socket.assigns.item,
+      agent: socket.assigns.agent,
+      round: socket.assigns.round,
+      file: socket.assigns.focus_file
     ]
 
     params = Enum.reject(params, fn {_key, value} -> is_nil(value) end)
@@ -855,7 +743,6 @@ defmodule RailWeb.TaskLive do
     |> apply_task(shown)
     |> watch_diff_comments(shown)
     |> watch_outputs(shown)
-    |> sync_tab_url()
   end
 
   # A split's parent hears every child's stage and issue, and a child hears its siblings'.
@@ -880,43 +767,50 @@ defmodule RailWeb.TaskLive do
 
   defp apply_task(socket, %Task{} = task) do
     roles = if task.project_id, do: Rail.Roles.list_roles(task.project_id), else: []
-    started = started_roles(roles, task)
-    {role, selected_run, page} = selected(socket, started, task)
-    children? = page == :children
-
-    asked = Pipeline.list_questions(task, order_by: [asc: :inserted_at, asc: :id])
-    questions = Enum.filter(asked, &(&1.status == :pending))
-    round_questions = round_questions(asked, selected_run)
+    runs = role_runs(roles, task)
 
     socket
     |> assign(:task, task)
     |> assign(:page_title, task.issue.title)
     |> assign(:roles_map, Map.new(roles, &{&1.id, &1}))
-    |> assign(:selected_tab, tab_id(page, role))
-    |> assign(:tab_stage, task.stage)
-    |> assign(:selected_role, role)
-    |> assign(:selected_run, selected_run)
-    |> assign(:stage_run, stage_run(started, task))
-    |> assign(:line, line(stage_run(started, task)))
-    |> assign(:conversation_run, selected_run)
-    |> assign(:pane, page || pane(role))
-    |> assign(:approvable, approvable?(role, task, selected_run))
-    |> assign(
-      :tabs,
-      family_tabs(
-        build_tabs(task, started, {page, role}, questions),
-        task,
-        socket.assigns.parent,
-        socket.assigns.statuses,
-        children?
-      )
-    )
+    |> assign(:open_item, open_item(socket.assigns.item, task, socket.assigns.parent))
+    |> assign(:rounds, Pipeline.list_rounds(task))
+    |> assign_runs(runs, task)
+    |> assign_questions(task)
     |> assign_family(task)
     |> assign(:subscribed_run_ids, sync_run_subscriptions(socket, task.runs))
     |> assign_watched_browser(task)
-    |> assign(:round_questions, round_questions)
-    |> assign(:suggestions, suggestions(round_questions))
     |> load_issue(task)
+  end
+
+  # The run the conversation takes messages for, the one it reads (the URL's agent, or else that one), and the
+  # run the header says the task is waiting on.
+  defp assign_runs(socket, runs, %Task{} = task) do
+    chat_run = if task.stage == :plan, do: runs[:plan], else: runs[:review_lead]
+    picked = Enum.find_value(runs, fn {stage, run} -> to_string(stage) == socket.assigns.agent && run end)
+    stage_run = stage_run(runs, task)
+
+    socket
+    |> assign(:plan_run, runs[:plan])
+    |> assign(:review_run, runs[:review_lead])
+    |> assign(:chat_run, chat_run)
+    |> assign(:agents, for(stage <- @agents, %Run{} = run <- [runs[stage]], do: run))
+    |> assign(:stage_run, stage_run)
+    |> assign(:line, line(stage_run))
+    |> assign(:conversation_run, picked || chat_run || runs |> Map.values() |> List.last())
+    |> assign(:approvable, task.stage == :review and not Run.running?(runs[:review_lead]))
+  end
+
+  defp assign_questions(socket, %Task{} = task) do
+    %{chat_run: chat_run, conversation_run: conversation_run} = socket.assigns
+    asked = Pipeline.list_questions(task, order_by: [asc: :inserted_at, asc: :id])
+    round_questions = round_questions(asked, conversation_run)
+
+    socket
+    |> assign(:chat_questions, Enum.count(asked, &((&1.status == :pending and chat_run) && &1.run_id == chat_run.id)))
+    |> assign(:round_questions, round_questions)
+    |> assign(:conversation_questions, run_questions(asked, conversation_run))
+    |> assign(:suggestions, suggestions(round_questions))
   end
 
   # The past answer each of the round's questions was matched to, read in one query.
@@ -946,14 +840,14 @@ defmodule RailWeb.TaskLive do
     end
   end
 
-  # The issue is a tab of its own and costs a query of its own, so it is read
+  # The issue is an item of its own and costs a query of its own, so it is read
   # only while it is the one being looked at.
   defp load_issue(socket, %Task{} = task) do
     preload = [:project, :owner_user, task: [runs: :role], comments: [:author_user, replies: :author_user]]
 
-    case socket.assigns.pane do
+    case socket.assigns.open_item do
       :issue -> assign(socket, :issue, read_issue(task.issue_id, preload))
-      _other_tab -> assign(socket, :issue, nil)
+      _other_item -> assign(socket, :issue, nil)
     end
   end
 
@@ -962,88 +856,28 @@ defmodule RailWeb.TaskLive do
     issue
   end
 
-  # A role with no run has nothing to read, so it is not a tab yet.
-  defp selected(socket, started, %Task{} = task) do
-    tab = socket.assigns.selected_tab
-    # Moving between a parent and its children is a new task on the page, not one that moved stage.
-    tab_stage = if match?(%Task{id: id} when id == task.id, socket.assigns.task), do: socket.assigns.tab_stage
+  # The item the stage opens: the URL's, or else what the task is waiting on now, as the stage reads it.
+  defp open_item(nil, %Task{id: id}, %Task{id: id}), do: :children
+  defp open_item(nil, %Task{stage: :plan}, _parent), do: :plan
+  defp open_item(nil, %Task{stage: :engineer}, _parent), do: :diff
+  defp open_item(nil, %Task{}, _parent), do: :findings
+  # The conversation was an item of its own; it is the Plan item's sidebar now.
+  defp open_item("conversation", %Task{}, _parent), do: :plan
+  defp open_item(item, %Task{}, _parent) when item in @items, do: String.to_existing_atom(item)
+  defp open_item(_unknown, %Task{} = task, parent), do: open_item(nil, task, parent)
 
-    review = finalize_review(started, task)
-
-    cond do
-      children_tab?(socket.assigns.parent, task, tab, tab_stage, socket.assigns.url_tab) ->
-        {nil, nil, :children}
-
-      review != nil and finalize_tab?(task, tab, tab_stage, socket.assigns.url_tab) ->
-        {role, run} = review
-        {role, run, :finalize}
-
-      true ->
-        {role, run} = select_tab(started, task, tab, tab_stage)
-        {role, run, nil}
-    end
+  # Each role read through its latest run: an earlier one is the same conversation before the stage sent the work
+  # back.
+  defp role_runs(roles, %Task{runs: runs}) do
+    for %Role{} = role <- roles, %Run{} = run <- [role_run(runs, role)], into: %{}, do: {role.stage, run}
   end
 
-  defp tab_id(:children, _role), do: @children_tab
-  defp tab_id(:finalize, _role), do: @finalize_tab
-  defp tab_id(nil, %Role{id: id}), do: id
-  defp tab_id(nil, nil), do: @issue_tab
-
-  # A split parent opens on its board, and comes to it when approval splits it.
-  defp children_tab?(%Task{id: id}, %Task{id: id} = task, tab, tab_stage, url_tab) do
-    tab == @children_tab or (tab == nil and url_tab == nil) or (tab_stage != nil and tab_stage != task.stage)
+  # The header says where the task is: at Review, whichever agent is checking the round, else the review agent.
+  defp stage_run(runs, %Task{stage: :review}) do
+    Enum.find_value([:qa, :review, :demo], &(Run.running?(runs[&1]) && runs[&1])) || runs[:review_lead]
   end
 
-  defp children_tab?(_parent, _task, _tab, _tab_stage, _url_tab), do: false
-
-  # Finalize reads the Review run, so a task Review finished, merged or not, has the tab while it has the run.
-  defp finalize_review(started, %Task{stage: stage, merged_at: merged_at}) do
-    if stage == :finalize or (stage == :merged and merged_at != nil),
-      do: Enum.find(started, fn {role, _run} -> role.stage == :review_lead end)
-  end
-
-  # The page follows the task to Finalize when Review finishes, and stays on it through the merge.
-  defp finalize_tab?(%Task{} = task, tab, tab_stage, url_tab) do
-    tab == @finalize_tab or (tab == nil and url_tab == nil) or (tab_stage != nil and tab_stage != task.stage)
-  end
-
-  # A child never runs Plan, but its Plan tab is where its approved part is read.
-  defp started_roles(roles, %Task{runs: runs} = task) do
-    roles
-    |> Enum.map(&{&1, role_run(runs, &1)})
-    |> Enum.reject(fn {role, run} ->
-      run == nil and not (role.stage == :plan and is_binary(task.parent_task_id))
-    end)
-  end
-
-  # The tab in the URL is the one to open. Without one, it is the role for the
-  # stage the task sits at; and once the task moves on, that role takes over from
-  # whatever the human was reading.
-  defp select_tab(started, %Task{} = task, tab, tab_stage) do
-    stage_entry = Enum.find(started, fn {role, _run} -> role.stage == Task.role_stage(task.stage) end)
-    picked = Enum.find(started, fn {role, _run} -> role.id == tab end)
-    default = stage_entry || List.last(started)
-
-    cond do
-      tab_stage != nil and tab_stage != task.stage and stage_entry != nil -> stage_entry
-      tab == @issue_tab -> {nil, nil}
-      picked != nil -> picked
-      default != nil -> default
-      true -> {nil, nil}
-    end
-  end
-
-  # Nothing is approved while its run is still working on it, and Review's rulings close once it moves on to Finalize.
-  defp approvable?(%Role{stage: role_stage}, %Task{stage: stage}, %Run{} = run),
-    do: role_stage == Task.role_stage(stage) and stage != :finalize and not Run.running?(run)
-
-  defp approvable?(_role, _task, _run), do: false
-
-  # The header says where the task is, whichever tab is open: a stage with no run
-  # yet is queued, not whatever an earlier stage's run left behind.
-  defp stage_run(started, %Task{stage: stage}) do
-    Enum.find_value(started, fn {role, run} -> role.stage == Task.role_stage(stage) and run end)
-  end
+  defp stage_run(runs, %Task{stage: stage}), do: runs[Task.role_stage(stage)]
 
   # What the stage's run waits on: its account's usage, or its place in the line for a sandbox.
   defp line(%Run{status: :waiting_for_usage} = run) do
@@ -1064,146 +898,12 @@ defmodule RailWeb.TaskLive do
 
   defp line(nil), do: nil
 
-  # Once the URL names a tab it keeps naming the one that is open, so a refresh
-  # comes back here even after the task has moved the page on. A URL that names
-  # none is left alone: it already means "wherever the task is now".
-  defp sync_tab_url(%{assigns: %{url_tab: url_tab, selected_tab: selected}} = socket) when url_tab in [nil, selected] do
-    socket
-  end
-
-  # The item went with the tab the URL named, which the page has left, so a Review pane this render opens
-  # shows Findings, as the new URL says.
-  defp sync_tab_url(%{assigns: %{selected_tab: tab}} = socket) do
-    socket
-    |> assign(:review_item, nil)
-    |> push_patch(to: task_path(socket, tab, nil))
-  end
-
-  defp pane(nil), do: :issue
-  defp pane(%Role{stage: :review_lead}), do: :review
-  defp pane(%Role{stage: stage}) when stage in [:plan, :engineer], do: stage
-
-  defp pane(%Role{}), do: :none
-
-  defp stage_component_id(%Role{id: id}), do: "stage-#{id}"
-
   # A role is read through its latest run: an earlier one is the same conversation
   # before the stage sent the work back.
   defp role_run(runs, %Role{id: role_id}) do
     runs
     |> Enum.filter(&(&1.role_id == role_id))
     |> Enum.max_by(&(&1.started_at || &1.inserted_at), DateTime, fn -> nil end)
-  end
-
-  defp build_tabs(%Task{} = task, started, {page, selected}, questions) do
-    counts = Enum.frequencies_by(questions, & &1.run_id)
-
-    issue_tab = %{
-      id: @issue_tab,
-      stage: nil,
-      label: "Issue",
-      sublabel: task.issue.identifier,
-      tone: :issue,
-      badge: 0,
-      selected?: page == nil and selected == nil
-    }
-
-    role_tabs =
-      Enum.map(started, fn {role, run} ->
-        %{
-          id: role.id,
-          stage: role.stage,
-          label: tab_label(role),
-          sublabel: role_status_label(role, run, task),
-          tone: tab_tone(run, role, task),
-          badge: Map.get(counts, run && run.id, 0) + to_rule(role, run, task),
-          selected?: page == nil and selected != nil and selected.id == role.id
-        }
-      end)
-
-    finalize_tabs(task, started, [issue_tab | role_tabs], page == :finalize)
-  end
-
-  # Right after Review's tab, read off where the task stands there, as the header reads it.
-  defp finalize_tabs(%Task{} = task, started, tabs, selected?) do
-    if finalize_review(started, task) do
-      state = Task.finalize_state(task)
-
-      finalize_tab = %{
-        id: @finalize_tab,
-        stage: :finalize,
-        label: "Finalize",
-        sublabel: state |> finalize_label() |> String.downcase(),
-        tone: finalize_tone(state),
-        badge: 0,
-        selected?: selected?
-      }
-
-      List.insert_at(tabs, (Enum.find_index(tabs, &(&1.stage == :review_lead)) || length(tabs) - 1) + 1, finalize_tab)
-    else
-      tabs
-    end
-  end
-
-  defp finalize_tone(state) when state in [:not_ready, :ready], do: :blocked
-  defp finalize_tone(:merging), do: :running
-  defp finalize_tone(:refused), do: :failed
-  defp finalize_tone(:merged), do: :done
-
-  # A role's tab names the step it leads, so the engineer's reads Implement; a role leading none keeps its name.
-  defp tab_label(%Role{stage: stage} = role) do
-    case Enum.find([:plan, :engineer, :review], &(Task.role_stage(&1) == stage)) do
-      step when step in [:plan, :engineer, :review] -> Task.stage_label(step)
-      nil -> role.name
-    end
-  end
-
-  # Review's tab counts the findings still to rule beside its questions, once its round has finished.
-  defp to_rule(%Role{stage: :review_lead}, %Run{} = run, %Task{} = task) do
-    if Run.running?(run), do: 0, else: task |> Pipeline.list_findings() |> Enum.count(&Finding.undecided?/1)
-  end
-
-  defp to_rule(%Role{}, _run, %Task{}), do: 0
-
-  # The Children tab comes right after Plan, on the parent and on every child.
-  defp family_tabs(tabs, _task, nil, _statuses, _children?), do: tabs
-
-  defp family_tabs(tabs, %Task{} = task, %Task{} = parent, statuses, children?) do
-    count = length(statuses)
-    merged = Enum.count(statuses, &(&1.state == :merged))
-    waiting = Enum.count(statuses, & &1.needs_attention)
-
-    children_tab = %{
-      id: @children_tab,
-      stage: nil,
-      label: "Children",
-      sublabel: "#{merged} of #{count} merged",
-      tone:
-        cond do
-          waiting > 0 -> :blocked
-          merged == count -> :done
-          Enum.any?(statuses, &(&1.state == :running)) -> :running
-          true -> :idle
-        end,
-      badge: waiting,
-      selected?: children?
-    }
-
-    plan_sublabel =
-      if task.id == parent.id,
-        do: "approved, split into #{split_total(statuses)}",
-        else: "approved in #{parent.issue.identifier}"
-
-    tabs =
-      Enum.map(tabs, fn
-        %{stage: :plan} = tab -> %{tab | sublabel: plan_sublabel, tone: :done}
-        %{id: @issue_tab} = tab -> %{tab | selected?: tab.selected? and not children?}
-        tab -> tab
-      end)
-
-    plan_at = Enum.find_index(tabs, &(&1.stage == :plan)) || 0
-
-    List.insert_at(tabs, plan_at + 1, children_tab)
   end
 
   # Where a split parent or a child of one stands, said in the header in place of a stage.
@@ -1298,8 +998,8 @@ defmodule RailWeb.TaskLive do
     end
   end
 
-  # A child's tabs are its parent's page, so the child goes in the URL with the tab.
-  defp task_path(socket, tab, item) do
+  # A child is shown on its parent's page, so the child goes in the URL with the item.
+  defp task_path(socket, params) do
     {id, child} =
       case socket.assigns do
         %{parent: %Task{id: parent_id}, task: %Task{id: id, issue: issue}} when parent_id != id ->
@@ -1309,19 +1009,9 @@ defmodule RailWeb.TaskLive do
           {url_id, nil}
       end
 
-    params = Enum.reject([child: child, tab: tab, item: item], fn {_key, value} -> is_nil(value) end)
+    params = Enum.reject([child: child] ++ params, fn {_key, value} -> is_nil(value) end)
     ~p"/tasks/#{id}?#{params}"
   end
-
-  # A run waiting for usage reads apart from one waiting for a sandbox, and a Review round waiting on a person
-  # is amber like a question.
-  defp tab_tone(%Run{status: :waiting_for_usage}, _role, _task), do: :waiting_for_usage
-
-  defp tab_tone(%Run{} = run, %Role{stage: :review_lead}, %Task{} = task) do
-    if review_waiting?(task, run), do: :blocked, else: Run.state(run)
-  end
-
-  defp tab_tone(run, %Role{}, %Task{}), do: Run.state(run)
 
   # A run can ask several things at once, so its whole unsent round shows as tabs, in
   # the order they were asked. A run resumed without an answer still shows them.
@@ -1333,6 +1023,9 @@ defmodule RailWeb.TaskLive do
   end
 
   defp round_questions(_asked, nil), do: []
+
+  defp run_questions(asked, %Run{id: run_id}), do: Enum.filter(asked, &(&1.run_id == run_id))
+  defp run_questions(_asked, nil), do: []
 
   # `run:<id>` carries the run's log lines and the finish of its OS process. A
   # LiveComponent cannot subscribe, so the page holds this and forwards. Every run
@@ -1350,18 +1043,18 @@ defmodule RailWeb.TaskLive do
     current
   end
 
-  defp assign_watched_browser(socket, %Task{} = task), do: watch_browser(socket, task, socket.assigns.pane)
+  defp assign_watched_browser(socket, %Task{} = task), do: watch_browser(socket, task, socket.assigns.open_item)
 
   # One topic per task and browser name, carrying whatever that browser is painting,
-  # heard only while the panel can show it: the browser the Review tab's Browser
+  # heard only while the panel can show it: the browser the Browser
   # item is open on. A round leaves its tabs open until the task leaves Review, and
   # a page that keeps repainting would otherwise send every viewer frames nobody
   # sees, which every click on the page waits behind. Being heard is also what keeps
   # Chrome painting them, so a tab nobody can see costs nothing.
-  defp watch_browser(socket, %Task{id: task_id} = task, pane) do
+  defp watch_browser(socket, %Task{id: task_id} = task, item) do
     watched = socket.assigns.watched_browser
     name = socket.assigns.review_browser
-    wanted = if pane == :review and is_binary(name), do: "browser:#{task_id}:#{name}"
+    wanted = if item == :browser and is_binary(name), do: "browser:#{task_id}:#{name}"
 
     if connected?(socket) and watched != wanted do
       if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, watched)

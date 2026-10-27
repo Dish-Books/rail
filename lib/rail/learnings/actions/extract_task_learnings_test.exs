@@ -9,8 +9,8 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
   alias Rail.Learnings.Schemas.ProcessedPullRequest
   alias Rail.Learnings.Workers.CollectPullRequest
   alias Rail.Pipeline
-  alias Rail.Pipeline.DetectedQuestion
-  alias Rail.Pipeline.Schemas.ImplementationPlan
+  alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles
   alias Rail.Tools
@@ -57,10 +57,7 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
     {:ok, finding} = Pipeline.save_finding(task, Map.merge(code, %{key: "nil", title: "Nil is not handled"}))
     {:ok, _decided} = Pipeline.decide_finding(Rail.Scope.for_user(user), finding, :fix)
 
-    {:ok, question} =
-      Pipeline.register_question(%{run | task: Repo.preload(task, :issue)}, %DetectedQuestion{
-        prompt: "Indigo or blue?"
-      })
+    question = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Indigo or blue?"})
 
     {:ok, _answered} = Pipeline.answer_question(Rail.Scope.for_user(user), question, "Blue.")
     rule = learning(project, %{rule: "Use the factory", kind: :convention})
@@ -99,16 +96,14 @@ defmodule Rail.Learnings.Actions.ExtractTaskLearningsTest do
 
     {:ok, %{head: "basesha"}} = Pipeline.save_review(task)
 
-    {:ok, _pending} =
-      Pipeline.register_question(%{run | task: Repo.preload(task, :issue)}, %DetectedQuestion{prompt: "Behind a flag?"})
+    Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Behind a flag?"})
 
-    %ImplementationPlan{}
-    |> ImplementationPlan.changeset(%{
+    Repo.insert!(%Round{
       task_id: task.id,
-      content: "Extend the invoices module.",
-      captured_at: DateTime.utc_now()
+      number: 1,
+      plan: "Extend the invoices module.",
+      approved_at: DateTime.utc_now()
     })
-    |> Repo.insert!()
 
     Req.Test.stub(Client, fn conn ->
       case conn.request_path do

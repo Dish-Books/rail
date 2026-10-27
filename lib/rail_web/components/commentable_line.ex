@@ -1,14 +1,17 @@
 defmodule RailWeb.Components.CommentableLine do
   @moduledoc """
-  One line of the ticket or the plan with the + that comments on it, as a diff line has, then its comments in tray
+  One line of the ticket, the plan or the next round's plan with the + that comments on it, as a diff line has, then its comments in tray
   order and the box being written. Where the + and the comments sit depends on the line: in the gutter for text, over
-  the number for code, inside the card for a summary line, and in a full-width row under a table row.
+  the number for code, in a full-width row under a table row, and alone, named, for a line the page hides.
   """
   use RailWeb, :html
 
-  attr :line, :map, default: nil, doc: "a line from `build_document_blocks/1` or `build_plan_sheet/1`"
-  attr :doc, :atom, required: true, values: [:ticket, :plan]
-  attr :layout, :atom, default: :text, values: [:text, :code, :table_row, :summary, :node, :values]
+  attr :line, :map,
+    default: nil,
+    doc: "a line from `build_document_blocks/1`, `build_plan_sheet/2` or `build_fix_plan_lines/1`"
+
+  attr :doc, :atom, required: true, values: [:ticket, :plan, :fix_plan]
+  attr :layout, :atom, default: :text, values: [:text, :code, :table_row, :away, :values]
   attr :placed, :map, required: true, doc: "each line's comments with their tray numbers, by its key"
   attr :draft, :map, default: nil, doc: "the line the comment box is open under, with what is typed so far"
   attr :offered, :boolean, required: true, doc: "the reader can comment now"
@@ -59,7 +62,7 @@ defmodule RailWeb.Components.CommentableLine do
     """
   end
 
-  def commentable_line(%{layout: :node} = assigns) do
+  def commentable_line(%{layout: :away} = assigns) do
     assigns = assign_under(assigns)
 
     ~H"""
@@ -68,6 +71,7 @@ defmodule RailWeb.Components.CommentableLine do
       open={@open}
       draft={@draft}
       named
+      box_named
       target={@target}
       class={[
         "px-4 py-2.5 bg-slate-50 dark:bg-slate-800/40 border-t border-slate-200 dark:border-slate-700",
@@ -118,7 +122,7 @@ defmodule RailWeb.Components.CommentableLine do
         <span
           phx-no-format
           class="min-w-0 pl-2 pr-4 whitespace-pre-wrap wrap-anywhere text-slate-800 dark:text-slate-200"
-        >{@line.text}</span>
+        >{if @line.html, do: raw(@line.html), else: @line.text}</span>
       </div>
       <.under
         comments={@comments}
@@ -157,8 +161,10 @@ defmodule RailWeb.Components.CommentableLine do
         ]}
       >
         <.add :if={@offered} line={@line} doc={@doc} target={@target} class="-left-8 top-1.5" />
+        {render_slot(@inner_block)}
         <div
           :for={cell <- @line.cells}
+          :if={@inner_block == []}
           class="min-w-0 px-3 py-1.5 wrap-anywhere prose prose-slate dark:prose-invert max-w-none text-[inherit] [&_p]:my-0"
         >
           {raw(cell)}
@@ -171,33 +177,6 @@ defmodule RailWeb.Components.CommentableLine do
         named={@named}
         target={@target}
         class="px-3 py-1.5 bg-slate-50 dark:bg-slate-800/40 border-t border-slate-200 dark:border-slate-700"
-      />
-    </div>
-    """
-  end
-
-  def commentable_line(%{layout: :summary} = assigns) do
-    assigns = assign_under(assigns)
-
-    ~H"""
-    <div data-qa="commentable_line" data-kind={@line.kind} class={@class}>
-      <div
-        id={"line-#{@doc}-#{@line.key}"}
-        class={[
-          "group/line relative flex items-start gap-2 -mx-1.5 px-1.5 py-0.5 rounded",
-          @offered && "hover:bg-slate-200/70 dark:hover:bg-slate-700/50"
-        ]}
-      >
-        <.add :if={@offered} line={@line} doc={@doc} target={@target} class="-left-[26px] top-0.5" />
-        {render_slot(@inner_block)}
-      </div>
-      <.under
-        comments={@comments}
-        open={@open}
-        draft={@draft}
-        named={@named}
-        target={@target}
-        class="py-1"
       />
     </div>
     """
@@ -262,6 +241,7 @@ defmodule RailWeb.Components.CommentableLine do
   attr :open, :boolean, required: true
   attr :draft, :map, default: nil
   attr :named, :boolean, default: false
+  attr :box_named, :boolean, default: false, doc: "the box names its line too, as nothing above it does"
   attr :target, :any, required: true
   attr :class, :any, required: true
 
@@ -286,7 +266,16 @@ defmodule RailWeb.Components.CommentableLine do
         change="change_plan_comment"
         cancel="cancel_plan_comment"
         target={@target}
-      />
+      >
+        <:heading :if={@box_named}>
+          <p
+            data-qa="document_comment_box_line"
+            class="mb-1.5 px-1 truncate font-mono text-[11px] text-slate-500 dark:text-slate-400"
+          >
+            {@draft.label}
+          </p>
+        </:heading>
+      </.comment_box>
     </div>
     """
   end

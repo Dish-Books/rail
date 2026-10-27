@@ -47,8 +47,19 @@ defmodule Rail.Pipeline.Actions.ListPlanCommentsTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_pclist_ada", login: "ada", email: "ada@example.com"})
-    {:ok, grace} = Users.register_oauth_user(%{github_id: "gh_pclist_grace", login: "grace", email: "grace@example.com"})
+    {:ok, ada} =
+      Users.register_oauth_user(%{
+        github_id: "gh_pclist_ada",
+        login: "ada-list-plan-comments",
+        email: "ada-list-plan-comments@example.com"
+      })
+
+    {:ok, grace} =
+      Users.register_oauth_user(%{
+        github_id: "gh_pclist_grace",
+        login: "grace-list-plan-comments",
+        email: "grace-list-plan-comments@example.com"
+      })
 
     attrs = %{
       target: :design,
@@ -100,7 +111,7 @@ defmodule Rail.Pipeline.Actions.ListPlanCommentsTest do
   test "a design comment and then a ticket comment come back as 1 and 2 to their author alone, and a later design
         comment moves ahead of the ticket's",
        %{task: task, run: run, ada: ada, grace: grace, attrs: attrs} do
-    {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Lanes", description: "- Group by project."})
+    {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Lanes", description: "- Group by project."})
     {:ok, %{id: first_design}} = Pipeline.create_plan_comment(ada, run, attrs)
 
     {:ok, %{id: ticket_id}} =

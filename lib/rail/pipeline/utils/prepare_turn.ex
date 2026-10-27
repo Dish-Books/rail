@@ -1,8 +1,7 @@
 defmodule Rail.Pipeline.Utils.PrepareTurn do
   @moduledoc """
-  Readies a task's worktree for an engineer's or Review lead's turn: the default branch fetched from
-  `origin`, so the agent can tell whether its branch is behind, the task's own branch checked against what
-  was pushed to it, and the ticket owner's identity and signing key written in, so the agent's own commits
+  Readies a task's worktree for an engineer's turn: the default branch fetched from `origin`, for a round that
+  merges it in, the task's own branch checked against what was pushed to it, and the ticket owner's identity and signing key written in, so the agent's own commits
   are theirs. Nothing failing stops the turn: it is said in the conversation instead.
   """
 
@@ -32,20 +31,10 @@ defmodule Rail.Pipeline.Utils.PrepareTurn do
         say(run, "Could not set who this turn commits as, so its commits may not be signed: #{reason}")
       end
 
-      behind(task, base) <> pushed(task)
+      pushed(task)
     else
       ""
     end
-  end
-
-  # The brief says to check every turn, but a resumed turn is sent only its message, so the turn that
-  # finds the branch behind is told so at the top.
-  defp behind(%Task{worktree_path: worktree_path}, base) do
-    if Git.up_to_date_with?(worktree_path, base),
-      do: "",
-      else:
-        "Rail fetched origin/#{base} as this turn started, and the branch is behind it: bring the branch up " <>
-          "to date with it, by merging it in, before anything else.\n\n"
   end
 
   # Rail never pushes over the remote branch, so what was pushed to it that the branch lacks is merged in first,

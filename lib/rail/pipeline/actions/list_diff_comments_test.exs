@@ -4,9 +4,6 @@ defmodule Rail.Pipeline.Actions.ListDiffCommentsTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
-  alias Rail.Roles
-  alias Rail.Tools
-  alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
   setup %{project: project} do
@@ -29,8 +26,19 @@ defmodule Rail.Pipeline.Actions.ListDiffCommentsTest do
     {:ok, other_task} = Pipeline.create_task(other_issue, :engineer)
     on_exit(fn -> Enum.each([task, other_task], &File.rm_rf(&1.scratch_path)) end)
 
-    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_dcl_ada", login: "ada", email: "ada@example.com"})
-    {:ok, grace} = Users.register_oauth_user(%{github_id: "gh_dcl_grace", login: "grace", email: "grace@example.com"})
+    {:ok, ada} =
+      Users.register_oauth_user(%{
+        github_id: "gh_dcl_ada",
+        login: "ada-list-diff-comments",
+        email: "ada-list-diff-comments@example.com"
+      })
+
+    {:ok, grace} =
+      Users.register_oauth_user(%{
+        github_id: "gh_dcl_grace",
+        login: "grace-list-diff-comments",
+        email: "grace-list-diff-comments@example.com"
+      })
 
     %{task: task, other_task: other_task, ada: user_scope(user: ada), grace: user_scope(user: grace)}
   end
@@ -53,18 +61,7 @@ defmodule Rail.Pipeline.Actions.ListDiffCommentsTest do
   end
 
   # The database's collation would put acme_web before acme/; the diff's file list and the sent message do not.
-  test "files go in byte order for every reader", %{project: project, task: task, ada: ada} do
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
-
-    {:ok, run} =
-      Pipeline.create_run(%{
-        task_id: task.id,
-        role_id: role.id,
-        status: :finished,
-        conversation_id: "sess_list_diff_comments_order",
-        started_at: DateTime.utc_now()
-      })
-
+  test "files go in byte order for every reader", %{task: task, ada: ada} do
     attrs = %{line_kind: :added, line: 1, line_text: "x", filter: :branch, body: "b"}
     {:ok, %{id: web_id}} = Pipeline.create_diff_comment(ada, task, Map.put(attrs, :path, "lib/acme_web/live/tray.ex"))
     {:ok, %{id: worker_id}} = Pipeline.create_diff_comment(ada, task, Map.put(attrs, :path, "lib/acme/worker.ex"))
@@ -72,8 +69,8 @@ defmodule Rail.Pipeline.Actions.ListDiffCommentsTest do
     assert [%DiffComment{id: ^worker_id}, %DiffComment{id: ^web_id}] =
              Pipeline.list_diff_comments(ada, task, unsent: true)
 
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-    {:ok, :sent, _run} = Pipeline.send_diff_comments(ada, run)
+    # As the Review tray's Send leaves them.
+    Repo.update_all(from(c in DiffComment, where: c.task_id == ^task.id and c.status == :unsent), set: [status: :sent])
 
     assert [%DiffComment{id: ^worker_id}, %DiffComment{id: ^web_id}] = Pipeline.list_diff_comments(system_scope(), task)
   end
@@ -93,27 +90,15 @@ defmodule Rail.Pipeline.Actions.ListDiffCommentsTest do
   end
 
   test "sent and resolved comments are listed for everyone, unsent ones only for their author", %{
-    project: project,
     task: task,
     ada: ada,
     grace: grace
   } do
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
-
-    {:ok, run} =
-      Pipeline.create_run(%{
-        task_id: task.id,
-        role_id: role.id,
-        status: :finished,
-        conversation_id: "sess_list_diff_comments",
-        started_at: DateTime.utc_now()
-      })
-
     comment = %{path: "lib/a.ex", line_kind: :added, line: 1, line_text: "def feature, do: :ok", filter: :branch}
     {:ok, %{id: resolved_id}} = Pipeline.create_diff_comment(ada, task, Map.put(comment, :body, "Resolved."))
     {:ok, %{id: sent_id}} = Pipeline.create_diff_comment(ada, task, Map.put(comment, :body, "Sent."))
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-    {:ok, :sent, _run} = Pipeline.send_diff_comments(ada, run)
+    # As the Review tray's Send leaves them.
+    Repo.update_all(from(c in DiffComment, where: c.task_id == ^task.id and c.status == :unsent), set: [status: :sent])
     {:ok, %{id: unsent_id}} = Pipeline.create_diff_comment(ada, task, Map.put(comment, :body, "Unsent."))
     [to_resolve | _rest] = Pipeline.list_diff_comments(ada, task)
     {:ok, _resolved} = Pipeline.set_diff_comment_resolved(ada, to_resolve, true)
@@ -126,38 +111,28 @@ defmodule Rail.Pipeline.Actions.ListDiffCommentsTest do
 
     for reader <- [grace, system_scope()] do
       assert [
-               %DiffComment{id: ^resolved_id, status: :resolved, user: %{login: "ada"}},
-               %DiffComment{id: ^sent_id, status: :sent, user: %{login: "ada"}}
+               %DiffComment{id: ^resolved_id, status: :resolved, user: %{login: "ada-list-diff-comments"}},
+               %DiffComment{id: ^sent_id, status: :sent, user: %{login: "ada-list-diff-comments"}}
              ] = Pipeline.list_diff_comments(reader, task)
     end
   end
 
   # The Review tray holds only what the reader's Send would send.
   test "the unsent filter lists only the reader's unsent comments", %{
-    project: project,
     task: task,
     ada: ada,
     grace: grace
   } do
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
-
-    {:ok, run} =
-      Pipeline.create_run(%{
-        task_id: task.id,
-        role_id: role.id,
-        status: :finished,
-        conversation_id: "sess_list_unsent_diff_comments",
-        started_at: DateTime.utc_now()
-      })
-
     comment = %{path: "lib/a.ex", line_kind: :added, line: 1, line_text: "x", filter: :branch}
     {:ok, _sent} = Pipeline.create_diff_comment(ada, task, Map.put(comment, :body, "Sent."))
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-    {:ok, :sent, _run} = Pipeline.send_diff_comments(ada, run)
+    # As the Review tray's Send leaves them.
+    Repo.update_all(from(c in DiffComment, where: c.task_id == ^task.id and c.status == :unsent), set: [status: :sent])
     {:ok, %{id: unsent_id}} = Pipeline.create_diff_comment(ada, task, Map.put(comment, :body, "Unsent."))
     {:ok, _theirs} = Pipeline.create_diff_comment(grace, task, Map.put(comment, :body, "Grace's."))
 
-    assert [%DiffComment{id: ^unsent_id, user: %{login: "ada"}}] = Pipeline.list_diff_comments(ada, task, unsent: true)
+    assert [%DiffComment{id: ^unsent_id, user: %{login: "ada-list-diff-comments"}}] =
+             Pipeline.list_diff_comments(ada, task, unsent: true)
+
     assert [%DiffComment{body: "Grace's."}] = Pipeline.list_diff_comments(grace, task, unsent: true)
     assert [%DiffComment{body: "Sent."}, %DiffComment{body: "Unsent."}] = Pipeline.list_diff_comments(ada, task)
   end

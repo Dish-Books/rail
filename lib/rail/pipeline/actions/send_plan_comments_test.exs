@@ -18,11 +18,19 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
 
   - Group by project.
 
-  No diagrams: one module changes.
+  ### Decisions
 
-  ### File-level changes
+  - Decision: one module changes.
 
-  - `lib/rail.ex`: groups.
+  ### Changes
+
+  #### `lib/rail.ex`
+
+  Groups.
+
+  ### Acceptance criteria
+
+  - 1: `lib/rail.ex`
 
   ### Verification
 
@@ -69,8 +77,19 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_pclist_ada", login: "ada", email: "ada@example.com"})
-    {:ok, grace} = Users.register_oauth_user(%{github_id: "gh_pclist_grace", login: "grace", email: "grace@example.com"})
+    {:ok, ada} =
+      Users.register_oauth_user(%{
+        github_id: "gh_pclist_ada",
+        login: "ada-send-plan-comments",
+        email: "ada-send-plan-comments@example.com"
+      })
+
+    {:ok, grace} =
+      Users.register_oauth_user(%{
+        github_id: "gh_pclist_grace",
+        login: "grace-send-plan-comments",
+        email: "grace-send-plan-comments@example.com"
+      })
 
     attrs = %{
       target: :design,
@@ -257,7 +276,7 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
                actor_id: ^ada_id,
                task_id: ^task_id,
                capture: %{"html" => ~s(<label id="group-by-project">Group by project</label>), "width" => 160},
-               learning: %{status: :provisional, kind: :design, roles: [:design], rule: "Turn this on by default."}
+               learning: %{status: :provisional, kind: :design, roles: [:plan], rule: "Turn this on by default."}
              }
            ] = Repo.all(from o in Observation, where: o.task_id == ^task.id, preload: :learning)
   end
@@ -323,7 +342,7 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
     ada: ada,
     attrs: attrs
   } do
-    {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Lanes", description: "- Group by project."})
+    {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Lanes", description: "- Group by project."})
     {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan})
     {:ok, %{id: design_id}} = Pipeline.create_plan_comment(ada, run, attrs)
     {:ok, %{id: plan_id}} = Pipeline.create_plan_comment(ada, run, Map.merge(@line, %{target: :plan, body: "Why?"}))
@@ -366,12 +385,12 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
              %Observation{
                source_id: ^plan_id,
                source_kind: :plan_comment,
-               learning: %{status: :provisional, roles: [:architect], rule: "Why?"}
+               learning: %{status: :provisional, roles: [:plan], rule: "Why?"}
              },
              %Observation{
                source_id: ^ticket_id,
                source_kind: :ticket_comment,
-               learning: %{status: :provisional, kind: :product, roles: [:product], rule: "Who?"}
+               learning: %{status: :provisional, kind: :product, roles: [:plan], rule: "Who?"}
              }
            ] =
              from(o in Observation, where: o.task_id == ^task.id, preload: :learning)
@@ -387,7 +406,7 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
     ada: ada,
     attrs: attrs
   } do
-    {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Lanes", description: "- Group by project."})
+    {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Lanes", description: "- Group by project."})
     {:ok, _design} = Pipeline.create_plan_comment(ada, run, attrs)
     {:ok, _ticket} = Pipeline.create_plan_comment(ada, run, Map.merge(@line, %{target: :ticket, body: "Who?"}))
     {:ok, running} = Pipeline.update_run(run, %{status: :running})

@@ -11,6 +11,7 @@ defmodule RailWeb.CoreComponents do
 
   defdelegate activity_feed(assigns), to: Components.ActivityFeed
   defdelegate answer_field(assigns), to: Components.AnswerField
+  defdelegate answers_card(assigns), to: Components.AnswersCard
   defdelegate assignee(assigns), to: Components.IssueIcons
   defdelegate browser_picker(assigns), to: Components.BrowserPicker
   defdelegate button(assigns), to: Components.Button
@@ -33,6 +34,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate finding_code(assigns), to: Components.FindingCode
   defdelegate finding_detail(assigns), to: Components.FindingDetail
   defdelegate finding_list(assigns), to: Components.FindingList
+  defdelegate fix_plan_sheet(assigns), to: Components.FixPlanSheet
   defdelegate icon(assigns), to: Components.Icon
   defdelegate in_progress_tasks(assigns), to: Components.InProgressTasks
   defdelegate input(assigns), to: Components.Input
@@ -50,14 +52,18 @@ defmodule RailWeb.CoreComponents do
   defdelegate overview_stats(assigns), to: Components.OverviewStats
   defdelegate plan_comment_card(assigns), to: Components.PlanCommentCard
   defdelegate plan_comment_tray(assigns), to: Components.PlanCommentTray
-  defdelegate plan_diagram(assigns), to: Components.PlanDiagram
+  defdelegate plan_cards(assigns), to: Components.PlanCards
   defdelegate plan_sheet(assigns), to: Components.PlanSheet
   defdelegate priority_icon(assigns), to: Components.IssueIcons
   defdelegate project_badge(assigns), to: Components.ProjectBadge
   defdelegate review_comment_tray(assigns), to: Components.ReviewCommentTray
   defdelegate review_items(assigns), to: Components.ReviewItems
+  defdelegate plan_queue(assigns), to: Components.PlanQueue
   defdelegate review_queue(assigns), to: Components.ReviewQueue
+  defdelegate round_plan(assigns), to: Components.RoundPlan
+  defdelegate review_send_card(assigns), to: Components.ReviewSendCard
   defdelegate review_status(assigns), to: Components.ReviewStatus
+  defdelegate reviewed_toggle(assigns), to: Components.ReviewedToggle
 
   defdelegate sandbox_meters(assigns), to: Components.SandboxMeters
   defdelegate sandbox_stats(assigns), to: Components.SandboxStats
@@ -71,7 +77,6 @@ defmodule RailWeb.CoreComponents do
   defdelegate split_board(assigns), to: Components.SplitBoard
   defdelegate status_icon(assigns), to: Components.IssueIcons
   defdelegate task_layout(assigns), to: Components.TaskLayout
-  defdelegate task_tabs(assigns), to: Components.TaskTabs
   defdelegate throughput_chart(assigns), to: Components.ThroughputChart
   defdelegate top_app_bar(assigns), to: Components.Nav
   defdelegate triage_image(assigns), to: Components.TriageImage

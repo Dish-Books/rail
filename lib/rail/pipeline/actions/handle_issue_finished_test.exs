@@ -2,6 +2,8 @@ defmodule Rail.Pipeline.Actions.HandleIssueFinishedTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  import Rail.Pipeline.Utils.BuildTask
+
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Workers.AdvanceSplit
@@ -25,12 +27,10 @@ defmodule Rail.Pipeline.Actions.HandleIssueFinishedTest do
     {:ok, child_issue} = Issues.create_issue(system_scope(), project, %{title: "HIF-2", parent: parent_issue})
 
     {:ok, _child} =
-      Pipeline.create_child_task(parent, child_issue, %{
-        number: 1,
-        builds_on: [],
-        builds_screen: false,
-        plan: "## Implementation plan"
-      })
+      child_issue.project
+      |> build_task(child_issue, %{stage: :engineer, split_position: 1, builds_on: []})
+      |> Ecto.Changeset.put_change(:parent_task_id, parent.id)
+      |> Repo.insert()
 
     %{parent: parent, parent_issue: parent_issue, child_issue: child_issue}
   end

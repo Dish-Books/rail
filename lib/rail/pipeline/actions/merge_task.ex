@@ -3,7 +3,7 @@ defmodule Rail.Pipeline.Actions.MergeTask do
   A tech lead's Merge on Finalize: the merge is claimed and broadcast, so every tab shows Merging and a second
   click is refused, then the pull request is squash-merged on GitHub outside any transaction. A refusal is kept
   with GitHub's message unless the pull request was merged there already; a merge records who and the sha,
-  starts the parent's next children, and enters Merged.
+  starts the parent's next children, queues the task's cleanup, and enters Merged.
   """
 
   import Ecto.Query
@@ -11,8 +11,10 @@ defmodule Rail.Pipeline.Actions.MergeTask do
 
   alias Rail.GitHub.Client, as: GitHub
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.AdvanceSplit
+  alias Rail.Pipeline.Workers.CleanupMergedTask
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Scope
@@ -28,6 +30,7 @@ defmodule Rail.Pipeline.Actions.MergeTask do
     task = Task |> Repo.get!(task.id) |> Repo.preload(:project)
 
     with true <- Scope.can_access_project?(scope, task.project_id) || {:error, :not_found},
+         :ok <- plan_approved(task),
          :ok <- claim(task) do
       # As claimed, so clearing the claim afterwards is a change the update writes.
       task = %{Repo.reload!(task) | project: task.project}
@@ -45,6 +48,15 @@ defmodule Rail.Pipeline.Actions.MergeTask do
         {:error, reason} ->
           merged_elsewhere(task, reason)
       end
+    end
+  end
+
+  # Work its owner started without approval merges only once a lead approved the plan. A task with no round
+  # never had a plan to approve.
+  defp plan_approved(%Task{} = task) do
+    case Pipeline.list_rounds(task) do
+      [%Round{approved_at: nil} | _later] -> {:error, :plan_not_approved}
+      _approved_or_none -> :ok
     end
   end
 
@@ -111,6 +123,7 @@ defmodule Rail.Pipeline.Actions.MergeTask do
         if task.parent_task_id,
           do: {:ok, _job} = %{parent_task_id: task.parent_task_id} |> AdvanceSplit.new() |> Oban.insert()
 
+        {:ok, _job} = %{task_id: task.id} |> CleanupMergedTask.new() |> Oban.insert()
         task
       end)
 

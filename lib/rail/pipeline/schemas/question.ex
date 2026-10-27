@@ -12,7 +12,11 @@ defmodule Rail.Pipeline.Schemas.Question do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Users.Schemas.User
 
-  @statuses [:pending, :unanswered, :answered, :dismissed]
+  # Stands in for each citation while a sent round is read back; no answer holds a control character.
+  @cited "\u0001cited\u0001"
+
+  # An asked question was filed mid-turn and joins the round, as pending, when the turn ends.
+  @statuses [:asked, :pending, :unanswered, :answered, :dismissed]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "qst"}
   schema "questions" do
@@ -21,7 +25,6 @@ defmodule Rail.Pipeline.Schemas.Question do
 
     field :prompt, :string
     field :options, {:array, :string}, default: []
-    field :context_summary, :string
     field :answer, :string
     field :status, Ecto.Enum, values: @statuses, default: :pending
     field :answered_at, :utc_datetime_usec
@@ -39,7 +42,6 @@ defmodule Rail.Pipeline.Schemas.Question do
     :run_id,
     :prompt,
     :options,
-    :context_summary,
     :answer,
     :status,
     :answered_at,
@@ -78,6 +80,41 @@ defmodule Rail.Pipeline.Schemas.Question do
   def resolved?(status) when is_atom(status), do: status in [:answered, :dismissed]
   def resolved?(_other), do: false
 
+  @doc """
+  The message that hands `round` back to the run that asked it. `citations` maps the learning each of Rail's
+  answers came from to whose answer it was, as in "Dana's answer on RAIL-31, Oct 2".
+  """
+  def calculate_answers_message([%__MODULE__{} = question], citations) do
+    "You asked: #{question.prompt}\n#{outcome(question, citations)}"
+  end
+
+  def calculate_answers_message(round, citations) do
+    body =
+      round
+      |> Enum.with_index(1)
+      |> Enum.map_join("\n\n", fn {question, index} ->
+        "#{index}. You asked: #{question.prompt}\n   #{outcome(question, citations)}"
+      end)
+
+    "You asked #{length(round)} questions. Answers, in order:\n\n#{body}"
+  end
+
+  @doc """
+  Reads `text` back as the delivered round of `questions` it was sent as, in the order asked, each with the
+  `by`, `identifier` and `date` its Rail answer was cited with, or `nil` when it is no round's message.
+  """
+  def parse_answers_message("You asked" <> _rest = text, questions) do
+    text = normalized_lines(text)
+
+    questions
+    |> Enum.filter(&match?(%__MODULE__{delivered_at: %DateTime{}}, &1))
+    |> Enum.group_by(& &1.delivered_at)
+    |> Map.values()
+    |> Enum.find_value(&parse_round(text, Enum.sort(&1, fn a, b -> asked_before?(a, b) end)))
+  end
+
+  def parse_answers_message(_text, _questions), do: nil
+
   # A dismissed question never carries a stale answer back to the agent or into Answer instead.
   defp clear_answer_on_dismiss(changeset) do
     case get_change(changeset, :status) do
@@ -91,6 +128,81 @@ defmodule Rail.Pipeline.Schemas.Question do
     case get_change(changeset, :answered_by_id) do
       user_id when is_binary(user_id) -> put_change(changeset, :answered_by_rail, false)
       nil -> changeset
+    end
+  end
+
+  defp outcome(%__MODULE__{status: :answered, answered_by_rail: true, answer: answer} = question, citations) do
+    case Map.fetch(citations, question.suggested_learning_id) do
+      {:ok, cited} -> "Answered by Rail from #{cited}: #{answer}"
+      :error -> "Answered by Rail from a past answer: #{answer}"
+    end
+  end
+
+  defp outcome(%__MODULE__{status: :answered, answer: answer}, _citations), do: "The answer is: #{answer}"
+  defp outcome(%__MODULE__{status: :dismissed}, _citations), do: "Dismissed without an answer; carry on without it."
+
+  # The round's own message with every citation left open, so what each one said is read off the text that went out.
+  defp parse_round(text, round) do
+    citations = Map.new(round, &{&1.suggested_learning_id, @cited})
+
+    [first | rest] =
+      round
+      |> calculate_answers_message(citations)
+      |> normalized_lines()
+      |> String.split(@cited)
+
+    # Matched piece by piece rather than as one regex, which a long enough round makes too large to compile.
+    with true <- String.starts_with?(text, first),
+         cited when is_list(cited) <- said(String.replace_prefix(text, first, ""), rest) do
+      by_rail = for %__MODULE__{status: :answered, answered_by_rail: true} = question <- round, do: question.id
+      cited = by_rail |> Enum.zip(cited) |> Map.new(fn {id, said} -> {id, citation(said)} end)
+      Enum.map(round, &%{question: &1, citation: cited[&1.id]})
+    else
+      _no_match -> nil
+    end
+  end
+
+  # What each citation said, given the text after the last piece matched and the pieces after it: a citation is one
+  # line, and the earliest end that lets the rest match is the one taken, as a lazy capture would.
+  defp said("", []), do: []
+  defp said(_text, []), do: nil
+
+  defp said(text, [piece | rest]) do
+    line_end =
+      text
+      |> :binary.match("\n")
+      |> then(fn
+        {at, _length} -> at
+        :nomatch -> byte_size(text)
+      end)
+
+    0..line_end//1
+    |> Stream.filter(&(text |> binary_part(&1, byte_size(text) - &1) |> String.starts_with?(piece)))
+    |> Enum.find_value(fn at ->
+      after_piece = binary_part(text, at + byte_size(piece), byte_size(text) - at - byte_size(piece))
+
+      case said(after_piece, rest) do
+        cited when is_list(cited) -> [binary_part(text, 0, at) | cited]
+        nil -> nil
+      end
+    end)
+  end
+
+  defp citation(said) do
+    case Regex.run(~r/^(.+?)'s answer(?: on (\S+))?, ([A-Z][a-z]{2} \d{1,2})$/, said) do
+      [_said, by, "", date] -> %{by: by, identifier: nil, date: date}
+      [_said, by, identifier, date] -> %{by: by, identifier: identifier, date: date}
+      nil -> nil
+    end
+  end
+
+  # The log keeps each line of a message without the indent it was sent with.
+  defp normalized_lines(text), do: text |> String.split("\n") |> Enum.map_join("\n", &String.trim/1) |> String.trim()
+
+  defp asked_before?(%__MODULE__{} = a, %__MODULE__{} = b) do
+    case DateTime.compare(a.inserted_at, b.inserted_at) do
+      :eq -> a.id <= b.id
+      order -> order == :lt
     end
   end
 

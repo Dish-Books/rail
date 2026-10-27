@@ -56,7 +56,7 @@ defmodule Rail.Tools.Schemas.OsProcess do
     field :runtime, Ecto.Enum, values: @runtimes, default: :local
     field :container_id, :string
     # What it holds while it runs, fixed when it joined the line.
-    field :reserved_cpus, :integer
+    field :reserved_cpus, Rail.Types.Cpus
     field :queued_at, :utc_datetime_usec
     # How to start it, kept until it starts: it carries the turn's MCP token.
     field :launch, EncryptedBinary, redact: true
@@ -147,7 +147,7 @@ defmodule Rail.Tools.Schemas.OsProcess do
   def describe_memory_top(%__MODULE__{}), do: nil
 
   @doc "True for a process that holds a reservation while it runs."
-  def sandboxed?(%__MODULE__{reserved_cpus: cpus}), do: is_integer(cpus)
+  def sandboxed?(%__MODULE__{reserved_cpus: cpus}), do: is_number(cpus)
 
   @doc """
   The CPUs this process lacks against what is `free`, 0 when there are already enough.

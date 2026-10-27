@@ -33,16 +33,18 @@ defmodule Rail.Roles.Schemas.RoleTest do
     %{project: project, role: role}
   end
 
-  test "canonical_stages/0 returns list of 12 stages" do
+  test "canonical_stages/0 returns list of 8 stages" do
     stages = Role.canonical_stages()
-    assert length(stages) == 12
+    assert length(stages) == 8
     assert :plan in stages
     assert :review_lead in stages
     assert :triage in stages
     assert :curator in stages
-    assert :debugger in stages
-    assert :design in stages
+    refute :debugger in stages
+    assert :demo in stages
     refute :designer in stages
+    # QA shoots the screen states itself
+    refute :screens in stages
     # Rebase is an engineer action, not a stage a role can bind to
     refute :rebase in stages
   end
@@ -201,11 +203,23 @@ defmodule Rail.Roles.Schemas.RoleTest do
     assert Role.fit_count(%Role{reserved_cpus: 2}, capacity) == 7
     assert Role.fit_count(%{reserved_cpus: 1}, capacity) == 14
     assert Role.fit_count(%{reserved_cpus: 16}, capacity) == 0
+    assert Role.fit_count(%{reserved_cpus: 0.5}, capacity) == 28
+    assert Role.fit_count(%{reserved_cpus: 1.5}, capacity) == 9
   end
 
   test "a reservation of nothing is refused" do
     changeset = Role.changeset(%Role{}, %{reserved_cpus: 0})
 
-    assert %{reserved_cpus: ["must be greater than or equal to 1"]} = errors_on(changeset)
+    assert %{reserved_cpus: ["must be greater than 0"]} = errors_on(changeset)
+  end
+
+  test "a reservation in quarters of a CPU is kept, and anything finer is refused" do
+    for cpus <- [0.25, 0.5, "0.75", 1.5] do
+      refute Map.has_key?(errors_on(Role.changeset(%Role{}, %{reserved_cpus: cpus})), :reserved_cpus)
+    end
+
+    changeset = Role.changeset(%Role{}, %{reserved_cpus: "0.3"})
+
+    assert %{reserved_cpus: ["must be in quarters of a CPU, like 0.25, 0.5 or 1.5"]} = errors_on(changeset)
   end
 end

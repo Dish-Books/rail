@@ -249,6 +249,23 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     assert Run.needs_attention?(stopped)
   end
 
+  # The review agent waits on the round's checks, so one that failed or stopped waits on whoever retries it.
+  test "a check run at Review waits on a human once it failed or stopped, and not once it is done" do
+    task = %Task{stage: :review, merged_at: nil, issue: %Issue{}}
+
+    assert Run.needs_attention?(%Run{
+             status: :finished,
+             error: "QA did not save its report.",
+             role: %Role{stage: :qa},
+             task: task
+           })
+
+    assert Run.needs_attention?(%Run{status: :finished, role: %Role{stage: :review}, task: task})
+    refute Run.needs_attention?(%Run{status: :finished, stage_outcome: :done, role: %Role{stage: :review}, task: task})
+    refute Run.needs_attention?(%Run{status: :finished, role: %Role{stage: :demo}, task: task})
+    refute Run.needs_attention?(%Run{status: :finished, role: %Role{stage: :qa}, task: %{task | stage: :engineer}})
+  end
+
   test "a failed run at a stage the task has left is not this task's problem" do
     passed_by = %Run{
       status: :finished,
@@ -337,17 +354,6 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     }
 
     assert Run.needs_attention?(done)
-  end
-
-  test "a done run at a stage no human signs off needs nothing" do
-    done = %Run{
-      status: :finished,
-      stage_outcome: :done,
-      role: %Role{stage: :debugger},
-      task: %Task{stage: :debugger, merged_at: nil, issue: %Issue{}}
-    }
-
-    refute Run.needs_attention?(done)
   end
 
   test "a merged task needs nothing, however its run ended" do

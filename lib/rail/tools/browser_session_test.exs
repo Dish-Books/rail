@@ -50,6 +50,7 @@ defmodule Rail.Tools.BrowserSessionTest do
     <!doctype html><title>Bill</title>
     <form>
       <label for="amount">Amount</label><input id="amount" type="text">
+      <select id="currency"><option value="usd">USD</option><option value="eur">EUR</option></select>
       <button type="button" id="save">Save</button>
     </form>
     """)
@@ -486,6 +487,81 @@ defmodule Rail.Tools.BrowserSessionTest do
     assert {:ok, <<0xFF, 0xD8, _rest::binary>>} = Base.decode64(data)
 
     assert Tools.get_browser_frame(task, "qa")
+  end
+
+  # The agent drives the tab over a connection of its own, so the page is what says it was acted on. A voiced demo
+  # is cut by these, and a page clicking itself, or an iframe going somewhere, is not anybody acting.
+  test "a click, key press, wheel and page change in the tab each go out as an action", %{task: task, page: page} do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}:qa")
+    {:ok, session} = Tools.start_browser_session(task, "qa")
+    {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
+    assert_receive {:browser_action, task_id, "qa", "navigate"}, 10_000
+    assert task_id == task.id
+    eventually(fn -> assert BrowserSession.where(session) == page end)
+
+    %{page_url: page_url} = BrowserSession.details(session)
+    {:ok, agent} = Browser.start_link(url: page_url)
+    on_exit(fn -> if Process.alive?(agent), do: GenServer.stop(agent, :normal) end)
+
+    {:ok, _evaluated} =
+      Browser.call(agent, "Runtime.evaluate", %{expression: "document.body.click(); window.__railAction('evil')"})
+
+    for type <- ["mousePressed", "mouseReleased"] do
+      {:ok, _clicked} =
+        Browser.call(agent, "Input.dispatchMouseEvent", %{type: type, x: 600, y: 600, button: "left", clickCount: 1})
+    end
+
+    assert_receive {:browser_action, _task_id, "qa", "click"}, 5_000
+
+    {:ok, _pressed} = Browser.call(agent, "Input.dispatchKeyEvent", %{type: "keyDown", key: "a", text: "a"})
+    assert_receive {:browser_action, _task_id, "qa", "key"}, 5_000
+
+    {:ok, _scrolled} =
+      Browser.call(agent, "Input.dispatchMouseEvent", %{type: "mouseWheel", x: 20, y: 20, deltaX: 0, deltaY: 200})
+
+    assert_receive {:browser_action, _task_id, "qa", "scroll"}, 5_000
+
+    # A native <select> is set in the page, so the driver's `select` reports the choice itself.
+    {:ok, _selected} =
+      Browser.call(agent, "Runtime.evaluate", %{
+        expression: """
+        const el = document.querySelector('#currency')
+        el.value = 'eur'
+        el.dispatchEvent(new Event('input', {bubbles: true}))
+        el.dispatchEvent(new Event('change', {bubbles: true}))
+        window.__railAction?.('click')
+        """
+      })
+
+    assert_receive {:browser_action, _task_id, "qa", "click"}, 5_000
+
+    send(session, {:cdp_event, "Page.frameNavigated", %{"frame" => %{"url" => "about:blank", "parentId" => "main"}}})
+    refute_receive {:browser_action, _task_id, "qa", _kind}, 500
+  end
+
+  # A deploy in the middle of a take comes back to the same document, which already has the listener.
+  test "a tab attached to again reports each action once", %{task: task, page: page} do
+    {:ok, session} = Tools.start_browser_session(task, "qa")
+    {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
+    eventually(fn -> assert BrowserSession.where(session) == page end)
+    :ok = GenServer.stop(session, :shutdown, 10_000)
+
+    {:ok, again} = Tools.start_browser_session(task, "qa")
+    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}:qa")
+
+    for type <- ["mousePressed", "mouseReleased"] do
+      {:ok, _clicked} =
+        BrowserSession.call(again, "Input.dispatchMouseEvent", %{
+          type: type,
+          x: 600,
+          y: 600,
+          button: "left",
+          clickCount: 1
+        })
+    end
+
+    assert_receive {:browser_action, _task_id, "qa", "click"}, 5_000
+    refute_receive {:browser_action, _task_id, "qa", "click"}, 500
   end
 
   # Frames are taken at most about fifteen a second, so a paint that lands while

@@ -2,7 +2,8 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidence do
   @moduledoc """
   Saves a screenshot of the browser in the task's QA folder under a name Rail chooses, so no path arrives
   from outside; a finding that cites the path attaches a copy. A screen state's shot goes in that state's
-  own folder, named for when it was taken, so its shots sort oldest first.
+  own folder, named for when it was taken, so its shots sort oldest first. The caller also gets a smaller
+  copy to show the agent, while the file keeps the page at full size.
   """
 
   alias Rail.Pipeline.Schemas.Task
@@ -26,9 +27,13 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidence do
   # Wide enough to absorb Chrome's PNG encoding, narrower than anything a page draws on purpose.
   @flat_within 4
 
+  # The longest side a picture shown to the agent keeps, past which a model scales it down anyway.
+  @preview_within 1568
+
   @doc """
-  Captures the page as `name` and returns `{:ok, path}` relative to the task's QA folder, which is what a
-  finding's evidence cites. `opts` takes the screen state's `:key` and the `:width` to lay the page out at.
+  Captures the page as `name` and returns `{:ok, path, preview}`: the path relative to the task's QA folder,
+  which is what a finding's evidence cites, and the picture as a JPEG whose longest side is at most
+  #{@preview_within} pixels. `opts` takes the screen state's `:key` and the `:width` to lay the page out at.
   """
   def capture_browser_evidence(session, %Task{scratch_path: scratch_path}, name, opts \\ []) do
     width = opts[:width]
@@ -83,7 +88,8 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidence do
          false <- flat?(png),
          {:ok, %{"data" => jpeg}} <-
            BrowserSession.call(session, "Page.captureScreenshot", %{format: "jpeg", quality: 72, clip: clip}),
-         {:ok, bytes} <- Base.decode64(jpeg) do
+         {:ok, bytes} <- Base.decode64(jpeg),
+         {:ok, preview} <- preview(session, clip, bytes) do
       file =
         if key,
           do: "screens/#{slug(key)}/#{System.os_time(:microsecond)}.jpg",
@@ -93,11 +99,28 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidence do
       File.mkdir_p!(Path.dirname(path))
       File.write!(path, bytes)
 
-      {:ok, file}
+      {:ok, file, preview}
     else
       true -> {:error, :flat_screenshot}
       :error -> {:error, :unreadable_screenshot}
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # Chrome scales the clip itself, so a picture is shrunk with no image library on this machine.
+  defp preview(session, clip, bytes) do
+    case max(clip.width, clip.height) do
+      longest when longest <= @preview_within ->
+        {:ok, bytes}
+
+      longest ->
+        with {:ok, %{"data" => jpeg}} <-
+               BrowserSession.call(session, "Page.captureScreenshot", %{
+                 format: "jpeg",
+                 quality: 72,
+                 clip: %{clip | scale: @preview_within / longest}
+               }),
+             do: Base.decode64(jpeg)
     end
   end
 

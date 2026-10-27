@@ -20,16 +20,21 @@ defmodule Rail.Mcp.Actions.CallRunTool do
 
   A line is filed under the namespace of the tool that wrote it - `[browser]`,
   `[qa]`, `[demo]` - so driving the page reads apart from reporting on it. A
-  save is not logged at all: the transcript already shows the call.
+  save or a round of questions is not logged at all: the transcript already shows the call.
+
+  A tool that photographs the page answers with the picture as an image block
+  beside its text.
 
   A refusal is the agent's to fix, so it comes back as one sentence naming each
   field; any other failure is Rail's own, and is said to be.
   """
 
   import Rail.Mcp.Utils.McpTools
+  import Rail.Mcp.Utils.RunToolAskQuestions
   import Rail.Mcp.Utils.RunToolBrowserClose
   import Rail.Mcp.Utils.RunToolBrowserConnect
   import Rail.Mcp.Utils.RunToolBrowserProblems
+  import Rail.Mcp.Utils.RunToolDemoCut
   import Rail.Mcp.Utils.RunToolDemoSay
   import Rail.Mcp.Utils.RunToolDemoStart
   import Rail.Mcp.Utils.RunToolKnowledgeSearch
@@ -39,11 +44,11 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   import Rail.Mcp.Utils.RunToolSaveDemo
   import Rail.Mcp.Utils.RunToolSaveDesignOption
   import Rail.Mcp.Utils.RunToolSaveFinding
+  import Rail.Mcp.Utils.RunToolSaveFixPlan
   import Rail.Mcp.Utils.RunToolSavePlan
+  import Rail.Mcp.Utils.RunToolSaveReport
   import Rail.Mcp.Utils.RunToolSaveReview
   import Rail.Mcp.Utils.RunToolSaveScreen
-  import Rail.Mcp.Utils.RunToolSaveSplit
-  import Rail.Mcp.Utils.RunToolSaveTicket
   import Rail.Mcp.Utils.ToolAllowed
   import Rail.Mcp.Utils.WithUpstreamToken
 
@@ -54,13 +59,14 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
 
-  @saves [
-    "save_ticket",
+  @unlogged [
+    "ask_questions",
     "save_design_option",
     "save_plan",
-    "save_split",
     "save_finding",
     "save_review",
+    "save_fix_plan",
+    "save_report",
     "save_demo",
     "save_screen"
   ]
@@ -103,6 +109,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
 
         case result do
           {:ok, text} -> {:ok, %{"content" => [%{"type" => "text", "text" => text}]}}
+          {:ok, text, picture} -> {:ok, %{"content" => [%{"type" => "text", "text" => text}, image(picture)]}}
           {:refused, text} -> {:error, {:refused, text}}
           {:error, reason} -> {:error, {:rail_failed, reason}}
         end
@@ -111,6 +118,9 @@ defmodule Rail.Mcp.Actions.CallRunTool do
         {:error, {:rail_failed, reason}}
     end
   end
+
+  # A picture rides in the reply itself, so the agent sees it without a second call to read the file.
+  defp image(jpeg), do: %{"type" => "image", "data" => Base.encode64(jpeg), "mimeType" => "image/jpeg"}
 
   defp refusal({:error, %Ecto.Changeset{} = changeset}), do: {:refused, sentence(changeset)}
   defp refusal(result), do: result
@@ -157,8 +167,8 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   # ten seconds to open is ten seconds of a person watching nothing happen.
   #
   # These are logged once they answer: a plan, mark or filing can be refused and its
-  # line must say so, `browser_problems` has nothing to say first, and a caption's time is the tool's.
-  defp answers_itself?(name), do: name in ["qa_plan", "qa_check", "qa_shot", "browser_problems", "demo_say"]
+  # line must say so, `browser_problems` has nothing to say first, and a caption's or cut's time is the tool's.
+  defp answers_itself?(name), do: name in ["qa_plan", "qa_check", "qa_shot", "browser_problems", "demo_say", "demo_cut"]
 
   # What the browser complained about, counted rather than quoted: the agent has
   # the list, and a watcher wants to know whether there was one.
@@ -172,6 +182,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   # The caption is the agent's and the timestamp is Rail's, so the log carries the
   # words with the moment they landed on rather than the receipt the agent read.
   defp said("demo_say", line, {:ok, "Said at " <> said}), do: "#{hd(String.split(said, "."))} #{line}"
+  defp said("demo_cut", line, {:ok, "Cut at " <> said}), do: "#{line} at #{hd(String.split(said, "."))}"
 
   defp said(_name, line, {:refused, _text}), do: line <> " · refused"
 
@@ -192,12 +203,13 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp asked("qa_shot", %{"name" => name}) when is_binary(name), do: "shot #{inspect(name)}"
   defp asked("demo_say", %{"text" => text}), do: "say #{inspect(text)}"
   defp asked("demo_say", _arguments), do: "say"
+  defp asked("demo_cut", _arguments), do: "cut"
   defp asked("knowledge_search", %{"query" => query}), do: "search #{inspect(query)}"
   defp asked(name, _arguments), do: name |> String.split("_", parts: 2) |> List.last()
 
   # A run that has not started has nowhere to write, which is every call made
   # while testing this rather than during a pass.
-  defp log(%RunContext{}, name, _line) when name in @saves, do: :ok
+  defp log(%RunContext{}, name, _line) when name in @unlogged, do: :ok
 
   defp log(%RunContext{os_process: %{run_id: run_id}}, name, line) when is_binary(run_id) do
     Pipeline.append_run_events(run_id, nil, ["[#{namespace(name)}] " <> line])
@@ -223,14 +235,16 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp run("save_screen", task, arguments, opts), do: run_tool_save_screen(task, arguments, opts)
   defp run("demo_start", task, arguments, opts), do: run_tool_demo_start(task, arguments, opts)
   defp run("demo_say", task, arguments, opts), do: run_tool_demo_say(task, arguments, opts)
-  defp run("save_ticket", task, arguments, opts), do: run_tool_save_ticket(task, arguments, opts)
+  defp run("demo_cut", task, arguments, opts), do: run_tool_demo_cut(task, arguments, opts)
   defp run("save_design_option", task, arguments, opts), do: run_tool_save_design_option(task, arguments, opts)
   defp run("save_plan", task, arguments, opts), do: run_tool_save_plan(task, arguments, opts)
-  defp run("save_split", task, arguments, opts), do: run_tool_save_split(task, arguments, opts)
   defp run("save_finding", task, arguments, opts), do: run_tool_save_finding(task, arguments, opts)
   defp run("save_review", task, arguments, opts), do: run_tool_save_review(task, arguments, opts)
+  defp run("save_fix_plan", task, arguments, opts), do: run_tool_save_fix_plan(task, arguments, opts)
+  defp run("save_report", task, arguments, opts), do: run_tool_save_report(task, arguments, opts)
 
   defp run("save_demo", task, arguments, opts), do: run_tool_save_demo(task, arguments, opts)
+  defp run("ask_questions", task, arguments, opts), do: run_tool_ask_questions(task, arguments, opts)
 
   defp task(%RunContext{os_process: %{task_id: task_id}}) when is_binary(task_id) do
     case Pipeline.get_task(task_id) do

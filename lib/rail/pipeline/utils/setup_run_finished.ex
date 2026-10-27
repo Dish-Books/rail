@@ -4,6 +4,8 @@ defmodule Rail.Pipeline.Utils.SetupRunFinished do
   waiting for it, or failed on what the script said.
   """
 
+  import Rail.Pipeline.Utils.StartChecks
+
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -21,6 +23,11 @@ defmodule Rail.Pipeline.Utils.SetupRunFinished do
     cond do
       resuming_chat?(run) ->
         run
+
+      # A check's setup at Review held back the others, since they share the worktree.
+      task.stage == :review and role.stage in Task.check_stages() ->
+        :ok = start_checks(task)
+        %{Repo.get!(Run, run.id) | task: task, role: role}
 
       Task.role_stage(task.stage) == role.stage ->
         {:ok, %Run{} = entered} = Pipeline.enter_stage(task, task.stage)

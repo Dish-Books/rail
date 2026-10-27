@@ -65,7 +65,11 @@ defmodule RailWeb.IssueAssetControllerTest do
     issue: issue
   } do
     {:ok, outsider} =
-      Users.register_oauth_user(%{github_id: "gh_outsider", login: "outsider", email: "outsider@example.com"})
+      Users.register_oauth_user(%{
+        github_id: "gh_outsider",
+        login: "outsider-issue-asset-controller",
+        email: "outsider-issue-asset-controller@example.com"
+      })
 
     {:ok, outsider} = Users.update_user(system_scope(), outsider, %{project_ids: ["prj_other"]})
     conn = log_in_user(conn, outsider)
@@ -73,7 +77,12 @@ defmodule RailWeb.IssueAssetControllerTest do
     assert conn |> get(~p"/issues/#{issue.id}/assets/ws_id/screenshot.png") |> response(404) == "Not found"
 
     {:ok, admin} =
-      Users.register_oauth_user(%{github_id: "gh_asset_admin", login: "asset_admin", email: "a@x.com", admin: true})
+      Users.register_oauth_user(%{
+        github_id: "gh_asset_admin",
+        login: "asset_admin",
+        email: "a-issue-asset-controller@x.com",
+        admin: true
+      })
 
     Req.Test.expect(Rail.Linear, fn conn -> Plug.Conn.send_resp(conn, 200, "PNG_BYTES") end)
 

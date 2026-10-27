@@ -29,8 +29,8 @@ defmodule Rail.Pipeline.Actions.CreateTaskTest do
     %{issue: issue}
   end
 
-  test "names the worktree after the issue's identifier", %{issue: %Issue{id: issue_id} = issue} do
-    path = "/tmp/repos/test-seed/.worktrees/crt-1"
+  test "names the worktree after the issue's identifier", %{issue: %Issue{id: issue_id} = issue, project: project} do
+    path = Path.join(project.clone_path, ".worktrees/crt-1")
 
     assert {:ok, %Task{issue_id: ^issue_id, stage: :plan, worktree_name: "crt-1", worktree_path: ^path}} =
              Pipeline.create_task(issue, :plan)

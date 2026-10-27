@@ -8,14 +8,15 @@ defmodule Rail.Pipeline.Schemas.Task do
   use Rail.Schema
 
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects.Schemas.Project
+  alias Rail.Roles.Schemas.Role
+  alias Rail.Scope
   alias Rail.Users.Schemas.User
 
   # The linear pipeline, then stages a task can be parked in off that path.
-  # `:debugger` has no position in the sequence: nothing advances into or out of it.
   # `:split` is a parent whose children carry the work, and it waits there until they merge.
   # `:finalize` has no run of its own: the Review lead's run stays the task's while a person merges it.
   @stages [
@@ -24,7 +25,6 @@ defmodule Rail.Pipeline.Schemas.Task do
     :review,
     :finalize,
     :merged,
-    :debugger,
     :split
   ]
 
@@ -50,6 +50,10 @@ defmodule Rail.Pipeline.Schemas.Task do
     field :builds_on, {:array, :integer}, default: []
     # Finalize: who marked it ready, a merge started and not yet answered, GitHub's refusal and the squash commit.
     field :marked_ready_at, :utc_datetime_usec
+    # How the branch stood against the default branch when Rail last looked, for the Update the page offers.
+    field :base_behind, :boolean, default: false
+    field :base_conflicts, {:array, :string}, default: []
+    field :base_checked_at, :utc_datetime_usec
     field :merge_started_at, :utc_datetime_usec
     field :merge_error, :string
     field :merge_error_at, :utc_datetime_usec
@@ -63,9 +67,8 @@ defmodule Rail.Pipeline.Schemas.Task do
 
     has_many :children, __MODULE__, foreign_key: :parent_task_id, preload_order: [asc: :split_position]
 
-    has_one :implementation_plan, ImplementationPlan
-
     has_many :questions, Question
+    has_many :rounds, Round, preload_order: [asc: :number]
     has_many :runs, Run
 
     timestamps()
@@ -93,7 +96,10 @@ defmodule Rail.Pipeline.Schemas.Task do
     :merge_error,
     :merge_error_at,
     :merged_by_id,
-    :merge_sha
+    :merge_sha,
+    :base_behind,
+    :base_conflicts,
+    :base_checked_at
   ]
 
   @required_fields [
@@ -122,6 +128,12 @@ defmodule Rail.Pipeline.Schemas.Task do
     |> validate_number(:split_position, greater_than: 0)
     |> validate_builds_on()
   end
+
+  @doc """
+  True when the scope's user owns the task's issue. Requires `issue` to be preloaded.
+  """
+  def owned_by?(%__MODULE__{issue: %Issue{owner_user_id: owner_id}}, %Scope{user: user}),
+    do: is_binary(owner_id) and is_map(user) and owner_id == user.id
 
   @doc """
   The first of the hundred ports the worktree of a task holding a slot owns.
@@ -154,12 +166,35 @@ defmodule Rail.Pipeline.Schemas.Task do
   def stages, do: @stages
 
   @doc """
-  The stage of the role that works a task at `stage`: Review is led by the Review lead, whose
-  subagents are the review, QA, engineer and demo roles.
+  The stage of the role a person talks to about a task at `stage`: at Review and Finalize that is the review
+  agent, beside the runs that check each round.
   """
   def role_stage(:review), do: :review_lead
   def role_stage(:finalize), do: :review_lead
   def role_stage(stage) when is_atom(stage), do: stage
+
+  @checks [:qa, :review]
+
+  @doc "The stages of the runs that check a Review round and hold back the review agent, which the demo does not."
+  def check_stages, do: @checks
+
+  @doc """
+  The run that says where this task stands: the latest at its stage, or at Review a check started since the review
+  agent last was and not done yet, in flight first, since that agent waits on it. Requires `runs` with their `role`.
+  """
+  def stage_run(%__MODULE__{runs: runs, stage: stage}) when is_list(runs) do
+    role_stage = role_stage(stage)
+    stage_runs = for %Run{role: %Role{stage: ^role_stage}} = run <- runs, do: run
+    latest = Enum.max_by(stage_runs, &(&1.started_at || &1.inserted_at), DateTime, fn -> nil end)
+
+    holding =
+      for %Run{role: %Role{stage: check}} = run <- runs,
+          stage == :review and check in @checks and Run.state(run) != :done,
+          is_nil(latest) or DateTime.after?(run.started_at, latest.started_at),
+          do: run
+
+    Enum.find(holding, &Run.running?/1) || List.first(holding) || latest
+  end
 
   # A merge GitHub has not answered in this long is one whose caller died, so another can be started.
   @merge_claim_seconds 60
@@ -208,7 +243,6 @@ defmodule Rail.Pipeline.Schemas.Task do
   def stage_label(:review), do: "Review"
   def stage_label(:finalize), do: "Finalize"
   def stage_label(:merged), do: "Merged"
-  def stage_label(:debugger), do: "Debugger"
   def stage_label(:split), do: "Split"
   def stage_label(_other), do: nil
 

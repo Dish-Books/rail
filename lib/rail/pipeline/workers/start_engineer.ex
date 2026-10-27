@@ -1,7 +1,8 @@
 defmodule Rail.Pipeline.Workers.StartEngineer do
   @moduledoc """
-  Starts the engineer on a task whose plan was just approved. The job is committed with the approval, so the
-  engineer starts even if the page that approved is gone, and is retried if the start dies part way.
+  Starts the engineer on a task whose round's plan was just approved, on a clean conversation: the plan is the
+  whole of what it is given. The job is committed with the approval, so the engineer starts even if the page that
+  approved is gone, and is retried if the start dies part way.
   """
   use Oban.Worker,
     queue: :issues,
@@ -19,7 +20,7 @@ defmodule Rail.Pipeline.Workers.StartEngineer do
   def perform(%Oban.Job{args: %{"task_id" => task_id}, inserted_at: approved_at}) do
     with %Task{stage: :engineer} = task <- Repo.get(Task, task_id),
          false <- spawned?(task, approved_at) do
-      {:ok, _started} = Pipeline.enter_stage(task, :engineer)
+      {:ok, _started} = Pipeline.enter_stage(task, :engineer, fresh: true)
       :ok
     else
       _gone_moved_on_or_spawned -> :ok

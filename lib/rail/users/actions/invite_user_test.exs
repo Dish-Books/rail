@@ -23,8 +23,8 @@ defmodule Rail.Users.Actions.InviteUserTest do
   end
 
   test "records who issued the invite", %{admin_id: admin_id, scope: scope} do
-    assert {:ok, %Invite{email: "new@example.com", admin: false, accepted_at: nil, invited_by_id: ^admin_id}} =
-             Users.invite_user(scope, %{email: "new@example.com"})
+    assert {:ok, %Invite{email: "new-invite-user@example.com", admin: false, accepted_at: nil, invited_by_id: ^admin_id}} =
+             Users.invite_user(scope, %{email: "new-invite-user@example.com"})
   end
 
   test "normalizes the email so sign-up matches regardless of how it was typed", %{scope: scope} do

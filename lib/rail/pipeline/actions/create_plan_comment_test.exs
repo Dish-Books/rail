@@ -16,11 +16,19 @@ defmodule Rail.Pipeline.Actions.CreatePlanCommentTest do
 
   One module decides.
 
-  No diagrams: one module changes.
+  ### Decisions
 
-  ### File-level changes
+  - Decision: one module changes.
 
-  - `lib/rail.ex`: decides.
+  ### Changes
+
+  #### `lib/rail.ex`
+
+  Decides.
+
+  ### Acceptance criteria
+
+  - 1: `lib/rail.ex`
 
   ### Verification
 
@@ -63,8 +71,19 @@ defmodule Rail.Pipeline.Actions.CreatePlanCommentTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_pcc_ada", login: "ada", email: "ada@example.com"})
-    {:ok, grace} = Users.register_oauth_user(%{github_id: "gh_pcc_grace", login: "grace", email: "grace@example.com"})
+    {:ok, ada} =
+      Users.register_oauth_user(%{
+        github_id: "gh_pcc_ada",
+        login: "ada-create-plan-comment",
+        email: "ada-create-plan-comment@example.com"
+      })
+
+    {:ok, grace} =
+      Users.register_oauth_user(%{
+        github_id: "gh_pcc_grace",
+        login: "grace-create-plan-comment",
+        email: "grace-create-plan-comment@example.com"
+      })
 
     attrs = %{
       target: :design,
@@ -167,7 +186,7 @@ defmodule Rail.Pipeline.Actions.CreatePlanCommentTest do
     assert {:error, :no_ticket} = Pipeline.create_plan_comment(ada, run, ticket)
     assert {:error, :no_plan} = Pipeline.create_plan_comment(ada, run, plan)
 
-    {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Recordings", description: "Recordings open blank."})
+    {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Recordings", description: "Recordings open blank."})
     {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan})
 
     assert {:ok, %PlanComment{target: :ticket, element_label: "Paragraph 1"}} =
@@ -183,7 +202,7 @@ defmodule Rail.Pipeline.Actions.CreatePlanCommentTest do
     run: chatty,
     ada: ada
   } do
-    {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Recordings", description: "Recordings open blank."})
+    {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Recordings", description: "Recordings open blank."})
     {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan})
 
     {:ok, silent} =
@@ -206,5 +225,41 @@ defmodule Rail.Pipeline.Actions.CreatePlanCommentTest do
 
     assert [%{body: "Say what settles."}, %{body: "And when."}, %{target: :plan}] =
              Pipeline.list_plan_comments(ada, task)
+  end
+
+  test "a comment on the next round's plan saves only while that plan is saved and waits on approval", %{
+    task: task,
+    run: run,
+    ada: ada
+  } do
+    attrs = %{
+      target: :fix_plan,
+      element_kind: :paragraph,
+      element_label: "Fix finding nil-crash, paragraph 1",
+      element_occurrence: 1,
+      element_text: "Guard nil.",
+      body: "Guard it at the caller instead."
+    }
+
+    path = Path.join([task.scratch_path, "fix_plans", "PCC-1.json"])
+    File.mkdir_p!(Path.dirname(path))
+
+    assert {:error, :no_fix_plan} = Pipeline.create_plan_comment(ada, run, attrs)
+
+    File.write!(path, Jason.encode!(%{round: 1, plan: nil, version: 0}))
+    assert {:error, :no_fix_plan} = Pipeline.create_plan_comment(ada, run, attrs)
+
+    File.write!(path, Jason.encode!(%{round: 1, plan: "Guard nil.", version: 1}))
+
+    assert {:ok, %PlanComment{target: :fix_plan, status: :unsent, element_label: "Fix finding nil-crash, paragraph 1"}} =
+             Pipeline.create_plan_comment(ada, run, attrs)
+
+    File.write!(
+      path,
+      Jason.encode!(%{round: 1, plan: "Guard nil.", version: 1, approved_by: "ada", approved_at: DateTime.utc_now()})
+    )
+
+    assert {:error, :no_fix_plan} = Pipeline.create_plan_comment(ada, run, %{attrs | body: "And this."})
+    assert [%PlanComment{body: "Guard it at the caller instead."}] = Pipeline.list_plan_comments(ada, task)
   end
 end

@@ -10,8 +10,8 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   There is no such thing as a chat turn here. A stage's own dispatch and a message
   the human typed are the same event — a process carrying this run exited — and
   they settle identically. What separates them is not how they started but what
-  the agent said: the run is recorded, the questions it asked are filed, and a run
-  that came back clean with nothing outstanding has its stage's finish applied. A
+  the agent did: the run is recorded, what it asked through `ask_questions` becomes
+  its round, and a run that came back clean with nothing outstanding has its stage's finish applied. A
   run that stopped half way says nothing, so nothing happens to it, and the next
   message picks it up where it left off.
 
@@ -24,6 +24,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   """
 
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
+  import Rail.Pipeline.Utils.CheckRunFinished
   import Rail.Pipeline.Utils.CiRunFinished
   import Rail.Pipeline.Utils.DispatchMessage
   import Rail.Pipeline.Utils.EngineerRunFinished
@@ -116,11 +117,12 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp usage(%{"usage" => usage}) when is_map(usage), do: struct(Run.Usage, usage)
   defp usage(_other), do: nil
 
-  # A turn that is over drives no browser, and the next one signs in again, so whatever its
-  # subagents left open is closed rather than kept in the shared Chrome while a human rules.
-  defp end_turn(%Run{role: %Role{stage: :review_lead}, task: %Task{} = task} = run, %OsProcess{kind: :agent}) do
-    :ok = Tools.stop_browser_session(task)
-    say_uncommitted(run)
+  # A turn that is over drives no browser, and the next one signs in again, so the one it left open is
+  # closed rather than kept in the shared Chrome.
+  defp end_turn(%Run{role: %Role{stage: stage}, task: %Task{} = task} = run, %OsProcess{kind: :agent})
+       when stage in [:qa, :demo] do
+    :ok = Tools.stop_browser_session(task, to_string(stage))
+    run
   end
 
   defp end_turn(%Run{role: %Role{stage: :engineer}} = run, %OsProcess{kind: :agent}), do: say_uncommitted(run)
@@ -141,8 +143,8 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp finish(%Run{} = run, %OsProcess{kind: :setup}, opts), do: setup_run_finished(run, opts)
   defp finish(%Run{} = run, %OsProcess{kind: :ci} = os_process, _opts), do: ci_run_finished(run, os_process)
 
-  defp finish(%Run{} = run, %OsProcess{} = os_process, opts) do
-    case register_asked_questions(os_process, run) do
+  defp finish(%Run{} = run, %OsProcess{}, opts) do
+    case register_asked_questions(run) do
       [] -> maybe_finish(run, opts)
       _asked -> run
     end
@@ -194,6 +196,8 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp finish_action(%Run{role: %Role{stage: :plan}}), do: &plan_run_finished/2
   defp finish_action(%Run{role: %Role{stage: :engineer}}), do: &engineer_run_finished/2
   defp finish_action(%Run{role: %Role{stage: :review_lead}}), do: &review_run_finished/2
+
+  defp finish_action(%Run{role: %Role{stage: stage}}) when stage in [:qa, :review], do: &check_run_finished/2
 
   defp finish_action(%Run{}), do: fn run, _opts -> run end
 

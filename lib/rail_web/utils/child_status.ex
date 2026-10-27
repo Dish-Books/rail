@@ -27,7 +27,7 @@ defmodule RailWeb.Utils.ChildStatus do
   def child_status(%Task{issue: %Issue{} = issue} = child, siblings) do
     by_position = Map.new(siblings, &{&1.split_position, &1})
     earlier = for position <- child.builds_on, sibling = by_position[position], do: sibling
-    run = stage_run(child)
+    run = Task.stage_run(child)
 
     unstarted? = issue.completed_at == nil and child.runs == []
     open = Enum.filter(earlier, &(is_nil(&1.merged_at) and is_nil(&1.issue.completed_at) and not canceled?(&1)))
@@ -157,7 +157,7 @@ defmodule RailWeb.Utils.ChildStatus do
       badge: if(needs, do: :dot),
       line: if(state == :refused, do: "Merge refused: #{child.merge_error}", else: label),
       line_class: style.text_class,
-      action: if(needs, do: %{label: "Finalize", tab: "finalize"})
+      action: if(needs, do: %{label: "Finalize", params: [item: "findings"]})
     }
   end
 
@@ -227,9 +227,17 @@ defmodule RailWeb.Utils.ChildStatus do
           needs -> "text-amber-700 dark:text-amber-300"
           true -> "text-slate-600 dark:text-slate-300"
         end,
-      action: if(needs, do: %{label: action(state, child), tab: run.role_id})
+      action: if(needs, do: %{label: action(state, child), params: action_params(state, child, run)})
     }
   end
+
+  # A question is answered in its agent's conversation, beside the plan, which opens on the review agent unless
+  # another is named; anything else needing the reader is the stage's own item. A child starts at Engineer, so Plan
+  # is never the one asking.
+  defp action_params(:blocked, %Task{}, %Run{role: %{stage: :review_lead}}), do: [item: "plan"]
+  defp action_params(:blocked, %Task{}, %Run{role: %{stage: stage}}), do: [item: "plan", agent: stage]
+  defp action_params(_state, %Task{stage: :engineer}, _run), do: [item: "diff"]
+  defp action_params(_state, %Task{}, _run), do: [item: "findings"]
 
   defp chip(:running, _stage, _style), do: %{label: "Running", icon: "pi-play-circle", class: blue()}
   defp chip(:blocked, _stage, _style), do: %{label: "Questions", icon: "pi-question", class: @amber}
@@ -266,13 +274,6 @@ defmodule RailWeb.Utils.ChildStatus do
   defp action(:blocked, _child), do: "Answer"
   defp action(:done, %Task{} = child), do: approval_label(child)
   defp action(_stalled, _child), do: "Fix"
-
-  # A child is read through its stage's latest run, as the task page reads it.
-  defp stage_run(%Task{runs: runs, stage: stage}) do
-    runs
-    |> Enum.filter(&(&1.role.stage == Task.role_stage(stage)))
-    |> Enum.max_by(&(&1.started_at || &1.inserted_at), DateTime, fn -> nil end)
-  end
 
   defp canceled?(%Task{issue: %Issue{state: state}}), do: state in [:canceled, :duplicate]
 

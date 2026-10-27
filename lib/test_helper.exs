@@ -47,6 +47,9 @@ Mimic.copy(Rail.Tools)
 Mimic.copy(Rail.Roles)
 Mimic.copy(Rail.Tools.Browser)
 Mimic.copy(Rail.Tools.BrowserSession)
+Mimic.copy(Rail.Tools.Clients.Speech)
+Mimic.copy(RailWeb.Endpoint)
+Mimic.copy(RailWeb.Utils.MonotonicMs)
 Mimic.copy(Rail.Tools.FollowerSupervisor)
 Mimic.copy(Rail.Issues.Tracker.Linear)
 Mimic.copy(Rail.Issues.Tracker.Github)
@@ -93,7 +96,9 @@ project =
         "canceled" => "st_canceled"
       },
       linear_workspace_id: "lw_test_seed",
-      clone_path: "/tmp/repos/test-seed"
+      # Under the run's own directory: tasks' worktrees are named for their issue, so a fixed path
+      # is one another suite on the same machine builds and removes too.
+      clone_path: Path.join(run_tmp_dir, "repos/test-seed")
     },
     upsert
   )
@@ -109,7 +114,7 @@ github_project =
       default_branch: "main",
       tracker: :github,
       key: "tgh",
-      clone_path: "/tmp/repos/test-gh"
+      clone_path: Path.join(run_tmp_dir, "repos/test-gh")
     },
     upsert
   )

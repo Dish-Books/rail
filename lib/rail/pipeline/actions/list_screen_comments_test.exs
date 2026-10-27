@@ -19,8 +19,19 @@ defmodule Rail.Pipeline.Actions.ListScreenCommentsTest do
       {:ok, _shot} = Pipeline.save_screen(shot_task, %{key: "toolbar", label: "Toolbar", file: "screens/toolbar/1.jpg"})
     end
 
-    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_lsm_ada", login: "ada", email: "ada@example.com"})
-    {:ok, grace} = Users.register_oauth_user(%{github_id: "gh_lsm_grace", login: "grace", email: "grace@example.com"})
+    {:ok, ada} =
+      Users.register_oauth_user(%{
+        github_id: "gh_lsm_ada",
+        login: "ada-list-screen-comments",
+        email: "ada-list-screen-comments@example.com"
+      })
+
+    {:ok, grace} =
+      Users.register_oauth_user(%{
+        github_id: "gh_lsm_grace",
+        login: "grace-list-screen-comments",
+        email: "grace-list-screen-comments@example.com"
+      })
 
     %{task: task, other: other, ada: user_scope(user: ada), grace: user_scope(user: grace)}
   end

@@ -4,9 +4,6 @@ defmodule Rail.Pipeline.Actions.DeleteDiffCommentTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
-  alias Rail.Roles
-  alias Rail.Tools
-  alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
   setup %{project: project} do
@@ -25,8 +22,20 @@ defmodule Rail.Pipeline.Actions.DeleteDiffCommentTest do
     {:ok, task} = Pipeline.create_task(issue, :engineer)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
-    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_dcd_ada", login: "ada", email: "ada@example.com"})
-    {:ok, grace} = Users.register_oauth_user(%{github_id: "gh_dcd_grace", login: "grace", email: "grace@example.com"})
+    {:ok, ada} =
+      Users.register_oauth_user(%{
+        github_id: "gh_dcd_ada",
+        login: "ada-delete-diff-comment",
+        email: "ada-delete-diff-comment@example.com"
+      })
+
+    {:ok, grace} =
+      Users.register_oauth_user(%{
+        github_id: "gh_dcd_grace",
+        login: "grace-delete-diff-comment",
+        email: "grace-delete-diff-comment@example.com"
+      })
+
     ada = user_scope(user: ada)
 
     {:ok, comment} =
@@ -61,24 +70,12 @@ defmodule Rail.Pipeline.Actions.DeleteDiffCommentTest do
   end
 
   test "a sent or resolved comment stays, and offers no removal", %{
-    project: project,
     task: task,
     ada: ada,
     comment: comment
   } do
-    {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
-
-    {:ok, run} =
-      Pipeline.create_run(%{
-        task_id: task.id,
-        role_id: role.id,
-        status: :finished,
-        conversation_id: "sess_delete_diff_comment",
-        started_at: DateTime.utc_now()
-      })
-
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-    {:ok, :sent, _run} = Pipeline.send_diff_comments(ada, run)
+    # As the Review tray's Send leaves them.
+    Repo.update_all(from(c in DiffComment, where: c.task_id == ^task.id and c.status == :unsent), set: [status: :sent])
     [sent] = Pipeline.list_diff_comments(ada, task)
     {:ok, resolved} = Pipeline.set_diff_comment_resolved(ada, sent, true)
 

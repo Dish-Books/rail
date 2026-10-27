@@ -7,31 +7,13 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
   alias Rail.Mcp.Schemas.McpConnection
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
-  # The smallest part of a plan the structure allows, trimmed as a save trims it.
-  @part String.trim("""
-        ## Implementation plan
-
-        ### Approach
-
-        Build it.
-
-        No diagrams: one module changes.
-
-        ### File-level changes
-
-        - `lib/rail.ex`: builds it.
-
-        ### Verification
-
-        - `lib/rail_test.exs`: covers it.
-        """)
-
-  # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
+  # The smallest plan the structure allows: one decision, one card and one criterion, and no data changes.
   @plan """
   ## Implementation plan
 
@@ -39,11 +21,19 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
 
   Extend the module.
 
-  No diagrams: one module changes.
+  ### Decisions
 
-  ### File-level changes
+  - Decision: one module changes.
 
-  - `lib/rail.ex`: extends the module.
+  ### Changes
+
+  #### `lib/rail.ex`
+
+  Extends the module.
+
+  ### Acceptance criteria
+
+  - 1: `lib/rail.ex`
 
   ### Verification
 
@@ -294,27 +284,20 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
         %RunContext{os_process: %OsProcess{task_id: task.id}, role: role, user: nil}
       end
 
-      assert {:ok, %{"content" => [%{"text" => "Ticket saved: One round." <> _rest}]}} =
-               Mcp.call_run_tool(context.(:plan), "save_ticket", %{"title" => "One round", "description" => "Body."})
+      assert {:ok,
+              %{"content" => [%{"text" => "Ticket saved: One round. No implementation plan is saved yet." <> _rest}]}} =
+               Mcp.call_run_tool(context.(:plan), "save_plan", %{"title" => "One round", "description" => "Body."})
 
-      assert {:ok, %{"content" => [%{"text" => "Plan saved, written for no design option yet." <> _rest}]}} =
+      assert {:ok,
+              %{
+                "content" => [
+                  %{"text" => "Ticket saved: One round. Plan saved, written for no design option yet." <> _rest}
+                ]
+              }} =
                Mcp.call_run_tool(context.(:plan), "save_plan", %{"plan" => @plan})
 
-      children = [
-        %{"title" => "One", "ticket" => "T1.", "plan" => @part},
-        %{"title" => "Two", "ticket" => "T2.", "plan" => @part, "builds_on" => [1]}
-      ]
-
-      assert {:ok, %{"content" => [%{"text" => "Split saved into 2 children." <> _rest}]}} =
-               Mcp.call_run_tool(context.(:plan), "save_split", %{"children" => children})
-
-      assert {:error, {:refused, "Refused, nothing saved. children 2 plan: is required."}} =
-               Mcp.call_run_tool(context.(:plan), "save_split", %{
-                 "children" => [hd(children), Map.delete(List.last(children), "plan")]
-               })
-
       assert {:ok, %{"content" => [%{"text" => "Write-up saved: One round."}]}} =
-               Mcp.call_run_tool(lead, "save_demo", %{"title" => "One round", "summary" => "Shown."})
+               Mcp.call_run_tool(context.(:demo), "save_demo", %{"title" => "One round", "summary" => "Shown."})
 
       # The engineer commits with git and its turn ending hands the work over, so no tool does either.
       assert {:error, :unknown_tool} =
@@ -329,12 +312,11 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
       test_pid = self()
 
       saves = [
-        {:plan, "save_ticket", :save_ticket},
         {:plan, "save_design_option", :save_design_option},
         {:plan, "save_plan", :save_plan},
-        {:plan, "save_split", :save_split},
         {:review_lead, "save_finding", :save_finding},
-        {:review_lead, "save_demo", :save_demo}
+        {:review_lead, "save_fix_plan", :save_fix_plan},
+        {:demo, "save_demo", :save_demo}
       ]
 
       dropped =
@@ -357,7 +339,26 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
             dropped ++ for field <- Map.keys(properties), not Map.has_key?(passed, field), do: {name, field}
         end
 
-      assert dropped == []
+      # A round of questions is a list, so what has to land is each entry's fields.
+      context = %RunContext{os_process: %OsProcess{task_id: task.id}, role: %Role{stage: :engineer, mcp_tools: []}}
+      {:ok, offered} = Mcp.list_run_tools(context)
+
+      %{"inputSchema" => %{"properties" => %{"questions" => %{"items" => %{"properties" => properties}}}}} =
+        Enum.find(offered, &(&1["name"] == "ask_questions"))
+
+      stub(Pipeline, :get_run, fn _id -> {:ok, %Rail.Pipeline.Schemas.Run{}} end)
+
+      expect(Pipeline, :ask_questions, fn _run, [entry] ->
+        send(test_pid, {:asked, entry})
+        {:error, []}
+      end)
+
+      {:error, {:refused, _nothing_asked}} =
+        Mcp.call_run_tool(context, "ask_questions", %{"questions" => [Map.new(properties, &{elem(&1, 0), 1})]})
+
+      assert_received {:asked, passed}
+
+      assert dropped ++ for(field <- Map.keys(properties), not Map.has_key?(passed, field), do: field) == []
     end
 
     test "a fix report naming no test is refused naming `test`, and the finding stays to be fixed", %{
@@ -380,12 +381,70 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
       assert [%Finding{key: "round-query-scope", status: :open, decision: :fix}] = Pipeline.list_findings(task)
     end
 
+    test "a lead's save_fix_plan saves the plan a Send made due", %{lead: lead, task: task} do
+      task = Repo.preload(task, :issue)
+      File.mkdir_p!(Path.join(task.scratch_path, "fix_plans"))
+
+      File.write!(
+        Path.join([task.scratch_path, "fix_plans", "#{task.issue.identifier}.json"]),
+        Jason.encode!(%{round: 1, findings: [], comments: [%{number: 1, kind: "diff", text: "Why?"}]})
+      )
+
+      assert {:ok, %{"content" => [%{"text" => "Fix plan saved as version 1" <> _rest}]}} =
+               Mcp.call_run_tool(lead, "save_fix_plan", %{"plan" => "### What changes\n\n#### Comment 1\n\nAnswered."})
+
+      assert %{version: 1, plan: "### What changes" <> _rest} = Pipeline.read_fix_plan(task)
+    end
+
     test "saves and their refusals append nothing to the run's log", %{lead: lead, run: run, task: task} do
       {:ok, _closed} = Mcp.call_run_tool(lead, "save_review", %{})
       {:error, {:refused, _refused}} = Mcp.call_run_tool(lead, "save_finding", %{})
 
       assert Pipeline.list_run_events(run) == []
       assert [%{round: 1}] = task |> Repo.preload(:issue) |> Pipeline.read_review()
+    end
+  end
+
+  describe "ask_questions" do
+    setup %{project: project} do
+      task = learnings_task(project, "CRQ-1")
+      {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
+
+      {:ok, run} =
+        Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
+
+      context = %RunContext{os_process: %OsProcess{run_id: run.id, task_id: task.id}, role: role}
+      %{context: context, task: task, run: run}
+    end
+
+    test "an Engineer run's round, as Jason decodes it, is filed on the run and logs no line", %{
+      context: context,
+      task: task,
+      run: %{id: run_id} = run
+    } do
+      arguments =
+        Jason.decode!(
+          ~s({"questions": [{"prompt": "Which database?", "options": ["Postgres", "SQLite"]}, {"prompt": "Behind a flag?"}]})
+        )
+
+      assert {:ok, %{"content" => [%{"text" => "Asked 2 questions. " <> _rest}]}} =
+               Mcp.call_run_tool(context, "ask_questions", arguments)
+
+      assert [
+               %Question{run_id: ^run_id, status: :asked, prompt: "Which database?", options: ["Postgres", "SQLite"]},
+               %Question{run_id: ^run_id, status: :asked, prompt: "Behind a flag?", options: []}
+             ] = Pipeline.list_questions(task, order_by: [asc: :inserted_at, asc: :id])
+
+      assert Pipeline.list_run_events(run) == []
+    end
+
+    test "a role it is not offered to falls through to the proxy and finds nothing", %{context: context, project: project} do
+      {:ok, qa} = Roles.get_role(project_id: project.id, stage: :qa)
+
+      assert {:error, :unknown_tool} =
+               Mcp.call_run_tool(%{context | role: qa}, "ask_questions", %{
+                 "questions" => [%{"prompt" => "Which database?"}]
+               })
     end
   end
 

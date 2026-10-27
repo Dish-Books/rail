@@ -8,17 +8,19 @@ defmodule Rail.Pipeline.Actions.CountAttention do
 
   @doc """
   Counts the tasks waiting on a human, across every project unless `:project_id` narrows it, the same way
-  the Overview lists them: a task whose latest run at its stage waits, and a child of a split with no run
+  the Overview lists them: a task whose stage run waits, and a child of a split with no run
   that a canceled or deleted sibling keeps from starting.
   """
   def count_attention(opts \\ []) do
     waiting =
       [project_id: opts[:project_id], preload: [:role, :questions, task: :issue]]
       |> Pipeline.list_runs()
-      |> Enum.filter(&(&1.role.stage == Task.role_stage(&1.task.stage)))
       |> Enum.group_by(& &1.task_id)
-      |> Enum.count(fn {_task_id, stage_runs} ->
-        stage_runs |> Enum.max_by(&(&1.started_at || &1.inserted_at), DateTime) |> Run.needs_attention?()
+      |> Enum.count(fn {_task_id, [%Run{task: task} | _rest] = runs} ->
+        case Task.stage_run(%{task | runs: runs}) do
+          %Run{} = run -> Run.needs_attention?(run)
+          nil -> false
+        end
       end)
 
     blocked =

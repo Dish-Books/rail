@@ -2,7 +2,6 @@ defmodule Rail.Pipeline.Utils.FormatTicketTest do
   use ExUnit.Case, async: true
 
   import Rail.Pipeline.Utils.FormatTicket
-  import Rail.Pipeline.Utils.ParseTicket
 
   alias Rail.Issues.Schemas.Issue
 
@@ -22,21 +21,5 @@ defmodule Rail.Pipeline.Utils.FormatTicketTest do
 
     assert format_ticket(%Issue{title: "Fix bug", description: nil, priority: nil}) ==
              "---\ntitle: Fix bug\n---\n"
-  end
-
-  test "round-trips through parse_ticket/1" do
-    issue = %Issue{
-      title: "Fix bug",
-      description: "## Desired outcome\n\nIt works.",
-      priority: :urgent,
-      estimate: 2
-    }
-
-    assert issue |> format_ticket() |> parse_ticket() == %{
-             title: "Fix bug",
-             description: "## Desired outcome\n\nIt works.",
-             priority: :urgent,
-             estimate: 2
-           }
   end
 end

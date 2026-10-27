@@ -15,6 +15,13 @@ defmodule RailWeb.Endpoint do
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]
 
+  # The kit is served to pages with no origin: sandboxed frames and the file:// screenshot.
+  plug Plug.Static,
+    at: "/design-kit",
+    from: {:rail, "priv/static/design-kit"},
+    gzip: not code_reloading?,
+    headers: %{"access-control-allow-origin" => "*"}
+
   plug Plug.Static,
     at: "/",
     from: :rail,

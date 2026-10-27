@@ -47,6 +47,40 @@ defmodule Rail.Tools.BrowserRecorderTest do
     assert [%{"file" => "000000.jpg", "at_ms" => 0}, %{"file" => "000001.jpg"}] = written
   end
 
+  # A voiced demo is cut by when the page was acted on, on the same clock as the frames.
+  test "writes each time the page was acted on, at the recording's clock", %{task: task, directory: directory} do
+    {:ok, recorder} = Tools.start_browser_recording(task, "demo")
+    topic = "browser:#{task.id}:demo"
+
+    Phoenix.PubSub.broadcast(Rail.PubSub, topic, {:browser_action, task.id, "demo", "click"})
+    Phoenix.PubSub.broadcast(Rail.PubSub, topic, {:browser_frame, task.id, "demo", Base.encode64("painted")})
+    # The clock starts as the recorder takes the frame, which can be after the broadcast returns.
+    _taken = :sys.get_state(recorder)
+    Process.sleep(20)
+    Phoenix.PubSub.broadcast(Rail.PubSub, topic, {:browser_action, task.id, "demo", "navigate"})
+
+    assert ^directory = BrowserRecorder.finish(recorder)
+
+    assert [%{"kind" => "click", "at_ms" => 0}, %{"kind" => "navigate", "at_ms" => later}] =
+             directory
+             |> Path.join("actions.jsonl")
+             |> File.read!()
+             |> String.split("\n", trim: true)
+             |> Enum.map(&Jason.decode!/1)
+
+    assert later >= 20
+  end
+
+  test "a new take starts with none of the last take's actions", %{task: task, directory: directory} do
+    File.mkdir_p!(directory)
+    File.write!(Path.join(directory, "actions.jsonl"), ~s({"kind": "click", "at_ms": 400}\n))
+
+    {:ok, recorder} = Tools.start_browser_recording(task, "demo")
+
+    refute File.exists?(Path.join(directory, "actions.jsonl"))
+    assert BrowserRecorder.finish(recorder)
+  end
+
   # Another agent's browser on the same task is another stream, and not the demo's.
   test "films only the browser it was started on", %{task: task, directory: directory} do
     {:ok, recorder} = Tools.start_browser_recording(task, "demo")

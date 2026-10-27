@@ -5,8 +5,6 @@ defmodule Rail.Pipeline.Actions.SetDiffCommentResolvedTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Roles
-  alias Rail.Tools
-  alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
   setup %{project: project} do
@@ -37,8 +35,20 @@ defmodule Rail.Pipeline.Actions.SetDiffCommentResolvedTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_dcr_ada", login: "ada", email: "ada@example.com"})
-    {:ok, grace} = Users.register_oauth_user(%{github_id: "gh_dcr_grace", login: "grace", email: "grace@example.com"})
+    {:ok, ada} =
+      Users.register_oauth_user(%{
+        github_id: "gh_dcr_ada",
+        login: "ada-set-diff-comment-resolved",
+        email: "ada-set-diff-comment-resolved@example.com"
+      })
+
+    {:ok, grace} =
+      Users.register_oauth_user(%{
+        github_id: "gh_dcr_grace",
+        login: "grace-set-diff-comment-resolved",
+        email: "grace-set-diff-comment-resolved@example.com"
+      })
+
     ada = user_scope(user: ada)
 
     {:ok, comment} =
@@ -55,9 +65,9 @@ defmodule Rail.Pipeline.Actions.SetDiffCommentResolvedTest do
   end
 
   describe "a sent comment" do
-    setup %{task: task, run: run, ada: ada} do
-      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-      {:ok, :sent, _run} = Pipeline.send_diff_comments(ada, run)
+    setup %{task: task, ada: ada} do
+      # As the Review tray's Send leaves them.
+      Repo.update_all(from(c in DiffComment, where: c.task_id == ^task.id and c.status == :unsent), set: [status: :sent])
       [sent] = Pipeline.list_diff_comments(ada, task)
 
       %{sent: sent}
@@ -83,7 +93,6 @@ defmodule Rail.Pipeline.Actions.SetDiffCommentResolvedTest do
       assert {:ok, %DiffComment{status: :sent}} = Pipeline.set_diff_comment_resolved(ada, resolved, false)
       assert [%DiffComment{status: :sent}] = Pipeline.list_diff_comments(ada, task)
       assert Pipeline.list_run_events(run) == events
-      assert {:error, :nothing_to_send} = Pipeline.send_diff_comments(ada, run)
     end
 
     # Two tabs clicking at once agree on where it ends up.

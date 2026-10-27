@@ -8,6 +8,7 @@ defmodule Rail.Tools.Actions.GetSandboxCapacity do
   alias Rail.Repo
   alias Rail.Tools.Clients.Docker
   alias Rail.Tools.Schemas.OsProcess
+  alias Rail.Types.Cpus
 
   @doc """
   What this machine can reserve for sandboxes, how much of it is reserved now,
@@ -23,7 +24,11 @@ defmodule Rail.Tools.Actions.GetSandboxCapacity do
   def get_sandbox_capacity do
     with {:ok, cpus, memory_gb, used_memory_gb} <- machine() do
       reserved_cpus =
-        Repo.one(from p in OsProcess, where: p.status in [:starting, :running], select: coalesce(sum(p.reserved_cpus), 0))
+        Repo.one(
+          from p in OsProcess,
+            where: p.status in [:starting, :running],
+            select: type(coalesce(sum(p.reserved_cpus), 0), Cpus)
+        )
 
       {:ok,
        %{

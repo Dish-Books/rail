@@ -4,32 +4,13 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
   alias Rail.Issues
   alias Rail.Learnings.Schemas.LearningRetrieval
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.ImplementationPlan
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
-
-  # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
-  @plan """
-  ## Implementation plan
-
-  ### Approach
-
-  Extend the module.
-
-  No diagrams: one module changes.
-
-  ### File-level changes
-
-  - `lib/rail.ex`: extends the module.
-
-  ### Verification
-
-  - `lib/rail_test.exs`: covers the extension.
-  """
 
   setup %{project: project} do
     scope = system_scope()
@@ -67,14 +48,13 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     task: %Task{worktree_path: worktree_path} = task,
     run: run
   } do
-    %ImplementationPlan{}
-    |> ImplementationPlan.changeset(%{
+    Repo.insert!(%Round{
       task_id: task.id,
-      content:
+      number: 1,
+      plan:
         ~s{### Approach\nExtend the invoices module.\n\n```mermaid\nflowchart LR\n  A["InvoicesLive"] --> B["Invoices"]\n```\n\n```elixir\ndef list_invoices(scope, filters)\n```},
-      captured_at: DateTime.utc_now()
+      approved_at: DateTime.utc_now()
     })
-    |> Repo.insert!()
 
     commits_dir = Path.join(task.scratch_path, "commits")
     test_pid = self()
@@ -98,10 +78,12 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
       assert prompt =~ "```elixir\ndef list_invoices(scope, filters)\n```"
       assert prompt =~ "A turn that ends with commits the remote does not have yet hands them over"
       assert prompt =~ "Work you leave uncommitted is not sent on"
+      assert prompt =~ "A later round whose plan changes no code"
+      assert prompt =~ "Rail sends the round to Review as it stands."
       assert prompt =~ "Your last message is what the human reads, not the commit body"
       assert prompt =~ "End every commit message with the line `Ticket: SEN-1`."
-      assert prompt =~ "check your branch against `origin/main`, which Rail fetched as the turn started"
-      assert prompt =~ "bring it up to date by merging it in"
+      assert prompt =~ "Never merge `origin/main` in unless the plan says to, or to get CI passing as below"
+      assert prompt =~ "a person brings the branch up to date with Update, which is a round of its own"
 
       assert prompt =~
                "Never rewrite commit history: no rebase, no amend, no reset or squash of a commit, nothing forced."
@@ -124,7 +106,85 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     refute File.exists?(commits_dir)
   end
 
-  # Product can approve straight past design and architect, which leaves no plan.
+  # Each round starts on a clean conversation, so a later round's brief carries what it fixes with its plan.
+  test "a later round carries the findings already on the task and the human's comments with its plan", %{
+    task: task,
+    run: run
+  } do
+    Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Filter by vendor.", approved_at: DateTime.utc_now()})
+    saved_at = ~U[2026-10-12 16:50:00.000000Z]
+
+    Repo.insert!(%Round{
+      task_id: task.id,
+      number: 2,
+      plan: "Guard the nil.",
+      plan_saved_at: saved_at,
+      approved_at: DateTime.utc_now()
+    })
+
+    {:ok, _finding} =
+      Pipeline.save_finding(task, %{
+        key: "unhandled-nil",
+        kind: :code,
+        raised_by: :code_reviewer,
+        title: "Nil is not handled",
+        problem: "It crashes.",
+        file: "lib/a.ex",
+        line: 3,
+        fix: "Guard it.",
+        why: "It crashes.",
+        rule: "Every caller handles nil.",
+        severity: :major,
+        recommendation: :fix,
+        places: [%{file: "lib/a.ex", line: 3}],
+        evidence: [%{name: "range", kind: :code, file: "lib/a.ex", line: 3}]
+      })
+
+    path = Path.join([task.scratch_path, "fix_plans", "SEN-1.json"])
+    File.mkdir_p!(Path.dirname(path))
+
+    File.write!(
+      path,
+      Jason.encode!(%{
+        round: 1,
+        plan: "Guard the nil.",
+        saved_at: saved_at,
+        approved_at: "2026-10-12T16:58:00Z",
+        comments: [%{number: 1, kind: "diff", place: "lib/a.ex:3", text: "Name it."}]
+      })
+    )
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "Guard the nil."
+      assert prompt =~ "Each round starts you on a clean conversation"
+      assert prompt =~ "save your report with `save_report`"
+      assert prompt =~ "- `unhandled-nil` [round 1, major code, human ruled: not yet, status: open] Nil is not handled"
+      assert prompt =~ "The human's comments this round, by the numbers the plan uses:\n\n1. On lib/a.ex:3: Name it."
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_engineer_run(run)
+
+    # An Update's round was approved from no fix plan, so the last one's comments are not its to answer.
+    Repo.insert!(%Round{
+      task_id: task.id,
+      number: 3,
+      plan: "Merge main in.",
+      plan_saved_at: DateTime.utc_now(),
+      approved_at: DateTime.utc_now()
+    })
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "Merge main in."
+      assert prompt =~ "`unhandled-nil`"
+      refute prompt =~ "The human's comments this round"
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_engineer_run(run)
+  end
+
+  # A task sent straight to Engineer has no plan.
   test "says the ticket is the whole specification when there is no plan", %{run: run} do
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
       assert ["-p", prompt | _rest] = argv
@@ -242,14 +302,15 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_engineer_run(run)
   end
 
-  test "a plan and a picked option revised after approval are what the next Engineer brief carries", %{
+  test "a picked option revised after approval is what the next Engineer brief carries, with the plan as approved", %{
     task: task,
     run: run
   } do
-    Repo.insert!(%ImplementationPlan{
+    Repo.insert!(%Round{
       task_id: task.id,
-      content: "## Implementation plan\n\nAs approved.",
-      captured_at: DateTime.utc_now()
+      number: 1,
+      plan: "## Implementation plan\n\nAs approved.",
+      approved_at: DateTime.utc_now()
     })
 
     design_dir = Path.join(task.scratch_path, "design")
@@ -258,16 +319,13 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     File.write!(Path.join(design_dir, "cards.html"), "<h1>As approved</h1>")
     File.write!(Path.join(design_dir, "picked"), "cards")
 
-    {:ok, _plan} =
-      Pipeline.save_plan(task, %{plan: String.replace(@plan, "Extend the module.", "Revised for the comments.")})
-
     File.write!(Path.join(design_dir, "cards.html"), "<h1>Revised for the comments</h1>")
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
       assert ["-p", prompt | _rest] = argv
-      assert prompt =~ "Revised for the comments."
+      assert prompt =~ "As approved."
       assert prompt =~ "<h1>Revised for the comments</h1>"
-      refute prompt =~ "As approved"
+      refute prompt =~ "<h1>As approved</h1>"
 
       {:ok, %OsProcess{run: spawned}}
     end)
@@ -354,11 +412,15 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_engineer_run(run)
   end
 
-  test "tells the engineer CI runs on its commit, and that failures come back to it", %{project: project, run: run} do
+  test "tells the engineer CI runs on its commit, that failures come back to it, and that it clears any failure",
+       %{project: project, run: run} do
     {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
       assert prompt =~ "Rail runs `mise run ci` on them before anything else sees them"
+      assert prompt =~ "a failure is yours to clear even when your change did not cause it"
+      assert prompt =~ "Fetch `origin/main`: when it has the fix, merge it in."
+      assert prompt =~ "fix the failing test or code on this branch, outside the plan if that is where it is"
       {:ok, %OsProcess{run: spawned}}
     end)
 
@@ -373,13 +435,12 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     } do
       stub_vertex(%{"Filter invoices" => vector([1.0])})
 
-      %ImplementationPlan{}
-      |> ImplementationPlan.changeset(%{
+      Repo.insert!(%Round{
         task_id: task.id,
-        content: "Extend the invoices module.",
-        captured_at: DateTime.utc_now()
+        number: 1,
+        plan: "Extend the invoices module.",
+        approved_at: DateTime.utc_now()
       })
-      |> Repo.insert!()
 
       rule =
         learning(project, %{rule: "Filters live in the URL", why: "So a view can be linked", kind: :convention},

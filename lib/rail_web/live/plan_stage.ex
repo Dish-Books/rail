@@ -1,7 +1,7 @@
 defmodule RailWeb.Live.PlanStage do
   @moduledoc """
-  The Plan step: the ticket, the design options, the plan and the split, a list of four with the selected
-  one beside it, and the one Approve in the header. A child of a split shows only its approved part.
+  The Plan step: the ticket, the design options and the plan, each a tab that switches in the browser, and the one
+  Approve in the header. A child of a split shows only its approved part.
 
   Everything here is read off scratch and the runs whenever the page reloads it, so a save shows
   the moment it lands. What waits on the human opens when the step opens, and only a click changes it after.
@@ -15,9 +15,9 @@ defmodule RailWeb.Live.PlanStage do
   import RailWeb.Utils.BuildDocumentBlocks
   import RailWeb.Utils.CalculateDocumentComments
 
+  alias Rail.Git
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -38,9 +38,9 @@ defmodule RailWeb.Live.PlanStage do
       |> assign_new(:line_draft, fn -> nil end)
       |> assign_new(:reported_changed, fn -> nil end)
       |> assign_new(:selected_key, fn -> nil end)
-      |> assign_new(:diagram_views, fn -> %{change: :diagram, call_flow: :diagram} end)
-      |> assign_new(:open_child, fn -> nil end)
       |> load()
+      |> assign_reviewed()
+      |> assign_default_paths()
 
     {:ok, socket}
   end
@@ -49,181 +49,126 @@ defmodule RailWeb.Live.PlanStage do
   def render(assigns) do
     ~H"""
     <div id="plan-stage" data-qa="plan-stage" class="contents">
-      <.task_layout
-        task={@task}
-        run={@run}
-        stage_run={@stage_run}
-        line={@line}
-        title={@task.issue.title}
-        status={@status}
-        flush
+      <p
+        :if={@error}
+        id="plan-error"
+        data-qa="plan_error"
+        class="px-6 pt-3 text-xs text-red-600 dark:text-red-500"
       >
-        <:breadcrumb :if={@breadcrumb != []}>{render_slot(@breadcrumb)}</:breadcrumb>
-        <:tabs>{render_slot(@tabs)}</:tabs>
+        {@error}
+      </p>
 
-        <:actions>
-          {render_slot(@actions)}
+      <.child_plan_pane
+        :if={@child_of}
+        child_of={@child_of}
+        plan={@plan}
+        sheet={@sheet}
+        criteria={@criteria}
+        default_paths={@default_paths}
+        project={@task.project}
+        target={@myself}
+      />
 
-          <span
-            :if={@approved}
-            id="plan-approved"
-            data-qa="plan_approved"
-            class="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400"
-          >
-            <.icon name="pi-check-circle" class="size-4" /> Plan approved
-          </span>
-
+      <div :if={!@child_of} id="plan-pane" class="@container h-full flex flex-col min-h-0">
+        <div
+          id={"plan-tabs-#{@task.id}"}
+          role="tablist"
+          aria-label="Plan"
+          class="shrink-0 flex items-center gap-6 px-6 @5xl:px-8 border-b border-slate-200 dark:border-slate-700 overflow-x-auto"
+        >
           <button
-            :if={@show_approve}
+            :for={tab <- @tabs}
             type="button"
-            id="approve-plan"
-            data-qa="approve_plan"
-            phx-click="approve"
-            phx-target={@myself}
-            phx-disable-with="Approving…"
-            class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs disabled:opacity-60 disabled:cursor-not-allowed"
+            role="tab"
+            id={"plan-tab-#{tab.id}"}
+            data-qa="plan_tab"
+            aria-controls={"plan-section-#{tab.id}"}
+            aria-selected={to_string(tab.id == @open_tab.tab)}
+            phx-mounted={JS.ignore_attributes(["aria-selected"])}
+            phx-click={show_tab(@task, tab.id)}
+            class="shrink-0 inline-flex items-center gap-2 h-10 px-1 border-b-2 border-transparent text-[13.5px] font-semibold text-slate-500 dark:text-slate-400 not-aria-selected:hover:text-slate-900 dark:not-aria-selected:hover:text-slate-100 not-aria-selected:hover:border-slate-300 dark:not-aria-selected:hover:border-slate-500 aria-selected:border-indigo-500 dark:aria-selected:border-indigo-400 aria-selected:text-slate-900 dark:aria-selected:text-slate-100 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-t"
           >
-            <.icon name="pi-check" class="size-4" /> Approve
+            {tab.label}
+            <span
+              :if={tab.mark == :pick}
+              id={"plan-tab-#{tab.id}-waiting"}
+              data-qa="plan_tab_waiting"
+              class="grid place-items-center size-[1.1rem] rounded-full bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200"
+            >
+              <.icon name="pi-hand-palm-fill" class="size-2.5" />
+              <span class="sr-only">, waiting on your pick</span>
+            </span>
+            <span
+              :if={tab.mark == :working}
+              id={"plan-tab-#{tab.id}-working"}
+              data-qa="plan_tab_working"
+              class="block size-3 shrink-0 rounded-full border-2 border-slate-300 dark:border-slate-600 border-t-blue-500 motion-safe:animate-spin"
+            >
+              <span class="sr-only">, being written</span>
+            </span>
           </button>
-        </:actions>
-
-        <:alerts :if={@error}>
-          <p id="plan-error" data-qa="plan_error" class="text-xs text-red-600 dark:text-red-500">
-            {@error}
-          </p>
-        </:alerts>
-
-        <.child_plan_pane
-          :if={@child_of}
-          child_of={@child_of}
-          plan={@plan}
-          sheet={@sheet}
-          diagram_views={@diagram_views}
-          target={@myself}
-        />
-
-        <div :if={!@child_of} class="@container h-full">
-          <div class="h-full flex flex-col @5xl:flex-row">
-            <nav
-              id="plan-items"
-              aria-label="Plan outputs"
-              class="shrink-0 flex @5xl:flex-col gap-2 @5xl:gap-1 p-2 @5xl:w-[280px] border-b @5xl:border-b-0 @5xl:border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/30"
-            >
-              <button
-                :for={item <- @items}
-                type="button"
-                id={"plan-item-#{item.id}"}
-                data-qa="plan_item"
-                aria-current={to_string(item.id == @selected_item)}
-                phx-click="select_item"
-                phx-value-item={item.id}
-                phx-target={@myself}
-                class={[
-                  "flex-1 @5xl:flex-none @5xl:w-full min-w-0 flex gap-2.5 px-3 py-2.5 rounded-lg text-left cursor-pointer",
-                  item.id == @selected_item &&
-                    "bg-blue-50 dark:bg-blue-950/40 ring-1 ring-blue-200 dark:ring-blue-800",
-                  item.id != @selected_item && "hover:bg-slate-100 dark:hover:bg-slate-800/60"
-                ]}
-              >
-                <.icon name={item.icon} class="size-[17px] mt-0.5 text-slate-500 dark:text-slate-300" />
-                <span class="min-w-0 flex-1">
-                  <span class={[
-                    "block text-[13.5px] font-semibold",
-                    item.tone == :skipped && "text-slate-500 dark:text-slate-400",
-                    item.tone != :skipped && "text-slate-900 dark:text-slate-100"
-                  ]}>
-                    {item.label}
-                  </span>
-                  <span
-                    id={"plan-item-#{item.id}-status"}
-                    class={["block text-[11.5px] truncate", status_class(item.tone)]}
-                  >
-                    {item.line}<span :if={item.line && item.saved_at}> · </span><span :if={
-                      item.saved_at
-                    }>saved
-                    <.local_time
-                      id={"plan-item-#{item.id}-saved"}
-                      at={item.saved_at}
-                    /></span>
-                  </span>
-                </span>
-                <.item_mark tone={item.tone} />
-              </button>
-            </nav>
-
-            <div
-              id="plan-pane"
-              class="flex-1 min-w-0 min-h-0 overflow-y-auto px-6 @5xl:px-8 py-5 @5xl:py-6"
-            >
-              <.ticket_pane
-                :if={@selected_item == "ticket"}
-                ticket={@ticket}
-                lines={@ticket_lines}
-                running={@running}
-                pick_up={@pick_up}
-                placed={@ticket_comments.placed}
-                changed={@ticket_comments.lifted}
-                draft={@line_draft}
-                offered={@ticket_offered}
-                target={@myself}
-              />
-
-              <.design_pane
-                :if={@selected_item == "design"}
-                task={@task}
-                design={@design}
-                option={@option}
-                plan={@plan}
-                running={@running}
-                pick_up={@pick_up}
-                can_pick={@can_pick}
-                comment_reason={@comment_reason}
-                commenting={@commenting}
-                draft={@draft}
-                markers={@markers}
-                user_id={@current_scope.user.id}
-                target={@myself}
-              />
-
-              <.plan_pane
-                :if={@selected_item == "plan"}
-                plan={@plan}
-                sheet={@sheet}
-                banner={@banner}
-                approved={@approved}
-                running={@running}
-                pending_text={@pending_text}
-                diagram_views={@diagram_views}
-                lines={@plan_lines}
-                placed={@plan_comments.placed}
-                changed={@plan_comments.lifted}
-                draft={@line_draft}
-                offered={@plan_offered}
-                target={@myself}
-              />
-
-              <.split_pane
-                :if={@selected_item == "split"}
-                split={@split}
-                open_child={@open_child}
-                diagram_views={@diagram_views}
-                target={@myself}
-              />
-            </div>
-          </div>
         </div>
 
-        <:sidebar :if={!@child_of}>{render_slot(@sidebar)}</:sidebar>
-      </.task_layout>
+        <div id={"plan-panels-#{@task.id}"} class="flex-1 min-h-0">
+          <.plan_section id="ticket" open={@open_tab.tab}>
+            <.ticket_pane
+              ticket={@ticket}
+              lines={@ticket_lines}
+              running={@running}
+              pick_up={@pick_up}
+              placed={@ticket_comments.placed}
+              changed={@ticket_comments.lifted}
+              draft={@line_draft}
+              offered={@ticket_offered}
+              target={@myself}
+            />
+          </.plan_section>
+
+          <.plan_section id="design" open={@open_tab.tab}>
+            <.design_pane
+              task={@task}
+              design={@design}
+              option={@option}
+              plan={@plan}
+              running={@running}
+              pick_up={@pick_up}
+              can_pick={@can_pick}
+              comment_reason={@comment_reason}
+              commenting={@commenting}
+              draft={@draft}
+              markers={@markers}
+              user_id={@current_scope.user.id}
+              target={@myself}
+            />
+          </.plan_section>
+
+          <.plan_section id="plan" open={@open_tab.tab}>
+            <.plan_pane
+              plan={@plan}
+              sheet={@sheet}
+              banner={@banner}
+              approved={@approved}
+              running={@running}
+              pending_text={@pending_text}
+              criteria={@criteria}
+              lines={@plan_lines}
+              reviewed={@reviewed}
+              default_paths={@default_paths}
+              project={@task.project}
+              placed={@plan_comments.placed}
+              changed={@plan_comments.lifted}
+              draft={@line_draft}
+              offered={@plan_offered}
+              target={@myself}
+            />
+          </.plan_section>
+        </div>
+      </div>
     </div>
     """
   end
 
   @impl true
-  def handle_event("select_item", %{"item" => item}, socket) when item in ["ticket", "design", "plan", "split"] do
-    {:noreply, assign(socket, :selected_item, item)}
-  end
-
   def handle_event("select_option", %{"key" => key}, socket) do
     socket =
       socket
@@ -235,16 +180,6 @@ defmodule RailWeb.Live.PlanStage do
 
   def handle_event("pick", %{"key" => key}, socket) do
     socket.assigns.current_scope |> Pipeline.pick_design_option(socket.assigns.run, key) |> respond(socket)
-  end
-
-  def handle_event("approve", _params, socket) do
-    socket.assigns.current_scope |> Pipeline.approve_plan(socket.assigns.run) |> respond(socket)
-  end
-
-  # A card opens to its child's whole ticket and part of the plan; opening it again closes it.
-  def handle_event("open_child", %{"number" => number}, socket) do
-    number = String.to_integer(number)
-    {:noreply, assign(socket, :open_child, if(socket.assigns.open_child == number, do: nil, else: number))}
   end
 
   def handle_event("toggle_commenting", _params, socket) do
@@ -406,12 +341,17 @@ defmodule RailWeb.Live.PlanStage do
     end
   end
 
-  def handle_event("diagram_view", %{"view" => view}, socket) do
-    [diagram, shown] = String.split(view, ":")
-    diagram = if diagram == "call_flow", do: :call_flow, else: :change
-    shown = if shown == "source", do: :source, else: :diagram
+  # Only a card this page drew is marked, as the path comes from the page. The digest is the one the reader saw, so a
+  # click from a page drawn before a revision marks the version read, which then reads revised.
+  def handle_event("toggle_plan_file_reviewed", %{"path" => path, "digest" => digest, "reviewed" => reviewed}, socket) do
+    %{current_scope: scope, task: task, sheet: sheet} = socket.assigns
 
-    {:noreply, update(socket, :diagram_views, &Map.put(&1, diagram, shown))}
+    if sheet && Enum.any?(sheet.cards, &(&1.path == path)) do
+      {:ok, _mark} = Git.set_file_viewed(scope, task, :plan, path, digest, reviewed == "true")
+      {:noreply, assign(socket, :reviewed, Git.list_viewed_files(scope, task, :plan))}
+    else
+      {:noreply, socket}
+    end
   end
 
   # --- Panes ---
@@ -740,8 +680,6 @@ defmodule RailWeb.Live.PlanStage do
             phx-click="pick"
             phx-value-key={@option.key}
             phx-target={@target}
-            disabled={@running}
-            title={if @running, do: "Plan is working. Pick once its turn ends."}
             class="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Use this design
@@ -803,8 +741,11 @@ defmodule RailWeb.Live.PlanStage do
   attr :approved, :boolean, required: true
   attr :running, :boolean, required: true
   attr :pending_text, :string, required: true
-  attr :diagram_views, :map, required: true
+  attr :criteria, :list, required: true, doc: "the ticket's acceptance criteria, for the plan's criteria table"
   attr :lines, :list, required: true, doc: "the plan's lines, read off its sheet or, without one, off its markdown"
+  attr :reviewed, :map, default: nil, doc: "the cards the reader marked reviewed, by path, with the digest each had"
+  attr :default_paths, :any, required: true
+  attr :project, :any, required: true
   attr :placed, :map, required: true
   attr :changed, :list, required: true
   attr :draft, :map, default: nil
@@ -844,9 +785,11 @@ defmodule RailWeb.Live.PlanStage do
       <.plan_sheet
         :if={@sheet}
         sheet={@sheet}
-        diagram_views={@diagram_views}
-        event="diagram_view"
+        criteria={@criteria}
+        default_paths={@default_paths}
+        project={@project}
         target={@target}
+        reviewed={@reviewed}
         placed={@placed}
         changed={@changed}
         draft={@draft}
@@ -875,153 +818,12 @@ defmodule RailWeb.Live.PlanStage do
     """
   end
 
-  attr :split, :any, required: true
-  attr :open_child, :integer, default: nil
-  attr :diagram_views, :map, default: %{}
-  attr :target, :any, default: nil
-
-  defp split_pane(%{split: nil} = assigns) do
-    ~H"""
-    <div
-      id="plan-split-none"
-      data-qa="plan_split_none"
-      class="flex flex-col items-center text-center max-w-md mx-auto py-14"
-    >
-      <div class="flex items-center justify-center size-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 ring-1 ring-slate-200 dark:ring-slate-700">
-        <.icon name="pi-arrows-split" class="size-7" />
-      </div>
-      <h2 class="mt-5 text-base font-semibold text-slate-900 dark:text-slate-100">Not split</h2>
-      <p class="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-        Approve makes one task, which moves to Implement. Ask Plan for a split when the work is too big for one ticket.
-      </p>
-    </div>
-    """
-  end
-
-  defp split_pane(assigns) do
-    children = Enum.map(assigns.split.children, &Map.put(&1, :first_file, first_file(&1.plan)))
-    open = Enum.find(assigns.split.children, &(&1.number == assigns.open_child))
-
-    assigns =
-      assigns
-      |> assign(:rounds, rounds(children))
-      |> assign(:open, open)
-      |> assign(:open_sheet, open && build_plan_sheet(open.plan))
-
-    ~H"""
-    <div id="plan-split" data-qa="plan_split" class="@container">
-      <div class="flex items-baseline gap-3 mb-4">
-        <h2 class="text-xl font-bold text-slate-900 dark:text-slate-100">
-          Split into {length(@split.children)} children
-        </h2>
-        <span class="text-sm text-slate-500 dark:text-slate-400">
-          {points(@split.children)} · {length(@rounds)} {if length(@rounds) == 1,
-            do: "round",
-            else: "rounds"}
-        </span>
-      </div>
-
-      <div class="grid @3xl:grid-cols-3 gap-5 items-start">
-        <div :for={{label, children} <- @rounds} data-qa="plan_split_round" class="min-w-0 space-y-2">
-          <p class="px-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            {label}
-          </p>
-          <div
-            :for={child <- children}
-            id={"plan-split-child-#{child.number}"}
-            data-qa="plan_split_child"
-            class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/60 p-3.5 space-y-2.5 min-w-0"
-          >
-            <div class="flex items-start gap-2.5">
-              <span class="flex items-center justify-center size-6 shrink-0 rounded-full bg-slate-100 dark:bg-slate-800 font-mono text-xs text-slate-600 dark:text-slate-300">
-                {child.number}
-              </span>
-              <p class="min-w-0 flex-1 text-[13.5px] font-semibold leading-snug text-slate-900 dark:text-slate-100 wrap-break-word">
-                {child.title}
-              </p>
-              <span
-                :if={child.estimate}
-                title="Estimate"
-                class="shrink-0 inline-flex items-center gap-1 h-6 px-2 rounded-full border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300"
-              >
-                <.icon name="pi-triangle" class="size-[11px] text-slate-500" />{child.estimate}
-              </span>
-            </div>
-            <p
-              id={"plan-split-child-#{child.number}-order"}
-              class="text-[11.5px] text-slate-500 dark:text-slate-400"
-            >
-              {if child.builds_on == [],
-                do: "starts at once",
-                else: "after " <> join_and(child.builds_on)}
-            </p>
-            <p class="text-[12.5px] leading-relaxed text-slate-600 dark:text-slate-300 line-clamp-2 wrap-break-word">
-              {first_paragraph(child.ticket)}
-            </p>
-            <p class="text-[11.5px] text-slate-500 dark:text-slate-400">
-              {count_label(criteria(child.ticket), "criterion", "criteria")}
-            </p>
-            <div class="pt-2 border-t border-slate-200 dark:border-slate-800">
-              <p class="font-mono text-[11.5px] text-slate-700 dark:text-slate-300 truncate">
-                {child.first_file.path}
-              </p>
-              <p :if={child.first_file.more > 0} class="font-mono text-[11.5px] text-slate-500">
-                + {child.first_file.more} more
-              </p>
-            </div>
-            <button
-              type="button"
-              id={"plan-split-child-#{child.number}-open"}
-              aria-expanded={to_string(@open_child == child.number)}
-              aria-controls="plan-split-child-detail"
-              phx-click="open_child"
-              phx-value-number={child.number}
-              phx-target={@target}
-              class="text-[12.5px] font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
-            >
-              {if @open_child == child.number,
-                do: "Hide the ticket and plan",
-                else: "Read the ticket and plan"}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <section
-        :if={@open}
-        id="plan-split-child-detail"
-        data-qa="plan_split_child_detail"
-        class="mt-6 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/60 p-5 space-y-6 select-text"
-      >
-        <h3 class="text-lg font-bold text-slate-900 dark:text-slate-100 wrap-break-word">
-          {@open.number}. {@open.title}
-        </h3>
-        <div>
-          <p class="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Ticket
-          </p>
-          <.markdown content={@open.ticket} class="text-[15px] leading-relaxed" />
-        </div>
-        <div>
-          <p class="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Part of the plan
-          </p>
-          <.plan_sheet
-            sheet={@open_sheet}
-            diagram_views={@diagram_views}
-            event="diagram_view"
-            target={@target}
-          />
-        </div>
-      </section>
-    </div>
-    """
-  end
-
   attr :child_of, :map, required: true
   attr :plan, :any, required: true
   attr :sheet, :any, required: true
-  attr :diagram_views, :map, required: true
+  attr :criteria, :list, required: true
+  attr :default_paths, :any, required: true
+  attr :project, :any, required: true
   attr :target, :any, required: true
 
   # A child never runs Plan: its plan is the part of its parent's it was approved with.
@@ -1061,8 +863,10 @@ defmodule RailWeb.Live.PlanStage do
         <.plan_sheet
           :if={@sheet}
           sheet={@sheet}
-          diagram_views={@diagram_views}
-          event="diagram_view"
+          criteria={@criteria}
+          part={@child_of.position}
+          default_paths={@default_paths}
+          project={@project}
           target={@target}
         />
         <.markdown :if={@sheet == nil} content={@plan.content} class="text-[15px] leading-relaxed" />
@@ -1094,21 +898,27 @@ defmodule RailWeb.Live.PlanStage do
     """
   end
 
-  attr :tone, :atom, required: true
+  attr :id, :string, required: true
+  attr :open, :string, required: true, doc: "the tab the page opened on"
+  slot :inner_block, required: true
 
-  defp item_mark(%{tone: :working} = assigns) do
+  # Every part is on the page and only the open one shows, so a tab switches without asking the server.
+  defp plan_section(assigns) do
     ~H"""
-    <span class="mt-0.5">
-      <span class="block size-3 shrink-0 rounded-full border-2 border-slate-300 dark:border-slate-600 border-t-blue-500 motion-safe:animate-spin" />
-    </span>
-    """
-  end
-
-  defp item_mark(assigns) do
-    assigns = assign(assigns, :mark, mark(assigns.tone))
-
-    ~H"""
-    <.icon name={@mark.icon} class={["size-[15px] mt-0.5", @mark.class]} />
+    <section
+      id={"plan-section-#{@id}"}
+      role="tabpanel"
+      aria-labelledby={"plan-tab-#{@id}"}
+      tabindex="0"
+      data-qa="plan_section"
+      phx-mounted={JS.ignore_attributes(["class"])}
+      class={[
+        "h-full min-w-0 overflow-y-auto px-6 @5xl:px-8 py-5 @5xl:py-6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500",
+        @id != @open && "hidden"
+      ]}
+    >
+      {render_slot(@inner_block)}
+    </section>
     """
   end
 
@@ -1141,42 +951,64 @@ defmodule RailWeb.Live.PlanStage do
 
   defp load(socket) do
     %{task: task, run: run} = socket.assigns
-    ticket = Pipeline.read_ticket(task)
+    # The combined plan is the first round's; a later round carries the ticket as its plan changed it.
+    rounds = Pipeline.list_rounds(task)
+    round = List.first(rounds)
+    latest = List.last(rounds)
+    ticket = latest && latest.ticket && Map.put(Map.from_struct(latest.ticket), :saved_at, latest.plan_saved_at)
     design = Pipeline.read_design(task)
-    {plan, approved} = plan(task)
-    split = Pipeline.read_split(task)
+    plan = if round && round.plan, do: %{content: round.plan, saved_at: round.plan_saved_at, design: round.design}
+    approved = plan != nil and round.approved_at != nil
     running = Run.running?(run)
     can_chat = Run.can_chat?(run)
+    # Once the work started, a comment asks the review agent for a change to the plan, the design or the ticket.
+    amending = approved and task.stage in [:review, :finalize] and Run.can_chat?(socket.assigns[:chat_run])
     picked = design && Enum.find(design.options, &(&1.key == design.picked))
     selected_key = selected_key(design, socket.assigns.selected_key)
-    sheet = plan && build_plan_sheet(plan.content)
-    items = items(ticket, design, picked, plan, sheet, split, running)
+    ticket_lines = ticket_lines(ticket)
+    sheet = sheet(plan, ticket_lines)
+    tabs = tabs(ticket, design, picked, plan, running)
 
     socket
     |> assign(:ticket, ticket)
-    |> assign_ticket_lines(ticket)
+    |> assign_ticket_lines(ticket_lines)
     |> assign(:design, design)
     |> assign(:plan, plan)
-    |> assign(:split, split)
     |> assign(:sheet, sheet)
     |> assign(:plan_lines, plan_lines(plan, sheet))
     |> assign(:approved, approved)
     |> assign(:running, running)
     |> assign(:can_pick, task.stage == :plan and can_chat)
-    |> assign_offered(ticket, plan, can_chat and not approved)
+    |> assign_offered(ticket, plan, (can_chat and not approved) or amending)
     |> assign(:selected_key, selected_key)
     |> assign(:option, shown_option(design, selected_key))
-    |> assign(:items, items)
-    |> assign_new(:selected_item, fn -> default_item(items, ticket, plan, split) end)
+    |> assign(:tabs, tabs)
+    |> assign_open_tab(task, tabs, plan)
     |> assign(:banner, banner(plan, picked, running))
     |> assign(:pick_up, pick_up(run))
     |> assign(:pending_text, pending_text(running, pick_up(run)))
-    |> assign(:show_approve, approvable?(socket.assigns, ticket, design, plan))
-    |> assign(:comment_reason, comment_reason(design, run, approved))
+    |> assign(:comment_reason, comment_reason(design, run, approved and not amending))
     |> stop_commenting_unless_allowed()
     |> close_line_draft_unless_offered()
     |> assign_comments()
   end
+
+  # Git is asked once per set of paths the sheet shows, so a comment or an unrelated update does not ask again.
+  defp assign_default_paths(socket) do
+    %{task: task, sheet: sheet} = socket.assigns
+    paths = Enum.sort(Enum.uniq(card_paths(sheet)))
+
+    if socket.assigns[:default_paths_of] == paths do
+      socket
+    else
+      socket
+      |> assign(:default_paths_of, paths)
+      |> assign(:default_paths, Git.list_default_branch_paths(task.project, paths))
+    end
+  end
+
+  defp card_paths(%{cards: cards}), do: Enum.map(cards, & &1.path)
+  defp card_paths(nil), do: []
 
   # Numbered in round order, so a card on a line carries the number the tray gives it.
   defp assign_comments(socket) do
@@ -1226,15 +1058,17 @@ defmodule RailWeb.Live.PlanStage do
   defp close_line_draft_unless_offered(socket), do: socket
 
   # The title, the priority and the estimate are lines of the ticket as much as its description's are.
-  defp assign_ticket_lines(socket, nil), do: socket |> assign(:ticket_lines, nil) |> assign(:ticket_line_list, [])
+  defp assign_ticket_lines(socket, nil),
+    do: socket |> assign(:ticket_lines, nil) |> assign(:ticket_line_list, []) |> assign(:criteria, [])
 
-  defp assign_ticket_lines(socket, ticket) do
-    lines = ticket_lines(ticket)
-
+  defp assign_ticket_lines(socket, lines) do
     socket
     |> assign(:ticket_lines, lines)
     |> assign(:ticket_line_list, [lines.title, lines.priority, lines.estimate | lines.description])
+    |> assign(:criteria, criteria_lines(lines))
   end
+
+  defp ticket_lines(nil), do: nil
 
   defp ticket_lines(ticket) do
     priority = (ticket.priority && Issue.priority_label(ticket.priority)) || "No priority"
@@ -1258,6 +1092,19 @@ defmodule RailWeb.Live.PlanStage do
     %{key: "#{kind}-#{:erlang.phash2({text, 1})}", kind: kind, text: text, occurrence: 1, label: label, depth: 0}
   end
 
+  # A row for each of the ticket's criteria, so one the plan leaves out takes a comment too.
+  defp sheet(nil, _ticket_lines), do: nil
+
+  defp sheet(plan, ticket_lines),
+    do: build_plan_sheet(plan.content, ticket_lines |> criteria_lines() |> Enum.map(& &1.number))
+
+  # Offered on the task's own plan alone, not on the part a child was approved with.
+  defp assign_reviewed(%{assigns: %{sheet: nil}} = socket), do: assign(socket, :reviewed, nil)
+  defp assign_reviewed(%{assigns: %{child_of: %{}}} = socket), do: assign(socket, :reviewed, nil)
+
+  defp assign_reviewed(%{assigns: %{current_scope: scope, task: task}} = socket),
+    do: assign(socket, :reviewed, Git.list_viewed_files(scope, task, :plan))
+
   defp plan_lines(nil, _sheet), do: []
   defp plan_lines(_plan, %{lines: lines}), do: lines
   defp plan_lines(plan, nil), do: build_document_blocks(plan.content)
@@ -1266,8 +1113,10 @@ defmodule RailWeb.Live.PlanStage do
   defp layout(%{kind: :table_row}), do: :table_row
   defp layout(_line), do: :text
 
-  # Comments go to Plan through its conversation, which an approved plan no longer has.
-  defp comment_reason(_design, _run, true), do: "The plan is approved, so the design takes no more comments."
+  # Comments go to Plan through its conversation, and once the work started to the review agent, which only a
+  # task under review has.
+  defp comment_reason(_design, _run, true),
+    do: "The plan is approved, so the design takes comments again once the round is under review."
 
   # Before a pick there is nothing to comment on, and the pick comes first.
   defp comment_reason(%{picked: picked}, %Run{} = run, false) when is_binary(picked) do
@@ -1335,165 +1184,59 @@ defmodule RailWeb.Live.PlanStage do
   # Clamped, so an element scrolled partly out of the frame cannot push the box out of it.
   defp percent(value, whole), do: (value / whole * 100) |> max(0.0) |> min(100.0) |> Float.round(3)
 
-  # Once the task has left Plan the page shows what the later stages were given.
-  defp plan(%Task{stage: :plan} = task), do: {Pipeline.read_plan(task), false}
-
-  defp plan(%Task{} = task) do
-    case Pipeline.get_implementation_plan(task) do
-      {:ok, %ImplementationPlan{content: content, captured_at: captured_at}} ->
-        scratch = Pipeline.read_plan(task)
-
-        {%{content: content, saved_at: (scratch && scratch.saved_at) || captured_at, design: scratch && scratch.design},
-         true}
-
-      {:error, :not_found} ->
-        {Pipeline.read_plan(task), false}
-    end
-  end
-
-  defp approvable?(%{approvable: approvable}, ticket, design, plan) do
-    approvable and ticket != nil and plan != nil and
-      case design do
-        %{options: [_first | _rest], picked: picked} ->
-          is_binary(picked) and plan.design != nil and plan.design.key == picked
-
-        _no_options ->
-          true
-      end
-  end
-
-  defp items(ticket, design, picked, plan, sheet, split, running) do
+  # A tab is its label, marked only where something waits: the pick on the reader, or a part Plan is writing.
+  defp tabs(ticket, design, picked, plan, running) do
     options = if design, do: design.options, else: []
 
+    design_mark =
+      cond do
+        picked != nil -> nil
+        running -> :working
+        length(options) == 3 -> :pick
+        true -> nil
+      end
+
+    revising = plan != nil and picked != nil and (plan.design == nil or plan.design.key != picked.key)
+
     [
-      ticket_item(ticket, running),
-      design_item(options, picked, plan, running),
-      plan_item(plan, sheet, picked, running),
-      split_item(split)
+      %{id: "ticket", label: "Ticket", mark: if(ticket == nil and running, do: :working)},
+      %{id: "design", label: "Design", mark: design_mark},
+      %{id: "plan", label: "Plan", mark: if(revising and running, do: :working)}
     ]
   end
 
-  defp ticket_item(nil, running) do
-    %{
-      id: "ticket",
-      label: "Ticket",
-      icon: "pi-file-text",
-      line: if(running, do: "Being written", else: "Not saved yet"),
-      saved_at: nil,
-      tone: if(running, do: :working, else: :empty)
-    }
-  end
+  # Picked once for the task the page shows and never from the server again, so a save cannot move the reader.
+  # A rejoin picks again, but the browser keeps the tab it shows.
+  defp assign_open_tab(%{assigns: %{open_tab: %{task_id: id}}} = socket, %Task{id: id}, _tabs, _plan), do: socket
 
-  defp ticket_item(ticket, _running) do
-    count = criteria(ticket.description)
-    line = if count > 0, do: "#{count} #{if count == 1, do: "criterion", else: "criteria"}"
-
-    %{id: "ticket", label: "Ticket", icon: "pi-file-text", line: line, saved_at: ticket.saved_at, tone: :done}
-  end
-
-  defp design_item(options, picked, plan, running) do
-    count = length(options)
-
-    {line, tone} =
+  defp assign_open_tab(socket, task, tabs, plan) do
+    tab =
       cond do
-        picked != nil -> {"Picked: #{picked.title}", :done}
-        options == [] and plan != nil and not running -> {"No screen in this change", :skipped}
-        options == [] -> {"Not saved yet", if(running, do: :working, else: :empty)}
-        running -> {"#{count} of 3 saved", :working}
-        count == 3 -> {"Pick one of 3", :pick}
-        true -> {"#{count} of 3 saved: needs 3", :failed}
+        Enum.any?(tabs, &(&1.mark == :pick)) -> "design"
+        plan != nil -> "plan"
+        true -> "ticket"
       end
 
-    %{id: "design", label: "Design", icon: "pi-palette", line: line, saved_at: nil, tone: tone}
+    assign(socket, :open_tab, %{task_id: task.id, tab: tab})
   end
 
-  defp plan_item(nil, _sheet, _picked, _running) do
-    %{id: "plan", label: "Plan", icon: "pi-list-checks", line: "Not saved yet", saved_at: nil, tone: :empty}
+  # Done in the browser, which keeps it through every patch the server sends after.
+  defp show_tab(task, id) do
+    [to: "#plan-panels-#{task.id} > [role='tabpanel']:not(#plan-section-#{id})"]
+    |> JS.hide()
+    |> JS.show(to: "#plan-section-#{id}", display: "block")
+    |> JS.set_attribute({"aria-selected", "false"}, to: "#plan-tabs-#{task.id} > [role='tab']:not(#plan-tab-#{id})")
+    |> JS.set_attribute({"aria-selected", "true"}, to: "#plan-tab-#{id}")
   end
 
-  defp plan_item(plan, sheet, picked, running) do
-    {line, saved_at, tone} =
-      cond do
-        picked == nil or (plan.design != nil and plan.design.key == picked.key) -> {files(sheet), plan.saved_at, :done}
-        running -> {"Revising for the pick", nil, :working}
-        plan.design == nil -> {"Written before the pick", nil, :stale}
-        true -> {"Written for #{plan.design.title}, not #{picked.title}", nil, :stale}
-      end
+  # The ticket's own acceptance criteria, as its lines name them, for the plan's criteria table to fill its rows from.
+  defp criteria_lines(nil), do: []
+  defp criteria_lines(%{description: lines}), do: criteria_lines(lines)
 
-    %{id: "plan", label: "Plan", icon: "pi-list-checks", line: line, saved_at: saved_at, tone: tone}
-  end
-
-  defp split_item(nil) do
-    %{id: "split", label: "Split", icon: "pi-arrows-split", line: "Not split: one task", saved_at: nil, tone: :skipped}
-  end
-
-  defp split_item(%{children: children, saved_at: saved_at}) do
-    line = "#{length(children)} children · #{points(children)}"
-    %{id: "split", label: "Split", icon: "pi-arrows-split", line: line, saved_at: saved_at, tone: :done}
-  end
-
-  defp points(children) do
-    children |> Enum.map(&(&1.estimate || 0)) |> Enum.sum() |> count_label("point", "points")
-  end
-
-  defp count_label(count, one, many), do: "#{count} #{if count == 1, do: one, else: many}"
-
-  # Each child sits in the round after the latest of the ones it builds on, so a lane starts together.
-  defp rounds(children) do
-    round_of =
-      Enum.reduce(children, %{}, fn child, rounds ->
-        Map.put(rounds, child.number, Enum.max(Enum.map(child.builds_on, &(rounds[&1] + 1)), fn -> 0 end))
-      end)
-
-    children
-    |> Enum.group_by(&round_of[&1.number])
-    |> Enum.sort()
-    |> Enum.map(fn
-      {0, lane} ->
-        {"Starts at once", lane}
-
-      {_round, lane} ->
-        {"After " <> (lane |> Enum.flat_map(& &1.builds_on) |> Enum.uniq() |> Enum.sort() |> join_and()), lane}
-    end)
-  end
-
-  defp join_and([one]), do: "#{one}"
-  defp join_and(numbers), do: Enum.join(Enum.drop(numbers, -1), ", ") <> " and #{List.last(numbers)}"
-
-  defp first_paragraph(ticket), do: ticket |> String.split(~r/\n\s*\n/, parts: 2) |> hd()
-
-  # A saved part passed the same section check as the plan, so it always lays out as a sheet.
-  defp first_file(plan) do
-    %{files: [first | rest]} = build_plan_sheet(plan)
-    %{path: first.path, more: length(rest)}
-  end
-
-  defp files(%{files: files}), do: "#{length(files)} #{if length(files) == 1, do: "file", else: "files"}"
-  defp files(nil), do: nil
-
-  # The acceptance criteria are the list under the heading that names them.
-  defp criteria(description) do
-    description
-    |> String.split("\n")
-    |> Enum.drop_while(&(not Regex.match?(~r/^#+\s+acceptance criteria/i, &1)))
-    |> Enum.drop(1)
-    |> Enum.take_while(&(not String.starts_with?(&1, "#")))
-    |> Enum.count(&Regex.match?(~r/^\s?([-*+]|\d+\.)\s+\S/, &1))
-  end
-
-  # What waits on the human opens first: a pick, then whatever Plan is working on or stopped short of.
-  defp default_item(items, ticket, plan, split) do
-    by_id = Map.new(items, &{&1.id, &1})
-
-    cond do
-      by_id["design"].tone in [:pick, :failed] -> "design"
-      by_id["plan"].tone in [:working, :stale] -> "plan"
-      ticket == nil -> "ticket"
-      by_id["design"].tone == :working -> "design"
-      split != nil -> "split"
-      plan != nil and by_id["design"].tone == :skipped -> "ticket"
-      true -> "plan"
-    end
+  defp criteria_lines(lines) do
+    for %{label: "Criterion " <> number} = line <- lines,
+        {number, ""} <- [Integer.parse(number)],
+        do: %{number: number, html: line.html}
   end
 
   defp banner(nil, _picked, _running), do: nil
@@ -1537,18 +1280,6 @@ defmodule RailWeb.Live.PlanStage do
 
   defp slots(_design, _running), do: []
 
-  defp status_class(:pick), do: "text-amber-600 dark:text-amber-300"
-  defp status_class(:failed), do: "text-red-600 dark:text-red-300"
-  defp status_class(:stale), do: "text-amber-600 dark:text-amber-300"
-  defp status_class(_tone), do: "text-slate-500 dark:text-slate-400"
-
-  defp mark(:done), do: %{icon: "pi-check-circle-fill", class: "text-emerald-500 dark:text-emerald-400"}
-  defp mark(:pick), do: %{icon: "pi-hand-pointing-fill", class: "text-amber-500 dark:text-amber-300"}
-  defp mark(:failed), do: %{icon: "pi-warning-circle-fill", class: "text-red-500 dark:text-red-400"}
-  defp mark(:stale), do: %{icon: "pi-warning-circle", class: "text-amber-500 dark:text-amber-300"}
-  defp mark(:skipped), do: %{icon: "pi-minus-circle", class: "text-slate-400 dark:text-slate-500"}
-  defp mark(:empty), do: %{icon: "pi-circle-dashed", class: "text-slate-400 dark:text-slate-500"}
-
   defp respond({:ok, _run}, socket) do
     send(self(), :task_changed)
     {:noreply, assign(socket, :error, nil)}
@@ -1560,14 +1291,7 @@ defmodule RailWeb.Live.PlanStage do
     {:noreply, assign(socket, :error, message_for(reason))}
   end
 
-  defp message_for(:stage_running), do: "Something is still running on this task."
   defp message_for({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not Plan."
-  defp message_for(:no_ticket), do: "Plan has not saved a ticket yet."
-  defp message_for(:no_plan), do: "Plan has not saved a plan yet."
-  defp message_for(:nothing_picked), do: "Pick a design before approving."
-  defp message_for(:plan_not_for_pick), do: "The plan is not written for the picked design yet."
-  defp message_for(:screenshot_missing), do: "The picked design has no screenshot yet."
-  defp message_for(:stale_screenshot), do: "The screenshot is older than the design. Ask Plan to retake it."
   defp message_for(:already_picked), do: "A design has already been picked."
   defp message_for(:design_not_found), do: "No design options are saved yet."
   defp message_for(:option_not_found), do: "That design option no longer exists."

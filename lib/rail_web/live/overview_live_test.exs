@@ -2,13 +2,14 @@ defmodule RailWeb.OverviewLiveTest do
   use RailWeb.ConnCase, async: true
 
   import Phoenix.LiveViewTest
+  import Rail.Pipeline.Utils.BuildTask
 
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
-  alias Rail.Pipeline.DetectedQuestion
-  alias Rail.Pipeline.Schemas.ImplementationPlan
+  alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
@@ -51,6 +52,39 @@ defmodule RailWeb.OverviewLiveTest do
     assert has_element?(view, "#project-switcher-button")
     assert has_element?(view, "#global-capture-idea-button")
     assert has_element?(view, "#theme-toggle-button")
+  end
+
+  # A tech lead approves plans, so the plans sent to them are theirs to see; anyone else gets none.
+  test "a tech lead sees the plans sent to them, the one started without approval marked, and nobody else does", %{
+    conn: conn,
+    project: project
+  } do
+    {:ok, lead} =
+      Users.register_oauth_user(%{github_id: "gh_ovl_lead", login: "ovl-lead", email: "ovl-lead@example.com"})
+
+    {:ok, lead} = Users.update_user(system_scope(), lead, %{tech_lead: true, project_ids: [project.id]})
+
+    {:ok, dev} =
+      Users.register_oauth_user(%{github_id: "gh_ovl_dev", login: "ovl-dev", email: "ovl-dev@example.com", admin: true})
+
+    sent = learnings_task(project, "OVL-1", :plan)
+    started = learnings_task(project, "OVL-2", :engineer)
+    unsent = learnings_task(project, "OVL-3", :plan)
+
+    for {task, ready_at} <- [{sent, DateTime.utc_now()}, {started, DateTime.utc_now()}, {unsent, nil}] do
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+      Repo.insert!(%Round{task_id: task.id, number: 1, plan: "A plan.", ready_at: ready_at})
+    end
+
+    assert {:ok, view, _html} = live(log_in_user(conn, lead), ~p"/")
+    assert has_element?(view, "#plan-queue-count", "2 plans")
+    assert has_element?(view, "#plan-queue-row-OVL-1[href='/tasks/#{sent.id}?item=plan']")
+    refute has_element?(view, "#plan-queue-row-OVL-1 [data-qa=plan_queue_started]")
+    assert has_element?(view, "#plan-queue-row-OVL-2 [data-qa=plan_queue_started]", "Started without approval")
+    refute has_element?(view, "#plan-queue-row-OVL-3")
+
+    assert {:ok, view, _html} = live(log_in_user(conn, dev), ~p"/")
+    refute has_element?(view, "#plan-queue-section")
   end
 
   test "a task leaves without a reload when Linear deletes its issue, and stays when Linear archives it", %{
@@ -263,29 +297,6 @@ defmodule RailWeb.OverviewLiveTest do
     assert has_element?(view, "#selected-project-name", project_name)
   end
 
-  test "toggles navigation rail expanded and collapsed state", %{conn: conn} do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_overview_live_4",
-        login: "overview_live_user_4",
-        email: "overview_live_user_4@example.com",
-        admin: true
-      })
-
-    authed_conn = log_in_user(conn, user)
-
-    assert {:ok, view, _html} = live(authed_conn, ~p"/")
-    assert has_element?(view, "#brand-name", "Rail")
-
-    # Collapse rail
-    view |> element("#rail-toggle") |> render_click()
-    refute has_element?(view, "#brand-name")
-
-    # Expand rail
-    view |> element("#rail-toggle") |> render_click()
-    assert has_element?(view, "#brand-name", "Rail")
-  end
-
   # The Theme hook flips <html data-theme> itself and reports the result back, so the
   # server only ever reacts to "theme_changed".
   test "follows the theme the client reports", %{conn: conn} do
@@ -453,7 +464,7 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, _marked} = Pipeline.mark_ready(Scope.for_user(user), ready)
       row = "#review-queue-row-#{ready.issue.identifier}"
 
-      assert has_element?(view, "#{row}[href='/tasks/#{ready.id}?tab=finalize'][data-state='ready']")
+      assert has_element?(view, "#{row}[href='/tasks/#{ready.id}'][data-state='ready']")
       assert has_element?(view, row, "marked by overview_queue_user")
       assert has_element?(view, row, "#151")
       assert has_element?(view, "#review-queue-count", "1 task")
@@ -461,6 +472,40 @@ defmodule RailWeb.OverviewLiveTest do
       refute has_element?(view, "#review-queue-row-#{reviewing.issue.identifier}")
       refute has_element?(view, "#review-queue-row-#{unmarked.issue.identifier}")
       refute has_element?(view, "#{row} button")
+    end
+
+    test "a fix round's plan joins Up next when the planning turn ends, and leaves it once approved, without a reload", %{
+      conn: conn,
+      user: user,
+      roles: roles,
+      task_for: task_for
+    } do
+      task = task_for.("Comments go as one round", %{stage: :review, worktree_path: create_temp_git_repo()})
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+      {:ok, run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:review_lead].id,
+          status: :running,
+          conversation_id: "sess_overview_fix_plan",
+          started_at: DateTime.utc_now()
+        })
+
+      path = Path.join([task.scratch_path, "fix_plans", "#{task.issue.identifier}.json"])
+      File.mkdir_p!(Path.dirname(path))
+      File.write!(path, Jason.encode!(%{round: 1, findings: [], comments: [%{number: 1, kind: "diff", text: "Why?"}]}))
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => "### What changes\n\n#### Comment 1\n\nAnswered."})
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+      refute has_element?(view, "#up-next", "approve the fix plan")
+
+      {:ok, run} = Pipeline.update_run(run, %{status: :finished, stage_outcome: :done})
+      Phoenix.PubSub.broadcast(Rail.PubSub, "pipeline", {:pipeline_changed, task.id})
+      assert render(view) =~ "Waiting on you to approve the fix plan."
+
+      {:ok, _approved} = Pipeline.approve_fix_plan(Scope.for_user(user), run, 1)
+      refute render(view) =~ "approve the fix plan"
     end
 
     test "a refused task stays in the queue saying so, a merging one says so, and a merged one leaves it", %{
@@ -536,14 +581,12 @@ defmodule RailWeb.OverviewLiveTest do
           attrs = %{title: "Child #{identifier}", parent: parent_issue, owner_user_id: user.id}
           {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
 
-          part = %{
-            number: number,
-            builds_on: builds_on,
-            builds_screen: false,
-            plan: "## Implementation plan\n\nPart #{number}."
-          }
+          {:ok, child} =
+            issue.project
+            |> build_task(issue, %{stage: :engineer, split_position: number, builds_on: builds_on})
+            |> Ecto.Changeset.put_change(:parent_task_id, parent.id)
+            |> Repo.insert()
 
-          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
           Repo.preload(child, [:issue, :project])
         end
 
@@ -592,14 +635,12 @@ defmodule RailWeb.OverviewLiveTest do
           attrs = %{title: "Child #{identifier}", parent: parent_issue, owner_user_id: rival.id}
           {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
 
-          part = %{
-            number: number,
-            builds_on: builds_on,
-            builds_screen: false,
-            plan: "## Implementation plan\n\nPart #{number}."
-          }
+          {:ok, child} =
+            issue.project
+            |> build_task(issue, %{stage: :engineer, split_position: number, builds_on: builds_on})
+            |> Ecto.Changeset.put_change(:parent_task_id, parent.id)
+            |> Repo.insert()
 
-          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
           Repo.preload(child, [:issue, :project])
         end
 
@@ -653,14 +694,12 @@ defmodule RailWeb.OverviewLiveTest do
           attrs = %{title: "Child #{identifier}", parent: parent_issue, owner_user_id: user.id}
           {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
 
-          part = %{
-            number: number,
-            builds_on: builds_on,
-            builds_screen: false,
-            plan: "## Implementation plan\n\nPart #{number}."
-          }
+          {:ok, child} =
+            issue.project
+            |> build_task(issue, %{stage: :engineer, split_position: number, builds_on: builds_on})
+            |> Ecto.Changeset.put_change(:parent_task_id, parent.id)
+            |> Repo.insert()
 
-          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
           Repo.preload(child, [:issue, :project])
         end
 
@@ -709,18 +748,16 @@ defmodule RailWeb.OverviewLiveTest do
           attrs = %{title: "Child #{identifier}", parent: parent_issue, owner_user_id: user.id}
           {:ok, issue} = Issues.create_issue(system_scope(), project, attrs)
 
-          part = %{
-            number: number,
-            builds_on: builds_on,
-            builds_screen: false,
-            plan: "## Implementation plan\n\nPart #{number}."
-          }
+          {:ok, child} =
+            issue.project
+            |> build_task(issue, %{stage: :engineer, split_position: number, builds_on: builds_on})
+            |> Ecto.Changeset.put_change(:parent_task_id, parent.id)
+            |> Repo.insert()
 
-          {:ok, child} = Pipeline.create_child_task(parent, issue, part)
           Repo.preload(child, [:issue, :project])
         end
 
-      Repo.insert!(%ImplementationPlan{task_id: parent.id, content: "## Implementation plan", captured_at: now})
+      Repo.insert!(%Round{task_id: parent.id, number: 1, plan: "## Implementation plan", approved_at: now})
 
       {:ok, _done} =
         Pipeline.create_run(%{
@@ -1135,14 +1172,13 @@ defmodule RailWeb.OverviewLiveTest do
           Pipeline.create_run(%{
             task_id: task.id,
             role_id: role.id,
-            status: :running,
+            status: :blocked_on_input,
             conversation_id: "sess_#{System.unique_integer([:positive])}",
             started_at: DateTime.shift(stopped_at, minute: -30)
           })
 
         Enum.each(prompts, fn prompt ->
-          {:ok, _question} =
-            Pipeline.register_question(Repo.preload(run, task: :issue), %DetectedQuestion{prompt: prompt})
+          Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: prompt})
         end)
 
         {:ok, blocked} = Pipeline.get_run(run.id)
@@ -1163,7 +1199,13 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#up-next-featured-#{review_run.id} [data-qa='up-next-action']", "Review")
 
       assert has_element?(view, "#up-next-row-#{one_question.id}[href='/tasks/#{one_task.id}']", "asked a question")
-      assert has_element?(view, "#up-next-row-#{two_questions.id}[href='/tasks/#{two_task.id}']", "asked 2 questions")
+
+      assert has_element?(
+               view,
+               "#up-next-row-#{two_questions.id}[href='/tasks/#{two_task.id}?item=plan&agent=engineer']",
+               "asked 2 questions"
+             )
+
       assert has_element?(view, "#up-next-row-#{two_questions.id}", "Answer")
 
       positions =
@@ -1204,7 +1246,7 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, design_run} =
         Pipeline.create_run(%{
           task_id: task.id,
-          role_id: roles[:design].id,
+          role_id: roles[:plan].id,
           status: :finished,
           stage_outcome: :done,
           started_at: DateTime.shift(now, hour: -5),
@@ -1251,13 +1293,12 @@ defmodule RailWeb.OverviewLiveTest do
         Pipeline.create_run(%{
           task_id: task.id,
           role_id: roles[:plan].id,
-          status: :running,
+          status: :blocked_on_input,
           conversation_id: "sess_answered",
           started_at: DateTime.utc_now()
         })
 
-      {:ok, question} =
-        Pipeline.register_question(Repo.preload(run, task: :issue), %DetectedQuestion{prompt: "Which one?"})
+      question = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which one?"})
 
       {:ok, _answered} = Pipeline.answer_question(system_scope(), question, "That one")
 
@@ -1279,13 +1320,12 @@ defmodule RailWeb.OverviewLiveTest do
         Pipeline.create_run(%{
           task_id: task.id,
           role_id: roles[:plan].id,
-          status: :running,
+          status: :blocked_on_input,
           conversation_id: "sess_pending",
           started_at: DateTime.utc_now()
         })
 
-      {:ok, _question} =
-        Pipeline.register_question(Repo.preload(run, task: :issue), %DetectedQuestion{prompt: "Which database?"})
+      Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
 
       assert {:ok, view, _html} = live(conn, ~p"/")
 
@@ -1321,13 +1361,13 @@ defmodule RailWeb.OverviewLiveTest do
           completed_at: DateTime.shift(now, hour: -4)
         })
 
-      # A stage no human signs off just finished; it did not hand anything over.
-      gate_task = task_for.("Gate work", %{stage: :debugger})
+      # A demo no human signs off just finished; it did not hand anything over.
+      gate_task = task_for.("Gate work", %{stage: :review})
 
       {:ok, gate} =
         Pipeline.create_run(%{
           task_id: gate_task.id,
-          role_id: roles[:debugger].id,
+          role_id: roles[:demo].id,
           status: :finished,
           stage_outcome: :done,
           started_at: DateTime.shift(now, hour: -5),
@@ -1464,6 +1504,72 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#in-progress-task-#{task.id}[data-state='running']", "Review running")
     end
 
+    test "a Review round whose checks are running is in progress, not stalled on its lead's last run", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+      task = task_for.("Checks running", %{stage: :review})
+
+      {:ok, last_round} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:review_lead].id,
+          status: :finished,
+          started_at: DateTime.shift(now, hour: -2),
+          completed_at: DateTime.shift(now, hour: -1)
+        })
+
+      {:ok, _qa} =
+        Pipeline.create_run(%{task_id: task.id, role_id: roles[:qa].id, status: :running, started_at: now})
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#up-next-empty")
+      refute has_element?(view, "#up-next-featured-#{last_round.id}")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
+      refute has_element?(view, "#attention-badge")
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='running']", "Review running")
+      # Starting the round reopened the lead's run, but it had handed its round over before that.
+      assert has_element?(view, "#activity-ended-#{last_round.id}", "is ready for review")
+    end
+
+    test "a Review round whose QA failed waits on QA, not on its lead's last run", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+      task = task_for.("QA failed", %{stage: :review})
+
+      {:ok, last_round} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:review_lead].id,
+          status: :finished,
+          started_at: DateTime.shift(now, hour: -2),
+          completed_at: DateTime.shift(now, hour: -1)
+        })
+
+      {:ok, qa} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:qa].id,
+          status: :finished,
+          error: "QA did not save its report.",
+          started_at: DateTime.shift(now, minute: -10),
+          completed_at: now
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#up-next-featured-#{qa.id}", "QA did not save its report.")
+      refute has_element?(view, "#up-next-featured-#{last_round.id}")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='failed']", "Review failed")
+    end
+
     test "a Review run whose review is finished becomes a Finalize row, ready to finalize", %{
       conn: conn,
       roles: roles,
@@ -1497,7 +1603,7 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, %Run{id: ^run_id}} = Pipeline.start_fix_round(system_scope(), run)
 
       assert {:ok, view, _html} = live(conn, ~p"/")
-      assert has_element?(view, "#up-next-finalize-row-#{run_id}[href='/tasks/#{task.id}?tab=finalize']", "Finalize")
+      assert has_element?(view, "#up-next-finalize-row-#{run_id}[href='/tasks/#{task.id}']", "Finalize")
       assert has_element?(view, "#in-progress-task-#{task.id}.bg-amber-50", "Ready to finalize")
 
       # Marked ready, it waits on a tech lead, so its owner's row, the stat and Up next all let it go.
@@ -1929,8 +2035,8 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
       assert has_element?(view, "#in-progress-task-#{task.id}[data-state='running']")
 
-      {:ok, _question} =
-        Pipeline.register_question(Repo.preload(run, task: :issue), %DetectedQuestion{prompt: "Which database?"})
+      Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
+      {:ok, _blocked} = Pipeline.update_run(run, %{status: :blocked_on_input})
 
       Phoenix.PubSub.broadcast(Rail.PubSub, "pipeline", {:pipeline_changed, task.id})
 

@@ -115,6 +115,7 @@ defmodule Rail.MixProject do
         "tailwind rail --minify",
         "esbuild rail --minify",
         "esbuild design_overlay --minify",
+        "esbuild design_kit --minify",
         "phx.digest"
       ]
     ]

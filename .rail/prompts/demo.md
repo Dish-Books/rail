@@ -16,7 +16,7 @@ page they did not ask about. The time in the film is the time you spend showing 
 
 ## What this project has learned
 
-Rail keeps the rules this project has learned from people's corrections and decisions, and the lead hands you the ones that fit the demo. Call `knowledge_search` for more before you ask a question, before you depart from the plan, and before you touch a module you do not know. A question it answers is not a question, and a departure a rule rules out is not yours to make.
+Rail keeps the rules this project has learned from people's corrections and decisions, and the ones that fit the demo are already in your brief. Call `knowledge_search` for more before you ask a question, before you depart from the plan, and before you touch a module you do not know. A question it answers is not a question, and a departure a rule rules out is not yours to make.
 
 ## Start the app
 
@@ -24,8 +24,7 @@ The production Rail on port 4000 is the one running you, and its database `rail_
 team's real tasks. You demo the branch on your own worktree's server and database, and never touch
 production or another worktree.
 
-An explorer usually starts the app first, and the lead gives you its address; its setup is under
-the scratch folder's `qa/env/`. If a server is already on your worktree's port and
+QA ran the app before you and left its setup under the scratch folder's `qa/env/`. If a server is already on your worktree's port and
 `/proc/<pid>/cwd` is your worktree, reuse it. Otherwise:
 
 ```bash
@@ -78,19 +77,6 @@ Rail's moving parts are agents, Linear, GitHub and Slack, and none of them are r
 
 Anything that only happens in the Docker sandbox or in production goes in `not_shown`.
 
-## Narration
-
-The captions are what turn a screen recording into a demo.
-
-- **One sentence of about twelve words**, in the words the person watching would use. "Answering
-  the Product agent's three questions in one go", not "clicking the Send answers button". They can
-  see the clicking. What they cannot see is why it matters.
-- **Say it just before the action, then act at once.** The caption stays up under the video while
-  the picture moves on, and Rail holds the picture only when the next caption would replace one
-  still being read. Never wait after a caption.
-- **Every acceptance criterion gets a beat.** One you cannot show is one to say so about, not one to
-  quietly skip.
-
 ## Shape
 
 A walkthrough, not a tour of the screens.
@@ -99,20 +85,17 @@ A walkthrough, not a tour of the screens.
   they would be on, with Rail in a state they would recognize.
 - **Do the thing the ticket asked for, end to end.** One coherent run through, not a sampler of
   features.
-- **Setup is not the demo.** The seeded starting state is one beat at the front, narrated in a
-  sentence ("a task in review with four findings waiting on a ruling"), and then you move on.
+- **Setup is not the demo.** The seeded starting state is one beat at the front, and then you move
+  on.
 - **Slow down where it matters.** The moment the change actually does its thing is the moment worth
   a caption of its own. Getting between two screens is not.
 - **Show the result, not just the action.** Clicking Send is not the point; the run picking the
   answers up and the card clearing is.
-- **Keep it moving.** Ten seconds between one caption and the next is a long time to watch nothing
-  being said.
 - **Stop when it is shown.** There is no summary slide and no lap of honor.
 
 ## The write-up
 
 - **`title`**: "Findings can be ruled on without losing your place", not "Add finding cursor".
-- **`summary`** is read before anybody presses play, in the same register as the captions.
 - **`not_shown`**: a screen that does not exist yet and a flow that needs a real Claude run or a
   real pull request read very differently to whoever picks this up, so say which.
 
@@ -121,7 +104,7 @@ A walkthrough, not a tour of the screens.
 If the change is broken, say so and stop. A walkthrough of a feature that does not work is worse than
 no walkthrough: record what you got to, and put what went wrong in `not_shown`.
 
-A defect an explorer found, or a human decided to live with, is still in the application. Do not film it, and
+A defect QA found, or a human decided to live with, is still in the application. Do not film it, and
 if one sits in the middle of the flow you were going to show, say so in `not_shown` rather than
 recording it and hoping nobody notices.
 

@@ -106,7 +106,7 @@ defmodule RailWeb.Components.UpNextTest do
     row = html |> Floki.parse_fragment!() |> Floki.find("#up-next-finalize-row-run_finalize")
 
     assert html =~ "up-next-featured-run_plan"
-    assert ["/tasks/tsk_finalize?tab=finalize"] = Floki.attribute(row, "href")
+    assert ["/tasks/tsk_finalize"] = Floki.attribute(row, "href")
     assert Floki.text(row) =~ "review finished"
     assert Floki.text(row) =~ "Finalize"
 
@@ -167,6 +167,27 @@ defmodule RailWeb.Components.UpNextTest do
     }
 
     assert render_component(&UpNext.up_next/1, runs: [blocked]) =~ "Which vendor field?"
+  end
+
+  # The task's conversation opens on the agent taking messages, so any other agent's question names its agent.
+  test "a blocked run opens its own agent's conversation, beside the plan", %{waiting: waiting} do
+    href = fn stage ->
+      run = %{
+        waiting.(stage)
+        | status: :blocked_on_input,
+          stage_outcome: :in_progress,
+          questions: [%Question{status: :pending, prompt: "Which vendor field?"}]
+      }
+
+      (&UpNext.up_next/1)
+      |> render_component(runs: [run])
+      |> Floki.parse_fragment!()
+      |> Floki.attribute("#up-next-featured-#{run.id}", "href")
+    end
+
+    assert ["/tasks/tsk_engineer?item=plan&agent=engineer"] = href.(:engineer)
+    assert ["/tasks/tsk_review"] = href.(:review)
+    assert ["/tasks/tsk_plan"] = href.(:plan)
   end
 
   test "a run whose questions are all answered is waiting to be sent", %{waiting: waiting} do
@@ -245,20 +266,20 @@ defmodule RailWeb.Components.UpNextTest do
     {:ok, %Run{id: ^run_id}} = Pipeline.start_fix_round(system_scope(), run)
     html = render_component(&UpNext.up_next/1, runs: [shown])
 
-    assert html =~ ~s(href="/tasks/#{task_id}?tab=#{lead.id}")
+    assert html =~ ~s(href="/tasks/#{task_id}?item=findings")
     assert html =~ "Ready to merge"
     assert html =~ "the pull request is waiting on you to merge it."
 
     html = render_component(&UpNext.up_next/1, runs: [waiting.(:engineer), shown])
 
     assert html =~ ~r/id="up-next-row-#{run_id}".*>\s*Ready to merge\s*</s
-    assert html =~ ~s(href="/tasks/#{task_id}?tab=#{lead.id}")
+    assert html =~ ~s(href="/tasks/#{task_id}?item=findings")
 
     html = render_component(&UpNext.up_next/1, runs: [%{shown | task: %{task | pr_url: nil}}])
 
     assert html =~ "Ready for review"
     assert html =~ ~s(href="/tasks/#{task_id}")
-    refute html =~ "?tab="
+    refute html =~ "?item="
   end
 
   test "a Review round waiting on a person reads Review with the Findings icon, however its findings are ruled", %{
@@ -393,5 +414,41 @@ defmodule RailWeb.Components.UpNextTest do
 
     html = render_component(&UpNext.up_next/1, runs: [waiting.(:engineer), waiting.(:plan)])
     assert html =~ ~r/id="up-next-row-run_plan".*pick a design.*>\s*Pick\s*</s
+  end
+
+  test "a Review run whose fix plan waits, out of date included, asks for its approval and opens the plan, also at Finalize",
+       %{waiting: waiting, scratch: scratch} do
+    File.mkdir_p!(Path.join(scratch, "fix_plans"))
+    sent = %{round: 1, findings: [], comments: [%{number: 1, kind: "diff", text: "Why?"}]}
+
+    for stage <- [:review, :finalize] do
+      run = waiting.(stage)
+      run = %{run | role_id: "rol_lead", task: %{run.task | id: "tsk_#{stage}"}}
+      href = "/tasks/tsk_#{stage}?item=fix_plan"
+
+      File.write!(
+        Path.join(scratch, "fix_plans/UPN-1.json"),
+        Jason.encode!(Map.merge(sent, %{plan: "p", covered_comments: 1}))
+      )
+
+      card = (&UpNext.up_next/1) |> render_component(runs: [run]) |> Floki.parse_fragment!()
+      assert [^href] = card |> Floki.find("[data-qa=up-next-featured]") |> Floki.attribute("href")
+      assert card |> Floki.find("[data-qa=up-next-summary]") |> Floki.text() =~ "Waiting on you to approve the fix plan."
+      assert card |> Floki.find("[data-qa=up-next-action]") |> Floki.text() |> String.trim() == "Review"
+
+      other = %{waiting.(:plan) | id: "run_first", completed_at: ~U[2025-12-31 10:00:00Z]}
+      out_of_date = Map.merge(sent, %{plan: "p", covered_comments: 1, covered_keys: ["gone"], findings: [%{key: "gone"}]})
+      File.write!(Path.join(scratch, "fix_plans/UPN-1.json"), Jason.encode!(out_of_date))
+
+      row =
+        (&UpNext.up_next/1)
+        |> render_component(runs: [other, run])
+        |> Floki.parse_fragment!()
+        |> Floki.find("[data-qa=up-next-row]")
+
+      assert Floki.text(row) =~ "fix plan to approve"
+      assert Floki.text(row) =~ "Review"
+      assert [^href] = Floki.attribute(row, "href")
+    end
   end
 end

@@ -23,27 +23,8 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
-  # The smallest part of a plan the structure allows, trimmed as a save trims it.
-  @part String.trim("""
-        ## Implementation plan
-
-        ### Approach
-
-        Build it.
-
-        No diagrams: one module changes.
-
-        ### File-level changes
-
-        - `lib/rail.ex`: builds it.
-
-        ### Verification
-
-        - `lib/rail_test.exs`: covers it.
-        """)
-
   # Its own project, because starting a run adds a worktree to a real clone.
-  # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
+  # The smallest plan the structure allows: one decision, one card and one criterion, and no data changes.
   @plan """
   ## Implementation plan
 
@@ -51,11 +32,19 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
 
   Extend the module.
 
-  No diagrams: one module changes.
+  ### Decisions
 
-  ### File-level changes
+  - Decision: one module changes.
 
-  - `lib/rail.ex`: extends the module.
+  ### Changes
+
+  #### `lib/rail.ex`
+
+  Extends the module.
+
+  ### Acceptance criteria
+
+  - 1: `lib/rail.ex`
 
   ### Verification
 
@@ -86,10 +75,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
 
     roles =
       for {stage, model} <- [
-            plan: "claude-opus-5-5",
-            product: "claude-sonnet-5-5",
-            design: "claude-opus-5-5",
-            architect: "claude-fable-5-1"
+            plan: "claude-opus-5-5"
           ],
           into: %{} do
         {:ok, role} =
@@ -125,11 +111,13 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     %{project: project, roles: roles, issue: issue}
   end
 
-  test "creates the task at Plan, queues the Linear advance and spawns one process with the three subagents", %{
+  test "creates the task at Plan, queues the Linear advance and spawns one process that has its plan checked", %{
     roles: %{plan: %Role{id: role_id}},
     issue: %Issue{id: issue_id} = issue
   } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+    stub(RailWeb.Endpoint, :url, fn -> "https://rail.example.com" end)
+    kit = "http://localhost:#{RailWeb.Endpoint.config(:http)[:port]}/design-kit"
 
     Repo.insert!(%Comment{
       issue_id: issue_id,
@@ -140,28 +128,31 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
 
     expect(Tools, :start_os_process, fn %Run{role_id: ^role_id, status: :running} = run, argv ->
       assert ["-p", prompt, "--model", "claude-opus-5-5", "--effort", "high" | _flags] = argv
-      assert prompt =~ "You lead Rail's Plan step"
-      assert prompt =~ "Product, Designer and Architect are your subagents"
-      assert prompt =~ "1. Product first."
-      assert prompt =~ "hand it to Designer and Architect at once rather than one after the other"
-      assert prompt =~ "Architect does not wait for the design"
-      assert prompt =~ "include every rule from the rules section of this brief that bears on its output, word for word"
-      assert prompt =~ "skip Designer and say so in one line"
+      assert prompt =~ "You run Rail's Plan step"
+      assert prompt =~ "You write all three yourself, and save them with Rail's tools."
+      assert prompt =~ "1. The ticket first. Save it with `save_plan`"
+      assert prompt =~ "three options, each saved with `save_design_option`"
+      assert prompt =~ "skip them and say so in one line"
+      assert prompt =~ "Never plan for all three."
       assert prompt =~ "which one you recommend and why"
-      assert prompt =~ "then to each other subagent whose output it affects"
+      assert prompt =~ "4. Have the plan checked before you end any turn that saved it"
+      assert prompt =~ "Start one subagent on a clean context to read it against the code."
+      assert prompt =~ "an acceptance criterion no step delivers"
+      assert prompt =~ "One check a turn: what it revised is checked when the next turn saves the plan."
+      assert prompt =~ "A fix the plan check brings is the one change a line nobody commented on can take."
+      assert prompt =~ "A part you leave out of a save stays as the last save left it"
+      assert prompt =~ "carry it everywhere it reaches before your turn ends"
       assert prompt =~ ~s(A pick arrives as a message that says only "I picked <title> \(<key>\).")
       assert prompt =~ "One round per turn."
       assert prompt =~ "Nothing is saved yet."
       assert prompt =~ "title: Attachments follow their source document"
       assert prompt =~ ~s(<comment author="Ana")
+      assert prompt =~ ~s(<script src="#{kit}/tailwind.js"></script>)
+      assert prompt =~ ~s(<link rel="stylesheet" href="#{kit}/phosphor.css">)
 
-      [json] = for ["--agents", json] <- Enum.chunk_every(argv, 2, 1), do: json
-
-      assert %{
-               "product" => %{"model" => "claude-sonnet-5-5", "prompt" => "You are the product agent." <> _product},
-               "designer" => %{"model" => "claude-opus-5-5", "prompt" => "You are the design agent." <> _design},
-               "architect" => %{"model" => "claude-fable-5-1", "prompt" => "You are the architect agent." <> _architect}
-             } = Jason.decode!(json)
+      refute "--agents" in argv
+      refute prompt =~ "may come from a CDN"
+      refute prompt =~ "https://rail.example.com/design-kit"
 
       {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
     end)
@@ -205,7 +196,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
-    {:ok, _ticket} = Pipeline.save_ticket(task, %{title: "Attachments follow", description: "Body."})
+    {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Attachments follow", description: "Body."})
     design = Path.join(task.scratch_path, "design")
     File.mkdir_p!(design)
 
@@ -218,14 +209,6 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     File.write!(Path.join(design, "picked"), "rows")
     {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan, design: "rows"})
 
-    {:ok, _split} =
-      Pipeline.save_split(task, %{
-        "children" => [
-          %{"title" => "Deploys", "ticket" => "T1.", "plan" => @part},
-          %{"title" => "QA on them", "ticket" => "T2.", "plan" => @part, "builds_on" => [1]}
-        ]
-      })
-
     {:ok, %Run{id: run_id} = run} = Pipeline.start_or_resume_run(task, role, worktree_path)
 
     expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, ["-p", prompt | _rest] = argv ->
@@ -233,18 +216,17 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
       assert prompt =~ "- Design options: Rows (rows), Panel (panel)"
       assert prompt =~ "- The human picked rows."
       assert prompt =~ "- The plan, written for rows."
-      assert prompt =~ "- A split into 2: 1. Deploys; 2. QA on them."
-      assert prompt =~ "have Architect decide where it splits and save it with `save_split`"
-      assert "--agents" in argv
+      refute prompt =~ "save_split"
+      refute "--agents" in argv
       {:ok, %OsProcess{run: spawned}}
     end)
 
     assert {:ok, %OsProcess{}} = Pipeline.start_plan_run(%{run | role: role})
   end
 
-  test "the brief carries the rules people set for product, design and architect", %{project: project, issue: issue} do
+  test "the brief carries the rules people set for Plan, and not another role's", %{project: project, issue: issue} do
     stub_vertex(%{"source document" => vector([1.0])})
-    learning(project, %{rule: "Copy says task, never ticket", kind: :product, roles: [:design]}, embedding: [1.0])
+    learning(project, %{rule: "Copy says task, never ticket", kind: :product, roles: [:plan]}, embedding: [1.0])
     learning(project, %{rule: "Engineers only", kind: :convention, roles: [:engineer]}, embedding: [1.0])
 
     expect(Tools, :start_os_process, fn %Run{} = run, ["-p", prompt | _rest] ->

@@ -110,7 +110,11 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
 
   test "create_issue/2 leaves an owner who never linked Linear unassigned there", %{project: project} do
     {:ok, owner} =
-      Users.register_oauth_user(%{github_id: "gh_unlinked_owner", login: "unlinked", email: "unlinked@example.com"})
+      Users.register_oauth_user(%{
+        github_id: "gh_unlinked_owner",
+        login: "unlinked-create-issue",
+        email: "unlinked-create-issue@example.com"
+      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn)

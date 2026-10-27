@@ -148,7 +148,7 @@ defmodule RailWeb.Utils.ChildStatusTest do
              line: "Findings to rule",
              needs_attention: true,
              badge: :dot,
-             action: %{label: "Review", tab: "rol_review_lead"}
+             action: %{label: "Review", params: [item: "findings"]}
            } = child_status(at_review, [at_review])
   end
 
@@ -200,7 +200,11 @@ defmodule RailWeb.Utils.ChildStatusTest do
     failed = child.(2, stage: :review, runs: [run.(:review_lead, status: :failed, error: "Chrome could not reach it")])
     running = child.(3, runs: [run.(:engineer, status: :running)])
 
-    assert %{badge: 2, line: "engineer role asked 2 questions", action: %{label: "Answer", tab: "rol_engineer"}} =
+    assert %{
+             badge: 2,
+             line: "engineer role asked 2 questions",
+             action: %{label: "Answer", params: [item: "plan", agent: :engineer]}
+           } =
              child_status(blocked, [blocked])
 
     assert %{
@@ -208,7 +212,7 @@ defmodule RailWeb.Utils.ChildStatusTest do
              label: "Review failed",
              line: "Review failed: Chrome could not reach it",
              line_class: "text-red-600 dark:text-red-500",
-             action: %{label: "Fix", tab: "rol_review_lead"},
+             action: %{label: "Fix", params: [item: "findings"]},
              cells: [%{mark: :done}, %{chip: %{label: "Failed"}}, _finalize]
            } = child_status(failed, [failed])
 
@@ -220,6 +224,14 @@ defmodule RailWeb.Utils.ChildStatusTest do
              cells: [%{chip: %{label: "Running"}} | _rest]
            } =
              child_status(running, [running])
+  end
+
+  # The review agent's conversation is the one a task opens on, so its questions need no agent named.
+  test "a child's review agent asking opens the plan's conversation as it is", %{child: child, run: run} do
+    asked = [%Question{status: :pending}]
+    blocked = child.(1, stage: :review, runs: [run.(:review_lead, status: :blocked_on_input, questions: asked)])
+
+    assert %{action: %{label: "Answer", params: [item: "plan"]}} = child_status(blocked, [blocked])
   end
 
   test "every other state reads its own line", %{child: child, run: run} do
@@ -288,7 +300,7 @@ defmodule RailWeb.Utils.ChildStatusTest do
              cells: [%{mark: :done}, %{mark: :done}, %{mark: :current, chip: %{label: "Ready to finalize"}}],
              needs_attention: true,
              badge: :dot,
-             action: %{label: "Finalize", tab: "finalize"}
+             action: %{label: "Finalize", params: [item: "findings"]}
            } = child_status(unmarked, [unmarked])
 
     ready = %{unmarked | marked_ready_at: now}

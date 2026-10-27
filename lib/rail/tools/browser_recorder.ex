@@ -10,7 +10,7 @@ defmodule Rail.Tools.BrowserRecorder do
   frames arrive already compressed.
 
   What is written is a directory of JPEGs and a line per frame saying when it
-  arrived. Not a video: encoding is something ffmpeg does once, at the end, from
+  arrived, and a line in `actions.jsonl` for each time the page was acted on. Not a video: encoding is something ffmpeg does once, at the end, from
   a recording that is finished. Writing a line per frame as it lands is what
   makes a run that dies half way still leave a demo - every frame up to the crash
   is on disk and the timings with them.
@@ -83,6 +83,17 @@ defmodule Rail.Tools.BrowserRecorder do
       # coveralls-ignore-next-line (Chrome sending a frame that is not base64)
       :error -> {:noreply, state}
     end
+  end
+
+  # Before the first frame the clock reads zero, which is where the video starts.
+  def handle_info({:browser_action, _task_id, _name, kind}, state) do
+    File.write!(
+      Path.join(state.directory, "actions.jsonl"),
+      [Jason.encode_to_iodata!(%{kind: kind, at_ms: elapsed(state)}), "\n"],
+      [:append]
+    )
+
+    {:noreply, state}
   end
 
   def handle_info(_message, state), do: {:noreply, state}

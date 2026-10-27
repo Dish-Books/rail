@@ -619,10 +619,65 @@ defmodule RailWeb.Components.FindingDetailTest do
     assert [] = Floki.find(doc, "[data-qa=decide_fix]")
   end
 
-  test "a fix saved before its turn handed the commit over says it is not sent on yet" do
+  test "a fixed finding leads with Fixed in its commit, and nothing on it is red or amber but a failing note" do
+    finding = %{
+      @finding
+      | severity: :blocker,
+        decision: :fix,
+        status: :fixed,
+        fixed_in: "2222222bbbb",
+        notes: [
+          %FindingNote{round: 1, kind: :raised, at: @at, commit: "1111111aaaa"},
+          %FindingNote{round: 2, kind: :pass, at: @at, status: :not_fixed, commit: "1111111aaaa"},
+          %FindingNote{round: 2, kind: :fix, at: @at, commit: "2222222bbbb", test: "test/a_test.exs: sends once"}
+        ]
+    }
+
+    doc =
+      (&FindingDetail.finding_detail/1)
+      |> render_component([finding: finding, labels: %{"2222222bbbb" => "Fix round 2"}] ++ @attrs)
+      |> Floki.parse_fragment!()
+
+    assert "Fixed in 2222222 · Fix round 2" =
+             doc |> Floki.find("#finding-outcome") |> Floki.text() |> String.split() |> Enum.join(" ")
+
+    assert doc |> Floki.attribute("#finding-outcome", "class") |> Enum.join() =~ "text-emerald-700"
+
+    assert doc |> Floki.find("#finding-meta") |> Floki.text() =~
+             ~r/\A\s*Raised as\s+blocker\s+·\s+Code\s+·\s*Round 1\s*·\s*1 of 1\s*\z/
+
+    assert doc |> Floki.attribute("#finding-severity", "class") |> Enum.join() =~ "bg-slate-100"
+    assert doc |> Floki.attribute("[data-qa=finding_recommendation] span", "class") |> Enum.join() =~ "bg-slate-400"
+    assert doc |> Floki.find("[data-qa=finding_fixed_in]") |> Floki.text() =~ "2222222"
+
+    assert doc |> Floki.find("[data-qa=finding_history]") |> Floki.text() |> String.split() |> Enum.join(" ") =~
+             "Fixed in 2222222; test"
+
+    # A pass that found it fixed, with no fix round behind it, names the commit alone.
+    passed = %{
+      finding
+      | notes: [%FindingNote{round: 2, kind: :pass, at: @at, status: :fixed, commit: "2222222bbbb"}]
+    }
+
+    assert "Fixed in 2222222" =
+             (&FindingDetail.finding_detail/1)
+             |> render_component([finding: passed] ++ @attrs)
+             |> Floki.parse_fragment!()
+             |> Floki.find("#finding-outcome")
+             |> Floki.text()
+             |> String.split()
+             |> Enum.join(" ")
+
+    # Only the note that it was once still failing is red.
+    assert [_failing_note] = Floki.find(doc, "[class*=text-red-], [class*=bg-red-], [class*=-amber-]")
+    assert doc |> Floki.find("[class*=text-red-]") |> Floki.text() =~ "Still failing on 1111111"
+  end
+
+  test "a finding fixed before Rail noted its commit reads Fixed, with no Fixed in line and nothing not yet" do
     finding = %{
       @finding
       | status: :fixed,
+        raised_in: "1111111aaaa",
         notes: [%FindingNote{round: 1, kind: :fix, at: @at, commit: nil, test: "test/a_test.exs: sends once"}]
     }
 
@@ -631,28 +686,74 @@ defmodule RailWeb.Components.FindingDetailTest do
       |> render_component([finding: finding] ++ @attrs)
       |> Floki.parse_fragment!()
 
+    assert "Fixed · Fix round 1" =
+             doc |> Floki.find("#finding-outcome") |> Floki.text() |> String.split() |> Enum.join(" ")
+
+    assert [] = Floki.find(doc, "[data-qa=finding_fixed_in]")
+    refute doc |> Floki.find("[data-qa=finding_commits]") |> Floki.text() =~ "Fixed in"
+    refute Floki.text(doc) =~ "not yet"
+
     assert doc |> Floki.find("[data-qa=finding_note]") |> Floki.text() |> String.split() |> Enum.join(" ") =~
-             "Fixed, not yet sent on; test that failed first: test/a_test.exs: sends once"
+             "Fixed; test that failed first: test/a_test.exs: sends once"
   end
 
-  test "every severity, state and raiser reads as itself" do
+  test "every state leads its own status line, and its severity keeps its tint only while still to decide or fix" do
+    failing = %FindingNote{round: 2, kind: :pass, at: @at, status: :not_fixed, commit: "3333333cccc"}
+
     cases = [
       {%{@finding | severity: :blocker, raised_by: :review_lead}, true, "Rule on it once the round finishes",
-       "Review lead"},
-      {%{@finding | severity: :minor, decision: :fix}, false, "Fix", "Code reviewer"},
-      {%{@finding | severity: :nit, decision: :fix, status: :not_fixed, recommendation: :skip}, false, "Still failing",
+       "text-blue-600", "bg-red-100", "bg-red-500", "Review lead"},
+      {%{@finding | severity: :major}, false, "Needs your call", "text-blue-600", "bg-amber-100", "bg-amber-500",
        "Code reviewer"},
-      {%{@finding | decision: :skip, raised_by: :explorer}, false, "Don't fix", "QA explorer"}
+      {%{@finding | severity: :minor, decision: :fix}, false, "Fix", "text-slate-700", "bg-amber-50", "bg-amber-400",
+       "Code reviewer"},
+      {%{@finding | severity: :nit, decision: :fix, status: :not_fixed, recommendation: :skip, notes: [failing]}, false,
+       "Still failing · on 3333333", "text-red-600", "bg-slate-100 text-slate-600", "bg-slate-400", "Code reviewer"},
+      {%{@finding | severity: :blocker, decision: :fix, status: :not_fixed}, false, "Still failing", "text-red-600",
+       "bg-red-100", "bg-red-500", "Code reviewer"},
+      {%{@finding | severity: :blocker, decision: :skip, raised_by: :explorer}, false, "Don't fix", "text-slate-700",
+       "bg-slate-100 text-slate-500", "bg-slate-400", "QA explorer"},
+      {%{@finding | severity: :major, suppressed_by_id: "lrn_quiet"}, false, "Suppressed", "text-slate-700",
+       "bg-slate-100 text-slate-500", "bg-slate-400", "Code reviewer"}
     ]
 
-    for {finding, running, state, raiser} <- cases do
+    for {finding, running, state, color, tint, dot, raiser} <- cases do
       doc =
         (&FindingDetail.finding_detail/1)
         |> render_component(Keyword.put([finding: finding] ++ @attrs, :running, running))
         |> Floki.parse_fragment!()
 
-      assert ^state = doc |> Floki.find("[data-qa=finding_state]") |> Floki.text() |> String.trim()
+      assert ^state = doc |> Floki.find("[data-qa=finding_state]") |> Floki.text() |> String.split() |> Enum.join(" ")
+      assert doc |> Floki.attribute("#finding-outcome", "class") |> Enum.join() =~ color
+      assert doc |> Floki.attribute("#finding-severity", "class") |> Enum.join() =~ tint
+      assert doc |> Floki.find("#finding-severity") |> Floki.text() |> String.trim() == to_string(finding.severity)
+      assert doc |> Floki.attribute("[data-qa=finding_recommendation] span", "class") |> Enum.join() =~ dot
       assert doc |> Floki.find("[data-qa=finding_recommendation]") |> Floki.text() =~ raiser
+      assert [] = Floki.find(doc, "[data-qa=finding_fixed_in]")
+      refute doc |> Floki.find("[data-qa=finding_commits]") |> Floki.text() =~ "Fixed in"
     end
+  end
+
+  test "a finding whose ruling changed since the fix plan says so and keeps its ruling buttons" do
+    finding = %{@finding | decision: :skip}
+
+    doc =
+      (&FindingDetail.finding_detail/1)
+      |> render_component([finding: finding, ruling_was: :fix] ++ @attrs)
+      |> Floki.parse_fragment!()
+
+    assert doc |> Floki.find("#finding-ruling-changed") |> Floki.text() =~ "Ruling changed since the fix plan · was Fix"
+    assert [_fix] = Floki.find(doc, "#decide-fix-send-twice")
+    assert [_skip] = Floki.find(doc, "#decide-skip-send-twice")
+
+    doc =
+      (&FindingDetail.finding_detail/1)
+      |> render_component([finding: %{finding | decision: :fix}, ruling_was: :skip] ++ @attrs)
+      |> Floki.parse_fragment!()
+
+    assert doc |> Floki.find("#finding-ruling-changed") |> Floki.text() =~ "was Don't fix"
+
+    doc = (&FindingDetail.finding_detail/1) |> render_component([finding: finding] ++ @attrs) |> Floki.parse_fragment!()
+    assert Floki.find(doc, "#finding-ruling-changed") == []
   end
 end

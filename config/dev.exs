@@ -33,6 +33,7 @@ config :rail, RailWeb.Endpoint,
   watchers: [
     esbuild: {Esbuild, :install_and_run, [:rail, ~w(--sourcemap=inline --watch)]},
     design_overlay: {Esbuild, :install_and_run, [:design_overlay, ~w(--watch)]},
+    design_kit: {Esbuild, :install_and_run, [:design_kit, ~w(--watch)]},
     tailwind: {Tailwind, :install_and_run, [:rail, ~w(--watch)]}
   ],
   live_reload: [

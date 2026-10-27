@@ -9,8 +9,8 @@ defmodule Rail.Users.Actions.CreateSigningKeyTest do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_signing_1",
-        login: "ada",
-        email: "ada@example.com",
+        login: "ada-create-signing-key",
+        email: "ada-create-signing-key@example.com",
         github_token: "gho_user_token",
         github_token_expires_at: ~U[2100-01-01 00:00:00.000000Z]
       })
@@ -21,7 +21,7 @@ defmodule Rail.Users.Actions.CreateSigningKeyTest do
   test "generates a key and registers it on the user's GitHub account", %{scope: scope} do
     Req.Test.expect(Client, fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn)
-      assert %{"title" => "Rail (ada)", "key" => "ssh-ed25519 " <> _rest} = Jason.decode!(body)
+      assert %{"title" => "Rail (ada-create-signing-key)", "key" => "ssh-ed25519 " <> _rest} = Jason.decode!(body)
 
       conn |> Plug.Conn.put_status(201) |> Req.Test.json(%{"id" => 4711})
     end)
@@ -84,7 +84,11 @@ defmodule Rail.Users.Actions.CreateSigningKeyTest do
 
   test "says so when the user has no GitHub token" do
     {:ok, user} =
-      Users.register_oauth_user(%{github_id: "gh_signing_2", login: "grace", email: "grace@example.com"})
+      Users.register_oauth_user(%{
+        github_id: "gh_signing_2",
+        login: "grace-create-signing-key",
+        email: "grace-create-signing-key@example.com"
+      })
 
     assert {:error, :no_github_token} = Users.create_signing_key(user_scope(user: user))
   end

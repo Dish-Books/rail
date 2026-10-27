@@ -8,7 +8,7 @@ mise run ci
 
 | Lane | Gates |
 |---|---|
-| dev (`_build/dev`) | compile (clean, no warnings) → format, credo, deps.audit, sobelow, assets (the app bundle and the design overlay) |
+| dev (`_build/dev`) | compile (clean, no warnings) → format, credo, deps.audit, sobelow, assets (the app bundle, the design overlay and the design kit) |
 | test (`_build/test`) | ecto.create/migrate, tests with coverage held at 100% |
 | tooling (no mix) | biome: the assets' tests (`pnpm test`), then `biome ci` |
 | `credo/` | the subproject's own gates, coverage held at 100% |

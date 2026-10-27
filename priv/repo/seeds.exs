@@ -55,11 +55,10 @@ _claude_backend =
 read_prompt = &(".rail/prompts/#{&1}.md" |> File.read!() |> String.replace_suffix("\n", ""))
 
 default_roles = [
-  # Leads the three below, which run inside its one conversation as subagents on its tools.
   %{
     stage: :plan,
     name: "Plan",
-    description: "Leads Product, Designer and Architect to the ticket, the design and the plan",
+    description: "Writes the ticket, the design options and the implementation plan",
     icon_name: "pi-compass-tool",
     cli: :claude,
     model: "claude-opus-5-5",
@@ -67,42 +66,6 @@ default_roles = [
     system_prompt: read_prompt.("plan"),
     max_concurrent: 1,
     position: 0
-  },
-  %{
-    stage: :product,
-    name: "Product Manager",
-    description: "Clarifies problem statements, gathers requirements, and prepares issues for architecture",
-    icon_name: "pi-clipboard-text",
-    cli: :claude,
-    model: "claude-opus-5-5",
-    reasoning_effort: :high,
-    system_prompt: read_prompt.("product"),
-    max_concurrent: 1,
-    position: 0
-  },
-  %{
-    stage: :design,
-    name: "Product Designer",
-    description: "Designs user interfaces, layout specs, and UX flows",
-    icon_name: "pi-paint-brush",
-    cli: :claude,
-    model: "claude-opus-5-5",
-    reasoning_effort: :high,
-    system_prompt: read_prompt.("design"),
-    max_concurrent: 1,
-    position: 1
-  },
-  %{
-    stage: :architect,
-    name: "Software Architect",
-    description: "Designs technical architecture, file changes, and implementation plans",
-    icon_name: "pi-cube",
-    cli: :claude,
-    model: "claude-opus-5-5",
-    reasoning_effort: :high,
-    system_prompt: read_prompt.("architect"),
-    max_concurrent: 1,
-    position: 2
   },
   %{
     stage: :engineer,
@@ -116,11 +79,11 @@ default_roles = [
     max_concurrent: 2,
     position: 3
   },
-  # Leads the four below inside one Review run, each a subagent on its own role's model.
+  # Turns what the three below report on a round into findings and the next round's plan.
   %{
     stage: :review_lead,
-    name: "Review lead",
-    description: "Leads the code reviewer, QA explorers, engineer and demo recorder through Review",
+    name: "Review",
+    description: "Turns QA's and the code reviewer's reports into findings and writes the next round's plan",
     icon_name: "pi-seal-check-fill",
     cli: :claude,
     model: "claude-opus-5-5",

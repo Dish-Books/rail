@@ -77,7 +77,8 @@ lane_dev() {
     set -e
     mix esbuild.install --if-missing
     mix esbuild rail --minify
-    mix esbuild design_overlay --minify'
+    mix esbuild design_overlay --minify
+    mix esbuild design_kit --minify'
 }
 
 lane_tests() {

@@ -36,12 +36,6 @@ defmodule Rail.Learnings.Utils.SearchLearnings do
   defp filter({:statuses, statuses}, query) when is_list(statuses), do: where(query, [learning: l], l.status in ^statuses)
   defp filter({:kind, kind}, query) when kind in @kinds, do: where(query, [learning: l], l.kind == ^kind)
 
-  # Plan leads the three roles it replaced, so the rules people set for them are its own.
-  defp filter({:role, :plan}, query) do
-    roles = ["plan", "product", "design", "architect"]
-    where(query, [learning: l], fragment("cardinality(?) = 0 OR ? && ?::text[]", l.roles, l.roles, ^roles))
-  end
-
   # The Review lead leads the four roles it hands work to, so their rules are its own too.
   defp filter({:role, :review_lead}, query) do
     roles = ["review_lead", "review", "qa", "engineer", "demo"]

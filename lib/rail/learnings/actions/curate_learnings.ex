@@ -1,6 +1,7 @@
 defmodule Rail.Learnings.Actions.CurateLearnings do
   @moduledoc """
-  The daily curator pass: what no pass has read, folded in one transaction into proposals, links and auto-activations, then a digest.
+  The daily curator pass: what no pass has read, folded in one transaction into proposals, links, auto-activations and
+  deletions of provisional rules proposed for retiring, then a digest.
   A failed pass stamps nothing, so its observations go to the next one.
   """
 
@@ -224,10 +225,13 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
           |> Enum.filter(&backed?/1)
           |> Enum.flat_map(&activate/1)
 
+        # After activation, so a rule this pass confirmed is active and waits on a person to retire.
+        deleted = delete_provisional_retires(project_id)
+
         Repo.update_all(from(o in Observation, where: o.id in ^MapSet.to_list(read)), set: [curator_pass_id: pass_id])
         Repo.update_all(from(p in CuratorPass, where: p.id == ^pass_id), set: [finished_at: DateTime.utc_now()])
 
-        %{proposals: proposals, activated: activated}
+        %{proposals: proposals, activated: activated, deleted: deleted}
       end)
 
     folded
@@ -371,6 +375,22 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
     tasks >= @auto_tasks
   end
 
+  # No person confirmed a provisional rule, so one proposed for retiring is deleted, its proposals with it, and its
+  # sightings and findings let go of it. An active rule's retire waits on a person.
+  defp delete_provisional_retires(project_id) do
+    learnings =
+      Repo.all(
+        from l in Learning,
+          join: p in LearningProposal,
+          on: p.learning_id == l.id and p.status == :pending and p.action == :retire,
+          where: l.project_id == ^project_id and l.status == :provisional,
+          distinct: true
+      )
+
+    {_count, nil} = Repo.delete_all(from(l in Learning, where: l.id in ^Enum.map(learnings, & &1.id)))
+    learnings
+  end
+
   # A rule retired since its add was proposed stays retired.
   defp activate(%LearningProposal{id: id} = proposal) do
     case apply_proposal(Scope.for_system(), proposal) do
@@ -398,7 +418,11 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
 
   defp string(_missing), do: nil
 
-  defp digest(%Project{} = project, %CuratorPass{} = pass, since, %{proposals: proposals, activated: activated}) do
+  defp digest(%Project{} = project, %CuratorPass{} = pass, since, %{
+         proposals: proposals,
+         activated: activated,
+         deleted: deleted
+       }) do
     provisional =
       Repo.all(
         from l in Learning,
@@ -409,7 +433,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
 
     # Read again as it posts, so a channel picked while the pass ran gets its digest. It names tracker
     # issues, so never in a channel triage has marked as shared outside the team.
-    with true <- activated != [] or proposals != [] or provisional != [],
+    with true <- activated != [] or deleted != [] or proposals != [] or provisional != [],
          {:ok, %Project{learnings_slack_workspace: %SlackWorkspace{} = workspace, learnings_channel_external_id: channel}}
          when is_binary(channel) <- Projects.get_project(project.id),
          false <-
@@ -417,7 +441,8 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
              {:ok, %SlackChannel{external: true}},
              Projects.get_slack_channel(external_id: channel, slack_workspace_id: workspace.id)
            ),
-         {:ok, ts} <- Slack.post_channel_message(workspace, channel, digest_text(project, pass, activated, provisional)),
+         {:ok, ts} <-
+           Slack.post_channel_message(workspace, channel, digest_text(project, pass, activated, deleted, provisional)),
          {:ok, permalink} <- Slack.permalink(workspace, channel, ts) do
       posted = pass |> Ecto.Changeset.change(digest_permalink: permalink) |> Repo.update!()
       broadcast_learnings_changed(project.id)
@@ -427,7 +452,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
     end
   end
 
-  defp digest_text(%Project{} = project, %CuratorPass{} = pass, activated, provisional) do
+  defp digest_text(%Project{} = project, %CuratorPass{} = pass, activated, deleted, provisional) do
     counts = Learnings.count_learnings(project_id: project.id)
 
     pending =
@@ -441,6 +466,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
     sections = [
       "*Learnings for #{project.name}*, curator run of #{Calendar.strftime(pass.started_at, "%b %-d")}",
       activated_section(activated),
+      deleted_section(deleted),
       if(counts.review > 0, do: "*To review #{counts.review}:* #{Enum.map_join(pending, ", ", &pending_label/1)}"),
       provisional_section(provisional),
       "<#{RailWeb.Endpoint.url()}/learnings|Open Learnings in Rail>"
@@ -455,6 +481,15 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
     activated = Repo.preload(activated, :observations)
     bullets = Enum.map(activated, &"• #{&1.rule} (#{sightings(&1.observations)})")
     Enum.join(["*Auto-activated #{length(activated)}*" | bullets], "\n")
+  end
+
+  defp deleted_section([]), do: nil
+
+  # A backlog can delete hundreds at once, more than a Slack message holds, so it names the first few.
+  defp deleted_section(deleted) do
+    bullets = deleted |> Enum.take(10) |> Enum.map(&"• #{&1.rule}")
+    more = if length(deleted) > 10, do: ["…and #{length(deleted) - 10} more"], else: []
+    Enum.join(["*Deleted #{length(deleted)} provisional*" | bullets ++ more], "\n")
   end
 
   defp provisional_section([]), do: nil
@@ -490,7 +525,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
     result = Path.join(dir, "result.json")
 
     String.trim("""
-    You are #{project.name}'s curator. Once a day you read what Rail has seen since your last pass and propose how the project's rules should change. People decide; you propose. The one thing that takes effect without a person is an add you back with sightings from three or more tasks, which Rail activates itself.
+    You are #{project.name}'s curator. Once a day you read what Rail has seen since your last pass and propose how the project's rules should change. People decide; you propose. Two things take effect without a person: an add you back with sightings from three or more tasks, which Rail activates itself, and a retire of a provisional rule, which Rail deletes. Retiring an active rule waits on a person.
 
     Everything is in #{dir}:
 

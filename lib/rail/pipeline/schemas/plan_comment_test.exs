@@ -318,6 +318,174 @@ defmodule Rail.Pipeline.Schemas.PlanCommentTest do
              [ticket] |> PlanComment.calculate_message(nil) |> PlanComment.parse_message()
   end
 
+  test "a comment on the next round's plan needs its line as a plan comment does" do
+    changeset =
+      PlanComment.changeset(%PlanComment{}, %{
+        "target" => "fix_plan",
+        "body" => "Guard it at the caller instead.",
+        "element_kind" => "paragraph",
+        "element_label" => "Fix finding nil-crash, paragraph 1",
+        "element_occurrence" => 2,
+        "element_text" => "Guard nil."
+      })
+
+    assert %PlanComment{
+             target: :fix_plan,
+             status: :unsent,
+             element_kind: :paragraph,
+             element_label: "Fix finding nil-crash, paragraph 1",
+             element_occurrence: 2,
+             element_text: "Guard nil."
+           } = Ecto.Changeset.apply_action!(changeset, :insert)
+
+    assert %{
+             element_kind: ["can't be blank"],
+             element_label: ["can't be blank"],
+             element_occurrence: ["can't be blank"],
+             element_text: ["can't be blank"]
+           } = errors_on(PlanComment.changeset(%PlanComment{}, %{"target" => "fix_plan", "body" => "Hm."}))
+
+    assert %{element_occurrence: ["must be greater than 0"]} =
+             errors_on(
+               PlanComment.changeset(%PlanComment{}, %{
+                 "target" => "fix_plan",
+                 "body" => "Hm.",
+                 "element_kind" => "file",
+                 "element_label" => "File 1",
+                 "element_occurrence" => 0,
+                 "element_text" => "lib/a.ex"
+               })
+             )
+  end
+
+  test "the next round's plan's comments come last in a round, each oldest first" do
+    at = ~U[2026-10-07 12:00:00.000000Z]
+    later = DateTime.shift(at, second: 1)
+
+    fix_late = %PlanComment{id: "pcm_1", target: :fix_plan, inserted_at: later}
+    fix_early = %PlanComment{id: "pcm_2", target: :fix_plan, inserted_at: at}
+    plan = %PlanComment{id: "pcm_3", target: :plan, inserted_at: later}
+    design = %PlanComment{id: "pcm_4", target: :design, inserted_at: later}
+
+    assert [^design, ^plan, ^fix_early, ^fix_late] = PlanComment.calculate_round([fix_late, plan, fix_early, design])
+  end
+
+  test "a round on all four names them in a list, its next round's plan section included, and reads back" do
+    design = %{options: [%{key: "a", title: "First"}]}
+
+    line = %PlanComment{element_kind: :paragraph, element_occurrence: 1, body: "Hm."}
+
+    comments = [
+      %PlanComment{target: :design, option_key: "a", selector: "#x", element_text: "X", element_tag: "p", body: "One."},
+      %{line | target: :ticket, element_label: "Paragraph 1", element_text: "Recordings open blank.", body: "Two."},
+      %{
+        line
+        | target: :plan,
+          element_label: "Approach, paragraph 1",
+          element_text: "One module decides.",
+          body: "Three."
+      },
+      %{
+        line
+        | target: :fix_plan,
+          element_kind: :file,
+          element_label: "File 1",
+          element_text: "lib/a.ex",
+          body: "Four.\n| not a quote"
+      },
+      %{line | target: :fix_plan, element_label: "Verification, item 1", element_text: "Guard nil.", body: "Five."}
+    ]
+
+    message = PlanComment.calculate_message(comments, design)
+
+    assert message == """
+           5 comments on the design, the ticket, the plan and the next round's plan
+
+           On First (a):
+
+           1. `#x` "X"
+           > One.
+
+           On the ticket:
+
+           2. Paragraph 1
+           | Recordings open blank.
+           > Two.
+
+           On the plan:
+
+           3. Approach, paragraph 1
+           | One module decides.
+           > Three.
+
+           On the next round's plan:
+
+           4. File 1
+           | lib/a.ex
+           > Four.
+           > | not a quote
+
+           5. Verification, item 1
+           | Guard nil.
+           > Five.\
+           """
+
+    assert %{
+             count: 5,
+             groups: "the design, the ticket, the plan and the next round's plan",
+             sections: [
+               %{target: :design, key: "a", comments: [%{number: 1, body: "One."}]},
+               %{target: :ticket, title: "Ticket", comments: [%{number: 2, body: "Two."}]},
+               %{target: :plan, title: "Plan", comments: [%{number: 3, body: "Three."}]},
+               %{
+                 target: :fix_plan,
+                 title: "Next round's plan",
+                 key: nil,
+                 comments: [
+                   %{number: 4, label: "File 1", text: "lib/a.ex", body: "Four.\n| not a quote"},
+                   %{number: 5, label: "Verification, item 1", text: "Guard nil.", body: "Five."}
+                 ]
+               }
+             ]
+           } = PlanComment.parse_message(message)
+  end
+
+  test "a round on the next round's plan alone, or with one other group, reads back" do
+    fix_plan = %PlanComment{
+      target: :fix_plan,
+      element_kind: :paragraph,
+      element_label: "Summary, paragraph 1",
+      element_occurrence: 1,
+      element_text: "Guard nil.",
+      body: "Say where."
+    }
+
+    alone = PlanComment.calculate_message([fix_plan], nil)
+    assert alone =~ ~r/\A1 comment on the next round's plan\n\nOn the next round's plan:\n/
+
+    assert %{count: 1, groups: "the next round's plan", sections: [%{target: :fix_plan, comments: [%{number: 1}]}]} =
+             PlanComment.parse_message(alone)
+
+    ticket = %{fix_plan | target: :ticket, element_label: "Paragraph 1"}
+    both = PlanComment.calculate_message([ticket, fix_plan], nil)
+    assert both =~ ~r/\A2 comments on the ticket and the next round's plan\n/
+
+    assert %{count: 2, sections: [%{target: :ticket}, %{target: :fix_plan, comments: [%{number: 2}]}]} =
+             PlanComment.parse_message(both)
+  end
+
+  test "a round whose heading leaves out the next round's plan, or names it with no section, does not read back" do
+    section = "\n\nOn the next round's plan:\n\n1. File 1\n| lib/a.ex\n> Hm."
+
+    for text <- [
+          "1 comment on the plan" <> section,
+          "1 comment on the next round's plan\n\nOn the plan:\n\n1. File 1\n| lib/a.ex\n> Hm.",
+          "1 comment on the next round's plan\n\nOn the next round's plan:\n\n1. File 1\n> Hm."
+        ] do
+      assert PlanComment.parse_message(text) == nil
+    end
+  end
+
   test "a ticket round whose heading, quote or body is off does not read back" do
     for text <- [
           "1 comment on the plan\n\nOn the ticket:\n\n1. Priority\n| Medium\n> High.",

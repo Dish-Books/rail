@@ -1,7 +1,7 @@
 defmodule RailWeb.Components.ReviewQueue do
   @moduledoc """
   Overview's review queue: every task a teammate marked ready at Finalize and nobody has merged, oldest mark
-  first, whoever owns it. A row only opens the task's Finalize tab; merging happens there.
+  first, whoever owns it. A row opens the task, whose header merges it.
   """
   use RailWeb, :html
 
@@ -38,7 +38,7 @@ defmodule RailWeb.Components.ReviewQueue do
       <div :if={@tasks != []} id="review-queue" class="space-y-3">
         <.link
           :for={task <- @tasks}
-          navigate={~p"/tasks/#{task.id}?tab=finalize"}
+          navigate={~p"/tasks/#{task.id}"}
           id={"review-queue-row-#{task.issue.identifier}"}
           data-state={Task.finalize_state(task)}
           class="group flex items-center gap-4 rounded-xl border border-slate-200 dark:border-slate-700/70 bg-white dark:bg-slate-800/40 px-5 py-3.5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"

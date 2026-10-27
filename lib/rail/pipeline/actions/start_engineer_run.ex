@@ -8,6 +8,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
   """
 
   import Rail.Pipeline.Utils.FormatComments
+  import Rail.Pipeline.Utils.FormatFindings
   import Rail.Pipeline.Utils.FormatTicket
   import Rail.Pipeline.Utils.LearningsBrief
   import Rail.Pipeline.Utils.PrepareTurn
@@ -15,7 +16,8 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.ImplementationPlan
+  alias Rail.Pipeline.Schemas.FixPlan
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
@@ -70,23 +72,24 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
 
     Git is yours to use, commits included, except for what Rail does for you: no push and no pull request, and never switch or rename the branch you are on. For each turn Rail sets the worktree to commit as the person the ticket is assigned to, signed with their key, so commit as it is set and never change who commits. End every commit message with the line `#{ticket_trailer(issue)}`. Never rewrite commit history: no rebase, no amend, no reset or squash of a commit, nothing forced. Rail never force-pushes, so a branch whose history was rewritten is not pushed, and comes back to you to merge what was pushed back in.
 
-    At the start of every turn, check your branch against `origin/#{task.project.default_branch}`, which Rail fetched as the turn started. When it is behind, bring it up to date by merging it in, resolve every conflict the way both sides meant it, and follow what the default branch changed through the code, tests and comments your branch relies on.
+    Never merge `origin/#{task.project.default_branch}` in unless the plan says to, or to get CI passing as below: a person brings the branch up to date with Update, which is a round of its own. A round that does merge it, which Rail fetched as the turn started, resolves every conflict the way both sides meant it and follows what the default branch changed through the code, tests and comments the branch relies on.
 
     Nothing under #{scratch_path} is part of the change. It is your workspace, and never committed. It survives between turns; `/tmp` and anything you left running do not.
 
     The machine is Rail's. Do not ask about it: work around what you can, and say in your last message what you could not. A headless Chrome you start yourself needs `--no-sandbox` here.
 
-    A turn that ends with commits the remote does not have yet hands them over: Rail sends them on and the task moves to Review. So commit only finished work: commit when the work is done and the tests for what you changed pass, then end your turn. A commit message is one line saying what this change does, a blank line, then what changed and why. Work you leave uncommitted is not sent on; Rail warns that it is there and it waits for your next turn.
+    A turn that ends with commits the remote does not have yet hands them over: Rail sends them on and the task moves to Review. So commit only finished work: commit when the work is done and the tests for what you changed pass, then end your turn. A commit message is one line saying what this change does, a blank line, then what changed and why. Work you leave uncommitted is not sent on; Rail warns that it is there and it waits for your next turn. A later round whose plan changes no code, such as one that only retakes the screen states or records a demo, has nothing to commit: do what it asks, leave the worktree clean, save your report and end your turn, and Rail sends the round to Review as it stands.
 
     Your last message is what the human reads, not the commit body: what you changed, how you checked it, and anything you could not do or disagreed with. A turn whose last words are "Running the tests now:" tells them nothing.
 
     - A test that fails only where your change does not touch is not a reason to hold the work back: name the test in the commit body and finish. If you stop part way, for a question or anything else, do not commit half a change, and the task waits for you.#{ci(task)}
     - Run every command in the foreground and wait for it, test runs included. Never start one in the background meaning to read it when it finishes: your turn ends the moment you stop writing, the CLI carrying you exits, and it kills whatever you left running. Nothing wakes you when it is done, so "I have started X and will check it shortly" is the end of the round with X unread and the work unfinished. A single command is cut off at ten minutes, so give a long one a `timeout` under that, or run it in parts, rather than backgrounding it.
-    - Review and QA findings come back as further turns of this same conversation. Commit each round as a commit of its own, describing that round's change, not the whole ticket over again.
-    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or a named assumption is not a question.
+    - Each round starts you on a clean conversation: this brief is all you are given of what came before. A round that changes code is committed as a commit of its own, describing this round's change, not the whole ticket over again.
+    - Before you end a turn that hands the round over, with commits or with nothing to commit, save your report with `save_report`: what you changed and why, and every file you changed that the plan did not name. For each finding below the plan covers, give the places you covered and those you left with why, and the test that failed first by its file and name. For each comment, say by its number what was done with it. QA, the code reviewer and the review agent read your report, and nothing else you say reaches them.
+    - Ask everything at once. Research to the end before you stop, then ask every question you could not close in one `ask_questions` call before you end your turn, each with its options, your recommended answer first. Leave the options out where the answer is free text. The human sees the round when your turn ends and answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or a named assumption is not a question.
 
     #{plan(task)}
-    #{design(task)}#{learnings_brief(run, fn -> ["#{issue.title}\n\n#{issue.description}" | plan_text(task)] end)}
+    #{fixes(task)}#{design(task)}#{learnings_brief(run, fn -> ["#{issue.title}\n\n#{issue.description}" | plan_text(task)] end)}
     The ticket it was planned from:
 
     #{format_ticket(issue)}
@@ -96,11 +99,35 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
     """)
   end
 
+  # A later round fixes what the review found, so the findings and the human's comments come with its plan.
+  defp fixes(%Task{} = task) do
+    case Pipeline.read_plan(task) do
+      %Round{number: number} = round when number > 1 ->
+        format_findings(task) <> comments(round, Pipeline.read_fix_plan(task))
+
+      _first_or_none ->
+        ""
+    end
+  end
+
+  # Only the fix plan this round was approved from answers comments: an Update's round has none of its own.
+  defp comments(%Round{plan_saved_at: saved_at}, %FixPlan{saved_at: saved_at, comments: [_first | _rest] = comments}) do
+    lines = Enum.map_join(comments, "\n", &"#{&1.number}. On #{&1.place}: #{&1.text}")
+    "The human's comments this round, by the numbers the plan uses:\n\n#{lines}\n\n"
+  end
+
+  defp comments(%Round{}, _none_or_another), do: ""
+
   defp ci(%Task{project: %Project{ci_command: command}}) when command in [nil, ""],
     do: "\n- This project has no CI command for Rail to run, so run its own checks yourself before you finish."
 
-  defp ci(%Task{project: %Project{ci_command: command}}) do
-    "\n- Once your turn hands your commits over, Rail runs `#{command}` on them before anything else sees them. If that fails, its output comes back to you as the next turn of this conversation. So never run `#{command}` or the whole test suite yourself: it would only run twice. Run the tests for the files you changed."
+  defp ci(%Task{project: %Project{ci_command: command, default_branch: default_branch}}) do
+    "\n- Once your turn hands your commits over, Rail runs `#{command}` on them before anything else sees them. If that fails, its output comes back to you as the next turn of this conversation. So never run `#{command}` or the whole test suite yourself: it would only run twice. Run the tests for the files you changed." <>
+      "\n- Nothing reaches Review until CI passes, so a failure is yours to clear even when your change did not cause it. " <>
+      "Fetch `origin/#{default_branch}`: when it has the fix, merge it in. When it does not, fix the failing test or " <>
+      "code on this branch, outside the plan if that is where it is, and name the fix and why in your commit body " <>
+      "and report. Never end a turn on a failing CI with nothing changed: CI fails the same way again, and after a few " <>
+      "failures in a row Rail stops and the task waits on a person."
   end
 
   defp workspace(%Task{worktree_path: worktree_path, worktree_name: branch, project: %Project{} = project}) do
@@ -152,20 +179,20 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
   defp leave_out_data_uri(uri, _media_type), do: uri
 
   defp plan_text(%Task{} = task) do
-    case Pipeline.get_implementation_plan(task) do
-      {:ok, %ImplementationPlan{content: content}} -> [content]
-      {:error, :not_found} -> []
+    case Pipeline.read_plan(task) do
+      %Round{plan: content, approved_at: %DateTime{}} when is_binary(content) -> [content]
+      _unapproved -> []
     end
   end
 
   # A task that skipped architect has no plan, and the ticket is then the whole
   # of the specification rather than a summary of one.
   defp plan(%Task{} = task) do
-    case Pipeline.get_implementation_plan(task) do
-      {:ok, %ImplementationPlan{content: content}} ->
+    case Pipeline.read_plan(task) do
+      %Round{plan: content, approved_at: %DateTime{}} when is_binary(content) ->
         "The approved implementation plan, which is the specification:\n\n#{String.trim(content)}"
 
-      {:error, :not_found} ->
+      _unapproved ->
         "There is no implementation plan for this ticket, so the ticket below is the whole specification. Decide the approach yourself, following the patterns already in the code."
     end
   end

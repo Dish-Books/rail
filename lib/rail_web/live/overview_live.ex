@@ -8,6 +8,7 @@ defmodule RailWeb.OverviewLive do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Roles.Schemas.Role
   alias Rail.Scope
   alias Rail.Tools
 
@@ -50,7 +51,6 @@ defmodule RailWeb.OverviewLive do
       flash={@flash}
       current_section={@current_section}
       current_scope={@current_scope}
-      is_rail_extended={@is_rail_extended}
       attention_count={@attention_count}
       triage_count={@triage_count}
       current_project_id={@current_project_id}
@@ -86,6 +86,8 @@ defmodule RailWeb.OverviewLive do
             </h2>
             <.up_next runs={@waiting} blocked={@blocked} />
           </section>
+
+          <.plan_queue tasks={@plan_queue} now={@now} />
 
           <.review_queue tasks={@review_queue} now={@now} />
 
@@ -201,6 +203,7 @@ defmodule RailWeb.OverviewLive do
 
     socket
     |> assign(:now, now)
+    |> assign(:plan_queue, plan_queue(socket.assigns.current_scope, project_id))
     |> assign(:waiting, waiting)
     |> assign(:blocked, blocked)
     |> assign(:review_queue, review_queue)
@@ -216,7 +219,7 @@ defmodule RailWeb.OverviewLive do
 
   # A split is one piece of work, so its children are read through their parent, which they are cleaned up with.
   defp load_tasks(project_id, owner_user_id) do
-    preload = [:project, :issue, :implementation_plan, runs: [:role, :questions]]
+    preload = [:project, :issue, :rounds, runs: [:role, :questions]]
 
     tasks =
       [project_id: project_id, owner_user_id: owner_user_id, preload: preload]
@@ -227,15 +230,12 @@ defmodule RailWeb.OverviewLive do
     {tasks, Enum.group_by(children, & &1.parent_task_id)}
   end
 
-  # An earlier run at the task's stage has been retried, and one at another stage
-  # is behind it, so neither says where the task stands.
+  # A task with no run at its stage yet is queued, so it has no entry.
   defp latest_stage_runs(runs) do
-    runs
-    |> Enum.filter(&(&1.role.stage == Task.role_stage(&1.task.stage)))
-    |> Enum.group_by(& &1.task_id)
-    |> Map.new(fn {task_id, task_runs} ->
-      {task_id, Enum.max_by(task_runs, &(&1.started_at || &1.inserted_at), DateTime)}
-    end)
+    for {task_id, [%Run{task: task} | _rest] = task_runs} <- Enum.group_by(runs, & &1.task_id),
+        %Run{} = run <- [Task.stage_run(%{task | runs: task_runs})],
+        into: %{},
+        do: {task_id, run}
   end
 
   # Defaults stay out of the URL, so the user's own work is still just /.
@@ -306,8 +306,14 @@ defmodule RailWeb.OverviewLive do
         %{id: "shipped-#{issue.id}", at: issue.completed_at, actor: nil, text: "#{issue.identifier} shipped"}
       end
 
+    # QA and the code reviewer start a round together, so the later of their starts is when a task's round began.
+    round_starts =
+      for %Run{role: %Role{stage: stage}} = run <- runs, stage in [:qa, :review], reduce: %{} do
+        starts -> Map.update(starts, run.task_id, run.started_at, &Enum.max([&1, run.started_at], DateTime))
+      end
+
     runs
-    |> Enum.flat_map(&run_activity/1)
+    |> Enum.flat_map(&run_activity(&1, round_starts[&1.task_id]))
     |> Enum.concat(shipped)
     |> Enum.concat(splits)
     |> Enum.filter(&DateTime.after?(&1.at, since))
@@ -315,12 +321,19 @@ defmodule RailWeb.OverviewLive do
     |> Enum.take(@activity_limit)
   end
 
-  defp run_activity(%Run{} = run) do
+  defp run_activity(%Run{} = run, round_start) do
     key = run.task.issue.identifier
     entry = &%{id: "#{&1}-#{run.id}", at: &2, actor: run.role.name, text: &3}
 
+    # A round reopens the checks and the review agent, so one that ended before it began had finished, not stopped.
+    reopened? =
+      run.role.stage in [:review_lead | Task.check_stages()] and is_struct(round_start, DateTime) and
+        is_struct(run.completed_at, DateTime) and DateTime.before?(run.completed_at, round_start)
+
+    state = if reopened? and Run.state(run) == :stopped, do: :done, else: Run.state(run)
+
     ended =
-      case Run.state(run) do
+      case state do
         :running -> nil
         :waiting -> nil
         :blocked -> entry.("asked", Run.waiting_since(run), "asked #{questions(run)} on #{key}")
@@ -345,7 +358,7 @@ defmodule RailWeb.OverviewLive do
 
   # A split is split when its plan was approved, which is when its children were made.
   defp splits(tasks, children) do
-    for %{implementation_plan: %{captured_at: at}} = task <- tasks, split = children[task.id] do
+    for %{rounds: [%{approved_at: %DateTime{} = at} | _later]} = task <- tasks, split = children[task.id] do
       %{
         id: "split-#{task.id}",
         at: at,
@@ -440,5 +453,12 @@ defmodule RailWeb.OverviewLive do
       age: format_age(DateTime.diff(now, task.updated_at)),
       children: statuses
     }
+  end
+
+  # Plans waiting on a tech lead, for the tech leads, who are the ones to approve them.
+  defp plan_queue(scope, project_id) do
+    if Scope.tech_lead?(scope),
+      do: Pipeline.list_tasks(project_id: project_id, plan_ready: true, preload: [:project, :issue, :rounds]),
+      else: []
   end
 end

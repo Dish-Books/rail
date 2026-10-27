@@ -52,8 +52,8 @@ defmodule Rail.Pipeline.Actions.ListApprovalsTest do
             review.("dana", "CHANGES_REQUESTED", "2026-10-10T17:00:00Z"),
             review.("omar", "APPROVED", "2026-10-10T15:10:00Z"),
             review.("omar", "DISMISSED", "2026-10-10T15:10:00Z"),
-            review.("jkowalski-dev", "CHANGES_REQUESTED", "2026-10-09T09:00:00Z"),
-            review.("jkowalski-dev", "APPROVED", "2026-10-10T16:02:00Z"),
+            review.("jkowalski-dev-list-approvals", "CHANGES_REQUESTED", "2026-10-09T09:00:00Z"),
+            review.("jkowalski-dev-list-approvals", "APPROVED", "2026-10-10T16:02:00Z"),
             review.("bea", "APPROVED", "2026-10-10T14:00:00Z"),
             %{"user" => nil, "state" => "APPROVED", "submitted_at" => "2026-10-10T14:00:00Z"},
             %{"user" => %{"login" => "pending"}, "state" => "PENDING", "submitted_at" => nil}
@@ -64,7 +64,7 @@ defmodule Rail.Pipeline.Actions.ListApprovalsTest do
     assert {:ok,
             [
               %{login: "bea", user: nil, approved_at: ~U[2026-10-10 14:00:00Z]},
-              %{login: "jkowalski-dev", user: nil, approved_at: ~U[2026-10-10 16:02:00Z]},
+              %{login: "jkowalski-dev-list-approvals", user: nil, approved_at: ~U[2026-10-10 16:02:00Z]},
               %{login: "priya-la", user: %User{id: ^priya_id}, approved_at: ~U[2026-10-10 16:02:00Z]}
             ]} = Pipeline.list_approvals(task)
   end

@@ -25,14 +25,14 @@ defmodule Rail.Users.Actions.ListInvitesTest do
     admin_id: admin_id,
     scope: scope
   } do
-    assert {:ok, %Invite{} = accepted} = Users.invite_user(scope, %{email: "accepted@example.com"})
+    assert {:ok, %Invite{} = accepted} = Users.invite_user(scope, %{email: "accepted-list-invites@example.com"})
     assert {:ok, _updated} = accepted |> Invite.changeset(%{accepted_at: DateTime.utc_now()}) |> Repo.update()
     assert {:ok, %Invite{}} = Users.invite_user(scope, %{email: "pending@example.com"})
 
     assert {:ok,
             [
               %Invite{email: "pending@example.com", accepted_at: nil, invited_by: %User{id: ^admin_id}},
-              %Invite{email: "accepted@example.com", accepted_at: %DateTime{}}
+              %Invite{email: "accepted-list-invites@example.com", accepted_at: %DateTime{}}
             ]} = Users.list_invites(scope)
   end
 

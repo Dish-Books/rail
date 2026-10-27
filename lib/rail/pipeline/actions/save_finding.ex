@@ -3,9 +3,10 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
   Saves what the Review lead says about one finding. A new key is raised in the current round against HEAD's
   commit and checked whole; a known key only gets a dated note in the round it is said in, and its status,
   so nothing it said when raised is ever rewritten. A Fix finding a pass finds still failing is carried into
-  that round with its ruling, and one ruled Don't fix is not argued again. A Fix finding saved fixed is the
+  that round with its ruling, and one ruled Don't fix is not argued again. A fixed finding saved open again, as a
+  later decision can reopen one, loses its ruling, so the human rules it afresh. A Fix finding saved fixed is the
   fix round's report on it, refused until it names every place covered or left, the test that failed first
-  and the files it changed; the commit is noted once the turn hands it over.
+  and the files it changed. A finding saved fixed names HEAD's commit as the one it was fixed in.
   """
 
   import Ecto.Changeset
@@ -83,6 +84,23 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
           note: Map.merge(said, %{kind: :pass, status: status, text: attrs["note"]})
         })
 
+      # Only a move to fixed names HEAD: one already fixed keeps its commit, or none if fixed before Rail
+      # noted one, and one no longer fixed names none.
+      fixed_in =
+        cond do
+          finding.status == :fixed and get_field(changeset, :status) == :fixed -> finding.fixed_in
+          get_field(changeset, :status) == :fixed -> said.commit
+          true -> nil
+        end
+
+      changeset = put_change(changeset, :fixed_in, fixed_in)
+
+      # Not fixed is a fix that stopped holding, carried with its ruling; open is a question for the human again.
+      changeset =
+        if finding.status == :fixed and get_field(changeset, :status) == :open,
+          do: change(changeset, decision: nil, decided_by_id: nil),
+          else: changeset
+
       carried? =
         finding.decision == :fix and get_field(changeset, :status) == :not_fixed and finding.carried_round != said.round
 
@@ -146,12 +164,12 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
         end
       end)
 
-    # A finding from before places has none to name, so its note names none. The commit is the one handed over.
+    # A finding from before places has none to name, so its note names none.
     note = %{
       round: max(length(Pipeline.read_review(task)), 1),
       kind: :fix,
       at: said.at,
-      commit: nil,
+      commit: said.commit,
       text: attrs["note"],
       covered:
         for(
@@ -171,7 +189,7 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
 
     build = fn evidence ->
       finding
-      |> Finding.note_changeset(%{status: :fixed, fixed_in: nil, evidence: evidence, note: note})
+      |> Finding.note_changeset(%{status: :fixed, fixed_in: said.commit, evidence: evidence, note: note})
       |> put_embed(:places, places)
     end
 

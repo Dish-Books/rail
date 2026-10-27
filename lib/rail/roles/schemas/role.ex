@@ -9,18 +9,16 @@ defmodule Rail.Roles.Schemas.Role do
   alias Rail.Tools.Schemas.Backend
 
   @canonical_stages [
-    # Leads product, design and architect, which run inside it as subagents and are entered by no task.
+    # Writes the ticket, the design and the plan itself.
     :plan,
-    :product,
-    :design,
-    :architect,
     :engineer,
-    # Leads review, QA, engineer and demo, which run inside it as subagents; a task at Review enters it.
-    :review_lead,
-    :review,
+    # The agents that check a round once it is pushed, each a run of its own: QA and the code reviewer report,
+    # QA also shoots each affected screen, and the demo recorder records when the plan asks.
     :qa,
+    :review,
     :demo,
-    :debugger,
+    # The review agent: turns the reports into findings and writes the next round's plan.
+    :review_lead,
     # Reads Slack threads rather than working a task, so no task ever enters it.
     :triage,
     # Distills what finished tasks taught and curates the rules daily; no task enters it either.
@@ -84,7 +82,7 @@ defmodule Rail.Roles.Schemas.Role do
     field :position, :integer, default: 0
     field :mcp_tools, {:array, :string}, default: []
     # What each of its agent turns, and the worktree setups its runs start, holds while it runs.
-    field :reserved_cpus, :integer, default: 1
+    field :reserved_cpus, Rail.Types.Cpus, default: 1
 
     belongs_to :project, Project
 
@@ -135,7 +133,8 @@ defmodule Rail.Roles.Schemas.Role do
     |> validate_inclusion(:icon_name, @icon_names)
     |> validate_number(:max_concurrent, greater_than_or_equal_to: 1)
     |> validate_number(:position, greater_than_or_equal_to: 0)
-    |> validate_number(:reserved_cpus, greater_than_or_equal_to: 1)
+    |> validate_number(:reserved_cpus, greater_than: 0)
+    |> validate_quarters()
     |> validate_capacity()
     |> unique_constraint(:stage, name: :roles_project_id_stage_index)
     |> foreign_key_constraint(:project_id)
@@ -145,7 +144,15 @@ defmodule Rail.Roles.Schemas.Role do
   How many sandboxes reserving what `role` does fit on a machine of `capacity` at
   once. Takes a role or a map of its `reserved_cpus`.
   """
-  def fit_count(%{reserved_cpus: cpus}, %{cpus: total_cpus}) when is_integer(cpus) and cpus > 0, do: div(total_cpus, cpus)
+  def fit_count(%{reserved_cpus: cpus}, %{cpus: total_cpus}) when is_number(cpus) and cpus > 0,
+    do: trunc(total_cpus / cpus)
+
+  # Quarters add up exactly as floats, so what the line hands out never drifts.
+  defp validate_quarters(changeset) do
+    validate_change(changeset, :reserved_cpus, fn :reserved_cpus, cpus ->
+      if cpus * 4 == trunc(cpus * 4), do: [], else: [reserved_cpus: "must be in quarters of a CPU, like 0.25, 0.5 or 1.5"]
+    end)
+  end
 
   # The machine is only asked when the reservation changes, and one it cannot be
   # asked about is left to the line, which refuses what never fits.

@@ -165,6 +165,21 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
     refute Map.has_key?(second, "title")
   end
 
+  test "a cleared estimate is sent as a null", %{issue: issue} do
+    {:ok, issue} = Issues.update_issue(issue, %{estimate: 5})
+    {:ok, issue} = Issues.update_issue(issue, %{estimate: nil})
+    test_pid = self()
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      send(test_pid, {:input, Jason.decode!(body)["variables"]["input"]})
+      Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
+    end)
+
+    assert :ok = perform_job(SyncIssue, %{issue_id: issue.id, fields: ["estimate"]})
+    assert_received {:input, %{"estimate" => nil}}
+  end
+
   test "the title still lands when Linear refuses the estimate", %{issue: issue} do
     {:ok, issue} = Issues.update_issue(issue, %{title: "New title", estimate: 7})
     test_pid = self()
@@ -311,7 +326,11 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
       [before, later] =
         Enum.map(["gh-before", "gh-later"], fn login ->
           {:ok, user} =
-            Users.register_oauth_user(%{github_id: "gh_#{login}", login: login, email: "#{login}@example.com"})
+            Users.register_oauth_user(%{
+              github_id: "gh_#{login}_sync-issue",
+              login: "#{login}-sync-issue",
+              email: "#{login}-sync-issue@example.com"
+            })
 
           user
         end)
@@ -327,11 +346,11 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
             Req.Test.json(conn, %{"token" => "ghs_token"})
 
           {"DELETE", "/repos/example/test-gh/issues/7/assignees"} ->
-            assert %{"assignees" => ["gh-before"]} == Jason.decode!(body)
+            assert %{"assignees" => ["gh-before-sync-issue"]} == Jason.decode!(body)
             Req.Test.json(conn, %{})
 
           {"POST", "/repos/example/test-gh/issues/7/assignees"} ->
-            assert %{"assignees" => ["gh-later"]} == Jason.decode!(body)
+            assert %{"assignees" => ["gh-later-sync-issue"]} == Jason.decode!(body)
             conn |> Plug.Conn.put_status(201) |> Req.Test.json(%{})
         end
       end)

@@ -18,10 +18,9 @@ import { ImageFallback } from "./hooks/image_fallback";
 import { JumpToLine } from "./hooks/jump_to_line";
 import { LocalResetTime } from "./hooks/local_reset_time";
 import { LocalTime } from "./hooks/local_time";
-import { PlanDiagram } from "./hooks/plan_diagram";
-import { PlanLinks } from "./hooks/plan_links";
 import { ScrollSelectedTab } from "./hooks/scroll_selected_tab";
 import { Shortcuts } from "./hooks/shortcuts";
+import { SidebarResize } from "./hooks/sidebar_resize";
 import { Theme } from "./hooks/theme";
 
 const Hooks = {
@@ -44,9 +43,8 @@ const Hooks = {
   DemoCaptions,
   CurrentInView,
   ScrollSelectedTab,
-  PlanDiagram,
-  PlanLinks,
-  ImageFallback
+  ImageFallback,
+  SidebarResize
 };
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content");

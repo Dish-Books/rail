@@ -3,11 +3,11 @@ defmodule Rail.Mcp.Utils.RunToolSavePlanTest do
 
   import Rail.Mcp.Utils.RunToolSavePlan
 
-  alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Schemas.Round
 
-  # The smallest plan the structure allows: no diagrams, so Approach says why, and no Program design.
+  # The smallest plan the structure allows: one decision, one card and one criterion, and no data changes.
   @plan """
   ## Implementation plan
 
@@ -15,29 +15,56 @@ defmodule Rail.Mcp.Utils.RunToolSavePlanTest do
 
   Extend the module.
 
-  No diagrams: one module changes.
+  ### Decisions
 
-  ### File-level changes
+  - Decision: one module changes.
 
-  - `lib/rail.ex`: extends the module.
+  ### Changes
+
+  #### `lib/rail.ex`
+
+  Extends the module.
+
+  ### Acceptance criteria
+
+  - 1: `lib/rail.ex`
 
   ### Verification
 
   - `lib/rail_test.exs`: covers the extension.
   """
 
-  setup do
-    scratch = Path.join(System.tmp_dir!(), "rt_save_plan_#{System.unique_integer([:positive])}")
-    on_exit(fn -> File.rm_rf(scratch) end)
+  setup %{project: project} do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_rt_plan_1", "identifier" => "RTP-1", "title" => "Tool Plan"}
+          }
+        }
+      })
+    end)
 
-    %{task: %Task{id: "tsk_rt_plan", scratch_path: scratch, issue: %Issue{identifier: "RTP-1"}}, scratch: scratch}
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Tool Plan"})
+    {:ok, task} = Pipeline.create_task(issue, :plan)
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+    %{task: task, scratch: task.scratch_path}
   end
 
-  test "a save with no option says it names none yet", %{task: task} do
-    assert {:ok, "Plan saved, written for no design option yet." <> _rest} =
-             run_tool_save_plan(task, %{"plan" => @plan}, [])
+  test "a save of the ticket alone says no implementation plan is saved yet", %{task: task} do
+    assert {:ok, "Ticket saved: Usage charts. No implementation plan is saved yet." <> _rest} =
+             run_tool_save_plan(task, %{"title" => "Usage charts", "description" => "Show usage.", "unknown" => "x"}, [])
 
-    assert %{content: @plan, design: nil} = Pipeline.read_plan(task)
+    assert %Round{ticket: %{title: "Usage charts"}, plan: nil} = Pipeline.read_plan(task)
+  end
+
+  test "a save with a plan and no option says it names none yet", %{task: task} do
+    assert {:ok, "Ticket saved: Usage charts. Plan saved, written for no design option yet." <> _rest} =
+             run_tool_save_plan(task, %{"title" => "Usage charts", "description" => "Show usage.", "plan" => @plan}, [])
+
+    assert %Round{design: nil} = Pipeline.read_plan(task)
   end
 
   test "a save for a saved option passes the key through and names the option", %{task: task, scratch: scratch} do
@@ -48,8 +75,12 @@ defmodule Rail.Mcp.Utils.RunToolSavePlanTest do
       ~s({"options": [{"key": "rows", "title": "Charts in the row"}]})
     )
 
-    assert {:ok, "Plan saved for Charts in the row (rows)." <> _rest} =
-             run_tool_save_plan(task, %{"plan" => @plan, "design" => "rows"}, [])
+    assert {:ok, "Ticket saved: Usage charts. Plan saved for Charts in the row (rows)." <> _rest} =
+             run_tool_save_plan(
+               task,
+               %{"title" => "Usage charts", "description" => "Show usage.", "plan" => @plan, "design" => "rows"},
+               []
+             )
   end
 
   test "a refusal is passed back as the changeset naming the field", %{task: task} do
@@ -57,5 +88,13 @@ defmodule Rail.Mcp.Utils.RunToolSavePlanTest do
 
     assert {:error, %Ecto.Changeset{errors: [design: _no_options]}} =
              run_tool_save_plan(task, %{"plan" => @plan, "design" => "rows"}, [])
+  end
+
+  test "a save after approval is refused, saying the plan no longer changes", %{task: task} do
+    {:ok, round} = Pipeline.save_plan(task, %{title: "Usage charts", description: "Show usage.", plan: @plan})
+    round |> Round.approve_changeset(nil) |> Repo.update!()
+
+    assert {:refused, "Nothing saved: the plan is approved, so it no longer changes."} =
+             run_tool_save_plan(task, %{"title" => "Something else"}, [])
   end
 end

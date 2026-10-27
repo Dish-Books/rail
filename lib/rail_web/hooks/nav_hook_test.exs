@@ -70,10 +70,9 @@ defmodule RailWeb.Hooks.NavHookTest do
     }
   end
 
-  test "handles switcher, theme, and rail toggle events", %{conn: conn, project: project} do
+  test "handles switcher and theme events", %{conn: conn, project: project} do
     assert {:ok, view, _html} = live(conn, ~p"/issues")
 
-    render_click(view, "toggle_rail", %{})
     render_click(view, "theme_changed", %{"theme" => "light"})
     render_click(view, "toggle_project_switcher", %{})
     assert has_element?(view, "#project-switcher-dialog")

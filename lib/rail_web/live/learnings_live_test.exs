@@ -16,6 +16,9 @@ defmodule RailWeb.LearningsLiveTest do
   alias Rail.Repo
   alias Rail.Users
 
+  # Stubbed, never called, so it is named rather than imported.
+  @clock RailWeb.Utils.MonotonicMs
+
   setup %{conn: conn, project: project} do
     id = System.unique_integer([:positive])
 
@@ -126,10 +129,10 @@ defmodule RailWeb.LearningsLiveTest do
     near = learning(project, %{rule: "Don't flag a missing @doc", kind: :calibration}, embedding: [0.9, 0.1])
     far_rule = learning(project, %{rule: "Copy says task", kind: :product}, embedding: [0.1, 0.9])
 
-    {:ok, view, _html} = live(conn, ~p"/learnings")
+    {:ok, view, _html} = live(conn, ~p"/learnings?status=active")
     view |> form("#learnings-search-form", %{q: "doc on components"}) |> render_change()
 
-    assert_patch(view, ~p"/learnings?q=doc+on+components&status=active")
+    assert_patch(view, ~p"/learnings?status=active&q=doc+on+components")
     assert has_element?(view, "#learnings-match-line", "2 matches, best first")
     html = view |> element("#learnings-list") |> render()
     assert [_before, after_near] = String.split(html, "learning-card-#{near.id}")
@@ -143,13 +146,35 @@ defmodule RailWeb.LearningsLiveTest do
     view |> form("#learnings-search-form", %{q: "components"}) |> render_change()
     assert_received {:embedded, "components", "RETRIEVAL_QUERY"}
 
-    {:ok, _view, _html} = live(conn, ~p"/learnings?status=review&q=components")
-    refute_received {:embedded, _text, _task_type}
-
     stub_vertex_down()
     {:ok, view, _html} = live(conn, ~p"/learnings?status=active&q=anything")
     assert has_element?(view, "#learnings-match-line", "Search is unavailable right now")
     refute has_element?(view, "[data-qa=learning-card]")
+  end
+
+  test "searching while reviewing ranks the proposals nearest first and stays on To review", %{
+    conn: conn,
+    project: project
+  } do
+    stub_vertex(%{"doc on components" => vector([1.0])})
+    near = learning(project, %{rule: "Don't flag a missing @doc", kind: :calibration}, embedding: [0.9, 0.1])
+    far_rule = learning(project, %{rule: "Copy says task", kind: :product}, embedding: [0.1, 0.9])
+    far_proposal = Repo.insert!(%LearningProposal{project_id: project.id, action: :retire, learning_id: far_rule.id})
+    near_proposal = Repo.insert!(%LearningProposal{project_id: project.id, action: :retire, learning_id: near.id})
+
+    {:ok, view, _html} = live(conn, ~p"/learnings")
+    view |> form("#learnings-search-form", %{q: "doc on components"}) |> render_change()
+
+    assert_patch(view, ~p"/learnings?status=review&q=doc+on+components")
+    assert has_element?(view, "#learnings-match-line", "2 matches, best first")
+    html = view |> element("#learnings-list") |> render()
+    assert [_before, after_near] = String.split(html, "proposal-card-#{near_proposal.id}")
+    assert after_near =~ "proposal-card-#{far_proposal.id}"
+
+    stub_vertex_down()
+    {:ok, view, _html} = live(conn, ~p"/learnings?status=review&q=anything")
+    assert has_element?(view, "#learnings-match-line", "Search is unavailable right now")
+    refute has_element?(view, "[data-qa=proposal-card]")
   end
 
   test "the kind and role menus and the two chips filter through the URL", %{conn: conn, project: project} do
@@ -205,6 +230,9 @@ defmodule RailWeb.LearningsLiveTest do
     {:ok, view, _html} = live(conn, ~p"/learnings?status=active&q=storybook+snapshot")
     assert has_element?(view, "#learnings-empty", "No rules match “storybook snapshot”")
 
+    {:ok, view, _html} = live(conn, ~p"/learnings?status=review&q=storybook+snapshot")
+    assert has_element?(view, "#learnings-empty", "No rules match “storybook snapshot”")
+
     {:ok, view, _html} = live(conn, ~p"/learnings?status=retired")
     assert has_element?(view, "#learnings-empty", "No rules match these filters")
   end
@@ -255,6 +283,8 @@ defmodule RailWeb.LearningsLiveTest do
 
   # The second click of a double click lands on the proposal the queue moved to, which nobody has read.
   test "a double click on Approve or Reject decides only the proposal that was open", %{conn: conn, project: project} do
+    stub(@clock, :monotonic_ms, fn -> 0 end)
+
     [first, second, third] =
       for n <- 1..3 do
         draft = learning(project, %{rule: "Draft #{n}", kind: :convention}, status: :proposed)
@@ -269,7 +299,8 @@ defmodule RailWeb.LearningsLiveTest do
     assert %LearningProposal{status: :approved} = Repo.reload!(first)
     assert %LearningProposal{status: :pending} = Repo.reload!(second)
 
-    Process.sleep(400)
+    # The clock has moved past the double-click window.
+    stub(@clock, :monotonic_ms, fn -> 1_000 end)
     view |> element("#reject-proposal-button") |> render_click()
     view |> element("#reject-proposal-button") |> render_click()
 
@@ -547,7 +578,7 @@ defmodule RailWeb.LearningsLiveTest do
     {:ok, admin} =
       Users.register_oauth_user(%{
         github_id: "llv-admin",
-        login: "ada",
+        login: "ada-learnings-live",
         name: "Ada Admin",
         email: "ada@llv.example",
         admin: true
@@ -934,7 +965,7 @@ defmodule RailWeb.LearningsLiveTest do
 
     assert has_element?(view, "#learning-rule", "Say how long the oldest one has waited.")
     assert has_element?(view, "[data-qa=learning-status]", "Provisional")
-    assert has_element?(view, "#learning-detail", "Designer")
+    assert has_element?(view, "#learning-detail", "Plan")
     assert has_element?(view, "#learning-sources", "Design comment · Dana Okafor")
     assert has_element?(view, ~s(#learning-sources a[href="/tasks/#{task.id}"]), "LLV-10")
     assert has_element?(view, "#learning-why", ~s(From a design comment on waiting-lanes, `#needs` "Needs you 3":))

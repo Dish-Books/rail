@@ -33,6 +33,10 @@ defmodule Rail.Issues.Schemas.Issue do
     field :number, :integer
     # The tracker's own updated_at: where a poll resumes, and how a stale webhook is told apart.
     field :external_updated_at, :utc_datetime_usec
+    # The open pull request its work was opened as outside Rail, kept once found so it is not looked up again.
+    field :pr_number, :integer
+    field :pr_url, :string
+    field :pr_title, :string
 
     belongs_to :project, Project
     belongs_to :owner_user, User
@@ -98,6 +102,12 @@ defmodule Rail.Issues.Schemas.Issue do
     |> foreign_key_constraint(:workflow_id)
     |> advance_when_claimed()
   end
+
+  @doc """
+  A changeset linking the issue to the pull request found for it, or clearing it with nils. It is Rail's own
+  record, so nothing goes to the tracker.
+  """
+  def pull_request_changeset(issue, attrs), do: cast(issue, attrs, [:pr_number, :pr_url, :pr_title])
 
   def priorities, do: @priorities
   def states, do: @states

@@ -30,12 +30,12 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
     attrs = %{
       cli: :claude,
       name: "Product Agent",
-      stage: :product,
+      stage: :demo,
       model: "claude-opus-5-5",
       system_prompt: "Write PRDs."
     }
 
-    assert {:ok, %Role{name: "Product Agent", stage: :product, project_id: ^project_id}} =
+    assert {:ok, %Role{name: "Product Agent", stage: :demo, project_id: ^project_id}} =
              Roles.create_role(scope, project, attrs)
   end
 

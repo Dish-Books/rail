@@ -2,12 +2,16 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  import Rail.Pipeline.Utils.BuildTask
+
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.AdvanceSplit
+  alias Rail.Pipeline.Workers.CleanupMergedTask
   alias Rail.Scope
   alias Rail.Users
 
@@ -29,7 +33,12 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, task} = Pipeline.create_task(issue, :finalize)
     {:ok, task} = Pipeline.update_task(task, %{pr_number: 151, marked_ready_at: DateTime.utc_now()})
 
-    {:ok, priya} = Users.register_oauth_user(%{github_id: "gh_mt_priya", login: "priya", email: "priya@example.com"})
+    {:ok, priya} =
+      Users.register_oauth_user(%{
+        github_id: "gh_mt_priya",
+        login: "priya-merge-task",
+        email: "priya-merge-task@example.com"
+      })
 
     {:ok, priya} =
       Users.update_user(system_scope(), priya, %{
@@ -41,6 +50,14 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       })
 
     %{task: task, lead: priya, scope: Scope.for_user(priya)}
+  end
+
+  # No GitHub mock is queued, so a merge request would raise.
+  test "work started without approval does not merge until a lead approves its plan", %{task: task, scope: scope} do
+    Repo.insert!(%Round{task_id: task.id, number: 1, plan: "## Implementation plan", ready_at: DateTime.utc_now()})
+
+    assert {:error, :plan_not_approved} = Pipeline.merge_task(scope, task)
+    assert %Task{stage: :finalize, merge_started_at: nil} = Repo.reload!(task)
   end
 
   test "a tech lead's merge says Merging, squash-merges as the lead, records it and enters Merged", %{
@@ -67,6 +84,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert %Task{stage: :merged, merge_started_at: nil} = Repo.reload!(task)
     assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: task.issue_id})
     refute_enqueued(worker: AdvanceSplit)
+    assert [%Oban.Job{args: %{"task_id" => ^task_id}}] = all_enqueued(worker: CleanupMergedTask)
   end
 
   test "a lead with no GitHub token, or one GitHub no longer takes, signs in again and the claim is let go", %{
@@ -85,6 +103,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, tokenless} = Users.update_user(system_scope(), lead, %{github_token: nil})
     assert {:error, :no_github_token} = Pipeline.merge_task(Scope.for_user(tokenless), task)
     assert %Task{stage: :finalize, merged_at: nil, merge_started_at: nil, merge_error: nil} = Repo.reload!(task)
+    refute_enqueued(worker: CleanupMergedTask)
   end
 
   test "the system, which is nobody on GitHub, merges as the app", %{project: project, task: task} do
@@ -125,13 +144,11 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, parent} = Pipeline.create_task(parent_issue, :split)
     {:ok, child_issue} = Issues.create_issue(system_scope(), project, %{title: "Child", parent: parent_issue})
 
-    {:ok, child} =
-      Pipeline.create_child_task(Repo.preload(parent, [:issue, :project]), child_issue, %{
-        number: 1,
-        builds_on: [],
-        builds_screen: false,
-        plan: "## Implementation plan\n\nPart 1."
-      })
+    {:ok, %Task{id: child_id} = child} =
+      child_issue.project
+      |> build_task(child_issue, %{stage: :engineer, split_position: 1, builds_on: []})
+      |> Ecto.Changeset.put_change(:parent_task_id, parent.id)
+      |> Repo.insert()
 
     {:ok, child} =
       Pipeline.update_task(child, %{stage: :finalize, pr_number: 151, marked_ready_at: DateTime.utc_now()})
@@ -140,6 +157,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     assert {:ok, %Task{stage: :merged}} = Pipeline.merge_task(scope, child)
     assert_enqueued(worker: AdvanceSplit, args: %{parent_task_id: parent.id})
+    assert [%Oban.Job{args: %{"task_id" => ^child_id}}] = all_enqueued(worker: CleanupMergedTask)
   end
 
   test "a refusal keeps GitHub's message and leaves the task ready and unmerged", %{
@@ -177,6 +195,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert Task.finalize_state(refused) == :refused
     assert_received {:pipeline_changed, ^task_id}
     assert_received {:pipeline_changed, ^task_id}
+    refute_enqueued(worker: CleanupMergedTask)
 
     # Merge stays there to try again, and a merge that goes clears the reason.
     Req.Test.expect(Client, &Req.Test.json(&1, %{"merged" => true, "sha" => "4b7d0e2"}))
@@ -190,7 +209,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     scope: scope
   } do
     {:ok, %{id: dan_id} = dan} =
-      Users.register_oauth_user(%{github_id: "gh_mt_dan_gh", login: "dan-gh", email: "dan@example.com"})
+      Users.register_oauth_user(%{github_id: "gh_mt_dan_gh", login: "dan-gh", email: "dan-merge-task@example.com"})
 
     {:ok, _dan} = Users.update_user(system_scope(), dan, %{project_ids: [project.id]})
 
@@ -228,6 +247,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     assert %Task{stage: :merged, merge_started_at: nil} = Repo.reload!(task)
     assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: task.issue_id})
+    assert_enqueued(worker: CleanupMergedTask, args: %{task_id: task.id})
 
     # Merged by someone Rail does not know, it names nobody rather than whoever clicked.
     for merged_by <- [%{"login" => "stranger"}, nil] do
@@ -272,6 +292,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     assert {:error, {:merge_refused, "Not mergeable"}} = Pipeline.merge_task(scope, task)
     assert %Task{stage: :finalize, merged_at: nil} = Repo.reload!(task)
+    refute_enqueued(worker: CleanupMergedTask)
   end
 
   test "a refusal GitHub gives no message for, or that never reached GitHub, still says why", %{
@@ -299,9 +320,14 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     project: project,
     task: task
   } do
-    {:ok, admin} = Users.register_oauth_user(%{github_id: "gh_mt_admin", login: "admin", email: "a@example.com"})
+    {:ok, admin} =
+      Users.register_oauth_user(%{github_id: "gh_mt_admin", login: "admin-merge-task", email: "a-merge-task@example.com"})
+
     {:ok, admin} = Users.update_user(system_scope(), admin, %{admin: true})
-    {:ok, dan} = Users.register_oauth_user(%{github_id: "gh_mt_dan", login: "dano", email: "d@example.com"})
+
+    {:ok, dan} =
+      Users.register_oauth_user(%{github_id: "gh_mt_dan", login: "dano-merge-task", email: "d-merge-task@example.com"})
+
     {:ok, dan} = Users.update_user(system_scope(), dan, %{project_ids: [project.id]})
 
     assert {:error, :not_authorized} = Pipeline.merge_task(Scope.for_user(admin), task)

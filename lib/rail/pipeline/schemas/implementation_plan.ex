@@ -1,89 +1,21 @@
 defmodule Rail.Pipeline.Schemas.ImplementationPlan do
   @moduledoc """
-  The plan the architect wrote for a task, once a human approved it.
-
-  One per task: a second architect pass replaces what the first one said rather
-  than leaving two plans for a reader to choose between. The plan lives in scratch
-  while it is being written and argued over; a row here means it was approved.
+  How Rail reads an implementation plan: the `###` sections it lays one out by, the checks a saved plan has to
+  pass, and the sheet the page shows. The plan itself is its round's.
   """
-  use Rail.Schema
-
-  alias Rail.Pipeline.Schemas.Task
+  import Ecto.Changeset
 
   @heading ~r/\A## Implementation plan\s*(\n|\z)/
 
-  # The `###` sections Rail lays a plan out by, in their order. The diagrams come as a pair or not
-  # at all, Program design only when application code changes, and Assumptions only when there are some.
-  @sections [
-    "Approach",
-    "Change diagram",
-    "Call flow",
-    "File-level changes",
-    "Program design",
-    "Verification",
-    "Assumptions"
-  ]
-  @required ["Approach", "File-level changes", "Verification"]
-  @diagrams ["Change diagram", "Call flow"]
+  # The `###` sections Rail lays a plan out by, in their order. Data changes only when tables or columns change.
+  @sections ["Approach", "Data changes", "Decisions", "Changes", "Acceptance criteria", "Verification"]
+  @required @sections -- ["Data changes"]
+
+  @decision_kinds %{"Decision" => :decision, "Ruled out" => :ruled_out, "Assumption" => :assumption}
 
   @extension [autolink: true, strikethrough: true, table: true, tasklist: true]
 
-  @diagram_kinds %{"Change diagram" => :change, "Call flow" => :call_flow}
-
-  @type_labels %{
-    "flowchart" => "Flowchart",
-    "graph" => "Flowchart",
-    "sequenceDiagram" => "Sequence diagram",
-    "classDiagram" => "Class diagram",
-    "stateDiagram" => "State diagram",
-    "stateDiagram-v2" => "State diagram",
-    "erDiagram" => "Entity relationship diagram"
-  }
-
-  @empty %{
-    approach: nil,
-    no_diagrams: nil,
-    diagrams: [],
-    files: nil,
-    modules: [],
-    program_design?: false,
-    verification: nil,
-    assumptions: nil,
-    rest: []
-  }
-
-  @primary_key {:id, UXID, autogenerate: true, prefix: "pln"}
-  schema "implementation_plans" do
-    belongs_to :task, Task
-
-    field :content, :string
-    field :captured_at, :utc_datetime_usec
-
-    timestamps()
-  end
-
-  @cast_fields [
-    :task_id,
-    :content,
-    :captured_at
-  ]
-
-  @required_fields [
-    :task_id,
-    :content,
-    :captured_at
-  ]
-
-  @doc """
-  Builds a changeset for an implementation plan.
-  """
-  def changeset(implementation_plan, attrs) do
-    implementation_plan
-    |> cast(attrs, @cast_fields)
-    |> validate_required(@required_fields)
-    |> foreign_key_constraint(:task_id)
-    |> unique_constraint(:task_id)
-  end
+  @empty %{approach: nil, data_changes: [], decisions: [], cards: nil, criteria: [], verification: nil}
 
   # Rail lays a plan out for review by its sections, so one whose shape is off is refused with what
   # to fix, rather than shown broken. Only the shape is checked, never how long or how good it is.
@@ -100,25 +32,17 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
 
         errors =
           lead_errors(lead) ++
-            title_errors(Enum.map(sections, &elem(&1, 0))) ++ Enum.flat_map(sections, &section_errors(&1, sections))
+            title_errors(Enum.map(sections, &elem(&1, 0))) ++ Enum.flat_map(sections, &section_errors/1)
 
-        # The sheet is the last word, so nothing is saved that would show unlaid-out.
-        errors =
-          if errors == [] and build_sheet(plan) == nil,
-            do: [
-              "does not lay out as a plan: each section must be its own `###` block, `No diagrams:` a paragraph of " <>
-                "its own after a blank line, and File-level changes a list of bullets that each start with a path in backticks"
-            ],
-            else: errors
-
+        errors = if errors == [], do: sheet_errors(build_sheet(plan)), else: errors
         Enum.map(errors, &{field, &1})
       end)
     end
   end
 
   @doc """
-  Splits a plan into the sections the plan sheet lays out, or `nil` when it does not lay out. Prose comes
-  back as markdown, and a diagram's `source` is its fenced block exactly as written.
+  Splits a plan into the parts the plan sheet lays out, or `nil` when it does not lay out, as a plan saved before
+  `### Changes` does not. Prose comes back as markdown, each item with its own bullet, and a card's code fenced.
   """
   def build_sheet(content) when is_binary(content) do
     content
@@ -129,22 +53,69 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
     |> finish()
   end
 
+  @doc """
+  Refuses markdown in `field` whose `### File-level changes` section is not the cards a fix plan's sheet lays out,
+  each as a plan's `### Changes` card is. Markdown without the section is left alone.
+  """
+  def validate_file_changes(%Ecto.Changeset{} = changeset, field) do
+    validate_change(changeset, field, fn ^field, content ->
+      case content |> sections() |> elem(1) |> List.keyfind("File-level changes", 0) do
+        {_title, lines} ->
+          errors = card_section_errors(lines, "File-level changes")
+
+          errors =
+            if errors == [] and build_file_changes(content) == nil,
+              do: ["does not lay out its `### File-level changes` as a `#### `path/to/file`` card for each file"],
+              else: errors
+
+          Enum.map(errors, &{field, &1})
+
+        nil ->
+          []
+      end
+    end)
+  end
+
+  @doc """
+  The cards of any markdown's `### File-level changes`, each as `build_sheet/1` reads a plan's, or `nil` when it has no
+  such section or the section does not lay out. A section of bullets, as a fix plan saved before cards wrote it, reads
+  as a card of prose per bullet.
+  """
+  def build_file_changes(content) when is_binary(content) do
+    content
+    |> MDEx.parse_document!(extension: @extension)
+    |> Map.fetch!(:nodes)
+    |> split(3)
+    |> Enum.find_value(fn
+      {%MDEx.Heading{} = heading, body} -> if text(heading) == "File-level changes", do: file_cards(body)
+      {nil, _preamble} -> nil
+    end)
+    |> case do
+      [_first | _rest] = cards -> cards
+      _absent_or_unlaid -> nil
+    end
+  end
+
   # Splits on the `###` headings outside fenced blocks, keeping each section's body as lines.
   defp sections(body) do
+    {lead, sections} = body |> String.split("\n") |> split_lines(~r/\A### (.+?)\s*\z/)
+    {lead, Enum.map(sections, fn {[_line, title], lines} -> {title, lines} end)}
+  end
+
+  # Lines before the first heading `pattern` matches outside a fence, then each heading's match and its lines.
+  defp split_lines(lines, pattern) do
     {lead, sections, _fenced} =
-      body
-      |> String.split("\n")
-      |> Enum.reduce({[], [], false}, fn line, {lead, sections, fenced} ->
+      Enum.reduce(lines, {[], [], false}, fn line, {lead, sections, fenced} ->
         fenced = if String.starts_with?(line, "```"), do: not fenced, else: fenced
 
-        case {fenced, Regex.run(~r/\A### (.+?)\s*\z/, line), sections} do
-          {false, [_line, title], _sections} -> {lead, [{title, []} | sections], fenced}
+        case {fenced, Regex.run(pattern, line), sections} do
+          {false, [_line | _captures] = match, _sections} -> {lead, [{match, []} | sections], fenced}
           {_fenced, _not_a_heading, []} -> {[line | lead], [], fenced}
-          {_fenced, _not_a_heading, [{title, lines} | rest]} -> {lead, [{title, [line | lines]} | rest], fenced}
+          {_fenced, _not_a_heading, [{match, lines} | rest]} -> {lead, [{match, [line | lines]} | rest], fenced}
         end
       end)
 
-    {Enum.reverse(lead), sections |> Enum.reverse() |> Enum.map(fn {title, lines} -> {title, Enum.reverse(lines)} end)}
+    {Enum.reverse(lead), sections |> Enum.reverse() |> Enum.map(fn {match, lines} -> {match, Enum.reverse(lines)} end)}
   end
 
   defp lead_errors(lead) do
@@ -166,7 +137,7 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
     Enum.map(unknown, &"has a `### #{&1}` section, but the sections are #{listed()}, with exactly these titles") ++
       Enum.map(duplicated, &"has `### #{&1}` more than once") ++
       Enum.map(@required -- titles, &"is missing its `### #{&1}` section") ++
-      order_errors(known) ++ diagram_errors(titles)
+      order_errors(known)
   end
 
   defp order_errors(known) do
@@ -175,82 +146,116 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
       else: ["has its sections out of order; they go #{listed()}"]
   end
 
-  defp diagram_errors(titles) do
-    case Enum.filter(@diagrams, &(&1 in titles)) do
-      [_one] ->
-        ["has one diagram section without the other; include both `### Change diagram` and `### Call flow`, or neither"]
-
-      _both_or_neither ->
-        []
-    end
+  defp section_errors({"Data changes", lines}) do
+    bullet_errors(
+      lines,
+      "Data changes",
+      ~r/\A[-*+] [^`\s][^`]*`[^`]+`/,
+      "a bullet giving the change's kind and then the table or column in backticks, " <>
+        "such as `* New column `users.slack_notifications`: ...`"
+    )
   end
 
-  # The sheet reads `No diagrams:` only as a paragraph's start, so a line run into the one above is not one.
-  defp section_errors({"Approach", lines}, sections) do
-    paragraph? = ["" | lines] |> Enum.zip(lines) |> Enum.any?(&no_diagrams_paragraph?/1)
+  defp section_errors({"Decisions", lines}) do
+    bullet_errors(
+      lines,
+      "Decisions",
+      ~r/\A[-*+] (Decision|Ruled out|Assumption): /,
+      "a bullet starting `Decision:`, `Ruled out:` or `Assumption:`"
+    )
+  end
+
+  # The page fills each row from the ticket's criterion of that number, so each number has one bullet.
+  defp section_errors({"Acceptance criteria", lines}) do
+    errors =
+      bullet_errors(
+        lines,
+        "Acceptance criteria",
+        ~r/\A[-*+] \d+: /,
+        "a bullet starting with the number of the ticket's criterion it answers, such as `* 1: `lib/a.ex``"
+      )
+
+    numbers = for line <- lines, [_line, number] <- [Regex.run(~r/\A[-*+] (\d+):/, line)], do: number
+
+    errors ++
+      Enum.map(
+        duplicates(numbers),
+        &"has criterion #{&1} more than once under `### Acceptance criteria`; give each criterion one bullet"
+      )
+  end
+
+  defp section_errors({"Changes", lines}), do: card_section_errors(lines, "Changes")
+  defp section_errors({_title, _lines}), do: []
+
+  # The sheet reads each `####` as a file's card, so nothing comes before the first, and each names its file.
+  defp card_section_errors(lines, title) do
+    {lead, cards} = split_lines(lines, ~r/\A#### .*\z/)
+    headings = Enum.map(cards, fn {[heading], _body} -> heading end)
+    paths = for heading <- headings, [_heading, path] <- [Regex.run(~r/\A#### `([^`]+)`/, heading)], do: path
 
     cond do
-      Enum.any?(sections, &(elem(&1, 0) in @diagrams)) or paragraph? ->
-        []
+      Enum.any?(lead, &(String.trim(&1) != "")) or cards == [] ->
+        ["needs `### #{title}` to be a `#### `path/to/file`` card for each file, each saying what changes in it"]
 
-      Enum.any?(lines, &String.starts_with?(&1, "No diagrams:")) ->
-        ["`No diagrams:` must start a paragraph of its own, after a blank line"]
+      Enum.any?(headings, &(not Regex.match?(~r/\A#### `[^`]+`( deleted)?\s*\z/, &1))) ->
+        ["has a heading under `### #{title}` that is not `#### `path/to/file``, optionally followed by `deleted`"]
 
       true ->
-        ["leaves out both diagrams, so `### Approach` must end with a line starting `No diagrams:` that says why"]
+        Enum.map(duplicates(paths), &"lists `#{&1}` more than once under `### #{title}`; give each file one card") ++
+          Enum.flat_map(cards, &card_errors/1)
     end
   end
 
-  defp section_errors({title, lines}, _sections) when title in @diagrams do
-    if Enum.any?(lines, &String.starts_with?(&1, "```mermaid")),
-      do: [],
-      else: ["needs a ```mermaid block under `### #{title}`"]
+  # The sheet is the last word, so nothing is saved that would show unlaid-out, or a criterion covered by nothing.
+  defp sheet_errors(nil) do
+    [
+      "does not lay out as a plan: each section must be its own `###` block, each file under `### Changes` " <>
+        "a `#### `path`` card, and the data changes, decisions and criteria flat lists of bullets"
+    ]
   end
 
-  # The plan sheet lists this section file by file, so it is bullets and nothing else.
-  defp section_errors({"File-level changes", lines}, _sections) do
+  defp sheet_errors(sheet) do
+    for %{files: [], tests: [], number: number} <- sheet.criteria do
+      "has criterion #{number} under `### Acceptance criteria` with no file or test in backticks; name what " <>
+        "satisfies it, or leave the criterion out so it reads Not covered"
+    end
+  end
+
+  defp card_errors({[heading], body}) do
+    {blocks, _fenced} =
+      Enum.reduce(body, {[], false}, fn line, {blocks, fenced} ->
+        cond do
+          String.starts_with?(line, "```") and fenced -> {blocks, false}
+          String.starts_with?(line, "```") -> {[sketch?(String.trim_leading(line, "`")) | blocks], true}
+          true -> {blocks, fenced}
+        end
+      end)
+
+    if Enum.count(blocks, & &1) > 1 or Enum.count(blocks, &(not &1)) > 1,
+      do: [
+        "has more than one code block of a kind under `#{heading}`; a card holds one block of signatures and one " <>
+          "marked `sketch` at most"
+      ],
+      else: []
+  end
+
+  defp bullet_errors(lines, title, pattern, shape) do
     lines = lines |> outside_fences() |> Enum.reject(&(String.trim(&1) == ""))
 
     cond do
       lines == [] ->
-        ["has nothing under `### File-level changes`; it is one bullet per file, starting with its path in backticks"]
+        ["has nothing under `### #{title}`; it is one bullet per item, each #{shape}"]
 
       Enum.any?(lines, &Regex.match?(~r/\A\s+([-*+]|\d+\.)\s/, &1)) ->
-        ["has sub-bullets under `### File-level changes`; it is one flat bullet per file"]
+        ["has sub-bullets under `### #{title}`; it is one flat bullet per item"]
 
-      Enum.any?(lines, &(not Regex.match?(~r/\A(\s|[-*+] `[^`]+`)/, &1))) ->
-        ["has a line under `### File-level changes` that is not a bullet starting with a file path in backticks"]
-
-      true ->
-        []
-    end
-  end
-
-  # The sheet reads each `####` as a module, so nothing comes before the first, and each names its file.
-  defp section_errors({"Program design", lines}, _sections) do
-    {lead, modules} = lines |> outside_fences() |> Enum.split_while(&(not String.starts_with?(&1, "####")))
-    headings = Enum.filter(modules, &String.starts_with?(&1, "####"))
-
-    cond do
-      Enum.any?(lead, &(String.trim(&1) != "")) or modules == [] ->
-        [
-          "needs `### Program design` to start with a `#### `Module.Name`` heading; leave the section out when no signature changes"
-        ]
-
-      Enum.any?(headings, &(not Regex.match?(~r/\A#### (`[A-Z][\w.]*`|[A-Z][\w.]*)( new)?\s*\z/, &1))) ->
-        ["has a heading under `### Program design` that is not `#### `Module.Name``, optionally followed by `new`"]
-
-      Enum.count(modules, &Regex.match?(~r/\A`[^`]+`\s*\z/, &1)) < length(headings) ->
-        ["needs each module under `### Program design` followed by its file path in backticks on a line of its own"]
+      Enum.any?(lines, &(not Regex.match?(pattern, &1) and not Regex.match?(~r/\A\s/, &1))) ->
+        ["has a line under `### #{title}` that is not #{shape}"]
 
       true ->
         []
     end
   end
-
-  defp section_errors({_title, _lines}, _sections), do: []
-
-  defp no_diagrams_paragraph?({before, line}), do: String.trim(before) == "" and String.starts_with?(line, "No diagrams:")
 
   defp outside_fences(lines) do
     {kept, _fenced} =
@@ -265,70 +270,34 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
     Enum.reverse(kept)
   end
 
+  defp duplicates(values) do
+    values |> Enum.frequencies() |> Enum.filter(fn {_value, count} -> count > 1 end) |> Enum.map(&elem(&1, 0))
+  end
+
   defp listed, do: Enum.map_join(@sections, ", ", &"`### #{&1}`")
 
-  # Anything above the first section except the heading the brief asks for.
+  # Nothing goes above the first section but the heading the brief asks for.
   defp place({nil, body}, sheet) do
-    case Enum.reject(body, &match?(%MDEx.Heading{level: 2}, &1)) do
-      [] -> sheet
-      preamble -> %{sheet | rest: [%{title: nil, body: markdown(preamble)} | sheet.rest]}
-    end
+    if Enum.all?(body, &match?(%MDEx.Heading{level: 2}, &1)), do: sheet, else: :error
   end
 
+  defp place(_section, :error), do: :error
   defp place({%MDEx.Heading{} = heading, body}, sheet), do: place({text(heading), body}, sheet)
+  defp place({"Approach", body}, %{approach: nil} = sheet), do: %{sheet | approach: markdown(body)}
 
-  defp place({"Approach", body}, %{approach: nil} = sheet) do
-    {no_diagrams, approach} =
-      Enum.split_with(body, &(match?(%MDEx.Paragraph{}, &1) and String.starts_with?(text(&1), "No diagrams:")))
+  defp place({"Data changes", body}, %{data_changes: []} = sheet),
+    do: put(sheet, :data_changes, items(body, &data_change/1))
 
-    %{
-      sheet
-      | approach: markdown(approach),
-        no_diagrams: if(no_diagrams != [], do: Enum.map_join(no_diagrams, " ", &text/1))
-    }
-  end
-
-  defp place({title, body} = section, sheet) when is_map_key(@diagram_kinds, title) do
-    case Enum.find(body, &match?(%MDEx.CodeBlock{info: "mermaid"}, &1)) do
-      %MDEx.CodeBlock{literal: source} -> %{sheet | diagrams: [diagram(title, source, body) | sheet.diagrams]}
-      nil -> place({:rest, section}, sheet)
-    end
-  end
-
-  defp place({"File-level changes", body}, %{files: nil} = sheet), do: %{sheet | files: files(body)}
-
-  defp place({"Program design", body}, %{program_design?: false} = sheet),
-    do: %{sheet | modules: modules(body), program_design?: true}
-
+  defp place({"Decisions", body}, %{decisions: []} = sheet), do: put(sheet, :decisions, items(body, &decision/1))
+  defp place({"Changes", body}, %{cards: nil} = sheet), do: put(sheet, :cards, cards(body))
+  defp place({"Acceptance criteria", body}, %{criteria: []} = sheet), do: put(sheet, :criteria, criteria(body))
   defp place({"Verification", body}, %{verification: nil} = sheet), do: %{sheet | verification: markdown(body)}
-  defp place({"Assumptions", body}, %{assumptions: nil} = sheet), do: %{sheet | assumptions: markdown(body)}
-  defp place({:rest, {title, body}}, sheet), do: %{sheet | rest: [%{title: title, body: markdown(body)} | sheet.rest]}
-  defp place(section, sheet), do: place({:rest, section}, sheet)
+  defp place(_unknown_or_repeated, _sheet), do: :error
 
-  # A plan from the old three-section prompt has Approach and File-level changes too,
-  # but none of these, and the summary would wrongly say no application code changes.
-  defp finish(
-         %{
-           approach: approach,
-           files: files,
-           modules: modules,
-           diagrams: diagrams,
-           no_diagrams: no_diagrams,
-           program_design?: program_design?
-         } = sheet
-       )
-       when is_binary(approach) and is_list(files) and is_list(modules) and
-              (diagrams != [] or is_binary(no_diagrams) or program_design?) do
-    paths = MapSet.new(files, & &1.path)
+  defp put(_sheet, _field, :error), do: :error
+  defp put(sheet, field, value), do: Map.put(sheet, field, value)
 
-    %{
-      Map.delete(sheet, :program_design?)
-      | diagrams: Enum.reverse(diagrams),
-        modules: Enum.map(modules, &%{&1 | listed?: MapSet.member?(paths, &1.path)}),
-        rest: Enum.reverse(sheet.rest)
-    }
-  end
-
+  defp finish(%{cards: [_first | _rest]} = sheet), do: sheet
   defp finish(_not_a_sheet), do: nil
 
   defp split(nodes, level) do
@@ -341,82 +310,153 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
     |> Enum.reverse()
   end
 
-  defp diagram(title, source, body) do
-    type_label = Map.get(@type_labels, source |> String.split(~r/\s+/, parts: 2, trim: true) |> List.first(), "Diagram")
+  # Each bullet of a flat list, read by `read`, which says `:error` for one it cannot lay out.
+  defp items(body, read) do
+    items =
+      for %MDEx.List{} = list <- body,
+          item <- list.nodes,
+          do: read.({item, markdown([%{list | nodes: [item]}])})
 
-    caption =
-      body
-      |> Enum.filter(&match?(%MDEx.Paragraph{}, &1))
-      |> Enum.map_join(" ", &text/1)
-      |> String.trim()
-      |> String.trim_trailing(".")
-
-    %{
-      kind: Map.fetch!(@diagram_kinds, title),
-      source: source,
-      type_label: type_label,
-      caption: if(caption == "", do: type_label, else: caption)
-    }
+    if items != [] and Enum.all?(body, &match?(%MDEx.List{}, &1)) and :error not in items, do: items, else: :error
   end
 
-  # The page links modules to files by path, so every bullet has to lead with one.
+  defp data_change(
+         {%MDEx.ListItem{
+            nodes: [
+              %MDEx.Paragraph{nodes: [%MDEx.Text{literal: kind}, %MDEx.Code{literal: name} | inline]} = lead | blocks
+            ]
+          }, item}
+       ) do
+    if String.trim(kind) == "" do
+      :error
+    else
+      description = markdown([%{lead | nodes: trim_lead(inline, ~r/\A\s*:?\s*/)} | blocks])
+      %{kind: String.trim(kind), name: name, description: description, markdown: item}
+    end
+  end
+
+  defp data_change(_item), do: :error
+
+  defp decision(
+         {%MDEx.ListItem{nodes: [%MDEx.Paragraph{nodes: [%MDEx.Text{literal: literal} | _inline]} | _blocks]} = node,
+          item}
+       ) do
+    case Regex.run(~r/\A(Decision|Ruled out|Assumption):\s*/, literal) do
+      [_match, kind] ->
+        [%MDEx.Paragraph{nodes: inline} = lead | blocks] = node.nodes
+        text = markdown([%{lead | nodes: trim_lead(inline, ~r/\A[^:]+:\s*/)} | blocks])
+        %{kind: Map.fetch!(@decision_kinds, kind), text: text, markdown: item}
+
+      nil ->
+        :error
+    end
+  end
+
+  defp decision(_item), do: :error
+
+  defp trim_lead([%MDEx.Text{literal: literal} = first | more], pattern) do
+    case String.replace(literal, pattern, "") do
+      "" -> more
+      literal -> [%{first | literal: literal} | more]
+    end
+  end
+
+  defp trim_lead(inline, _pattern), do: inline
+
+  defp cards(body) do
+    with [{nil, []} | sections] <- split(body, 4),
+         cards = Enum.map(sections, &card/1),
+         true <- :error not in cards,
+         paths = Enum.map(cards, & &1.path),
+         true <- Enum.uniq(paths) == paths do
+      cards
+    else
+      _preamble_or_unlaid -> :error
+    end
+  end
+
+  defp card({%MDEx.Heading{nodes: [%MDEx.Code{literal: path} | suffix]}, body}) do
+    {sketches, rest} = Enum.split_with(body, &(match?(%MDEx.CodeBlock{}, &1) and sketch?(&1.info)))
+    {signatures, prose} = Enum.split_with(rest, &match?(%MDEx.CodeBlock{}, &1))
+    deleted = suffix |> Enum.map_join(&text/1) |> String.trim()
+
+    if deleted in ["", "deleted"] and length(sketches) <= 1 and length(signatures) <= 1 do
+      %{
+        path: path,
+        deleted?: deleted == "deleted",
+        prose: markdown(prose),
+        signatures: if(signatures != [], do: markdown(signatures)),
+        sketch: if(sketches != [], do: markdown(sketches))
+      }
+    else
+      :error
+    end
+  end
+
+  defp card(_heading_without_a_path), do: :error
+
+  defp sketch?(info), do: "sketch" in String.split(info || "")
+
+  defp criteria(body) do
+    with [_first | _rest] = criteria <- items(body, &criterion/1),
+         numbers = Enum.map(criteria, & &1.number),
+         true <- Enum.uniq(numbers) == numbers do
+      Enum.sort_by(criteria, & &1.number)
+    else
+      _unlaid -> :error
+    end
+  end
+
+  # A path naming a test goes under Test, and every other under Files.
+  defp criterion(
+         {%MDEx.ListItem{nodes: [%MDEx.Paragraph{nodes: [%MDEx.Text{literal: literal} | _inline]} | _blocks]} = item,
+          _markdown}
+       ) do
+    case Regex.run(~r/\A(\d+):/, literal) do
+      [_match, number] ->
+        {tests, files} = item |> paths() |> Enum.split_with(&String.ends_with?(&1, ["_test.exs", ".test.js"]))
+        %{number: String.to_integer(number), files: files, tests: tests}
+
+      nil ->
+        :error
+    end
+  end
+
+  defp criterion(_item), do: :error
+
+  defp paths(%MDEx.Code{literal: literal}), do: [literal]
+  defp paths(%{nodes: nodes}), do: Enum.flat_map(nodes, &paths/1)
+  defp paths(_leaf), do: []
+
+  defp file_cards(body) do
+    case cards(body) do
+      :error -> files(body)
+      cards -> cards
+    end
+  end
+
+  # Each file is named by its path, so every bullet has to lead with one.
   defp files(body) do
     items = for %MDEx.List{nodes: items} <- body, item <- items, do: item
 
     if items != [] and Enum.all?(body, &match?(%MDEx.List{}, &1)) and Enum.all?(items, &leads_with_path?/1) do
-      items |> Enum.with_index(1) |> Enum.map(&file/1)
+      Enum.map(items, &file/1)
     else
       :error
     end
   end
 
   defp leads_with_path?(%MDEx.ListItem{nodes: [%MDEx.Paragraph{nodes: [%MDEx.Code{} | _inline]} | _blocks]}), do: true
-  # A task-list bullet, or any shape a plan might hold, is left to the markdown fallback.
+  # A task-list bullet, or any other shape, does not lay out.
   defp leads_with_path?(_item), do: false
 
-  defp file(
-         {%MDEx.ListItem{nodes: [%MDEx.Paragraph{nodes: [%MDEx.Code{literal: path} | inline]} = lead | blocks]}, number}
-       ) do
-    inline =
-      case inline do
-        [%MDEx.Text{literal: literal} = first | more] ->
-          [%{first | literal: String.replace(literal, ~r/\A\s*:?\s*/, "")} | more]
-
-        inline ->
-          inline
-      end
-
-    %{number: number, path: path, description: markdown([%{lead | nodes: inline} | blocks])}
-  end
-
-  defp modules(body) do
-    case split(body, 4) do
-      [{nil, []} | modules] -> Enum.map(modules, &program_module/1)
-      _preamble_or_prose -> :error
-    end
-  end
-
-  defp program_module({%MDEx.Heading{nodes: heading}, body}) do
-    {name, suffix} =
-      case heading do
-        [%MDEx.Code{literal: name} | suffix] -> {name, Enum.map_join(suffix, &text/1)}
-        heading -> {heading |> Enum.map_join(&text/1) |> String.trim(), ""}
-      end
-
-    lead = Enum.find(body, &match?(%MDEx.Paragraph{nodes: [%MDEx.Code{} | _inline]}, &1))
-
-    %{
-      name: name,
-      new?: String.trim(suffix) == "new",
-      path: lead && hd(lead.nodes).literal,
-      signatures: body |> List.delete(lead) |> markdown(),
-      listed?: false
-    }
+  defp file(%MDEx.ListItem{nodes: [%MDEx.Paragraph{nodes: [%MDEx.Code{literal: path} | inline]} = lead | blocks]}) do
+    prose = markdown([%{lead | nodes: trim_lead(inline, ~r/\A\s*:?\s*/)} | blocks])
+    %{path: path, deleted?: false, prose: prose, signatures: nil, sketch: nil}
   end
 
   defp markdown(nodes), do: %MDEx.Document{nodes: nodes} |> MDEx.to_markdown!(extension: @extension) |> String.trim()
 
   defp text(%{literal: literal}), do: literal
   defp text(%{nodes: nodes}), do: Enum.map_join(nodes, &text/1)
-  defp text(_break), do: " "
 end

@@ -118,10 +118,9 @@ defmodule Rail.Mcp.Actions.ListRunToolsTest do
 
     assert {:ok,
             [
-              %{"name" => "save_ticket"},
               %{"name" => "save_design_option"},
               %{"name" => "save_plan"},
-              %{"name" => "save_split"},
+              %{"name" => "ask_questions"},
               %{"name" => "knowledge_search"},
               %{"name" => "lrt_linear__get_issue"}
             ]} = Mcp.list_run_tools(context)

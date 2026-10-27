@@ -40,7 +40,7 @@ defmodule Rail.Mcp.Utils.RunToolDemoSayTest do
   end
 
   test "stamps the caption against the recording's clock", %{task: task, written: written} do
-    {:ok, _rolling} = run_tool_demo_start(task, %{"browser" => "demo"}, stage: :review_lead)
+    {:ok, _rolling} = run_tool_demo_start(task, %{"browser" => "demo"}, stage: :demo)
 
     assert {:ok, said} = run_tool_demo_say(task, %{"text" => "Entering a bill for Sysco"}, [])
     assert said =~ "Said at 0:00"
@@ -52,7 +52,7 @@ defmodule Rail.Mcp.Utils.RunToolDemoSayTest do
   # The criterion is what says the walkthrough covered the ticket rather than
   # wandering around the application, so it is carried through untouched.
   test "a beat that proves a criterion says which", %{task: task, written: written} do
-    {:ok, _rolling} = run_tool_demo_start(task, %{"browser" => "demo"}, stage: :review_lead)
+    {:ok, _rolling} = run_tool_demo_start(task, %{"browser" => "demo"}, stage: :demo)
 
     {:ok, _said} =
       run_tool_demo_say(
@@ -65,7 +65,7 @@ defmodule Rail.Mcp.Utils.RunToolDemoSayTest do
   end
 
   test "every beat is kept, in the order it was said", %{task: task, written: written} do
-    {:ok, _rolling} = run_tool_demo_start(task, %{"browser" => "demo"}, stage: :review_lead)
+    {:ok, _rolling} = run_tool_demo_start(task, %{"browser" => "demo"}, stage: :demo)
 
     {:ok, _first} = run_tool_demo_say(task, %{"text" => "Opening the bills page"}, [])
     {:ok, _second} = run_tool_demo_say(task, %{"text" => "Entering a bill"}, [])
@@ -75,15 +75,43 @@ defmodule Rail.Mcp.Utils.RunToolDemoSayTest do
 
   test "every page open on the task hears a caption land", %{task: %{id: task_id} = task} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task_id}")
-    {:ok, _rolling} = run_tool_demo_start(task, %{"browser" => "demo"}, stage: :review_lead)
+    {:ok, _rolling} = run_tool_demo_start(task, %{"browser" => "demo"}, stage: :demo)
 
     {:ok, _said} = run_tool_demo_say(task, %{"text" => "Opening the bills page"}, [])
 
     assert_received {:output_saved, ^task_id}
   end
 
+  # The caption is spoken word for word, and a symbol has no one way to be said.
+  test "a caption holding a symbol is refused naming it, and nothing is recorded", %{task: task} do
+    {:ok, _rolling} = run_tool_demo_start(task, %{"browser" => "demo"}, stage: :demo)
+
+    for {text, named} <- [
+          {"Picking Cash - Main as the account", ~s|"-"|},
+          {"Bank/Cash is listed", ~s|"/"|},
+          {"Bills & payments", ~s|"&"|},
+          {"Opening the list (all of it)", ~s|"(", ")"|},
+          {"A bill for $40 - paid", ~s|"$", "-"|}
+        ] do
+      assert {:refused, said} = run_tool_demo_say(task, %{"text" => text}, [])
+      assert said =~ "#{named} cannot be said"
+      assert said =~ "Nothing was recorded."
+    end
+
+    refute File.exists?(Path.join([task.scratch_path, "demo", "captions.jsonl"]))
+  end
+
+  test "a caption of words, numbers and sentence punctuation is recorded", %{task: task, written: written} do
+    {:ok, _rolling} = run_tool_demo_start(task, %{"browser" => "demo"}, stage: :demo)
+
+    assert {:ok, _said} =
+             run_tool_demo_say(task, %{"text" => "Sysco's 3 bills, 40 dollars each: all paid. Done? Yes!"}, [])
+
+    assert [%{"text" => "Sysco's 3 bills, 40 dollars each: all paid. Done? Yes!"}] = written.()
+  end
+
   test "a call with no words to say records nothing", %{task: task} do
-    {:ok, _rolling} = run_tool_demo_start(task, %{"browser" => "demo"}, stage: :review_lead)
+    {:ok, _rolling} = run_tool_demo_start(task, %{"browser" => "demo"}, stage: :demo)
 
     assert {:refused, "demo_say needs a `text`. Nothing was recorded."} = run_tool_demo_say(task, %{}, [])
 

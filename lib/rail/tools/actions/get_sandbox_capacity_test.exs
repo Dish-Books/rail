@@ -18,7 +18,7 @@ defmodule Rail.Tools.Actions.GetSandboxCapacityTest do
         started_at: DateTime.utc_now()
       })
 
-    for {status, cpus} <- [running: 2, starting: 1, waiting_for_resources: 1, finished: 3] do
+    for {status, cpus} <- [running: 2.5, starting: 0.5, waiting_for_resources: 1, finished: 3] do
       Repo.insert!(%OsProcess{
         run_id: run.id,
         task_id: run.task_id,
@@ -32,6 +32,7 @@ defmodule Rail.Tools.Actions.GetSandboxCapacityTest do
     :ok
   end
 
+  # Parts of CPUs that add up to whole ones read as a whole number.
   test "reserves what is starting or running, and nothing that waits or has ended" do
     assert {:ok, %{cpus: 4, reserved_cpus: 3}} = Tools.get_sandbox_capacity()
   end

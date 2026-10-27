@@ -38,7 +38,7 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
     {:ok, _source_pm} =
       Roles.create_role(system_scope(), source, %{
         cli: :claude,
-        stage: :product,
+        stage: :demo,
         name: "Source PM",
         model: "claude-opus-5-5",
         system_prompt: "Source PM prompt"
@@ -59,7 +59,7 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
 
     target_roles = Roles.list_roles(target.id)
     assert length(target_roles) == 2
-    assert Enum.any?(target_roles, &(&1.name == "Source PM" && &1.stage == :product))
+    assert Enum.any?(target_roles, &(&1.name == "Source PM" && &1.stage == :demo))
 
     assert Enum.any?(
              target_roles,

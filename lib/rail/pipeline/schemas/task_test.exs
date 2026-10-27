@@ -4,7 +4,6 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
-  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -116,10 +115,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, _question} =
-      Pipeline.register_question(Repo.preload(run, task: :issue), %DetectedQuestion{
-        prompt: "Question prompt 12609?"
-      })
+    Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Question prompt 12609?"})
 
     assert %Task{
              project: %{id: ^project_id},
@@ -157,7 +153,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     assert :plan in Task.stages()
     refute :product in Task.stages()
     assert :merged in Task.stages()
-    assert :debugger in Task.stages()
+    refute :debugger in Task.stages()
   end
 
   test "stage_label/1 names each stage" do
@@ -167,7 +163,6 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
              "Review",
              "Finalize",
              "Merged",
-             "Debugger",
              "Split"
            ]
 
@@ -182,9 +177,75 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
              :review_lead,
              :review_lead,
              :merged,
-             :debugger,
              :split
            ]
+  end
+
+  test "stage_run/1 is the latest run at the task's stage, or at Review a check since its lead that is not done", %{
+    project: project,
+    task: task,
+    role: role
+  } do
+    now = DateTime.utc_now()
+    {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
+    {:ok, qa} = Roles.get_role(project_id: project.id, stage: :qa)
+    {:ok, demo} = Roles.get_role(project_id: project.id, stage: :demo)
+    {:ok, reviewer} = Roles.get_role(project_id: project.id, stage: :review)
+
+    {:ok, plan_run} =
+      Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :finished, started_at: now})
+
+    {:ok, last_round} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: lead.id,
+        status: :finished,
+        started_at: DateTime.shift(now, hour: -2)
+      })
+
+    {:ok, retried} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: lead.id,
+        status: :finished,
+        started_at: DateTime.shift(now, hour: -1)
+      })
+
+    {:ok, checking} = Pipeline.create_run(%{task_id: task.id, role_id: qa.id, status: :running, started_at: now})
+    {:ok, recording} = Pipeline.create_run(%{task_id: task.id, role_id: demo.id, status: :running, started_at: now})
+    # Reopened when its round started, and not retaken since.
+    {:ok, earlier_review} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: reviewer.id,
+        status: :finished,
+        started_at: DateTime.shift(now, hour: -3)
+      })
+
+    {:ok, failed} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: reviewer.id,
+        status: :finished,
+        error: "No report.",
+        started_at: now
+      })
+
+    runs = Repo.preload([plan_run, last_round, retried, recording, earlier_review], :role)
+    [checking, failed] = Repo.preload([checking, failed], :role)
+
+    assert Task.stage_run(%{task | runs: []}) == nil
+    assert Task.stage_run(%{task | runs: runs}).id == plan_run.id
+    # The demo recorder does not hold the review agent back, so it does not stand in for it.
+    assert Task.stage_run(%{task | stage: :review, runs: runs}).id == retried.id
+    assert Task.stage_run(%{task | stage: :review, runs: [checking | runs]}).id == checking.id
+    assert Task.stage_run(%{task | stage: :review, runs: [failed | runs]}).id == failed.id
+    assert Task.stage_run(%{task | stage: :review, runs: [failed, checking | runs]}).id == checking.id
+    # A first round has no lead run yet for its checks to be newer than.
+    assert Task.stage_run(%{task | stage: :review, runs: [failed]}).id == failed.id
+    done = %{checking | status: :finished, stage_outcome: :done}
+    assert Task.stage_run(%{task | stage: :review, runs: [done | runs]}).id == retried.id
+    assert Task.stage_run(%{task | stage: :finalize, runs: [checking | runs]}).id == retried.id
   end
 
   test "demo_recorded?/1 is true once the demo recorder's video is on disk", %{task: task} do
