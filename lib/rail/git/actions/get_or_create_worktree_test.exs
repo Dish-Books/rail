@@ -134,4 +134,31 @@ defmodule Rail.Git.Actions.GetOrCreateWorktreeTest do
 
     assert reason =~ "not a git repository"
   end
+
+  test "a new worktree of a project with no setup script has the clone's .env at once", %{repo: repo, project: project} do
+    File.write!(Path.join(repo, ".env"), "FOO=bar\n")
+    wt_path = Path.join(repo, ".worktrees/feature-env")
+
+    assert {:ok, ^wt_path} =
+             Git.get_or_create_worktree(project, %Task{worktree_path: wt_path, worktree_name: "feature-env"})
+
+    assert File.read!(Path.join(wt_path, ".env")) =~ "\nFOO=bar\n"
+    assert git!(wt_path, ["status", "--porcelain"]) == ""
+  end
+
+  test "a new worktree of a project with a setup script waits for it to succeed for its .env", %{
+    repo: repo,
+    project: project
+  } do
+    File.write!(Path.join(repo, ".env"), "FOO=bar\n")
+    wt_path = Path.join(repo, ".worktrees/feature-scripted")
+
+    assert {:ok, ^wt_path} =
+             Git.get_or_create_worktree(
+               %{project | worktree_setup_script: "scripts/setup.sh"},
+               %Task{worktree_path: wt_path, worktree_name: "feature-scripted"}
+             )
+
+    refute File.exists?(Path.join(wt_path, ".env"))
+  end
 end

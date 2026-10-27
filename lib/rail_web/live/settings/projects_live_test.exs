@@ -3,6 +3,8 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
 
   import Phoenix.LiveViewTest
 
+  alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -1120,5 +1122,217 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     view |> element("#learnings-channel-picker-trigger") |> render_click()
     assert has_element?(view, "#learnings-channel-picker-none")
     refute has_element?(view, "#learnings-channel-picker-options button[phx-value-channel_id]")
+  end
+
+  describe "a project's .env" do
+    # Each project on a clone of its own, so no other test's worktree sees its .env.
+    setup do
+      projects =
+        for {name, worktree_count} <- [two: 2, one: 1, none: 0], into: %{} do
+          unique = System.unique_integer([:positive])
+          clone = create_temp_git_repo(prefix: "rail_env_live_#{name}")
+
+          {:ok, %Project{id: project_id} = project} =
+            Projects.create_project(system_scope(), %{
+              name: "Env Live #{name}",
+              github_repo: "example/env-live-#{name}-#{unique}",
+              github_installation_id: 1,
+              key: "envl#{unique}",
+              default_branch: "main",
+              clone_path: clone
+            })
+
+          worktrees =
+            for number <- 1..worktree_count//1 do
+              branch = "env-live-#{name}-#{number}-#{unique}"
+              path = Path.join(clone, ".worktrees/#{branch}")
+              git!(clone, ["worktree", "add", "-b", branch, path])
+
+              issue =
+                Repo.insert!(
+                  Issue.changeset(%Issue{}, %{
+                    project_id: project_id,
+                    external_id: "I_#{branch}",
+                    identifier: branch,
+                    title: branch,
+                    state: :backlog
+                  })
+                )
+
+              %Task{}
+              |> Task.changeset(
+                %{issue_id: issue.id, stage: :engineer, worktree_name: branch, worktree_path: path, scratch_path: path},
+                project_id
+              )
+              |> Repo.insert!()
+
+              path
+            end
+
+          {name, %{project: project, worktrees: worktrees}}
+        end
+
+      %{env: projects}
+    end
+
+    test "shows each variable by name with its value in a password input, and saves an added row", %{
+      admin_conn: conn,
+      env: %{two: %{project: project, worktrees: worktrees}}
+    } do
+      File.write!(Path.join(project.clone_path, ".env"), "# Secrets\nFOO=bar\nexport BAZ=\"q x\"\n")
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+
+      view |> element("#env-file-project-#{project.id}") |> render_click()
+
+      assert has_element?(view, "#env-file-title", project.name)
+      assert has_element?(view, "#env-file-path", Path.join(project.clone_path, ".env"))
+      assert has_element?(view, "input[aria-label=Name][value=FOO]")
+      assert has_element?(view, "input[type=password][aria-label='Value of FOO'][value=bar]")
+      assert has_element?(view, "input[type=password][aria-label='Value of BAZ'][value='\"q x\"']")
+      assert has_element?(view, "button[aria-label='Show value'][aria-pressed=false]")
+      refute has_element?(view, "#env-file-empty")
+
+      view
+      |> form("#env-file-form")
+      |> render_change(%{"env_file" => %{"variables_sort" => ["0", "1", "new"]}})
+
+      assert has_element?(view, "input[type=password][aria-label=Value]")
+      assert has_element?(view, "input[type=checkbox][aria-label=Remove]")
+      refute has_element?(view, "[id^=env-name-error-]")
+
+      assert view |> render() |> Floki.parse_document!() |> Floki.find("#env-file-form tbody tr") |> length() == 3
+
+      view
+      |> form("#env-file-form", %{"env_file" => %{"variables" => %{"2" => %{"name" => "NEW", "value" => "1"}}}})
+      |> render_submit()
+
+      assert has_element?(view, "#env-file-saved", "Saved to the clone and 2 worktrees")
+      assert File.read!(Path.join(project.clone_path, ".env")) == "FOO=bar\nBAZ=\"q x\"\nNEW=1\n"
+      for worktree <- worktrees, do: assert(File.read!(Path.join(worktree, ".env")) =~ "\nBAZ=\"q x\"\nNEW=1\n")
+
+      view |> form("#env-file-form") |> render_change()
+      refute has_element?(view, "#env-file-saved")
+    end
+
+    test "a project with no .env says it has no variables yet, and saves the rows added", %{
+      admin_conn: conn,
+      env: %{none: %{project: project}}
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      view |> element("#env-file-project-#{project.id}") |> render_click()
+
+      assert has_element?(view, "#env-file-empty", "No variables yet.")
+      assert has_element?(view, "#env-file-empty", Path.join(project.clone_path, ".env"))
+
+      view |> form("#env-file-form") |> render_change(%{"env_file" => %{"variables_sort" => ["new"]}})
+      refute has_element?(view, "#env-file-empty")
+
+      view
+      |> form("#env-file-form", %{"env_file" => %{"variables" => %{"0" => %{"name" => "ONLY", "value" => ""}}}})
+      |> render_submit()
+
+      assert view |> element("#env-file-saved") |> render() |> Floki.parse_fragment!() |> Floki.text() |> String.trim() ==
+               "Saved to the clone"
+
+      assert File.read!(Path.join(project.clone_path, ".env")) == "ONLY=\n"
+    end
+
+    test "a removed row is gone from the file, and every row removed empties it", %{
+      admin_conn: conn,
+      env: %{two: %{project: project}}
+    } do
+      File.write!(Path.join(project.clone_path, ".env"), "FOO=1\nBAR=2\n")
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      view |> element("#env-file-project-#{project.id}") |> render_click()
+
+      view |> form("#env-file-form") |> render_change(%{"env_file" => %{"variables_drop" => ["0"]}})
+      refute has_element?(view, "input[aria-label=Name][value=FOO]")
+      assert has_element?(view, "input[aria-label=Name][value=BAR]")
+
+      view |> form("#env-file-form") |> render_submit()
+      assert File.read!(Path.join(project.clone_path, ".env")) == "BAR=2\n"
+
+      view |> form("#env-file-form") |> render_change(%{"env_file" => %{"variables_drop" => ["0"]}})
+      assert has_element?(view, "#env-file-empty")
+
+      view |> form("#env-file-form") |> render_submit()
+      assert File.read!(Path.join(project.clone_path, ".env")) == ""
+    end
+
+    test "a repeated name or one that is no variable name is shown on its row, and nothing is written", %{
+      admin_conn: conn,
+      env: %{two: %{project: project, worktrees: [worktree | _others]}}
+    } do
+      File.write!(Path.join(project.clone_path, ".env"), "FOO=1\nBAR=2\n")
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      view |> element("#env-file-project-#{project.id}") |> render_click()
+
+      view
+      |> form("#env-file-form", %{
+        "env_file" => %{"variables" => %{"0" => %{"name" => "redis url"}, "1" => %{"name" => "redis url"}}}
+      })
+      |> render_change()
+
+      view
+      |> form("#env-file-form", %{"env_file" => %{"variables" => %{"0" => %{"name" => "FOO"}, "1" => %{"name" => "FOO"}}}})
+      |> render_submit()
+
+      assert has_element?(view, "[id^=env-name-error-]", "FOO is already set above")
+      assert has_element?(view, "input[aria-label=Name][aria-invalid=true][value=FOO]")
+      refute has_element?(view, "#env-file-saved")
+      assert File.read!(Path.join(project.clone_path, ".env")) == "FOO=1\nBAR=2\n"
+      refute File.exists?(Path.join(worktree, ".env"))
+
+      view
+      |> form("#env-file-form", %{"env_file" => %{"variables" => %{"1" => %{"name" => "redis url"}}}})
+      |> render_change()
+
+      assert has_element?(view, "[id^=env-name-error-]", "Use letters, digits and _, not starting with a digit")
+    end
+
+    test "a clone whose .env cannot be written says so, and a later save goes through", %{
+      admin_conn: conn,
+      env: %{one: %{project: project, worktrees: [worktree]}}
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      view |> element("#env-file-project-#{project.id}") |> render_click()
+      File.mkdir_p!(Path.join(project.clone_path, ".env"))
+
+      view |> form("#env-file-form") |> render_change(%{"env_file" => %{"variables_sort" => ["new"]}})
+
+      view
+      |> form("#env-file-form", %{"env_file" => %{"variables" => %{"0" => %{"name" => "FOO", "value" => "1"}}}})
+      |> render_submit()
+
+      assert has_element?(
+               view,
+               "#env-file-error",
+               "Could not write #{project.clone_path}/.env: illegal operation on a directory. Nothing was saved."
+             )
+
+      refute File.exists?(Path.join(worktree, ".env"))
+
+      File.rm_rf!(Path.join(project.clone_path, ".env"))
+      view |> form("#env-file-form") |> render_submit()
+
+      refute has_element?(view, "#env-file-error")
+      assert has_element?(view, "#env-file-saved", "Saved to the clone and 1 worktree")
+    end
+
+    test "closing the modal removes it, and opening it again reads the file afresh", %{
+      admin_conn: conn,
+      env: %{none: %{project: project}}
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      view |> element("#env-file-project-#{project.id}") |> render_click()
+      assert has_element?(view, "#env-file-modal")
+
+      view |> element("#close-env-file-button") |> render_click()
+      refute has_element?(view, "#env-file-modal")
+
+      File.write!(Path.join(project.clone_path, ".env"), "LATER=1\n")
+      view |> element("#env-file-project-#{project.id}") |> render_click()
+      assert has_element?(view, "input[aria-label=Name][value=LATER]")
+    end
   end
 end

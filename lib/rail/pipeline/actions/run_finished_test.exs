@@ -12,6 +12,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
+  alias Rail.Projects.Schemas.Project
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.BrowserSession
@@ -614,6 +615,50 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     assert {:ok, %Run{status: :finished, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert %Task{stage: :review, worktree_setup_at: %DateTime{}} = Repo.reload!(task)
+  end
+
+  describe "a worktree setup on a project with a .env" do
+    # A clone of its own, since a .env in the shared project's would reach other tests' worktrees.
+    setup %{task: task} do
+      clone = create_temp_git_repo(prefix: "rail_setup_env_clone")
+      File.write!(Path.join(clone, ".env"), "FOO=bar\n")
+      unique = System.unique_integer([:positive])
+
+      {:ok, %Project{id: project_id}} =
+        Projects.create_project(system_scope(), %{
+          name: "Setup Env",
+          github_repo: "example/setup-env-#{unique}",
+          github_installation_id: 1,
+          key: "senv#{unique}",
+          default_branch: "main",
+          clone_path: clone,
+          worktree_setup_script: "scripts/setup.sh"
+        })
+
+      worktree = create_temp_git_repo(prefix: "rail_setup_env_worktree")
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: worktree})
+      Repo.update_all(from(t in Task, where: t.id == ^task.id), set: [project_id: project_id])
+
+      %{worktree: worktree}
+    end
+
+    test "that succeeded leaves the clone's lines in the worktree's .env", %{worktree: worktree, exited: exited} do
+      {_run, os_process} = exited.(:plan, %{})
+      os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
+
+      assert {:ok, %Run{status: :finished, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+      assert File.read!(Path.join(worktree, ".env")) =~ "\nFOO=bar\n"
+    end
+
+    test "that failed leaves the worktree with no .env", %{worktree: worktree, exited: exited} do
+      {_run, os_process} = exited.(:plan, %{})
+      os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
+
+      assert {:ok, %Run{error: "The worktree setup script failed" <> _rest}} =
+               Pipeline.run_finished(os_process, %{exit_code: 1, error: "Exited with code 1"})
+
+      refute File.exists?(Path.join(worktree, ".env"))
+    end
   end
 
   describe "an engineer hand-over into a machine with no room for its CI" do

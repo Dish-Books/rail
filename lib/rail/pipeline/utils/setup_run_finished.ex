@@ -6,9 +6,11 @@ defmodule Rail.Pipeline.Utils.SetupRunFinished do
 
   import Rail.Pipeline.Utils.StartChecks
 
+  alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools
@@ -17,6 +19,10 @@ defmodule Rail.Pipeline.Utils.SetupRunFinished do
   def setup_run_finished(%Run{exit_code: 0, task: %Task{} = task, role: %Role{} = role} = run, _opts) do
     {:ok, task} = task |> Task.changeset(%{worktree_setup_at: DateTime.utc_now()}) |> Repo.update()
     run = %{run | task: task}
+
+    # Marked set up first, so a save from here on writes it too and the later of the two wins.
+    %Task{project: %Project{} = project} = Repo.preload(task, :project)
+    :ok = Git.copy_env_file(project, task.worktree_path)
 
     # A message queued on a conversation already under way is drained once this
     # returns; anything else was held up on its way into the stage.
