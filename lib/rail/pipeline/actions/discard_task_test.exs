@@ -40,12 +40,17 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
       Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_discard"}]}}})
     end)
 
+    # Keyed and named per test, since a key, repo or login two open sandboxes both insert waits on the other's.
+    n = System.unique_integer([:positive])
+    repo = "org/discard-#{n}"
+    pull_path = "/repos/#{repo}/pulls/212"
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
-        name: "Discard Project",
-        github_repo: "org/discard",
+        name: "Discard Project #{n}",
+        github_repo: repo,
         github_installation_id: 8707,
-        key: "DSC",
+        key: "dsc#{n}",
         default_branch: "main",
         clone_path: clone,
         linear_workspace_id: workspace_id
@@ -82,20 +87,25 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
       %{method: "POST", request_path: "/app/installations/8707/access_tokens"} = conn ->
         Req.Test.json(conn, %{"token" => "ghs_discard"})
 
-      %{method: "GET", request_path: "/repos/org/discard/pulls/212"} = conn ->
+      %{method: "GET", request_path: ^pull_path} = conn ->
         Req.Test.json(conn, %{"number" => 212, "state" => "open"})
 
-      %{method: "PATCH", request_path: "/repos/org/discard/pulls/212"} = conn ->
+      %{method: "PATCH", request_path: ^pull_path} = conn ->
         {:ok, body, conn} = Plug.Conn.read_body(conn)
         send(test_pid, {:pull_request_changed, 212, Jason.decode!(body)})
         Req.Test.json(conn, %{"number" => 212, "state" => "closed"})
     end)
 
     {:ok, reader} =
-      Users.register_oauth_user(%{github_id: "gh_discard", login: "discard-reader", email: "discard@example.com"})
+      Users.register_oauth_user(%{
+        github_id: "gh_discard_#{n}",
+        login: "discard-reader-#{n}",
+        email: "discard-#{n}@example.com"
+      })
 
     %{
       reader: reader,
+      repo: repo,
       scope: user_scope(project_ids: [project.id]),
       issue: issue,
       task: task,
@@ -328,23 +338,27 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
   test "an issue linked to an adopted pull request lets the link go once it is closed", %{
     scope: scope,
     task: task,
-    issue: issue
+    issue: issue,
+    repo: repo
   } do
+    pulls_path = "/repos/#{repo}/pulls"
+    pull_path = "/repos/#{repo}/pulls/212"
+
     {:ok, task} = Pipeline.update_task(task, %{pr_number: 212})
 
     %Issue{id: issue_id} =
       issue
-      |> Issue.pull_request_changeset(%{pr_number: 212, pr_url: "https://github.com/org/discard/pull/212"})
+      |> Issue.pull_request_changeset(%{pr_number: 212, pr_url: "https://github.com/#{repo}/pull/212"})
       |> Repo.update!()
 
     Req.Test.stub(Client, fn
       %{method: "POST"} = conn ->
         Req.Test.json(conn, %{"token" => "ghs_discard"})
 
-      %{method: "GET", request_path: "/repos/org/discard/pulls"} = conn ->
+      %{method: "GET", request_path: ^pulls_path} = conn ->
         Req.Test.json(conn, [])
 
-      %{method: "GET", request_path: "/repos/org/discard/pulls/212"} = conn ->
+      %{method: "GET", request_path: ^pull_path} = conn ->
         state = if Process.get(:closed), do: "closed", else: "open"
         Req.Test.json(conn, %{"number" => 212, "state" => state})
 

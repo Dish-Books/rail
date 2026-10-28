@@ -23,8 +23,8 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
 
   @plan "## Implementation plan\n\nFilter by vendor."
 
-  # The branch is pushed to and deleted from a real `origin`.
-  setup %{project: project} do
+  # A project of its own, because the branch is pushed to and deleted from a real `origin`.
+  setup %{project: %{id: seeded_id, linear_workspace_id: workspace_id}} do
     origin = Path.join(System.tmp_dir!(), "rail_return_origin_#{System.unique_integer([:positive])}")
     File.mkdir_p!(origin)
     on_exit(fn -> File.rm_rf(origin) end)
@@ -34,14 +34,28 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
     git!(clone, ["remote", "add", "origin", origin])
     git!(clone, ["push", "--quiet", "origin", "main"])
 
-    # The seeded project, since the Planner starts on its roles; the change is this test's alone.
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_return"}]}}})
+    end)
+
+    # Keyed and named per test, since a key, repo or login two open sandboxes both insert waits on the other's.
+    n = System.unique_integer([:positive])
+    repo = "org/return-#{n}"
+    pull_path = "/repos/#{repo}/pulls/212"
+
     {:ok, project} =
-      Projects.update_project(system_scope(), project, %{
-        github_repo: "org/return",
+      Projects.create_project(system_scope(), %{
+        name: "Return Project #{n}",
+        github_repo: repo,
         github_installation_id: 8708,
+        key: "rtp#{n}",
         default_branch: "main",
-        clone_path: clone
+        clone_path: clone,
+        linear_workspace_id: workspace_id
       })
+
+    # The Planner starts on the project's own roles, which a new project has none of.
+    {:ok, _roles} = Roles.copy_roles(system_scope(), project.id, seeded_id)
 
     issue =
       %Issue{}
@@ -94,17 +108,21 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
       %{method: "POST", request_path: "/app/installations/8708/access_tokens"} = conn ->
         Req.Test.json(conn, %{"token" => "ghs_return"})
 
-      %{method: "GET", request_path: "/repos/org/return/pulls/212"} = conn ->
+      %{method: "GET", request_path: ^pull_path} = conn ->
         Req.Test.json(conn, %{"number" => 212, "state" => "open"})
 
-      %{method: "PATCH", request_path: "/repos/org/return/pulls/212"} = conn ->
+      %{method: "PATCH", request_path: ^pull_path} = conn ->
         {:ok, body, conn} = Plug.Conn.read_body(conn)
         send(test_pid, {:pull_request_changed, 212, Jason.decode!(body)})
         Req.Test.json(conn, %{"number" => 212, "state" => "closed"})
     end)
 
     {:ok, reader} =
-      Users.register_oauth_user(%{github_id: "gh_return", login: "return-reader", email: "return@example.com"})
+      Users.register_oauth_user(%{
+        github_id: "gh_return_#{n}",
+        login: "return-reader-#{n}",
+        email: "return-#{n}@example.com"
+      })
 
     %{
       scope: user_scope(project_ids: [project.id]),
