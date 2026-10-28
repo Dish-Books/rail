@@ -3,9 +3,23 @@ defmodule Rail.Workflows.Actions.SetWorkflowPausedTest do
 
   alias Rail.Workflows
   alias Rail.Workflows.Schemas.Workflow
+  alias Rail.Workflows.Schemas.WorkflowDefinition
 
   setup %{project: project} do
-    [workflow] = sync_workflow_files(project, %{".rail/workflows/dependency-updates.yml" => workflow_yaml()})
+    workflow =
+      %Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/dependency-updates.yml",
+        definition: %WorkflowDefinition{
+          name: "Dependency updates",
+          schedule: "0 9 * * 1",
+          instructions: "Update the dependencies."
+        },
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      }
+      |> Repo.insert!()
+      |> Repo.preload(:project)
+
     Phoenix.PubSub.subscribe(Rail.PubSub, "workflows")
 
     %{workflow: workflow}

@@ -15,6 +15,8 @@ defmodule RailWeb.IssuesLiveTest do
   alias Rail.Roles
   alias Rail.Scope
   alias Rail.Users
+  alias Rail.Workflows.Schemas.Workflow
+  alias Rail.Workflows.Schemas.WorkflowDefinition
 
   test "redirects an unauthenticated user to the sign-in page", %{conn: conn} do
     assert {:error, {:redirect, %{to: "/sign-in"}}} = live(conn, ~p"/issues")
@@ -421,9 +423,16 @@ defmodule RailWeb.IssuesLiveTest do
 
     {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
 
-    [workflow] =
-      sync_workflow_files(project, %{
-        ".rail/workflows/flaky-test-sweep.yml" => workflow_yaml(%{"name" => "Flaky test sweep"})
+    workflow =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/flaky-test-sweep.yml",
+        definition: %WorkflowDefinition{
+          name: "Flaky test sweep",
+          schedule: "0 9 * * 1",
+          instructions: "Sweep the flaky tests."
+        },
+        next_run_at: ~U[2026-10-12 09:00:00Z]
       })
 
     [opened, filed] =
@@ -448,7 +457,12 @@ defmodule RailWeb.IssuesLiveTest do
     refute has_element?(view, "#issue-workflow-#{filed.id}")
 
     # A sync that renames the workflow shows on the open list.
-    sync_workflow_files(project, %{".rail/workflows/flaky-test-sweep.yml" => workflow_yaml(%{"name" => "Flake sweep"})})
+    workflow
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.put_embed(:definition, %{name: "Flake sweep"})
+    |> Repo.update!()
+
+    Phoenix.PubSub.broadcast(Rail.PubSub, "workflows", {:workflows_changed, project.id})
     assert has_element?(view, ~s(#issue-workflow-#{opened.id}[title="Opened by the Flake sweep workflow"]))
   end
 

@@ -5,17 +5,52 @@ defmodule Rail.Workflows.Workers.StartDueWorkflowsTest do
   import ExUnit.CaptureLog
 
   alias Rail.Git
+  alias Rail.Projects.Schemas.Project
+  alias Rail.Workflows
   alias Rail.Workflows.Schemas.Workflow
   alias Rail.Workflows.Workers.StartDueWorkflows
   alias Rail.Workflows.Workers.StartWorkflow
 
-  test "syncs each cloned project, then queues one start per due workflow", %{project: project, github_project: github} do
-    [%{id: weekly_id, project: %{clone_path: clone}}, %{id: daily_id}] =
-      sync_workflow_files(project, %{
-        ".rail/workflows/a-weekly.yml" => workflow_yaml(),
-        ".rail/workflows/b-daily.yml" => workflow_yaml(%{"schedule" => "0 6 * * *"})
-      })
+  setup %{project: project} do
+    remote = create_temp_git_repo(prefix: "rail_wf_remote")
+    File.mkdir_p!(Path.join(remote, ".rail/workflows"))
 
+    File.write!(Path.join(remote, ".rail/workflows/a-weekly.yml"), """
+    name: Dependency updates
+    schedule: "0 9 * * 1"
+    instructions: Update the dependencies.
+    """)
+
+    File.write!(Path.join(remote, ".rail/workflows/b-daily.yml"), """
+    name: Flaky test sweep
+    schedule: "0 6 * * *"
+    instructions: Fix the flaky tests.
+    """)
+
+    git!(remote, ["add", "."])
+    git!(remote, ["commit", "-m", "workflows"])
+    clone = create_temp_git_repo(prefix: "rail_wf_clone")
+    git!(clone, ["remote", "add", "origin", remote])
+    git!(clone, ["fetch", "origin", "main"])
+
+    # The seeded project's clone is not on disk, so it is pointed at this one.
+    Repo.update_all(from(p in Project, where: p.id == ^project.id), set: [clone_path: clone])
+    stub(DateTime, :utc_now, fn -> ~U[2026-10-12 08:00:00.000000Z] end)
+    {:ok, 2} = Workflows.sync_workflows(%{project | clone_path: clone})
+
+    [%Workflow{id: weekly_id}, %Workflow{id: daily_id}] =
+      Repo.all(from(w in Workflow, where: w.project_id == ^project.id, order_by: w.path))
+
+    %{weekly_id: weekly_id, daily_id: daily_id, clone: clone}
+  end
+
+  test "syncs each cloned project, then queues one start per due workflow", %{
+    project: project,
+    github_project: github,
+    weekly_id: weekly_id,
+    daily_id: daily_id,
+    clone: clone
+  } do
     # A row gone from the table comes back only through a sync.
     Repo.delete_all(from(w in Workflow, where: w.id == ^daily_id))
     stub(Git, :git_repo?, fn path -> path in [clone, github.clone_path] end)

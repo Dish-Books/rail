@@ -1,26 +1,36 @@
 defmodule Rail.Workflows.Actions.StartWorkflowTest do
   use Rail.DataCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
-  alias Rail.Git
   alias Rail.GitHub.Client
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.Run
-  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
-  alias Rail.Tools
-  alias Rail.Tools.Schemas.OsProcess
   alias Rail.Workflows
   alias Rail.Workflows.Schemas.Workflow
+  alias Rail.Workflows.Schemas.WorkflowDefinition
+  alias Rail.Workflows.Workers.StartWorkflowTask
 
   setup %{project: project} do
-    [workflow] = sync_workflow_files(project, %{".rail/workflows/dependency-updates.yml" => workflow_yaml()})
+    workflow =
+      %Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/dependency-updates.yml",
+        definition: %WorkflowDefinition{
+          name: "Dependency updates",
+          schedule: "0 9 * * 1",
+          instructions: "Update the dependencies."
+        },
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      }
+      |> Repo.insert!()
+      |> Repo.preload(:project)
+
     Phoenix.PubSub.subscribe(Rail.PubSub, "workflows")
 
     %{workflow: workflow}
   end
 
-  test "a due workflow opens one unassigned ticket on its own project's team and starts its task at Plan", %{
+  test "a due workflow opens one unassigned ticket on its own project's team and queues its task's start", %{
     project: %{id: project_id},
     workflow: %{id: workflow_id} = workflow
   } do
@@ -54,9 +64,6 @@ defmodule Rail.Workflows.Actions.StartWorkflowTest do
       })
     end)
 
-    expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
-    expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
-
     assert {:ok,
             %Issue{
               id: issue_id,
@@ -67,15 +74,23 @@ defmodule Rail.Workflows.Actions.StartWorkflowTest do
               description: "Update the dependencies."
             }} = Workflows.start_workflow(workflow)
 
-    assert [%Task{stage: :plan, runs: [%Run{}]}] =
-             Repo.all(from(t in Task, where: t.issue_id == ^issue_id, preload: :runs))
+    assert_enqueued(worker: StartWorkflowTask, args: %{issue_id: issue_id})
 
     assert %Workflow{next_run_at: ~U[2026-10-19 09:00:00Z]} = Repo.get!(Workflow, workflow_id)
     assert_receive {:workflows_changed, ^project_id}
   end
 
   test "a workflow on a GitHub project opens its issue in that repository", %{github_project: project} do
-    [workflow] = sync_workflow_files(project, %{".rail/workflows/sweep.yaml" => workflow_yaml(%{"name" => "Sweep"})})
+    workflow =
+      %Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/sweep.yaml",
+        definition: %WorkflowDefinition{name: "Sweep", schedule: "0 9 * * 1", instructions: "Update the dependencies."},
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      }
+      |> Repo.insert!()
+      |> Repo.preload(:project)
+
     stub(DateTime, :utc_now, fn -> ~U[2026-10-12 09:00:30.000000Z] end)
 
     Req.Test.expect(Client, 2, fn conn ->
@@ -92,17 +107,28 @@ defmodule Rail.Workflows.Actions.StartWorkflowTest do
       end
     end)
 
-    expect(Pipeline, :start_task, fn %Issue{}, :plan -> {:ok, %Task{}} end)
+    assert {:ok, %Issue{id: issue_id, tracker: :github, identifier: "tgh#42", owner_user_id: nil}} =
+             Workflows.start_workflow(workflow)
 
-    assert {:ok, %Issue{tracker: :github, identifier: "tgh#42", owner_user_id: nil}} = Workflows.start_workflow(workflow)
+    assert_enqueued(worker: StartWorkflowTask, args: %{issue_id: issue_id})
   end
 
   test "a workflow whose last issue is unfinished opens nothing and still moves its due time on", %{
     workflow: %{id: workflow_id} = workflow
   } do
     stub(DateTime, :utc_now, fn -> ~U[2026-10-12 09:00:30.000000Z] end)
-    expect_linear_issue("TST-78")
-    stub(Pipeline, :start_task, fn %Issue{}, :plan -> {:ok, %Task{}} end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_TST-78", "identifier" => "TST-78", "title" => "Dependency updates 2026-10-12"}
+          }
+        }
+      })
+    end)
+
     {:ok, %Issue{id: unfinished_id}} = Workflows.start_workflow(workflow)
 
     stub(DateTime, :utc_now, fn -> ~U[2026-10-19 09:01:00.000000Z] end)
@@ -110,20 +136,43 @@ defmodule Rail.Workflows.Actions.StartWorkflowTest do
     assert {:error, {:unfinished, %Issue{id: ^unfinished_id}}} = Workflows.start_workflow(workflow)
     assert %Workflow{next_run_at: ~U[2026-10-26 09:00:00Z]} = Repo.get!(Workflow, workflow_id)
     assert [_one] = Repo.all(from(i in Issue, where: i.workflow_id == ^workflow_id))
+    assert [%Oban.Job{args: %{"issue_id" => ^unfinished_id}}] = all_enqueued(worker: StartWorkflowTask)
   end
 
   test "a finished last issue lets the next one open", %{workflow: %{id: workflow_id} = workflow} do
     stub(DateTime, :utc_now, fn -> ~U[2026-10-12 09:00:30.000000Z] end)
-    expect_linear_issue("TST-78")
-    stub(Pipeline, :start_task, fn %Issue{}, :plan -> {:ok, %Task{}} end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_TST-78", "identifier" => "TST-78", "title" => "Dependency updates 2026-10-12"}
+          }
+        }
+      })
+    end)
+
     {:ok, issue} = Workflows.start_workflow(workflow)
     issue |> Issue.tracker_changeset(%{state: :done}) |> Repo.update!()
 
     stub(DateTime, :utc_now, fn -> ~U[2026-10-19 09:00:10.000000Z] end)
-    expect_linear_issue("TST-79")
 
-    assert {:ok, %Issue{identifier: "TST-79", title: "Dependency updates 2026-10-19"}} =
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_TST-79", "identifier" => "TST-79", "title" => "Dependency updates 2026-10-19"}
+          }
+        }
+      })
+    end)
+
+    assert {:ok, %Issue{id: next_id, identifier: "TST-79", title: "Dependency updates 2026-10-19"}} =
              Workflows.start_workflow(workflow)
+
+    assert_enqueued(worker: StartWorkflowTask, args: %{issue_id: next_id})
 
     assert [_first, _second] = Repo.all(from(i in Issue, where: i.workflow_id == ^workflow_id))
   end
@@ -154,8 +203,16 @@ defmodule Rail.Workflows.Actions.StartWorkflowTest do
         active: false
       })
 
-    [%{id: workflow_id} = workflow] =
-      sync_workflow_files(inactive, %{".rail/workflows/changelog.yml" => workflow_yaml(%{"name" => "Changelog"})})
+    %Workflow{id: workflow_id} =
+      workflow =
+      %Workflow{
+        project_id: inactive.id,
+        path: ".rail/workflows/changelog.yml",
+        definition: %WorkflowDefinition{name: "Changelog", schedule: "0 9 * * 1", instructions: "Draft the changelog."},
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      }
+      |> Repo.insert!()
+      |> Repo.preload(:project)
 
     stub(DateTime, :utc_now, fn -> ~U[2026-10-12 09:00:30.000000Z] end)
 
@@ -171,7 +228,11 @@ defmodule Rail.Workflows.Actions.StartWorkflowTest do
   end
 
   test "an invalid workflow opens nothing", %{project: project} do
-    [workflow] = sync_workflow_files(project, %{".rail/workflows/broken.yml" => "name: ["})
+    workflow =
+      %Workflow{project_id: project.id, path: ".rail/workflows/broken.yml"}
+      |> Repo.insert!()
+      |> Repo.preload(:project)
+
     stub(DateTime, :utc_now, fn -> ~U[2026-10-12 09:00:30.000000Z] end)
 
     assert {:error, :invalid} = Workflows.start_workflow(workflow)
@@ -181,8 +242,17 @@ defmodule Rail.Workflows.Actions.StartWorkflowTest do
     workflow: %{id: workflow_id} = workflow
   } do
     stub(DateTime, :utc_now, fn -> ~U[2026-10-12 09:00:30.000000Z] end)
-    expect_linear_issue("TST-90")
-    stub(Pipeline, :start_task, fn %Issue{}, :plan -> {:ok, %Task{}} end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_TST-90", "identifier" => "TST-90", "title" => "Dependency updates 2026-10-12"}
+          }
+        }
+      })
+    end)
 
     scheduled = Elixir.Task.async(fn -> Workflows.start_workflow(workflow) end)
     now = Elixir.Task.async(fn -> Workflows.run_workflow_now(system_scope(), workflow) end)
@@ -191,6 +261,7 @@ defmodule Rail.Workflows.Actions.StartWorkflowTest do
              Enum.sort_by(Elixir.Task.await_many([scheduled, now]), &elem(&1, 0), :desc)
 
     assert [%Issue{id: ^issue_id}] = Repo.all(from(i in Issue, where: i.workflow_id == ^workflow_id))
+    assert [%Oban.Job{args: %{"issue_id" => ^issue_id}}] = all_enqueued(worker: StartWorkflowTask)
   end
 
   test "a tracker error opens nothing and leaves the start to the next due time", %{
@@ -204,19 +275,7 @@ defmodule Rail.Workflows.Actions.StartWorkflowTest do
 
     assert {:error, {:linear_api_error, 500, _body}} = Workflows.start_workflow(workflow)
     assert [] = Repo.all(from(i in Issue, where: i.workflow_id == ^workflow_id))
+    refute_enqueued(worker: StartWorkflowTask)
     assert %Workflow{next_run_at: ~U[2026-10-19 09:00:00Z]} = Repo.get!(Workflow, workflow_id)
-  end
-
-  test "a task that will not start leaves the opened issue and says so in the log", %{workflow: workflow} do
-    stub(DateTime, :utc_now, fn -> ~U[2026-10-12 09:00:30.000000Z] end)
-    expect_linear_issue("TST-91")
-    expect(Pipeline, :start_task, fn %Issue{}, :plan -> {:error, :dispatch_disabled} end)
-
-    log =
-      ExUnit.CaptureLog.capture_log(fn ->
-        assert {:ok, %Issue{identifier: "TST-91"}} = Workflows.start_workflow(workflow)
-      end)
-
-    assert log =~ "Could not start TST-91, opened by a workflow: :dispatch_disabled"
   end
 end

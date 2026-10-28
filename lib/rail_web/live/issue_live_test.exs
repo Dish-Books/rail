@@ -20,6 +20,8 @@ defmodule RailWeb.IssueLiveTest do
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
+  alias Rail.Workflows.Schemas.Workflow
+  alias Rail.Workflows.Schemas.WorkflowDefinition
 
   setup %{conn: conn, project: project} do
     {:ok, user} =
@@ -75,10 +77,20 @@ defmodule RailWeb.IssueLiveTest do
     conn: conn,
     project: project
   } do
-    [workflow] =
-      sync_workflow_files(project, %{
-        ".rail/workflows/flaky-test-sweep.yml" => workflow_yaml(%{"name" => "Flaky test sweep"})
+    workflow =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/flaky-test-sweep.yml",
+        definition: %WorkflowDefinition{
+          name: "Flaky test sweep",
+          schedule: "0 9 * * 1",
+          instructions: "Sweep the flaky tests."
+        },
+        next_run_at: ~U[2026-10-12 09:00:00Z]
       })
+
+    # The byline reads when the issue was opened.
+    stub(DateTime, :utc_now, fn -> ~U[2026-10-12 08:00:00.000000Z] end)
 
     issue =
       %Issue{}
@@ -100,7 +112,13 @@ defmodule RailWeb.IssueLiveTest do
 
     # Only a workflow change on this issue's project reloads it.
     Phoenix.PubSub.broadcast(Rail.PubSub, "workflows", {:workflows_changed, "prj_elsewhere"})
-    sync_workflow_files(project, %{".rail/workflows/flaky-test-sweep.yml" => workflow_yaml(%{"name" => "Flake sweep"})})
+
+    workflow
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.put_embed(:definition, %{name: "Flake sweep"})
+    |> Repo.update!()
+
+    Phoenix.PubSub.broadcast(Rail.PubSub, "workflows", {:workflows_changed, project.id})
     assert has_element?(view, "#issue-workflow-byline", "Opened by the Flake sweep workflow")
   end
 
@@ -116,7 +134,14 @@ defmodule RailWeb.IssueLiveTest do
       })
 
     {:ok, _admin} = Users.update_user(system_scope(), admin, %{admin: true})
-    [workflow] = sync_workflow_files(project, %{".rail/workflows/sweep.yml" => workflow_yaml(%{"name" => "Sweep"})})
+
+    workflow =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/sweep.yml",
+        definition: %WorkflowDefinition{name: "Sweep", schedule: "0 9 * * 1", instructions: "Sweep the flaky tests."},
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      })
 
     [opened, filed] =
       for {workflow_id, n} <- [{workflow.id, 1}, {nil, 2}] do

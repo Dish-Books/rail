@@ -11,6 +11,7 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
   alias Rail.Repo
   alias Rail.Users
   alias Rail.Workflows.Schemas.Workflow
+  alias Rail.Workflows.Schemas.WorkflowDefinition
 
   setup %{conn: conn} do
     id = System.unique_integer([:positive])
@@ -33,7 +34,17 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
     conn: conn,
     project: project
   } do
-    [%{id: id}] = sync_workflow_files(project, %{".rail/workflows/dependency-updates.yml" => workflow_yaml()})
+    %Workflow{id: id} =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/dependency-updates.yml",
+        definition: %WorkflowDefinition{
+          name: "Dependency updates",
+          schedule: "0 9 * * 1",
+          instructions: "Update the dependencies."
+        },
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      })
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/workflows")
 
@@ -58,7 +69,17 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
   end
 
   test "a file path with a space links to the file", %{conn: conn, project: project} do
-    [%{id: id}] = sync_workflow_files(project, %{".rail/workflows/with space.yml" => workflow_yaml()})
+    %Workflow{id: id} =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/with space.yml",
+        definition: %WorkflowDefinition{
+          name: "Dependency updates",
+          schedule: "0 9 * * 1",
+          instructions: "Update the dependencies."
+        },
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      })
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/workflows")
 
@@ -69,7 +90,7 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
   end
 
   test "an invalid file reads Invalid, with no Run now or switch", %{conn: conn, project: project} do
-    [%{id: id}] = sync_workflow_files(project, %{".rail/workflows/nightly-e2e.yml" => "name: ["})
+    %Workflow{id: id} = Repo.insert!(%Workflow{project_id: project.id, path: ".rail/workflows/nightly-e2e.yml"})
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/workflows")
 
@@ -81,7 +102,18 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
   end
 
   test "the switch pauses a workflow and turns it back on", %{conn: conn, project: project} do
-    [%{id: id}] = sync_workflow_files(project, %{".rail/workflows/dependency-updates.yml" => workflow_yaml()})
+    %Workflow{id: id} =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/dependency-updates.yml",
+        definition: %WorkflowDefinition{
+          name: "Dependency updates",
+          schedule: "0 9 * * 1",
+          instructions: "Update the dependencies."
+        },
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      })
+
     {:ok, view, _html} = live(conn, ~p"/settings/workflows")
 
     view |> element("#workflow-switch-#{id}") |> render_click()
@@ -99,7 +131,18 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
   end
 
   test "a switch clicked in a tab that missed another's pause sets the state it showed", %{conn: conn, project: project} do
-    [%{id: id}] = sync_workflow_files(project, %{".rail/workflows/dependency-updates.yml" => workflow_yaml()})
+    %Workflow{id: id} =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/dependency-updates.yml",
+        definition: %WorkflowDefinition{
+          name: "Dependency updates",
+          schedule: "0 9 * * 1",
+          instructions: "Update the dependencies."
+        },
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      })
+
     {:ok, first, _html} = live(conn, ~p"/settings/workflows")
     {:ok, second, _html} = live(conn, ~p"/settings/workflows")
 
@@ -115,22 +158,81 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
     conn: conn,
     project: project
   } do
-    [%{id: id}] = sync_workflow_files(project, %{".rail/workflows/dependency-updates.yml" => workflow_yaml()})
+    %Workflow{id: id} =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/dependency-updates.yml",
+        definition: %WorkflowDefinition{
+          name: "Dependency updates",
+          schedule: "0 9 * * 1",
+          instructions: "Update the dependencies."
+        },
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      })
+
     {:ok, view, _html} = live(conn, ~p"/settings/workflows")
     view |> element("#workflow-switch-#{id}") |> render_click()
 
     stub(DateTime, :utc_now, fn -> ~U[2026-10-14 10:00:00.000000Z] end)
-    stub(Pipeline, :start_task, fn %Issue{}, :plan -> {:ok, %Task{}} end)
-    expect_linear_issue("TST-84")
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_TST-84", "identifier" => "TST-84", "title" => "Dependency updates 2026-10-14"}
+          }
+        }
+      })
+    end)
 
     assert view |> element("#run-now-#{id}") |> render_click() =~ "Dependency updates opened TST-84."
     assert [%Issue{title: "Dependency updates 2026-10-14"}] = Repo.all(from(i in Issue, where: i.workflow_id == ^id))
     assert has_element?(view, "#workflow-next-#{id}", "None while paused")
 
+    # Jobs do not run here, so the issue still has no task.
+    assert view |> element("#run-now-#{id}") |> render_click() =~
+             "Dependency updates opened nothing: TST-84 is still unfinished and has no task yet. " <>
+               "You can start it from its page."
+
+    assert [_one] = Repo.all(from(i in Issue, where: i.workflow_id == ^id))
+  end
+
+  test "Run now on a workflow whose unfinished issue has a task says only that it is unfinished", %{
+    conn: conn,
+    project: project
+  } do
+    %Workflow{id: id} =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/dependency-updates.yml",
+        definition: %WorkflowDefinition{
+          name: "Dependency updates",
+          schedule: "0 9 * * 1",
+          instructions: "Update the dependencies."
+        },
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      })
+
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        workflow_id: id,
+        external_id: "lin_TST-84",
+        identifier: "TST-84",
+        title: "Dependency updates 2026-10-12",
+        state: :in_progress
+      })
+      |> Repo.insert!()
+
+    {:ok, %Task{}} = issue |> Repo.preload(:project) |> Pipeline.create_task(:plan)
+    {:ok, view, _html} = live(conn, ~p"/settings/workflows")
+
     assert view |> element("#run-now-#{id}") |> render_click() =~
              "Dependency updates opened nothing: TST-84 is still unfinished."
 
-    assert [_one] = Repo.all(from(i in Issue, where: i.workflow_id == ^id))
+    refute render(view) =~ "has no task yet"
   end
 
   test "a workflow on an inactive project has no next start, and Run now says why it opened nothing", %{conn: conn} do
@@ -145,8 +247,17 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
         active: false
       })
 
-    [%{id: id}] =
-      sync_workflow_files(inactive, %{".rail/workflows/changelog.yml" => workflow_yaml(%{"name" => "Changelog draft"})})
+    %Workflow{id: id} =
+      Repo.insert!(%Workflow{
+        project_id: inactive.id,
+        path: ".rail/workflows/changelog.yml",
+        definition: %WorkflowDefinition{
+          name: "Changelog draft",
+          schedule: "0 9 * * 1",
+          instructions: "Update the dependencies."
+        },
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      })
 
     {:ok, view, _html} = live(conn, ~p"/settings/workflows")
 
@@ -158,7 +269,18 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
   end
 
   test "Run now from a page that missed its file turning invalid says so", %{conn: conn, project: project} do
-    [%{id: id}] = sync_workflow_files(project, %{".rail/workflows/dependency-updates.yml" => workflow_yaml()})
+    %Workflow{id: id} =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/dependency-updates.yml",
+        definition: %WorkflowDefinition{
+          name: "Dependency updates",
+          schedule: "0 9 * * 1",
+          instructions: "Update the dependencies."
+        },
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      })
+
     {:ok, view, _html} = live(conn, ~p"/settings/workflows")
 
     # Written behind the page's back, so it still offers Run now.
@@ -169,7 +291,18 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
   end
 
   test "Run now says what the tracker answered when it opened nothing", %{conn: conn, project: project} do
-    [%{id: id}] = sync_workflow_files(project, %{".rail/workflows/dependency-updates.yml" => workflow_yaml()})
+    %Workflow{id: id} =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/dependency-updates.yml",
+        definition: %WorkflowDefinition{
+          name: "Dependency updates",
+          schedule: "0 9 * * 1",
+          instructions: "Update the dependencies."
+        },
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      })
+
     {:ok, view, _html} = live(conn, ~p"/settings/workflows")
     Req.Test.expect(Rail.Linear, fn conn -> conn |> Plug.Conn.put_status(500) |> Req.Test.json(%{}) end)
 
@@ -181,7 +314,19 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
     {:ok, view, _html} = live(conn, ~p"/settings/workflows")
     assert has_element?(view, "#workflows-empty")
 
-    [%{id: id}] = sync_workflow_files(project, %{".rail/workflows/dependency-updates.yml" => workflow_yaml()})
+    %Workflow{id: id} =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/dependency-updates.yml",
+        definition: %WorkflowDefinition{
+          name: "Dependency updates",
+          schedule: "0 9 * * 1",
+          instructions: "Update the dependencies."
+        },
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      })
+
+    Phoenix.PubSub.broadcast(Rail.PubSub, "workflows", {:workflows_changed, project.id})
 
     assert has_element?(view, "#workflow-name-#{id}", "Dependency updates")
     refute has_element?(view, "#workflows-empty")

@@ -10,18 +10,16 @@ defmodule Rail.Workflows.Utils.OpenWorkflowIssue do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Pipeline
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Scope
   alias Rail.Workflows.Schemas.Workflow
   alias Rail.Workflows.Schemas.WorkflowDefinition
-
-  require Logger
+  alias Rail.Workflows.Workers.StartWorkflowTask
 
   @doc """
-  Opens `workflow`'s issue in its project's tracker, with no owner, and starts its task at Plan once that is
-  committed. A `:scheduled` start goes ahead only while the row is due and moves the due time on whether it opens
+  Opens `workflow`'s issue in its project's tracker, with no owner, and queues its task's start at Plan with the
+  issue. A `:scheduled` start goes ahead only while the row is due and moves the due time on whether it opens
   anything or not; `:now` leaves the due time alone and ignores the pause.
 
   Returns `{:ok, issue}`, or why nothing was opened: `{:error, {:unfinished, issue}}`, `{:error, :project_inactive}`,
@@ -38,12 +36,15 @@ defmodule Rail.Workflows.Utils.OpenWorkflowIssue do
         outcome =
           with {:ok, date} <- start_date(workflow, trigger, now),
                :ok <- move_on(workflow, trigger, now),
-               :ok <- skip(workflow, trigger) do
-            Issues.create_issue(Scope.for_system(), workflow.project, %{
-              title: "#{workflow.definition.name} #{Date.to_iso8601(date)}",
-              description: workflow.definition.instructions,
-              workflow_id: workflow.id
-            })
+               :ok <- skip(workflow, trigger),
+               {:ok, issue} <-
+                 Issues.create_issue(Scope.for_system(), workflow.project, %{
+                   title: "#{workflow.definition.name} #{Date.to_iso8601(date)}",
+                   description: workflow.definition.instructions,
+                   workflow_id: workflow.id
+                 }) do
+            Oban.insert!(StartWorkflowTask.new(%{issue_id: issue.id}))
+            {:ok, issue}
           end
 
         {workflow, outcome}
@@ -51,11 +52,6 @@ defmodule Rail.Workflows.Utils.OpenWorkflowIssue do
 
     case outcome do
       {:ok, %Issue{} = issue} ->
-        # After the commit, since the run's spawn reads the issue from another process.
-        with {:error, reason} <- Pipeline.start_task(issue, :plan) do
-          Logger.warning("Could not start #{issue.identifier}, opened by a workflow: #{inspect(reason)}")
-        end
-
         broadcast_workflows_changed(workflow.project)
         {:ok, issue}
 
@@ -98,7 +94,8 @@ defmodule Rail.Workflows.Utils.OpenWorkflowIssue do
         from i in Issue,
           where: i.workflow_id == ^workflow.id and i.project_id == ^workflow.project_id,
           order_by: [desc: i.inserted_at],
-          limit: 1
+          limit: 1,
+          preload: [:task]
       )
 
     if last != nil and not Issue.finished_state?(last.state), do: {:error, {:unfinished, last}}, else: :ok

@@ -5,15 +5,24 @@ defmodule Rail.Workflows.Workers.StartWorkflowTest do
   import ExUnit.CaptureLog
 
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.Task
   alias Rail.Workflows.Schemas.Workflow
+  alias Rail.Workflows.Schemas.WorkflowDefinition
   alias Rail.Workflows.Workers.StartWorkflow
 
   setup %{project: project} do
-    [workflow] = sync_workflow_files(project, %{".rail/workflows/dependency-updates.yml" => workflow_yaml()})
+    workflow =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/dependency-updates.yml",
+        definition: %WorkflowDefinition{
+          name: "Dependency updates",
+          schedule: "0 9 * * 1",
+          instructions: "Update the dependencies."
+        },
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      })
+
     stub(DateTime, :utc_now, fn -> ~U[2026-10-12 09:00:30.000000Z] end)
-    stub(Pipeline, :start_task, fn %Issue{}, :plan -> {:ok, %Task{}} end)
 
     %{workflow: workflow}
   end
@@ -21,7 +30,16 @@ defmodule Rail.Workflows.Workers.StartWorkflowTest do
   test "the job starts its workflow, and a later one finding its issue unfinished opens nothing", %{
     workflow: %{id: workflow_id}
   } do
-    expect_linear_issue("TST-84")
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_TST-84", "identifier" => "TST-84", "title" => "Dependency updates 2026-10-12"}
+          }
+        }
+      })
+    end)
 
     assert :ok = perform_job(StartWorkflow, %{workflow_id: workflow_id})
     assert [%Issue{identifier: "TST-84"}] = Repo.all(from(i in Issue, where: i.workflow_id == ^workflow_id))

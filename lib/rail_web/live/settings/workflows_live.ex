@@ -259,6 +259,9 @@ defmodule RailWeb.Settings.WorkflowsLive do
 
   defp run_message({:ok, %Issue{identifier: identifier}}, _workflow), do: "opened #{identifier}."
 
+  defp run_message({:error, {:unfinished, %Issue{identifier: identifier, task: nil}}}, _workflow),
+    do: "opened nothing: #{identifier} is still unfinished and has no task yet. You can start it from its page."
+
   defp run_message({:error, {:unfinished, %Issue{identifier: identifier}}}, _workflow),
     do: "opened nothing: #{identifier} is still unfinished."
 
