@@ -332,9 +332,9 @@ defmodule RailWeb.TaskLive do
   def handle_event("pick_discard", _params, %{assigns: %{discarding: true}} = socket), do: {:noreply, socket}
 
   def handle_event("pick_discard", %{"choice" => "plan"}, %{assigns: %{show_back_to_plan: true}} = socket),
-    do: {:noreply, assign(socket, :discard_choice, :plan)}
+    do: {:noreply, pick(socket, :plan)}
 
-  def handle_event("pick_discard", _params, socket), do: {:noreply, assign(socket, :discard_choice, :discard)}
+  def handle_event("pick_discard", _params, socket), do: {:noreply, pick(socket, :discard)}
 
   # The dialog stays until the action under way has its answer, which opens the issue or the plan, or says what failed.
   def handle_event("close_discard", _params, %{assigns: %{discarding: true}} = socket), do: {:noreply, socket}
@@ -359,7 +359,11 @@ defmodule RailWeb.TaskLive do
       |> assign(:discarding, true)
       |> assign(:discard_error, nil)
       |> assign(:discard_had_runs, Enum.any?(task.runs, &(Run.running?(&1) or Run.state(&1) == :blocked)))
-      |> start_async(:discard, fn -> {choice, act(choice, scope, task)} end)
+      |> start_async(:discard, fn ->
+        # Unlinked, so leaving the page does not cut Back to Plan off between its commit and the Planner's start.
+        action = Elixir.Task.Supervisor.async_nolink(Rail.TaskSupervisor, fn -> act(choice, scope, task) end)
+        {choice, Elixir.Task.await(action, :infinity)}
+      end)
 
     {:noreply, socket}
   end
@@ -603,11 +607,13 @@ defmodule RailWeb.TaskLive do
   end
 
   def handle_async(:discard, {:ok, {choice, {:error, reason}}}, socket) do
+    stopped = socket.assigns.discard_had_runs and after_stops?(reason)
+
     socket =
       socket
       |> assign(:discarding, false)
-      |> assign(:discard_error, discard_error(choice, reason))
-      |> assign(:discard_stopped, socket.assigns.discard_had_runs and after_stops?(reason))
+      |> assign(:discard_stopped, stopped)
+      |> assign(:discard_error, discard_error(choice, reason, stopped))
       |> refresh_task()
 
     {:noreply, socket}
@@ -617,7 +623,7 @@ defmodule RailWeb.TaskLive do
     socket =
       socket
       |> assign(:discarding, false)
-      |> assign(:discard_error, discard_error(socket.assigns.discard_choice, :crashed))
+      |> assign(:discard_error, discard_error(socket.assigns.discard_choice, :crashed, false))
       |> assign(:discard_stopped, false)
       |> refresh_task()
 
@@ -1269,30 +1275,46 @@ defmodule RailWeb.TaskLive do
   defp after_stops?(:task_busy), do: true
   defp after_stops?(_reason), do: false
 
-  defp discard_error(:plan, :not_discardable), do: "This task already went back to Plan, or was discarded or cleaned up."
+  defp pick(%{assigns: %{discard_choice: choice}} = socket, choice), do: socket
 
-  defp discard_error(:plan, :crashed), do: "Could not take the task back to Plan."
-  defp discard_error(_choice, reason), do: discard_error(reason)
+  # An error names the choice it came from, so it goes with that choice.
+  defp pick(socket, choice) do
+    socket
+    |> assign(:discard_choice, choice)
+    |> assign(:discard_error, nil)
+    |> assign(:discard_stopped, false)
+  end
 
-  defp discard_error({:branch_not_deleted, "" <> reason}),
-    do:
-      "GitHub refused to delete the branch: #{reason}. The runs are stopped; the worktree and ticket are as they were. " <>
-        "Discard again to finish."
+  defp discard_error(:plan, :not_discardable, _stopped),
+    do: "This task already went back to Plan, or was discarded or cleaned up."
 
-  defp discard_error({:branch_not_deleted, _reason}),
-    do:
-      "GitHub refused to delete the branch. The runs are stopped; the worktree and ticket are as they were. " <>
-        "Discard again to finish."
+  defp discard_error(:discard, :not_discardable, _stopped), do: "This task was already discarded or cleaned up."
 
-  defp discard_error({:pull_request_not_closed, _reason}),
-    do:
-      "GitHub refused to close the pull request. The runs are stopped; the worktree and ticket are as they were. " <>
-        "Discard again to finish."
+  defp discard_error(choice, {:branch_not_deleted, "" <> reason}, stopped),
+    do: "GitHub refused to delete the branch: #{reason}. " <> left_as_was(choice, stopped)
 
-  defp discard_error(:task_busy), do: "A run was still finishing. Discard again to stop it."
-  defp discard_error(:merging), do: "A merge is in progress. Discard once it finishes or fails."
-  defp discard_error(:not_discardable), do: "This task was already discarded or cleaned up."
-  defp discard_error(_reason), do: "Could not discard the task."
+  defp discard_error(choice, {:branch_not_deleted, _reason}, stopped),
+    do: "GitHub refused to delete the branch. " <> left_as_was(choice, stopped)
+
+  defp discard_error(choice, {:pull_request_not_closed, _reason}, stopped),
+    do: "GitHub refused to close the pull request. " <> left_as_was(choice, stopped)
+
+  defp discard_error(choice, :task_busy, _stopped), do: "A run was still finishing. #{again(choice)} to stop it."
+
+  defp discard_error(:plan, :merging, _stopped),
+    do: "A merge is in progress. Take it back to Plan once it finishes or fails."
+
+  defp discard_error(:discard, :merging, _stopped), do: "A merge is in progress. Discard once it finishes or fails."
+  defp discard_error(:plan, _reason, _stopped), do: "Could not take the task back to Plan."
+  defp discard_error(:discard, _reason, _stopped), do: "Could not discard the task."
+
+  defp left_as_was(choice, true),
+    do: "The runs are stopped; the worktree and ticket are as they were. #{again(choice)} to finish."
+
+  defp left_as_was(choice, false), do: "The worktree and ticket are as they were. #{again(choice)} to finish."
+
+  defp again(:plan), do: "Click Back to Plan again"
+  defp again(:discard), do: "Discard again"
 
   defp claim_error(:already_assigned), do: "Somebody else claimed this issue first"
   defp claim_error(:linear_not_linked), do: "Link your Linear account in Settings before claiming an issue"

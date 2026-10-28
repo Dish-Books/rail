@@ -38,8 +38,13 @@ defmodule Rail.Pipeline.Actions.ReturnToPlan do
       else: {:error, :not_discardable}
   end
 
-  # What is on disk cannot be rolled back, so it goes first; the rows then land together or not at all.
+  # Retry and Re-record start runs without the task's lock, so one may have started while GitHub answered.
+  # What is on disk cannot be rolled back, so it goes next; the rows then land together or not at all.
   defp rewind(scope, %Task{id: task_id, issue: issue} = task) do
+    for run <- Repo.preload(task, :runs, force: true).runs,
+        Run.running?(run),
+        do: {:ok, _stopped, _queued} = Pipeline.stop_run(scope, run)
+
     :ok = Tools.stop_browser_session(task)
     remove_work(task)
 

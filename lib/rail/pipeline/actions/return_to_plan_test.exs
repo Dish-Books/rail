@@ -243,6 +243,39 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
     assert_enqueued(worker: SyncIssue, args: %{issue_id: issue_id, fields: ["state", "state_name"]})
   end
 
+  test "a run started while GitHub closed the pull request is stopped before its row goes", %{
+    scope: scope,
+    task: task,
+    issue: issue,
+    lead: lead
+  } do
+    {:ok, %Task{id: task_id} = task} = Pipeline.update_task(task, %{pr_number: 212})
+    pull_path = "/repos/#{issue.project.github_repo}/pulls/212"
+    test_pid = self()
+
+    # Runs in the test process, so the subscription is the test's.
+    Req.Test.stub(Client, fn
+      %{method: "POST", request_path: "/app/installations/8708/access_tokens"} = conn ->
+        Req.Test.json(conn, %{"token" => "ghs_return"})
+
+      %{method: "GET", request_path: ^pull_path} = conn ->
+        Req.Test.json(conn, %{"number" => 212, "state" => "open"})
+
+      %{method: "PATCH", request_path: ^pull_path} = conn ->
+        {:ok, %Run{id: run_id}} =
+          Pipeline.create_run(%{task_id: task_id, role_id: lead.id, status: :running, started_at: DateTime.utc_now()})
+
+        Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run_id}")
+        send(test_pid, {:started_mid_close, run_id})
+        Req.Test.json(conn, %{"number" => 212, "state" => "closed"})
+    end)
+
+    assert {:ok, %Task{id: ^task_id, stage: :plan}} = Pipeline.return_to_plan(scope, task)
+
+    assert_receive {:started_mid_close, run_id}
+    assert_receive {:run_changed, ^run_id}
+  end
+
   test "a task started without approval goes back the same way", %{scope: scope, task: task, first_id: first_id} do
     Repo.update_all(from(r in Round, where: r.id == ^first_id), set: [approved_at: nil])
     {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})

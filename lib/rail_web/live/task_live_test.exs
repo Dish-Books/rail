@@ -1268,7 +1268,14 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("#confirm-discard") |> render_click()
       render_async(view, 5_000)
 
-      assert has_element?(view, "#discard-error", "GitHub refused to delete the branch")
+      assert has_element?(
+               view,
+               "#discard-error",
+               "GitHub refused to delete the branch: Repository rule violations found. " <>
+                 "The worktree and ticket are as they were. Discard again to finish."
+             )
+
+      refute has_element?(view, "#discard-error", "runs are stopped")
       assert has_element?(view, "#discard-runs", "No runs in progress")
 
       expect(Pipeline, :discard_task, fn _scope, %Task{} -> {:error, :merging} end)
@@ -1405,7 +1412,11 @@ defmodule RailWeb.TaskLiveTest do
 
       for {result, said} <- [
             {{:error, :not_discardable}, "This task already went back to Plan, or was discarded or cleaned up."},
-            {{:error, {:branch_not_deleted, "Refused"}}, "GitHub refused to delete the branch: Refused."}
+            {{:error, {:branch_not_deleted, "Refused"}},
+             "GitHub refused to delete the branch: Refused. The runs are stopped; the worktree and ticket are as they " <>
+               "were. Click Back to Plan again to finish."},
+            {{:error, :task_busy}, "A run was still finishing. Click Back to Plan again to stop it."},
+            {{:error, :merging}, "A merge is in progress. Take it back to Plan once it finishes or fails."}
           ] do
         expect(Pipeline, :return_to_plan, fn _scope, %Task{} -> result end)
         view |> element("#confirm-discard") |> render_click()
@@ -1420,6 +1431,55 @@ defmodule RailWeb.TaskLiveTest do
       render_async(view, 5_000)
 
       assert has_element?(view, "#discard-error", "Could not take the task back to Plan.")
+    end
+
+    test "picking Back to Plan after a refused Start over clears the refusal", %{conn: conn, task: task} do
+      expect(Pipeline, :discard_task, fn _scope, %Task{} -> {:error, :task_busy} end)
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#discard-task") |> render_click()
+      view |> element("#confirm-discard") |> render_click()
+      render_async(view, 5_000)
+
+      view |> element("#discard-choice-discard input") |> render_click()
+      assert has_element?(view, "#discard-error", "A run was still finishing. Discard again to stop it.")
+
+      view |> element("#discard-choice-plan input") |> render_click()
+      refute has_element?(view, "#discard-error")
+      assert view |> element("#confirm-discard") |> render() =~ ~r/>\s*Back to Plan\s*</
+    end
+
+    test "Back to Plan goes on after the page that started it closes", %{
+      conn: conn,
+      project: project,
+      task: %Task{id: task_id, issue_id: issue_id} = task
+    } do
+      Process.flag(:trap_exit, true)
+      test_pid = self()
+
+      expect(Git, :delete_remote_branch, fn _project, _branch ->
+        send(test_pid, {:deleting, self()})
+        receive do: (:go -> :ok)
+      end)
+
+      Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#discard-task") |> render_click()
+      view |> element("#discard-choice-plan input") |> render_click()
+      view |> element("#confirm-discard") |> render_click()
+      assert_receive {:deleting, action}
+      # Its last writes land before the test's sandbox goes.
+      action_ref = Process.monitor(action)
+
+      # A page killed mid-query takes the test's connection with it, so it reloads after the stops first.
+      assert has_element?(view, "#confirm-discard[disabled]", "Going back…")
+      Process.exit(view.pid, :kill)
+      send(action, :go)
+
+      assert_receive {:issue_changed, ^issue_id}, 5_000
+      assert_receive {:DOWN, ^action_ref, :process, ^action, :normal}, 5_000
+      {:ok, %{id: plan_role_id}} = Roles.get_role(project_id: project.id, stage: :plan)
+      assert {:ok, %Task{stage: :plan}} = Pipeline.get_task(task_id)
+      assert [%Run{role_id: ^plan_role_id}] = Repo.all(from(r in Run, where: r.task_id == ^task_id))
     end
 
     test "a pick of Start over after Back to Plan goes back to it", %{conn: conn, task: task} do
