@@ -8,13 +8,14 @@ defmodule Rail.Mcp.Utils.McpTools do
   `Rail.Mcp.Actions.CallRunTool` is what runs them. A name that is not on a run's
   list is a name to forward, so this is also the gate.
 
-  Three registers, because Review's explorers and its demo recorder drive the
-  same browser for different reasons. `@browser_tools` is the browser itself and
-  belongs to neither: an explorer drives it to find out whether the change works,
-  the recorder drives it to show that it does, and the page does not care which.
-  Rail holds it, so it can keep the session alive between calls, film and stream
-  it, and take the whole thing down when the task leaves Review. Every other stage
-  reads code, and a browser would be a thing to get lost in.
+  Three registers, because Review's explorers, its demo recorder and the
+  engineer drive the same browser for different reasons. `@browser_tools` is the
+  browser itself and belongs to none of them: an explorer drives it to find out
+  whether the change works, the recorder to show that it does, and the engineer
+  to retake the screenshots the repository commits, such as a help center's, and
+  the page does not care which. Rail holds it, so it can keep the session alive
+  between calls, film and stream it, and take it down when the turn ends. Every
+  other stage reads code, and a browser would be a thing to get lost in.
 
   Rail does not drive it. `browser_connect` hands the agent its tab's DevTools
   address and a driver, and the agent writes and runs its own scripts against
@@ -99,7 +100,7 @@ defmodule Rail.Mcp.Utils.McpTools do
             "type" => "string",
             "description" =>
               "A name for this browser, a few letters, digits, spaces or dashes. Leave it out: yours is named for " <>
-                "your part, `qa`, `screens` or `demo`, and another name is another browser signed in as another account."
+                "your part, `qa`, `screens`, `demo` or `engineer`, and another name is another browser signed in as another account."
           },
           "account" => %{
             "type" => "string",
@@ -644,10 +645,10 @@ defmodule Rail.Mcp.Utils.McpTools do
 
   @doc """
   The tools Rail serves this run itself: the save tools each agent hands its output over with, the browser for
-  the two that drive the app, `ask_questions` for the agents a person talks to, and the knowledge base for all.
+  the three that drive the app, `ask_questions` for the agents a person talks to, and the knowledge base for all.
   """
   def mcp_tools(%Role{stage: :plan}), do: @design_tools ++ @plan_tools ++ @question_tools ++ @knowledge_tools
-  def mcp_tools(%Role{stage: :engineer}), do: @report_tools ++ @question_tools ++ @knowledge_tools
+  def mcp_tools(%Role{stage: :engineer}), do: @browser_tools ++ @report_tools ++ @question_tools ++ @knowledge_tools
   def mcp_tools(%Role{stage: :qa}), do: @browser_tools ++ @qa_tools ++ @report_tools ++ @knowledge_tools
   def mcp_tools(%Role{stage: :review}), do: @report_tools ++ @knowledge_tools
 

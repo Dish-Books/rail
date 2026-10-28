@@ -125,7 +125,11 @@ defmodule Rail.Pipeline.Actions.RunFinished do
     run
   end
 
-  defp end_turn(%Run{role: %Role{stage: :engineer}} = run, %OsProcess{kind: :agent}), do: say_uncommitted(run)
+  defp end_turn(%Run{role: %Role{stage: :engineer}, task: %Task{} = task} = run, %OsProcess{kind: :agent}) do
+    :ok = Tools.stop_browser_session(task, "engineer")
+    say_uncommitted(run)
+  end
+
   defp end_turn(%Run{} = run, %OsProcess{}), do: run
 
   # Rail sends on only what the agents that commit to the branch committed, so work left uncommitted is said.

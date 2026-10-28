@@ -250,6 +250,21 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
            ] = Repo.all(from s in BrowserSession, where: s.task_id == ^task.id, order_by: s.name)
   end
 
+  test "an engineer turn that ends closes the browser it retook screenshots in", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+
+    %BrowserSession{}
+    |> BrowserSession.changeset(%{task_id: task.id, name: "engineer", status: :running})
+    |> Repo.insert!()
+
+    {_run, os_process} = exited.(:engineer, %{})
+
+    assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: -1})
+
+    assert [%BrowserSession{name: "engineer", status: :finished, ended_reason: :closed}] =
+             Repo.all(from s in BrowserSession, where: s.task_id == ^task.id)
+  end
+
   # The code reviewer started beside QA, so QA's finish starts nothing while it works.
   test "a QA turn that saved its report latches done and starts nothing while the other checks work", %{
     task: task,
