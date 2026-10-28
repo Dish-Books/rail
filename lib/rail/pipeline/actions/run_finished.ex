@@ -56,7 +56,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
           |> settle_run(outcome)
           |> end_turn(os_process)
           |> finish(os_process, opts)
-          |> drain_queued_message(opts)
+          |> drain_queued_message(os_process, opts)
           |> send_rail_answers(os_process)
           |> broadcast_pipeline_changed()
 
@@ -234,14 +234,18 @@ defmodule Rail.Pipeline.Actions.RunFinished do
 
   # This run is idle now, so whatever the human queued on it while it worked goes
   # out. A run parked on a question is not idle: the answer goes first.
-  defp drain_queued_message(%Run{pending_chat: nil} = run, _opts), do: run
+  defp drain_queued_message(%Run{pending_chat: nil} = run, %OsProcess{}, _opts), do: run
+
+  # A setup that failed keeps its message until a person retries or writes again: sending it would only start the
+  # setup again, which fails the same way.
+  defp drain_queued_message(%Run{error: error} = run, %OsProcess{kind: :setup}, _opts) when is_binary(error), do: run
 
   # Finishing started another process on this run, running or in line, and the
   # message waits for it.
-  defp drain_queued_message(%Run{status: status} = run, _opts)
+  defp drain_queued_message(%Run{status: status} = run, %OsProcess{}, _opts)
        when status in [:running, :waiting_for_resources, :waiting_for_usage], do: run
 
-  defp drain_queued_message(%Run{} = run, opts) do
+  defp drain_queued_message(%Run{} = run, %OsProcess{}, opts) do
     if pending_questions(run.task_id) == [] do
       dispatch_message(run, opts)
     end

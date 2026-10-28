@@ -1168,6 +1168,28 @@ defmodule RailWeb.Live.RunConversationTest do
     assert html =~ ~s(id="queued-banner")
     assert html =~ ~s(id="send-queued-now")
     assert html =~ "Please add a test"
+    assert html =~ "(sends when #{roles[:engineer].name} is done)"
+  end
+
+  test "a message queued on a failed run waits for the role to run again", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :finished,
+        error: "The worktree setup script failed (Exited with code 1).",
+        pending_chat: "Please add a test",
+        started_at: DateTime.utc_now()
+      })
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+    assert [banner] = html |> Floki.parse_fragment!() |> Floki.find("#queued-banner")
+    assert Floki.text(banner) =~ "(sends when #{roles[:engineer].name} runs again)"
   end
 
   test "a run whose role is unknown still reads, with what it spent", %{task: task, roles: roles} do

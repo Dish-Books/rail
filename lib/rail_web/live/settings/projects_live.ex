@@ -3,6 +3,7 @@ defmodule RailWeb.Settings.ProjectsLive do
   use RailWeb, :live_view
 
   alias Rail.Projects
+  alias Rail.Projects.Schemas.EnvFile
   alias Rail.Projects.Schemas.Project
   alias Rail.Slack
   alias Rail.Triage
@@ -34,6 +35,7 @@ defmodule RailWeb.Settings.ProjectsLive do
       |> assign(:modal_title, nil)
       |> assign(:selected_project, nil)
       |> assign_changeset(nil)
+      |> assign_env_file(nil, nil, nil)
 
     {:ok, socket}
   end
@@ -109,7 +111,7 @@ defmodule RailWeb.Settings.ProjectsLive do
           >
             <li
               :for={project <- @projects}
-              class="p-6 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-700"
+              class="p-6 flex items-center justify-between gap-6 hover:bg-slate-100 dark:hover:bg-slate-700"
               id={"project-item-#{project.id}"}
             >
               <div class="min-w-0 space-y-1">
@@ -163,7 +165,15 @@ defmodule RailWeb.Settings.ProjectsLive do
                 </div>
               </div>
 
-              <div>
+              <div class="flex items-center gap-2 shrink-0">
+                <.button
+                  size="sm"
+                  phx-click="open_env_file"
+                  phx-value-project_id={project.id}
+                  id={"env-file-project-#{project.id}"}
+                >
+                  <.icon name="pi-key" class="h-3.5 w-3.5" /><span class="font-mono">.env</span>
+                </.button>
                 <.button
                   size="sm"
                   phx-click="edit_project"
@@ -822,6 +832,247 @@ defmodule RailWeb.Settings.ProjectsLive do
         </div>
       </div>
     </Layouts.app>
+
+    <div
+      :if={@env_project}
+      id="env-file-overlay"
+      class="fixed inset-0 z-50 flex items-start justify-center bg-zinc-950/60 p-4 pt-12"
+      phx-window-keydown={@close_env_file}
+      phx-key="Escape"
+    >
+      <.focus_wrap
+        id="env-file-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="env-file-title"
+        phx-mounted={JS.focus_first(to: "#env-file-form, #env-file-read-failed")}
+        class="w-full max-w-3xl max-h-[calc(100dvh-4rem)] overflow-y-auto rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-4 ring-1 ring-slate-200 dark:ring-slate-700"
+      >
+        <div class="flex items-start justify-between gap-4 border-b border-slate-200 dark:border-slate-700 pb-4">
+          <div class="min-w-0">
+            <h2
+              id="env-file-title"
+              class="text-lg font-semibold text-slate-900 dark:text-slate-100 break-words"
+            >
+              {@env_project.name} <span class="font-mono text-slate-400 font-normal">.env</span>
+            </h2>
+            <p
+              id="env-file-path"
+              class="mt-0.5 font-mono text-xs text-slate-500 dark:text-slate-400 truncate"
+            >
+              {@env_path}
+            </p>
+          </div>
+          <button
+            type="button"
+            id="close-env-file-button"
+            aria-label="Close"
+            phx-click={@close_env_file}
+            class="h-8 w-8 shrink-0 rounded-md flex items-center justify-center text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-indigo-500 cursor-pointer"
+          >
+            <.icon name="pi-x" class="size-4" />
+          </button>
+        </div>
+
+        <div :if={@env_read_error} id="env-file-read-failed" class="space-y-4">
+          <p
+            id="env-file-read-error"
+            class="text-xs text-red-600 dark:text-red-400 flex items-start gap-1.5"
+          >
+            <.icon name="pi-warning-circle" class="size-3.5 mt-0.5" />
+            <span>
+              Could not read <span class="font-mono break-all">{@env_path}</span>: {@env_read_error}. Fix the file on the machine, then open it again.
+            </span>
+          </p>
+          <div class="flex flex-wrap items-center justify-end gap-3 pt-2 border-t border-slate-200 dark:border-slate-700">
+            <.button id="close-env-read-error-button" phx-click={@close_env_file}>Close</.button>
+          </div>
+        </div>
+
+        <.form
+          :let={form}
+          :if={!@env_read_error}
+          for={@env_changeset}
+          as={:env_file}
+          id="env-file-form"
+          phx-change="validate_env_file"
+          phx-submit="save_env_file"
+          class="space-y-4"
+        >
+          <div
+            :if={@show_env_empty}
+            id="env-file-empty"
+            class="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 px-5 py-4 text-sm text-slate-500 dark:text-slate-400"
+          >
+            <p class="font-medium text-slate-700 dark:text-slate-300">No variables yet.</p>
+            <p class="mt-1 break-words">
+              Rail writes them to
+              <code class="font-mono text-[13px] text-slate-700 dark:text-slate-300 break-all">{@env_path}</code>
+              and every worktree of {@env_project.name} once you save.
+            </p>
+          </div>
+
+          <div
+            :if={!@show_env_empty}
+            class="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden"
+          >
+            <table class="w-full table-fixed text-sm">
+              <thead>
+                <tr class="text-left text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-950/50">
+                  <th class="py-2 pl-4 pr-2 font-medium w-[36%]">Name</th>
+                  <th class="py-2 px-2 font-medium">Value</th>
+                  <th class="w-10"><span class="sr-only">Show</span></th>
+                  <th class="w-10"><span class="sr-only">Remove</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                <.inputs_for :let={variable} field={form[:variables]} skip_hidden>
+                  <tr
+                    id={"env-row-#{variable[:id].value}"}
+                    class="border-t border-slate-200 dark:border-slate-700 align-top"
+                  >
+                    <td class="py-2 pl-4 pr-2">
+                      <input type="hidden" name={variable[:id].name} value={variable[:id].value} />
+                      <input type="hidden" name="env_file[variables_sort][]" value={variable.index} />
+                      <input
+                        type="text"
+                        id={"env-name-#{variable[:id].value}"}
+                        name={variable[:name].name}
+                        value={variable[:name].value}
+                        placeholder="NAME"
+                        aria-label="Name"
+                        aria-invalid={to_string(name_error(variable, @env_changeset) != nil)}
+                        aria-describedby={
+                          name_error(variable, @env_changeset) &&
+                            "env-name-error-#{variable[:id].value}"
+                        }
+                        autocomplete="off"
+                        spellcheck="false"
+                        class={[
+                          "block w-full min-w-0 rounded-md border bg-white dark:bg-slate-800 px-2.5 py-1.5 font-mono text-[12.5px] focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sky-700 dark:text-sky-300 placeholder:text-slate-500",
+                          name_error(variable, @env_changeset) &&
+                            "border-red-500 dark:border-red-500/80",
+                          !name_error(variable, @env_changeset) &&
+                            "border-slate-200 dark:border-slate-700"
+                        ]}
+                      />
+                      <p
+                        :if={name_error(variable, @env_changeset)}
+                        id={"env-name-error-#{variable[:id].value}"}
+                        class="mt-1 text-xs text-red-600 dark:text-red-400 break-words"
+                      >
+                        {name_error(variable, @env_changeset)}
+                      </p>
+                    </td>
+                    <td class="py-2 px-2">
+                      <input
+                        type="password"
+                        id={"env-value-#{variable[:id].value}"}
+                        name={variable[:value].name}
+                        value={variable[:value].value}
+                        placeholder="value"
+                        aria-label={labelled("Value of", variable[:name].value)}
+                        autocomplete="off"
+                        spellcheck="false"
+                        class="block w-full min-w-0 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 font-mono text-[12.5px] focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder:text-slate-500"
+                      />
+                    </td>
+                    <td class="py-2 pr-1">
+                      <button
+                        type="button"
+                        id={"env-show-#{variable[:id].value}"}
+                        aria-label="Show value"
+                        aria-pressed="false"
+                        phx-click={
+                          JS.toggle_attribute({"type", "text", "password"},
+                            to: "#env-value-#{variable[:id].value}"
+                          )
+                          |> JS.toggle_attribute({"aria-pressed", "true", "false"})
+                          |> JS.toggle_attribute({"aria-label", "Hide value", "Show value"})
+                          |> JS.toggle_class("hidden",
+                            to:
+                              "#env-eye-#{variable[:id].value}, #env-eye-slash-#{variable[:id].value}"
+                          )
+                        }
+                        class="h-8 w-8 rounded-md flex items-center justify-center text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-indigo-500 cursor-pointer"
+                      >
+                        <%!-- Keyed by the row, so a row removed above never hands its toggled icon to this one. --%>
+                        <.icon id={"env-eye-#{variable[:id].value}"} name="pi-eye" class="size-4" />
+                        <.icon
+                          id={"env-eye-slash-#{variable[:id].value}"}
+                          name="pi-eye-slash"
+                          class="size-4 hidden"
+                        />
+                      </button>
+                    </td>
+                    <td class="py-2 pr-3">
+                      <label class="h-8 w-8 rounded-md flex items-center justify-center text-slate-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-slate-200 dark:hover:bg-slate-700 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-indigo-500 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          id={"env-remove-#{variable[:id].value}"}
+                          name="env_file[variables_drop][]"
+                          value={variable.index}
+                          aria-label={labelled("Remove", variable[:name].value)}
+                          class="sr-only"
+                        />
+                        <.icon name="pi-trash" class="size-4" />
+                      </label>
+                    </td>
+                  </tr>
+                </.inputs_for>
+              </tbody>
+            </table>
+          </div>
+          <input type="hidden" name="env_file[variables_drop][]" />
+
+          <button
+            type="button"
+            id="add-env-variable"
+            name="env_file[variables_sort][]"
+            value="new"
+            phx-click={JS.dispatch("change")}
+            class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-indigo-500 cursor-pointer"
+          >
+            <.icon name="pi-plus" class="size-4" />Add variable
+          </button>
+          <p class="text-xs text-slate-500 dark:text-slate-400">
+            Saved into the clone and every worktree of this project, and into each new worktree once it is set up.
+            A variable here replaces a worktree's own line for the same name, so leave its ports to its setup script.
+            Git ignores the file.
+          </p>
+          <p
+            :if={@env_error}
+            id="env-file-error"
+            class="text-xs text-red-600 dark:text-red-400 flex items-start gap-1.5"
+          >
+            <.icon name="pi-warning-circle" class="size-3.5 mt-0.5" />
+            <span>
+              Could not write <span class="font-mono break-all">{@env_path}</span>: {@env_error}. Nothing was saved.
+            </span>
+          </p>
+          <p
+            :for={{{path, message}, index} <- Enum.with_index(@env_refused)}
+            id={"env-file-refused-#{index}"}
+            class="text-xs text-red-600 dark:text-red-400 flex items-start gap-1.5"
+          >
+            <.icon name="pi-warning-circle" class="size-3.5 mt-0.5" />
+            <span class="break-all">Not written to {path}: {message}.</span>
+          </p>
+
+          <div class="flex flex-wrap items-center justify-end gap-3 pt-2 border-t border-slate-200 dark:border-slate-700">
+            <span
+              :if={@env_saved}
+              id="env-file-saved"
+              class="text-xs text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-1"
+            >
+              <.icon name="pi-check-bold" class="size-3.5" />{@env_saved}
+            </span>
+            <.button id="cancel-env-file-button" phx-click={@close_env_file}>Close</.button>
+            <.button variant="primary" type="submit" id="save-env-file-button">Save</.button>
+          </div>
+        </.form>
+      </.focus_wrap>
+    </div>
     """
   end
 
@@ -985,6 +1236,60 @@ defmodule RailWeb.Settings.ProjectsLive do
     end
   end
 
+  def handle_event("open_env_file", %{"project_id" => project_id}, socket) do
+    project = Enum.find(socket.assigns.projects, &(&1.id == project_id))
+
+    socket =
+      case Projects.read_env_file(socket.assigns.current_scope, project) do
+        {:ok, %EnvFile{} = env_file} ->
+          assign_env_file(socket, project, env_file, EnvFile.changeset(env_file, %{}))
+
+        # No form, since Save on one that opened empty would overwrite a file nobody could see.
+        {:error, reason} when reason != :not_authorized ->
+          socket
+          |> assign_env_file(project, nil, nil)
+          |> assign(:env_read_error, to_string(:file.format_error(reason)))
+      end
+
+    {:noreply, socket}
+  end
+
+  # Each change is cast from the file as it was read, so the rows the form sends are the whole list.
+  def handle_event("validate_env_file", %{"env_file" => params}, socket) do
+    changeset = socket.assigns.env_file |> EnvFile.changeset(params) |> Map.put(:action, :validate)
+
+    socket = assign_env_file(socket, socket.assigns.env_project, socket.assigns.env_file, changeset)
+    {:noreply, socket}
+  end
+
+  def handle_event("save_env_file", %{"env_file" => params}, socket) do
+    %{env_project: project, env_file: env_file} = socket.assigns
+
+    socket =
+      case Projects.save_env_file(socket.assigns.current_scope, project, params) do
+        {:ok, %{written: written, refused: refused}} ->
+          socket
+          |> assign_env_file(project, env_file, EnvFile.changeset(env_file, params))
+          |> assign(:env_saved, saved_message(written))
+          |> assign(:env_refused, refused)
+
+        {:error, %Ecto.Changeset{} = changeset} ->
+          assign_env_file(socket, project, env_file, changeset)
+
+        {:error, reason} ->
+          socket
+          |> assign_env_file(project, env_file, EnvFile.changeset(env_file, params))
+          |> assign(:env_error, to_string(:file.format_error(reason)))
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("close_env_file", _params, socket) do
+    socket = assign_env_file(socket, nil, nil, nil)
+    {:noreply, socket}
+  end
+
   # An edit from anywhere, such as a learnings channel picked on the Learnings page, shows here too.
   def handle_info({:project_changed, project_id}, socket) do
     if Enum.any?(socket.assigns.projects, &(&1.id == project_id)),
@@ -994,6 +1299,41 @@ defmodule RailWeb.Settings.ProjectsLive do
 
   # The navigation hook subscribes this view to pipeline events it does not use.
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  # Opening, closing and every change clear the last save's result, so it only ever speaks for the rows shown.
+  defp assign_env_file(socket, project, env_file, changeset) do
+    # Closing hands focus back to the button that opened it, as the modal leaves the page with it.
+    close = project && JS.push(JS.focus(to: "#env-file-project-#{project.id}"), "close_env_file")
+
+    socket
+    |> assign(:env_project, project)
+    |> assign(:env_file, env_file)
+    |> assign(:env_changeset, changeset)
+    |> assign(:env_path, project && Path.join(project.clone_path, ".env"))
+    |> assign(:show_env_empty, changeset != nil and Ecto.Changeset.get_field(changeset, :variables) == [])
+    |> assign(:close_env_file, close)
+    |> assign(:env_saved, nil)
+    |> assign(:env_error, nil)
+    |> assign(:env_refused, [])
+    |> assign(:env_read_error, nil)
+  end
+
+  # A row just added shows no error until its name has been touched or the form is saved.
+  defp name_error(variable, %Ecto.Changeset{action: action}) do
+    with true <- action == :save or Phoenix.Component.used_input?(variable[:name]),
+         [{message, _opts} | _others] <- variable[:name].errors do
+      message
+    else
+      _untouched_or_valid -> nil
+    end
+  end
+
+  defp labelled(prefix, name) when name in [nil, ""], do: String.replace_suffix(prefix, " of", "")
+  defp labelled(prefix, name), do: "#{prefix} #{name}"
+
+  defp saved_message(0), do: "Saved to the clone"
+  defp saved_message(1), do: "Saved to the clone and 1 worktree"
+  defp saved_message(worktrees), do: "Saved to the clone and #{worktrees} worktrees"
 
   defp assign_changeset(socket, changeset) do
     tracker = changeset && Ecto.Changeset.get_field(changeset, :tracker)

@@ -7,6 +7,7 @@ defmodule Rail.Git do
   stage. The agent commits there itself, as the ticket's owner and signed with
   their key, which Rail writes into the worktree's own config for as long as the
   worktree lasts. Pushing stays Rail's, since the credential is the project's.
+  The clone's `.env` is the project's, and reaches every worktree once it is set up.
   Reading the result is the other half of the same thing, so parsing a diff and
   remembering who has read which file of it live here too.
   """
@@ -41,6 +42,9 @@ defmodule Rail.Git do
   defdelegate list_default_branch_files(project, directory), to: Actions.ListDefaultBranchFiles
   defdelegate list_default_branch_paths(project, paths), to: Actions.ListDefaultBranchPaths
   defdelegate list_branch_paths(task, paths), to: Actions.ListBranchPaths
+  defdelegate read_env_file(project), to: Actions.ReadEnvFile
+  defdelegate save_env_file(project, content), to: Actions.SaveEnvFile
+  defdelegate copy_env_file(project, worktree_path), to: Actions.CopyEnvFile
 
   # `filter` is `:branch`, `:uncommitted`, or `{:commit, sha}` for one commit against its first parent.
   defdelegate load_diff(scope, task, filter \\ :branch, previous_files \\ []), to: Actions.LoadDiff
