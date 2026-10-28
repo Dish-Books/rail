@@ -38,9 +38,10 @@ defmodule Rail.Triage.Actions.TriageThread do
   @timeout to_timeout(minute: 30)
 
   @doc """
-  Triages `thread`. Returns `:ok`, `{:snooze, 30}` when another pass holds it, or
-  `{:waiting_for_usage, resets_at}` when every account is used up, which is no
-  failure. A pass that fails records why on the thread and leaves its items as they were.
+  Triages `thread`. Returns `:ok`, `{:snooze, 30}` when another pass holds it or
+  one of the role's MCP servers did not answer, or `{:waiting_for_usage, resets_at}`
+  when every account is used up, none of which is a failure. A pass that fails
+  records why on the thread and leaves its items as they were.
   """
   def triage_thread(%Thread{id: thread_id}) do
     {token, hash} = Mcp.issue_run_token()
@@ -73,6 +74,7 @@ defmodule Rail.Triage.Actions.TriageThread do
 
     case outcome do
       {:error, {:waiting_for_usage, resets_at}} -> {:waiting_for_usage, resets_at}
+      {:error, {:mcp_unreachable, _names}} -> {:snooze, 30}
       _ran_or_failed -> :ok
     end
   end
@@ -150,10 +152,12 @@ defmodule Rail.Triage.Actions.TriageThread do
 
   # The agent finds existing issues through the role's MCP servers, so a pass
   # without them would draft duplicates rather than fail: it is stopped here,
-  # saying what to fix before a retry.
+  # saying what to fix before a retry. A server that did not answer is no
+  # failure: the pass is tried again until it does.
   defp check_tools(%Thread{project: project}, role) do
     case Mcp.check_run_tools(%RunContext{role: role, user: project.triage_user}) do
       :ok -> :ok
+      {:error, {:mcp_unreachable, _names}} = unreachable -> unreachable
       {:error, reason} -> {:error, tools_error(reason, project.triage_user)}
     end
   end
@@ -166,9 +170,6 @@ defmodule Rail.Triage.Actions.TriageThread do
     do:
       "#{Enum.join(names, ", ")} needs reconnecting for #{user.name || user.login}. " <>
         "Reconnect it under Settings → Connected accounts, then retry."
-
-  defp tools_error({:mcp_unreachable, names}, _user),
-    do: "Could not reach #{Enum.join(names, ", ")}, so triage did not run. Retry once it answers."
 
   defp write_files(%Thread{} = thread) do
     dir = Thread.scratch_path(thread)
@@ -224,6 +225,7 @@ defmodule Rail.Triage.Actions.TriageThread do
 
   defp finish(_thread, :nothing), do: :ok
   defp finish(_thread, {:error, {:waiting_for_usage, _resets_at}}), do: :ok
+  defp finish(_thread, {:error, {:mcp_unreachable, _names}}), do: :ok
 
   defp finish(%Thread{id: thread_id} = thread, {:error, reason}) do
     Repo.update_all(from(i in Item, where: i.thread_id == ^thread_id and i.retriaging), set: [retriaging: false])
