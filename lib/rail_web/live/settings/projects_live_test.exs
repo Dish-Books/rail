@@ -1319,6 +1319,55 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
       assert has_element?(view, "#env-file-saved", "Saved to the clone and 1 worktree")
     end
 
+    test "a clone whose .env cannot be read says why, offers no Save, and closes", %{
+      admin_conn: conn,
+      env: %{none: %{project: project}}
+    } do
+      File.mkdir_p!(Path.join(project.clone_path, ".env"))
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+
+      view |> element("#env-file-project-#{project.id}") |> render_click()
+
+      assert has_element?(
+               view,
+               "#env-file-read-error",
+               "Could not read #{project.clone_path}/.env: illegal operation on a directory. " <>
+                 "Fix the file on the machine, then open it again."
+             )
+
+      refute has_element?(view, "#env-file-form")
+      refute has_element?(view, "#save-env-file-button")
+
+      view |> element("#close-env-read-error-button") |> render_click()
+      refute has_element?(view, "#env-file-modal")
+    end
+
+    test "a worktree whose .env cannot be written is named, the others are written, and a change clears it", %{
+      admin_conn: conn,
+      env: %{two: %{project: project, worktrees: [refused, written]}}
+    } do
+      File.write!(Path.join(project.clone_path, ".env"), "FOO=1\n")
+      File.mkdir_p!(Path.join(refused, ".env"))
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+
+      view |> element("#env-file-project-#{project.id}") |> render_click()
+      view |> form("#env-file-form") |> render_submit()
+
+      assert has_element?(view, "#env-file-saved", "Saved to the clone and 1 worktree")
+
+      assert has_element?(
+               view,
+               "#env-file-refused-0",
+               "Not written to #{refused}: #{refused}/.env: illegal operation on a directory."
+             )
+
+      refute has_element?(view, "#env-file-refused-1")
+      assert File.read!(Path.join(written, ".env")) =~ "\nFOO=1\n"
+
+      view |> form("#env-file-form") |> render_change()
+      refute has_element?(view, "#env-file-refused-0")
+    end
+
     test "closing the modal removes it, and opening it again reads the file afresh", %{
       admin_conn: conn,
       env: %{none: %{project: project}}

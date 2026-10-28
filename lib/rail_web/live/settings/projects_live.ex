@@ -845,7 +845,7 @@ defmodule RailWeb.Settings.ProjectsLive do
         role="dialog"
         aria-modal="true"
         aria-labelledby="env-file-title"
-        phx-mounted={JS.focus_first(to: "#env-file-form")}
+        phx-mounted={JS.focus_first(to: "#env-file-form, #env-file-read-failed")}
         class="w-full max-w-3xl max-h-[calc(100dvh-4rem)] overflow-y-auto rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-4 ring-1 ring-slate-200 dark:ring-slate-700"
       >
         <div class="flex items-start justify-between gap-4 border-b border-slate-200 dark:border-slate-700 pb-4">
@@ -874,8 +874,24 @@ defmodule RailWeb.Settings.ProjectsLive do
           </button>
         </div>
 
+        <div :if={@env_read_error} id="env-file-read-failed" class="space-y-4">
+          <p
+            id="env-file-read-error"
+            class="text-xs text-red-600 dark:text-red-400 flex items-start gap-1.5"
+          >
+            <.icon name="pi-warning-circle" class="size-3.5 mt-0.5" />
+            <span>
+              Could not read <span class="font-mono break-all">{@env_path}</span>: {@env_read_error}. Fix the file on the machine, then open it again.
+            </span>
+          </p>
+          <div class="flex flex-wrap items-center justify-end gap-3 pt-2 border-t border-slate-200 dark:border-slate-700">
+            <.button id="close-env-read-error-button" phx-click={@close_env_file}>Close</.button>
+          </div>
+        </div>
+
         <.form
           :let={form}
+          :if={!@env_read_error}
           for={@env_changeset}
           as={:env_file}
           id="env-file-form"
@@ -1033,6 +1049,14 @@ defmodule RailWeb.Settings.ProjectsLive do
             <span>
               Could not write <span class="font-mono break-all">{@env_path}</span>: {@env_error}. Nothing was saved.
             </span>
+          </p>
+          <p
+            :for={{{path, message}, index} <- Enum.with_index(@env_refused)}
+            id={"env-file-refused-#{index}"}
+            class="text-xs text-red-600 dark:text-red-400 flex items-start gap-1.5"
+          >
+            <.icon name="pi-warning-circle" class="size-3.5 mt-0.5" />
+            <span class="break-all">Not written to {path}: {message}.</span>
           </p>
 
           <div class="flex flex-wrap items-center justify-end gap-3 pt-2 border-t border-slate-200 dark:border-slate-700">
@@ -1214,9 +1238,19 @@ defmodule RailWeb.Settings.ProjectsLive do
 
   def handle_event("open_env_file", %{"project_id" => project_id}, socket) do
     project = Enum.find(socket.assigns.projects, &(&1.id == project_id))
-    env_file = Projects.read_env_file(socket.assigns.current_scope, project)
 
-    socket = assign_env_file(socket, project, env_file, EnvFile.changeset(env_file, %{}))
+    socket =
+      case Projects.read_env_file(socket.assigns.current_scope, project) do
+        {:ok, %EnvFile{} = env_file} ->
+          assign_env_file(socket, project, env_file, EnvFile.changeset(env_file, %{}))
+
+        # No form, since Save on one that opened empty would overwrite a file nobody could see.
+        {:error, reason} when reason != :not_authorized ->
+          socket
+          |> assign_env_file(project, nil, nil)
+          |> assign(:env_read_error, to_string(:file.format_error(reason)))
+      end
+
     {:noreply, socket}
   end
 
@@ -1233,10 +1267,11 @@ defmodule RailWeb.Settings.ProjectsLive do
 
     socket =
       case Projects.save_env_file(socket.assigns.current_scope, project, params) do
-        {:ok, worktrees} ->
+        {:ok, %{written: written, refused: refused}} ->
           socket
           |> assign_env_file(project, env_file, EnvFile.changeset(env_file, params))
-          |> assign(:env_saved, saved_message(worktrees))
+          |> assign(:env_saved, saved_message(written))
+          |> assign(:env_refused, refused)
 
         {:error, %Ecto.Changeset{} = changeset} ->
           assign_env_file(socket, project, env_file, changeset)
@@ -1275,10 +1310,12 @@ defmodule RailWeb.Settings.ProjectsLive do
     |> assign(:env_file, env_file)
     |> assign(:env_changeset, changeset)
     |> assign(:env_path, project && Path.join(project.clone_path, ".env"))
-    |> assign(:show_env_empty, changeset && Ecto.Changeset.get_field(changeset, :variables) == [])
+    |> assign(:show_env_empty, changeset != nil and Ecto.Changeset.get_field(changeset, :variables) == [])
     |> assign(:close_env_file, close)
     |> assign(:env_saved, nil)
     |> assign(:env_error, nil)
+    |> assign(:env_refused, [])
+    |> assign(:env_read_error, nil)
   end
 
   # A row just added shows no error until its name has been touched or the form is saved.

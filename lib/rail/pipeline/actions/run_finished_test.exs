@@ -659,6 +659,25 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
       refute File.exists?(Path.join(worktree, ".env"))
     end
+
+    test "whose .env cannot be written fails, is not set up, and enters no stage", %{
+      task: task,
+      worktree: worktree,
+      exited: exited
+    } do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
+      File.mkdir_p!(Path.join(worktree, ".env"))
+      {%Run{id: setup_run_id}, os_process} = exited.(:engineer, %{})
+      os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
+
+      reject(Tools, :start_os_process, 2)
+
+      assert {:ok, %Run{error: "Rail could not write the project's .env into the worktree (" <> _rest}} =
+               Pipeline.run_finished(os_process, %{exit_code: 0})
+
+      assert %Task{worktree_setup_at: nil} = Repo.reload!(task)
+      assert [%Run{id: ^setup_run_id}] = Repo.all(from(r in Run, where: r.task_id == ^task.id))
+    end
   end
 
   describe "an engineer hand-over into a machine with no room for its CI" do

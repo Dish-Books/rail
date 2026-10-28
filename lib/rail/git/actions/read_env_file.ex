@@ -4,12 +4,13 @@ defmodule Rail.Git.Actions.ReadEnvFile do
   alias Rail.Projects.Schemas.Project
 
   @doc """
-  The text of `project`'s `.env`, in its clone, or `""` when the clone has none.
+  `{:ok, text}` of `project`'s `.env` in its clone, `{:ok, ""}` when the clone has none, or `{:error, posix}`.
   """
   def read_env_file(%Project{clone_path: clone}) do
     case File.read(Path.join(clone, ".env")) do
-      {:ok, text} -> text
-      {:error, :enoent} -> ""
+      {:ok, text} -> {:ok, text}
+      {:error, :enoent} -> {:ok, ""}
+      {:error, reason} -> {:error, reason}
     end
   end
 end

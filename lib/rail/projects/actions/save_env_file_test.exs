@@ -12,7 +12,7 @@ defmodule Rail.Projects.Actions.SaveEnvFileTest do
   end
 
   test "an admin saves the rows as one NAME=value line each, in order", %{project: project} do
-    assert {:ok, 0} =
+    assert {:ok, %{written: 0, refused: []}} =
              Projects.save_env_file(temp_user_scope(admin: true), project, %{
                "variables" => %{
                  "0" => %{"name" => "ZED", "value" => "\"quoted\""},

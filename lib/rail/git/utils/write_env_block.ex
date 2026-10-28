@@ -8,10 +8,13 @@ defmodule Rail.Git.Utils.WriteEnvBlock do
 
   @doc """
   Writes the clone's `.env` into the top of `worktree_path`'s, between Rail's markers, keeping each of the
-  worktree's own lines that sets no variable the clone's does. Takes no lock: callers hold the clone's.
+  worktree's own lines that sets no variable the clone's does. Returns `:ok` or `{:error, "<path>: <reason>"}`.
   """
+  # Takes no lock: callers hold the clone's.
   def write_env_block(%Project{clone_path: clone}, worktree_path) when is_binary(worktree_path) do
-    case File.read(Path.join(clone, ".env")) do
+    source = Path.join(clone, ".env")
+
+    case File.read(source) do
       {:ok, project_env} ->
         ours = project_env |> String.split(~r/\r?\n/) |> Enum.reject(&(String.trim(&1) == ""))
         # Comments and blank lines name no variable, so they never knock out a worktree's own.
@@ -21,21 +24,32 @@ defmodule Rail.Git.Utils.WriteEnvBlock do
         kept =
           case File.read(target) do
             {:ok, text} ->
-              text
-              |> String.trim_trailing()
-              |> String.split("\n")
-              |> drop_block()
-              |> Enum.reject(&MapSet.member?(names, variable(&1)))
+              lines =
+                text
+                |> String.trim_trailing()
+                |> String.split("\n")
+                |> drop_block()
+                |> Enum.reject(&MapSet.member?(names, variable(&1)))
+
+              {:ok, lines}
 
             {:error, :enoent} ->
-              []
+              {:ok, []}
+
+            {:error, reason} ->
+              said({:error, reason}, target)
           end
 
-        exclude_env(clone)
-        File.write(target, Enum.join([@open | ours] ++ [@close | kept], "\n") <> "\n")
+        with {:ok, kept} <- kept,
+             :ok <- exclude_env(clone) do
+          target |> File.write(Enum.join([@open | ours] ++ [@close | kept], "\n") <> "\n") |> said(target)
+        end
 
       {:error, :enoent} ->
         :ok
+
+      {:error, reason} ->
+        said({:error, reason}, source)
     end
   end
 
@@ -63,15 +77,23 @@ defmodule Rail.Git.Utils.WriteEnvBlock do
   defp exclude_env(clone) do
     info = Path.join([clone, ".git", "info"])
     exclude = Path.join(info, "exclude")
-    File.mkdir_p!(info)
 
-    case File.read(exclude) do
-      {:ok, text} ->
-        if "/.env" not in String.split(text, ~r/\r?\n/),
-          do: File.write!(exclude, String.trim_trailing(text) <> "\n/.env\n")
+    with :ok <- info |> File.mkdir_p() |> said(info) do
+      case File.read(exclude) do
+        {:ok, text} ->
+          if "/.env" in String.split(text, ~r/\r?\n/),
+            do: :ok,
+            else: exclude |> File.write(String.trim_trailing(text) <> "\n/.env\n") |> said(exclude)
 
-      {:error, :enoent} ->
-        File.write!(exclude, "/.env\n")
+        {:error, :enoent} ->
+          exclude |> File.write("/.env\n") |> said(exclude)
+
+        {:error, reason} ->
+          said({:error, reason}, exclude)
+      end
     end
   end
+
+  defp said(:ok, _path), do: :ok
+  defp said({:error, reason}, path), do: {:error, "#{path}: #{:file.format_error(reason)}"}
 end

@@ -34,4 +34,19 @@ defmodule Rail.Git.Actions.CopyEnvFileTest do
     assert :ok = Git.copy_env_file(project, worktree)
     refute File.exists?(Path.join(worktree, ".env"))
   end
+
+  test "a worktree whose .env cannot be read says which file", %{project: project, worktree: worktree} do
+    File.write!(Path.join(project.clone_path, ".env"), "FOO=bar\n")
+    File.mkdir_p!(Path.join(worktree, ".env"))
+    message = "#{worktree}/.env: illegal operation on a directory"
+
+    assert {:error, ^message} = Git.copy_env_file(project, worktree)
+  end
+
+  test "a clone whose .env cannot be read says which file", %{project: project, worktree: worktree} do
+    File.mkdir_p!(Path.join(project.clone_path, ".env"))
+    source = Path.join(project.clone_path, ".env")
+
+    assert {:error, ^source <> ": " <> _reason} = Git.copy_env_file(project, worktree)
+  end
 end

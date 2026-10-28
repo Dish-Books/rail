@@ -53,7 +53,8 @@ defmodule Rail.Git.Actions.GetOrCreateWorktree do
       case Tools.run("git", args, cd: repo_path, stderr_to_stdout: true) do
         # With no script to wait on it is set up as it is made; otherwise the setup run copies the .env.
         {_out, 0} when project.worktree_setup_script in [nil, ""] ->
-          :ok = write_env_block(project, worktree_path)
+          with {:error, message} <- write_env_block(project, worktree_path),
+               do: remove_new_worktree(repo_path, worktree_path, message)
 
         {_out, 0} ->
           :ok
@@ -64,6 +65,19 @@ defmodule Rail.Git.Actions.GetOrCreateWorktree do
              "(git #{Enum.join(args, " ")} exited #{code}): #{String.trim(out)}"}
       end
     end)
+  end
+
+  # Removed, so the next attempt makes it again rather than finding a worktree with no .env.
+  defp remove_new_worktree(repo_path, worktree_path, message) do
+    case Tools.run("git", ["worktree", "remove", "--force", worktree_path], cd: repo_path, stderr_to_stdout: true) do
+      {_out, 0} ->
+        {:error, "Rail could not write the new worktree's .env (#{message}), so it removed the worktree."}
+
+      {out, _code} ->
+        {:error,
+         "Rail could not write the new worktree's .env (#{message}), and could not remove #{worktree_path} " <>
+           "(#{String.trim(out)}): remove it before retrying."}
+    end
   end
 
   defp branch_exists?(repo_path, branch) do

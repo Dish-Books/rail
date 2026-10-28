@@ -8,8 +8,8 @@ defmodule Rail.Projects.Actions.SaveEnvFile do
   @doc """
   Writes the rows in `attrs` as `project`'s `.env`, in its clone and every set-up worktree.
 
-  Returns `{:ok, worktrees_written}`, `{:error, changeset}` with nothing written when a row is wrong,
-  or `{:error, reason}` when the clone's file could not be written.
+  Returns `{:ok, %{written: count, refused: [{worktree_path, message}]}}`, `{:error, changeset}` with nothing
+  written when a row is wrong, or `{:error, reason}` when the clone's file could not be written.
   """
   def save_env_file(_scope, %Project{} = project, attrs) do
     with {:ok, %EnvFile{} = env_file} <- %EnvFile{} |> EnvFile.changeset(attrs) |> Ecto.Changeset.apply_action(:save) do

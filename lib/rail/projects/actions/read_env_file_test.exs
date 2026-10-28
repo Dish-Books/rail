@@ -13,19 +13,25 @@ defmodule Rail.Projects.Actions.ReadEnvFileTest do
   test "an admin reads the variables the clone's .env sets", %{project: project} do
     File.write!(Path.join(project.clone_path, ".env"), "# Secrets\nFOO=bar\nexport BAZ='q'\n")
 
-    assert %EnvFile{variables: [%Variable{name: "FOO", value: "bar"}, %Variable{name: "BAZ", value: "'q'"}]} =
+    assert {:ok, %EnvFile{variables: [%Variable{name: "FOO", value: "bar"}, %Variable{name: "BAZ", value: "'q'"}]}} =
              Projects.read_env_file(temp_user_scope(admin: true), project)
   end
 
   test "a clone with no .env has no variables", %{project: project} do
-    assert %EnvFile{variables: []} = Projects.read_env_file(temp_user_scope(admin: true), project)
+    assert {:ok, %EnvFile{variables: []}} = Projects.read_env_file(temp_user_scope(admin: true), project)
   end
 
   test "bytes that are not UTF-8 read as replaced rather than crash", %{project: project} do
     File.write!(Path.join(project.clone_path, ".env"), <<"FOO=a", 0xFF, "b\n">>)
 
-    assert %EnvFile{variables: [%Variable{name: "FOO", value: "a�b"}]} =
+    assert {:ok, %EnvFile{variables: [%Variable{name: "FOO", value: "a�b"}]}} =
              Projects.read_env_file(temp_user_scope(admin: true), project)
+  end
+
+  test "a clone whose .env cannot be read says why", %{project: project} do
+    File.mkdir_p!(Path.join(project.clone_path, ".env"))
+
+    assert {:error, :eisdir} = Projects.read_env_file(temp_user_scope(admin: true), project)
   end
 
   test "someone who is not an admin cannot read it", %{project: project} do
