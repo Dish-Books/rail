@@ -4617,6 +4617,7 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, _unsent} = Pipeline.create_diff_comment(scope, task, diff)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      _settled = render(view)
       assert has_element?(view, "#cleanup-task")
       assert has_element?(view, "#send-review-tray", "Send 1")
 

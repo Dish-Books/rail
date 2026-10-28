@@ -228,6 +228,8 @@ defmodule RailWeb.Live.TaskDetailTest do
     {:ok, _comment} = Pipeline.create_diff_comment(user_scope(user: user), task, Map.put(diff, :body, "Name it."))
 
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    # The stage hands the conversation its tray through the page, which queues behind the first render.
+    _settled = render(view)
     assert has_element?(view, "#send-review-tray", "Send 1")
     refute has_element?(view, "#send-review-tray[disabled]")
     refute has_element?(view, "#finish-review")
@@ -245,14 +247,17 @@ defmodule RailWeb.Live.TaskDetailTest do
     {:ok, _idle} = Pipeline.update_run(Repo.reload!(run), %{status: :finished})
     {:ok, merged} = Pipeline.update_task(finalizing, %{stage: :merged, merged_at: DateTime.utc_now()})
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    _settled = render(view)
     refute has_element?(view, "#review-send-tray")
 
     {:ok, _again} = Pipeline.create_diff_comment(user_scope(user: user), task, Map.put(diff, :body, "And this."))
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    _settled = render(view)
     assert has_element?(view, "#send-review-tray", "Send 1")
 
     {:ok, _cleaned} = Pipeline.update_task(merged, %{cleaned_up_at: DateTime.utc_now()})
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    _settled = render(view)
     refute has_element?(view, "#review-send-tray")
   end
 
@@ -263,6 +268,7 @@ defmodule RailWeb.Live.TaskDetailTest do
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), finding, :skip)
 
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    _settled = render(view)
     assert has_element?(view, "#review-send-tray", "Nothing to send")
     assert has_element?(view, "#review-send-tray-hint", "Nothing to fix. Finish review closes the review.")
     assert has_element?(view, "#decide-fix-view-only-send")
@@ -744,6 +750,7 @@ defmodule RailWeb.Live.TaskDetailTest do
     {:ok, _stopped} = engineer_run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished})
     {:ok, _reviewing} = Pipeline.update_task(fixing, %{stage: :review})
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    _settled = render(view)
 
     assert has_element?(view, "#review-send-tray-count", "1")
     view |> element("#review-send-tray-fold") |> render_click()
@@ -2035,6 +2042,7 @@ defmodule RailWeb.Live.TaskDetailTest do
       {:ok, _comment} = Pipeline.create_diff_comment(user_scope(user: user), task, Map.put(diff, :body, "And this."))
       {:ok, _comment} = Pipeline.create_diff_comment(user_scope(user: user), task, Map.put(diff, :body, "And that."))
       {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=fix_plan")
+      _settled = render(view)
 
       expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
       view |> element("#send-review-tray", "Send 2") |> render_click()

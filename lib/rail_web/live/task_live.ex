@@ -458,7 +458,12 @@ defmodule RailWeb.TaskLive do
       else: {:noreply, socket}
   end
 
-  def handle_info({:workflows_changed, project_id}, %{assigns: %{task: %Task{project_id: project_id}}} = socket) do
+  # Only a task a workflow opened names one, so no other page reads its task again on a sync.
+  def handle_info(
+        {:workflows_changed, project_id},
+        %{assigns: %{task: %Task{project_id: project_id, issue: %Issue{workflow_id: workflow_id}}}} = socket
+      )
+      when is_binary(workflow_id) do
     {:noreply, refresh_task(socket)}
   end
 
