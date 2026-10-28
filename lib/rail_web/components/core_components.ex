@@ -28,6 +28,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate diff_row(assigns), to: Components.DiffRow
   defdelegate diff_stat(assigns), to: Components.DiffStat
   defdelegate demo_player(assigns), to: Components.DemoPlayer
+  defdelegate discard_dialog(assigns), to: Components.DiscardDialog
   defdelegate dispatch_banner(assigns), to: Components.DispatchBanner
   defdelegate document_comment(assigns), to: Components.DocumentComment
   defdelegate element_preview(assigns), to: Components.ElementPreview

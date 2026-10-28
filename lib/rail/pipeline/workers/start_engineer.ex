@@ -18,7 +18,7 @@ defmodule Rail.Pipeline.Workers.StartEngineer do
 
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"task_id" => task_id}, inserted_at: approved_at}) do
-    with %Task{stage: :engineer} = task <- Repo.get(Task, task_id),
+    with %Task{stage: :engineer, cleaned_up_at: nil} = task <- Repo.get(Task, task_id),
          false <- spawned?(task, approved_at) do
       {:ok, _started} = Pipeline.enter_stage(task, :engineer, fresh: true)
       :ok

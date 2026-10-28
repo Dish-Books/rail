@@ -99,6 +99,17 @@ defmodule Rail.Issues.Schemas.Issue do
   end
 
   @doc """
+  A changeset putting the ticket back to not started, the one move backward Rail makes. The state is forced, so
+  the tracker is told even when Rail's copy already reads `todo`, and its name waits for the tracker's own.
+  """
+  def reset_changeset(issue) do
+    issue
+    |> change(state_name: nil)
+    |> force_change(:state, :todo)
+    |> sync_to_tracker()
+  end
+
+  @doc """
   A changeset linking the issue to the pull request found for it, or clearing it with nils. It is Rail's own
   record, so nothing goes to the tracker.
   """

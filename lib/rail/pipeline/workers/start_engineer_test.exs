@@ -101,6 +101,15 @@ defmodule Rail.Pipeline.Workers.StartEngineerTest do
     assert [] = Repo.preload(task, :runs, force: true).runs
   end
 
+  # A plan approved just before Discard must not rebuild the worktree and push the branch again.
+  test "a task cleaned up after the job was queued is left alone", %{task: task} do
+    reject(&Tools.start_os_process/2)
+    {:ok, %Task{}} = Pipeline.update_task(task, %{cleaned_up_at: DateTime.utc_now()})
+
+    assert :ok = perform_job(StartEngineer, %{task_id: task.id})
+    assert [] = Repo.preload(task, :runs, force: true).runs
+  end
+
   test "a task that is gone needs nothing" do
     assert :ok = perform_job(StartEngineer, %{task_id: "tsk_gone"})
   end
