@@ -74,7 +74,8 @@ defmodule Rail.Workflows.Actions.SyncWorkflowsTest do
     assert log =~ "Test Project's .rail/workflows/broken.yaml is invalid, so it starts nothing: schedule is not a cron"
     assert {:ok, [%Workflow{definition: nil, next_run_at: nil}]} = Workflows.list_workflows(system_scope(), [])
 
-    assert capture_log(fn -> assert {:ok, 0} = Workflows.sync_workflows(project) end) == ""
+    # Other async tests log too, so only this file's warning is looked for.
+    refute capture_log(fn -> assert {:ok, 0} = Workflows.sync_workflows(project) end) =~ "broken.yaml"
 
     merge.(%{".rail/workflows/broken.yaml" => @weekly})
     assert {:ok, 1} = Workflows.sync_workflows(project)
@@ -83,6 +84,24 @@ defmodule Rail.Workflows.Actions.SyncWorkflowsTest do
     merge.(%{".rail/workflows/broken.yaml" => "name: ["})
     assert capture_log(fn -> assert {:ok, 1} = Workflows.sync_workflows(project) end) =~ "not YAML"
     assert {:ok, [%Workflow{definition: nil, next_run_at: nil}]} = Workflows.list_workflows(system_scope(), [])
+  end
+
+  test "a file whose skip names a map is invalid, and the valid file beside it still syncs", %{
+    project: project,
+    merge: merge
+  } do
+    merge.(%{
+      ".rail/workflows/dependency-updates.yml" => @weekly,
+      ".rail/workflows/sweep.yml" => "name: Sweep\nschedule: \"0 6 * * *\"\ninstructions: Go\nskip:\n  - product: true\n"
+    })
+
+    capture_log(fn -> assert {:ok, 2} = Workflows.sync_workflows(project) end)
+    {:ok, workflows} = Workflows.list_workflows(system_scope(), [])
+
+    assert %Workflow{definition: nil, next_run_at: nil} = Enum.find(workflows, &(&1.path == ".rail/workflows/sweep.yml"))
+
+    assert %Workflow{definition: %WorkflowDefinition{name: "Dependency updates"}} =
+             Enum.find(workflows, &(&1.path == ".rail/workflows/dependency-updates.yml"))
   end
 
   test "a file git cannot read starts nothing, the same as one that does not parse", %{project: project, merge: merge} do

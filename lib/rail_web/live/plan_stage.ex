@@ -1,7 +1,8 @@
 defmodule RailWeb.Live.PlanStage do
   @moduledoc """
   The Plan step: the ticket, the design options and the plan, each a tab that switches in the browser, and the one
-  Approve in the header. A child of a split shows only its approved part.
+  Approve in the header. A child of a split shows only its approved part. A step the task's workflow turned off
+  reads as off, and with Product off the issue stands as the ticket.
 
   Everything here is read off scratch and the runs whenever the page reloads it, so a save shows
   the moment it lands. What waits on the human opens when the step opens, and only a click changes it after.
@@ -86,9 +87,22 @@ defmodule RailWeb.Live.PlanStage do
             aria-selected={to_string(tab.id == @open_tab.tab)}
             phx-mounted={JS.ignore_attributes(["aria-selected"])}
             phx-click={show_tab(@task, tab.id)}
-            class="shrink-0 inline-flex items-center gap-2 h-10 px-1 border-b-2 border-transparent text-[13.5px] font-semibold text-slate-500 dark:text-slate-400 not-aria-selected:hover:text-slate-900 dark:not-aria-selected:hover:text-slate-100 not-aria-selected:hover:border-slate-300 dark:not-aria-selected:hover:border-slate-500 aria-selected:border-indigo-500 dark:aria-selected:border-indigo-400 aria-selected:text-slate-900 dark:aria-selected:text-slate-100 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-t"
+            class={[
+              "shrink-0 inline-flex items-center gap-2 h-10 px-1 border-b-2 border-transparent text-[13.5px] font-semibold text-slate-500 dark:text-slate-400 not-aria-selected:hover:text-slate-900 dark:not-aria-selected:hover:text-slate-100 not-aria-selected:hover:border-slate-300 dark:not-aria-selected:hover:border-slate-500 aria-selected:border-indigo-500 dark:aria-selected:border-indigo-400 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-t",
+              tab.mark != :off && "aria-selected:text-slate-900 dark:aria-selected:text-slate-100"
+            ]}
           >
             {tab.label}
+            <span
+              :if={tab.mark == :off}
+              id={"plan-tab-#{tab.id}-off"}
+              data-qa="plan_tab_off"
+              title="Off for this workflow"
+              class="inline-flex text-slate-400 dark:text-slate-500"
+            >
+              <.icon name="pi-minus-circle" class="size-4" />
+              <span class="sr-only">, off for this workflow</span>
+            </span>
             <span
               :if={tab.mark == :pick}
               id={"plan-tab-#{tab.id}-waiting"}
@@ -112,6 +126,7 @@ defmodule RailWeb.Live.PlanStage do
         <div id={"plan-panels-#{@task.id}"} class="flex-1 min-h-0">
           <.plan_section id="ticket" open={@open_tab.tab}>
             <.ticket_pane
+              issue={if :product in @skipped, do: @task.issue}
               ticket={@ticket}
               lines={@ticket_lines}
               running={@running}
@@ -125,7 +140,14 @@ defmodule RailWeb.Live.PlanStage do
           </.plan_section>
 
           <.plan_section id="design" open={@open_tab.tab}>
+            <.step_off
+              :if={:design in @skipped}
+              id="plan-design-off"
+              icon="pi-palette"
+              text="This workflow turned Design off, so its tasks have no design options."
+            />
             <.design_pane
+              :if={:design not in @skipped}
               task={@task}
               design={@design}
               option={@option}
@@ -143,7 +165,14 @@ defmodule RailWeb.Live.PlanStage do
           </.plan_section>
 
           <.plan_section id="plan" open={@open_tab.tab}>
+            <.step_off
+              :if={:architect in @skipped}
+              id="plan-plan-off"
+              icon="pi-list-checks"
+              text={"This workflow turned Architect off, so there is no implementation plan. Engineer builds from #{if :product in @skipped, do: "the issue", else: "the ticket"}."}
+            />
             <.plan_pane
+              :if={:architect not in @skipped}
               plan={@plan}
               sheet={@sheet}
               banner={@banner}
@@ -356,6 +385,7 @@ defmodule RailWeb.Live.PlanStage do
 
   # --- Panes ---
 
+  attr :issue, :any, default: nil, doc: "the issue, which stands as the ticket when the workflow turned Product off"
   attr :ticket, :any, required: true
   attr :lines, :map, required: true, doc: "the ticket's title, priority and estimate lines, and its description's"
   attr :running, :boolean, required: true
@@ -365,6 +395,29 @@ defmodule RailWeb.Live.PlanStage do
   attr :draft, :map, default: nil
   attr :offered, :boolean, required: true
   attr :target, :any, required: true
+
+  defp ticket_pane(%{issue: %Issue{}} = assigns) do
+    ~H"""
+    <div id="plan-ticket-from-issue" data-qa="plan_ticket_from_issue" class="max-w-3xl select-text">
+      <p class="flex items-start gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+        <.icon name="pi-info" class="mt-0.5 size-3.5 shrink-0" />
+        Product is off for this workflow, so the issue's description is the ticket.
+      </p>
+      <h2
+        id="plan-ticket-issue-title"
+        class="mt-3 text-xl font-bold text-slate-900 dark:text-slate-100 wrap-break-word"
+      >
+        {@issue.title}
+      </h2>
+      <.markdown
+        :if={@issue.description not in [nil, ""]}
+        content={@issue.description}
+        assets_base={~p"/issues/#{@issue.id}/assets"}
+        class="mt-3 text-[15px] leading-relaxed wrap-break-word"
+      />
+    </div>
+    """
+  end
 
   defp ticket_pane(assigns) do
     ~H"""
@@ -877,6 +930,28 @@ defmodule RailWeb.Live.PlanStage do
 
   attr :id, :string, required: true
   attr :icon, :string, required: true
+  attr :text, :string, required: true
+
+  # A part the task's workflow turned off, which nobody writes and approval does not wait on.
+  defp step_off(assigns) do
+    ~H"""
+    <div id={@id} data-qa={@id} class="flex flex-col items-center text-center max-w-md mx-auto py-14">
+      <div class="relative flex items-center justify-center size-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 ring-1 ring-slate-200 dark:ring-slate-700">
+        <.icon name={@icon} class="size-7" />
+        <span class="absolute -top-1.5 -right-1.5 grid place-items-center size-5 rounded-full bg-white dark:bg-slate-900">
+          <.icon name="pi-minus-circle" class="size-5" />
+        </span>
+      </div>
+      <h2 class="mt-5 text-base font-semibold text-slate-900 dark:text-slate-100">
+        Off for this workflow
+      </h2>
+      <p class="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">{@text}</p>
+    </div>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :icon, :string, required: true
   attr :running, :boolean, required: true
   attr :title, :string, required: true
   attr :text, :string, required: true
@@ -967,9 +1042,11 @@ defmodule RailWeb.Live.PlanStage do
     selected_key = selected_key(design, socket.assigns.selected_key)
     ticket_lines = ticket_lines(ticket)
     sheet = sheet(plan, ticket_lines)
-    tabs = tabs(ticket, design, picked, plan, running)
+    skipped = task.issue.skipped_steps
+    tabs = tabs(ticket, design, picked, plan, running, skipped)
 
     socket
+    |> assign(:skipped, skipped)
     |> assign(:ticket, ticket)
     |> assign_ticket_lines(ticket_lines)
     |> assign(:design, design)
@@ -979,7 +1056,7 @@ defmodule RailWeb.Live.PlanStage do
     |> assign(:approved, approved)
     |> assign(:running, running)
     |> assign(:can_pick, task.stage == :plan and can_chat)
-    |> assign_offered(ticket, plan, (can_chat and not approved) or amending)
+    |> assign_offered(if(:product in skipped, do: nil, else: ticket), plan, (can_chat and not approved) or amending)
     |> assign(:selected_key, selected_key)
     |> assign(:option, shown_option(design, selected_key))
     |> assign(:tabs, tabs)
@@ -1184,25 +1261,35 @@ defmodule RailWeb.Live.PlanStage do
   # Clamped, so an element scrolled partly out of the frame cannot push the box out of it.
   defp percent(value, whole), do: (value / whole * 100) |> max(0.0) |> min(100.0) |> Float.round(3)
 
-  # A tab is its label, marked only where something waits: the pick on the reader, or a part Plan is writing.
-  defp tabs(ticket, design, picked, plan, running) do
-    options = if design, do: design.options, else: []
-
-    design_mark =
-      cond do
-        picked != nil -> nil
-        running -> :working
-        length(options) == 3 -> :pick
-        true -> nil
-      end
-
+  # A tab is its label, marked only where something waits: the pick on the reader, or a part Plan is writing. A
+  # part the workflow turned off is marked off.
+  defp tabs(ticket, design, picked, plan, running, skipped) do
     revising = plan != nil and picked != nil and (plan.design == nil or plan.design.key != picked.key)
 
     [
       %{id: "ticket", label: "Ticket", mark: if(ticket == nil and running, do: :working)},
-      %{id: "design", label: "Design", mark: design_mark},
-      %{id: "plan", label: "Plan", mark: if(revising and running, do: :working)}
+      %{
+        id: "design",
+        label: "Design",
+        mark: if(:design in skipped, do: :off, else: design_mark(design, picked, running))
+      },
+      %{
+        id: "plan",
+        label: "Plan",
+        mark: if(:architect in skipped, do: :off, else: if(revising and running, do: :working))
+      }
     ]
+  end
+
+  defp design_mark(design, picked, running) do
+    options = if design, do: design.options, else: []
+
+    cond do
+      picked != nil -> nil
+      running -> :working
+      length(options) == 3 -> :pick
+      true -> nil
+    end
   end
 
   # Picked once for the task the page shows and never from the server again, so a save cannot move the reader.

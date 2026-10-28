@@ -14,6 +14,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.PlanCommentCapture
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
@@ -222,6 +223,55 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     end)
 
     assert {:ok, %OsProcess{}} = Pipeline.start_plan_run(%{run | role: role})
+  end
+
+  test "with Product and Design off, round 1 holds the issue as its ticket and the brief hands the issue over", %{
+    issue: issue
+  } do
+    issue = issue |> Ecto.Changeset.change(skipped_steps: [:product, :design]) |> Repo.update!()
+
+    expect(Tools, :start_os_process, fn %Run{} = run, ["-p", prompt | _rest] ->
+      assert prompt =~ "- Product is off: the issue below is the ticket"
+      assert prompt =~ "- Design is off: there are no design options"
+      assert prompt =~ "1. The implementation plan, saved with `save_plan` as `plan`.\n2. Have the plan checked"
+      refute prompt =~ "The design options:"
+      {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
+    end)
+
+    assert {:ok, %OsProcess{task_id: task_id}} = Pipeline.start_plan_run(issue)
+
+    assert %Round{
+             number: 1,
+             plan: nil,
+             approved_at: nil,
+             ticket: %Round.Ticket{title: "Attachments follow their source document"}
+           } = Pipeline.read_plan(Repo.get!(Task, task_id))
+  end
+
+  test "with Architect off the brief asks for no plan, and no round is started before the ticket", %{issue: issue} do
+    issue = issue |> Ecto.Changeset.change(skipped_steps: [:architect]) |> Repo.update!()
+
+    expect(Tools, :start_os_process, fn %Run{} = run, ["-p", prompt | _rest] ->
+      assert prompt =~ "- Architect is off: there is no implementation plan."
+      assert prompt =~ "- Approval needs the ticket and, when there are options, a pick."
+      refute prompt =~ "Have the plan checked"
+      {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
+    end)
+
+    assert {:ok, %OsProcess{task_id: task_id}} = Pipeline.start_plan_run(issue)
+    assert Pipeline.read_plan(Repo.get!(Task, task_id)) == nil
+  end
+
+  test "with Design, Architect and the demo off, approval needs the ticket alone", %{issue: issue} do
+    issue = issue |> Ecto.Changeset.change(skipped_steps: [:design, :architect, :demo]) |> Repo.update!()
+
+    expect(Tools, :start_os_process, fn %Run{} = run, ["-p", prompt | _rest] ->
+      assert prompt =~ "- Approval needs the ticket.\n"
+      assert prompt =~ "- The demo is off: Review records none, so never pass `record_demo`."
+      {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_plan_run(issue)
   end
 
   test "the brief carries the rules people set for Plan, and not another role's", %{project: project, issue: issue} do

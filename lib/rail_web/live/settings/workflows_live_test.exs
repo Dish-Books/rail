@@ -68,6 +68,44 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
     refute has_element?(view, "#workflows-settings textarea")
   end
 
+  test "each workflow lists its stage sequence and what it skips", %{conn: conn, project: project} do
+    definition = %WorkflowDefinition{name: "Sweep", schedule: "0 6 * * *", instructions: "Sweep."}
+
+    %Workflow{id: some_off} =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/dependency-updates.yml",
+        definition: %{definition | skip: [:product, :design]},
+        next_run_at: ~U[2026-10-12 06:00:00Z]
+      })
+
+    %Workflow{id: plan_off} =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/flaky-test-sweep.yml",
+        definition: %{definition | skip: [:product, :design, :architect, :demo]},
+        next_run_at: ~U[2026-10-12 06:00:00Z]
+      })
+
+    %Workflow{id: none_off} =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/a11y-audit.yml",
+        definition: definition,
+        next_run_at: ~U[2026-10-12 06:00:00Z]
+      })
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/workflows")
+
+    assert has_element?(view, "#workflows-stages-header", "Stages")
+    assert has_element?(view, "#workflow-stages-#{some_off}-stages", "Plan › Implement › Review")
+    assert has_element?(view, "#workflow-stages-#{some_off}-skips", "Skips product and design")
+    assert has_element?(view, "#workflow-stages-#{plan_off}-stages", "Implement › Review")
+    assert has_element?(view, "#workflow-stages-#{plan_off}-skips", "Skips plan and demo")
+    assert has_element?(view, "#workflow-stages-#{none_off}-stages", "Plan › Implement › Review")
+    refute has_element?(view, "#workflow-stages-#{none_off}-skips")
+  end
+
   test "a file path with a space links to the file", %{conn: conn, project: project} do
     %Workflow{id: id} =
       Repo.insert!(%Workflow{
@@ -95,8 +133,9 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
     assert {:ok, view, _html} = live(conn, ~p"/settings/workflows")
 
     assert has_element?(view, "#workflow-name-#{id}", "nightly-e2e.yml")
-    assert has_element?(view, "#workflow-invalid-#{id}", "Invalid")
+    assert has_element?(view, ~s(td[colspan="2"] #workflow-invalid-#{id}), "Invalid")
     refute has_element?(view, "#workflow-schedule-#{id}")
+    refute has_element?(view, "#workflow-stages-#{id}")
     refute has_element?(view, "#run-now-#{id}")
     refute has_element?(view, "#workflow-switch-#{id}")
   end
@@ -338,6 +377,8 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
     assert has_element?(view, "#workflows-empty", "No workflows yet.")
     assert has_element?(view, "#workflow-example", "# cron, in UTC: Mondays at 09:00")
     assert has_element?(view, "#workflow-example", "# the issue's description")
+    assert has_element?(view, "#workflow-example", "skip: [product, design]")
+    assert has_element?(view, "#workflow-example", "# any of product, design, architect, demo")
     assert has_element?(view, ~s(#copy-workflow-example[phx-hook="CopyText"][data-copy-text*="name: Dependency updates"]))
     refute has_element?(view, "#workflows-list")
   end

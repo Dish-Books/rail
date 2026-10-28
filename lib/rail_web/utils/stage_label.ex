@@ -82,7 +82,11 @@ defmodule RailWeb.Utils.StageLabel do
   board name the errand alike.
   """
   def approval_label(%Task{stage: :plan} = task) do
-    if waiting_on_pick?(task), do: "Pick a design", else: "Review the plan"
+    cond do
+      waiting_on_pick?(task) -> "Pick a design"
+      match?(%Task{issue: %Issue{}}, task) and Issue.skips_step?(task.issue, :architect) -> "Review the ticket"
+      true -> "Review the plan"
+    end
   end
 
   def approval_label(%Task{stage: :engineer}), do: "Review the diff"

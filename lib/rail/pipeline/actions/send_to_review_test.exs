@@ -83,6 +83,25 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
     refute_received {:started, _stage}
   end
 
+  test "starts QA and the code reviewer and no demo for a task whose workflow turned the demo off", %{
+    task: task,
+    run: run
+  } do
+    Repo.preload(task, :issue).issue |> Ecto.Changeset.change(skipped_steps: [:demo]) |> Repo.update!()
+    Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Filter.", record_demo: true})
+    test_pid = self()
+
+    stub(Tools, :start_os_process, fn %Run{} = spawned, _argv ->
+      send(test_pid, {:started, Repo.preload(spawned, :role, force: true).role.stage})
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{}} = Pipeline.send_to_review(run)
+
+    for stage <- [:qa, :review], do: assert_received({:started, ^stage})
+    refute_received {:started, _stage}
+  end
+
   test "starts only QA and the code reviewer when the round's plan asks for no demo", %{
     task: task,
     run: run

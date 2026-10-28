@@ -14,6 +14,7 @@ defmodule RailWeb.Live.TaskActions do
   """
   use RailWeb, :live_component
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.Round
@@ -430,9 +431,12 @@ defmodule RailWeb.Live.TaskActions do
   # straight away when they own it, and later when the owner started it without approval.
   defp plan_actions(%Task{} = task, rounds, %Scope{} = scope, lead?) do
     none = %{send: false, start: false, approve: false, sent: false, unapproved: false}
+    first = List.first(rounds)
+    # With Architect off the ticket is all there is to approve.
+    written? = match?(%Round{plan: plan} when is_binary(plan), first) or Issue.skips_step?(task.issue, :architect)
 
-    case List.first(rounds) do
-      %Round{approved_at: nil, plan: plan, ready_at: ready_at} when task.stage == :plan and is_binary(plan) ->
+    case first do
+      %Round{approved_at: nil, ready_at: ready_at} when task.stage == :plan and written? ->
         initial_plan(
           none,
           Task.owned_by?(task, scope),

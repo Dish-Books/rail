@@ -108,7 +108,11 @@ defmodule RailWeb.TaskLive do
       |> assign(:viewer_owns, false)
 
     # A stage moved from another page or by a run finishing is what keeps this one current.
-    if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+      # The header names the workflow, which its file renames.
+      Phoenix.PubSub.subscribe(Rail.PubSub, "workflows")
+    end
 
     {:ok, socket}
   end
@@ -453,6 +457,17 @@ defmodule RailWeb.TaskLive do
       do: {:noreply, refresh_task(socket)},
       else: {:noreply, socket}
   end
+
+  # Only a task a workflow opened names one, so no other page reads its task again on a sync.
+  def handle_info(
+        {:workflows_changed, project_id},
+        %{assigns: %{task: %Task{project_id: project_id, issue: %Issue{workflow_id: workflow_id}}}} = socket
+      )
+      when is_binary(workflow_id) do
+    {:noreply, refresh_task(socket)}
+  end
+
+  def handle_info({:workflows_changed, _project_id}, socket), do: {:noreply, socket}
 
   # A child's issue completing in Linear is what merges it.
   def handle_info({:issue_changed, issue_id}, socket) do

@@ -70,10 +70,8 @@ defmodule RailWeb.IssueLive do
     """
   end
 
-  def handle_event("start_task", %{"stage" => stage}, socket) do
-    {:ok, stage} = Task.cast_stage(stage)
-
-    case Pipeline.start_task(socket.assigns.issue, stage) do
+  def handle_event("start_task", _params, socket) do
+    case Pipeline.start_task(socket.assigns.issue) do
       {:ok, task} ->
         {:noreply, push_navigate(socket, to: ~p"/tasks/#{task.id}")}
 

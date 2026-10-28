@@ -17,7 +17,7 @@ defmodule Rail.Pipeline.Actions.GetTask do
     query =
       from(t in Task,
         where: t.id == ^id,
-        preload: [:project, :issue, :marked_ready_by, :merged_by, runs: [:role, :questions]]
+        preload: [:project, :marked_ready_by, :merged_by, issue: :workflow, runs: [:role, :questions]]
       )
 
     case Repo.one(query) do

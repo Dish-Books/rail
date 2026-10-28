@@ -3,9 +3,11 @@ defmodule Rail.Pipeline.Utils.PlanRunFinished do
   Where a finished Plan run leaves its task: nothing is captured and nothing moves until a human approves.
 
   What a Plan turn can get wrong is ending short, and that is recorded on the run so the step stays
-  open for the message that fixes it. No options at all is a change with no screen, and is fine.
+  open for the message that fixes it. No options at all is a change with no screen, and is fine, as is no plan on a
+  task whose workflow turned Architect off. With Product off, round 1 holds the issue as its ticket from the start.
   """
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Repo
@@ -29,7 +31,7 @@ defmodule Rail.Pipeline.Utils.PlanRunFinished do
         incomplete != [] ->
           "Saved design options missing a page or screenshot: #{Enum.map_join(incomplete, ", ", & &1.key)}."
 
-        plan.plan == nil ->
+        plan.plan == nil and not Issue.skips_step?(task.issue, :architect) ->
           "The Plan agent did not save a plan."
 
         true ->

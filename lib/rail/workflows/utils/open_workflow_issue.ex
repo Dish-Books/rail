@@ -18,8 +18,8 @@ defmodule Rail.Workflows.Utils.OpenWorkflowIssue do
   alias Rail.Workflows.Workers.StartWorkflowTask
 
   @doc """
-  Opens `workflow`'s issue in its project's tracker, with no owner, and queues its task's start at Plan with the
-  issue. A `:scheduled` start goes ahead only while the row is due and moves the due time on whether it opens
+  Opens `workflow`'s issue in its project's tracker, with no owner and the steps its file skips, and queues its
+  task's start with the issue. A `:scheduled` start goes ahead only while the row is due and moves the due time on whether it opens
   anything or not; `:now` leaves the due time alone and ignores the pause.
 
   Returns `{:ok, issue}`, or why nothing was opened: `{:error, {:unfinished, issue}}`, `{:error, :project_inactive}`,
@@ -41,7 +41,8 @@ defmodule Rail.Workflows.Utils.OpenWorkflowIssue do
                  Issues.create_issue(Scope.for_system(), workflow.project, %{
                    title: "#{workflow.definition.name} #{Date.to_iso8601(date)}",
                    description: workflow.definition.instructions,
-                   workflow_id: workflow.id
+                   workflow_id: workflow.id,
+                   skipped_steps: workflow.definition.skip
                  }) do
             Oban.insert!(StartWorkflowTask.new(%{issue_id: issue.id}))
             {:ok, issue}

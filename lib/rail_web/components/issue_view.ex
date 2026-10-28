@@ -163,11 +163,10 @@ defmodule RailWeb.Components.IssueView do
                   id="issue-start-plan"
                   data-qa="issue-start-plan"
                   phx-click="start_task"
-                  phx-value-stage="plan"
                   class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 cursor-pointer"
                 >
                   <.icon name="pi-play" class="h-3.5 w-3.5" />
-                  <span>{Task.stage_label(:plan)}</span>
+                  <span>{Task.stage_label(hd(Issue.calculate_stages(@issue)))}</span>
                 </button>
                 <button
                   :if={@issue.pr_number}

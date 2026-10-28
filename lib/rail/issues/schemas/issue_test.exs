@@ -161,4 +161,22 @@ defmodule Rail.Issues.Schemas.IssueTest do
       refute Issue.active?(123)
     end
   end
+
+  test "an issue with no skipped steps runs every step, with Plan, Engineer and Review as its stages" do
+    issue = %Issue{}
+
+    assert Issue.optional_steps() == [:product, :design, :architect, :demo]
+    refute Enum.any?(Issue.optional_steps(), &Issue.skips_step?(issue, &1))
+    assert Issue.calculate_stages(issue) == [:plan, :engineer, :review]
+  end
+
+  test "an issue with Product, Design and Architect off runs Engineer and Review only" do
+    assert Issue.calculate_stages(%Issue{skipped_steps: [:product, :design, :architect]}) == [:engineer, :review]
+    assert Issue.calculate_stages(%Issue{skipped_steps: [:product, :design, :demo]}) == [:plan, :engineer, :review]
+    assert Issue.skips_step?(%Issue{skipped_steps: [:demo]}, :demo)
+  end
+
+  test "step_label/1 names each step as a sentence says it" do
+    assert Enum.map(Issue.optional_steps(), &Issue.step_label/1) == ["product", "design", "architect", "demo"]
+  end
 end

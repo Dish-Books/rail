@@ -125,6 +125,16 @@ defmodule Rail.Pipeline.Actions.SaveFixPlanTest do
     assert %FixPlan{record_demo: true} = Pipeline.read_fix_plan(task)
   end
 
+  test "a task whose workflow turned the demo off refuses a plan asking for one, and saves one that does not", %{
+    task: task
+  } do
+    task = %{task | issue: %{task.issue | skipped_steps: [:demo]}}
+
+    assert {:error, {:step_off, :demo}} = Pipeline.save_fix_plan(task, %{"plan" => @plan, "record_demo" => true})
+    assert %FixPlan{plan: nil} = Pipeline.read_fix_plan(task)
+    assert {:ok, %FixPlan{record_demo: false}} = Pipeline.save_fix_plan(task, %{"plan" => @plan})
+  end
+
   # A changed ticket is said where the person approving reads it, before anything is approved on it.
   test "a plan that changes the ticket says so under Changes to the plan, or is refused", %{task: task} do
     assert {:error, changeset} = Pipeline.save_fix_plan(task, %{"plan" => @plan, "description" => "Filter by tag."})

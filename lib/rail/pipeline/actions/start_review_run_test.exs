@@ -166,6 +166,22 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     assert {:ok, %OsProcess{}} = Pipeline.start_review_run(run)
   end
 
+  test "briefs the review agent of a task whose workflow turned the demo off to ask for none", %{
+    task: task,
+    run: run
+  } do
+    Repo.preload(task, :issue).issue |> Ecto.Changeset.change(skipped_steps: [:demo]) |> Repo.update!()
+    reject(@prepare_turn, :prepare_turn, 1)
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "The demo is off for this task's workflow, so never pass `record_demo`."
+      refute prompt =~ "Pass `record_demo: true`"
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_review_run(run)
+  end
+
   test "a fixed finding, one ruled Don't fix and one from before rules read as such, and the plan is the specification",
        %{
          task: task,

@@ -182,6 +182,52 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
     assert %Issue{title: "Approved title", description: ^description} = Repo.get!(Issue, task.issue_id)
   end
 
+  test "with Product off it publishes nothing over the issue, which stays the ticket", %{task: task, run: run} do
+    Issue |> Repo.get!(task.issue_id) |> Ecto.Changeset.change(skipped_steps: [:product]) |> Repo.update!()
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(system_scope(), run)
+
+    assert %Issue{title: "Approve Plan", description: nil} = Repo.get!(Issue, task.issue_id)
+    refute_enqueued(worker: Rail.Issues.Workers.SyncIssue)
+    assert %Task{stage: :engineer} = Repo.reload!(task)
+  end
+
+  test "with Architect off it is approved with no plan and the task enters Engineer with none recorded", %{
+    task: task,
+    run: run
+  } do
+    Issue |> Repo.get!(task.issue_id) |> Ecto.Changeset.change(skipped_steps: [:architect]) |> Repo.update!()
+    Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [plan: nil])
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(system_scope(), run)
+
+    assert %Task{stage: :engineer} = Repo.reload!(task)
+    assert %Round{number: 1, plan: nil, approved_at: %DateTime{}} = Pipeline.read_plan(task)
+    assert %Issue{title: "Approved title"} = Repo.get!(Issue, task.issue_id)
+  end
+
+  test "with Product and Architect off a pick alone is approved, adding its section to the issue as it stands", %{
+    task: task,
+    run: run,
+    picked: picked,
+    uploaded: uploaded
+  } do
+    Issue
+    |> Repo.get!(task.issue_id)
+    |> Ecto.Changeset.change(skipped_steps: [:product, :architect])
+    |> Repo.update!()
+
+    Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [plan: nil])
+    picked.()
+    uploaded.()
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(system_scope(), run)
+
+    description = "## Design: Table\n\nDense rows.\n\n![Table](https://uploads.linear.app/assets/app-1-table.png)"
+
+    assert %Issue{title: "Approve Plan", description: ^description} = Repo.get!(Issue, task.issue_id)
+  end
+
   test "a second approval is told the plan is already approved and publishes nothing again", %{task: task, run: run} do
     assert {:ok, _approved} = Pipeline.approve_plan(system_scope(), run)
     {:ok, _issue} = Issues.update_issue(Repo.get!(Issue, task.issue_id), %{description: "Edited in Linear since."})

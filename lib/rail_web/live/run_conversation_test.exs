@@ -1753,6 +1753,8 @@ defmodule RailWeb.Live.RunConversationTest do
 
       {:ok, ada_view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
       {:ok, grace_view, _html} = live(grace_conn, ~p"/tasks/#{task.id}")
+      _settled = render(ada_view)
+      _settled = render(grace_view)
 
       for view <- [ada_view, grace_view] do
         view |> element("#review-send-tray-fold") |> render_click()
@@ -1808,6 +1810,7 @@ defmodule RailWeb.Live.RunConversationTest do
     } do
       {:ok, _mine} = Pipeline.create_screen_comment(ada, task, %{"key" => "toolbar", "body" => "Fold it."})
       {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
+      _settled = render(view)
       view |> element("#review-item-screens") |> render_click()
       view |> element("#review-send-tray-fold") |> render_click()
 
@@ -1895,6 +1898,7 @@ defmodule RailWeb.Live.RunConversationTest do
       ada_conn: ada_conn
     } do
       {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
+      _settled = render(view)
 
       assert has_element?(view, "#review-send-tray-fold[aria-expanded='false']")
       assert has_element?(view, "#review-send-tray-count", "1")
@@ -1920,6 +1924,7 @@ defmodule RailWeb.Live.RunConversationTest do
       ada_conn: ada_conn
     } do
       {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
+      _settled = render(view)
       expect(Pipeline, :start_fix_round, fn _scope, _run -> {:error, :stage_running} end)
       view |> element("#send-review-tray") |> render_click()
       assert has_element?(view, "#review-send-tray-hint", "The Review lead is working. Send waits until it stops.")
@@ -2001,6 +2006,8 @@ defmodule RailWeb.Live.RunConversationTest do
       {:ok, _mine} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "Name it."))
       # The card is a message in the conversation, which only the Plan item shows in full, beside it.
       {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}?item=plan")
+      # The stage hands the page its tray in a message of its own, which queues behind the first render.
+      _settled = render(view)
 
       expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: %{spawned | status: :running}}} end)
       view |> element("#send-review-tray", "Send 2") |> render_click()
@@ -2014,6 +2021,7 @@ defmodule RailWeb.Live.RunConversationTest do
       {:ok, _again} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "And this."))
       {:ok, _idle} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
       {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}?item=plan")
+      _settled = render(view)
 
       expect(Pipeline, :start_fix_round, fn _scope, _run -> {:error, :fix_plan_waiting} end)
       view |> element("#send-review-tray", "Send 1") |> render_click()

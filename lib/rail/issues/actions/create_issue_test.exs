@@ -176,7 +176,9 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
     assert %{priority: ["is invalid"]} = errors_on(changeset)
   end
 
-  test "create_issue/2 keeps the workflow opening it, over a row the webhook saved first", %{project: project} do
+  test "create_issue/2 keeps the workflow opening it and the steps it skips, over a row the webhook saved first", %{
+    project: project
+  } do
     %Workflow{id: workflow_id} =
       Repo.insert!(%Workflow{
         project_id: project.id,
@@ -207,10 +209,14 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
       })
     end)
 
-    assert {:ok, %Issue{id: ^mirrored_id, workflow_id: ^workflow_id}} =
-             Issues.create_issue(system_scope(), project, %{title: "Sweep 2026-10-12", workflow_id: workflow_id})
+    assert {:ok, %Issue{id: ^mirrored_id, workflow_id: ^workflow_id, skipped_steps: [:product, :demo]}} =
+             Issues.create_issue(system_scope(), project, %{
+               title: "Sweep 2026-10-12",
+               workflow_id: workflow_id,
+               skipped_steps: [:product, :demo]
+             })
 
-    assert %Issue{workflow_id: ^workflow_id} = Repo.get!(Issue, mirrored_id)
+    assert %Issue{workflow_id: ^workflow_id, skipped_steps: [:product, :demo]} = Repo.get!(Issue, mirrored_id)
   end
 
   test "create_issue/2 returns an error when Linear does not create it", %{project: project} do

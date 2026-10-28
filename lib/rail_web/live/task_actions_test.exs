@@ -1,6 +1,7 @@
 defmodule RailWeb.Live.TaskActionsTest do
   use RailWeb.ConnCase, async: true
 
+  import Ecto.Query
   import Phoenix.LiveViewTest
 
   alias Rail.GitHub.Client
@@ -966,6 +967,35 @@ defmodule RailWeb.Live.TaskActionsTest do
       view |> element("#task-approve-plan") |> render_click()
 
       refute has_element?(view, "#task-actions-error")
+    end
+
+    test "with Architect off a tech lead who owns it approves the ticket alone, and the task moves to Engineer", %{
+      conn: conn,
+      plan_task: task,
+      priya: priya
+    } do
+      {:ok, _owner} = Issues.update_issue(task.issue, %{owner_user_id: priya.id})
+      task.issue |> Ecto.Changeset.change(skipped_steps: [:architect]) |> Repo.update!()
+      Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [plan: nil])
+
+      assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
+      view |> element("#task-approve-plan", "Approve plan") |> render_click()
+
+      refute has_element?(view, "#task-actions-error")
+      assert %Task{stage: :engineer} = Repo.reload!(task)
+      assert [%Round{plan: nil, approved_at: %DateTime{}}] = Pipeline.list_rounds(task)
+    end
+
+    test "with no plan saved and every step on, there is nothing to approve", %{
+      conn: conn,
+      plan_task: task,
+      priya: priya
+    } do
+      {:ok, _owner} = Issues.update_issue(task.issue, %{owner_user_id: priya.id})
+      Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [plan: nil])
+
+      assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}")
+      refute has_element?(view, "#task-approve-plan")
     end
 
     test "a tech lead who owns it approves it at once, and a refusal says why", %{

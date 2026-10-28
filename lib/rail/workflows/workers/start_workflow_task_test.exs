@@ -59,6 +59,22 @@ defmodule Rail.Workflows.Workers.StartWorkflowTaskTest do
     assert_receive {:workflows_changed, ^project_id}
   end
 
+  test "an issue whose workflow turned every Plan step off starts its task at Engineer, with no Plan run", %{
+    project: project,
+    issue: %{id: issue_id} = issue
+  } do
+    issue |> Ecto.Changeset.change(skipped_steps: [:product, :design, :architect]) |> Repo.update!()
+    {:ok, %{id: engineer_id}} = Rail.Roles.get_role(project_id: project.id, stage: :engineer)
+
+    stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+    assert :ok = perform_job(StartWorkflowTask, %{issue_id: issue_id})
+
+    assert [%Task{stage: :engineer, runs: [%Run{role_id: ^engineer_id}]}] =
+             Repo.all(from(t in Task, where: t.issue_id == ^issue_id, preload: :runs))
+  end
+
   test "a start that rolled back fails the job, so Oban tries again", %{
     project: %{id: project_id},
     issue: %{id: issue_id}
@@ -80,7 +96,7 @@ defmodule Rail.Workflows.Workers.StartWorkflowTaskTest do
 
   test "an issue that already has a task is left alone", %{issue: %{id: issue_id} = issue} do
     {:ok, %Task{id: task_id}} = issue |> Repo.preload(:project) |> Pipeline.create_task(:plan)
-    reject(Pipeline, :start_task, 2)
+    reject(Pipeline, :start_task, 1)
 
     assert :ok = perform_job(StartWorkflowTask, %{issue_id: issue_id})
     assert [%Task{id: ^task_id}] = Repo.all(from(t in Task, where: t.issue_id == ^issue_id))
@@ -88,7 +104,7 @@ defmodule Rail.Workflows.Workers.StartWorkflowTaskTest do
 
   test "an issue finished before the job ran is left alone", %{issue: %{id: issue_id} = issue} do
     issue |> Issue.tracker_changeset(%{state: :done}) |> Repo.update!()
-    reject(Pipeline, :start_task, 2)
+    reject(Pipeline, :start_task, 1)
 
     assert :ok = perform_job(StartWorkflowTask, %{issue_id: issue_id})
     assert [] = Repo.all(from(t in Task, where: t.issue_id == ^issue_id))
@@ -96,7 +112,7 @@ defmodule Rail.Workflows.Workers.StartWorkflowTaskTest do
 
   test "a deleted issue finishes the job", %{issue: %{id: issue_id} = issue} do
     Repo.delete!(issue)
-    reject(Pipeline, :start_task, 2)
+    reject(Pipeline, :start_task, 1)
 
     assert :ok = perform_job(StartWorkflowTask, %{issue_id: issue_id})
   end

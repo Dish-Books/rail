@@ -1,7 +1,8 @@
 defmodule Rail.Pipeline.Utils.StartChecks do
   @moduledoc """
   Starts the agents that check a round's change once it is pushed, all together, each a run of its own on a clean
-  conversation: QA, the code reviewer, and the demo recorder when the round's plan asks for it. Each that drives the
+  conversation: QA, the code reviewer, and the demo recorder when the round's plan asks for it and the task's workflow
+  left the demo on. Each that drives the
   app has a browser of its own on the worktree's one server. The review agent
   follows them all but the demo.
 
@@ -16,6 +17,7 @@ defmodule Rail.Pipeline.Utils.StartChecks do
   import Rail.Pipeline.Utils.StartRoleRun
 
   alias Rail.Git
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
@@ -51,7 +53,7 @@ defmodule Rail.Pipeline.Utils.StartChecks do
           [:review]
 
         nil ->
-          [:qa, :review | asked(Pipeline.read_plan(task))]
+          [:qa, :review | asked(Repo.preload(task, :issue).issue, Pipeline.read_plan(task))]
       end
 
     roles =
@@ -69,8 +71,8 @@ defmodule Rail.Pipeline.Utils.StartChecks do
   defp set_up?(%Task{project_id: project_id}), do: Repo.get!(Project, project_id).worktree_setup_script in [nil, ""]
 
   # A demo is recorded only when the round's plan asks.
-  defp asked(%Round{record_demo: true}), do: [:demo]
-  defp asked(_round), do: []
+  defp asked(%Issue{skipped_steps: skipped}, %Round{record_demo: true}), do: if(:demo in skipped, do: [], else: [:demo])
+  defp asked(%Issue{}, _round), do: []
 
   # Round 1 is always walked whole, and a round git cannot tell apart, or one with no QA run to mark, is QA's.
   defp unseen(%Task{} = task) do
