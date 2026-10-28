@@ -18,6 +18,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate changed_comments(assigns), to: Components.ChangedComments
   defdelegate child_switcher(assigns), to: Components.ChildSwitcher
   defdelegate comment_box(assigns), to: Components.CommentBox
+  defdelegate comment_list(assigns), to: Components.CommentList
   defdelegate commentable_line(assigns), to: Components.CommentableLine
   defdelegate commit_picker(assigns), to: Components.CommitPicker
   defdelegate design_comment_control(assigns), to: Components.DesignCommentControl

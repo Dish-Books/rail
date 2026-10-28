@@ -130,7 +130,7 @@ defmodule RailWeb.Live.TaskDetailTest do
     assert has_element?(view, "#review-item-demo[title='Demo: None recorded']")
     assert has_element?(view, "#review-item-browser[title='Browser: No browsers open']")
 
-    assert ["issue", "plan", "findings", "diff", "screens", "demo", "browser"] =
+    assert ["issue", "plan", "comments", "findings", "diff", "screens", "demo", "browser"] =
              view
              |> render()
              |> Floki.parse_document!()
@@ -1206,6 +1206,118 @@ defmodule RailWeb.Live.TaskDetailTest do
     assert has_element?(view, "#review-error", "The review is finished, so its rulings are settled.")
   end
 
+  describe "the Comments item" do
+    setup %{project: project} do
+      {:ok, grace} =
+        Users.register_oauth_user(%{
+          github_id: "rst-grace-#{System.unique_integer([:positive])}",
+          login: "grace-#{System.unique_integer([:positive])}",
+          name: "Grace",
+          email: "grace-#{System.unique_integer([:positive])}@rst.example"
+        })
+
+      {:ok, grace} = Users.update_user(system_scope(), grace, %{project_ids: [project.id]})
+      %{grace: grace}
+    end
+
+    test "a task nobody has commented on says there are no comments yet", %{conn: conn, task: task} do
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=comments")
+
+      assert has_element?(view, "#review-item-comments[aria-current=true][title='Comments: Every comment on the task']")
+      assert has_element?(view, "[data-qa=comments_count]", "0")
+      assert has_element?(view, "#comments-empty", "No comments yet")
+      refute has_element?(view, "#comment-list")
+    end
+
+    test "lists the newest comment first with You on the reader's own, and Oldest first puts the oldest at the top", %{
+      conn: conn,
+      task: task,
+      run: run,
+      user: user,
+      grace: grace
+    } do
+      diff = %{path: "lib/a.ex", line_kind: :added, line: 3, line_text: "x = 1", filter: :branch, body: "Name it."}
+      {:ok, %{id: mine}} = Pipeline.create_diff_comment(user_scope(user: user), task, diff)
+      [%{id: theirs}] = Pipeline.append_run_events(run.id, nil, ["[human:#{grace.id}] Keep the numbering."])
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#review-item-comments") |> render_click()
+
+      assert has_element?(view, "#review-pane[data-item=comments] [data-qa=comments_count]", "2")
+
+      assert ["comment-#{theirs}", "comment-#{mine}"] ==
+               view |> render() |> Floki.parse_document!() |> Floki.attribute("[data-qa=comment_row]", "id")
+
+      assert has_element?(view, "#comment-#{mine} [data-qa=comment_author]", "You")
+      assert has_element?(view, "#comment-#{mine} [data-qa=comment_unsent]", "Not sent")
+      assert has_element?(view, "#comment-#{mine} [data-qa=comment_opens]", "Open in Diff")
+      assert has_element?(view, "#comment-#{theirs} [data-qa=comment_author]", "Grace")
+      assert has_element?(view, "#comment-#{theirs} [data-qa=comment_opens]", "Open the conversation")
+      assert has_element?(view, "#comment-#{theirs} [data-qa=comment_body]", "Keep the numbering.")
+
+      view |> element("#comment-order-oldest") |> render_click()
+
+      assert ["comment-#{mine}", "comment-#{theirs}"] ==
+               view |> render() |> Floki.parse_document!() |> Floki.attribute("[data-qa=comment_row]", "id")
+
+      assert has_element?(view, "#comment-order-oldest[aria-pressed=true]")
+    end
+
+    test "clicking a finding comment selects its finding, and one gone since the list was drawn does nothing", %{
+      conn: conn,
+      task: task,
+      user: user,
+      code: code,
+      screen: screen
+    } do
+      {:ok, _first} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
+      {:ok, second} = Pipeline.save_finding(task, Map.put(screen, :key, "send-twice"))
+      {:ok, _pass} = Pipeline.save_review(task)
+      on = %{"finding_id" => second.id, "piece" => "fix", "body" => "Disable it sooner."}
+      {:ok, %{id: id}} = Pipeline.create_finding_comment(user_scope(user: user), task, on)
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=comments")
+
+      view |> with_target("#task-detail") |> render_click("open_comment", %{"kind" => "finding", "id" => "fcm_gone"})
+      assert has_element?(view, "#review-pane[data-item=comments]")
+
+      assert has_element?(view, "#comment-#{id}", "send-twice · Fix")
+      view |> element("#comment-#{id}") |> render_click()
+
+      assert has_element?(view, "#review-pane[data-item=findings]")
+      assert has_element?(view, "[data-qa=review_finding][aria-current=true]", "Send stays enabled")
+    end
+
+    test "clicking a screen comment opens its state over the page, and the Screens grid once the state is gone", %{
+      conn: conn,
+      task: task,
+      user: user
+    } do
+      folder = Path.join([task.scratch_path, "qa", "screens", "toolbar"])
+      File.mkdir_p!(folder)
+      File.write!(Path.join(folder, "1.jpg"), "jpeg")
+      {:ok, _shot} = Pipeline.save_screen(task, %{key: "toolbar", label: "Toolbar", file: "screens/toolbar/1.jpg"})
+      scope = user_scope(user: user)
+      {:ok, %{id: id}} = Pipeline.create_screen_comment(scope, task, %{"key" => "toolbar", "body" => "Fold it."})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=comments")
+
+      assert has_element?(view, "#comment-#{id} [data-qa=comment_opens]", "Open the screen")
+      view |> element("#comment-#{id}") |> render_click()
+
+      assert has_element?(view, "#review-pane[data-item=screens]")
+      assert has_element?(view, "#screen-view", "Toolbar")
+
+      File.rm_rf!(folder)
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=comments")
+
+      assert has_element?(view, "#comment-#{id} [data-qa=comment_shot_gone]", "No shot of this screen now")
+      assert has_element?(view, "#comment-#{id} [data-qa=comment_body]", "Fold it.")
+      view |> element("#comment-#{id}") |> render_click()
+
+      assert has_element?(view, "#review-pane[data-item=screens] [data-qa=review_screens_none]")
+      refute has_element?(view, "#screen-view")
+    end
+  end
+
   describe "with the branch's commits" do
     # The branch forked from origin/main at the first commit, then the engineer committed, round 1 read it,
     # and the fix round it led to committed.
@@ -1222,6 +1334,26 @@ defmodule RailWeb.Live.TaskDetailTest do
       fix = worktree |> git!(["rev-parse", "HEAD"]) |> String.trim()
 
       %{engineer: engineer, fix: fix}
+    end
+
+    test "clicking a diff comment written in a commit opens Diff on that commit at its file", %{
+      conn: conn,
+      task: task,
+      user: user,
+      engineer: engineer
+    } do
+      comment = %{path: "a.ex", line_kind: :added, line: 1, line_text: "defmodule A do", filter: :commit}
+      attrs = Map.merge(comment, %{commit: engineer, body: "Name it."})
+      {:ok, %{id: id}} = Pipeline.create_diff_comment(user_scope(user: user), task, attrs)
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=comments")
+
+      assert has_element?(view, "#comment-#{id}", "a.ex:1")
+      view |> element("#comment-#{id}") |> render_click()
+
+      assert has_element?(view, "#review-pane[data-item=diff] #diff-commit-picker", "Implement")
+      assert has_element?(view, "[data-qa='diff_file_section'][data-path='a.ex'] #diff-comment-#{id}")
+      refute has_element?(view, "[data-qa='diff_file_section'][data-path='b.ex']")
+      assert_push_event(view, "diff:scroll_to", %{id: "diff-comment-" <> ^id})
     end
 
     test "the Diff item counts the commits and lines, and opens on the whole branch", %{conn: conn, task: task} do
@@ -1850,6 +1982,34 @@ defmodule RailWeb.Live.TaskDetailTest do
 
       view |> element("#fix-plan-card-1 [data-qa=plan_card_reviewed]") |> render_click()
       assert has_element?(view, "#fix-plan-card-1[data-state=unreviewed]")
+    end
+
+    test "clicking a comment on the next round's plan opens the plan waiting on approval", %{
+      conn: conn,
+      task: task,
+      run: run,
+      plan: plan,
+      user: user
+    } do
+      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
+      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
+
+      attrs = %{
+        target: :fix_plan,
+        element_kind: :paragraph,
+        element_label: "view-only-send · paragraph 1",
+        element_occurrence: 1,
+        element_text: "Check the role.",
+        body: "Say which role."
+      }
+
+      {:ok, %{id: id}} = Pipeline.create_plan_comment(user_scope(user: user), Repo.reload!(run), attrs)
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=comments")
+
+      assert has_element?(view, "#comment-#{id}", "Next round's plan")
+      view |> element("#comment-#{id}") |> render_click()
+
+      assert has_element?(view, "#review-pane[data-item=fix_plan] #fix-plan-pane")
     end
 
     test "a line of the waiting plan takes a comment for the review agent, shown under it and in the tray, until removed",

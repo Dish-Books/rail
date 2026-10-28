@@ -1297,7 +1297,7 @@ defmodule RailWeb.TaskLiveTest do
       ids =
         html |> Floki.parse_document!() |> Floki.find("#review-items [data-qa='review_item']") |> Floki.attribute("id")
 
-      assert ids == ["review-item-issue", "review-item-plan"]
+      assert ids == ["review-item-issue", "review-item-plan", "review-item-comments"]
       assert has_element?(view, "#review-item-issue[title='Issue: TLV-1']")
       assert has_element?(view, "#review-item-plan[aria-current='true']")
       assert has_element?(view, "[data-qa='plan-stage']")
@@ -4479,6 +4479,7 @@ defmodule RailWeb.TaskLiveTest do
       assert [
                "review-item-issue",
                "review-item-plan",
+               "review-item-comments",
                "review-item-findings",
                "review-item-diff",
                "review-item-screens",
@@ -5770,7 +5771,7 @@ defmodule RailWeb.TaskLiveTest do
          %{conn: conn, parent: parent, scope: scope} do
       assert {:ok, view, html} = live(conn, ~p"/tasks/#{parent.id}")
 
-      assert ["review-item-issue", "review-item-plan", "review-item-children" | _rest] =
+      assert ["review-item-issue", "review-item-plan", "review-item-children", "review-item-comments" | _rest] =
                html
                |> Floki.parse_document!()
                |> Floki.find("#review-items [data-qa='review_item']")
@@ -6368,6 +6369,116 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#review-items")
       refute has_element?(view, "#review-item-children")
       refute has_element?(view, "#child-switcher")
+    end
+  end
+
+  describe "the Comments item" do
+    setup %{project: project, task: task, run: run} do
+      {:ok, lead_role} = Roles.get_role(project_id: project.id, stage: :review_lead)
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
+      {:ok, plan_run} = Pipeline.update_run(run, %{conversation_id: "sess_comments_plan"})
+      {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Comments", description: "- List every comment."})
+      {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan})
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      {:ok, lead_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: lead_role.id,
+          status: :finished,
+          stage_outcome: :done,
+          conversation_id: "sess_comments_lead",
+          started_at: DateTime.utc_now()
+        })
+
+      {:ok, grace} =
+        Users.register_oauth_user(%{
+          github_id: "gh_task_live_grace",
+          login: "grace_task_live",
+          name: "Grace",
+          email: "grace_task_live@example.com"
+        })
+
+      %{task: task, plan_run: plan_run, lead_run: lead_run, grace: Scope.for_user(grace)}
+    end
+
+    test "a message another person sends while the run works, so it is queued, appears without a reload", %{
+      conn: conn,
+      task: task,
+      lead_run: lead_run,
+      grace: grace
+    } do
+      {:ok, working} = Pipeline.update_run(lead_run, %{status: :running, stage_outcome: :in_progress})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=comments")
+      assert has_element?(view, "#comments-empty")
+
+      {:ok, :queued, _run} = Pipeline.send_message(grace, working, "Check the tray.")
+      _settled = render(view)
+
+      assert has_element?(view, "[data-qa=comment_row] [data-qa=comment_body]", "Check the tray.")
+      assert has_element?(view, "[data-qa=comment_row] [data-qa=comment_author]", "Grace")
+    end
+
+    test "another person's Review Send adds their screen comment without a reload", %{
+      conn: conn,
+      task: task,
+      lead_run: lead_run,
+      grace: grace
+    } do
+      folder = Path.join([task.scratch_path, "qa", "screens", "tray"])
+      File.mkdir_p!(folder)
+      File.write!(Path.join(folder, "1.jpg"), "jpeg")
+      {:ok, _shot} = Pipeline.save_screen(task, %{key: "tray", label: "Tray", file: "screens/tray/1.jpg"})
+      {:ok, _pass} = Pipeline.save_review(task)
+      {:ok, %{id: id}} = Pipeline.create_screen_comment(grace, task, %{"key" => "tray", "body" => "Fold it."})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=comments")
+      refute has_element?(view, "#comment-#{id}")
+
+      {:ok, _resumed} = Pipeline.start_fix_round(grace, lead_run)
+      _settled = render(view)
+
+      assert has_element?(view, "#comment-#{id} [data-qa=comment_body]", "Fold it.")
+      assert has_element?(view, "#comment-#{id} [data-qa=comment_author]", "Grace")
+    end
+
+    test "clicking a ticket comment opens the Plan item on the Ticket tab, not the Plan tab, and the URL keeps round 1",
+         %{conn: conn, task: task, plan_run: plan_run, scope: scope} do
+      attrs = %{
+        target: :ticket,
+        element_kind: :list_item,
+        element_label: "Item 1",
+        element_occurrence: 1,
+        element_text: "List every comment.",
+        body: "Say which comments."
+      }
+
+      {:ok, %{id: id}} = Pipeline.create_plan_comment(scope, plan_run, attrs)
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=comments")
+
+      assert has_element?(view, "#comment-#{id}", "Ticket")
+      view |> element("#comment-#{id}") |> render_click()
+
+      assert_patch(view, ~p"/tasks/#{task.id}?item=plan&round=1")
+      assert has_element?(view, "#review-pane[data-item=plan] #plan-tab-ticket[aria-selected='true']")
+      assert has_element?(view, "#plan-section-ticket:not(.hidden)")
+      assert has_element?(view, "#plan-section-plan.hidden")
+    end
+
+    test "clicking a Plan conversation message on a task at Review opens Plan's conversation, not the lead's", %{
+      conn: conn,
+      task: task,
+      plan_run: plan_run,
+      scope: scope
+    } do
+      [%{id: id}] = Pipeline.append_run_events(plan_run.id, nil, ["[human:#{scope.user.id}] Keep it short."])
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=comments")
+
+      assert has_element?(view, "#comment-#{id} [data-qa=comment_author]", "You")
+      view |> element("#comment-#{id}") |> render_click()
+
+      assert_patch(view, ~p"/tasks/#{task.id}?item=plan&agent=plan")
+      assert has_element?(view, "#review-pane[data-item=plan] #conversation-agent-plan[aria-current='true']")
+      assert has_element?(view, "#plan-chat", "Keep it short.")
     end
   end
 end

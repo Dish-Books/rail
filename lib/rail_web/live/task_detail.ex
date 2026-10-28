@@ -7,6 +7,7 @@ defmodule RailWeb.Live.TaskDetail do
   for the conversation's tray. Diff is the branch, or one commit of it, which a finding's commits open. Screens is
   each screen state's one shot, opened over the page to step through and comment on, Demo plays the latest
   recording with its walkthrough and says when the branch has moved past it, and Browser watches QA's browser.
+  Comments lists every comment on the task, and each opens where it was left.
   """
   use RailWeb, :live_component
 
@@ -17,6 +18,7 @@ defmodule RailWeb.Live.TaskDetail do
   alias Rail.Git
   alias Rail.Learnings
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.FindingComment
   alias Rail.Pipeline.Schemas.FindingEvidence
@@ -50,6 +52,18 @@ defmodule RailWeb.Live.TaskDetail do
   # Something the page heard moved what the stage shows; it reads it again off the task it holds.
   def update(%{reload: true}, socket), do: {:ok, load(socket)}
 
+  # A comment in the Comments item opens the Plan item. Round 1 is the Plan stage, whose round the URL keeps.
+  def update(%{open_plan: nil}, socket) do
+    socket = socket |> pick(:plan) |> assign(:plan_round, nil) |> load()
+    {:ok, socket}
+  end
+
+  def update(%{open_plan: round}, socket) do
+    send(self(), {:plan_round, round})
+    socket = socket |> assign(:item, :plan) |> assign(:plan_round, round) |> load()
+    {:ok, socket}
+  end
+
   def update(assigns, socket) do
     socket =
       socket
@@ -68,6 +82,7 @@ defmodule RailWeb.Live.TaskDetail do
       |> assign_new(:screen_draft, fn -> nil end)
       |> assign_new(:finding_draft, fn -> nil end)
       |> assign_new(:fix_plan_draft, fn -> nil end)
+      |> assign_new(:comment_order, fn -> "newest" end)
       |> assign_new(:reported_lifted, fn -> nil end)
       |> assign_new(:code_cache, fn -> %{fingerprint: :unread, by_key: %{}} end)
       |> load()
@@ -402,6 +417,17 @@ defmodule RailWeb.Live.TaskDetail do
                   target={@myself}
                 />
 
+                <.comment_list
+                  :if={@item == :comments}
+                  comments={
+                    if @comment_order == "newest", do: Enum.reverse(@comments), else: @comments
+                  }
+                  order={@comment_order}
+                  screen_keys={Enum.map(@screens, & &1.key)}
+                  reader_id={@current_scope.user.id}
+                  target={@myself}
+                />
+
                 <.demo_player
                   :if={@item == :demo}
                   task={@task}
@@ -623,6 +649,17 @@ defmodule RailWeb.Live.TaskDetail do
     {:noreply, socket}
   end
 
+  def handle_event("order_comments", %{"order" => order}, socket) when order in ["newest", "oldest"],
+    do: {:noreply, assign(socket, :comment_order, order)}
+
+  # A comment gone since the list was drawn opens nothing; the next read drops its row.
+  def handle_event("open_comment", %{"kind" => kind, "id" => id}, socket) do
+    case Enum.find(socket.assigns.comments, &(to_string(&1.kind) == kind and &1.id == id)) do
+      %{} = entry -> {:noreply, open_comment(socket, entry)}
+      nil -> {:noreply, socket}
+    end
+  end
+
   def handle_event("record_demo", _params, socket) do
     case Pipeline.record_demo(socket.assigns.current_scope, socket.assigns.task) do
       {:ok, _run} ->
@@ -829,7 +866,7 @@ defmodule RailWeb.Live.TaskDetail do
   # Everything the open item shows is read off the rows and the disk again; what only one item needs is
   # read only while it is the one open.
   defp load(socket) do
-    %{task: task} = socket.assigns
+    %{task: task, current_scope: scope} = socket.assigns
     findings = Pipeline.list_findings(task)
     passes = Pipeline.read_review(task)
     runs = role_runs(task)
@@ -871,8 +908,48 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign_selected(selected, findings)
     |> assign(:commentable, task.stage in [:review, :finalize, :merged] and is_nil(task.cleaned_up_at))
     |> assign_finding_comments()
+    |> assign(:comments, if(socket.assigns.item == :comments, do: Pipeline.list_comments(scope, task), else: []))
     |> watch()
     |> tray(findings, passes, phase)
+  end
+
+  # Each comment opens where it was left, as the tray and the rail open the same places.
+  defp open_comment(socket, %{kind: :diff, comment: comment}) do
+    socket
+    |> pick(:diff)
+    |> assign(:diff_open, %{
+      view: DiffComment.calculate_view(comment),
+      comment: comment.id,
+      at: System.unique_integer([:positive])
+    })
+    |> assign(:diff_file, comment.path)
+    |> load()
+  end
+
+  # A state a retake or a cleanup took away leaves the grid open.
+  defp open_comment(socket, %{kind: :screen, comment: %ScreenComment{key: key}}) do
+    key = if Enum.any?(socket.assigns.screens, &(&1.key == key)), do: key
+    socket |> pick(:screens) |> open_screen(key) |> load()
+  end
+
+  defp open_comment(socket, %{kind: :finding, comment: %FindingComment{finding: finding}}) do
+    socket |> pick(:findings) |> assign(:selected_key, finding.key) |> assign(:filed_index, 0) |> load()
+  end
+
+  defp open_comment(socket, %{kind: :plan, comment: %PlanComment{target: :fix_plan}}) do
+    item = if waiting_plan?(socket.assigns), do: :fix_plan, else: :plan
+    socket |> pick(item) |> assign(:plan_round, nil) |> load()
+  end
+
+  # The Plan stage and the conversation beside it are the page's, so the page opens them.
+  defp open_comment(socket, %{kind: :plan, comment: %PlanComment{target: target}}) do
+    send(self(), {:open_plan, %{tab: Atom.to_string(target)}})
+    socket
+  end
+
+  defp open_comment(socket, %{kind: :message, comment: %{role: role}}) do
+    send(self(), {:open_plan, %{agent: Atom.to_string(role.stage)}})
+    socket
   end
 
   # The round's plan, what changed in its rulings and whether it can be approved. Its item opens only while there is one.
@@ -1218,7 +1295,8 @@ defmodule RailWeb.Live.TaskDetail do
   defp waiting_plan?(%{fix_plan: %FixPlan{}, plan_state: state}), do: state != :approved
   defp waiting_plan?(_assigns), do: false
 
-  # The whole task's items before the review's: the issue, the plan with its conversation and a split's children.
+  # The whole task's items before the review's: the issue, the plan with its conversation, a split's children and
+  # every comment on the task.
   defp page_items(assigns) do
     [
       %{
@@ -1255,7 +1333,17 @@ defmodule RailWeb.Live.TaskDetail do
           badge: nil,
           dot: nil,
           mark: nil
-        }
+        },
+      %{
+        key: :comments,
+        label: "Comments",
+        icon: "pi-chats",
+        picked_icon: "pi-chats-fill",
+        state: "Every comment on the task",
+        badge: nil,
+        dot: nil,
+        mark: nil
+      }
     ]
   end
 
@@ -1646,6 +1734,7 @@ defmodule RailWeb.Live.TaskDetail do
   defp item("plan"), do: :plan
   defp item("conversation"), do: :plan
   defp item("children"), do: :children
+  defp item("comments"), do: :comments
   defp item("fix_plan"), do: :fix_plan
   defp item("diff"), do: :diff
   defp item("screens"), do: :screens

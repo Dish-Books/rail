@@ -1,10 +1,10 @@
 defmodule RailWeb.TaskLive do
   @moduledoc """
   One task on one page: a header with every decision a person makes on it, a rail of the task's items, and the
-  item picked beside it. The items are the issue, the plan with the conversation beside it and, once there is
-  something of each to read, the findings, the next round's plan, the diff, the screens, the demo and the browser; a split adds its
-  children. The item, the agent the conversation reads and a split's child are in the URL, so a refresh comes
-  back to them.
+  item picked beside it. The items are the issue, the plan with the conversation beside it, every comment on the
+  task and, once there is something of each to read, the findings, the next round's plan, the diff, the screens, the
+  demo and the browser; a split adds its children. The item, the agent the conversation reads and a split's child
+  are in the URL, so a refresh comes back to them.
 
   The conversation takes messages for Plan until its plan is approved, then for the review agent; every other
   agent's run is read there as the record of what it did.
@@ -46,7 +46,7 @@ defmodule RailWeb.TaskLive do
   @frame_interval_ms 250
 
   # The items the URL can name; any other opens what the task is waiting on.
-  @items ["issue", "plan", "children", "findings", "fix_plan", "diff", "screens", "demo", "browser"]
+  @items ["issue", "plan", "children", "comments", "findings", "fix_plan", "diff", "screens", "demo", "browser"]
 
   # The agents whose runs the conversation reads, in the order a task meets them.
   @agents [:plan, :engineer, :qa, :review, :demo, :review_lead]
@@ -106,6 +106,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:split_points, nil)
       |> assign(:cleanup_confirm, nil)
       |> assign(:viewer_owns, false)
+      |> assign(:plan_tab, nil)
 
     # A stage moved from another page or by a run finishing is what keeps this one current.
     if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
@@ -236,6 +237,7 @@ defmodule RailWeb.TaskLive do
               approvable={@task.stage == :plan and not Run.running?(@plan_run)}
               status={@header_status}
               child_of={@child_of}
+              tab={@plan_tab}
             />
           </:plan>
           <:conversation>
@@ -313,10 +315,16 @@ defmodule RailWeb.TaskLive do
   end
 
   def handle_info({:run_events, run_id, events}, socket) do
-    for {run_id, batches} <- Enum.group_by(queued_run_events([{run_id, events}]), &elem(&1, 0), &elem(&1, 1)),
+    queued = queued_run_events([{run_id, events}])
+
+    for {run_id, batches} <- Enum.group_by(queued, &elem(&1, 0), &elem(&1, 1)),
         MapSet.member?(socket.assigns.subscribed_run_ids, run_id) do
       send_update(RunConversation, id: "run-conversation", run_id: run_id, appended_events: Enum.concat(batches))
     end
+
+    # A message someone typed is a comment the open Comments item lists.
+    typed? = Enum.any?(queued, fn {_run_id, batch} -> Enum.any?(batch, &String.starts_with?(&1.line, "[human:")) end)
+    if typed?, do: reload_comments(socket)
 
     socket = refresh_diff(socket)
 
@@ -390,7 +398,7 @@ defmodule RailWeb.TaskLive do
     # The conversation is drawn under every item, as its trays at least, so it always reads them.
     with %{task_id: ^task_id, open_item: item} <- socket.assigns do
       if item == :plan, do: send_update(PlanStage, id: "plan-stage", reload_comments: true)
-      if item == :fix_plan, do: send_update(TaskDetail, id: "task-detail", reload: true)
+      if item in [:fix_plan, :comments], do: send_update(TaskDetail, id: "task-detail", reload: true)
       send_update(RunConversation, id: "run-conversation", reload_plan_comments: true)
       send_update(TaskActions, id: "task-actions")
     end
@@ -404,17 +412,33 @@ defmodule RailWeb.TaskLive do
     {:noreply, socket}
   end
 
+  # A comment opens the Plan item on its tab, which the Plan stage takes as it mounts, or beside its agent's
+  # conversation.
+  def handle_info({:open_plan, opts}, socket) do
+    socket = assign(socket, :plan_tab, opts[:tab])
+
+    socket =
+      if opts[:agent], do: push_patch(socket, to: task_path(socket, item: "plan", agent: opts[:agent])), else: socket
+
+    send_update(TaskDetail, id: "task-detail", open_plan: if(opts[:tab], do: "1"))
+    {:noreply, socket}
+  end
+
   # The Plan item opened another round, which the URL names in place for a reload, beside the same agent's run.
+  # The Plan stage has taken any tab it was handed by now.
   def handle_info({:plan_round, round}, socket) do
     path = task_path(socket, item: "plan", round: round, agent: socket.assigns.agent)
-    {:noreply, push_patch(socket, to: path, replace: true)}
+    socket = socket |> assign(:plan_tab, nil) |> push_patch(to: path, replace: true)
+    {:noreply, socket}
   end
 
   # The stage opened another item, which the URL names in place for a reload; the Plan item keeps the agent its
   # conversation reads.
   def handle_info({:review_item, item}, socket) do
     agent = if item in [:plan, :fix_plan], do: socket.assigns.agent
-    {:noreply, push_patch(socket, to: task_path(socket, item: Atom.to_string(item), agent: agent), replace: true)}
+    path = task_path(socket, item: Atom.to_string(item), agent: agent)
+    socket = socket |> assign(:plan_tab, nil) |> push_patch(to: path, replace: true)
+    {:noreply, socket}
   end
 
   # The Browser item is open on this browser, or on none; only the subscription moves.
@@ -443,8 +467,12 @@ defmodule RailWeb.TaskLive do
     {:noreply, socket}
   end
 
+  # A task read again can equal the one the stage holds, which then is not updated, so the open Comments item is
+  # told to read its comments again: another person's Review Send arrives only as this.
   def handle_info({:pipeline_changed, task_id}, %{assigns: %{task_id: task_id}} = socket) do
-    {:noreply, refresh_task(socket)}
+    socket = refresh_task(socket)
+    reload_comments(socket)
+    {:noreply, socket}
   end
 
   # A split's parent and children are one page, so a move in any of them redraws it.
@@ -660,6 +688,11 @@ defmodule RailWeb.TaskLive do
     end
 
     socket
+  end
+
+  defp reload_comments(socket) do
+    if match?(%{open_item: :comments, task: %Task{}}, socket.assigns),
+      do: send_update(TaskDetail, id: "task-detail", reload: true)
   end
 
   # Whatever the open item shows is read off disk or the rows again.
@@ -1082,8 +1115,8 @@ defmodule RailWeb.TaskLive do
   end
 
   # Sent and resolved comments are everyone's, so the task has a topic; unsent ones
-  # are the reader's alone, so every tab of theirs also hears their own topic. Plan,
-  # screen and finding comments are only ever unsent on the page, so they have only the reader's topic.
+  # are the reader's alone, so every tab of theirs also hears their own topic. Plan, screen and finding comments
+  # have only the reader's topic: Comments hears another's sent ones as their log line or the pipeline's broadcast.
   defp watch_diff_comments(socket, %Task{id: task_id}) do
     watched = socket.assigns.watched_comments_task_id
     user_id = socket.assigns.current_scope.user.id
