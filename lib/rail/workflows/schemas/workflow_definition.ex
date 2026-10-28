@@ -7,8 +7,11 @@ defmodule Rail.Workflows.Schemas.WorkflowDefinition do
 
   alias Oban.Cron.Expression
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.IssueStage
 
-  @keys ["name", "schedule", "instructions", "skip"]
+  @keys ["name", "schedule", "instructions", "skip", "stages"]
+  @built_ins %{"plan" => :plan, "implement" => :engineer, "review" => :review}
+  @stages_hint "the stages are plan, implement and review, with custom stages of a name and a prompt before review"
   @steps Enum.map(Issue.optional_steps(), &Atom.to_string/1)
   @weekdays ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"]
 
@@ -20,16 +23,19 @@ defmodule Rail.Workflows.Schemas.WorkflowDefinition do
     field :schedule, :string
     # The steps its tasks run without, copied onto each issue it opens.
     field :skip, {:array, Ecto.Enum}, values: Issue.optional_steps(), default: []
+    # Its tasks' stages in order, copied onto each issue it opens; none runs Plan, Engineer and Review.
+    embeds_many :stages, IssueStage, on_replace: :delete
   end
 
   @doc """
   Builds a definition from a file's keys, refusing one short of a name, instructions or a schedule Rail can step,
-  or skipping a step Rail does not have.
+  skipping a step Rail does not have, or with stages out of order, unknown, repeated or after Review.
   """
   def changeset(definition, attrs) do
     definition
     |> cast(attrs, [:name, :instructions, :schedule])
     |> cast_skip(attrs["skip"])
+    |> cast_stages(attrs["stages"])
     |> update_change(:name, &String.trim/1)
     |> update_change(:instructions, &String.trim/1)
     |> update_change(:schedule, &String.trim/1)
@@ -104,6 +110,63 @@ defmodule Rail.Workflows.Schemas.WorkflowDefinition do
 
   defp cast_skip(changeset, _not_a_list) do
     add_error(changeset, :skip, "is not a list; the steps are #{Enum.join(@steps, ", ")}")
+  end
+
+  # Checked whole rather than per entry, since an order or a repeat is about the list and not one stage.
+  defp cast_stages(changeset, nil), do: changeset
+
+  defp cast_stages(changeset, entries) when is_list(entries) do
+    stages = Enum.map(entries, &stage_changeset/1)
+
+    case stages_error(entries, stages) do
+      message when is_binary(message) -> add_error(changeset, :stages, message)
+      nil -> put_embed(changeset, :stages, Enum.map(stages, &apply_changes/1))
+    end
+  end
+
+  defp cast_stages(changeset, _not_a_list), do: add_error(changeset, :stages, "is not a list; #{@stages_hint}")
+
+  defp stage_changeset(entry) when is_map_key(@built_ins, entry),
+    do: IssueStage.changeset(%IssueStage{}, %{stage: @built_ins[entry]})
+
+  defp stage_changeset(%{} = entry) do
+    if Map.keys(entry) -- ["name", "prompt"] == [],
+      do: IssueStage.changeset(%IssueStage{}, %{stage: :custom, name: entry["name"], prompt: entry["prompt"]}),
+      else: :invalid
+  end
+
+  defp stage_changeset(_unknown), do: nil
+
+  defp stages_error(entries, stages) do
+    unknown = for {entry, nil} <- Enum.zip(entries, stages), do: entry
+
+    built =
+      for %Ecto.Changeset{valid?: true} = stage <- stages,
+          get_field(stage, :stage) != :custom,
+          do: get_field(stage, :stage)
+
+    names = for %Ecto.Changeset{valid?: true} = stage <- stages, name = get_field(stage, :name), do: name
+    repeated = names |> Enum.frequencies() |> Enum.find_value(fn {name, count} -> count > 1 && name end)
+
+    cond do
+      unknown != [] ->
+        "names #{Enum.map_join(unknown, ", ", &if(is_binary(&1), do: &1, else: inspect(&1)))}; #{@stages_hint}"
+
+      not Enum.all?(stages, &match?(%Ecto.Changeset{valid?: true}, &1)) ->
+        "has a custom stage that is not a name and a prompt"
+
+      built != [:plan, :engineer, :review] ->
+        "must name plan, implement and review once each, in that order"
+
+      get_field(List.last(stages), :stage) != :review ->
+        "places a custom stage after review"
+
+      is_binary(repeated) ->
+        "names the custom stage #{repeated} twice"
+
+      true ->
+        nil
+    end
   end
 
   defp read_yaml(text) do

@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.StartTask do
   @moduledoc """
-  Starts an issue's task at the first of its stages: Plan, or Engineer when its workflow turned every Plan step off.
+  Starts an issue's task at the first of its stages: Plan, a custom stage its workflow placed first, or Engineer when
+  its workflow turned every Plan step off.
   """
 
   alias Rail.Git
@@ -21,19 +22,19 @@ defmodule Rail.Pipeline.Actions.StartTask do
       [:plan | _later] ->
         with {:ok, %OsProcess{task_id: task_id}} <- Pipeline.start_plan_run(issue), do: Pipeline.get_task(task_id)
 
-      [:engineer | _later] ->
-        with {:ok, %Task{} = task} <- record_task(Repo.preload(issue, :project)) do
-          {:ok, _run} = Pipeline.enter_stage(task, :engineer, fresh: true)
+      [first | _later] = stages ->
+        with {:ok, %Task{} = task} <- record_task(Repo.preload(issue, :project), first, :plan in stages) do
+          {:ok, _run} = Pipeline.enter_stage(task, first, fresh: true)
           Pipeline.get_task(task.id)
         end
     end
   end
 
-  # Nothing was planned, so round 1 holds the issue as its ticket, approved by Rail so Merge waits on no plan.
-  defp record_task(%Issue{project: %Project{} = project} = issue) do
+  # With no Plan to come, round 1 holds the issue as its ticket, approved by Rail so Merge waits on no plan.
+  defp record_task(%Issue{project: %Project{} = project} = issue, first, planned?) do
     Repo.transaction(fn ->
-      with {:ok, task} <- Pipeline.create_task(issue, :engineer),
-           {:ok, _round} <- issue_round(task, issue),
+      with {:ok, task} <- Pipeline.create_task(issue, first),
+           {:ok, _round} <- if(planned?, do: {:ok, nil}, else: issue_round(task, issue)),
            {:ok, _worktree_path} <- worktree(project, task) do
         task
       else

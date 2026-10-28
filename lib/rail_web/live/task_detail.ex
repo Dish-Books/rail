@@ -1,7 +1,8 @@
 defmodule RailWeb.Live.TaskDetail do
   @moduledoc """
   A task's page body: the header with every decision on it, and a slim rail of the task's items beside the picked
-  one. Issue and Plan are the page's own, handed in as slots, and the conversation is too: Plan reads every round
+  one. Issue and Plan are the page's own, handed in as slots, and the conversation is too. A custom stage of a
+  workflow's task is an item of its own, its file beside its conversation, with Approve in the header. Plan reads every round
   beside it, with the next one's plan and its Approve while it waits, and every other item has its trays under it. Findings is the list beside one finding, with what the round's agents are doing
   above them; ruling moves on to the next finding. What Send would send and whether it can is handed to the page
   for the conversation's tray. Diff is the branch, or one commit of it, which a finding's commits open. Screens is
@@ -12,7 +13,9 @@ defmodule RailWeb.Live.TaskDetail do
 
   import RailWeb.Utils.BuildFixPlanLines
   import RailWeb.Utils.CalculateDocumentComments
+  import RailWeb.Utils.CustomStageItem
   import RailWeb.Utils.MonotonicMs
+  import RailWeb.Utils.StageLabel, only: [custom_stage_waiting?: 2]
 
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
@@ -32,6 +35,7 @@ defmodule RailWeb.Live.TaskDetail do
   alias Rail.Scope
   alias Rail.Tools
   alias Rail.Users
+  alias RailWeb.Live.CustomStage
   alias RailWeb.Live.DiffView
 
   @double_click_ms 400
@@ -109,6 +113,19 @@ defmodule RailWeb.Live.TaskDetail do
             <%!-- Not the PR's Approve, which sits in the same place at Finalize --%>
             <.icon name="pi-play" class="size-4" /> Start fix round
           </button>
+
+          <button
+            :if={@stage_approvable}
+            type="button"
+            id="approve-custom-stage"
+            data-qa="approve_custom_stage"
+            phx-click="approve_stage_output"
+            phx-target={@myself}
+            phx-disable-with="Approving…"
+            class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+          >
+            <.icon name="pi-check" class="size-4" /> Approve
+          </button>
         </:actions>
 
         <:alerts :if={@error}>
@@ -141,7 +158,7 @@ defmodule RailWeb.Live.TaskDetail do
               <%!-- Its edge drags it wider, and the width the hook sets is kept through patches. A split's child
               waiting on its turn has run nothing, so it has no conversation to show. --%>
               <aside
-                :if={@item in [:plan, :fix_plan] and @task.runs != []}
+                :if={@beside and @task.runs != []}
                 id="plan-chat"
                 data-qa="plan_chat"
                 phx-hook="SidebarResize"
@@ -203,6 +220,16 @@ defmodule RailWeb.Live.TaskDetail do
                   {render_slot(@plan)}
                 </div>
                 <.round_plan :if={@item == :plan and @round_pick != "1"} round={@shown_round} />
+                <div :if={@custom_item} id="task-item-custom-stage" class="flex-1 min-h-0">
+                  <.live_component
+                    module={CustomStage}
+                    id={"custom-#{@custom_item.key}"}
+                    task={@task}
+                    run={@custom_item.run}
+                    name={@custom_item.name}
+                    current_scope={@current_scope}
+                  />
+                </div>
                 <div
                   :if={@item == :children}
                   id="task-item-children"
@@ -428,7 +455,7 @@ defmodule RailWeb.Live.TaskDetail do
                 />
 
                 <%!-- Under every other item, the comments waiting to be sent, so Send is never an item away. --%>
-                <div :if={@item not in [:plan, :fix_plan]} class="shrink-0">
+                <div :if={!@beside} class="shrink-0">
                   {render_slot(@conversation)}
                 </div>
               </div>
@@ -461,7 +488,7 @@ defmodule RailWeb.Live.TaskDetail do
   end
 
   def handle_event("pick_item", %{"item" => item}, socket) do
-    socket = socket |> pick(item(item) || :findings) |> load()
+    socket = socket |> pick(item(item, socket.assigns.task) || :findings) |> load()
     {:noreply, socket}
   end
 
@@ -680,6 +707,26 @@ defmodule RailWeb.Live.TaskDetail do
     {:noreply, socket}
   end
 
+  # Approve moves the task on, so the page opens on the stage it moved to.
+  def handle_event("approve_stage_output", _params, socket) do
+    %{current_scope: scope, task: task} = socket.assigns
+
+    # A page drawn before another tab approved still sends this, and the approval refuses it.
+    socket =
+      with %Task{stage: :custom} <- task,
+           {:ok, _run} <- Pipeline.approve_stage_output(scope, custom_run(task, task.custom_stage)) do
+        {:ok, moved} = Pipeline.get_task(task.id)
+        send(self(), :task_changed)
+        socket |> assign(:error, nil) |> pick(default_item(moved))
+      else
+        %Task{} -> assign(socket, :error, message_for(:already_approved))
+        {:error, {:invalid_stage, _stage}} -> assign(socket, :error, message_for(:already_approved))
+        {:error, reason} -> assign(socket, :error, message_for(reason))
+      end
+
+    {:noreply, load(socket)}
+  end
+
   def handle_event("approve_fix_plan", %{"version" => version}, socket) do
     %{current_scope: scope, run: run} = socket.assigns
 
@@ -793,7 +840,10 @@ defmodule RailWeb.Live.TaskDetail do
   defp open_url_item(%{assigns: %{task: %Task{id: id}}} = socket, %{task: %Task{id: id}}), do: socket
 
   defp open_url_item(socket, assigns) do
-    item = item(assigns[:url_item]) || if(assigns[:split_parent], do: :children, else: default_item(assigns.task))
+    item =
+      item(assigns[:url_item], assigns.task) ||
+        if(assigns[:split_parent], do: :children, else: default_item(assigns.task))
+
     assign(socket, :item, item)
   end
 
@@ -806,6 +856,7 @@ defmodule RailWeb.Live.TaskDetail do
   defp open_url_file(socket, _assigns), do: socket
 
   # A page opens on what the task is waiting on now.
+  defp default_item(%Task{stage: :custom} = task), do: custom_stage_item(task.issue, Task.current_stage(task)).key
   defp default_item(%Task{stage: :plan}), do: :plan
   defp default_item(%Task{stage: :engineer}), do: :diff
   defp default_item(%Task{}), do: :findings
@@ -871,6 +922,7 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign_branch(passes)
     |> assign_screen_comments()
     |> assign_demo_and_browsers(runs)
+    |> assign_custom_stage()
     |> assign_items()
     |> assign_selected(selected, findings)
     |> assign(:commentable, task.stage in [:review, :finalize, :merged] and is_nil(task.cleaned_up_at))
@@ -878,6 +930,29 @@ defmodule RailWeb.Live.TaskDetail do
     |> watch()
     |> tray(findings, passes, phase)
   end
+
+  # The custom stage item open, with its run beside it, and whether the stage the task is at waits on its Approve.
+  defp assign_custom_stage(%{assigns: %{task: task, item: item, current_scope: scope}} = socket) do
+    open =
+      with "stage-" <> _number <- item,
+           %{name: name} = found <- custom_stage_item(task.issue, item),
+           %Run{} = run <- custom_run(task, name) do
+        Map.put(found, :run, run)
+      else
+        _not_a_custom_stage -> nil
+      end
+
+    approvable =
+      task.stage == :custom and is_nil(task.cleaned_up_at) and match?(%{user: %{}}, scope) and
+        custom_stage_waiting?(task, custom_run(task, task.custom_stage))
+
+    socket
+    |> assign(:custom_item, open)
+    |> assign(:beside, item in [:plan, :fix_plan] or open != nil)
+    |> assign(:stage_approvable, approvable)
+  end
+
+  defp custom_run(%Task{runs: runs}, name), do: Enum.find(runs, &match?(%Run{role: %Role{custom_stage: ^name}}, &1))
 
   # The round's plan, what changed in its rulings and whether it can be approved. Its item opens only while there is one.
   defp assign_fix_plan(socket, fix_plan, plan_state, findings) do
@@ -1193,7 +1268,11 @@ defmodule RailWeb.Live.TaskDetail do
   # built, the rest once it is reviewed.
   defp shown(%{task: task, passes: passes}, [findings, diff, screens, demo, browser]) do
     reviewed? = task.stage in [:review, :finalize, :merged] or passes != []
-    built? = task.stage != :plan
+    # A custom stage can run before the engineer has built anything, or after.
+    built? =
+      task.stage not in [:plan, :custom] or
+        (task.stage == :custom and Enum.any?(task.runs, &match?(%Run{role: %Role{stage: :engineer}}, &1)))
+
     [reviewed? && findings, built? && diff, reviewed? && screens, reviewed? && demo, built? && browser]
   end
 
@@ -1222,8 +1301,12 @@ defmodule RailWeb.Live.TaskDetail do
   defp waiting_plan?(%{fix_plan: %FixPlan{}, plan_state: state}), do: state != :approved
   defp waiting_plan?(_assigns), do: false
 
-  # The whole task's items before the review's: the issue, the plan with its conversation and a split's children.
+  # The whole task's items before the review's: the issue, the plan with its conversation, each custom stage it has
+  # reached on the side of Plan its sequence puts it, and a split's children.
   defp page_items(assigns) do
+    sequence = Issue.calculate_stages(assigns.task.issue)
+    {before_plan, after_plan} = if :plan in sequence, do: Enum.split_while(sequence, &(&1 != :plan)), else: {[], sequence}
+
     [
       %{
         key: :issue,
@@ -1234,33 +1317,69 @@ defmodule RailWeb.Live.TaskDetail do
         badge: nil,
         dot: nil,
         mark: nil
-      },
-      Map.merge(
-        %{
-          key: :plan,
-          label: "Plan",
-          icon: "pi-clipboard-text",
-          picked_icon: "pi-clipboard-text-fill",
-          state: assigns.plan_label,
-          # Its conversation is beside it, so the questions waiting there are counted on it.
-          badge: if(assigns.questions > 0, do: assigns.questions),
-          dot: if(assigns.task.stage == :plan and Run.running?(assigns.plan_run), do: :running),
-          mark: nil
-        },
-        fix_plan_item(assigns) || %{}
-      ),
-      assigns.split &&
-        %{
-          key: :children,
-          label: "Children",
-          icon: "pi-tree-structure",
-          picked_icon: "pi-tree-structure-fill",
-          state: "The split's children",
-          badge: nil,
-          dot: nil,
-          mark: nil
-        }
-    ]
+      }
+      | custom_items(assigns.task, before_plan)
+    ] ++
+      [
+        Map.merge(
+          %{
+            key: :plan,
+            label: "Plan",
+            icon: "pi-clipboard-text",
+            picked_icon: "pi-clipboard-text-fill",
+            state: assigns.plan_label,
+            # Its conversation is beside it, so the questions waiting there are counted on it.
+            badge: if(assigns.questions > 0 and assigns.task.stage != :custom, do: assigns.questions),
+            dot: if(assigns.task.stage == :plan and Run.running?(assigns.plan_run), do: :running),
+            mark: nil
+          },
+          fix_plan_item(assigns) || %{}
+        )
+        | custom_items(assigns.task, after_plan)
+      ] ++
+      [
+        assigns.split &&
+          %{
+            key: :children,
+            label: "Children",
+            icon: "pi-tree-structure",
+            picked_icon: "pi-tree-structure-fill",
+            state: "The split's children",
+            badge: nil,
+            dot: nil,
+            mark: nil
+          }
+      ]
+  end
+
+  # A custom stage shows once it has a run, saying what it waits on: an answer, its file, or the reader's Approve.
+  defp custom_items(%Task{} = task, stages) do
+    saved = task |> Pipeline.read_stage_outputs() |> Enum.map(& &1.name)
+
+    for {:custom, name} = stage <- stages, %Run{} = run <- [custom_run(task, name)] do
+      questions = Enum.count(run.questions, &(&1.status == :pending))
+
+      {state, dot, mark} =
+        case {Run.state(run), name in saved} do
+          {state, _saved?} when state in [:running, :waiting] -> {"running", :running, nil}
+          {:blocked, _saved?} -> {"needs an answer", nil, :waiting}
+          {:failed, _saved?} -> {"failed", nil, :failed}
+          {:done, _saved?} -> {"approved", nil, :done}
+          {_stopped, true} -> {"waiting on you", nil, :waiting}
+          {_stopped, false} -> {"no file saved", nil, :waiting}
+        end
+
+      %{
+        key: custom_stage_item(task.issue, stage).key,
+        label: name,
+        icon: "pi-puzzle-piece",
+        picked_icon: "pi-puzzle-piece-fill",
+        state: state,
+        badge: if(questions > 0, do: questions),
+        dot: dot,
+        mark: mark
+      }
+    end
   end
 
   # The next round's plan, while there is one, is what the Plan item says it is doing.
@@ -1369,20 +1488,23 @@ defmodule RailWeb.Live.TaskDetail do
 
   defp first_line(text), do: text |> String.trim() |> String.split("\n", parts: 2) |> hd()
 
-  # Each role's run on the task, by its stage.
+  # Each role's run on the task, by its stage; a custom stage's role has none.
   defp role_runs(%Task{runs: runs}) do
-    for %Run{role: %Role{stage: stage}} = run <- runs, into: %{}, do: {stage, run}
+    for %Run{role: %Role{stage: stage}} = run <- runs, is_atom(stage) and stage != nil, into: %{}, do: {stage, run}
   end
 
   defp plan_label(%Task{stage: :plan}, plan_run, _first),
     do: if(Run.running?(plan_run), do: "Plan is writing", else: "Not approved yet")
 
-  # Work its owner started without a tech lead's approval still waits on one.
-  defp plan_label(%Task{}, _plan_run, %Round{approved_at: nil}), do: "Started without approval"
-
-  # A task whose workflow turned every Plan step off started at Engineer, with nothing to approve.
-  defp plan_label(%Task{issue: issue}, _plan_run, _approved_or_none) do
-    if hd(Issue.calculate_stages(issue)) == :engineer, do: "Off for this workflow", else: "Approved"
+  # A task whose workflow turned every Plan step off has nothing to approve, and one a custom stage runs before
+  # Plan has not reached it yet. Work its owner started without a tech lead's approval still waits on one.
+  defp plan_label(%Task{issue: issue} = task, plan_run, first) do
+    cond do
+      :plan not in Issue.calculate_stages(issue) -> "Off for this workflow"
+      task.stage == :custom and plan_run == nil -> "Not started yet"
+      match?(%Round{approved_at: nil}, first) -> "Started without approval"
+      true -> "Approved"
+    end
   end
 
   # A fix plan is numbered for the review it answers, and the engineer's work for the round it builds.
@@ -1663,6 +1785,16 @@ defmodule RailWeb.Live.TaskDetail do
   defp double_click?({key, at}, key), do: monotonic_ms() - at < @double_click_ms
   defp double_click?(_advanced_to, _key), do: false
 
+  # A custom stage's item opens once its stage has a run to show.
+  defp item("stage-" <> _number = item, %Task{} = task) do
+    case custom_stage_item(task.issue, item) do
+      %{key: key, name: name} -> if custom_run(task, name), do: key
+      nil -> nil
+    end
+  end
+
+  defp item(item, %Task{}), do: item(item)
+
   defp item("issue"), do: :issue
   defp item("plan"), do: :plan
   defp item("conversation"), do: :plan
@@ -1678,6 +1810,8 @@ defmodule RailWeb.Live.TaskDetail do
   defp decision("fix"), do: :fix
   defp decision("skip"), do: :skip
 
+  defp message_for(:already_approved), do: "That stage was already approved."
+  defp message_for(:no_output), do: "Nothing is saved to approve yet."
   defp message_for(:stage_running), do: "Something is still running on this task."
   defp message_for({:step_off, :demo}), do: "The demo is off for this workflow."
   defp message_for(:no_stage_run), do: "Review has no run to ask yet."

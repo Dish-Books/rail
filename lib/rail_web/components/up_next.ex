@@ -80,7 +80,7 @@ defmodule RailWeb.Components.UpNext do
                 )}
               </span>
               <span class="font-mono text-xs text-slate-600 dark:text-slate-400 truncate">
-                {@featured.task.issue.identifier} · {Task.stage_label(@featured.task.stage)}
+                {@featured.task.issue.identifier} · {Task.stage_label(@featured.task)}
                 <span :if={parent_identifier(@featured)} class="text-slate-500 dark:text-slate-400">
                   in {parent_identifier(@featured)}
                 </span>
@@ -169,7 +169,8 @@ defmodule RailWeb.Components.UpNext do
 
   # Review is what the merge is decided on, so a change ready for it opens on its findings, and one at Finalize on
   # the task, whose header merges it. A question is answered in its agent's conversation, beside the plan, which the
-  # task opens on by itself only for the agent taking messages: Plan at Plan, the review agent after.
+  # task opens on by itself only for the agent taking messages: Plan at Plan, a custom stage at its own, the review
+  # agent after.
   defp destination(run, fix_plans) do
     cond do
       MapSet.member?(fix_plans, run.id) ->
@@ -188,6 +189,9 @@ defmodule RailWeb.Components.UpNext do
         [navigate: ~p"/tasks/#{run.task_id}"]
     end
   end
+
+  defp chat_run?(%Run{role: %Role{custom_stage: name}, task: %Task{} = task} = run) when is_binary(name),
+    do: Task.works_stage?(task, run.role)
 
   defp chat_run?(%Run{role: %Role{stage: stage}, task: %Task{stage: :plan}}), do: stage == :plan
   defp chat_run?(%Run{role: %Role{stage: stage}}), do: stage == :review_lead

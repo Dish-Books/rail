@@ -5,6 +5,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
 
   alias Rail.Git
   alias Rail.Issues
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.RunEvent
@@ -240,6 +241,41 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
       assert_received {:prepared, ^task_id}
       assert "The branch is behind origin/main.\n\nRename the button" in argv
       refute "--agents" in argv
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
+  end
+
+  test "a message to a custom stage's agent resumes it with the issue's copy of its prompt, on no fresh branch", %{
+    project: project,
+    task: task
+  } do
+    stages = [%IssueStage{stage: :custom, name: "License check", prompt: "Check each license."}]
+
+    Repo.preload(task, :issue).issue
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.put_embed(:stages, stages)
+    |> Repo.update!()
+
+    {:ok, %Task{id: task_id} = task} = Pipeline.update_task(task, %{stage: :custom, custom_stage: "License check"})
+    {:ok, role} = Roles.get_custom_stage_role(project.id, "License check")
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :finished,
+        conversation_id: "sess_dispatch_custom",
+        pending_chat: "Say which screens.",
+        started_at: DateTime.utc_now()
+      })
+
+    expect(Tools, :start_os_process, fn spawned, argv ->
+      refute_received {:prepared, ^task_id}
+      assert "Say which screens." in argv
+      assert "Check each license." in argv
+      refute role.system_prompt in argv
       {:ok, %OsProcess{run: spawned}}
     end)
 

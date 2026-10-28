@@ -100,7 +100,11 @@ defmodule RailWeb.Settings.RolesLiveTest do
                system_prompt: "You are an engineer."
              })
 
-    assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
+    # A custom stage's role is the workflow file's, so Settings never lists it.
+    {:ok, _license} = Roles.get_custom_stage_role(project.id, "License check")
+
+    assert {:ok, view, html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
+    refute html =~ "License check"
 
     # Stage list checks
     assert has_element?(view, "#pipeline-stages-list")

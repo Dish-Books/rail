@@ -19,6 +19,7 @@ defmodule RailWeb.Live.RunConversation do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Turn
+  alias Rail.Roles.Schemas.Role
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
@@ -120,7 +121,7 @@ defmodule RailWeb.Live.RunConversation do
           open={@tray_open}
           can_send={Run.can_chat?(@selected_run)}
           plan_running={Run.running?(@selected_run)}
-          agent={if review_run?(assigns), do: "The review agent", else: "Plan"}
+          agent={tray_agent(assigns)}
           target={@myself}
         />
 
@@ -285,7 +286,7 @@ defmodule RailWeb.Live.RunConversation do
               open={@tray_open}
               can_send={Run.can_chat?(@selected_run)}
               plan_running={Run.running?(@selected_run)}
-              agent={if review_run?(assigns), do: "The review agent", else: "Plan"}
+              agent={tray_agent(assigns)}
               target={@myself}
             />
 
@@ -1272,7 +1273,7 @@ defmodule RailWeb.Live.RunConversation do
     %{task: task, selected_run: run, roles_map: roles_map} = socket.assigns
 
     if retryable?(run, task, roles_map) do
-      {:ok, %Run{} = run} = Pipeline.enter_stage(task, task.stage)
+      {:ok, %Run{} = run} = Pipeline.enter_stage(task, Task.current_stage(task))
       {:noreply, select(socket, run)}
     else
       {:noreply, socket}
@@ -1483,9 +1484,10 @@ defmodule RailWeb.Live.RunConversation do
   defp identifier(_no_issue), do: nil
 
   # Only the Plan run's conversation is where plan comments wait to be sent.
-  # Plan takes the reader's ticket, design and plan comments, and once the work started the review agent does.
+  # Plan takes the reader's ticket, design and plan comments, a custom stage those on its file, and once the work
+  # started the review agent does.
   defp assign_plan_comments(%{assigns: %{current_scope: %{user: %{}} = scope, task: task}} = socket) do
-    if plan_run?(socket.assigns) or review_run?(socket.assigns),
+    if plan_run?(socket.assigns) or review_run?(socket.assigns) or custom_stage_run?(socket.assigns),
       do: assign(socket, :plan_comments, Pipeline.list_plan_comments(scope, task)),
       else: assign(socket, :plan_comments, [])
   end
@@ -1517,6 +1519,20 @@ defmodule RailWeb.Live.RunConversation do
     do: match?(%{stage: :review_lead}, roles_map[role_id])
 
   defp review_run?(_assigns), do: false
+
+  defp custom_stage_run?(%{selected_run: %Run{role_id: role_id}, roles_map: %{} = roles_map}),
+    do: match?(%{custom_stage: name} when is_binary(name), roles_map[role_id])
+
+  defp custom_stage_run?(_assigns), do: false
+
+  # Who the tray's comments go to, as its Send hint names them.
+  defp tray_agent(assigns) do
+    cond do
+      review_run?(assigns) -> "The review agent"
+      custom_stage_run?(assigns) -> assigns.roles_map[assigns.selected_run.role_id].name
+      true -> "Plan"
+    end
+  end
 
   defp tray_message(:stage_running), do: "The Review lead is working. Send waits until it stops."
 
@@ -1875,9 +1891,9 @@ defmodule RailWeb.Live.RunConversation do
 
   # Only the stage the task is in can be entered again without moving the task.
   # The run belongs to the stage the task is at, Review's being the Review lead's.
-  defp retryable?(%Run{role_id: role_id} = run, %{stage: stage}, %{} = roles_map) do
-    role_stage = Task.role_stage(stage)
-    not Run.running?(run) and not Run.resumable?(run) and match?(%{stage: ^role_stage}, roles_map[role_id])
+  defp retryable?(%Run{role_id: role_id} = run, %Task{} = task, %{} = roles_map) do
+    not Run.running?(run) and not Run.resumable?(run) and match?(%Role{}, roles_map[role_id]) and
+      Task.works_stage?(task, roles_map[role_id])
   end
 
   defp restore_draft(nil, draft), do: draft

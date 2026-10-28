@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.HandOverWork do
   @moduledoc """
-  Sends on what the engineer committed, through CI where the project has it and then pushed, and on to Review,
-  where Rail starts the agents that check the round.
+  Sends on what the engineer committed, through CI where the project has it and then pushed, and on to the next
+  stage: Review, where Rail starts the agents that check the round, or a custom stage placed before it.
   """
 
   import Rail.Pipeline.Utils.CiPassed
@@ -47,12 +47,12 @@ defmodule Rail.Pipeline.Actions.HandOverWork do
     end
   end
 
-  # Pushed once CI has passed on HEAD, and sent to Review once pushed; CI's finish does both where it runs.
+  # Pushed once CI has passed on HEAD, and sent on once pushed; CI's finish does both where it runs.
   defp push(%Scope{} = scope, %Run{task: %Task{} = task} = run) do
     case Git.push_branch(scope, task) do
       :ok ->
         pushed = %{update(run, %{review_on_ci_pass: false, error: nil}) | task: open_pull_request(task, run)}
-        Pipeline.send_to_review(pushed)
+        Pipeline.send_to_next_stage(pushed)
 
       {:error, reason} ->
         _cleared = update(run, %{review_on_ci_pass: false})

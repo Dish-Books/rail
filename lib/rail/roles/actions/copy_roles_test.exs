@@ -54,6 +54,9 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
         reserved_cpus: 2
       })
 
+    # A custom stage's role is made when a task enters that stage, so it is not copied.
+    {:ok, %Role{custom_stage: "License check"}} = Roles.get_custom_stage_role(source.id, "License check")
+
     assert {:ok, [%Role{name: "Source PM"}, %Role{name: "Source Engineer"}]} =
              Roles.copy_roles(scope, target.id, source.id)
 

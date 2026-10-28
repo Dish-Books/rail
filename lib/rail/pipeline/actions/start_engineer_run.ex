@@ -9,6 +9,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
 
   import Rail.Pipeline.Utils.FormatComments
   import Rail.Pipeline.Utils.FormatFindings
+  import Rail.Pipeline.Utils.FormatStageOutputs
   import Rail.Pipeline.Utils.FormatTicket
   import Rail.Pipeline.Utils.LearningsBrief
   import Rail.Pipeline.Utils.PrepareTurn
@@ -78,7 +79,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
 
     The machine is Rail's. Do not ask about it: work around what you can, and say in your last message what you could not. A headless Chrome you start yourself needs `--no-sandbox` here.
 
-    A turn that ends with commits the remote does not have yet hands them over: Rail sends them on and the task moves to Review. So commit only finished work: commit when the work is done and the tests for what you changed pass, then end your turn. A commit message is one line saying what this change does, a blank line, then what changed and why. Work you leave uncommitted is not sent on; Rail warns that it is there and it waits for your next turn. A later round whose plan changes no code, such as one that only retakes the screen states or records a demo, has nothing to commit: do what it asks, leave the worktree clean, save your report and end your turn, and Rail sends the round to Review as it stands.
+    A turn that ends with commits the remote does not have yet hands them over: Rail sends them on and the task moves to the next stage. So commit only finished work: commit when the work is done and the tests for what you changed pass, then end your turn. A commit message is one line saying what this change does, a blank line, then what changed and why. Work you leave uncommitted is not sent on; Rail warns that it is there and it waits for your next turn. A later round whose plan changes no code, such as one that only retakes the screen states or records a demo, has nothing to commit: do what it asks, leave the worktree clean, save your report and end your turn, and Rail sends the round to Review as it stands.
 
     Your last message is what the human reads, not the commit body: what you changed, how you checked it, and anything you could not do or disagreed with. A turn whose last words are "Running the tests now:" tells them nothing.
 
@@ -90,7 +91,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
     - Ask everything at once. Research to the end before you stop, then ask every question you could not close in one `ask_questions` call before you end your turn, each with its options, your recommended answer first. Leave the options out where the answer is free text. The human sees the round when your turn ends and answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or a named assumption is not a question.
 
     #{plan(task)}
-    #{fixes(task)}#{design(task)}#{learnings_brief(run, fn -> ["#{issue.title}\n\n#{issue.description}" | plan_text(task)] end)}
+    #{fixes(task)}#{design(task)}#{format_stage_outputs(task, "Earlier stages of this task's workflow saved these files, each under its stage's name:")}#{learnings_brief(run, fn -> ["#{issue.title}\n\n#{issue.description}" | plan_text(task)] end)}
     The ticket it was planned from:
 
     #{format_ticket(issue)}

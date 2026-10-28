@@ -5,6 +5,7 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
   import Phoenix.LiveViewTest
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
@@ -95,7 +96,25 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
         next_run_at: ~U[2026-10-12 06:00:00Z]
       })
 
+    stages = [
+      %IssueStage{stage: :plan},
+      %IssueStage{stage: :engineer},
+      %IssueStage{stage: :custom, name: "License check", prompt: "Check each license."},
+      %IssueStage{stage: :review}
+    ]
+
+    %Workflow{id: licensed} =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/licensed.yml",
+        definition: %{definition | stages: stages},
+        next_run_at: ~U[2026-10-12 06:00:00Z]
+      })
+
     assert {:ok, view, _html} = live(conn, ~p"/settings/workflows")
+
+    assert view |> element("#workflow-stages-#{licensed}-stages") |> render() |> Floki.parse_fragment!() |> Floki.text() ==
+             "Plan › Implement › License check › Review"
 
     assert has_element?(view, "#workflows-stages-header", "Stages")
     assert has_element?(view, "#workflow-stages-#{some_off}-stages", "Plan › Implement › Review")
@@ -379,6 +398,8 @@ defmodule RailWeb.Settings.WorkflowsLiveTest do
     assert has_element?(view, "#workflow-example", "# the issue's description")
     assert has_element?(view, "#workflow-example", "skip: [product, design]")
     assert has_element?(view, "#workflow-example", "# any of product, design, architect, demo")
+    assert has_element?(view, "#workflow-example", "# a custom stage, anywhere before review")
+    assert has_element?(view, "#workflow-example", "Check each changed dependency against LICENSES.md.")
     assert has_element?(view, ~s(#copy-workflow-example[phx-hook="CopyText"][data-copy-text*="name: Dependency updates"]))
     refute has_element?(view, "#workflows-list")
   end

@@ -1,6 +1,6 @@
 defmodule RailWeb.Components.CommentableLine do
   @moduledoc """
-  One line of the ticket, the plan or the next round's plan with the + that comments on it, as a diff line has, then its comments in tray
+  One line of the ticket, the plan, the next round's plan or a custom stage's file with the + that comments on it, as a diff line has, then its comments in tray
   order and the box being written. Where the + and the comments sit depends on the line: in the gutter for text, over
   the number for code, in a full-width row under a table row, and alone, named, for a line the page hides.
   """
@@ -10,7 +10,7 @@ defmodule RailWeb.Components.CommentableLine do
     default: nil,
     doc: "a line from `build_document_blocks/1`, `build_plan_sheet/2` or `build_fix_plan_lines/1`"
 
-  attr :doc, :atom, required: true, values: [:ticket, :plan, :fix_plan]
+  attr :doc, :atom, required: true, values: [:ticket, :plan, :fix_plan, :output]
   attr :layout, :atom, default: :text, values: [:text, :code, :table_row, :away, :values]
   attr :placed, :map, required: true, doc: "each line's comments with their tray numbers, by its key"
   attr :draft, :map, default: nil, doc: "the line the comment box is open under, with what is typed so far"

@@ -67,4 +67,7 @@ defmodule Rail.Pipeline.Utils.StartRoleRun do
 
   defp start_process(%Run{role: %Role{stage: stage}} = run) when stage in [:qa, :review, :demo],
     do: Pipeline.start_check_run(run)
+
+  defp start_process(%Run{role: %Role{custom_stage: name}} = run) when is_binary(name),
+    do: Pipeline.start_custom_stage_run(run)
 end

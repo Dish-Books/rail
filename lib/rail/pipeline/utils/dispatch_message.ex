@@ -18,6 +18,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   import Rail.Pipeline.Utils.StartWorktreeSetup
 
   alias Ecto.Adapters.SQL.Sandbox
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
@@ -138,7 +139,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
         model: role.model,
         reasoning_effort: role.reasoning_effort || "high",
         read_only: false,
-        system_prompt: role.system_prompt,
+        system_prompt: system_prompt(task, role),
         conversation_id: run.conversation_id,
         work_dir: worktree_path
       )
@@ -156,6 +157,12 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
         {:error, :dispatch_disabled}
     end
   end
+
+  # A custom stage's prompt is the one its issue copied from the workflow file, never the role's.
+  defp system_prompt(%Task{} = task, %Role{custom_stage: name}) when is_binary(name),
+    do: Issue.custom_stage(Repo.preload(task, :issue).issue, name).prompt
+
+  defp system_prompt(%Task{}, %Role{} = role), do: role.system_prompt
 
   # A design picked while Plan was working was recorded without a message, so the next one carries it. Plan has
   # heard a pick once its plan is saved for it.

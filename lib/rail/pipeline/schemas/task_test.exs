@@ -3,12 +3,14 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles
+  alias Rail.Roles.Schemas.Role
 
   setup %{project: project} do
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
@@ -159,6 +161,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   test "stage_label/1 names each stage" do
     assert Enum.map(Task.stages(), &Task.stage_label/1) == [
              "Plan",
+             "Custom stage",
              "Implement",
              "Review",
              "Finalize",
@@ -173,6 +176,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   test "role_stage/1 names the Review lead for Review and Finalize and every other stage's own role" do
     assert Enum.map(Task.stages(), &Task.role_stage/1) == [
              :plan,
+             :custom,
              :engineer,
              :review_lead,
              :review_lead,
@@ -299,5 +303,36 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
 
     assert Task.finalize_state(%Task{marked_ready_at: stale, merge_started_at: stale}) == :ready
     assert Task.finalize_state(%Task{marked_ready_at: stale, merge_started_at: stale, merge_error: "No"}) == :refused
+  end
+
+  test "a task at a custom stage is worked by that stage's role and not by Engineer's, and names the stage" do
+    engineer = %Role{stage: :engineer}
+    license = %Role{custom_stage: "License check"}
+    prompt = %IssueStage{stage: :custom, name: "License check", prompt: "Check each license."}
+    task = %Task{stage: :custom, custom_stage: "License check", issue: %Issue{stages: [prompt]}}
+
+    assert Task.works_stage?(task, license)
+    refute Task.works_stage?(task, engineer)
+    refute Task.works_stage?(task, %Role{custom_stage: "Missing strings"})
+    assert Task.works_stage?(%Task{stage: :engineer}, engineer)
+    refute Task.works_stage?(%Task{stage: :engineer}, license)
+    assert Task.works_stage?(%Task{stage: :review}, %Role{stage: :review_lead})
+
+    assert Task.current_stage(task) == {:custom, "License check"}
+    assert Task.current_stage(%Task{stage: :review}) == :review
+    assert Task.custom_stage(task) == prompt
+    assert Task.custom_stage(%Task{stage: :engineer}) == nil
+    assert Task.stage_label(task) == "License check"
+    assert Task.stage_label(%Task{stage: :engineer}) == "Implement"
+    assert Task.stage_label({:custom, "License check"}) == "License check"
+  end
+
+  test "a custom stage needs its name, and any other stage drops the name of one it left", %{task: task} do
+    assert %{custom_stage: ["can't be blank"]} = errors_on(Task.changeset(task, %{stage: :custom}))
+
+    {:ok, licensed} = task |> Task.changeset(%{stage: :custom, custom_stage: "License check"}) |> Repo.update()
+
+    assert {:ok, %Task{stage: :review, custom_stage: nil}} =
+             licensed |> Task.changeset(%{stage: :review}) |> Repo.update()
   end
 end

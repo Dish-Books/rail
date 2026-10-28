@@ -1,13 +1,17 @@
-defmodule Rail.Pipeline.Actions.SendToReviewTest do
+defmodule Rail.Pipeline.Actions.SendToNextStageTest do
   use Rail.DataCase, async: true
 
+  import Ecto.Query
+
   alias Rail.Issues
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Roles
+  alias Rail.Roles.Schemas.Role
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
@@ -63,8 +67,51 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
   end
 
   test "hands the task to review and latches the engineer run", %{task: task, run: run} do
-    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.send_to_review(run)
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.send_to_next_stage(run)
     assert %Task{stage: :review} = Repo.reload!(task)
+  end
+
+  test "hands the task to the custom stage its sequence places after Engineer, then past it once it is approved", %{
+    project: project,
+    task: task,
+    run: run
+  } do
+    stages = [
+      %IssueStage{stage: :plan},
+      %IssueStage{stage: :engineer},
+      %IssueStage{stage: :custom, name: "License check", prompt: "Check each license."},
+      %IssueStage{stage: :review}
+    ]
+
+    Repo.preload(task, :issue).issue
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.put_embed(:stages, stages)
+    |> Repo.update!()
+
+    test_pid = self()
+
+    stub(Tools, :start_os_process, fn %Run{} = spawned, _argv ->
+      send(test_pid, {:started, Repo.preload(spawned, :role, force: true).role})
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.send_to_next_stage(run)
+    assert %Task{stage: :custom, custom_stage: "License check"} = Repo.reload!(task)
+    assert_received {:started, %Role{custom_stage: "License check"}}
+
+    # Approved, the custom stage runs once per task, so a later round's work goes to Review.
+    {:ok, license} = Roles.get_custom_stage_role(project.id, "License check")
+
+    Repo.update_all(from(r in Run, where: r.task_id == ^task.id and r.role_id == ^license.id),
+      set: [stage_outcome: :done, status: :finished]
+    )
+
+    {:ok, _back} = Pipeline.update_task(Repo.reload!(task), %{stage: :engineer})
+    {:ok, _reopened} = run |> Run.changeset(%{stage_outcome: :in_progress}) |> Repo.update()
+
+    assert {:ok, %Run{}} = Pipeline.send_to_next_stage(run)
+    assert %Task{stage: :review} = Repo.reload!(task)
+    assert_received {:started, %Role{stage: :qa}}
   end
 
   # Each that drives the app has a browser of its own, so none waits on another.
@@ -77,7 +124,7 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
       {:ok, %OsProcess{run: spawned}}
     end)
 
-    assert {:ok, %Run{}} = Pipeline.send_to_review(run)
+    assert {:ok, %Run{}} = Pipeline.send_to_next_stage(run)
 
     for stage <- [:qa, :review, :demo], do: assert_received({:started, ^stage})
     refute_received {:started, _stage}
@@ -96,7 +143,7 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
       {:ok, %OsProcess{run: spawned}}
     end)
 
-    assert {:ok, %Run{}} = Pipeline.send_to_review(run)
+    assert {:ok, %Run{}} = Pipeline.send_to_next_stage(run)
 
     for stage <- [:qa, :review], do: assert_received({:started, ^stage})
     refute_received {:started, _stage}
@@ -114,7 +161,7 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
       {:ok, %OsProcess{run: spawned}}
     end)
 
-    assert {:ok, %Run{}} = Pipeline.send_to_review(run)
+    assert {:ok, %Run{}} = Pipeline.send_to_next_stage(run)
 
     for stage <- [:qa, :review], do: assert_received({:started, ^stage})
     refute_received {:started, _stage}
@@ -175,7 +222,7 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
     } do
       commit.([{"test/bill_test.exs", "test\n"}, {"README.md", "docs\n"}])
 
-      assert {:ok, %Run{}} = Pipeline.send_to_review(run)
+      assert {:ok, %Run{}} = Pipeline.send_to_next_stage(run)
 
       assert_received {:started, :review}
       refute_received {:started, _stage}
@@ -189,7 +236,7 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
     test "that changed a file the app runs starts QA and the demo too", %{run: run, commit: commit} do
       commit.([{"test/bill_test.exs", "test\n"}, {"lib/bill.ex", "code\n"}])
 
-      assert {:ok, %Run{}} = Pipeline.send_to_review(run)
+      assert {:ok, %Run{}} = Pipeline.send_to_next_stage(run)
 
       for stage <- [:qa, :review, :demo], do: assert_received({:started, ^stage})
     end
@@ -198,7 +245,7 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
       {:ok, _project} = Projects.update_project(system_scope(), project, %{qa_skip_paths: []})
       commit.([{"test/bill_test.exs", "test\n"}])
 
-      assert {:ok, %Run{}} = Pipeline.send_to_review(run)
+      assert {:ok, %Run{}} = Pipeline.send_to_next_stage(run)
 
       assert_received {:started, :qa}
     end
@@ -218,7 +265,7 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
       {:ok, %OsProcess{run: spawned}}
     end)
 
-    assert {:ok, %Run{}} = Pipeline.send_to_review(run)
+    assert {:ok, %Run{}} = Pipeline.send_to_next_stage(run)
 
     assert_received {:started, :qa}
   end
@@ -228,7 +275,7 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
     File.write!(Path.join(repo, "uncommitted.ex"), "one\n")
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
-    assert {:ok, %Run{}} = Pipeline.send_to_review(run)
+    assert {:ok, %Run{}} = Pipeline.send_to_next_stage(run)
     assert %Task{stage: :review} = Repo.reload!(task)
     assert File.exists?(Path.join(repo, "uncommitted.ex"))
   end
@@ -239,21 +286,21 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
     git!(repo, ["add", "."])
     git!(repo, ["commit", "-m", "never pushed"])
 
-    assert {:error, :unpushed_changes} = Pipeline.send_to_review(run)
+    assert {:error, :unpushed_changes} = Pipeline.send_to_next_stage(run)
     assert %Task{stage: :engineer} = Repo.reload!(task)
   end
 
   test "refuses while something is still running on the task", %{task: task, run: run} do
     {:ok, _running} = Pipeline.update_run(run, %{status: :running})
 
-    assert {:error, :stage_running} = Pipeline.send_to_review(run)
+    assert {:error, :stage_running} = Pipeline.send_to_next_stage(run)
     assert %Task{stage: :engineer} = Repo.reload!(task)
   end
 
   test "refuses a task that has not reached engineer", %{task: task, run: run} do
     {:ok, _moved} = Pipeline.update_task(task, %{stage: :plan})
 
-    assert {:error, {:invalid_stage, :plan}} = Pipeline.send_to_review(run)
+    assert {:error, {:invalid_stage, :plan}} = Pipeline.send_to_next_stage(run)
   end
 
   # The fixes Review asks for are made inside Review, so nothing sends a task there twice.
@@ -261,13 +308,13 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
     {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
     reject(Tools, :start_os_process, 2)
 
-    assert {:error, {:invalid_stage, :review}} = Pipeline.send_to_review(run)
+    assert {:error, {:invalid_stage, :review}} = Pipeline.send_to_next_stage(run)
   end
 
   test "a project with CI sends nothing to review that CI has not passed", %{project: project, task: task, run: run} do
     {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
 
-    assert {:error, :ci_not_passed} = Pipeline.send_to_review(run)
+    assert {:error, :ci_not_passed} = Pipeline.send_to_next_stage(run)
     assert %Task{stage: :engineer} = Repo.reload!(task)
   end
 
@@ -291,7 +338,7 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
     })
     |> Repo.insert!()
 
-    assert {:error, :ci_not_passed} = Pipeline.send_to_review(run)
+    assert {:error, :ci_not_passed} = Pipeline.send_to_next_stage(run)
 
     %OsProcess{}
     |> OsProcess.changeset(%{
@@ -306,6 +353,6 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
     })
     |> Repo.insert!()
 
-    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.send_to_review(run)
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.send_to_next_stage(run)
   end
 end

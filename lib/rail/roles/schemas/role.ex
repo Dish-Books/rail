@@ -68,6 +68,8 @@ defmodule Rail.Roles.Schemas.Role do
   @primary_key {:id, UXID, autogenerate: true, prefix: "rol"}
   schema "roles" do
     field :stage, Ecto.Enum, values: @canonical_stages
+    # The custom stage of a workflow's file this role works, by its name, in place of a stage; never cast.
+    field :custom_stage, :string
     field :name, :string
     field :description, :string
     field :icon_name, :string, default: @default_icon_name

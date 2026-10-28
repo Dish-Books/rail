@@ -2,7 +2,8 @@ defmodule RailWeb.Live.PlanStage do
   @moduledoc """
   The Plan step: the ticket, the design options and the plan, each a tab that switches in the browser, and the one
   Approve in the header. A child of a split shows only its approved part. A step the task's workflow turned off
-  reads as off, and with Product off the issue stands as the ticket.
+  reads as off, and with Product off the issue stands as the ticket. The file of each custom stage run before Plan is
+  a tab first.
 
   Everything here is read off scratch and the runs whenever the page reloads it, so a save shows
   the moment it lands. What waits on the human opens when the step opens, and only a click changes it after.
@@ -15,6 +16,7 @@ defmodule RailWeb.Live.PlanStage do
 
   import RailWeb.Utils.BuildDocumentBlocks
   import RailWeb.Utils.CalculateDocumentComments
+  import RailWeb.Utils.StageOutputRecipients
 
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
@@ -39,7 +41,9 @@ defmodule RailWeb.Live.PlanStage do
       |> assign_new(:line_draft, fn -> nil end)
       |> assign_new(:reported_changed, fn -> nil end)
       |> assign_new(:selected_key, fn -> nil end)
+      |> assign_earlier()
       |> load()
+      |> prepend_earlier_tabs()
       |> assign_reviewed()
       |> assign_default_paths()
 
@@ -124,6 +128,32 @@ defmodule RailWeb.Live.PlanStage do
         </div>
 
         <div id={"plan-panels-#{@task.id}"} class="flex-1 min-h-0">
+          <.plan_section
+            :for={output <- @earlier}
+            id={"stage-#{output.position}"}
+            open={@open_tab.tab}
+          >
+            <div
+              id={"plan-earlier-stage-#{output.position}"}
+              data-qa="plan_earlier_stage"
+              class="max-w-3xl select-text"
+            >
+              <p class="text-xs text-slate-500 dark:text-slate-400">
+                Earlier stage · Saved {Calendar.strftime(output.saved_at, "%b %-d, %H:%M")} UTC · {stage_output_recipients(
+                  @task.issue,
+                  output.name
+                )}
+              </p>
+              <h2 class="mt-3 text-xl font-bold text-slate-900 dark:text-slate-100 wrap-break-word">
+                {output.name}
+              </h2>
+              <.markdown
+                content={output.markdown}
+                class="mt-3 text-[15px] leading-relaxed wrap-break-word"
+              />
+            </div>
+          </.plan_section>
+
           <.plan_section id="ticket" open={@open_tab.tab}>
             <.ticket_pane
               issue={if :product in @skipped, do: @task.issue}
@@ -1070,6 +1100,17 @@ defmodule RailWeb.Live.PlanStage do
     |> assign_comments()
   end
 
+  # The files custom stages saved before Plan ran, which Plan was given; one run after Plan is not Plan's to show.
+  defp assign_earlier(%{assigns: %{task: %Task{issue: issue} = task}} = socket) do
+    stages = Issue.calculate_stages(issue)
+    before = if :plan in stages, do: Enum.take_while(stages, &(&1 != :plan)), else: []
+    assign(socket, :earlier, Enum.filter(Pipeline.read_stage_outputs(task), &({:custom, &1.name} in before)))
+  end
+
+  defp prepend_earlier_tabs(%{assigns: %{earlier: earlier, tabs: tabs}} = socket) do
+    assign(socket, :tabs, Enum.map(earlier, &%{id: "stage-#{&1.position}", label: &1.name, mark: nil}) ++ tabs)
+  end
+
   # Git is asked once per set of paths the sheet shows, so a comment or an unrelated update does not ask again.
   defp assign_default_paths(socket) do
     %{task: task, sheet: sheet} = socket.assigns
@@ -1301,6 +1342,7 @@ defmodule RailWeb.Live.PlanStage do
       cond do
         Enum.any?(tabs, &(&1.mark == :pick)) -> "design"
         plan != nil -> "plan"
+        socket.assigns.earlier != [] -> "stage-#{hd(socket.assigns.earlier).position}"
         true -> "ticket"
       end
 

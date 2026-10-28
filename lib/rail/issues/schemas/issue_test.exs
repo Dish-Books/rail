@@ -2,6 +2,7 @@ defmodule Rail.Issues.Schemas.IssueTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -178,5 +179,41 @@ defmodule Rail.Issues.Schemas.IssueTest do
 
   test "step_label/1 names each step as a sentence says it" do
     assert Enum.map(Issue.optional_steps(), &Issue.step_label/1) == ["product", "design", "architect", "demo"]
+  end
+
+  test "an issue with no stages runs the built-ins, and one with stages runs them in order" do
+    assert Issue.calculate_next_stage(%Issue{}, :plan) == :engineer
+    assert Issue.calculate_next_stage(%Issue{}, :review) == nil
+
+    issue = %Issue{
+      stages: [
+        %IssueStage{stage: :custom, name: "Missing strings", prompt: "Find them."},
+        %IssueStage{stage: :plan},
+        %IssueStage{stage: :engineer},
+        %IssueStage{stage: :custom, name: "License check", prompt: "Check them."},
+        %IssueStage{stage: :review}
+      ]
+    }
+
+    assert Issue.calculate_stages(issue) == [
+             {:custom, "Missing strings"},
+             :plan,
+             :engineer,
+             {:custom, "License check"},
+             :review
+           ]
+
+    assert Issue.calculate_next_stage(issue, {:custom, "Missing strings"}) == :plan
+    assert Issue.calculate_next_stage(issue, :engineer) == {:custom, "License check"}
+    assert Issue.calculate_next_stage(issue, {:custom, "License check"}) == :review
+    assert %IssueStage{prompt: "Check them."} = Issue.custom_stage(issue, "License check")
+    assert Issue.custom_stage(issue, "Nothing") == nil
+
+    assert Issue.calculate_stages(%{issue | skipped_steps: [:product, :design, :architect]}) == [
+             {:custom, "Missing strings"},
+             :engineer,
+             {:custom, "License check"},
+             :review
+           ]
   end
 end

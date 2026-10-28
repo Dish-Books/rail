@@ -18,6 +18,9 @@ defmodule Rail.Pipeline do
   what the turn committed. A task never goes back to Engineer, and it waits at
   Review, ready to merge, once nothing is left to rule or fix.
 
+  A workflow's file can add custom stages before Plan, Engineer or Review. Each is one agent with the file's prompt
+  that saves one markdown file, waits on a person's Approve like Plan, and hands the file to every later stage.
+
   A task split before splitting was retired waits at Split, its children each an issue and a task of their own,
   until the last child merges.
 
@@ -50,9 +53,14 @@ defmodule Rail.Pipeline do
 
   defdelegate start_engineer_run(run), to: Actions.StartEngineerRun
   defdelegate hand_over_work(scope, run), to: Actions.HandOverWork
-  defdelegate send_to_review(run), to: Actions.SendToReview
+  defdelegate send_to_next_stage(run), to: Actions.SendToNextStage
   defdelegate run_ci(scope, run), to: Actions.RunCi
   defdelegate get_ci_status(run), to: Actions.GetCiStatus
+
+  defdelegate start_custom_stage_run(run), to: Actions.StartCustomStageRun
+  defdelegate save_stage_output(task, attrs), to: Actions.SaveStageOutput
+  defdelegate read_stage_outputs(task), to: Actions.ReadStageOutputs
+  defdelegate approve_stage_output(scope, run), to: Actions.ApproveStageOutput
 
   defdelegate start_review_run(run), to: Actions.StartReviewRun
   defdelegate start_check_run(run), to: Actions.StartCheckRun

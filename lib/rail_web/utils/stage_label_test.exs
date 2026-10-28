@@ -1,9 +1,11 @@
 defmodule RailWeb.Utils.StageLabelTest do
   use Rail.DataCase, async: true
 
+  import RailWeb.Utils.RunStateStyle
   import RailWeb.Utils.StageLabel
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -171,6 +173,29 @@ defmodule RailWeb.Utils.StageLabelTest do
       assert stage_label(%Task{stage: :finalize, marked_ready_at: now, merge_error: "No"}, run) == "Merge refused"
       assert stage_label(%Task{stage: :merged, merged_at: now}, run) == "Merged"
     end
+  end
+
+  test "a custom stage reads by its name, and once its agent stops waits on a person's Approve or on its file" do
+    scratch = Path.join(System.tmp_dir!(), "stage_label_custom_#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf(scratch) end)
+    stages = [%IssueStage{stage: :custom, name: "License check", prompt: "Check."}, %IssueStage{stage: :review}]
+    task = %Task{stage: :custom, custom_stage: "License check", scratch_path: scratch, issue: %Issue{stages: stages}}
+    stopped = %Run{status: :finished, stage_outcome: :in_progress}
+
+    assert stage_label(task, %Run{status: :running}) == "License check running"
+    assert stage_label(task, %Run{status: :waiting_for_usage}) == "License check waiting for usage"
+    assert stage_label(task, stopped) == "License check needs you"
+    refute custom_stage_waiting?(task, stopped)
+    assert %{icon: "pi-warning-circle"} = run_state_style(stopped, task)
+
+    File.mkdir_p!(Path.join(scratch, "stages"))
+    File.write!(Path.join([scratch, "stages", "1-license-check.md"]), "All MIT.")
+
+    assert stage_label(task, stopped) == "Review License check"
+    assert custom_stage_waiting?(task, stopped)
+    assert %{icon: "pi-hand-pointing"} = run_state_style(stopped, task)
+    assert %{icon: "pi-play-circle"} = run_state_style(%Run{status: :running}, task)
+    refute custom_stage_waiting?(%Task{stage: :engineer}, stopped)
   end
 
   test "a running engineer run reads Implement running" do

@@ -90,7 +90,7 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
     File.write!(Path.join(repo, "feature.ex"), "one\n")
     stub(Git, :branch_unpushed?, fn _path -> false end)
     reject(&Pipeline.hand_over_work/2)
-    reject(&Pipeline.send_to_review/1)
+    reject(&Pipeline.send_to_next_stage/1)
 
     assert {:open, %Run{error: nil}} = engineer_run_finished(run, [])
   end
@@ -99,7 +99,7 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
   test "a first-round turn that left nothing to send leaves the stage open", %{task: task, run: run} do
     {:ok, _first} = Pipeline.create_round(task)
     stub(Git, :branch_unpushed?, fn _path -> false end)
-    reject(&Pipeline.send_to_review/1)
+    reject(&Pipeline.send_to_next_stage/1)
 
     assert {:open, %Run{error: nil}} = engineer_run_finished(run, [])
   end
@@ -108,7 +108,7 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
     {:ok, _first} = Pipeline.create_round(task)
     {:ok, _second} = Pipeline.create_round(task)
     stub(Git, :branch_unpushed?, fn _path -> false end)
-    expect(Pipeline, :send_to_review, fn %Run{id: ^run_id} = run -> {:ok, %{run | stage_outcome: :done}} end)
+    expect(Pipeline, :send_to_next_stage, fn %Run{id: ^run_id} = run -> {:ok, %{run | stage_outcome: :done}} end)
 
     assert %Run{id: ^run_id, stage_outcome: :done} = engineer_run_finished(run, [])
   end
@@ -118,7 +118,7 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
     {:ok, _first} = Pipeline.create_round(task)
     {:ok, _second} = Pipeline.create_round(task)
     stub(Git, :branch_unpushed?, fn _path -> false end)
-    reject(&Pipeline.send_to_review/1)
+    reject(&Pipeline.send_to_next_stage/1)
 
     assert {:open, %Run{}} = engineer_run_finished(%{run | pending_chat: "Also retake the empty state."}, [])
   end
@@ -130,7 +130,7 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
     {:ok, _second} = Pipeline.create_round(task)
     stub(Git, :branch_unpushed?, fn _path -> false end)
     stub(Git, :credential_env, fn _project -> {:ok, %{"RAIL_GIT_TOKEN" => "ghs_token"}} end)
-    expect(Pipeline, :send_to_review, fn _run -> {:error, :ci_not_passed} end)
+    expect(Pipeline, :send_to_next_stage, fn _run -> {:error, :ci_not_passed} end)
 
     expect(Tools, :start_command_process, fn %Run{id: ^run_id} = spawned, :ci, "mise run ci", _opts ->
       {:ok, %OsProcess{kind: :ci, run: spawned}}
@@ -145,7 +145,7 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
     {:ok, _second} = Pipeline.create_round(task)
     stub(Git, :branch_unpushed?, fn _path -> false end)
     stub(Git, :credential_env, fn _project -> {:ok, %{"RAIL_GIT_TOKEN" => "ghs_token"}} end)
-    expect(Pipeline, :send_to_review, fn _run -> {:error, :ci_not_passed} end)
+    expect(Pipeline, :send_to_next_stage, fn _run -> {:error, :ci_not_passed} end)
     expect(Tools, :start_command_process, fn _run, :ci, _command, _opts -> {:error, {:bad_cwd, "/gone"}} end)
 
     assert %Run{error: "Could not start CI: {:bad_cwd, \"/gone\"}", review_on_ci_pass: false} =
@@ -156,7 +156,7 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
     {:ok, _first} = Pipeline.create_round(task)
     {:ok, _second} = Pipeline.create_round(task)
     stub(Git, :branch_unpushed?, fn _path -> false end)
-    expect(Pipeline, :send_to_review, fn _run -> {:error, :stage_running} end)
+    expect(Pipeline, :send_to_next_stage, fn _run -> {:error, :stage_running} end)
 
     assert %Run{error: "The round committed nothing new, but it was not sent to review: :stage_running"} =
              engineer_run_finished(run, [])

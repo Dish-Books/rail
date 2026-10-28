@@ -35,13 +35,13 @@ defmodule Rail.Issues.Workers.AdvanceTrackerState do
   # The target comes from where the task is now, not from when the job was queued,
   # so jobs for one issue that run together all aim at the same status.
   defp advance(%Issue{owner_user_id: owner_user_id, task: %Task{stage: stage} = task} = issue)
-       when is_binary(owner_user_id) and stage in [:plan, :engineer, :review, :finalize, :merged] do
+       when is_binary(owner_user_id) and stage in [:plan, :custom, :engineer, :review, :finalize, :merged] do
     target =
       case stage do
         :merged -> :done
         # Finalize is still the pull request in review, waiting on a tech lead to merge it.
         stage when stage in [:review, :finalize] -> :in_review
-        _plan_or_engineer -> :in_progress
+        _plan_custom_or_engineer -> :in_progress
       end
 
     result = Tracker.tracker(issue).advance_issue(issue, target)

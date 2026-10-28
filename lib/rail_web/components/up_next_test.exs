@@ -188,6 +188,23 @@ defmodule RailWeb.Components.UpNextTest do
     assert ["/tasks/tsk_engineer?item=plan&agent=engineer"] = href.(:engineer)
     assert ["/tasks/tsk_review"] = href.(:review)
     assert ["/tasks/tsk_plan"] = href.(:plan)
+
+    # A task at a custom stage opens on that stage's own item, its conversation beside it.
+    custom = %{
+      waiting.(:custom)
+      | status: :blocked_on_input,
+        stage_outcome: :in_progress,
+        role: %Role{name: "License check", icon_name: "pi-robot", custom_stage: "License check"},
+        questions: [%Question{status: :pending, prompt: "German only?"}]
+    }
+
+    custom = %{custom | task: %{custom.task | custom_stage: "License check"}}
+
+    assert ["/tasks/tsk_custom"] =
+             (&UpNext.up_next/1)
+             |> render_component(runs: [custom])
+             |> Floki.parse_fragment!()
+             |> Floki.attribute("#up-next-featured-#{custom.id}", "href")
   end
 
   test "a run whose questions are all answered is waiting to be sent", %{waiting: waiting} do

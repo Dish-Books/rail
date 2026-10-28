@@ -26,6 +26,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.CheckRunFinished
   import Rail.Pipeline.Utils.CiRunFinished
+  import Rail.Pipeline.Utils.CustomStageRunFinished
   import Rail.Pipeline.Utils.DispatchMessage
   import Rail.Pipeline.Utils.EngineerRunFinished
   import Rail.Pipeline.Utils.PlanRunFinished
@@ -202,6 +203,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp finish_action(%Run{role: %Role{stage: :review_lead}}), do: &review_run_finished/2
 
   defp finish_action(%Run{role: %Role{stage: stage}}) when stage in [:qa, :review], do: &check_run_finished/2
+  defp finish_action(%Run{role: %Role{custom_stage: name}}) when is_binary(name), do: &custom_stage_run_finished/2
 
   defp finish_action(%Run{}), do: fn run, _opts -> run end
 

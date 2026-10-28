@@ -7,6 +7,7 @@ defmodule RailWeb.IssuesLiveTest do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Issues.Workers.LinearSync
   alias Rail.Pipeline
   alias Rail.Projects
@@ -661,6 +662,51 @@ defmodule RailWeb.IssuesLiveTest do
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
     assert has_element?(view, "#task-link-#{issue.id}[href='/tasks/#{task.id}']")
+  end
+
+  test "a task whose custom stage saved its file and waits on Approve reads Review and the stage's name", %{
+    conn: conn,
+    project: project
+  } do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_custom",
+        login: "issues_live_user_custom",
+        email: "issues_live_user_custom@example.com",
+        admin: true
+      })
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_il_custom", "identifier" => "ILC-1", "title" => "Dependency updates"}
+          }
+        }
+      })
+    end)
+
+    stages = [
+      %IssueStage{stage: :plan},
+      %IssueStage{stage: :engineer},
+      %IssueStage{stage: :custom, name: "License check", prompt: "Check each license."},
+      %IssueStage{stage: :review}
+    ]
+
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Dependency updates", stages: stages})
+    {:ok, issue} = Issues.update_issue(issue, %{state: :in_progress})
+    {:ok, task} = Pipeline.create_task(issue, {:custom, "License check"})
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    {:ok, role} = Roles.get_custom_stage_role(project.id, "License check")
+
+    {:ok, _run} =
+      Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :finished, started_at: DateTime.utc_now()})
+
+    {:ok, _saved} = Pipeline.save_stage_output(task, %{markdown: "All MIT."})
+
+    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/issues")
+    assert has_element?(view, "#task-link-#{issue.id}", "Review License check")
   end
 
   test "a child of a split that waits on a sibling reads Waiting on it, here and on its own page", %{

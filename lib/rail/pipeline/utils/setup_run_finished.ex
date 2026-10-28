@@ -36,8 +36,8 @@ defmodule Rail.Pipeline.Utils.SetupRunFinished do
             :ok = start_checks(task)
             %{Repo.get!(Run, run.id) | task: task, role: role}
 
-          Task.role_stage(task.stage) == role.stage ->
-            {:ok, %Run{} = entered} = Pipeline.enter_stage(task, task.stage)
+          Task.works_stage?(task, role) ->
+            {:ok, %Run{} = entered} = Pipeline.enter_stage(task, Task.current_stage(task))
 
             entered
 

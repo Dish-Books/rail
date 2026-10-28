@@ -49,6 +49,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   import Rail.Mcp.Utils.RunToolSaveReport
   import Rail.Mcp.Utils.RunToolSaveReview
   import Rail.Mcp.Utils.RunToolSaveScreen
+  import Rail.Mcp.Utils.RunToolSaveStageOutput
   import Rail.Mcp.Utils.ToolAllowed
   import Rail.Mcp.Utils.WithUpstreamToken
 
@@ -68,7 +69,8 @@ defmodule Rail.Mcp.Actions.CallRunTool do
     "save_fix_plan",
     "save_report",
     "save_demo",
-    "save_screen"
+    "save_screen",
+    "save_stage_output"
   ]
 
   @doc """
@@ -243,6 +245,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp run("save_fix_plan", task, arguments, opts), do: run_tool_save_fix_plan(task, arguments, opts)
   defp run("save_report", task, arguments, opts), do: run_tool_save_report(task, arguments, opts)
 
+  defp run("save_stage_output", task, arguments, opts), do: run_tool_save_stage_output(task, arguments, opts)
   defp run("save_demo", task, arguments, opts), do: run_tool_save_demo(task, arguments, opts)
   defp run("ask_questions", task, arguments, opts), do: run_tool_ask_questions(task, arguments, opts)
 

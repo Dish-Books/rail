@@ -2,6 +2,7 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.PlanComment
@@ -417,5 +418,52 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
 
     assert [%PlanComment{target: :design, status: :unsent}, %PlanComment{target: :ticket, status: :unsent}] =
              Pipeline.list_plan_comments(ada, task)
+  end
+
+  test "a custom stage's Send goes to its own agent as one message, and its file's comments teach no rule", %{
+    project: project,
+    task: task,
+    ada: ada
+  } do
+    stages = [%IssueStage{stage: :custom, name: "License check", prompt: "Check each license."}]
+
+    Repo.preload(task, :issue).issue
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.put_embed(:stages, stages)
+    |> Repo.update!()
+
+    {:ok, task} = Pipeline.update_task(task, %{stage: :custom, custom_stage: "License check"})
+    {:ok, _saved} = Pipeline.save_stage_output(task, %{markdown: "sweet_xml 0.7.5 is AGPL-3.0."})
+    {:ok, role} = Roles.get_custom_stage_role(project.id, "License check")
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :finished,
+        conversation_id: "sess_send_custom_comments",
+        started_at: DateTime.utc_now()
+      })
+
+    {:ok, _comment} =
+      Pipeline.create_plan_comment(ada, run, %{
+        target: :output,
+        body: "Say to replace it with saxy.",
+        element_kind: :paragraph,
+        element_label: "Paragraph 1",
+        element_occurrence: 1,
+        element_text: "sweet_xml 0.7.5 is AGPL-3.0."
+      })
+
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    assert {:ok, :sent, %Run{}} = Pipeline.send_plan_comments(ada, run)
+
+    assert [%{line: "[human:" <> _first}, %{line: _blank}, %{line: "[human:" <> on_output} | _rest] =
+             Pipeline.list_run_events(run)
+
+    assert on_output =~ "On the output:"
+    assert [%PlanComment{status: :sent}] = Repo.all(PlanComment)
+    assert [] = Repo.all(from o in Observation, where: o.task_id == ^task.id)
   end
 end

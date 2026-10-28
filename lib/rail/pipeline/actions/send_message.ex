@@ -12,7 +12,7 @@ defmodule Rail.Pipeline.Actions.SendMessage do
 
   The engineer's own conversation closes once the task leaves Engineer: Review's
   fixes are the Review lead's to hand its engineer, so a message there would
-  change the branch behind Review's back.
+  change the branch behind Review's back. A custom stage's closes once it is approved, so its file stays as approved.
   """
 
   import Rail.Pipeline.Utils.DispatchMessage
@@ -44,6 +44,10 @@ defmodule Rail.Pipeline.Actions.SendMessage do
 
   defp validate_open(%Run{role: %Role{stage: :engineer}, task: %Task{stage: stage}}) when stage != :engineer,
     do: {:error, {:invalid_stage, stage}}
+
+  defp validate_open(%Run{role: %Role{custom_stage: name} = role, task: %Task{} = task}) when is_binary(name) do
+    if Task.works_stage?(task, role), do: :ok, else: {:error, {:invalid_stage, task.stage}}
+  end
 
   defp validate_open(%Run{}), do: :ok
 
