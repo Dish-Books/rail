@@ -33,6 +33,41 @@ defmodule Rail.Pipeline.Schemas.RoundTest do
     end
   end
 
+  describe "return_to_plan_changeset/1" do
+    test "clears its approval, sending, heads and review, and keeps its ticket, plan and design" do
+      now = DateTime.utc_now()
+
+      round = %Round{
+        number: 1,
+        plan: "## Implementation plan",
+        approved_at: now,
+        approved_by_id: "usr_approver",
+        ready_at: now,
+        ready_by_id: "usr_sender",
+        base_head: "abc",
+        head: "def",
+        reviewed_at: now,
+        finished_at: now,
+        ticket: %Round.Ticket{title: "A ticket", description: "The body."},
+        design: %Round.Design{key: "rows", title: "Charts in the row"}
+      }
+
+      assert %Round{
+               plan: "## Implementation plan",
+               approved_at: nil,
+               approved_by_id: nil,
+               ready_at: nil,
+               ready_by_id: nil,
+               base_head: nil,
+               head: nil,
+               reviewed_at: nil,
+               finished_at: nil,
+               ticket: %Round.Ticket{title: "A ticket"},
+               design: %Round.Design{key: "rows"}
+             } = round |> Round.return_to_plan_changeset() |> Ecto.Changeset.apply_changes()
+    end
+  end
+
   describe "plan_changeset/2" do
     test "takes the trimmed plan as the next version" do
       changeset = Round.plan_changeset(%Round{plan_version: 3}, %{plan: "\nGuard nil.  ", record_demo: true})

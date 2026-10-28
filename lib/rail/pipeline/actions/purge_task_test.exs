@@ -8,6 +8,7 @@ defmodule Rail.Pipeline.Actions.PurgeTaskTest do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Roles
+  alias Rail.Tools.Schemas.BrowserSession
   alias Rail.Tools.Schemas.OsProcess
 
   test "stops only the runs still going and stamps nothing on the task", %{project: project} do
@@ -40,6 +41,32 @@ defmodule Rail.Pipeline.Actions.PurgeTaskTest do
     assert_receive {:run_changed, ^running_id}
     refute_receive {:run_changed, ^failed_id}, 50
     assert %Task{id: ^task_id, cleaned_up_at: nil} = Repo.get(Task, task_id)
+  end
+
+  # The task's delete takes the session rows with it, and the reconciler only closes contexts it has a row for.
+  test "closes the task's open browser sessions", %{project: project} do
+    {:ok, %Task{id: task_id} = task} =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_purge_browser",
+        identifier: "PRG-3",
+        title: "Purged browser",
+        state: :in_progress
+      })
+      |> Repo.insert!()
+      |> Repo.preload(:project)
+      |> Pipeline.create_task(:review)
+
+    %BrowserSession{id: session_id} =
+      Repo.insert!(%BrowserSession{task_id: task_id, name: "qa", status: :running, started_at: DateTime.utc_now()})
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task_id}:qa")
+
+    assert :ok = Pipeline.purge_task(task)
+
+    assert %BrowserSession{status: :finished, ended_reason: :closed} = Repo.get!(BrowserSession, session_id)
+    assert_receive {:browser_closed, ^task_id, "qa"}
   end
 
   # Runs have no foreign key to tasks, so nothing else would take them.

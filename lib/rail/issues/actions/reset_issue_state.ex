@@ -1,18 +1,16 @@
 defmodule Rail.Issues.Actions.ResetIssueState do
   @moduledoc """
-  Moves an issue back to not started, locally and then in its tracker, for a task discarded to start over.
+  Moves an issue back, locally and then in its tracker: to not started for Discard, to In Progress for Back to Plan.
   """
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Repo
 
   @doc """
-  Writes `issue` back to `todo` and tells open issue pages. Returns `{:ok, issue}` as written.
+  Writes `issue` back to `state` and returns `{:ok, issue}` as written. Both callers run it in a transaction and
+  tell open issue pages once it commits, so nothing is broadcast here.
   """
-  def reset_issue_state(%Issue{} = issue) do
-    with {:ok, reset} <- issue |> Issue.reset_changeset() |> Repo.update() do
-      Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, reset.id})
-      {:ok, reset}
-    end
+  def reset_issue_state(%Issue{} = issue, state) do
+    issue |> Issue.reset_changeset(state) |> Repo.update()
   end
 end

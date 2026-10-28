@@ -18,10 +18,12 @@ defmodule RailWeb.TaskLive do
   import RailWeb.Utils.HandleIssueEvent
 
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Learnings
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
@@ -90,9 +92,13 @@ defmodule RailWeb.TaskLive do
       |> assign(:round_questions, [])
       |> assign(:conversation_questions, [])
       |> assign(:suggestions, %{})
+      |> assign(:cleaning_up, false)
       |> assign(:discard_open, false)
       |> assign(:discarding, false)
       |> assign(:discard_error, nil)
+      |> assign(:discard_choice, :discard)
+      |> assign(:discard_had_runs, false)
+      |> assign(:discard_stopped, false)
       |> assign(:focus_file, nil)
       |> assign(:url_id, nil)
       |> assign(:child, nil)
@@ -105,7 +111,9 @@ defmodule RailWeb.TaskLive do
       |> assign(:header_status, nil)
       |> assign(:child_of, nil)
       |> assign(:split_points, nil)
+      |> assign(:cleanup_confirm, nil)
       |> assign(:show_discard, false)
+      |> assign(:show_back_to_plan, false)
       |> assign(:viewer_owns, false)
 
     # A stage moved from another page or by a run finishing is what keeps this one current.
@@ -165,7 +173,7 @@ defmodule RailWeb.TaskLive do
           class="flex flex-col items-center justify-center min-h-[300px] text-center p-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs"
         >
           <p class="text-base font-medium text-slate-500 dark:text-slate-400">
-            This task has been cleaned up.
+            This task was discarded or its issue was deleted.
           </p>
         </div>
 
@@ -205,6 +213,7 @@ defmodule RailWeb.TaskLive do
             </span>
             <.claim_button task={@task} />
             <.discard_button :if={@show_discard} />
+            <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
             <.live_component
               module={TaskActions}
               id="task-actions"
@@ -282,6 +291,9 @@ defmodule RailWeb.TaskLive do
       task={@task}
       discarding={@discarding}
       error={@discard_error}
+      stopped={@discard_stopped}
+      choice={@discard_choice}
+      back_to_plan={@show_back_to_plan}
     />
     """
   end
@@ -295,16 +307,36 @@ defmodule RailWeb.TaskLive do
     {:noreply, push_patch(socket, to: task_path(socket, item: "plan", agent: stage))}
   end
 
+  def handle_event("cleanup", _params, socket) do
+    task = socket.assigns.task
+
+    socket =
+      socket
+      |> assign(:cleaning_up, true)
+      |> start_async(:cleanup, fn -> Pipeline.cleanup_task(task) end)
+
+    {:noreply, socket}
+  end
+
   def handle_event("open_discard", _params, socket) do
     socket =
       socket
       |> assign(:discard_open, true)
       |> assign(:discard_error, nil)
+      |> assign(:discard_stopped, false)
+      |> assign(:discard_choice, :discard)
 
     {:noreply, socket}
   end
 
-  # The dialog stays until a discard under way has its answer, which either opens the issue or says what failed.
+  def handle_event("pick_discard", _params, %{assigns: %{discarding: true}} = socket), do: {:noreply, socket}
+
+  def handle_event("pick_discard", %{"choice" => "plan"}, %{assigns: %{show_back_to_plan: true}} = socket),
+    do: {:noreply, assign(socket, :discard_choice, :plan)}
+
+  def handle_event("pick_discard", _params, socket), do: {:noreply, assign(socket, :discard_choice, :discard)}
+
+  # The dialog stays until the action under way has its answer, which opens the issue or the plan, or says what failed.
   def handle_event("close_discard", _params, %{assigns: %{discarding: true}} = socket), do: {:noreply, socket}
 
   def handle_event("close_discard", _params, socket) do
@@ -319,13 +351,15 @@ defmodule RailWeb.TaskLive do
   def handle_event("discard", _params, %{assigns: %{discarding: true}} = socket), do: {:noreply, socket}
 
   def handle_event("discard", _params, socket) do
-    %{current_scope: scope, task: task} = socket.assigns
+    %{current_scope: scope, task: task, discard_choice: choice} = socket.assigns
 
+    # What the dialog listed as in progress is what "Runs stopped" stands for after a failure past the stops.
     socket =
       socket
       |> assign(:discarding, true)
       |> assign(:discard_error, nil)
-      |> start_async(:discard, fn -> Pipeline.discard_task(scope, task) end)
+      |> assign(:discard_had_runs, Enum.any?(task.runs, &(Run.running?(&1) or Run.state(&1) == :blocked)))
+      |> start_async(:discard, fn -> {choice, act(choice, scope, task)} end)
 
     {:noreply, socket}
   end
@@ -449,6 +483,9 @@ defmodule RailWeb.TaskLive do
     {:noreply, push_patch(socket, to: task_path(socket, item: Atom.to_string(item), agent: agent), replace: true)}
   end
 
+  # Sent by the stage as it drew, so it can land after the task was discarded underneath the page.
+  def handle_info({:watch_browser, _name}, %{assigns: %{task: nil}} = socket), do: {:noreply, socket}
+
   # The Browser item is open on this browser, or on none; only the subscription moves.
   def handle_info({:watch_browser, name}, socket) do
     socket = assign(socket, :review_browser, name)
@@ -530,16 +567,47 @@ defmodule RailWeb.TaskLive do
     {:noreply, socket}
   end
 
-  # A discarded task is gone, so the issue is where it can be started again.
-  def handle_async(:discard, {:ok, {:ok, %Task{issue_id: issue_id}}}, socket) do
+  # A cleaned-up task is gone, so the issue is where it can be started again.
+  def handle_async(:cleanup, {:ok, {:ok, %Task{issue_id: issue_id}}}, socket) do
     {:noreply, push_navigate(socket, to: ~p"/issues/#{issue_id}")}
   end
 
-  def handle_async(:discard, {:ok, {:error, reason}}, socket) do
+  def handle_async(:cleanup, {:ok, {:error, :task_busy}}, socket) do
+    socket =
+      socket
+      |> assign(:cleaning_up, false)
+      |> put_flash(:error, "Stop the task's run before cleaning it up")
+      |> refresh_task()
+
+    {:noreply, socket}
+  end
+
+  def handle_async(:cleanup, _result, socket) do
+    socket =
+      socket
+      |> assign(:cleaning_up, false)
+      |> put_flash(:error, "Could not clean up the task")
+      |> refresh_task()
+
+    {:noreply, socket}
+  end
+
+  # A discarded task is gone, so the issue is where it can be started again.
+  def handle_async(:discard, {:ok, {:discard, {:ok, %Task{issue_id: issue_id}}}}, socket) do
+    {:noreply, push_navigate(socket, to: ~p"/issues/#{issue_id}")}
+  end
+
+  # Navigated rather than patched, so every pane mounts again on the task as it now stands.
+  def handle_async(:discard, {:ok, {:plan, {:ok, %Task{id: id}}}}, socket) do
+    {:noreply, push_navigate(socket, to: ~p"/tasks/#{id}?item=plan")}
+  end
+
+  def handle_async(:discard, {:ok, {choice, {:error, reason}}}, socket) do
     socket =
       socket
       |> assign(:discarding, false)
-      |> assign(:discard_error, discard_error(reason))
+      |> assign(:discard_error, discard_error(choice, reason))
+      |> assign(:discard_stopped, socket.assigns.discard_had_runs and after_stops?(reason))
       |> refresh_task()
 
     {:noreply, socket}
@@ -549,7 +617,8 @@ defmodule RailWeb.TaskLive do
     socket =
       socket
       |> assign(:discarding, false)
-      |> assign(:discard_error, "Could not discard the task.")
+      |> assign(:discard_error, discard_error(socket.assigns.discard_choice, :crashed))
+      |> assign(:discard_stopped, false)
       |> refresh_task()
 
     {:noreply, socket}
@@ -578,6 +647,28 @@ defmodule RailWeb.TaskLive do
       class="px-4 py-2 rounded-lg bg-blue-600 dark:bg-blue-500 text-sm font-semibold text-white hover:opacity-90 cursor-pointer"
     >
       Claim
+    </button>
+    """
+  end
+
+  attr :task, :any, required: true
+  attr :cleaning_up, :boolean, required: true
+  attr :confirm, :string, required: true
+
+  # A cleaned-up task is history: there is nothing left on disk to clean. A child goes with its parent.
+  defp cleanup_button(assigns) do
+    ~H"""
+    <button
+      :if={@task.cleaned_up_at == nil and @task.parent_task_id == nil}
+      type="button"
+      id="cleanup-task"
+      data-qa="cleanup_task"
+      phx-click="cleanup"
+      data-confirm={@confirm}
+      disabled={@cleaning_up}
+      class="px-4 py-2 rounded-lg border border-red-300 dark:border-red-800 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 cursor-pointer disabled:opacity-50"
+    >
+      {if @cleaning_up, do: "Cleaning up…", else: "Clean up"}
     </button>
     """
   end
@@ -728,11 +819,21 @@ defmodule RailWeb.TaskLive do
   defp refresh_task(socket) do
     with {:ok, task} <- Pipeline.get_task(socket.assigns.url_id),
          true <- Scope.can_access_project?(socket.assigns.current_scope, task.project_id) do
-      show_task(socket, task)
+      socket
+      |> show_task(task)
+      |> follow_back_to_plan(socket.assigns.task, task)
     else
       _missing -> assign(socket, :task, nil)
     end
   end
+
+  # The tab that sent the task back navigates from its own handle_async; leaving first would kill the action.
+  defp follow_back_to_plan(%{assigns: %{discarding: true}} = socket, _was, _task), do: socket
+
+  defp follow_back_to_plan(socket, %Task{id: id, stage: was}, %Task{id: id, stage: :plan})
+       when was in [:engineer, :review, :finalize], do: push_navigate(socket, to: ~p"/tasks/#{id}?item=plan")
+
+  defp follow_back_to_plan(socket, _was, _task), do: socket
 
   # Every link to a child, its own included, lands on its parent's page with it selected.
   defp show_task(socket, %Task{parent_task_id: parent_id, issue: issue}) when is_binary(parent_id) do
@@ -792,17 +893,21 @@ defmodule RailWeb.TaskLive do
   defp apply_task(socket, %Task{} = task) do
     roles = if task.project_id, do: Rail.Roles.list_roles(task.project_id), else: []
     runs = role_runs(roles, task)
+    rounds = Pipeline.list_rounds(task)
+    back_to_plan = discardable?(task) and task.stage != :plan and match?(%Round{plan: "" <> _plan}, List.first(rounds))
 
     socket
     |> assign(:task, task)
     |> assign(:page_title, task.issue.title)
     |> assign(:roles_map, Map.new(roles, &{&1.id, &1}))
     |> assign(:open_item, open_item(socket.assigns.item, task, socket.assigns.parent))
-    |> assign(:rounds, Pipeline.list_rounds(task))
+    |> assign(:rounds, rounds)
     |> assign_runs(runs, task)
     |> assign_questions(task)
     |> assign_family(task)
     |> assign(:show_discard, discardable?(task))
+    |> assign(:show_back_to_plan, back_to_plan)
+    |> assign(:discard_choice, if(back_to_plan, do: socket.assigns.discard_choice, else: :discard))
     |> assign(:subscribed_run_ids, sync_run_subscriptions(socket, task.runs))
     |> assign_watched_browser(task)
     |> load_issue(task)
@@ -932,8 +1037,9 @@ defmodule RailWeb.TaskLive do
   end
 
   # Where a split parent or a child of one stands, said in the header in place of a stage.
-  defp assign_family(%{assigns: %{parent: nil}} = socket, %Task{}) do
+  defp assign_family(%{assigns: %{parent: nil}} = socket, %Task{} = task) do
     socket
+    |> assign(:cleanup_confirm, cleanup_confirm(task.issue, []))
     |> assign(:show_switcher, false)
     |> assign(:header_status, nil)
     |> assign(:child_of, nil)
@@ -968,6 +1074,7 @@ defmodule RailWeb.TaskLive do
       end
 
     socket
+    |> assign(:cleanup_confirm, cleanup_confirm(parent.issue, Enum.map(statuses, & &1.task.issue)))
     |> assign(:show_switcher, false)
     |> assign(:header_status, status)
     |> assign(:child_of, nil)
@@ -982,6 +1089,7 @@ defmodule RailWeb.TaskLive do
         do: %{label: status.label, icon: status.icon, class: status.text_class}
 
     socket
+    |> assign(:cleanup_confirm, nil)
     |> assign(:viewer_owns, viewer_owns?(socket, parent))
     |> assign(:show_switcher, true)
     |> assign(:header_status, header_status)
@@ -999,6 +1107,26 @@ defmodule RailWeb.TaskLive do
 
   # A split is as big as it was approved, so a child deleted in Linear since does not shrink it.
   defp split_total(statuses), do: statuses |> Enum.map(& &1.task.split_position) |> Enum.max()
+
+  # Cleaning up work Linear has not marked done is usually a mistake, so the confirmation says so.
+  defp cleanup_confirm(%Issue{state: :done}, []),
+    do: "Clean up this task? Its worktree and scratch files will be deleted."
+
+  defp cleanup_confirm(%Issue{identifier: identifier}, []) do
+    "#{identifier} is not marked done in Linear. Clean up this task anyway? Its worktree and scratch files will be deleted."
+  end
+
+  defp cleanup_confirm(%Issue{}, children) do
+    case Enum.reject(children, &(&1.state == :done)) do
+      [] ->
+        "Clean up this task and its #{length(children)} children? Their worktrees and scratch files will be deleted."
+
+      open ->
+        "#{length(open)} of #{length(children)} children are not marked done in Linear: " <>
+          "#{Enum.map_join(open, ", ", & &1.identifier)}. Clean up this task and all of its children anyway? " <>
+          "Their worktrees and scratch files will be deleted."
+    end
+  end
 
   # A child is shown on its parent's page, so the child goes in the URL with the item.
   defp task_path(socket, params) do
@@ -1132,6 +1260,19 @@ defmodule RailWeb.TaskLive do
     do: stage not in [:merged, :split]
 
   defp discardable?(%Task{}), do: false
+
+  defp act(:discard, scope, task), do: Pipeline.discard_task(scope, task)
+  defp act(:plan, scope, task), do: Pipeline.return_to_plan(scope, task)
+
+  # Only a failure past the stops leaves runs stopped: GitHub's refusals, and a run still settling.
+  defp after_stops?({step, _reason}) when step in [:branch_not_deleted, :pull_request_not_closed], do: true
+  defp after_stops?(:task_busy), do: true
+  defp after_stops?(_reason), do: false
+
+  defp discard_error(:plan, :not_discardable), do: "This task already went back to Plan, or was discarded or cleaned up."
+
+  defp discard_error(:plan, :crashed), do: "Could not take the task back to Plan."
+  defp discard_error(_choice, reason), do: discard_error(reason)
 
   defp discard_error({:branch_not_deleted, "" <> reason}),
     do:

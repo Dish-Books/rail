@@ -1,7 +1,7 @@
 defmodule RailWeb.Components.DiscardDialog do
   @moduledoc """
-  The task page's Discard confirmation: the runs it stops, the files and branch it deletes, and where it leaves
-  the ticket. An error stays in the dialog, where Discard again finishes the job.
+  The task page's Discard confirmation: on a task past Plan, the choice of starting over or going Back to Plan, then
+  the runs it stops, what it deletes and where it leaves the ticket. An error stays in the dialog, to try again.
   """
   use RailWeb, :html
 
@@ -11,28 +11,46 @@ defmodule RailWeb.Components.DiscardDialog do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
 
-  attr :task, Task, required: true, doc: "with its issue and its runs, each with its role"
+  @choices [
+    %{value: :discard, title: "Start over", detail: "Deletes the task and puts the ticket back to not started"},
+    %{value: :plan, title: "Back to Plan", detail: "Keeps the ticket, design and plan"}
+  ]
+
+  attr :task, Task, required: true, doc: "with its issue and its runs, each with its role and questions"
   attr :discarding, :boolean, default: false
   attr :error, :string, default: nil
+  attr :stopped, :boolean, default: false, doc: "whether the runs listed when it was confirmed were stopped"
+  attr :choice, :atom, default: :discard, values: [:discard, :plan]
+  attr :back_to_plan, :boolean, default: false, doc: "whether Back to Plan is offered"
 
   def discard_dialog(assigns) do
     %Task{issue: %Issue{} = issue, runs: runs} = assigns.task
 
     running =
-      for run <- Enum.sort_by(runs, &(&1.started_at || &1.inserted_at), DateTime), Run.running?(run) do
+      for run <- Enum.sort_by(runs, &(&1.started_at || &1.inserted_at), DateTime),
+          Run.running?(run) or Run.state(run) == :blocked do
         %{id: run.id, name: run.role.name, style: run_state_style(run)}
       end
 
     runs_heading =
       cond do
         running != [] -> "Stops #{length(running)} #{if length(running) == 1, do: "run", else: "runs"} in progress"
-        is_binary(assigns.error) and runs != [] -> "Runs stopped"
+        assigns.stopped -> "Runs stopped"
         true -> "No runs in progress"
       end
+
+    %{title: title, files_title: files_title, files_detail: files_detail, target: target, target_label: target_label} =
+      copy(assigns.choice, issue.identifier)
 
     assigns =
       assigns
       |> assign(:identifier, issue.identifier)
+      |> assign(:title, title)
+      |> assign(:files_title, files_title)
+      |> assign(:files_detail, files_detail)
+      |> assign(:target, target)
+      |> assign(:target_label, target_label)
+      |> assign(:choices, for(choice <- @choices, do: Map.put(choice, :checked, choice.value == assigns.choice)))
       |> assign(:running, running)
       |> assign(:runs_heading, runs_heading)
       |> assign(:status, issue.state_name || Issue.state_label(issue.state))
@@ -56,7 +74,7 @@ defmodule RailWeb.Components.DiscardDialog do
       >
         <div class="flex items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-700 pb-3">
           <h2 id="discard-title" class="text-base font-semibold min-w-0 break-words">
-            Discard {@identifier} and start over?
+            {@title}
           </h2>
           <button
             type="button"
@@ -67,6 +85,40 @@ defmodule RailWeb.Components.DiscardDialog do
           >
             <.icon name="pi-x" class="size-[18px]" />
           </button>
+        </div>
+
+        <div :if={@back_to_plan} role="radiogroup" aria-label="What Discard does" class="flex gap-2">
+          <label
+            :for={choice <- @choices}
+            id={"discard-choice-#{choice.value}"}
+            data-qa={"discard_choice_#{choice.value}"}
+            class={[
+              "flex-1 min-w-0 flex gap-2.5 rounded-xl px-3 py-2.5 cursor-pointer has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-blue-500",
+              choice.checked && "ring-2 ring-blue-500 bg-blue-500/10",
+              !choice.checked &&
+                "ring-1 ring-slate-300 dark:ring-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"
+            ]}
+          >
+            <input
+              type="radio"
+              name="discard_choice"
+              value={choice.value}
+              checked={choice.checked}
+              disabled={@discarding}
+              phx-click="pick_discard"
+              phx-value-choice={choice.value}
+              class="sr-only"
+            />
+            <span class={[
+              "mt-0.5 size-4 shrink-0 rounded-full",
+              choice.checked && "border-4 border-blue-500 bg-white",
+              !choice.checked && "border border-slate-400 dark:border-slate-500"
+            ]} />
+            <span class="min-w-0">
+              <span class="block font-semibold">{choice.title}</span>
+              <span class="block text-xs text-slate-500 dark:text-slate-400">{choice.detail}</span>
+            </span>
+          </label>
         </div>
 
         <ul class="space-y-4">
@@ -93,13 +145,11 @@ defmodule RailWeb.Components.DiscardDialog do
               </ul>
             </div>
           </li>
-          <li class="flex gap-3 min-w-0">
+          <li id="discard-files" class="flex gap-3 min-w-0">
             <.icon name="pi-folder-minus" class="size-[18px] text-slate-400 mt-0.5" />
             <div class="min-w-0 flex-1">
-              <p class="font-semibold">Deletes the worktree and scratch folder</p>
-              <p class="text-slate-500 dark:text-slate-400">
-                Runs and questions stay on the task as history.
-              </p>
+              <p class="font-semibold">{@files_title}</p>
+              <p class="text-slate-500 dark:text-slate-400">{@files_detail}</p>
             </div>
           </li>
           <li id="discard-branch" class="flex gap-3 min-w-0">
@@ -135,11 +185,11 @@ defmodule RailWeb.Components.DiscardDialog do
           <li id="discard-ticket" class="flex gap-3 min-w-0">
             <.icon name="pi-ticket" class="size-[18px] text-slate-400 mt-0.5" />
             <div :if={!@finished} class="min-w-0 flex-1">
-              <p class="font-semibold">Moves {@identifier} back to not started</p>
+              <p class="font-semibold">Moves {@identifier} back to {@target}</p>
               <p class="flex flex-wrap items-center gap-1 text-slate-500 dark:text-slate-400">
                 <span>{@status}</span>
                 <.icon name="pi-arrow-right" class="size-3.5" />
-                <span class="text-slate-900 dark:text-slate-200">Not started</span>
+                <span class="text-slate-900 dark:text-slate-200">{@target_label}</span>
               </p>
             </div>
             <div :if={@finished} class="min-w-0 flex-1">
@@ -185,7 +235,31 @@ defmodule RailWeb.Components.DiscardDialog do
     """
   end
 
+  defp copy(:plan, identifier) do
+    %{
+      title: "Take #{identifier} back to Plan?",
+      files_title: "Deletes the worktree and all the work on it",
+      files_detail:
+        "Runs, findings, comments and later rounds go. The ticket, design and plan stay, and Plan starts a new conversation on them.",
+      target: "In Progress",
+      target_label: "In Progress"
+    }
+  end
+
+  defp copy(:discard, identifier) do
+    %{
+      title: "Discard #{identifier} and start over?",
+      files_title: "Deletes the task, its worktree and scratch folder",
+      files_detail: "Its runs, questions, findings and comments go too. Clean up keeps them.",
+      target: "not started",
+      target_label: "Not started"
+    }
+  end
+
+  defp confirm_label(%{discarding: true, choice: :plan}), do: "Going back…"
   defp confirm_label(%{discarding: true}), do: "Discarding…"
+  defp confirm_label(%{error: "" <> _error, choice: :plan}), do: "Back to Plan again"
   defp confirm_label(%{error: "" <> _error}), do: "Discard again"
+  defp confirm_label(%{choice: :plan}), do: "Back to Plan"
   defp confirm_label(_assigns), do: "Discard"
 end

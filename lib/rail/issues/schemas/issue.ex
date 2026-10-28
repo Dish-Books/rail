@@ -99,13 +99,13 @@ defmodule Rail.Issues.Schemas.Issue do
   end
 
   @doc """
-  A changeset putting the ticket back to not started, the one move backward Rail makes. The state is forced, so
-  the tracker is told even when Rail's copy already reads `todo`, and its name waits for the tracker's own.
+  A changeset moving the ticket back to `state`, `:todo` for Discard or `:in_progress` for Back to Plan. Forced, so
+  the tracker is told even when Rail's copy already reads it, and its name waits for the tracker's own.
   """
-  def reset_changeset(issue) do
+  def reset_changeset(issue, state) when state in [:todo, :in_progress] do
     issue
     |> change(state_name: nil)
-    |> force_change(:state, :todo)
+    |> force_change(:state, state)
     |> sync_to_tracker()
   end
 

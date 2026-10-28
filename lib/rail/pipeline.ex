@@ -107,6 +107,7 @@ defmodule Rail.Pipeline do
   defdelegate cleanup_task(task), to: Actions.CleanupTask
   defdelegate purge_task(task), to: Actions.PurgeTask
   defdelegate discard_task(scope, task), to: Actions.DiscardTask
+  defdelegate return_to_plan(scope, task), to: Actions.ReturnToPlan
 
   defdelegate ask_questions(run, questions), to: Actions.AskQuestions
   defdelegate answer_question(scope, question, answer), to: Actions.AnswerQuestion

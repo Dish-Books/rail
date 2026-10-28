@@ -93,6 +93,23 @@ defmodule Rail.Pipeline.Schemas.Round do
   end
 
   @doc """
+  Builds a changeset taking round 1 back to a plan waiting to be started or approved, for Back to Plan. Its ticket,
+  plan and design stay.
+  """
+  def return_to_plan_changeset(%__MODULE__{} = round) do
+    change(round,
+      approved_at: nil,
+      approved_by_id: nil,
+      ready_at: nil,
+      ready_by_id: nil,
+      base_head: nil,
+      head: nil,
+      reviewed_at: nil,
+      finished_at: nil
+    )
+  end
+
+  @doc """
   Where the round stands: `:planning` with no plan saved, `:waiting` on approval, `:working` once approved,
   `:reviewed` once its review is saved, or `:finished`.
   """

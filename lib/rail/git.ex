@@ -52,4 +52,5 @@ defmodule Rail.Git do
 
   defdelegate list_viewed_files(scope, task, document), to: Actions.ListViewedFiles
   defdelegate set_file_viewed(scope, task, document, path, digest, viewed), to: Actions.SetFileViewed
+  defdelegate delete_viewed_files(task), to: Actions.DeleteViewedFiles
 end

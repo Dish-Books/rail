@@ -81,11 +81,78 @@ defmodule RailWeb.Components.DiscardDialogTest do
 
     stopped = %{task | runs: Enum.map(task.runs, &%{&1 | status: :finished})}
 
-    html = render_component(&DiscardDialog.discard_dialog/1, task: stopped, error: "GitHub refused to delete the branch.")
+    html =
+      render_component(&DiscardDialog.discard_dialog/1,
+        task: stopped,
+        error: "GitHub refused to delete the branch.",
+        stopped: true
+      )
+
     doc = Floki.parse_fragment!(html)
 
     assert doc |> Floki.find("#discard-runs") |> Floki.text() =~ "Runs stopped"
     assert doc |> Floki.find("#discard-error[role=alert]") |> Floki.text() =~ "GitHub refused to delete the branch."
     assert "Discard again" = doc |> Floki.find("#confirm-discard") |> Floki.text() |> String.trim()
+  end
+
+  # A refusal that came before any stop, such as a merge in progress, stopped nothing.
+  test "an error with nothing stopped says no runs are in progress", %{task: task} do
+    stopped = %{task | runs: Enum.map(task.runs, &%{&1 | status: :finished})}
+    html = render_component(&DiscardDialog.discard_dialog/1, task: stopped, error: "A merge is in progress.")
+
+    assert html |> Floki.parse_fragment!() |> Floki.find("#discard-runs") |> Floki.text() =~ "No runs in progress"
+  end
+
+  test "a run waiting on a question is listed as needing someone", %{task: task} do
+    parked = %Run{
+      id: "run_parked",
+      status: :blocked_on_input,
+      role: %Role{name: "Engineer"},
+      started_at: DateTime.utc_now()
+    }
+
+    doc = Floki.parse_fragment!(render_component(&DiscardDialog.discard_dialog/1, task: %{task | runs: [parked]}))
+
+    assert doc |> Floki.find("#discard-runs p") |> Floki.text() =~ "Stops 1 run in progress"
+    assert doc |> Floki.find("#discard-run-run_parked") |> Floki.text() =~ "Needs you"
+  end
+
+  test "Back to Plan says what stays and that the ticket goes to In Progress", %{task: task} do
+    html = render_component(&DiscardDialog.discard_dialog/1, task: task, back_to_plan: true, choice: :plan)
+    doc = Floki.parse_fragment!(html)
+
+    assert "Take RAIL-41 back to Plan?" = doc |> Floki.find("#discard-title") |> Floki.text() |> String.trim()
+    assert [_checked] = Floki.find(doc, "#discard-choice-plan input[checked]")
+    assert [] = Floki.find(doc, "#discard-choice-discard input[checked]")
+    assert doc |> Floki.find("#discard-files") |> Floki.text() =~ "Deletes the worktree and all the work on it"
+
+    assert doc |> Floki.find("#discard-files") |> Floki.text() =~
+             "The ticket, design and plan stay, and Plan starts a new conversation on them."
+
+    assert doc |> Floki.find("#discard-ticket") |> Floki.text() =~ "Moves RAIL-41 back to In Progress"
+    assert "Back to Plan" = doc |> Floki.find("#confirm-discard") |> Floki.text() |> String.trim()
+
+    doc =
+      Floki.parse_fragment!(
+        render_component(&DiscardDialog.discard_dialog/1, task: task, choice: :plan, discarding: true)
+      )
+
+    assert "Going back…" = doc |> Floki.find("#confirm-discard") |> Floki.text() |> String.trim()
+
+    doc =
+      Floki.parse_fragment!(render_component(&DiscardDialog.discard_dialog/1, task: task, choice: :plan, error: "No."))
+
+    assert "Back to Plan again" = doc |> Floki.find("#confirm-discard") |> Floki.text() |> String.trim()
+  end
+
+  test "the choice is offered only where Back to Plan is", %{task: task} do
+    offered = Floki.parse_fragment!(render_component(&DiscardDialog.discard_dialog/1, task: task, back_to_plan: true))
+
+    assert [_checked] = Floki.find(offered, "#discard-choice-discard input[checked]")
+    assert offered |> Floki.find("#discard-files") |> Floki.text() =~ "Deletes the task, its worktree and scratch folder"
+    assert offered |> Floki.find("#discard-files") |> Floki.text() =~ "Clean up keeps them."
+
+    doc = Floki.parse_fragment!(render_component(&DiscardDialog.discard_dialog/1, task: task, back_to_plan: false))
+    assert [] = Floki.find(doc, "[role=radiogroup]")
   end
 end
