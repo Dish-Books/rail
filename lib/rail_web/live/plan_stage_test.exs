@@ -141,7 +141,8 @@ defmodule RailWeb.Live.PlanStageTest do
       task: task,
       skipping: skipping
     } do
-      skipping.([:product])
+      issue = skipping.([:product])
+      issue |> Ecto.Changeset.change(description: "Update the **dependencies**.") |> Repo.update!()
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
@@ -152,6 +153,7 @@ defmodule RailWeb.Live.PlanStageTest do
              )
 
       assert has_element?(view, "#plan-ticket-issue-title", "Plan Stage Issue")
+      assert has_element?(view, "#plan-ticket-from-issue strong", "dependencies")
       refute has_element?(view, "[data-qa='plan_ticket']")
       refute has_element?(view, "[data-qa='plan_tab_off']")
     end

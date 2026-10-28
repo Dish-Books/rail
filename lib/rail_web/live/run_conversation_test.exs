@@ -1979,6 +1979,8 @@ defmodule RailWeb.Live.RunConversationTest do
       {:ok, _mine} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "Name it."))
       # The card is a message in the conversation, which only the Plan item shows in full, beside it.
       {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}?item=plan")
+      # The stage hands the page its tray in a message of its own, which queues behind the first render.
+      _settled = render(view)
 
       expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: %{spawned | status: :running}}} end)
       view |> element("#send-review-tray", "Send 2") |> render_click()
@@ -1992,6 +1994,7 @@ defmodule RailWeb.Live.RunConversationTest do
       {:ok, _again} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "And this."))
       {:ok, _idle} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
       {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}?item=plan")
+      _settled = render(view)
 
       expect(Pipeline, :start_fix_round, fn _scope, _run -> {:error, :fix_plan_waiting} end)
       view |> element("#send-review-tray", "Send 1") |> render_click()

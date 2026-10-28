@@ -1569,6 +1569,11 @@ defmodule RailWeb.Live.TaskDetailTest do
       view |> element("#demo-rerecord") |> render_click()
       assert has_element?(view, "#review-error", "Something is still running on this task.")
 
+      # A page drawn before the task's demo was turned off still offers Re-record, which is refused.
+      expect(Pipeline, :record_demo, fn _scope, _task -> {:error, {:step_off, :demo}} end)
+      view |> element("#demo-rerecord") |> render_click()
+      assert has_element?(view, "#review-error", "The demo is off for this workflow.")
+
       view |> element("#demo-stale button", short) |> render_click()
       assert has_element?(view, "#review-pane[data-item=diff] #diff-commit-picker", "Implement")
 

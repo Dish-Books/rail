@@ -74,7 +74,8 @@ defmodule Rail.Workflows.Actions.SyncWorkflowsTest do
     assert log =~ "Test Project's .rail/workflows/broken.yaml is invalid, so it starts nothing: schedule is not a cron"
     assert {:ok, [%Workflow{definition: nil, next_run_at: nil}]} = Workflows.list_workflows(system_scope(), [])
 
-    assert capture_log(fn -> assert {:ok, 0} = Workflows.sync_workflows(project) end) == ""
+    # Other async tests log too, so only this file's warning is looked for.
+    refute capture_log(fn -> assert {:ok, 0} = Workflows.sync_workflows(project) end) =~ "broken.yaml"
 
     merge.(%{".rail/workflows/broken.yaml" => @weekly})
     assert {:ok, 1} = Workflows.sync_workflows(project)
