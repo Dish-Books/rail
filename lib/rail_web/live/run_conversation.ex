@@ -948,6 +948,7 @@ defmodule RailWeb.Live.RunConversation do
     is_thinking = Run.state(run) == :running
     is_queued = run != nil and is_binary(run.pending_chat) and run.pending_chat != ""
     is_unavailable = run == nil or not Run.can_chat?(run)
+    sends_when = if Run.state(run) == :failed, do: "runs again", else: "is done"
 
     hint_text =
       cond do
@@ -964,6 +965,7 @@ defmodule RailWeb.Live.RunConversation do
       |> assign(:is_thinking, is_thinking)
       |> assign(:is_queued, is_queued)
       |> assign(:is_unavailable, is_unavailable)
+      |> assign(:sends_when, sends_when)
       |> assign(:hint_text, hint_text)
 
     ~H"""
@@ -1072,7 +1074,7 @@ defmodule RailWeb.Live.RunConversation do
         <div class="flex items-center gap-2 text-xs text-slate-900 dark:text-slate-100 truncate">
           <.icon name="pi-clock" class="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" />
           <span class="truncate">
-            {"Queued: \"#{@run.pending_chat}\" (sends when #{@role_name} is done)"}
+            {"Queued: \"#{@run.pending_chat}\" (sends when #{@role_name} #{@sends_when})"}
           </span>
         </div>
 

@@ -678,6 +678,39 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       assert %Task{worktree_setup_at: nil} = Repo.reload!(task)
       assert [%Run{id: ^setup_run_id}] = Repo.all(from(r in Run, where: r.task_id == ^task.id))
     end
+
+    test "whose .env cannot be written keeps a message queued during it, and starts nothing", %{
+      task: task,
+      worktree: worktree,
+      exited: exited
+    } do
+      {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
+      File.mkdir_p!(Path.join(worktree, ".env"))
+      {run, os_process} = exited.(:engineer, %{pending_chat: "Also check the logs"})
+      os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
+
+      reject(Tools, :start_command_process, 4)
+      reject(Tools, :start_os_process, 2)
+
+      assert {:ok, %Run{error: "Rail could not write the project's .env into the worktree" <> _rest}} =
+               Pipeline.run_finished(os_process, %{exit_code: 0}, async: false)
+
+      assert %Run{pending_chat: "Also check the logs"} = Repo.reload!(run)
+    end
+
+    test "that failed keeps a message queued during it, and starts nothing", %{task: task, exited: exited} do
+      {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
+      {run, os_process} = exited.(:engineer, %{pending_chat: "Also check the logs"})
+      os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
+
+      reject(Tools, :start_command_process, 4)
+      reject(Tools, :start_os_process, 2)
+
+      assert {:ok, %Run{error: "The worktree setup script failed" <> _rest}} =
+               Pipeline.run_finished(os_process, %{exit_code: 1, error: "Exited with code 1"}, async: false)
+
+      assert %Run{pending_chat: "Also check the logs"} = Repo.reload!(run)
+    end
   end
 
   describe "an engineer hand-over into a machine with no room for its CI" do
