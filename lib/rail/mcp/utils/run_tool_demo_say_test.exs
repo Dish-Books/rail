@@ -4,13 +4,14 @@ defmodule Rail.Mcp.Utils.RunToolDemoSayTest do
   import Rail.Mcp.Utils.RunToolDemoSay
   import Rail.Mcp.Utils.RunToolDemoStart
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Tools
 
   setup do
     unique = System.unique_integer([:positive])
     scratch = Path.join([System.tmp_dir!(), "rail_say_test", to_string(unique)])
-    task = %Task{id: "tsk_say_#{unique}", scratch_path: scratch}
+    task = %Task{id: "tsk_say_#{unique}", scratch_path: scratch, issue: %Issue{}}
 
     # A take films a browser browser_connect opened; which page it shows is no caption's business.
     stub(Tools, :start_browser_session, fn ^task, "demo", _opts -> {:ok, self()} end)

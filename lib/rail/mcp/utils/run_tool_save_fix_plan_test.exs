@@ -44,4 +44,11 @@ defmodule Rail.Mcp.Utils.RunToolSaveFixPlanTest do
     assert {:refused, "Nothing saved: nothing is ruled Fix" <> _rest} =
              run_tool_save_fix_plan(task, %{"plan" => "Nothing to fix.\n\n### What changes"}, [])
   end
+
+  test "a demo asked of a task whose workflow turned it off says the demo is off", %{task: task} do
+    task = %{task | issue: %{task.issue | skipped_steps: [:demo]}}
+
+    assert {:refused, "Nothing saved: the demo is off for this task, so leave out `record_demo`."} =
+             run_tool_save_fix_plan(task, %{"plan" => @plan, "record_demo" => true}, [])
+  end
 end

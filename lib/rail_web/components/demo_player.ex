@@ -1,7 +1,8 @@
 defmodule RailWeb.Components.DemoPlayer do
   @moduledoc """
   Review's Demo item: the video, sized so it and the caption bar under it always fit and its column never scrolls,
-  beside a walkthrough that scrolls on its own, follows playback and seeks the player. A stale demo offers Re-record.
+  beside a walkthrough that scrolls on its own, follows playback and seeks the player. A stale demo offers Re-record,
+  unless the task's workflow turned the demo off.
   """
   use RailWeb, :html
 
@@ -18,6 +19,7 @@ defmodule RailWeb.Components.DemoPlayer do
     doc: "`%{commit:, behind:}` when commits came after the recording; `behind` is nil when the branch lost it"
 
   attr :rerecordable, :boolean, default: false, doc: "the Review lead is idle and can be asked to record again"
+  attr :off, :boolean, default: false, doc: "the task's workflow turned the demo off"
   attr :target, :any, default: nil
 
   def demo_player(assigns) do
@@ -38,11 +40,19 @@ defmodule RailWeb.Components.DemoPlayer do
       </div>
 
       <p
-        :if={not @recorded and not @recording}
+        :if={not @recorded and not @recording and not @off}
         data-qa="review_demo_none"
         class="p-5 text-sm text-slate-500 dark:text-slate-400"
       >
         No demo was recorded. A change with nothing on screen gets none, and the demo recorder's take appears here once it is saved.
+      </p>
+      <p
+        :if={not @recorded and not @recording and @off}
+        id="review-demo-off"
+        data-qa="review_demo_off"
+        class="p-5 text-sm text-slate-500 dark:text-slate-400"
+      >
+        The demo is off for this workflow, so Review records none.
       </p>
 
       <%!-- The walkthrough scrolls on its own, so the video stays in view while it is read. --%>
@@ -81,6 +91,7 @@ defmodule RailWeb.Components.DemoPlayer do
                   else: ", which the branch no longer has"}; may be out of date
               </p>
               <button
+                :if={not @off}
                 type="button"
                 id="demo-rerecord"
                 data-qa="demo_rerecord"

@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Actions.RecordDemo do
 
   import Rail.Pipeline.Utils.StartRoleRun
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles
@@ -13,11 +14,11 @@ defmodule Rail.Pipeline.Actions.RecordDemo do
 
   @doc """
   Starts the demo recorder on `task` for the scope's user. Returns `{:ok, run}` as it now stands, or
-  `{:error, reason}` for a project the scope cannot open, a task not at Review, one something works on, or a
-  project with no demo role.
+  `{:error, reason}` for a project the scope cannot open, a task not at Review, one something works on, one whose
+  workflow turned the demo off, or a project with no demo role.
   """
   def record_demo(%Scope{} = scope, %Task{} = task) do
-    task = Task |> Repo.get!(task.id) |> Repo.preload(:runs)
+    task = Task |> Repo.get!(task.id) |> Repo.preload([:runs, :issue])
 
     with true <- Scope.can_access_project?(scope, task.project_id) || {:error, :not_found},
          :ok <- recordable(task),
@@ -30,5 +31,12 @@ defmodule Rail.Pipeline.Actions.RecordDemo do
   end
 
   defp recordable(%Task{stage: stage}) when stage != :review, do: {:error, {:invalid_stage, stage}}
-  defp recordable(%Task{} = task), do: if(Task.running?(task), do: {:error, :stage_running}, else: :ok)
+
+  defp recordable(%Task{} = task) do
+    cond do
+      Issue.skips_step?(task.issue, :demo) -> {:error, {:step_off, :demo}}
+      Task.running?(task) -> {:error, :stage_running}
+      true -> :ok
+    end
+  end
 end

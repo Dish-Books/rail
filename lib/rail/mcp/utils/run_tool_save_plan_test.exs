@@ -97,4 +97,22 @@ defmodule Rail.Mcp.Utils.RunToolSavePlanTest do
     assert {:refused, "Nothing saved: the plan is approved, so it no longer changes."} =
              run_tool_save_plan(task, %{"title" => "Something else"}, [])
   end
+
+  test "a part whose step the task's workflow turned off is refused, saying the step is off", %{task: task} do
+    issue =
+      Repo.preload(task, :issue).issue
+      |> Ecto.Changeset.change(skipped_steps: [:product, :architect, :demo])
+      |> Repo.update!()
+
+    task = %{task | issue: issue}
+
+    assert {:refused, "Nothing saved: Product is off for this task, so the issue is the ticket." <> _rest} =
+             run_tool_save_plan(task, %{"title" => "Usage charts"}, [])
+
+    assert {:refused, "Nothing saved: Architect is off for this task" <> _rest} =
+             run_tool_save_plan(task, %{"plan" => @plan}, [])
+
+    assert {:refused, "Nothing saved: the demo is off for this task" <> _rest} =
+             run_tool_save_plan(task, %{"record_demo" => true}, [])
+  end
 end

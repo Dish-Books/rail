@@ -77,6 +77,20 @@ defmodule Rail.Pipeline.Schemas.Round do
   end
 
   @doc """
+  Builds a changeset taking `issue` as the round's ticket, for a task whose workflow turned Product off.
+  """
+  def issue_ticket_changeset(round_or_changeset, %Issue{} = issue) do
+    ticket = %__MODULE__.Ticket{
+      title: issue.title,
+      description: issue.description || "",
+      priority: issue.priority,
+      estimate: issue.estimate
+    }
+
+    round_or_changeset |> change() |> put_embed(:ticket, ticket)
+  end
+
+  @doc """
   Builds a changeset marking the round's plan sent to a tech lead by `user_id`, which is nil when Rail sent it.
   A plan already sent keeps who sent it and when.
   """

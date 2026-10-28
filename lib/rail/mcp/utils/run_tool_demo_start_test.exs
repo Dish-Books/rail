@@ -3,6 +3,7 @@ defmodule Rail.Mcp.Utils.RunToolDemoStartTest do
 
   import Rail.Mcp.Utils.RunToolDemoStart
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Tools
   alias Rail.Tools.BrowserRecorder
@@ -10,7 +11,7 @@ defmodule Rail.Mcp.Utils.RunToolDemoStartTest do
   setup do
     unique = System.unique_integer([:positive])
     scratch = Path.join([System.tmp_dir!(), "rail_start_test", to_string(unique)])
-    task = %Task{id: "tsk_start_#{unique}", scratch_path: scratch}
+    task = %Task{id: "tsk_start_#{unique}", scratch_path: scratch, issue: %Issue{}}
 
     on_exit(fn ->
       Tools.stop_browser_recording(task)
@@ -64,6 +65,15 @@ defmodule Rail.Mcp.Utils.RunToolDemoStartTest do
     expect(Tools, :start_browser_session, fn ^task, "demo", [existing: false, stage: :demo] -> {:ok, self()} end)
 
     assert {:ok, "Recording." <> _rest} = run_tool_demo_start(task, %{}, stage: :demo)
+  end
+
+  test "a task whose workflow turned the demo off is refused, and nothing is filmed", %{task: task} do
+    reject(Tools, :start_browser_session, 3)
+
+    assert {:refused, "Not recording: the demo is off for this task's workflow" <> _rest} =
+             run_tool_demo_start(%{task | issue: %Issue{skipped_steps: [:demo]}}, %{}, stage: :demo)
+
+    refute Tools.get_browser_recording(task)
   end
 
   test "a browser name Rail will not key a browser by is refused", %{task: task} do

@@ -11,6 +11,7 @@ defmodule RailWeb.Settings.WorkflowsLive do
   # .rail/workflows/dependency-updates.yml
   name: Dependency updates      # the issue title adds the date
   schedule: "0 9 * * 1"         # cron, in UTC: Mondays at 09:00
+  skip: [product, design]       # any of product, design, architect, demo
   instructions: |               # the issue's description
     Update Elixir and npm dependencies to their latest compatible versions.
   """
@@ -71,14 +72,16 @@ defmodule RailWeb.Settings.WorkflowsLive do
           <div class="rounded-xl border border-slate-200 dark:border-slate-700/70 overflow-hidden bg-slate-50 dark:bg-slate-800/40">
             <table class="w-full table-fixed" id="workflows-list">
               <colgroup>
-                <col class="w-[45%]" />
+                <col class="w-[30%]" />
+                <col class="w-[20%]" />
                 <col />
-                <col class="w-[168px]" />
+                <col class="w-[144px]" />
               </colgroup>
               <thead class="bg-slate-50 dark:bg-slate-800/60">
                 <tr class="text-left text-xs font-medium text-slate-500 dark:text-slate-400">
                   <th class="px-4 py-2.5 font-medium">Workflow</th>
                   <th class="px-3 py-2.5 font-medium">Schedule, UTC</th>
+                  <th id="workflows-stages-header" class="px-3 py-2.5 font-medium">Stages</th>
                   <th class="px-4 py-2.5 font-medium text-right">Runs</th>
                 </tr>
               </thead>
@@ -114,7 +117,7 @@ defmodule RailWeb.Settings.WorkflowsLive do
                     </span>
                   </td>
 
-                  <td :if={workflow.definition == nil} class="px-3 py-3">
+                  <td :if={workflow.definition == nil} colspan="2" class="px-3 py-3">
                     <span
                       id={"workflow-invalid-#{workflow.id}"}
                       class="flex items-start gap-1.5 font-semibold text-red-700 dark:text-red-300"
@@ -136,6 +139,12 @@ defmodule RailWeb.Settings.WorkflowsLive do
                     >
                       {next_label(workflow)}
                     </span>
+                  </td>
+                  <td :if={workflow.definition != nil} class="px-3 py-3">
+                    <.stage_sequence
+                      id={"workflow-stages-#{workflow.id}"}
+                      skipped={workflow.definition.skip}
+                    />
                   </td>
 
                   <td class="px-4 py-3">

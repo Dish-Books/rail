@@ -1585,6 +1585,37 @@ defmodule RailWeb.Live.TaskDetailTest do
       refute has_element?(latest, "#demo-stale")
     end
 
+    test "a task whose workflow turned the demo off shows Demo dimmed as off, and offers no Re-record", %{
+      conn: conn,
+      task: task,
+      engineer: engineer
+    } do
+      Repo.preload(task, :issue).issue |> Ecto.Changeset.change(skipped_steps: [:demo]) |> Repo.update!()
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#review-item-demo[title='Demo: Off for this workflow'] [data-qa=review_item_off]")
+      view |> element("#review-item-demo") |> render_click()
+      assert has_element?(view, "#review-demo-off", "The demo is off for this workflow")
+      refute has_element?(view, "[data-qa=review_demo_none]")
+
+      # A demo recorded before is still played, with nothing offered to record it again.
+      demo_dir = Path.join(task.scratch_path, "demo")
+      File.mkdir_p!(demo_dir)
+      File.write!(Path.join(demo_dir, "demo.webm"), "webm")
+
+      File.write!(
+        Path.join(demo_dir, "RST-1.json"),
+        Jason.encode!(%{title: "Filters", summary: "It filters.", commit: engineer})
+      )
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=demo")
+
+      assert has_element?(view, "#demo-stale")
+      refute has_element?(view, "#demo-rerecord")
+      refute has_element?(view, "#review-item-demo [data-qa=review_item_stale]")
+    end
+
     # A rebase leaves the branch without the commit the demo was recorded on, which is when it is most out of date.
     test "a demo on a commit the branch no longer has is stale, with nothing to open", %{
       conn: conn,

@@ -8,6 +8,7 @@ defmodule Rail.Pipeline.Actions.SaveDesignOption do
   import Ecto.Query
   import Rail.Pipeline.Utils.WriteScratchFile
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -26,9 +27,18 @@ defmodule Rail.Pipeline.Actions.SaveDesignOption do
 
   @doc """
   Saves the option in `attrs` on `task`, replacing one under the same key.
-  Returns `{:ok, option}` as `read_design/1` reads it, or `{:error, changeset}`.
+  Returns `{:ok, option}` as `read_design/1` reads it, `{:error, {:step_off, :design}}` when the task's workflow
+  turned Design off, or `{:error, changeset}`.
   """
   def save_design_option(%Task{} = task, attrs) when is_map(attrs) do
+    task = Repo.preload(task, :issue)
+
+    if Issue.skips_step?(task.issue, :design),
+      do: {:error, {:step_off, :design}},
+      else: save(task, attrs)
+  end
+
+  defp save(%Task{} = task, attrs) do
     dir = Path.join(task.scratch_path, "design")
 
     # Parallel saves each rewrite the whole manifest, so they take turns on the task's row.

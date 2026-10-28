@@ -75,6 +75,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate settings_nav(assigns), to: Components.SettingsNav
   defdelegate side_sheet(assigns), to: Components.SideSheet
   defdelegate split_board(assigns), to: Components.SplitBoard
+  defdelegate stage_sequence(assigns), to: Components.StageSequence
   defdelegate status_icon(assigns), to: Components.IssueIcons
   defdelegate task_layout(assigns), to: Components.TaskLayout
   defdelegate throughput_chart(assigns), to: Components.ThroughputChart

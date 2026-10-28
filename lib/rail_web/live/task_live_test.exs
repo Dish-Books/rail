@@ -31,6 +31,8 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.Tools.Schemas.BrowserSession
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
+  alias Rail.Workflows.Schemas.Workflow
+  alias Rail.Workflows.Schemas.WorkflowDefinition
 
   # Stubbed, never called, so it is named rather than imported.
   @clock RailWeb.Utils.MonotonicMs
@@ -125,6 +127,80 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "[data-qa='task_issue_identifier']", "TLV-1")
     assert has_element?(view, "[data-qa='task_branch_name']", task.worktree_name)
     assert has_element?(view, "[data-qa='task_status_chip']", "Review the plan")
+  end
+
+  test "a workflow's task names the workflow and its stages after the PR, linked to Settings for an admin", %{
+    conn: conn,
+    project: project,
+    issue: issue,
+    task: task
+  } do
+    workflow =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/flaky-test-sweep.yml",
+        definition: %WorkflowDefinition{name: "Flaky test sweep", schedule: "0 6 * * *", instructions: "Sweep."},
+        next_run_at: ~U[2026-10-12 06:00:00Z]
+      })
+
+    issue
+    |> Ecto.Changeset.change(workflow_id: workflow.id, skipped_steps: [:product, :design, :architect, :demo])
+    |> Repo.update!()
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    assert has_element?(view, ~s(#task-workflow a#task-workflow-link[href="/settings/workflows"]), "Flaky test sweep")
+    assert has_element?(view, "#task-stage-sequence-stages", "Implement › Review")
+    assert has_element?(view, "#task-stage-sequence-skips", "skips plan and demo")
+
+    # Only a workflow change on the task's project reads the task again.
+    Phoenix.PubSub.broadcast(Rail.PubSub, "workflows", {:workflows_changed, "prj_elsewhere"})
+
+    workflow
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.put_embed(:definition, %{name: "Flake sweep"})
+    |> Repo.update!()
+
+    assert has_element?(view, "#task-workflow-link", "Flaky test sweep")
+
+    Phoenix.PubSub.broadcast(Rail.PubSub, "workflows", {:workflows_changed, project.id})
+    assert has_element?(view, "#task-workflow-link", "Flake sweep")
+
+    {:ok, member} =
+      Users.register_oauth_user(%{github_id: "gh_task_live_member", login: "member", email: "member@example.com"})
+
+    {:ok, member} = Users.update_user(system_scope(), member, %{project_ids: [project.id]})
+
+    assert {:ok, view, _html} = live(log_in_user(build_conn(), member), ~p"/tasks/#{task.id}")
+
+    assert has_element?(view, "#task-workflow-name", "Flake sweep")
+    refute has_element?(view, "#task-workflow-link")
+  end
+
+  test "a task with every Plan step off reads Plan as off, with the issue as its ticket and no plan or design", %{
+    conn: conn,
+    issue: issue,
+    task: task
+  } do
+    issue = issue |> Ecto.Changeset.change(skipped_steps: [:product, :design, :architect]) |> Repo.update!()
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
+    {:ok, round} = Pipeline.create_round(task)
+    round |> Round.approve_changeset(nil) |> Round.issue_ticket_changeset(issue) |> Repo.update!()
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+    assert has_element?(view, "#review-item-plan[title='Plan: Off for this workflow']")
+    assert has_element?(view, "#plan-ticket-from-issue", "Task Live Issue")
+    assert has_element?(view, "#plan-design-off")
+    assert has_element?(view, "#plan-plan-off")
+    refute has_element?(view, "#task-approve-plan")
+  end
+
+  test "a hand-filed task names no workflow and no stages in its header", %{conn: conn, task: task} do
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    refute has_element?(view, "#task-workflow")
+    refute has_element?(view, "#task-stage-sequence")
   end
 
   test "the header's identifier opens the issue in its tracker in a new tab, and stays text with no address", %{

@@ -89,12 +89,21 @@ defmodule Rail.Pipeline.Utils.StartPlannedWork do
   end
 
   # One write carries the ticket and the design. The tracker hears about it from the sync that write enqueues.
-  defp publish(%Task{issue: %Issue{} = issue}, ticket, nil) do
+  # With Product off the issue is the ticket, so nothing of it is written back over what the tracker has now.
+  defp publish(%Task{issue: %Issue{skipped_steps: skipped} = issue} = task, ticket, design) do
+    if :product in skipped,
+      do: publish_design(task, %{title: nil, description: issue.description, priority: nil, estimate: nil}, design),
+      else: publish_design(task, ticket, design)
+  end
+
+  defp publish_design(%Task{}, %{title: nil}, nil), do: :ok
+
+  defp publish_design(%Task{issue: %Issue{} = issue}, ticket, nil) do
     update_issue(issue, ticket_attrs(ticket, ticket.description))
   end
 
   # A tracker that cannot hold the screenshot, such as GitHub Issues, still gets the design's text.
-  defp publish(%Task{issue: %Issue{} = issue} = task, ticket, {option, screenshot}) do
+  defp publish_design(%Task{issue: %Issue{} = issue} = task, ticket, {option, screenshot}) do
     uploaded =
       case Issues.upload_asset(task.project, "#{issue.identifier}-#{option.key}.png", "image/png", screenshot) do
         {:error, :unsupported} -> {:ok, nil}

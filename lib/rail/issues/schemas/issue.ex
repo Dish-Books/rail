@@ -13,6 +13,8 @@ defmodule Rail.Issues.Schemas.Issue do
   @priorities [:urgent, :high, :medium, :low]
   @states [:backlog, :triage, :todo, :in_progress, :in_review, :done, :canceled, :duplicate]
   @finished_states [:done, :canceled, :duplicate]
+  @optional_steps [:product, :design, :architect, :demo]
+  @plan_steps [:product, :design, :architect]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "iss"}
   schema "issues" do
@@ -37,6 +39,8 @@ defmodule Rail.Issues.Schemas.Issue do
     field :pr_number, :integer
     field :pr_url, :string
     field :pr_title, :string
+    # Copied from the workflow's file when it opened the issue, so a later change to the file leaves its task alone.
+    field :skipped_steps, {:array, Ecto.Enum}, values: @optional_steps, default: []
 
     belongs_to :project, Project
     belongs_to :owner_user, User
@@ -131,6 +135,21 @@ defmodule Rail.Issues.Schemas.Issue do
   def state_label(:canceled), do: "Canceled"
   def state_label(:duplicate), do: "Duplicate"
   def state_label(_other), do: nil
+
+  @doc "The steps a workflow can turn off: Product, Design and Architect in Plan, and the demo in Review."
+  def optional_steps, do: @optional_steps
+
+  def skips_step?(%__MODULE__{skipped_steps: skipped}, step) when step in @optional_steps, do: step in skipped
+
+  def step_label(:product), do: "product"
+  def step_label(:design), do: "design"
+  def step_label(:architect), do: "architect"
+  def step_label(:demo), do: "demo"
+
+  @doc "The stages the issue's task runs, in order: Plan is left out when Product, Design and Architect are all off."
+  def calculate_stages(%__MODULE__{skipped_steps: skipped}) do
+    if Enum.all?(@plan_steps, &(&1 in skipped)), do: [:engineer, :review], else: [:plan, :engineer, :review]
+  end
 
   def finished_state?(state) when is_atom(state), do: state in @finished_states
   def finished_state?(_other), do: false

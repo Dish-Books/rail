@@ -5,6 +5,7 @@ defmodule Rail.Pipeline.Utils.PlanRunFinishedTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Repo
   alias Rail.Roles
@@ -122,6 +123,25 @@ defmodule Rail.Pipeline.Utils.PlanRunFinishedTest do
 
     options.(["b"], [])
     File.write!(Path.join(dir, "picked"), "b")
+    assert %Run{error: nil} = plan_run_finished(run, [])
+  end
+
+  test "with Architect off, a ticket and no plan finish clean", %{run: run, ticket: ticket} do
+    Repo.preload(run.task, :issue).issue |> Ecto.Changeset.change(skipped_steps: [:architect]) |> Repo.update!()
+    ticket.()
+
+    assert %Run{error: nil} = plan_run_finished(run, [])
+  end
+
+  test "with Product and Architect off, the round holding the issue finishes clean with nothing saved", %{run: run} do
+    issue =
+      Repo.preload(run.task, :issue).issue
+      |> Ecto.Changeset.change(skipped_steps: [:product, :architect])
+      |> Repo.update!()
+
+    {:ok, round} = Pipeline.create_round(run.task)
+    round |> Round.issue_ticket_changeset(issue) |> Repo.update!()
+
     assert %Run{error: nil} = plan_run_finished(run, [])
   end
 end

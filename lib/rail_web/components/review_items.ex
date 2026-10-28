@@ -3,7 +3,8 @@ defmodule RailWeb.Components.ReviewItems do
   Review's slim rail: Findings, a fix round's Fix plan, Diff, Screens, Demo and Browser, each an icon over a short
   label, the picked one filled blue. Each item's state is its hover title and its screen-reader text; Findings
   carries the amber count still to rule, a dot marks anything running, red while recording, a raised hand a plan
-  waiting on the reader, and a clock marks a demo the branch has moved past. Under 576px of main column it is one
+  waiting on the reader, a clock marks a demo the branch has moved past, and a dimmed minus marks a step the task's
+  workflow turned off. Under 576px of main column it is one
   row across the top.
   """
   use RailWeb, :html
@@ -12,7 +13,7 @@ defmodule RailWeb.Components.ReviewItems do
     required: true,
     doc:
       "`%{key:, label:, icon:, picked_icon:, state:, badge:, dot:, mark:}`, `dot` `:running`, `:recording` or nil, " <>
-        "`mark` `:done`, `:failed`, `:stale`, `:waiting`, `:stopped` or nil"
+        "`mark` `:done`, `:failed`, `:stale`, `:waiting`, `:stopped`, `:off` or nil"
 
   attr :picked, :atom, required: true
   attr :target, :any, required: true
@@ -38,8 +39,10 @@ defmodule RailWeb.Components.ReviewItems do
           "flex-1 @xl:flex-none min-w-0 flex flex-col items-center gap-1 px-1 py-2 rounded-lg cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500",
           item.key == @picked &&
             "bg-blue-50 dark:bg-blue-950/40 ring-1 ring-blue-200 dark:ring-blue-800 text-blue-800 dark:text-blue-200",
-          item.key != @picked &&
-            "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+          item.key != @picked && item.mark != :off &&
+            "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60",
+          item.key != @picked && item.mark == :off &&
+            "text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800/60"
         ]}
       >
         <span class="relative">
@@ -93,6 +96,11 @@ defmodule RailWeb.Components.ReviewItems do
               :if={item.mark == :stopped}
               name="pi-stop-circle-fill"
               class="size-3.5 text-slate-400"
+            />
+            <.icon
+              :if={item.mark == :off}
+              name="pi-minus-circle"
+              class="size-3.5 text-slate-400 dark:text-slate-500"
             />
             <.icon
               :if={item.mark == :stale}

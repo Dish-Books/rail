@@ -80,6 +80,37 @@ defmodule Rail.Workflows.Actions.StartWorkflowTest do
     assert_receive {:workflows_changed, ^project_id}
   end
 
+  test "the issue a workflow opens keeps the steps its file skipped, whatever the file says later", %{
+    workflow: workflow
+  } do
+    stub(DateTime, :utc_now, fn -> ~U[2026-10-12 09:00:30.000000Z] end)
+
+    set_skip = fn skip ->
+      Repo.update_all(from(w in Workflow, where: w.id == ^workflow.id),
+        set: [definition: %{workflow.definition | skip: skip}]
+      )
+    end
+
+    set_skip.([:product, :design])
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_wf_skip", "identifier" => "TST-85", "title" => "Dependency updates 2026-10-12"}
+          }
+        }
+      })
+    end)
+
+    assert {:ok, %Issue{id: issue_id, skipped_steps: [:product, :design]}} = Workflows.start_workflow(workflow)
+
+    set_skip.([:demo])
+
+    assert %Issue{skipped_steps: [:product, :design]} = Repo.get!(Issue, issue_id)
+  end
+
   test "a workflow on a GitHub project opens its issue in that repository", %{github_project: project} do
     workflow =
       %Workflow{

@@ -49,6 +49,13 @@ defmodule Rail.Pipeline.Actions.RecordDemoTest do
     assert {:error, :stage_running} = Pipeline.record_demo(scope, task)
   end
 
+  test "is refused for a task whose workflow turned the demo off", %{task: task, scope: scope} do
+    Repo.preload(task, :issue).issue |> Ecto.Changeset.change(skipped_steps: [:demo]) |> Repo.update!()
+    reject(Tools, :start_os_process, 2)
+
+    assert {:error, {:step_off, :demo}} = Pipeline.record_demo(scope, task)
+  end
+
   test "is refused for a task not at Review, a project the person cannot open, or one with no demo role", %{
     task: task,
     demo: demo,

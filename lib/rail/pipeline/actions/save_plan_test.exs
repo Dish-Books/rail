@@ -363,4 +363,43 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
     assert {:error, :round_approved} = Pipeline.save_plan(task, %{title: "Something else"})
     assert %Round{ticket: %{title: "Usage charts"}} = Pipeline.read_plan(task)
   end
+
+  describe "a step the task's workflow turned off" do
+    setup %{task: task} do
+      skipping = fn steps ->
+        issue = Repo.preload(task, :issue).issue |> Ecto.Changeset.change(skipped_steps: steps) |> Repo.update!()
+        %{task | issue: issue}
+      end
+
+      %{skipping: skipping}
+    end
+
+    test "with Product off, any part of the ticket is refused and nothing is saved", %{skipping: skipping} do
+      task = skipping.([:product])
+
+      assert {:error, {:step_off, :product}} = Pipeline.save_plan(task, %{title: "Usage charts", plan: @plan})
+      assert {:error, {:step_off, :product}} = Pipeline.save_plan(task, %{estimate: 2})
+      assert Pipeline.read_plan(task) == nil
+    end
+
+    test "with Architect off, a plan is refused and the ticket saves as before", %{skipping: skipping} do
+      task = skipping.([:architect])
+
+      assert {:error, {:step_off, :architect}} =
+               Pipeline.save_plan(task, %{title: "Usage charts", description: "Show usage.", plan: @plan})
+
+      assert {:ok, %Round{plan: nil, ticket: %{title: "Usage charts"}}} =
+               Pipeline.save_plan(task, %{title: "Usage charts", description: "Show usage."})
+    end
+
+    test "with the demo off, asking for one is refused, and saying no demo is not", %{skipping: skipping} do
+      task = skipping.([:demo])
+
+      assert {:error, {:step_off, :demo}} =
+               Pipeline.save_plan(task, %{title: "Usage charts", description: "Show usage.", record_demo: true})
+
+      assert {:ok, %Round{record_demo: false}} =
+               Pipeline.save_plan(task, %{title: "Usage charts", description: "Show usage.", record_demo: false})
+    end
+  end
 end

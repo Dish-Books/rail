@@ -30,6 +30,16 @@ defmodule Rail.Mcp.Utils.RunToolSavePlan do
       {:error, :round_approved} ->
         {:refused, "Nothing saved: the plan is approved, so it no longer changes."}
 
+      {:error, {:step_off, :product}} ->
+        {:refused,
+         "Nothing saved: Product is off for this task, so the issue is the ticket. Leave out `title`, `description`, `priority` and `estimate`."}
+
+      {:error, {:step_off, :architect}} ->
+        {:refused, "Nothing saved: Architect is off for this task, so it has no implementation plan. Leave out `plan`."}
+
+      {:error, {:step_off, :demo}} ->
+        {:refused, "Nothing saved: the demo is off for this task, so leave out `record_demo`."}
+
       {:error, changeset} ->
         {:error, changeset}
     end

@@ -1,6 +1,6 @@
 defmodule Rail.Workflows.Workers.StartWorkflowTask do
   @moduledoc """
-  Starts the task at Plan for an issue a workflow opened. It is committed with the issue, and retried while the
+  Starts the task at its first stage for an issue a workflow opened. It is committed with the issue, and retried while the
   issue still has no task.
   """
   use Oban.Worker,
@@ -22,7 +22,7 @@ defmodule Rail.Workflows.Workers.StartWorkflowTask do
   def perform(%Oban.Job{args: %{"issue_id" => issue_id}}) do
     with {:ok, %Issue{task: nil} = issue} <- Issues.get_issue(issue_id, preload: [:project, :task]),
          false <- Issue.finished_state?(issue.state),
-         result = Pipeline.start_task(issue, :plan),
+         result = Pipeline.start_task(issue),
          broadcast_workflows_changed(issue.project),
          {:error, reason} <- result,
          # Retried only while nothing was committed; a spawn refused after the task exists is not.

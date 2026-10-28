@@ -122,6 +122,68 @@ defmodule RailWeb.Live.PlanStageTest do
 
     assert ["plan-tab-ticket", "plan-tab-design", "plan-tab-plan"] ==
              view |> render() |> Floki.parse_document!() |> Floki.attribute("[data-qa='plan_tab']", "id")
+
+    refute has_element?(view, "[data-qa='plan_tab_off']")
+    refute has_element?(view, "#plan-ticket-from-issue")
+  end
+
+  describe "a task whose workflow turned steps off" do
+    setup %{task: task} do
+      skipping = fn steps ->
+        Repo.preload(task, :issue).issue |> Ecto.Changeset.change(skipped_steps: steps) |> Repo.update!()
+      end
+
+      %{skipping: skipping}
+    end
+
+    test "with Product off the Ticket tab is the issue, saying why, and its lines take no comment", %{
+      conn: conn,
+      task: task,
+      skipping: skipping
+    } do
+      skipping.([:product])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+      assert has_element?(
+               view,
+               "#plan-ticket-from-issue",
+               "Product is off for this workflow, so the issue's description is the ticket."
+             )
+
+      assert has_element?(view, "#plan-ticket-issue-title", "Plan Stage Issue")
+      refute has_element?(view, "[data-qa='plan_ticket']")
+      refute has_element?(view, "[data-qa='plan_tab_off']")
+    end
+
+    test "with Design off the Design tab is marked off and says so", %{conn: conn, task: task, skipping: skipping} do
+      skipping.([:design])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+      assert has_element?(view, "#plan-tab-design #plan-tab-design-off[title='Off for this workflow']")
+      assert has_element?(view, "#plan-design-off", "Off for this workflow")
+      assert has_element?(view, "#plan-design-off", "This workflow turned Design off")
+      refute has_element?(view, "#plan-design-pending")
+      refute has_element?(view, "#plan-tab-plan-off")
+    end
+
+    test "with Architect off the Plan tab is marked off and the status asks for the ticket", %{
+      conn: conn,
+      task: task,
+      skipping: skipping
+    } do
+      skipping.([:product, :architect])
+      Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [plan: nil])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+      assert has_element?(view, "#plan-tab-plan-off")
+      assert has_element?(view, "#plan-plan-off", "This workflow turned Architect off")
+      assert has_element?(view, "#plan-plan-off", "Engineer builds from the issue.")
+      refute has_element?(view, "#plan-plan-pending")
+      assert has_element?(view, "[data-qa='task_status_chip']", "Review the ticket")
+    end
   end
 
   test "every part is a panel on the page with only the opening one shown, and a tab switches in the browser alone", %{

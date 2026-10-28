@@ -6,8 +6,10 @@ defmodule Rail.Workflows.Schemas.WorkflowDefinition do
   use Rail.Schema
 
   alias Oban.Cron.Expression
+  alias Rail.Issues.Schemas.Issue
 
-  @keys ["name", "schedule", "instructions"]
+  @keys ["name", "schedule", "instructions", "skip"]
+  @steps Enum.map(Issue.optional_steps(), &Atom.to_string/1)
   @weekdays ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"]
 
   @primary_key false
@@ -16,14 +18,18 @@ defmodule Rail.Workflows.Schemas.WorkflowDefinition do
     field :instructions, :string
     # Cron, in UTC.
     field :schedule, :string
+    # The steps its tasks run without, copied onto each issue it opens.
+    field :skip, {:array, Ecto.Enum}, values: Issue.optional_steps(), default: []
   end
 
   @doc """
-  Builds a definition from a file's keys, refusing one short of a name, instructions or a schedule Rail can step.
+  Builds a definition from a file's keys, refusing one short of a name, instructions or a schedule Rail can step,
+  or skipping a step Rail does not have.
   """
   def changeset(definition, attrs) do
     definition
     |> cast(attrs, [:name, :instructions, :schedule])
+    |> cast_skip(attrs["skip"])
     |> update_change(:name, &String.trim/1)
     |> update_change(:instructions, &String.trim/1)
     |> update_change(:schedule, &String.trim/1)
@@ -79,6 +85,27 @@ defmodule Rail.Workflows.Schemas.WorkflowDefinition do
     else
       _not_daily -> schedule
     end
+  end
+
+  # Cast by hand, so a step Rail does not have is named rather than called invalid.
+  defp cast_skip(changeset, nil), do: changeset
+
+  defp cast_skip(changeset, steps) when is_list(steps) do
+    case Enum.reject(steps, &(&1 in @steps)) do
+      [] ->
+        put_change(changeset, :skip, steps |> Enum.uniq() |> Enum.map(&String.to_existing_atom/1))
+
+      unknown ->
+        add_error(
+          changeset,
+          :skip,
+          "names #{Enum.map_join(unknown, ", ", &to_string/1)}, which Rail cannot skip; the steps are #{Enum.join(@steps, ", ")}"
+        )
+    end
+  end
+
+  defp cast_skip(changeset, _not_a_list) do
+    add_error(changeset, :skip, "is not a list; the steps are #{Enum.join(@steps, ", ")}")
   end
 
   defp read_yaml(text) do

@@ -15,6 +15,7 @@ defmodule RailWeb.Live.TaskDetail do
   import RailWeb.Utils.MonotonicMs
 
   alias Rail.Git
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Learnings
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
@@ -28,6 +29,7 @@ defmodule RailWeb.Live.TaskDetail do
   alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
+  alias Rail.Scope
   alias Rail.Tools
   alias Rail.Users
   alias RailWeb.Live.DiffView
@@ -86,6 +88,7 @@ defmodule RailWeb.Live.TaskDetail do
         line={@line}
         title={@task.issue.title}
         status={@status}
+        link_workflow={Scope.admin?(@current_scope)}
         flush
       >
         <:breadcrumb :if={@breadcrumb != []}>{render_slot(@breadcrumb)}</:breadcrumb>
@@ -411,6 +414,7 @@ defmodule RailWeb.Live.TaskDetail do
                   recording={@recording}
                   stale={@stale}
                   rerecordable={@approvable and not Run.running?(@run)}
+                  off={Issue.skips_step?(@task.issue, :demo)}
                   target={@myself}
                 />
 
@@ -1154,10 +1158,10 @@ defmodule RailWeb.Live.TaskDetail do
       label: "Demo",
       icon: "pi-video-camera",
       picked_icon: "pi-video-camera-fill",
-      state: demo_state(socket.assigns),
+      state: demo_label(socket.assigns),
       badge: nil,
       dot: if(socket.assigns.recording, do: :recording),
-      mark: if(socket.assigns.stale && not socket.assigns.recording, do: :stale)
+      mark: demo_mark(socket.assigns)
     }
 
     browser = %{
@@ -1375,7 +1379,11 @@ defmodule RailWeb.Live.TaskDetail do
 
   # Work its owner started without a tech lead's approval still waits on one.
   defp plan_label(%Task{}, _plan_run, %Round{approved_at: nil}), do: "Started without approval"
-  defp plan_label(%Task{}, _plan_run, _approved_or_none), do: "Approved"
+
+  # A task whose workflow turned every Plan step off started at Engineer, with nothing to approve.
+  defp plan_label(%Task{issue: issue}, _plan_run, _approved_or_none) do
+    if hd(Issue.calculate_stages(issue)) == :engineer, do: "Off for this workflow", else: "Approved"
+  end
 
   # A fix plan is numbered for the review it answers, and the engineer's work for the round it builds.
   defp round(phase, _passes, fix_plan, _latest) when phase in [:planning, :waiting, :outdated], do: fix_plan.round
@@ -1461,6 +1469,19 @@ defmodule RailWeb.Live.TaskDetail do
     latest = Enum.max_by(screens, & &1.taken_at, DateTime)
     on = if latest.commit, do: " · on #{String.slice(latest.commit, 0, 7)}", else: ""
     "#{plural(length(screens), "screen")}#{on}"
+  end
+
+  # A demo the task's workflow turned off reads as off, whatever was recorded before.
+  defp demo_label(assigns) do
+    if Issue.skips_step?(assigns.task.issue, :demo), do: "Off for this workflow", else: demo_state(assigns)
+  end
+
+  defp demo_mark(assigns) do
+    cond do
+      Issue.skips_step?(assigns.task.issue, :demo) -> :off
+      assigns.stale && not assigns.recording -> :stale
+      true -> nil
+    end
   end
 
   defp demo_state(%{recording: true, beats: [_one]}), do: "Recording · 1 beat said so far"
@@ -1658,6 +1679,7 @@ defmodule RailWeb.Live.TaskDetail do
   defp decision("skip"), do: :skip
 
   defp message_for(:stage_running), do: "Something is still running on this task."
+  defp message_for({:step_off, :demo}), do: "The demo is off for this workflow."
   defp message_for(:no_stage_run), do: "Review has no run to ask yet."
   defp message_for(:chat_unavailable), do: "The Review lead has no conversation to ask yet."
   defp message_for({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not Review."

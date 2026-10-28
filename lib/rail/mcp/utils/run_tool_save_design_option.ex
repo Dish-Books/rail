@@ -13,8 +13,15 @@ defmodule Rail.Mcp.Utils.RunToolSaveDesignOption do
   changeset that refused it.
   """
   def run_tool_save_design_option(%Task{} = task, arguments, _opts) do
-    with {:ok, %{key: key, title: title}} <- Pipeline.save_design_option(task, Map.take(arguments, @fields)) do
-      {:ok, "Saved option #{key}: #{title}. Save it again whenever its page changes, with a fresh screenshot."}
+    case Pipeline.save_design_option(task, Map.take(arguments, @fields)) do
+      {:ok, %{key: key, title: title}} ->
+        {:ok, "Saved option #{key}: #{title}. Save it again whenever its page changes, with a fresh screenshot."}
+
+      {:error, {:step_off, :design}} ->
+        {:refused, "Nothing saved: Design is off for this task, so it has no design options."}
+
+      {:error, changeset} ->
+        {:error, changeset}
     end
   end
 end

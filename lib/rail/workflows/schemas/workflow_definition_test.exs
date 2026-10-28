@@ -44,8 +44,24 @@ defmodule Rail.Workflows.Schemas.WorkflowDefinitionTest do
   end
 
   test "an unknown key is refused" do
-    assert {:error, "keys Rail does not know: \"skip\""} =
-             WorkflowDefinition.parse("name: Sweep\nschedule: \"0 6 * * *\"\ninstructions: Go\nskip: [plan]\n")
+    assert {:error, "keys Rail does not know: \"owner\""} =
+             WorkflowDefinition.parse("name: Sweep\nschedule: \"0 6 * * *\"\ninstructions: Go\nowner: dana\n")
+  end
+
+  test "a file skipping product and design parses with them as its skipped steps" do
+    assert {:ok, %WorkflowDefinition{skip: [:product, :design]}} =
+             WorkflowDefinition.parse("name: Sweep\nschedule: \"0 6 * * *\"\ninstructions: Go\nskip: [product, design]\n")
+
+    assert {:ok, %WorkflowDefinition{skip: []}} =
+             WorkflowDefinition.parse("name: Sweep\nschedule: \"0 6 * * *\"\ninstructions: Go\n")
+  end
+
+  test "a file skipping a step Rail does not have names it and the steps there are" do
+    assert {:error, "skip names qa, which Rail cannot skip; the steps are product, design, architect, demo"} =
+             WorkflowDefinition.parse("name: Sweep\nschedule: \"0 6 * * *\"\ninstructions: Go\nskip: [design, qa]\n")
+
+    assert {:error, "skip is not a list; the steps are product, design, architect, demo"} =
+             WorkflowDefinition.parse("name: Sweep\nschedule: \"0 6 * * *\"\ninstructions: Go\nskip: design\n")
   end
 
   test "a schedule that is not a cron expression is refused" do
