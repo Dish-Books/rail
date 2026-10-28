@@ -15,5 +15,5 @@ instructions: |
 
   The pull request description has three parts:
   1. Every bump, as old → new, grouped by ecosystem.
-  2. What we should be aware of: behaviour changes, new defaults, deprecations to plan for, anything that needs a config or infrastructure change outside this repository (the rail VM, secrets), and anything that needs checking by hand after deploy.
+  2. What we should be aware of: behavior changes, new defaults, deprecations to plan for, anything that needs a config or infrastructure change outside this repository (the rail VM, secrets), and anything that needs checking by hand after deploy.
   3. What was held back, and why.
