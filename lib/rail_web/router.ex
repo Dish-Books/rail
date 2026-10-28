@@ -124,6 +124,7 @@ defmodule RailWeb.Router do
         NavHook
       ] do
       live "/settings/projects", Settings.ProjectsLive
+      live "/settings/workflows", Settings.WorkflowsLive
       live "/settings/linear-workspaces", Settings.LinearWorkspacesLive
       live "/settings/slack-workspaces", Settings.SlackWorkspacesLive
       live "/settings/users", Settings.UsersLive

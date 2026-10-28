@@ -15,6 +15,8 @@ defmodule RailWeb.IssuesLiveTest do
   alias Rail.Roles
   alias Rail.Scope
   alias Rail.Users
+  alias Rail.Workflows.Schemas.Workflow
+  alias Rail.Workflows.Schemas.WorkflowDefinition
 
   test "redirects an unauthenticated user to the sign-in page", %{conn: conn} do
     assert {:error, {:redirect, %{to: "/sign-in"}}} = live(conn, ~p"/issues")
@@ -406,6 +408,62 @@ defmodule RailWeb.IssuesLiveTest do
     view |> element("#sync-issues-button") |> render_click()
     assert_enqueued(worker: LinearSync, args: %{project_id: project.id})
     refute_enqueued(worker: LinearSync, args: %{project_id: other_id})
+  end
+
+  test "an issue a workflow opened is marked with the workflow and unassigned, for anyone who can see it", %{
+    conn: conn,
+    project: project
+  } do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_workflow",
+        login: "issues_live_user_workflow",
+        email: "issues_live_user_workflow@example.com"
+      })
+
+    {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
+
+    workflow =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/flaky-test-sweep.yml",
+        definition: %WorkflowDefinition{
+          name: "Flaky test sweep",
+          schedule: "0 9 * * 1",
+          instructions: "Sweep the flaky tests."
+        },
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      })
+
+    [opened, filed] =
+      for {workflow_id, n} <- [{workflow.id, 1}, {nil, 2}] do
+        %Issue{}
+        |> Issue.tracker_changeset(%{
+          project_id: project.id,
+          workflow_id: workflow_id,
+          external_id: "lin_workflow_card_#{n}",
+          identifier: "WFC-#{n}",
+          title: "Card #{n}",
+          state: :triage
+        })
+        |> Repo.insert!()
+      end
+
+    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/issues")
+
+    assert has_element?(view, ~s(#issue-workflow-#{opened.id}[title="Opened by the Flaky test sweep workflow"]))
+    assert has_element?(view, "#issue-card-#{opened.id} .sr-only", "From the Flaky test sweep workflow:")
+    assert has_element?(view, "#issue-card-#{opened.id} [data-qa=issue-unassigned]")
+    refute has_element?(view, "#issue-workflow-#{filed.id}")
+
+    # A sync that renames the workflow shows on the open list.
+    workflow
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.put_embed(:definition, %{name: "Flake sweep"})
+    |> Repo.update!()
+
+    Phoenix.PubSub.broadcast(Rail.PubSub, "workflows", {:workflows_changed, project.id})
+    assert has_element?(view, ~s(#issue-workflow-#{opened.id}[title="Opened by the Flake sweep workflow"]))
   end
 
   test "toggles Show finished filter chip", %{conn: conn, project: %Project{id: _project_id} = project} do

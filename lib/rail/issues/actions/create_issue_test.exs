@@ -6,6 +6,8 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
   alias Rail.Users
+  alias Rail.Workflows.Schemas.Workflow
+  alias Rail.Workflows.Schemas.WorkflowDefinition
 
   test "create_issue/2 opens the ticket in triage with the title and description given", %{
     project: %{id: project_id} = project
@@ -172,6 +174,43 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
              Issues.create_issue(system_scope(), project, %{title: "Bad priority", priority: "invalid_priority"})
 
     assert %{priority: ["is invalid"]} = errors_on(changeset)
+  end
+
+  test "create_issue/2 keeps the workflow opening it, over a row the webhook saved first", %{project: project} do
+    %Workflow{id: workflow_id} =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/sweep.yml",
+        definition: %WorkflowDefinition{name: "Sweep", schedule: "0 9 * * 1", instructions: "Sweep the flaky tests."},
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      })
+
+    %Issue{id: mirrored_id} =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_TST-84",
+        identifier: "TST-84",
+        title: "Sweep 2026-10-12",
+        state: :triage
+      })
+      |> Repo.insert!()
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_TST-84", "identifier" => "TST-84", "title" => "Sweep 2026-10-12"}
+          }
+        }
+      })
+    end)
+
+    assert {:ok, %Issue{id: ^mirrored_id, workflow_id: ^workflow_id}} =
+             Issues.create_issue(system_scope(), project, %{title: "Sweep 2026-10-12", workflow_id: workflow_id})
+
+    assert %Issue{workflow_id: ^workflow_id} = Repo.get!(Issue, mirrored_id)
   end
 
   test "create_issue/2 returns an error when Linear does not create it", %{project: project} do

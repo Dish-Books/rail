@@ -92,7 +92,8 @@ defmodule Rail.MixProject do
       {:tz, "~> 0.28"},
       {:ueberauth, "~> 0.10"},
       {:ueberauth_github, "~> 0.8"},
-      {:uxid, "~> 2.0"}
+      {:uxid, "~> 2.0"},
+      {:yaml_elixir, "~> 2.11"}
     ]
   end
 

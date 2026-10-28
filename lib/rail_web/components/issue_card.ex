@@ -1,13 +1,14 @@
 defmodule RailWeb.Components.IssueCard do
   @moduledoc """
   One issue as a single row of the issues list: priority, identifier, status and
-  title on the left; where its work stands, its points and who owns it on the
-  right. Clicking the row opens the issue's page.
+  title on the left, marked when a workflow opened it; where its work stands, its
+  points and who owns it on the right. Clicking the row opens the issue's page.
   """
   use RailWeb, :html
 
   alias Phoenix.LiveView.JS
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Workflows.Schemas.Workflow
 
   attr :issue, :map, required: true
   attr :task, :map, default: nil
@@ -46,12 +47,25 @@ defmodule RailWeb.Components.IssueCard do
         <span class="sr-only">{status_label(@issue)}</span>
       </span>
 
-      <span
-        data-qa="issue-title"
-        title={@issue.title}
-        class="flex-1 min-w-0 truncate text-sm font-medium text-slate-900 dark:text-slate-100"
-      >
-        {@issue.title}
+      <span class="flex-1 min-w-0 flex items-center gap-1.5">
+        <span
+          :if={@issue.workflow}
+          id={"issue-workflow-#{@issue.id}"}
+          title={"Opened by the #{Workflow.name(@issue.workflow)} workflow"}
+          class="flex shrink-0"
+        >
+          <.icon name="pi-repeat" class="h-4 w-4 text-slate-500 dark:text-slate-400" />
+        </span>
+        <span :if={@issue.workflow} class="sr-only">
+          From the {Workflow.name(@issue.workflow)} workflow:
+        </span>
+        <span
+          data-qa="issue-title"
+          title={@issue.title}
+          class="min-w-0 truncate text-sm font-medium text-slate-900 dark:text-slate-100"
+        >
+          {@issue.title}
+        </span>
       </span>
 
       <div class="flex items-center gap-2 shrink-0" onclick="event.stopPropagation()">

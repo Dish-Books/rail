@@ -4,17 +4,28 @@ defmodule Rail.Projects.Actions.ListSlackChannelsTest do
   alias Rail.Projects
   alias Rail.Projects.Schemas.SlackChannel
 
-  setup %{project: project} do
+  # Its own projects and keys, not the seed or a shared key: async tests locking those rows deadlocked here.
+  setup do
     unique = System.unique_integer([:positive])
     Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "team_id" => "T#{unique}"}))
     {:ok, workspace} = Projects.create_slack_workspace(system_scope(), %{"name" => "Acme", "token" => "xoxb-1"})
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Mine",
+        github_repo: "example/mine-#{unique}",
+        github_installation_id: 2,
+        key: "MIN-#{unique}",
+        default_branch: "main",
+        clone_path: "/tmp/mine"
+      })
 
     {:ok, other} =
       Projects.create_project(system_scope(), %{
         name: "Other",
         github_repo: "example/other-#{unique}",
         github_installation_id: 2,
-        key: "OTH",
+        key: "OTH-#{unique}",
         default_branch: "main",
         clone_path: "/tmp/other"
       })
@@ -27,7 +38,7 @@ defmodule Rail.Projects.Actions.ListSlackChannelsTest do
     {:ok, _other} =
       Projects.update_project(system_scope(), other, %{"slack_channels" => [channel.("C#{unique}a", "alpha")]})
 
-    %{other: other, workspace: workspace}
+    %{project: project, other: other, workspace: workspace}
   end
 
   test "lists one project's channels, or several projects' in one query, by name", %{project: project, other: other} do

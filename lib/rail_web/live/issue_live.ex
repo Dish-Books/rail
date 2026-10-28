@@ -19,7 +19,11 @@ defmodule RailWeb.IssueLive do
   @issue_events ["assign", "filter_assignees", "draft_comment", "comment"]
 
   def mount(_params, _session, socket) do
-    if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+    # Workflows too, since the byline names the workflow that opened the issue.
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "workflows")
+    end
 
     socket =
       socket
@@ -59,6 +63,8 @@ defmodule RailWeb.IssueLive do
         owner_editable={
           not match?(%{task: %Task{parent_task_id: parent_id}} when is_binary(parent_id), @issue)
         }
+        workflow={@issue.workflow}
+        link_workflow={Scope.admin?(@current_scope)}
       />
     </Layouts.app>
     """
@@ -114,6 +120,13 @@ defmodule RailWeb.IssueLive do
 
   def handle_info({:issue_created, _issue_id}, socket), do: {:noreply, socket}
 
+  # A sync may have renamed the workflow that opened this issue.
+  def handle_info({:workflows_changed, project_id}, %{assigns: %{issue: %{project_id: project_id}}} = socket) do
+    {:noreply, load_issue(socket, socket.assigns.issue.id)}
+  end
+
+  def handle_info({:workflows_changed, _other_project_id}, socket), do: {:noreply, socket}
+
   # Looking up GitHub is not something the page waits on: it offers Plan once GitHub has nothing, or cannot say.
   def handle_async(:link_pull_request, {:ok, {:ok, _pull_request}}, socket) do
     socket = socket |> assign(:checking_pull_request, false) |> load_issue(socket.assigns.issue.id)
@@ -128,6 +141,7 @@ defmodule RailWeb.IssueLive do
     preload = [
       :project,
       :owner_user,
+      :workflow,
       task: [runs: :role, parent_task: [children: :issue]],
       comments: [:author_user, replies: :author_user]
     ]

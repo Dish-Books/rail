@@ -10,7 +10,11 @@ defmodule RailWeb.IssuesLive do
   @page_size 50
 
   def mount(_params, _session, socket) do
-    if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+    # Workflows too, since a row names the workflow that opened it.
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "workflows")
+    end
 
     socket =
       socket
@@ -353,6 +357,8 @@ defmodule RailWeb.IssuesLive do
 
   def handle_info({:issue_comments_changed, _issue_id}, socket), do: {:noreply, socket}
 
+  def handle_info({:workflows_changed, _project_id}, socket), do: {:noreply, reload_data(socket)}
+
   # Picked out of the runs already loaded rather than queried per row.
   defp stage_run(%Task{} = task), do: Task.stage_run(task)
   defp stage_run(nil), do: nil
@@ -377,7 +383,7 @@ defmodule RailWeb.IssuesLive do
         priority: assigns.filter_priority,
         limit: @page_size,
         offset: offset,
-        preload: [:project, :owner_user, task: [runs: :role, parent_task: [children: :issue]]]
+        preload: [:project, :owner_user, :workflow, task: [runs: :role, parent_task: [children: :issue]]]
       )
 
     last_page = max(div(total + @page_size - 1, @page_size), 1)

@@ -18,6 +18,8 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Users
+  alias Rail.Workflows.Schemas.Workflow
+  alias Rail.Workflows.Schemas.WorkflowDefinition
 
   setup %{project: project} do
     %{project: project}
@@ -110,6 +112,54 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
 
     # Pulling from Linear is not a change to push back to it.
     refute_enqueued(worker: SyncIssue)
+  end
+
+  test "an issue a workflow opened keeps its workflow through a full sync", %{project: project} do
+    %Workflow{id: workflow_id} =
+      Repo.insert!(%Workflow{
+        project_id: project.id,
+        path: ".rail/workflows/sweep.yml",
+        definition: %WorkflowDefinition{name: "Sweep", schedule: "0 9 * * 1", instructions: "Sweep the flaky tests."},
+        next_run_at: ~U[2026-10-12 09:00:00Z]
+      })
+
+    stub(DateTime, :utc_now, fn -> ~U[2026-10-12 10:00:00.000000Z] end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_TST-84", "identifier" => "TST-84", "title" => "Sweep 2026-10-12"}
+          }
+        }
+      })
+    end)
+
+    {:ok, _issue} = Issues.create_issue(system_scope(), project, %{title: "Sweep 2026-10-12", workflow_id: workflow_id})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issues" => %{
+            "nodes" => [
+              %{
+                "id" => "lin_TST-84",
+                "identifier" => "TST-84",
+                "title" => "Sweep 2026-10-12, retitled",
+                "state" => %{"id" => "st_1", "name" => "Todo", "type" => "unstarted"}
+              }
+            ],
+            "pageInfo" => %{"hasNextPage" => true, "endCursor" => "cursor_2"}
+          }
+        }
+      })
+    end)
+
+    assert :ok = perform_job(LinearSync, %{project_id: project.id, started_at: "2026-10-12T10:00:00.000000Z"})
+
+    assert %Issue{title: "Sweep 2026-10-12, retitled", workflow_id: ^workflow_id} =
+             Repo.get_by(Issue, external_id: "lin_TST-84")
   end
 
   test "an unowned issue the page gives an owner has its Linear status caught up, and no other does", %{

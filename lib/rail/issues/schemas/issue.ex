@@ -8,6 +8,7 @@ defmodule Rail.Issues.Schemas.Issue do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Users.Schemas.User
+  alias Rail.Workflows.Schemas.Workflow
 
   @priorities [:urgent, :high, :medium, :low]
   @states [:backlog, :triage, :todo, :in_progress, :in_review, :done, :canceled, :duplicate]
@@ -39,6 +40,8 @@ defmodule Rail.Issues.Schemas.Issue do
 
     belongs_to :project, Project
     belongs_to :owner_user, User
+    # The workflow that opened it, or nil for one somebody filed.
+    belongs_to :workflow, Workflow
 
     # The live task. Cleaned-up tasks stay in the table as history.
     has_one :task, Task, where: [cleaned_up_at: nil]
@@ -63,7 +66,8 @@ defmodule Rail.Issues.Schemas.Issue do
     :state,
     :title,
     :tracker,
-    :url
+    :url,
+    :workflow_id
   ]
 
   @required_fields [
@@ -95,6 +99,7 @@ defmodule Rail.Issues.Schemas.Issue do
     |> unique_constraint(:external_id)
     |> foreign_key_constraint(:project_id)
     |> foreign_key_constraint(:owner_user_id)
+    |> foreign_key_constraint(:workflow_id)
     |> advance_when_claimed()
   end
 
