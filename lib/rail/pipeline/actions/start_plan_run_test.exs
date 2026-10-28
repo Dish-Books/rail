@@ -233,7 +233,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     expect(Tools, :start_os_process, fn %Run{} = run, ["-p", prompt | _rest] ->
       assert prompt =~ "- Product is off: the issue below is the ticket"
       assert prompt =~ "- Design is off: there are no design options"
-      assert prompt =~ "1. Then the implementation plan, saved with `save_plan` as `plan`.\n2. Have the plan checked"
+      assert prompt =~ "1. The implementation plan, saved with `save_plan` as `plan`.\n2. Have the plan checked"
       refute prompt =~ "The design options:"
       {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
     end)

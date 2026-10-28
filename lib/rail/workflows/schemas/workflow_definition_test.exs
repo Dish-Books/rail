@@ -60,6 +60,12 @@ defmodule Rail.Workflows.Schemas.WorkflowDefinitionTest do
     assert {:error, "skip names qa, which Rail cannot skip; the steps are product, design, architect, demo"} =
              WorkflowDefinition.parse("name: Sweep\nschedule: \"0 6 * * *\"\ninstructions: Go\nskip: [design, qa]\n")
 
+    assert {:error,
+            "skip names %{\"product\" => true}, which Rail cannot skip; the steps are product, design, architect, demo"} =
+             WorkflowDefinition.parse(
+               "name: Sweep\nschedule: \"0 6 * * *\"\ninstructions: Go\nskip:\n  - product: true\n"
+             )
+
     assert {:error, "skip is not a list; the steps are product, design, architect, demo"} =
              WorkflowDefinition.parse("name: Sweep\nschedule: \"0 6 * * *\"\ninstructions: Go\nskip: design\n")
   end

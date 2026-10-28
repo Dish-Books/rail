@@ -4,9 +4,11 @@ defmodule Rail.Mcp.Utils.RunToolSavePlan do
   the plan is written for.
   """
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Repo
 
   @fields ["title", "description", "priority", "estimate", "plan", "design", "record_demo"]
 
@@ -17,15 +19,26 @@ defmodule Rail.Mcp.Utils.RunToolSavePlan do
   refused it.
   """
   def run_tool_save_plan(%Task{} = task, arguments, _opts) do
+    issue = Repo.preload(task, :issue).issue
+
     case Pipeline.save_plan(task, Map.take(arguments, @fields)) do
-      {:ok, %Round{ticket: %{title: title}, plan: nil}} ->
-        {:ok, "Ticket saved: #{title}. No implementation plan is saved yet. #{@again}"}
+      {:ok, %Round{} = round} ->
+        said =
+          Enum.filter(
+            [
+              not Issue.skips_step?(issue, :product) && "Ticket saved: #{round.ticket.title}.",
+              not Issue.skips_step?(issue, :architect) &&
+                cond do
+                  round.plan == nil -> "No implementation plan is saved yet."
+                  round.design != nil -> "Plan saved for #{round.design.title} (#{round.design.key})."
+                  Issue.skips_step?(issue, :design) -> "Plan saved."
+                  true -> "Plan saved, written for no design option yet."
+                end
+            ],
+            &is_binary/1
+          )
 
-      {:ok, %Round{ticket: %{title: title}, design: %{key: key, title: option}}} ->
-        {:ok, "Ticket saved: #{title}. Plan saved for #{option} (#{key}). #{@again}"}
-
-      {:ok, %Round{ticket: %{title: title}, design: nil}} ->
-        {:ok, "Ticket saved: #{title}. Plan saved, written for no design option yet. #{@again}"}
+        {:ok, "#{if said == [], do: "Saved.", else: Enum.join(said, " ")} #{@again}"}
 
       {:error, :round_approved} ->
         {:refused, "Nothing saved: the plan is approved, so it no longer changes."}

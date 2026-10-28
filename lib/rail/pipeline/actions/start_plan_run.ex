@@ -114,7 +114,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     on? = &(not Issue.skips_step?(issue, &1))
 
     String.trim("""
-    You run Rail's Plan step for the issue below: one conversation that ends with one plan the human approves with one click. The plan is the ticket, the design options when the change has a screen, and the implementation plan. You write #{if issue.skipped_steps == [], do: "all three", else: "each part this task has"} yourself, and save them with Rail's tools. You change nothing in the worktree: no application code, no tests, no branch.
+    You run Rail's Plan step for the issue below: one conversation that ends with one plan the human approves with one click. The plan is #{listing([on?.(:product) && "the ticket", on?.(:design) && "the design options when the change has a screen#{if on?.(:architect), do: ","}", on?.(:architect) && "the implementation plan"])}. You write #{if issue.skipped_steps == [], do: "all three", else: "each part this task has"} yourself, and save them with Rail's tools. You change nothing in the worktree: no application code, no tests, no branch.
     #{skipped(issue)}
     How the Plan step works:
 
@@ -123,17 +123,15 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     Saving:
 
     #{Enum.join(saving(on?), "\n")}
-    #{if on?.(:design), do: design_brief(dir, kit), else: ""}
+    #{if on?.(:design), do: design_brief(dir, kit, on?), else: ""}
     Keeping the #{if issue.skipped_steps == [], do: "three", else: "parts"} in step:
 
-    - Whenever the human asks for a change, carry it everywhere it reaches before your turn ends, so the ticket, the design and the implementation plan agree: "do not store it" removes the column, the migration, the schema field and their tests, not only the sentence.
-    #{if on?.(:design), do: pick_brief(dir), else: ""}- Comments arrive as one message before approval, grouped by what they are on. Those on the design name each element of the picked option by its CSS selector with what it says and the comment: find the element, change the page, retake the screenshot and save under the same key, keeping the ids and structure of elements nobody commented on. Those "On the ticket:" and "On the plan:" each name a line by its label and quote it as it read when the comment was written: answer by changing that line, and leave every line nobody commented on reading exactly as it did, so the other comments stay under their lines. A fix the plan check brings is the one change a line nobody commented on can take.
-
+    #{keeping(dir, on?)}
     Questions:
 
     - One round per turn. Collect every question you could not close and ask them all in one `ask_questions` call before you end your turn, each with its options, your recommended answer first. Leave the options out where the answer is free text. The human sees the round when your turn ends and answers the lot in a single pass. A question you can settle from the docs, the code or a named assumption is not a question.
     #{learnings_brief(run, ["#{issue.title}\n\n#{issue.description}"])}
-    #{saved(task)}
+    #{saved(task, on?)}
 
     The ticket as it stands, its title, priority and estimate above its description:
 
@@ -146,29 +144,44 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
 
   # The steps of a Plan turn, numbered once the ones the workflow turned off are left out.
   defp steps(on?) do
-    Enum.filter(
-      [
-        on?.(:product) &&
-          "The ticket first. Save it with `save_plan`, giving its `title` and `description`, as soon as you have a draft, so the human can read it while you work.",
-        on?.(:design) &&
-          "Then the design, only when the change has a screen: three options, each saved with `save_design_option`. When nothing anyone sees changes there are no options: skip them and say so in one line.",
-        (on?.(:architect) and on?.(:design)) &&
-          "Then the implementation plan, saved with `save_plan` as `plan`. Write everything that does not hang on the screen first. Once the options are saved, either write the screen-specific details for the option you recommend, naming it as `design` when you save, or leave them until the pick. Never plan for all three.",
-        (on?.(:architect) and not on?.(:design)) &&
-          "Then the implementation plan, saved with `save_plan` as `plan`.",
-        on?.(:architect) &&
-          "Have the plan checked before you end any turn that saved it, so the human reads a plan with nothing missing. Start one subagent on a clean context to read it against the code. It sees only what you write it, so give it the worktree path, the ticket and the implementation plan word for word as saved, and the path of the page of the option the plan is written for. Ask it to report, each point with the file and line it rests on, what is missing: an acceptance criterion no step delivers, a caller, sibling or test of a changed function the plan leaves out, a migration, schema field, permission check or screen state the change needs and no step names. And what is likely wrong: a step that contradicts the code as it is, a file or function that does not exist, an approach that breaks the project's written standards or a rule you handed it, a test that would pass without the change. It changes nothing and saves nothing. Fix every point that holds, carrying it to the ticket where it reaches, save again, and drop each that does not. One check a turn: what it revised is checked when the next turn saves the plan.",
-        "End the turn by saying what is saved, what the check changed in a line each, and, when there are options, which one you recommend and why, in a sentence or two. The human picks in Rail, not in the chat."
-      ],
-      &is_binary/1
-    )
+    [
+      on?.(:product) &&
+        "The ticket first. Save it with `save_plan`, giving its `title` and `description`, as soon as you have a draft, so the human can read it while you work.",
+      on?.(:design) &&
+        "Then the design, only when the change has a screen: three options, each saved with `save_design_option`. When nothing anyone sees changes there are no options: skip them and say so in one line.",
+      (on?.(:architect) and on?.(:design)) &&
+        "Then the implementation plan, saved with `save_plan` as `plan`. Write everything that does not hang on the screen first. Once the options are saved, either write the screen-specific details for the option you recommend, naming it as `design` when you save, or leave them until the pick. Never plan for all three.",
+      (on?.(:architect) and not on?.(:design)) &&
+        "Then the implementation plan, saved with `save_plan` as `plan`.",
+      on?.(:architect) &&
+        "Have the plan checked before you end any turn that saved it, so the human reads a plan with nothing missing. Start one subagent on a clean context to read it against the code. It sees only what you write it, so give it the worktree path, the ticket and the implementation plan word for word as saved#{if on?.(:design), do: ", and the path of the page of the option the plan is written for"}. Ask it to report, each point with the file and line it rests on, what is missing: an acceptance criterion no step delivers, a caller, sibling or test of a changed function the plan leaves out, a migration, schema field, permission check or screen state the change needs and no step names. And what is likely wrong: a step that contradicts the code as it is, a file or function that does not exist, an approach that breaks the project's written standards or a rule you handed it, a test that would pass without the change. It changes nothing and saves nothing. Fix every point that holds, #{if on?.(:product), do: "carrying it to the ticket where it reaches, "}save again, and drop each that does not. One check a turn: what it revised is checked when the next turn saves the plan.",
+      "End the turn by saying what is saved#{if on?.(:architect), do: "#{if on?.(:design), do: ",", else: " and"} what the check changed"} in a line each#{if on?.(:design), do: ", and, when there are options, which one you recommend and why, in a sentence or two. The human picks in Rail, not in the chat"}."
+    ]
+    |> Enum.filter(&is_binary/1)
+    # The first step listed reads as the start, not as following another.
+    |> List.update_at(0, &String.replace_prefix(&1, "Then t", "T"))
+  end
+
+  defp keeping(dir, on?) do
+    in_step =
+      Enum.filter(
+        [on?.(:product) && "the ticket", on?.(:design) && "the design", on?.(:architect) && "the implementation plan"],
+        &is_binary/1
+      )
+
+    headings = Enum.filter([on?.(:product) && ~s("On the ticket:"), on?.(:architect) && ~s("On the plan:")], &is_binary/1)
+
+    """
+    - Whenever the human asks for a change, carry it everywhere it reaches before your turn ends#{if match?([_, _ | _], in_step), do: ", so #{listing(in_step)} agree"}: "do not store it" removes the column, the migration, the schema field and their tests, not only the sentence.
+    #{if on?.(:design), do: pick_brief(dir, on?), else: ""}- Comments arrive as one message before approval, grouped by what they are on.#{if on?.(:design), do: " Those on the design name each element of the picked option by its CSS selector with what it says and the comment: find the element, change the page, retake the screenshot and save under the same key, keeping the ids and structure of elements nobody commented on."}#{if headings != [], do: " Those #{listing(headings)} each name a line by its label and quote it as it read when the comment was written: answer by changing that line, and leave every line nobody commented on reading exactly as it did, so the other comments stay under their lines."}#{if on?.(:architect), do: " A fix the plan check brings is the one change a line nobody commented on can take."}
+    """
   end
 
   defp saving(on?) do
     Enum.filter(
       [
         (on?.(:product) or on?.(:architect)) &&
-          "- `save_plan` is the only way to hand over the ticket and the implementation plan. Write no ticket file and no plan file. A part you leave out of a save stays as the last save left it, and a part you give replaces it in full, so give the whole ticket body or the whole implementation plan every time you change it.",
+          "- `save_plan` is the only way to hand over #{listing([on?.(:product) && "the ticket", on?.(:architect) && "the implementation plan"])}. Write #{listing([on?.(:product) && "no ticket file", on?.(:architect) && "no plan file"])}. A part you leave out of a save stays as the last save left it, and a part you give replaces it in full, so give #{listing([on?.(:product) && "the whole ticket body", on?.(:architect) && "the whole implementation plan"], "or")} every time you change it.",
         on?.(:product) &&
           "- `title` and `description` are the ticket, the description being its body in markdown, verbatim. `priority` and `estimate` keep whatever they are already set to when left out.",
         on?.(:architect) && "- `plan` opens with the `## Implementation plan` heading on its first line.",
@@ -223,7 +236,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     end
   end
 
-  defp design_brief(dir, kit) do
+  defp design_brief(dir, kit, on?) do
     """
 
     The design options:
@@ -237,32 +250,38 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     Use `google-chrome`, or Google Chrome's full path on macOS, where that is what is installed. The window is taller than 1080 because headless Chrome keeps about 90px of it for itself.
 
     - Save each option with `save_design_option` as soon as its page and screenshot exist: its `key`, `title`, a `summary` of one or two sentences on the position it takes, `good_at` and `costs` as lists of short phrases, and `assumptions`, what you assumed so it can be vetoed. The human sees each option the moment it is saved, so save one before you start the next. A key is lowercase letters, digits and dashes, and names that option's files.
-    - Retake an option's screenshot every time its page changes, and save the option again. The screenshot is what gets published. Write no manifest yourself.
-    - When you plan for an option, read its page: its markup carries the layout, states and copy the ticket only describes. Plan every state it shows.
+    - Retake an option's screenshot every time its page changes, and save the option again. The screenshot is what gets published. Write no manifest yourself.#{if on?.(:architect), do: "\n- When you plan for an option, read its page: its markup carries the layout, states and copy the ticket only describes. Plan every state it shows."}
     """
   end
 
-  defp pick_brief(dir) do
+  defp pick_brief(dir, on?) do
     """
-    - A pick arrives as a message that says only "I picked <title> (<key>)." Fill in or revise the screen-specific parts of the implementation plan for that option and save it naming its key, and update the ticket if the pick changes it. A pick should change the frontend parts of the plan and little else. If the plan is already written for the pick, say it stands.
+    - A pick arrives as a message that says only "I picked <title> (<key>)." #{if on?.(:architect), do: "Fill in or revise the screen-specific parts of the implementation plan for that option and save it naming its key#{if on?.(:product), do: ", and update the ticket if the pick changes it"}. A pick should change the frontend parts of the plan and little else. If the plan is already written for the pick, say it stands.", else: if(on?.(:product), do: "Update the ticket if the pick changes it, and otherwise say it stands.", else: "Nothing needs saving for it.")}
     - Rail records the pick in #{Path.join(dir, "picked")} and deletes the options not picked; never write that file. After the pick only the picked option can be saved.
     """
   end
 
+  # Joins the parts a sentence names, fewer when the workflow turned steps off.
+  defp listing(parts, conjunction \\ "and") do
+    {last, rest} = parts |> Enum.filter(&is_binary/1) |> List.pop_at(-1)
+    if rest == [], do: last, else: "#{Enum.join(rest, ", ")} #{conjunction} #{last}"
+  end
+
   # A turn after a deploy or a retry picks up from whatever is saved, not from the start.
-  defp saved(%Task{} = task) do
+  defp saved(%Task{} = task, on?) do
     design = Pipeline.read_design(task, pages: false)
     round = Pipeline.read_plan(task)
 
     lines =
       Enum.filter(
         [
-          round && "- The ticket: #{round.ticket.title}",
+          on?.(:product) && round && "- The ticket: #{round.ticket.title}",
           design && design.options != [] &&
             "- Design options: #{Enum.map_join(design.options, ", ", &"#{&1.title} (#{&1.key})")}",
           design && design.picked && "- The human picked #{design.picked}.",
-          round && round.plan &&
-            "- The plan, written for #{if round.design, do: round.design.key, else: "no design option"}."
+          round && round.plan && on?.(:design) &&
+            "- The plan, written for #{if round.design, do: round.design.key, else: "no design option"}.",
+          round && round.plan && not on?.(:design) && "- The implementation plan."
         ],
         &is_binary/1
       )

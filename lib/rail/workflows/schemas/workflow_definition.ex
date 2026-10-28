@@ -96,11 +96,9 @@ defmodule Rail.Workflows.Schemas.WorkflowDefinition do
         put_change(changeset, :skip, steps |> Enum.uniq() |> Enum.map(&String.to_existing_atom/1))
 
       unknown ->
-        add_error(
-          changeset,
-          :skip,
-          "names #{Enum.map_join(unknown, ", ", &to_string/1)}, which Rail cannot skip; the steps are #{Enum.join(@steps, ", ")}"
-        )
+        # A YAML entry can be a map or a list, which has no text of its own.
+        names = Enum.map_join(unknown, ", ", &if(is_binary(&1), do: &1, else: inspect(&1)))
+        add_error(changeset, :skip, "names #{names}, which Rail cannot skip; the steps are #{Enum.join(@steps, ", ")}")
     end
   end
 

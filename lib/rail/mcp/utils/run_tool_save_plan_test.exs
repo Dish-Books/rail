@@ -115,4 +115,40 @@ defmodule Rail.Mcp.Utils.RunToolSavePlanTest do
     assert {:refused, "Nothing saved: the demo is off for this task" <> _rest} =
              run_tool_save_plan(task, %{"record_demo" => true}, [])
   end
+
+  test "with Product and Design off, a saved plan says only that it is saved", %{task: task} do
+    issue =
+      Repo.preload(task, :issue).issue
+      |> Ecto.Changeset.change(skipped_steps: [:product, :design], description: "Show usage.")
+      |> Repo.update!()
+
+    {:ok, round} = Pipeline.create_round(task)
+    round |> Round.issue_ticket_changeset(issue) |> Repo.update!()
+
+    assert {:ok, "Plan saved. Save again after every change; the human reads the last save."} =
+             run_tool_save_plan(%{task | issue: issue}, %{"plan" => @plan}, [])
+  end
+
+  test "with Architect off, a saved ticket says nothing of an implementation plan", %{task: task} do
+    issue =
+      Repo.preload(task, :issue).issue
+      |> Ecto.Changeset.change(skipped_steps: [:architect])
+      |> Repo.update!()
+
+    assert {:ok, "Ticket saved: Usage charts. Save again after every change; the human reads the last save."} =
+             run_tool_save_plan(%{task | issue: issue}, %{"title" => "Usage charts", "description" => "Show usage."}, [])
+  end
+
+  test "with Product and Architect off, a save of neither part says only that it is saved", %{task: task} do
+    issue =
+      Repo.preload(task, :issue).issue
+      |> Ecto.Changeset.change(skipped_steps: [:product, :architect], description: "Show usage.")
+      |> Repo.update!()
+
+    {:ok, round} = Pipeline.create_round(task)
+    round |> Round.issue_ticket_changeset(issue) |> Repo.update!()
+
+    assert {:ok, "Saved. Save again after every change; the human reads the last save."} =
+             run_tool_save_plan(%{task | issue: issue}, %{"record_demo" => true}, [])
+  end
 end
