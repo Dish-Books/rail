@@ -8,7 +8,7 @@ defmodule Rail.Workflows.Schemas.WorkflowDefinition do
   alias Oban.Cron.Expression
   alias Rail.Issues.Schemas.Issue
 
-  @keys ["name", "schedule", "instructions", "skip"]
+  @keys ["name", "schedule", "instructions", "skip", "assignee"]
   @steps Enum.map(Issue.optional_steps(), &Atom.to_string/1)
   @weekdays ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"]
 
@@ -20,6 +20,8 @@ defmodule Rail.Workflows.Schemas.WorkflowDefinition do
     field :schedule, :string
     # The steps its tasks run without, copied onto each issue it opens.
     field :skip, {:array, Ecto.Enum}, values: Issue.optional_steps(), default: []
+    # The GitHub login of the Rail user who owns the issues it opens; nil leaves them unowned.
+    field :assignee, :string
   end
 
   @doc """
@@ -28,11 +30,12 @@ defmodule Rail.Workflows.Schemas.WorkflowDefinition do
   """
   def changeset(definition, attrs) do
     definition
-    |> cast(attrs, [:name, :instructions, :schedule])
+    |> cast(attrs, [:name, :instructions, :schedule, :assignee])
     |> cast_skip(attrs["skip"])
     |> update_change(:name, &String.trim/1)
     |> update_change(:instructions, &String.trim/1)
     |> update_change(:schedule, &String.trim/1)
+    |> update_change(:assignee, &String.trim/1)
     |> validate_required([:name, :instructions, :schedule])
     |> validate_change(:schedule, fn :schedule, schedule ->
       # `@reboot` parses, but has no next time to start at.

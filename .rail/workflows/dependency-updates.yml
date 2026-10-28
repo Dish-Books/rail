@@ -1,0 +1,19 @@
+name: Dependency updates
+schedule: "0 14 * * 1"
+skip: [product, design, architect, demo]
+assignee: michaelst
+instructions: |
+  Update every dependency in the repository to its latest release, major versions included:
+  - Hex packages in mix.exs and credo/mix.exs: raise each version requirement to the latest release, then `mix deps.update --all`.
+  - npm packages in assets/package.json and tool/qa/package.json, with their lockfiles.
+  - Tool versions in mise.toml (Erlang, Elixir, Node and the rest), kept in step with the Dockerfile's base images.
+  - Base images in the Dockerfile.
+  - Action versions in .github/workflows.
+
+  For each major bump, read the changelog or upgrade guide and make the changes it calls for. Fix every new compile warning and deprecation, and keep the full CI suite passing.
+  Hold a dependency back only when its upgrade cannot be finished here, and say why.
+
+  The pull request description has three parts:
+  1. Every bump, as old → new, grouped by ecosystem.
+  2. What we should be aware of: behaviour changes, new defaults, deprecations to plan for, anything that needs a config or infrastructure change outside this repository (the rail VM, secrets), and anything that needs checking by hand after deploy.
+  3. What was held back, and why.
