@@ -122,6 +122,8 @@ defmodule RailWeb.Live.TaskDetail do
             phx-click="approve_stage_output"
             phx-target={@myself}
             phx-disable-with="Approving…"
+            disabled={@stage_unsent > 0}
+            title={@stage_unsent > 0 && unsent(@stage_unsent)}
             class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
           >
             <.icon name="pi-check" class="size-4" /> Approve
@@ -950,6 +952,7 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign(:custom_item, open)
     |> assign(:beside, item in [:plan, :fix_plan] or open != nil)
     |> assign(:stage_approvable, approvable)
+    |> assign(:stage_unsent, if(approvable, do: length(Pipeline.list_plan_comments(scope, task)), else: 0))
   end
 
   defp custom_run(%Task{runs: runs}, name), do: Enum.find(runs, &match?(%Run{role: %Role{custom_stage: ^name}}, &1))
@@ -1825,8 +1828,12 @@ defmodule RailWeb.Live.TaskDetail do
   defp message_for({:unanswered_questions, count}),
     do: "Answer or dismiss the #{count} open questions first. Nothing started."
 
+  defp message_for({:unsent_comments, count}), do: unsent(count)
   defp message_for(:no_fix_plan), do: "There is no fix plan waiting on approval."
   defp message_for({:fix_plan_not_waiting, :outdated}), do: "A ruling changed since that plan was saved. Nothing started."
   defp message_for({:fix_plan_not_waiting, :approved}), do: "That fix plan is already approved."
   defp message_for({:fix_plan_not_waiting, _writing}), do: "The lead is revising that fix plan. Nothing started."
+
+  defp unsent(1), do: "Send or remove your unsent comment first."
+  defp unsent(count), do: "Send or remove your #{count} unsent comments first."
 end

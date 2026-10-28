@@ -7,6 +7,7 @@ defmodule RailWeb.OverviewLiveTest do
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Round
@@ -1699,6 +1700,84 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(everyone, "#in-progress-task-#{engineer.id} .pi-chat-text")
       assert has_element?(everyone, "#in-progress-task-#{engineer.id}", "Review the diff")
       refute has_element?(everyone, "#in-progress-task-#{engineer.id} .pi-list-checks")
+    end
+
+    test "a custom stage whose file waits on Approve reads as waiting on you, not as stopped", %{
+      conn: conn,
+      project: project,
+      roles: roles,
+      task_for: task_for,
+      user: user
+    } do
+      now = DateTime.utc_now()
+
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{"id" => "lin_queue_custom", "identifier" => "QUE-302", "title" => "Dependency updates"}
+            }
+          }
+        })
+      end)
+
+      stages = [
+        %IssueStage{stage: :plan},
+        %IssueStage{stage: :engineer},
+        %IssueStage{stage: :custom, name: "License check", prompt: "Check each changed dependency's license."},
+        %IssueStage{stage: :review}
+      ]
+
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Dependency updates", stages: stages})
+      {:ok, _owned} = issue |> Issue.tracker_changeset(%{owner_user_id: user.id}) |> Repo.update()
+      {:ok, task} = Pipeline.create_task(issue, {:custom, "License check"})
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+      {:ok, license_check} = Roles.get_custom_stage_role(project.id, "License check")
+
+      {:ok, checking} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: license_check.id,
+          status: :finished,
+          started_at: DateTime.shift(now, hour: -2),
+          completed_at: DateTime.shift(now, hour: -1)
+        })
+
+      {:ok, stalled} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:engineer].id,
+          status: :finished,
+          started_at: DateTime.shift(now, hour: -4),
+          completed_at: DateTime.shift(now, hour: -3)
+        })
+
+      {:ok, _saved} = Pipeline.save_stage_output(task, %{markdown: "sweet_xml 0.7.5 is AGPL-3.0."})
+
+      broken = task_for.("Broken work", %{stage: :review})
+
+      {:ok, _failed} =
+        Pipeline.create_run(%{
+          task_id: broken.id,
+          role_id: roles[:review_lead].id,
+          status: :failed,
+          error: "Exited with code 2",
+          started_at: DateTime.shift(now, hour: -6),
+          completed_at: DateTime.shift(now, hour: -5)
+        })
+
+      assert {:ok, view, html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#activity-ended-#{checking.id}", "says QUE-302 is ready for review")
+      refute has_element?(view, "#activity-ended-#{checking.id}", "stopped on")
+      assert has_element?(view, "#activity-ended-#{stalled.id}", "stopped on QUE-302")
+      assert has_element?(view, "#up-next-row-#{checking.id}", "License check file to approve")
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='done']")
+
+      # Waiting on you comes before broken, though the broken task has stood longer.
+      assert html |> :binary.match("in-progress-task-#{task.id}") |> elem(0) <
+               html |> :binary.match("in-progress-task-#{broken.id}") |> elem(0)
     end
 
     test "the sidebar lists every task in progress and where it stands", %{

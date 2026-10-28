@@ -2,17 +2,19 @@ defmodule Rail.Pipeline.Workers.StartEngineerTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.StartEngineer
   alias Rail.Roles
+  alias Rail.Roles.Schemas.Role
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
-    stub(Rail.Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -99,6 +101,54 @@ defmodule Rail.Pipeline.Workers.StartEngineerTest do
 
     assert :ok = perform_job(StartEngineer, %{task_id: task.id})
     assert [] = Repo.preload(task, :runs, force: true).runs
+  end
+
+  test "an approved custom stage's job starts Plan on a task it moved to Plan", %{task: task, spawned: spawned} do
+    {:ok, %Task{}} = Pipeline.update_task(task, %{stage: :plan})
+    test_pid = self()
+
+    expect(Tools, :start_os_process, fn %Run{role: %Role{stage: :plan}} = run, argv ->
+      send(test_pid, :plan_started)
+      spawned.(run, argv)
+    end)
+
+    assert :ok = perform_job(StartEngineer, %{task_id: task.id, stage: "plan"})
+    assert_received :plan_started
+  end
+
+  describe "an approved custom stage's job on a task it moved to Review" do
+    setup %{task: task} do
+      {:ok, reviewing} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
+      on_exit(fn -> File.rm_rf(reviewing.scratch_path) end)
+      stub(Git, :base_status, fn _path, _base -> %{behind: true, conflicts: []} end)
+      %{task: reviewing}
+    end
+
+    test "checks the base and starts QA and the code reviewer", %{task: task, spawned: spawned} do
+      test_pid = self()
+
+      stub(Tools, :start_os_process, fn run, argv ->
+        send(test_pid, {:started, Repo.preload(run, :role, force: true).role.stage})
+        spawned.(run, argv)
+      end)
+
+      assert :ok = perform_job(StartEngineer, %{task_id: task.id, stage: "review"})
+
+      assert %Task{base_behind: true} = Repo.reload!(task)
+      for stage <- [:qa, :review], do: assert_received({:started, ^stage})
+    end
+
+    test "starts nothing again once a check has spawned", %{task: task, spawned: spawned} do
+      expect(Tools, :start_os_process, 2, spawned)
+      approved_at = DateTime.shift(DateTime.utc_now(), second: -1)
+
+      assert :ok = perform_job(StartEngineer, %{task_id: task.id, stage: "review"}, inserted_at: approved_at)
+
+      assert :ok =
+               perform_job(StartEngineer, %{task_id: task.id, stage: "review"}, inserted_at: approved_at, attempt: 2)
+
+      assert [%OsProcess{}, %OsProcess{}] = Tools.list_os_processes(task_id: task.id)
+    end
   end
 
   test "a task that is gone needs nothing" do

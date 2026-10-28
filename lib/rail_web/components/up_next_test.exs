@@ -4,6 +4,7 @@ defmodule RailWeb.Components.UpNextTest do
   import Phoenix.LiveViewTest
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.Question
@@ -123,6 +124,49 @@ defmodule RailWeb.Components.UpNextTest do
       assert featured =~ ~r/UPN-1 · #{step}\b/
       refute featured =~ "#{stage} role"
     end
+  end
+
+  test "a custom stage stopped with its file saved waits on approval, and without it needs a fix", %{
+    waiting: waiting,
+    scratch: scratch
+  } do
+    stages = [
+      %IssueStage{stage: :plan},
+      %IssueStage{stage: :engineer},
+      %IssueStage{stage: :custom, name: "License check", prompt: "Check each license."},
+      %IssueStage{stage: :review}
+    ]
+
+    checking = %{
+      waiting.(:custom)
+      | stage_outcome: :in_progress,
+        conversation_id: "sess_up_next_custom",
+        role: %Role{name: "License check", icon_name: "pi-puzzle-piece", custom_stage: "License check"},
+        task: %Task{
+          stage: :custom,
+          custom_stage: "License check",
+          scratch_path: scratch,
+          issue: %Issue{identifier: "UPN-2", title: "Dependency updates", stages: stages}
+        }
+    }
+
+    html = render_component(&UpNext.up_next/1, runs: [checking])
+    assert html =~ "Needs a fix"
+    assert html =~ ~r/data-qa="up-next-action".*>\s*Fix\s*</s
+    assert html =~ "bg-red-500"
+
+    File.mkdir_p!(Path.join(scratch, "stages"))
+    File.write!(Path.join(scratch, "stages/3-license-check.md"), "sweet_xml 0.7.5 is AGPL-3.0.")
+
+    html = render_component(&UpNext.up_next/1, runs: [checking])
+    assert html =~ "Ready for review"
+    assert html =~ ~r/data-qa="up-next-action".*>\s*Review\s*</s
+    assert html =~ "Waiting on you to approve the License check file."
+    assert html =~ "bg-amber-500"
+    refute html =~ "bg-red-500"
+
+    html = render_component(&UpNext.up_next/1, runs: [waiting.(:plan), checking])
+    assert html =~ "License check file to approve"
   end
 
   test "a failed run leads with the error, and reads as a problem", %{waiting: waiting} do

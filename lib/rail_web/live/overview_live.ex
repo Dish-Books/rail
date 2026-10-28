@@ -3,6 +3,7 @@ defmodule RailWeb.OverviewLive do
   use RailWeb, :live_view
 
   import RailWeb.Utils.ChildStatus
+  import RailWeb.Utils.StageLabel, only: [custom_stage_waiting?: 2]
 
   alias Rail.Issues
   alias Rail.Pipeline
@@ -330,7 +331,13 @@ defmodule RailWeb.OverviewLive do
       run.role.stage in [:review_lead | Task.check_stages()] and is_struct(round_start, DateTime) and
         is_struct(run.completed_at, DateTime) and DateTime.before?(run.completed_at, round_start)
 
-    state = if reopened? and Run.state(run) == :stopped, do: :done, else: Run.state(run)
+    # A custom stage's agent stops once its file is saved, which hands the file over as Plan's does.
+    state =
+      cond do
+        reopened? and Run.state(run) == :stopped -> :done
+        Task.works_stage?(run.task, run.role) and custom_stage_waiting?(run.task, run) -> :done
+        true -> Run.state(run)
+      end
 
     ended =
       case state do
@@ -348,7 +355,7 @@ defmodule RailWeb.OverviewLive do
   # A run at a stage a human signs off has handed its work over when it is done,
   # whether or not the human has since reviewed it and moved the task on.
   defp done_text(run, key) do
-    if run.role.stage in [:plan, :engineer, :review_lead],
+    if run.role.stage in [:plan, :engineer, :review_lead] or is_binary(run.role.custom_stage),
       do: "says #{key} is ready for review",
       else: "finished on #{key}"
   end
@@ -403,7 +410,7 @@ defmodule RailWeb.OverviewLive do
   end
 
   defp build_in_progress_entry(task, run, user_id, now) do
-    state = Run.state(run)
+    state = if custom_stage_waiting?(task, run), do: :done, else: Run.state(run)
 
     changed_at =
       case state do

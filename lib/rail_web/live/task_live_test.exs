@@ -6606,6 +6606,45 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#custom-stage-1-error", "This stage's file was approved, so it takes no more comments.")
     end
 
+    test "the reader's own unsent comments hold Approve until they are removed, and an Approve sent anyway is refused",
+         %{conn: conn, scope: scope, task: task, run: run} do
+      {:ok, _saved} = Pipeline.save_stage_output(task, %{markdown: "12 keys have no German entry."})
+
+      [first_id, second_id] =
+        for body <- ["Say which screens.", "Group them by screen."] do
+          {:ok, %{id: id}} =
+            Pipeline.create_plan_comment(scope, run, %{
+              target: :output,
+              body: body,
+              element_kind: :paragraph,
+              element_label: "Paragraph 1",
+              element_occurrence: 1,
+              element_text: "12 keys have no German entry."
+            })
+
+          id
+        end
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#approve-custom-stage[disabled][title='Send or remove your 2 unsent comments first.']")
+
+      reject(Tools, :start_os_process, 2)
+      view |> with_target("#task-detail") |> render_click("approve_stage_output", %{})
+      assert has_element?(view, "#review-error", "Send or remove your 2 unsent comments first.")
+      assert %Task{stage: :custom} = Repo.reload!(task)
+
+      render(view)
+      view |> element("#plan-comment-tray-fold") |> render_click()
+      view |> element("#remove-plan-comment-#{first_id}") |> render_click()
+      render(view)
+      assert has_element?(view, "#approve-custom-stage[disabled][title='Send or remove your unsent comment first.']")
+
+      view |> element("#remove-plan-comment-#{second_id}") |> render_click()
+      render(view)
+      assert has_element?(view, "#approve-custom-stage")
+      refute has_element?(view, "#approve-custom-stage[disabled]")
+    end
+
     test "Approve says why it did nothing on a page drawn before the file, before another tab's Approve, or after it", %{
       conn: conn,
       task: task,

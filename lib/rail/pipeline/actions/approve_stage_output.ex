@@ -1,23 +1,25 @@
 defmodule Rail.Pipeline.Actions.ApproveStageOutput do
   @moduledoc """
   A person approves the file a custom stage saved, which moves its task on to the next stage of its sequence, where
-  that stage starts with the file in its brief. Unsent comments on the file are deleted, since the conversation they
-  would go to closes.
+  a `StartEngineer` job committed with the move starts it with the file in its brief. Other people's unsent comments
+  on the file are deleted, since the conversation they would go to closes; the approver's own wait to be sent first.
 
-  Approving is a one-way door. The task row is locked while the run is latched, so a second click or a second tab
-  waits on the lock, then finds the run already approved and is refused before anything starts twice.
+  Approving is a one-way door. The task row is locked while the run is latched and the next stage claimed, so a second
+  click or a second tab waits on the lock, then finds the task moved on and is refused before anything starts twice.
   """
 
   import Ecto.Query
+  import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.BroadcastPlanComments
   import Rail.Pipeline.Utils.CheckAnswered
-  import Rail.Pipeline.Utils.EnterNextStage
+  import Rail.Pipeline.Utils.CheckUnsent
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Workers.StartEngineer
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
@@ -25,7 +27,8 @@ defmodule Rail.Pipeline.Actions.ApproveStageOutput do
   @doc """
   Approves the output the custom stage `run` saved as the scope's user. Returns `{:ok, run}`, latched done, or
   `{:error, reason}`: `:not_found`, `{:invalid_stage, stage}` once the task is at another stage, `:already_approved`,
-  `:stage_running` while its agent works, `:no_output` before it saved its file, or `{:unanswered_questions, count}`.
+  `:stage_running` while its agent works, `:no_output` before it saved its file, `{:unanswered_questions, count}`, or
+  `{:unsent_comments, count}` while the scope's user has that many comments unsent.
   """
   def approve_stage_output(%Scope{} = scope, %Run{} = run) do
     result =
@@ -36,19 +39,24 @@ defmodule Rail.Pipeline.Actions.ApproveStageOutput do
 
         with true <- Scope.can_access_project?(scope, task.project_id) || {:error, :not_found},
              :ok <- approvable(task, run),
-             :ok <- check_answered(task) do
+             :ok <- check_answered(task),
+             :ok <- check_unsent(scope, task) do
           authors = delete_unsent_comments(task)
           {:ok, latched} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
-          {%{latched | task: task, role: run.role}, task, authors}
+          next = Issue.calculate_next_stage(task.issue, Task.current_stage(task))
+          {:ok, moved} = Pipeline.enter_stage(task, next, start: false)
+          # Committed with the move, so the start does not depend on the caller outliving it.
+          {:ok, _job} = Oban.insert(StartEngineer.new(%{task_id: task.id, stage: Atom.to_string(moved.stage)}))
+          {%{latched | task: moved, role: run.role}, moved, authors}
         else
           {:error, reason} -> Repo.rollback(reason)
         end
       end)
 
-    # Entered once the latch is committed, so the next stage's agent reads the task as approved.
+    # enter_stage's own broadcast went out inside the transaction, before a page could read the move.
     with {:ok, {run, task, authors}} <- result do
       for user_id <- authors, do: broadcast_plan_comments(task.id, user_id)
-      {:ok, _entered} = enter_next_stage(task, Issue.calculate_next_stage(task.issue, Task.current_stage(task)))
+      broadcast_pipeline_changed(task)
       {:ok, run}
     end
   end

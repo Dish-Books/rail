@@ -1,5 +1,6 @@
 defmodule Rail.Pipeline.Actions.ApproveStageOutputTest do
   use Rail.DataCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
   import Ecto.Query
 
@@ -11,6 +12,7 @@ defmodule Rail.Pipeline.Actions.ApproveStageOutputTest do
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Workers.StartEngineer
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools
@@ -60,17 +62,69 @@ defmodule Rail.Pipeline.Actions.ApproveStageOutputTest do
     {:ok, ada} =
       Users.register_oauth_user(%{github_id: "gh_aso_ada", login: "ada-aso", email: "ada-aso@example.com"})
 
-    %{task: task, run: run, ada: user_scope(user: Map.put(ada, :project_ids, [project.id]))}
+    {:ok, bob} =
+      Users.register_oauth_user(%{github_id: "gh_aso_bob", login: "bob-aso", email: "bob-aso@example.com"})
+
+    %{
+      task: task,
+      run: run,
+      ada: user_scope(user: Map.put(ada, :project_ids, [project.id])),
+      bob: user_scope(user: Map.put(bob, :project_ids, [project.id]))
+    }
   end
 
-  test "Approve with a file saved latches the run, deletes unsent comments and starts the next stage with the file", %{
+  test "Approve with a file saved latches the run, deletes others' unsent comments and enqueues the next stage's start",
+       %{task: %{id: task_id} = task, run: %{id: run_id} = run, ada: ada, bob: bob} do
+    {:ok, _saved} = Pipeline.save_stage_output(task, %{markdown: "12 keys have no German entry."})
+
+    {:ok, _comment} =
+      Pipeline.create_plan_comment(bob, run, %{
+        target: :output,
+        body: "Say which screens.",
+        element_kind: :paragraph,
+        element_label: "Paragraph 1",
+        element_occurrence: 1,
+        element_text: "12 keys have no German entry."
+      })
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "plan_comments:#{task_id}:#{bob.user.id}")
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+    reject(&Tools.start_os_process/2)
+
+    assert {:ok, %Run{id: ^run_id, stage_outcome: :done, task: %Task{stage: :plan}}} =
+             Pipeline.approve_stage_output(ada, run)
+
+    assert %Task{stage: :plan, custom_stage: nil} = Repo.reload!(task)
+    assert [] = Repo.all(from c in PlanComment, where: c.task_id == ^task_id)
+    assert_received {:plan_comments_changed, ^task_id}
+    assert_received {:pipeline_changed, ^task_id}
+    assert_enqueued(worker: StartEngineer, args: %{task_id: task_id, stage: "plan"})
+  end
+
+  test "the job Approve enqueues starts Plan with the file in its brief", %{task: task, run: run, ada: ada} do
+    {:ok, _saved} = Pipeline.save_stage_output(task, %{markdown: "12 keys have no German entry."})
+    {:ok, _approved} = Pipeline.approve_stage_output(ada, run)
+    assert [%Oban.Job{args: args}] = all_enqueued(worker: StartEngineer)
+
+    expect(Tools, :start_os_process, fn %Run{role: %Role{stage: :plan}} = spawned, argv ->
+      assert Enum.any?(argv, &(&1 =~ ~s(<stage_output stage="Missing strings">\n12 keys have no German entry.)))
+      {:ok, %OsProcess{run: spawned, task: task}}
+    end)
+
+    assert :ok = perform_job(StartEngineer, args)
+
+    # Product is off, so the Plan it entered holds the issue as its ticket.
+    assert %Round{ticket: %Round.Ticket{title: "Translation sync"}} = Pipeline.read_plan(task)
+  end
+
+  test "Approve is refused while the approver has a comment unsent, which is kept", %{
     task: %{id: task_id} = task,
-    run: %{id: run_id} = run,
+    run: run,
     ada: ada
   } do
     {:ok, _saved} = Pipeline.save_stage_output(task, %{markdown: "12 keys have no German entry."})
 
-    {:ok, _comment} =
+    {:ok, %PlanComment{id: comment_id}} =
       Pipeline.create_plan_comment(ada, run, %{
         target: :output,
         body: "Say which screens.",
@@ -80,20 +134,12 @@ defmodule Rail.Pipeline.Actions.ApproveStageOutputTest do
         element_text: "12 keys have no German entry."
       })
 
-    Phoenix.PubSub.subscribe(Rail.PubSub, "plan_comments:#{task_id}:#{ada.user.id}")
+    assert {:error, {:unsent_comments, 1}} = Pipeline.approve_stage_output(ada, run)
 
-    expect(Tools, :start_os_process, fn %Run{role: %Role{stage: :plan}} = spawned, argv ->
-      assert Enum.any?(argv, &(&1 =~ ~s(<stage_output stage="Missing strings">\n12 keys have no German entry.)))
-      {:ok, %OsProcess{run: spawned, task: task}}
-    end)
-
-    assert {:ok, %Run{id: ^run_id, stage_outcome: :done}} = Pipeline.approve_stage_output(ada, run)
-    assert %Task{stage: :plan, custom_stage: nil} = Repo.reload!(task)
-    assert [] = Repo.all(from c in PlanComment, where: c.task_id == ^task_id)
-    assert_received {:plan_comments_changed, ^task_id}
-
-    # Product is off, so the Plan it entered holds the issue as its ticket.
-    assert %Round{ticket: %Round.Ticket{title: "Translation sync"}} = Pipeline.read_plan(task)
+    assert %Task{stage: :custom, custom_stage: "Missing strings"} = Repo.reload!(task)
+    assert %Run{stage_outcome: :in_progress} = Repo.reload!(run)
+    assert [%PlanComment{id: ^comment_id}] = Repo.all(from c in PlanComment, where: c.task_id == ^task_id)
+    refute_enqueued(worker: StartEngineer)
   end
 
   test "Approve is refused before a file is saved, while the agent works, and while a question waits", %{
@@ -117,12 +163,16 @@ defmodule Rail.Pipeline.Actions.ApproveStageOutputTest do
     assert %Run{stage_outcome: :in_progress} = Repo.reload!(run)
   end
 
-  test "a second click or tab after the first is refused, and starts nothing again", %{task: task, run: run, ada: ada} do
+  test "a second click or tab after the first is refused, and starts nothing again", %{
+    task: %{id: task_id} = task,
+    run: run,
+    ada: ada
+  } do
     {:ok, _saved} = Pipeline.save_stage_output(task, %{markdown: "12 keys."})
-    expect(Tools, :start_os_process, 1, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 
     assert {:ok, %Run{}} = Pipeline.approve_stage_output(ada, run)
     assert {:error, {:invalid_stage, :plan}} = Pipeline.approve_stage_output(ada, run)
+    assert [%Oban.Job{}] = all_enqueued(worker: StartEngineer, args: %{task_id: task_id})
 
     {:ok, _back} = Pipeline.update_task(Repo.reload!(task), %{stage: :custom, custom_stage: "Missing strings"})
     assert {:error, :already_approved} = Pipeline.approve_stage_output(ada, run)

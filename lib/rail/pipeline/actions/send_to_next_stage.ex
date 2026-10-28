@@ -12,10 +12,11 @@ defmodule Rail.Pipeline.Actions.SendToNextStage do
   """
 
   import Rail.Pipeline.Utils.CiPassed
-  import Rail.Pipeline.Utils.EnterNextStage
+  import Rail.Pipeline.Utils.StartChecks
 
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
@@ -36,6 +37,17 @@ defmodule Rail.Pipeline.Actions.SendToNextStage do
       {:ok, %{latched | task: run.task, role: run.role}}
     end
   end
+
+  # At Review the agents that check the round start, and anywhere else the stage's own agent on a clean conversation.
+  defp enter_next_stage(%Task{} = task, :review) do
+    {:ok, reviewing} = Pipeline.enter_stage(task, :review, start: false)
+    # A round that brought the branch up to date clears its Update, and one that did not may still need it.
+    {:ok, reviewing} = Pipeline.check_base(reviewing)
+    :ok = start_checks(reviewing)
+    {:ok, reviewing}
+  end
+
+  defp enter_next_stage(%Task{} = task, stage), do: Pipeline.enter_stage(task, stage, fresh: true)
 
   defp sendable(%Task{stage: stage}) when stage != :engineer, do: {:error, {:invalid_stage, stage}}
 
