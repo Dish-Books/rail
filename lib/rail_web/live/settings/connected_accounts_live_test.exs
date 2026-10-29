@@ -411,4 +411,88 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
 
     assert has_element?(view, "#disconnect-slack-button")
   end
+
+  describe "Slack notifications" do
+    test "cannot be turned on without Slack connected", %{authed_conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+
+      assert has_element?(view, "#slack-notifications-message", "Connect Slack to get notifications.")
+      assert has_element?(view, "#slack-notifications-state", "Off")
+      assert has_element?(view, "#slack-notifications-switch[disabled]")
+      refute has_element?(view, "#slack-notifications-switch[checked]")
+    end
+
+    test "turn on and stay on after a reload, and turn off again", %{authed_conn: conn, user: user} do
+      {:ok, _linked} =
+        Users.update_user(system_scope(), user, %{slack_user_id: "U1", slack_team_id: "T1", slack_access_token: "xoxp-1"})
+
+      {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+      assert has_element?(view, "#slack-notifications-message", "Off. Rail sends you nothing in Slack.")
+      refute has_element?(view, "#slack-notifications-switch[disabled]")
+
+      view |> element("#slack-notifications-switch") |> render_click()
+
+      assert has_element?(view, "#slack-notifications-state", "On")
+      assert %User{slack_notifications: true} = Repo.reload!(user)
+
+      {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+      assert has_element?(view, "#slack-notifications-switch[checked]")
+
+      assert has_element?(
+               view,
+               "#slack-notifications-message",
+               "Rail messages you when a task you own waits on you, and when someone else merges it."
+             )
+
+      view |> element("#slack-notifications-switch") |> render_click()
+
+      assert has_element?(view, "#slack-notifications-state", "Off")
+      assert %User{slack_notifications: false} = Repo.reload!(user)
+    end
+
+    test "a second tab still showing Off sets On again rather than flipping it", %{authed_conn: conn, user: user} do
+      {:ok, _linked} =
+        Users.update_user(system_scope(), user, %{slack_user_id: "U1", slack_team_id: "T1", slack_access_token: "xoxp-1"})
+
+      {:ok, first, _html} = live(conn, ~p"/settings/connected-accounts")
+      {:ok, second, _html} = live(conn, ~p"/settings/connected-accounts")
+
+      first |> element("#slack-notifications-switch") |> render_click()
+      second |> element("#slack-notifications-switch") |> render_click()
+
+      assert has_element?(second, "#slack-notifications-state", "On")
+      assert %User{slack_notifications: true} = Repo.reload!(user)
+    end
+
+    test "read Off once Slack is disconnected", %{authed_conn: conn, user: user} do
+      {:ok, linked} =
+        Users.update_user(system_scope(), user, %{slack_user_id: "U1", slack_team_id: "T1", slack_access_token: "xoxp-1"})
+
+      {:ok, _on} = Users.set_slack_notifications(Scope.for_user(linked), true)
+
+      {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+      view |> element("#disconnect-slack-button") |> render_click()
+
+      assert has_element?(view, "#slack-notifications-state", "Off")
+      assert has_element?(view, "#slack-notifications-switch[disabled]")
+      assert %User{slack_notifications: false} = Repo.reload!(user)
+    end
+
+    test "turned on after Slack was disconnected in another tab, the page catches up", %{
+      authed_conn: conn,
+      user: user
+    } do
+      {:ok, linked} =
+        Users.update_user(system_scope(), user, %{slack_user_id: "U1", slack_team_id: "T1", slack_access_token: "xoxp-1"})
+
+      {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+      {:ok, _unlinked} = Users.unlink_slack(Scope.for_user(linked))
+
+      view |> element("#slack-notifications-switch") |> render_click()
+
+      assert has_element?(view, "#connect-slack-button")
+      assert has_element?(view, "#slack-notifications-switch[disabled]")
+      assert %User{slack_notifications: false} = Repo.reload!(user)
+    end
+  end
 end

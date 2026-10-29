@@ -1,5 +1,6 @@
 defmodule Rail.Pipeline.Actions.RunFinishedTest do
   use Rail.DataCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
   import Rail.Pipeline.Utils.QuestionQueue
   import Rail.Pipeline.Utils.WithTaskLock
@@ -12,6 +13,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Workers.NotifyOwner
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Roles
@@ -184,12 +186,22 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   end
 
   test "a non-zero exit records the error and concludes nothing", %{task: task, exited: exited} do
-    {_run, os_process} = exited.(:plan, %{})
+    {%Run{id: run_id}, %OsProcess{id: os_process_id} = os_process} = exited.(:plan, %{})
 
     assert {:ok, %Run{exit_code: 2, error: "Exited with code 2", stage_outcome: :in_progress}} =
              Pipeline.run_finished(os_process, %{exit_code: 2, error: "Exited with code 2"})
 
     assert %Task{stage: :plan} = Repo.reload!(task)
+    assert_enqueued(worker: NotifyOwner, args: %{run_id: run_id, os_process_id: os_process_id})
+  end
+
+  test "a chat reply that fails on a run already done tells nobody", %{exited: exited} do
+    {_run, os_process} = exited.(:plan, %{stage_outcome: :done})
+
+    assert {:ok, %Run{error: "Exited with code 2", stage_outcome: :done}} =
+             Pipeline.run_finished(os_process, %{exit_code: 2, error: "Exited with code 2"})
+
+    refute_enqueued(worker: NotifyOwner)
   end
 
   test "a process whose run is gone has nothing to settle, with an outcome or without", %{
@@ -228,8 +240,21 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert Enum.any?(argv, &(&1 =~ "Please also add a test"))
   end
 
+  test "a turn that has its say with a message queued tells nobody, since the message goes straight back", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, _task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+    {_run, os_process} = exited.(:plan, %{pending_chat: "Please also add a test"})
+
+    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0}, async: false)
+    refute_enqueued(worker: NotifyOwner)
+  end
+
   test "a run that came back clean latches done and moves nothing", %{task: task, exited: exited} do
-    {run, os_process} = exited.(:plan, %{})
+    {%Run{id: run_id} = run, %OsProcess{id: os_process_id} = os_process} = exited.(:plan, %{})
 
     Pipeline.append_run_events(run.id, nil, ["The ticket is written."])
 
@@ -237,6 +262,17 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     # Plan hands on only when a human approves; the exit itself moves nothing.
     assert %Task{stage: :plan} = Repo.reload!(task)
+
+    assert [%Oban.Job{args: %{"run_id" => ^run_id, "os_process_id" => ^os_process_id}}] =
+             all_enqueued(worker: NotifyOwner)
+  end
+
+  test "a turn someone stopped tells nobody, however it ended", %{exited: exited} do
+    {_run, os_process} = exited.(:plan, %{})
+    {:ok, os_process} = os_process |> Ecto.Changeset.change(ended_reason: :stopped) |> Repo.update()
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    refute_enqueued(worker: NotifyOwner)
   end
 
   test "a run that already had its say is left alone however often it exits", %{task: task, exited: exited} do
@@ -246,6 +282,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert %Task{stage: :plan} = Repo.reload!(task)
+    refute_enqueued(worker: NotifyOwner)
   end
 
   test "a run that asked something parks on it rather than concluding", %{task: task, exited: exited} do
@@ -255,6 +292,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert {:ok, %Run{stage_outcome: :in_progress}} = Pipeline.run_finished(os_process, %{exit_code: 0})
 
     assert [%{prompt: "Which database?"}] = pending_questions(task.id)
+    assert_enqueued(worker: NotifyOwner, args: %{run_id: run.id})
   end
 
   test "a review agent turn that saved its review leaves the task at review with what it found", %{
@@ -799,6 +837,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
                Pipeline.run_finished(os_process, %{exit_code: 1, error: "Exited with code 1"}, async: false)
 
       assert %Run{pending_chat: "Also check the logs"} = Repo.reload!(run)
+      assert_enqueued(worker: NotifyOwner, args: %{run_id: run.id})
     end
   end
 
@@ -1257,6 +1296,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
       refute Enum.any?(lines, &String.starts_with?(&1, "[human]"))
       refute Enum.any?(lines, &(&1 =~ "When asked"))
+      refute_enqueued(worker: NotifyOwner)
     end
 
     test "waits while a person still has a question to answer", %{task: task, exited: exited} do
@@ -1271,6 +1311,8 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
       assert [%Question{answered_by_rail: true, delivered_at: nil}, %Question{status: :pending}] =
                Repo.all(from q in Question, where: q.task_id == ^task.id, order_by: [asc: q.inserted_at, asc: q.id])
+
+      assert_enqueued(worker: NotifyOwner, args: %{run_id: run.id})
     end
 
     test "waits on a turn a person stopped, rather than resuming it", %{task: task, exited: exited} do

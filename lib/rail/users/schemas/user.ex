@@ -27,6 +27,8 @@ defmodule Rail.Users.Schemas.User do
     field :slack_team_id, :string
     field :slack_name, :string
     field :slack_access_token, EncryptedBinary, redact: true
+    # Only `slack_notifications_changeset/2` turns it on, so an admin editing a user cannot.
+    field :slack_notifications, :boolean, default: false
     field :signing_key, EncryptedBinary, redact: true
     field :signing_public_key, :string
     field :signing_key_github_id, :integer
@@ -71,6 +73,21 @@ defmodule Rail.Users.Schemas.User do
     |> unique_constraint(:github_id)
     |> unique_constraint(:login)
     |> unique_constraint(:email)
+    # Removing the Slack link turns notifications off, forced so a stale struct that still reads off clears them too.
+    |> then(
+      &if(fetch_change(&1, :slack_user_id) == {:ok, nil}, do: force_change(&1, :slack_notifications, false), else: &1)
+    )
+  end
+
+  @doc """
+  Turns the user's Slack notifications on or off, refusing on for someone with no Slack account to message.
+  """
+  def slack_notifications_changeset(user, attrs) do
+    changeset = user |> cast(attrs, [:slack_notifications]) |> validate_required([:slack_notifications])
+
+    if get_field(changeset, :slack_notifications) == true and is_nil(get_field(changeset, :slack_user_id)),
+      do: add_error(changeset, :slack_notifications, "connect Slack first"),
+      else: changeset
   end
 
   @doc """
