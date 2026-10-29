@@ -159,7 +159,7 @@ defmodule Rail.Pipeline.Workers.CleanupMergedTaskTest do
     end
   end
 
-  # Clean up clicked while the job waited leaves nothing for it to do.
+  # A cleanup that won the race while the job waited leaves nothing for it to do.
   test "a task already cleaned up keeps its time and is left alone", %{task: task} do
     {:ok, %Task{cleaned_up_at: %DateTime{} = cleaned_at}} = Pipeline.cleanup_task(task)
     File.mkdir_p!(task.scratch_path)

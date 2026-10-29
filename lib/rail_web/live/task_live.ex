@@ -92,7 +92,6 @@ defmodule RailWeb.TaskLive do
       |> assign(:round_questions, [])
       |> assign(:conversation_questions, [])
       |> assign(:suggestions, %{})
-      |> assign(:cleaning_up, false)
       |> assign(:discard_open, false)
       |> assign(:discarding, false)
       |> assign(:discard_error, nil)
@@ -111,7 +110,6 @@ defmodule RailWeb.TaskLive do
       |> assign(:header_status, nil)
       |> assign(:child_of, nil)
       |> assign(:split_points, nil)
-      |> assign(:cleanup_confirm, nil)
       |> assign(:show_discard, false)
       |> assign(:show_back_to_plan, false)
       |> assign(:viewer_owns, false)
@@ -218,7 +216,6 @@ defmodule RailWeb.TaskLive do
             </span>
             <.claim_button task={@task} />
             <.discard_button :if={@show_discard} />
-            <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
             <.live_component
               module={TaskActions}
               id="task-actions"
@@ -311,17 +308,6 @@ defmodule RailWeb.TaskLive do
   # The Plan item's conversation reads any agent's run; only the one taking messages has a composer.
   def handle_event("pick_agent", %{"stage" => stage}, socket) do
     {:noreply, push_patch(socket, to: task_path(socket, item: "plan", agent: stage))}
-  end
-
-  def handle_event("cleanup", _params, socket) do
-    task = socket.assigns.task
-
-    socket =
-      socket
-      |> assign(:cleaning_up, true)
-      |> start_async(:cleanup, fn -> Pipeline.cleanup_task(task) end)
-
-    {:noreply, socket}
   end
 
   def handle_event("open_discard", _params, socket) do
@@ -616,31 +602,6 @@ defmodule RailWeb.TaskLive do
     {:noreply, socket}
   end
 
-  # A cleaned-up task is gone, so the issue is where it can be started again.
-  def handle_async(:cleanup, {:ok, {:ok, %Task{issue_id: issue_id}}}, socket) do
-    {:noreply, push_navigate(socket, to: ~p"/issues/#{issue_id}")}
-  end
-
-  def handle_async(:cleanup, {:ok, {:error, :task_busy}}, socket) do
-    socket =
-      socket
-      |> assign(:cleaning_up, false)
-      |> put_flash(:error, "Stop the task's run before cleaning it up")
-      |> refresh_task()
-
-    {:noreply, socket}
-  end
-
-  def handle_async(:cleanup, _result, socket) do
-    socket =
-      socket
-      |> assign(:cleaning_up, false)
-      |> put_flash(:error, "Could not clean up the task")
-      |> refresh_task()
-
-    {:noreply, socket}
-  end
-
   # A discarded task is gone, so the issue is where it can be started again.
   def handle_async(:discard, {:ok, {:discard, {:ok, %Task{issue_id: issue_id}}}}, socket) do
     {:noreply, push_navigate(socket, to: ~p"/issues/#{issue_id}")}
@@ -698,28 +659,6 @@ defmodule RailWeb.TaskLive do
       class="px-4 py-2 rounded-lg bg-blue-600 dark:bg-blue-500 text-sm font-semibold text-white hover:opacity-90 cursor-pointer"
     >
       Claim
-    </button>
-    """
-  end
-
-  attr :task, :any, required: true
-  attr :cleaning_up, :boolean, required: true
-  attr :confirm, :string, required: true
-
-  # A cleaned-up task is history: there is nothing left on disk to clean. A child goes with its parent.
-  defp cleanup_button(assigns) do
-    ~H"""
-    <button
-      :if={@task.cleaned_up_at == nil and @task.parent_task_id == nil}
-      type="button"
-      id="cleanup-task"
-      data-qa="cleanup_task"
-      phx-click="cleanup"
-      data-confirm={@confirm}
-      disabled={@cleaning_up}
-      class="px-4 py-2 rounded-lg border border-red-300 dark:border-red-800 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 cursor-pointer disabled:opacity-50"
-    >
-      {if @cleaning_up, do: "Cleaning up…", else: "Clean up"}
     </button>
     """
   end
@@ -1093,9 +1032,8 @@ defmodule RailWeb.TaskLive do
   end
 
   # Where a split parent or a child of one stands, said in the header in place of a stage.
-  defp assign_family(%{assigns: %{parent: nil}} = socket, %Task{} = task) do
+  defp assign_family(%{assigns: %{parent: nil}} = socket, %Task{}) do
     socket
-    |> assign(:cleanup_confirm, cleanup_confirm(task.issue, []))
     |> assign(:show_switcher, false)
     |> assign(:header_status, nil)
     |> assign(:child_of, nil)
@@ -1130,7 +1068,6 @@ defmodule RailWeb.TaskLive do
       end
 
     socket
-    |> assign(:cleanup_confirm, cleanup_confirm(parent.issue, Enum.map(statuses, & &1.task.issue)))
     |> assign(:show_switcher, false)
     |> assign(:header_status, status)
     |> assign(:child_of, nil)
@@ -1145,7 +1082,6 @@ defmodule RailWeb.TaskLive do
         do: %{label: status.label, icon: status.icon, class: status.text_class}
 
     socket
-    |> assign(:cleanup_confirm, nil)
     |> assign(:viewer_owns, viewer_owns?(socket, parent))
     |> assign(:show_switcher, true)
     |> assign(:header_status, header_status)
@@ -1163,26 +1099,6 @@ defmodule RailWeb.TaskLive do
 
   # A split is as big as it was approved, so a child deleted in Linear since does not shrink it.
   defp split_total(statuses), do: statuses |> Enum.map(& &1.task.split_position) |> Enum.max()
-
-  # Cleaning up work Linear has not marked done is usually a mistake, so the confirmation says so.
-  defp cleanup_confirm(%Issue{state: :done}, []),
-    do: "Clean up this task? Its worktree and scratch files will be deleted."
-
-  defp cleanup_confirm(%Issue{identifier: identifier}, []) do
-    "#{identifier} is not marked done in Linear. Clean up this task anyway? Its worktree and scratch files will be deleted."
-  end
-
-  defp cleanup_confirm(%Issue{}, children) do
-    case Enum.reject(children, &(&1.state == :done)) do
-      [] ->
-        "Clean up this task and its #{length(children)} children? Their worktrees and scratch files will be deleted."
-
-      open ->
-        "#{length(open)} of #{length(children)} children are not marked done in Linear: " <>
-          "#{Enum.map_join(open, ", ", & &1.identifier)}. Clean up this task and all of its children anyway? " <>
-          "Their worktrees and scratch files will be deleted."
-    end
-  end
 
   # A child is shown on its parent's page, so the child goes in the URL with the item.
   defp task_path(socket, params) do

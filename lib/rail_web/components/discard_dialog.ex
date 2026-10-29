@@ -250,7 +250,7 @@ defmodule RailWeb.Components.DiscardDialog do
     %{
       title: "Discard #{identifier} and start over?",
       files_title: "Deletes the task, its worktree and scratch folder",
-      files_detail: "Its runs, questions, findings and comments go too. Clean up keeps them.",
+      files_detail: "Its runs, questions, findings and comments go too.",
       target: "not started",
       target_label: "Not started"
     }
