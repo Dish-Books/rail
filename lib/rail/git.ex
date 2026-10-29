@@ -38,6 +38,7 @@ defmodule Rail.Git do
   defdelegate ci_env(project, task), to: Actions.CiEnv
   defdelegate fetch_default_branch(project, worktree_path), to: Actions.FetchDefaultBranch
   defdelegate fetch_branch(project, branch), to: Actions.FetchBranch
+  defdelegate delete_remote_branch(project, branch), to: Actions.DeleteRemoteBranch
   defdelegate read_default_branch_file(project, path), to: Actions.ReadDefaultBranchFile
   defdelegate list_default_branch_files(project, directory), to: Actions.ListDefaultBranchFiles
   defdelegate list_default_branch_paths(project, paths), to: Actions.ListDefaultBranchPaths
@@ -56,4 +57,5 @@ defmodule Rail.Git do
 
   defdelegate list_viewed_files(scope, task, document), to: Actions.ListViewedFiles
   defdelegate set_file_viewed(scope, task, document, path, digest, viewed), to: Actions.SetFileViewed
+  defdelegate delete_viewed_files(task), to: Actions.DeleteViewedFiles
 end

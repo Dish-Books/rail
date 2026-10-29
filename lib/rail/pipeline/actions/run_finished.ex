@@ -34,6 +34,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   import Rail.Pipeline.Utils.ReviewRunFinished
   import Rail.Pipeline.Utils.SetupRunFinished
   import Rail.Pipeline.Utils.UnsentRound
+  import Rail.Pipeline.Utils.WithTaskLock
 
   alias Rail.Git
   alias Rail.Pipeline
@@ -49,6 +50,16 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   Settles the run whose OS process just exited, against `outcome`.
   """
   def run_finished(%OsProcess{} = os_process, outcome \\ %{}, opts \\ []) do
+    # A stop settles outside the task's lock, since Discard and Back to Plan stop runs and wait on the settle.
+    case {exit_code(outcome, nil), Repo.get(Run, os_process.run_id)} do
+      {-1, _run} -> finish_run(os_process, outcome, opts)
+      {_code, %Run{task_id: task_id}} -> with_task_lock(task_id, fn -> finish_run(os_process, outcome, opts) end)
+      {_code, nil} -> {:error, :invalid_state}
+    end
+  end
+
+  # Read again under the lock, so a run Discard or Back to Plan deleted meanwhile pushes and starts nothing.
+  defp finish_run(%OsProcess{} = os_process, outcome, opts) do
     case Repo.preload(os_process, [run: [:task, :role]], force: true) do
       %OsProcess{run: %Run{task: %Task{}}} = os_process ->
         run =

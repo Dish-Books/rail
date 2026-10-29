@@ -108,6 +108,17 @@ defmodule Rail.Issues.Schemas.Issue do
   end
 
   @doc """
+  A changeset moving the ticket back to `state`, `:todo` for Discard or `:in_progress` for Back to Plan. Forced, so
+  the tracker is told even when Rail's copy already reads it, and its name waits for the tracker's own.
+  """
+  def reset_changeset(issue, state) when state in [:todo, :in_progress] do
+    issue
+    |> change(state_name: nil)
+    |> force_change(:state, state)
+    |> sync_to_tracker()
+  end
+
+  @doc """
   A changeset linking the issue to the pull request found for it, or clearing it with nils. It is Rail's own
   record, so nothing goes to the tracker.
   """

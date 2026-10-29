@@ -1,6 +1,8 @@
 defmodule Rail.Pipeline.Actions.RetryRunTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.WithTaskLock
+
   alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -60,6 +62,28 @@ defmodule Rail.Pipeline.Actions.RetryRunTest do
     end)
 
     assert {:ok, %Run{id: ^lead_id}} = Pipeline.retry_run(system_scope(), lead)
+  end
+
+  test "a run deleted while the retry waited on the task's lock is not retried", %{task: task, run: run} do
+    %Run{id: lead_id} = lead = run.(:review_lead, %{error: "It broke.", conversation_id: "sess_lead"})
+    reject(Tools, :start_os_process, 2)
+
+    pending =
+      with_task_lock(task.id, fn ->
+        pending = Elixir.Task.async(fn -> Pipeline.retry_run(system_scope(), lead) end)
+        refute Elixir.Task.yield(pending, 100)
+        Repo.delete_all(from(r in Run, where: r.id == ^lead_id))
+        pending
+      end)
+
+    assert {:error, :not_retryable} = Elixir.Task.await(pending)
+  end
+
+  test "a run that no longer exists is not retried", %{run: run} do
+    %Run{id: lead_id} = lead = run.(:review_lead, %{error: "It broke."})
+    Repo.delete_all(from(r in Run, where: r.id == ^lead_id))
+
+    assert {:error, :not_retryable} = Pipeline.retry_run(system_scope(), lead)
   end
 
   test "is refused for a run that has not failed, one of another step, while anything works, or outside the project",

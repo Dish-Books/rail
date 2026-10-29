@@ -2,6 +2,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   use Rail.DataCase, async: true
 
   import Rail.Pipeline.Utils.QuestionQueue
+  import Rail.Pipeline.Utils.WithTaskLock
 
   alias Rail.Git
   alias Rail.GitHub.Client
@@ -772,6 +773,54 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     assert {:ok, %Run{stage_outcome: :done, ci_failure_streak: 0, error: nil}} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
+  end
+
+  test "CI that passes while Discard holds the task's lock pushes nothing once its run is gone", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
+    {%Run{id: run_id}, os_process} = exited.(:engineer, %{})
+    os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
+
+    reject(Git, :push_branch, 2)
+
+    pending =
+      with_task_lock(task.id, fn ->
+        pending = Elixir.Task.async(fn -> Pipeline.run_finished(os_process, %{exit_code: 0}) end)
+        refute Elixir.Task.yield(pending, 100)
+        Repo.delete_all(from(r in Run, where: r.id == ^run_id))
+        pending
+      end)
+
+    assert {:error, :invalid_state} = Elixir.Task.await(pending)
+  end
+
+  test "an engineer turn that ends while Discard holds the task's lock hands nothing over once its run is gone", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+    {%Run{id: run_id}, os_process} = exited.(:engineer, %{})
+
+    reject(&Pipeline.hand_over_work/2)
+
+    pending =
+      with_task_lock(task.id, fn ->
+        pending = Elixir.Task.async(fn -> Pipeline.run_finished(os_process, %{exit_code: 0}) end)
+        refute Elixir.Task.yield(pending, 100)
+        Repo.delete_all(from(r in Run, where: r.id == ^run_id))
+        pending
+      end)
+
+    assert {:error, :invalid_state} = Elixir.Task.await(pending)
+  end
+
+  test "a process whose run is already gone settles nothing", %{exited: exited} do
+    {%Run{id: run_id}, os_process} = exited.(:plan, %{})
+    Repo.delete_all(from(r in Run, where: r.id == ^run_id))
+
+    assert {:error, :invalid_state} = Pipeline.run_finished(os_process, %{exit_code: 0})
   end
 
   test "CI that passed on a branch that will not push says so and is not done", %{task: task, exited: exited} do

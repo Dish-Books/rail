@@ -127,7 +127,7 @@ defmodule Rail.Issues.Workers.LinearSync do
 
     {with_task, without_task} = Enum.split_with(stale, &elem(&1, 2))
 
-    # Linear is asked outside any transaction, so what goes is re-read before any task is discarded.
+    # Linear is asked outside any transaction, so what goes is re-read before any task is purged.
     with {:ok, gone_ids} <- Enum.reduce_while(with_task, {:ok, []}, &gone_from_linear(project, &1, &2)) do
       without_task_ids = Enum.map(without_task, &elem(&1, 0))
 
@@ -148,9 +148,9 @@ defmodule Rail.Issues.Workers.LinearSync do
           )
         )
 
-      # Every task, cleaned up or not, is discarded first: its runs have no foreign key to go with it.
+      # Every task, cleaned up or not, is purged first: its runs have no foreign key to go with it.
       tasks = Repo.all(from(t in Task, where: t.issue_id in ^doomed_ids))
-      Enum.each(tasks, &(:ok = Pipeline.discard_task(&1)))
+      Enum.each(tasks, &(:ok = Pipeline.purge_task(&1)))
 
       Repo.delete_all(from(i in Issue, where: i.project_id == ^project_id and i.id in ^doomed_ids))
 

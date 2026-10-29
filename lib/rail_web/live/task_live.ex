@@ -23,6 +23,7 @@ defmodule RailWeb.TaskLive do
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
@@ -92,6 +93,12 @@ defmodule RailWeb.TaskLive do
       |> assign(:conversation_questions, [])
       |> assign(:suggestions, %{})
       |> assign(:cleaning_up, false)
+      |> assign(:discard_open, false)
+      |> assign(:discarding, false)
+      |> assign(:discard_error, nil)
+      |> assign(:discard_choice, :discard)
+      |> assign(:discard_had_runs, false)
+      |> assign(:discard_stopped, false)
       |> assign(:focus_file, nil)
       |> assign(:url_id, nil)
       |> assign(:child, nil)
@@ -105,6 +112,8 @@ defmodule RailWeb.TaskLive do
       |> assign(:child_of, nil)
       |> assign(:split_points, nil)
       |> assign(:cleanup_confirm, nil)
+      |> assign(:show_discard, false)
+      |> assign(:show_back_to_plan, false)
       |> assign(:viewer_owns, false)
 
     # A stage moved from another page or by a run finishing is what keeps this one current.
@@ -168,7 +177,7 @@ defmodule RailWeb.TaskLive do
           class="flex flex-col items-center justify-center min-h-[300px] text-center p-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs"
         >
           <p class="text-base font-medium text-slate-500 dark:text-slate-400">
-            This task has been cleaned up.
+            This task was discarded or its issue was deleted.
           </p>
         </div>
 
@@ -207,6 +216,7 @@ defmodule RailWeb.TaskLive do
               {@split_points}
             </span>
             <.claim_button task={@task} />
+            <.discard_button :if={@show_discard} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} confirm={@cleanup_confirm} />
             <.live_component
               module={TaskActions}
@@ -279,6 +289,16 @@ defmodule RailWeb.TaskLive do
         </.live_component>
       </div>
     </Layouts.app>
+
+    <.discard_dialog
+      :if={@discard_open and @task != nil}
+      task={@task}
+      discarding={@discarding}
+      error={@discard_error}
+      stopped={@discard_stopped}
+      choice={@discard_choice}
+      back_to_plan={@show_back_to_plan}
+    />
     """
   end
 
@@ -298,6 +318,56 @@ defmodule RailWeb.TaskLive do
       socket
       |> assign(:cleaning_up, true)
       |> start_async(:cleanup, fn -> Pipeline.cleanup_task(task) end)
+
+    {:noreply, socket}
+  end
+
+  def handle_event("open_discard", _params, socket) do
+    socket =
+      socket
+      |> assign(:discard_open, true)
+      |> assign(:discard_error, nil)
+      |> assign(:discard_stopped, false)
+      |> assign(:discard_choice, :discard)
+
+    {:noreply, socket}
+  end
+
+  def handle_event("pick_discard", _params, %{assigns: %{discarding: true}} = socket), do: {:noreply, socket}
+
+  def handle_event("pick_discard", %{"choice" => "plan"}, %{assigns: %{show_back_to_plan: true}} = socket),
+    do: {:noreply, pick(socket, :plan)}
+
+  def handle_event("pick_discard", _params, socket), do: {:noreply, pick(socket, :discard)}
+
+  # The dialog stays until the action under way has its answer, which opens the issue or the plan, or says what failed.
+  def handle_event("close_discard", _params, %{assigns: %{discarding: true}} = socket), do: {:noreply, socket}
+
+  def handle_event("close_discard", _params, socket) do
+    socket =
+      socket
+      |> assign(:discard_open, false)
+      |> assign(:discard_error, nil)
+
+    {:noreply, socket}
+  end
+
+  def handle_event("discard", _params, %{assigns: %{discarding: true}} = socket), do: {:noreply, socket}
+
+  def handle_event("discard", _params, socket) do
+    %{current_scope: scope, task: task, discard_choice: choice} = socket.assigns
+
+    # What the dialog listed as in progress is what "Runs stopped" stands for after a failure past the stops.
+    socket =
+      socket
+      |> assign(:discarding, true)
+      |> assign(:discard_error, nil)
+      |> assign(:discard_had_runs, Enum.any?(task.runs, &(Run.running?(&1) or Run.state(&1) == :blocked)))
+      |> start_async(:discard, fn ->
+        # Unlinked, so leaving the page does not cut Back to Plan off between its commit and the Planner's start.
+        action = Elixir.Task.Supervisor.async_nolink(Rail.TaskSupervisor, fn -> act(choice, scope, task) end)
+        {choice, Elixir.Task.await(action, :infinity)}
+      end)
 
     {:noreply, socket}
   end
@@ -421,6 +491,9 @@ defmodule RailWeb.TaskLive do
     {:noreply, push_patch(socket, to: task_path(socket, item: Atom.to_string(item), agent: agent), replace: true)}
   end
 
+  # Sent by the stage as it drew, so it can land after the task was discarded underneath the page.
+  def handle_info({:watch_browser, _name}, %{assigns: %{task: nil}} = socket), do: {:noreply, socket}
+
   # The Browser item is open on this browser, or on none; only the subscription moves.
   def handle_info({:watch_browser, name}, socket) do
     socket = assign(socket, :review_browser, name)
@@ -538,6 +611,40 @@ defmodule RailWeb.TaskLive do
     {:noreply, socket}
   end
 
+  # A discarded task is gone, so the issue is where it can be started again.
+  def handle_async(:discard, {:ok, {:discard, {:ok, %Task{issue_id: issue_id}}}}, socket) do
+    {:noreply, push_navigate(socket, to: ~p"/issues/#{issue_id}")}
+  end
+
+  # Navigated rather than patched, so every pane mounts again on the task as it now stands.
+  def handle_async(:discard, {:ok, {:plan, {:ok, %Task{id: id}}}}, socket) do
+    {:noreply, push_navigate(socket, to: ~p"/tasks/#{id}?item=plan")}
+  end
+
+  def handle_async(:discard, {:ok, {choice, {:error, reason}}}, socket) do
+    stopped = socket.assigns.discard_had_runs and after_stops?(reason)
+
+    socket =
+      socket
+      |> assign(:discarding, false)
+      |> assign(:discard_stopped, stopped)
+      |> assign(:discard_error, discard_error(choice, reason, stopped))
+      |> refresh_task()
+
+    {:noreply, socket}
+  end
+
+  def handle_async(:discard, {:exit, _reason}, socket) do
+    socket =
+      socket
+      |> assign(:discarding, false)
+      |> assign(:discard_error, discard_error(socket.assigns.discard_choice, :crashed, false))
+      |> assign(:discard_stopped, false)
+      |> refresh_task()
+
+    {:noreply, socket}
+  end
+
   # A live frame that arrived first is newer than the one asked for, which is then dropped.
   def handle_async({:held_frame, topic}, {:ok, "" <> data}, %{assigns: %{awaited_frame: topic}} = socket),
     do: {:noreply, show_frame(socket, data)}
@@ -583,6 +690,20 @@ defmodule RailWeb.TaskLive do
       class="px-4 py-2 rounded-lg border border-red-300 dark:border-red-800 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 cursor-pointer disabled:opacity-50"
     >
       {if @cleaning_up, do: "Cleaning up…", else: "Clean up"}
+    </button>
+    """
+  end
+
+  defp discard_button(assigns) do
+    ~H"""
+    <button
+      type="button"
+      id="discard-task"
+      data-qa="discard_task"
+      phx-click="open_discard"
+      class="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-red-300 dark:border-red-800 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+    >
+      <.icon name="pi-trash-bold" class="size-[15px]" /> Discard
     </button>
     """
   end
@@ -719,11 +840,21 @@ defmodule RailWeb.TaskLive do
   defp refresh_task(socket) do
     with {:ok, task} <- Pipeline.get_task(socket.assigns.url_id),
          true <- Scope.can_access_project?(socket.assigns.current_scope, task.project_id) do
-      show_task(socket, task)
+      socket
+      |> show_task(task)
+      |> follow_back_to_plan(socket.assigns.task, task)
     else
       _missing -> assign(socket, :task, nil)
     end
   end
+
+  # The tab that sent the task back navigates from its own handle_async; leaving first would kill the action.
+  defp follow_back_to_plan(%{assigns: %{discarding: true}} = socket, _was, _task), do: socket
+
+  defp follow_back_to_plan(socket, %Task{id: id, stage: was}, %Task{id: id, stage: :plan})
+       when was in [:engineer, :review, :finalize], do: push_navigate(socket, to: ~p"/tasks/#{id}?item=plan")
+
+  defp follow_back_to_plan(socket, _was, _task), do: socket
 
   # Every link to a child, its own included, lands on its parent's page with it selected.
   defp show_task(socket, %Task{parent_task_id: parent_id, issue: issue}) when is_binary(parent_id) do
@@ -783,16 +914,21 @@ defmodule RailWeb.TaskLive do
   defp apply_task(socket, %Task{} = task) do
     roles = if task.project_id, do: Rail.Roles.list_roles(task.project_id), else: []
     runs = role_runs(roles, task)
+    rounds = Pipeline.list_rounds(task)
+    back_to_plan = discardable?(task) and task.stage != :plan and match?(%Round{plan: "" <> _plan}, List.first(rounds))
 
     socket
     |> assign(:task, task)
     |> assign(:page_title, task.issue.title)
     |> assign(:roles_map, Map.new(roles, &{&1.id, &1}))
     |> assign(:open_item, open_item(socket.assigns.item, task, socket.assigns.parent))
-    |> assign(:rounds, Pipeline.list_rounds(task))
+    |> assign(:rounds, rounds)
     |> assign_runs(runs, task)
     |> assign_questions(task)
     |> assign_family(task)
+    |> assign(:show_discard, discardable?(task))
+    |> assign(:show_back_to_plan, back_to_plan)
+    |> assign(:discard_choice, if(back_to_plan, do: socket.assigns.discard_choice, else: :discard))
     |> assign(:subscribed_run_ids, sync_run_subscriptions(socket, task.runs))
     |> assign_watched_browser(task)
     |> load_issue(task)
@@ -1139,6 +1275,61 @@ defmodule RailWeb.TaskLive do
     |> assign(:frame_window_open?, true)
     |> push_event("browser:frame", %{data: data})
   end
+
+  # Mirrors what Discard itself refuses; a merge in progress is offered, so the dialog can say why it waits.
+  defp discardable?(%Task{cleaned_up_at: nil, merged_at: nil, parent_task_id: nil, stage: stage}),
+    do: stage not in [:merged, :split]
+
+  defp discardable?(%Task{}), do: false
+
+  defp act(:discard, scope, task), do: Pipeline.discard_task(scope, task)
+  defp act(:plan, scope, task), do: Pipeline.return_to_plan(scope, task)
+
+  # Only a failure past the stops leaves runs stopped: GitHub's refusals, and a run still settling.
+  defp after_stops?({step, _reason}) when step in [:branch_not_deleted, :pull_request_not_closed], do: true
+  defp after_stops?(:task_busy), do: true
+  defp after_stops?(_reason), do: false
+
+  defp pick(%{assigns: %{discard_choice: choice}} = socket, choice), do: socket
+
+  # An error names the choice it came from, so it goes with that choice.
+  defp pick(socket, choice) do
+    socket
+    |> assign(:discard_choice, choice)
+    |> assign(:discard_error, nil)
+    |> assign(:discard_stopped, false)
+  end
+
+  defp discard_error(:plan, :not_discardable, _stopped),
+    do: "This task already went back to Plan, or was discarded or cleaned up."
+
+  defp discard_error(:discard, :not_discardable, _stopped), do: "This task was already discarded or cleaned up."
+
+  defp discard_error(choice, {:branch_not_deleted, "" <> reason}, stopped),
+    do: "GitHub refused to delete the branch: #{reason}. " <> left_as_was(choice, stopped)
+
+  defp discard_error(choice, {:branch_not_deleted, _reason}, stopped),
+    do: "GitHub refused to delete the branch. " <> left_as_was(choice, stopped)
+
+  defp discard_error(choice, {:pull_request_not_closed, _reason}, stopped),
+    do: "GitHub refused to close the pull request. " <> left_as_was(choice, stopped)
+
+  defp discard_error(choice, :task_busy, _stopped), do: "A run was still finishing. #{again(choice)} to stop it."
+
+  defp discard_error(:plan, :merging, _stopped),
+    do: "A merge is in progress. Take it back to Plan once it finishes or fails."
+
+  defp discard_error(:discard, :merging, _stopped), do: "A merge is in progress. Discard once it finishes or fails."
+  defp discard_error(:plan, _reason, _stopped), do: "Could not take the task back to Plan."
+  defp discard_error(:discard, _reason, _stopped), do: "Could not discard the task."
+
+  defp left_as_was(choice, true),
+    do: "The runs are stopped; the worktree and ticket are as they were. #{again(choice)} to finish."
+
+  defp left_as_was(choice, false), do: "The worktree and ticket are as they were. #{again(choice)} to finish."
+
+  defp again(:plan), do: "Click Back to Plan again"
+  defp again(:discard), do: "Discard again"
 
   defp claim_error(:already_assigned), do: "Somebody else claimed this issue first"
   defp claim_error(:linear_not_linked), do: "Link your Linear account in Settings before claiming an issue"

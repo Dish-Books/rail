@@ -2,8 +2,8 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   @moduledoc """
   Moves a task to a stage and starts that stage's run.
 
-  This is the only thing that writes `task.stage`, and the only thing that puts a
-  run back to `:in_progress`. Both halves belong together: entering a stage is
+  This is the only thing that writes `task.stage`, besides Back to Plan putting a task back at Plan, and the only
+  thing that puts a run back to `:in_progress`. Both halves belong together: entering a stage is
   exactly the moment that stage gets to conclude something again, so a reviewer
   that already passed can pass afresh on the rework, and an engineer that already
   said it was done can say it about the next round.
