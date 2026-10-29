@@ -15,6 +15,11 @@ defmodule RailWeb.TriageLiveTest do
   alias Rail.Users
 
   setup %{conn: conn} do
+    # What is merged is read from the project's clone, which another test may have made, so reading it here
+    # would spawn git: these pages see nothing on the default branch, as when there is no clone.
+    stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Rail.Git, :list_default_branch_paths, fn _project, paths -> if paths == [], do: MapSet.new() end)
+
     %{project: project} = triage_project()
     %{workspace: workspace, channel: channel} = connect_slack_channel(project, users: %{"U_PRIYA" => "Priya Natarajan"})
 

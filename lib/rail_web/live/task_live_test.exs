@@ -5,6 +5,7 @@ defmodule RailWeb.TaskLiveTest do
   import Ecto.Query
   import Mimic
   import Phoenix.LiveViewTest
+  import Rail.Git.Utils.ParseDiff
   import Rail.Pipeline.Utils.BuildTask
   import RailWeb.Utils.BuildDocumentBlocks
 
@@ -65,6 +66,11 @@ defmodule RailWeb.TaskLiveTest do
   """
 
   setup %{conn: conn, project: project} do
+    # What is merged is read from the project's clone, which another test may have made, so reading it here
+    # would spawn git: these pages see nothing on the default branch, as when there is no clone.
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :list_default_branch_paths, fn _project, paths -> if paths == [], do: MapSet.new() end)
+
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_live",
@@ -243,7 +249,15 @@ defmodule RailWeb.TaskLiveTest do
     project: project
   } do
     {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
-    {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
+
+    # Git is only ever asked through Rail.Git, so the worktree is a directory, on a branch git cannot read.
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: worktree})
+
+    stub(Git, :load_branch_history, fn _task, _rounds ->
+      %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
+    end)
 
     {:ok, _engineer_run} =
       Pipeline.create_run(%{
@@ -266,7 +280,20 @@ defmodule RailWeb.TaskLiveTest do
   } do
     {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
     {:ok, engineer} = Roles.update_role(system_scope(), engineer, %{reserved_cpus: 2})
-    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+
+    # Git is only ever asked through Rail.Git, so the worktree is a directory, on a branch git cannot read.
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
+
+    stub(Git, :load_branch_history, fn _task, _rounds ->
+      %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
+    end)
+
+    stub(Git, :load_diff, fn _scope, _task, _filter, _previous -> {:ok, []} end)
+    stub(Git, :branch_fingerprint, fn _worktree_path -> nil end)
+    stub(Git, :worktree_dirty?, fn _worktree_path -> false end)
+
     now = DateTime.utc_now()
 
     {:ok, run} =
@@ -296,7 +323,20 @@ defmodule RailWeb.TaskLiveTest do
     model = "claude-task-usage-#{System.unique_integer([:positive])}"
     {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
     {:ok, engineer} = Roles.update_role(system_scope(), engineer, %{model: model})
-    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+
+    # Git is only ever asked through Rail.Git, so the worktree is a directory, on a branch git cannot read.
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
+
+    stub(Git, :load_branch_history, fn _task, _rounds ->
+      %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
+    end)
+
+    stub(Git, :load_diff, fn _scope, _task, _filter, _previous -> {:ok, []} end)
+    stub(Git, :branch_fingerprint, fn _worktree_path -> nil end)
+    stub(Git, :worktree_dirty?, fn _worktree_path -> false end)
+
     reset = DateTime.utc_now() |> DateTime.shift(hour: 2) |> DateTime.truncate(:second)
 
     {:ok, account} =
@@ -388,7 +428,19 @@ defmodule RailWeb.TaskLiveTest do
     project: project
   } do
     {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
-    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+
+    # Git is only ever asked through Rail.Git, so the worktree is a directory, on a branch git cannot read.
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
+
+    stub(Git, :load_branch_history, fn _task, _rounds ->
+      %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
+    end)
+
+    stub(Git, :load_diff, fn _scope, _task, _filter, _previous -> {:ok, []} end)
+    stub(Git, :branch_fingerprint, fn _worktree_path -> nil end)
+    stub(Git, :worktree_dirty?, fn _worktree_path -> false end)
 
     {:ok, _run} =
       Pipeline.create_run(%{
@@ -412,7 +464,15 @@ defmodule RailWeb.TaskLiveTest do
     model = "claude-task-pinned-#{System.unique_integer([:positive])}"
     {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
     {:ok, engineer} = Roles.update_role(system_scope(), engineer, %{model: model})
-    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+
+    # Git is only ever asked through Rail.Git, so the worktree is a directory, on a branch git cannot read.
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
+
+    stub(Git, :load_branch_history, fn _task, _rounds ->
+      %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
+    end)
 
     {:ok, work} =
       Tools.create_backend(system_scope(), %{
@@ -1541,7 +1601,15 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#review-item-issue[aria-current='true']")
       refute has_element?(view, "#review-item-diff")
 
-      {:ok, _moved} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+      # Git is only ever asked through Rail.Git, so the worktree is a directory, on a branch git cannot read.
+      worktree = Path.join(task.scratch_path, "worktree")
+      File.mkdir_p!(worktree)
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: worktree})
+
+      stub(Git, :load_branch_history, fn _task, _rounds ->
+        %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
+      end)
+
       send(view.pid, :task_changed)
 
       assert has_element?(view, "#review-item-diff")
@@ -1554,7 +1622,16 @@ defmodule RailWeb.TaskLiveTest do
       # A tech lead who owns the task approves its plan without it being sent first.
       {:ok, _lead} = Users.update_user(system_scope(), scope.user, %{tech_lead: true})
       Repo.update_all(from(i in Issue, where: i.id == ^task.issue_id), set: [owner_user_id: scope.user.id])
-      {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+
+      # Git is only ever asked through Rail.Git, so the worktree is a directory, on a branch git cannot read.
+      worktree = Path.join(task.scratch_path, "worktree")
+      File.mkdir_p!(worktree)
+      {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
+
+      stub(Git, :load_branch_history, fn _task, _rounds ->
+        %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
+      end)
+
       {:ok, run} = Pipeline.update_run(run, %{conversation_id: "sess_plan_stage"})
       design_dir = Path.join(task.scratch_path, "design")
       File.mkdir_p!(design_dir)
@@ -1685,22 +1762,48 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#plan-section-ticket [data-qa='plan_ticket']", "Slow.")
     end
 
-    test "Use this design picks at Plan, and the message says only what was picked", %{
-      conn: conn,
-      task: task,
-      run: run,
-      design_dir: dir,
-      save_ticket: save_ticket,
-      save_options: save_options
-    } do
+    test "the ticket, the design and the plan are tabs that come back with the Plan item, and Use this design picks at Plan, the message saying only what was picked",
+         %{
+           conn: conn,
+           task: task,
+           run: run,
+           design_dir: dir,
+           save_ticket: save_ticket,
+           save_options: save_options
+         } do
       save_ticket.()
       save_options.(["cards", "table", "timeline"])
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      refute has_element?(view, "#plan-items")
 
+      assert ["plan-section-ticket", "plan-section-design", "plan-section-plan"] =
+               view
+               |> render()
+               |> Floki.parse_document!()
+               |> Floki.find("#plan-pane [data-qa='plan_section']")
+               |> Floki.attribute("id")
+
+      assert ["plan-tab-ticket", "plan-tab-design", "plan-tab-plan"] =
+               view
+               |> render()
+               |> Floki.parse_document!()
+               |> Floki.find("#plan-pane [data-qa='plan_tab']")
+               |> Floki.attribute("id")
+
+      assert has_element?(view, "#plan-section-ticket [data-qa='plan_ticket']", "Slow.")
+      assert has_element?(view, "#plan-section-design #design-tab-cards", "Cards")
+      assert has_element?(view, "#plan-section-plan #plan-plan-pending")
       assert has_element?(view, "[data-qa='task_status_chip']", "Pick a design")
       assert has_element?(view, "#plan-tab-design-waiting")
       refute has_element?(view, "#task-approve-plan")
+
+      view |> element("#review-item-issue") |> render_click()
+      refute has_element?(view, "[data-qa='plan-stage']")
+
+      view |> element("#review-item-plan") |> render_click()
+      assert has_element?(view, "#plan-section-ticket [data-qa='plan_ticket']", "Slow.")
+      assert has_element?(view, "#plan-tab-design-waiting")
 
       view |> element("#design-tab-table") |> render_click()
       assert has_element?(view, "#design-option-title", "Table")
@@ -1734,45 +1837,6 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "#plan-section-design #design-option-table", "Picked")
       assert has_element?(view, "#plan-tab-plan-working")
-    end
-
-    test "the ticket, the design and the plan are tabs, and coming back to the Plan item shows them again",
-         %{
-           conn: conn,
-           task: task,
-           save_ticket: save_ticket,
-           save_options: save_options
-         } do
-      save_ticket.()
-      save_options.(["cards", "table", "timeline"])
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      refute has_element?(view, "#plan-items")
-
-      assert ["plan-section-ticket", "plan-section-design", "plan-section-plan"] =
-               view
-               |> render()
-               |> Floki.parse_document!()
-               |> Floki.find("#plan-pane [data-qa='plan_section']")
-               |> Floki.attribute("id")
-
-      assert ["plan-tab-ticket", "plan-tab-design", "plan-tab-plan"] =
-               view
-               |> render()
-               |> Floki.parse_document!()
-               |> Floki.find("#plan-pane [data-qa='plan_tab']")
-               |> Floki.attribute("id")
-
-      assert has_element?(view, "#plan-section-ticket [data-qa='plan_ticket']", "Slow.")
-      assert has_element?(view, "#plan-section-design #design-tab-cards", "Cards")
-      assert has_element?(view, "#plan-section-plan #plan-plan-pending")
-
-      view |> element("#review-item-issue") |> render_click()
-      refute has_element?(view, "[data-qa='plan-stage']")
-
-      view |> element("#review-item-plan") |> render_click()
-      assert has_element?(view, "#plan-section-ticket [data-qa='plan_ticket']", "Slow.")
-      assert has_element?(view, "#plan-tab-design-waiting")
     end
 
     test "a pick of another option than the plan's says it is being revised, and offers no Approve", %{
@@ -1921,40 +1985,6 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#plan-error", "This task is at Implement, not Plan.")
     end
 
-    test "a page left open ignores another task's move", %{
-      conn: conn,
-      task: task,
-      save_ticket: save_ticket,
-      save_plan: save_plan
-    } do
-      save_ticket.()
-      save_plan.(nil)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      send(view.pid, {:pipeline_changed, "tsk_another"})
-
-      assert has_element?(view, "#task-approve-plan")
-    end
-
-    test "approving a run that started working since the page loaded says so", %{
-      conn: conn,
-      task: task,
-      run: run,
-      save_ticket: save_ticket,
-      save_plan: save_plan
-    } do
-      save_ticket.()
-      save_plan.(nil)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      {:ok, _working} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
-
-      view |> element("#task-approve-plan") |> render_click()
-
-      assert has_element?(view, "#task-actions-error", "Something is still running on this task.")
-      assert %Task{stage: :plan} = Repo.reload!(task)
-    end
-
     test "a turn that ended short shows its error, the options it is short of, and where to pick", %{
       conn: conn,
       task: task,
@@ -2003,12 +2033,8 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#plan-chat #retry-run")
     end
 
-    test "a change with no screen says so, and Approve needs only the ticket and the plan", %{
-      conn: conn,
-      task: task,
-      save_ticket: save_ticket,
-      save_plan: save_plan
-    } do
+    test "a change with no screen says so, and Approve needs only the ticket and the plan, stays through another task's move and says so when a run started since",
+         %{conn: conn, task: task, run: run, save_ticket: save_ticket, save_plan: save_plan} do
       save_ticket.()
       save_plan.(nil)
 
@@ -2020,6 +2046,16 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#task-approve-plan")
       assert has_element?(view, "#plan-section-design #plan-design-none", "No screen in this change")
       assert has_element?(view, "#plan-section-plan [data-qa='plan_plan']", "For nobody.")
+
+      # A page left open ignores another task's move.
+      send(view.pid, {:pipeline_changed, "tsk_another"})
+      assert has_element?(view, "#task-approve-plan")
+
+      {:ok, _working} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+      view |> element("#task-approve-plan") |> render_click()
+
+      assert has_element?(view, "#task-actions-error", "Something is still running on this task.")
+      assert %Task{stage: :plan} = Repo.reload!(task)
     end
 
     test "a subagent line opens on its own transcript, a refused save with its reason", %{
@@ -2159,7 +2195,15 @@ defmodule RailWeb.TaskLiveTest do
 
   describe "comments on the picked design" do
     setup %{task: task, run: run} do
-      {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+      # Git is only ever asked through Rail.Git, so the worktree is a directory, on a branch git cannot read.
+      worktree = Path.join(task.scratch_path, "worktree")
+      File.mkdir_p!(worktree)
+      {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
+
+      stub(Git, :load_branch_history, fn _task, _rounds ->
+        %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
+      end)
+
       {:ok, run} = Pipeline.update_run(run, %{conversation_id: "sess_plan_comments"})
       dir = Path.join(task.scratch_path, "design")
       File.mkdir_p!(dir)
@@ -2200,11 +2244,8 @@ defmodule RailWeb.TaskLiveTest do
       %{task: task, run: run, dir: dir, pick: pick, element: element}
     end
 
-    test "the Comment control sits above the frame, outside it, before and after a pick", %{
-      conn: conn,
-      task: task,
-      pick: pick
-    } do
+    test "the Comment control sits above the frame, outside it, before and after a pick, and before it is disabled with its reason, nothing turning commenting on",
+         %{conn: conn, task: task, pick: pick, element: element} do
       for picked? <- [false, true] do
         if picked?, do: pick.()
         assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
@@ -2215,26 +2256,20 @@ defmodule RailWeb.TaskLiveTest do
         html = view |> element("#design-frame-waiting-lanes") |> render()
         assert html |> Floki.parse_fragment!() |> Floki.find("button, form, a") == []
         assert :binary.match(render(view), "design-comment-control") < :binary.match(render(view), "design-frame-")
+
+        if not picked? do
+          assert has_element?(view, "#design-comment-toggle[disabled]")
+          assert has_element?(view, "#design-comment-hint", "Pick a design to comment on it.")
+
+          view |> with_target("#plan-stage") |> render_click("toggle_commenting", %{})
+          view |> with_target("#plan-stage") |> render_hook("select_element", element)
+
+          assert has_element?(view, "#design-frame-waiting-lanes[data-commenting='false'][data-comments='false']")
+          refute has_element?(view, "[data-qa='plan_comment_form']")
+          refute has_element?(view, "#design-page-waiting-lanes-" <> "x")
+          refute render(view) =~ "comments=1"
+        end
       end
-    end
-
-    test "before a pick Comment is disabled with its reason, and nothing turns commenting on", %{
-      conn: conn,
-      task: task,
-      element: element
-    } do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#design-comment-toggle[disabled]")
-      assert has_element?(view, "#design-comment-hint", "Pick a design to comment on it.")
-
-      view |> with_target("#plan-stage") |> render_click("toggle_commenting", %{})
-      view |> with_target("#plan-stage") |> render_hook("select_element", element)
-
-      assert has_element?(view, "#design-frame-waiting-lanes[data-commenting='false'][data-comments='false']")
-      refute has_element?(view, "[data-qa='plan_comment_form']")
-      refute has_element?(view, "#design-page-waiting-lanes-" <> "x")
-      refute render(view) =~ "comments=1"
     end
 
     test "after the pick a clicked element opens the comment box, and saving adds a marker and a row", %{
@@ -2643,7 +2678,15 @@ defmodule RailWeb.TaskLiveTest do
 
   describe "comments on the ticket and the plan" do
     setup %{task: task, run: run} do
-      {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+      # Git is only ever asked through Rail.Git, so the worktree is a directory, on a branch git cannot read.
+      worktree = Path.join(task.scratch_path, "worktree")
+      File.mkdir_p!(worktree)
+      {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
+
+      stub(Git, :load_branch_history, fn _task, _rounds ->
+        %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
+      end)
+
       {:ok, run} = Pipeline.update_run(run, %{conversation_id: "sess_document_comments"})
       dir = Path.join(task.scratch_path, "design")
       File.mkdir_p!(dir)
@@ -2694,8 +2737,8 @@ defmodule RailWeb.TaskLiveTest do
       %{task: task, run: run, design: design, description: description, key: key}
     end
 
-    test "the title, priority, estimate and every description line draw a +, and only the design has a Comment control",
-         %{conn: conn, task: task} do
+    test "the title, priority, estimate and every line draw a +, only the design a Comment control, and a resave changing a commented paragraph moves its comment to the top, changed, leaving the others",
+         %{conn: conn, task: task, key: key, description: description} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       labels =
@@ -2725,6 +2768,27 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#plan-sheet button[aria-label='Comment on File 1']")
       refute has_element?(view, "#plan-section-plan #design-comment-toggle")
       assert has_element?(view, "#plan-section-design #design-comment-toggle")
+
+      view |> element("#line-ticket-#{key.("Paragraph 1")} [data-qa='line_comment_add']") |> render_click()
+      view |> form("[data-qa='document_comment_form']", %{"body" => "Say which pages."}) |> render_submit()
+      view |> element("#line-ticket-#{key.("Criterion 1")} [data-qa='line_comment_add']") |> render_click()
+      view |> form("[data-qa='document_comment_form']", %{"body" => "Kept."}) |> render_submit()
+
+      {:ok, _ticket} =
+        Pipeline.save_plan(task, %{
+          title: "Recordings settle",
+          description: String.replace(description, "at first paint", "the moment the browser paints")
+        })
+
+      _settled = render(view)
+      _settled = render(view)
+
+      assert has_element?(view, "#ticket-changed-comments [data-lifted='true']", "Say which pages.")
+      assert has_element?(view, "#ticket-changed-comments [data-qa='document_comment_quote']", "at first paint")
+      assert has_element?(view, "#line-ticket-#{key.("Criterion 1")} + [data-qa='line_comments']", "Kept.")
+      view |> element("#plan-comment-tray-fold") |> render_click()
+      assert has_element?(view, "#plan-comment-tray [data-qa='plan_comment_changed']")
+      assert has_element?(view, "#plan-comment-tray [data-qa='plan_comment_row'][data-found='false']", "Paragraph 1")
     end
 
     test "after a design comment, a comment on a criterion is card 2 under it and 2 in the tray, a second stacks as 3,
@@ -2814,37 +2878,8 @@ defmodule RailWeb.TaskLiveTest do
       assert sent =~ "1 | send_back_to_architect.ex | send_back_to_architect_test.exs"
     end
 
-    test "a resave that changes a commented paragraph moves its comment to the top, changed, and leaves the others",
-         %{conn: conn, task: task, key: key, description: description} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#line-ticket-#{key.("Paragraph 1")} [data-qa='line_comment_add']") |> render_click()
-      view |> form("[data-qa='document_comment_form']", %{"body" => "Say which pages."}) |> render_submit()
-      view |> element("#line-ticket-#{key.("Criterion 1")} [data-qa='line_comment_add']") |> render_click()
-      view |> form("[data-qa='document_comment_form']", %{"body" => "Kept."}) |> render_submit()
-
-      {:ok, _ticket} =
-        Pipeline.save_plan(task, %{
-          title: "Recordings settle",
-          description: String.replace(description, "at first paint", "the moment the browser paints")
-        })
-
-      _settled = render(view)
-      _settled = render(view)
-
-      assert has_element?(view, "#ticket-changed-comments [data-lifted='true']", "Say which pages.")
-      assert has_element?(view, "#ticket-changed-comments [data-qa='document_comment_quote']", "at first paint")
-      assert has_element?(view, "#line-ticket-#{key.("Criterion 1")} + [data-qa='line_comments']", "Kept.")
-      view |> element("#plan-comment-tray-fold") |> render_click()
-      assert has_element?(view, "#plan-comment-tray [data-qa='plan_comment_changed']")
-      assert has_element?(view, "#plan-comment-tray [data-qa='plan_comment_row'][data-found='false']", "Paragraph 1")
-    end
-
-    test "typing in a line's box keeps it, Remove on a card takes it away, and a box Plan can no longer take closes", %{
-      conn: conn,
-      task: task,
-      run: run,
-      key: key
-    } do
+    test "typing in a line's box keeps it, Remove on a card takes it away, and a box Plan can no longer take closes, or says why once saved",
+         %{conn: conn, task: task, run: run, key: key} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       view |> element("#line-ticket-#{key.("Criterion 1")} [data-qa='line_comment_add']") |> render_click()
       view |> form("[data-qa='document_comment_form']", %{"body" => "Half a"}) |> render_change()
@@ -2871,10 +2906,8 @@ defmodule RailWeb.TaskLiveTest do
         Repo.update_all(from(r in Run, where: r.id == ^run.id), set: [conversation_id: "sess_document_comments"])
         send(view.pid, {:pipeline_changed, task.id})
       end
-    end
 
-    test "a comment Plan can no longer take when it is saved says why", %{conn: conn, task: task, run: run, key: key} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      # A box the page has not heard is gone says why once its comment is saved.
       view |> element("#line-ticket-#{key.("Criterion 1")} [data-qa='line_comment_add']") |> render_click()
       Repo.update_all(from(r in Run, where: r.id == ^run.id), set: [conversation_id: nil])
 
@@ -2931,19 +2964,66 @@ defmodule RailWeb.TaskLiveTest do
     setup %{project: project, task: task} do
       {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
-      # The pane's buttons are about what is outstanding, so the worktree starts
-      # where a finished round leaves it: committed and pushed.
-      remote = create_temp_git_repo(prefix: "rail_git_remote", initial_commit: false)
-      git!(remote, ["config", "receive.denyCurrentBranch", "ignore"])
+      # Git is only ever asked through Rail.Git, so the worktree is a directory holding two patches the stubs
+      # answer from: branch.diff, what the branch changed against main, uncommitted work included, and
+      # uncommitted.diff, that work alone. A test moves the worktree on by writing one. It starts where a
+      # finished round leaves it: one commit, committed and pushed.
+      repo = Path.join(task.scratch_path, "worktree")
+      File.mkdir_p!(repo)
 
-      repo = create_temp_git_repo()
-      git!(repo, ["remote", "add", "origin", remote])
-      git!(repo, ["push", "origin", "main"])
-      git!(repo, ["checkout", "-b", "feature"])
-      File.write!(Path.join(repo, "shipped.ex"), "committed\n")
-      git!(repo, ["add", "."])
-      git!(repo, ["commit", "-m", "the engineer's work"])
-      git!(repo, ["push", "--set-upstream", "origin", "feature"])
+      File.write!(Path.join(repo, "branch.diff"), """
+      diff --git a/shipped.ex b/shipped.ex
+      new file mode 100644
+      --- /dev/null
+      +++ b/shipped.ex
+      @@ -0,0 +1 @@
+      +committed
+      """)
+
+      File.write!(Path.join(repo, "uncommitted.diff"), "")
+
+      commit = %{
+        sha: String.duplicate("a", 40),
+        short_sha: "aaaaaaa",
+        parent: String.duplicate("0", 40),
+        subject: "the engineer's work",
+        at: DateTime.utc_now(),
+        label: nil,
+        merge?: false,
+        main?: false,
+        merged: nil,
+        conflicts: [],
+        files: 1,
+        additions: 1,
+        deletions: 0
+      }
+
+      stub(Git, :load_branch_history, fn _task, _rounds ->
+        %{base: "main", head: "aaaaaaa", commits: [commit], files: 1, additions: 1, deletions: 0}
+      end)
+
+      # Rows come back unhighlighted, which the pane draws as their text.
+      stub(Git, :load_diff, fn scope, task, filter, _previous ->
+        viewed = Git.list_viewed_files(scope, task, :diff)
+
+        patch =
+          File.read!(
+            Path.join(task.worktree_path, if(filter == :uncommitted, do: "uncommitted.diff", else: "branch.diff"))
+          )
+
+        {:ok,
+         for file <- parse_diff(patch) do
+           rows = Enum.map(file.rows, &Map.put(&1, :html, nil))
+           Map.merge(file, %{rows: rows, viewed?: viewed[file.path] == file.digest})
+         end}
+      end)
+
+      stub(Git, :branch_fingerprint, fn worktree_path ->
+        :erlang.phash2(for patch <- ["branch.diff", "uncommitted.diff"], do: File.read!(Path.join(worktree_path, patch)))
+      end)
+
+      stub(Git, :worktree_dirty?, fn worktree_path -> File.read!(Path.join(worktree_path, "uncommitted.diff")) != "" end)
+      stub(Git, :branch_unpushed?, fn _worktree_path -> false end)
 
       {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: repo})
 
@@ -3086,7 +3166,19 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, idle, _html} = live(conn, ~p"/tasks/#{task.id}")
       typing |> form("#answer-question-form", %{"answer" => "Half typed"}) |> render_change()
 
-      File.write!(Path.join(repo, "fresh.ex"), "just written\n")
+      File.write!(
+        Path.join(repo, "branch.diff"),
+        """
+        diff --git a/fresh.ex b/fresh.ex
+        new file (untracked)
+        --- /dev/null
+        +++ b/fresh.ex
+        @@ -0,0 +1 @@
+        +just written
+        """,
+        [:append]
+      )
+
       _logged = Pipeline.append_run_events(run.id, nil, ["[tool write_file] fresh.ex"])
       _settled = render(idle)
       _settled = render(idle)
@@ -3096,15 +3188,40 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(typing, "#answer-textarea", "Half typed")
     end
 
-    test "a task at Engineer opens on the diff the engineer produced", %{conn: conn, task: task} do
+    # Reading and highlighting a large branch is the slow part, and the first page
+    # is thrown away the moment the live view connects.
+    test "a task at Engineer opens on the diff the engineer produced, which only the live view reads", %{
+      conn: conn,
+      task: task,
+      repo: repo
+    } do
+      html = conn |> get(~p"/tasks/#{task.id}") |> html_response(200)
+
+      assert html =~ "diff_loading"
+      refute html =~ "diff_file_section"
+
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(view, "#review-item-diff[aria-current='true']")
       assert has_element?(view, "#review-pane[data-item='diff'] #diff-view")
       assert has_element?(view, "[data-qa='diff-file-row']", "shipped.ex")
+      assert has_element?(view, "[data-qa='diff_file_section']", "shipped.ex")
+      refute has_element?(view, "[data-qa='diff_loading']")
 
       # A file an agent writes is read off disk again once its save is heard.
-      File.write!(Path.join(task.worktree_path, "fresh.ex"), "new\n")
+      File.write!(
+        Path.join(repo, "branch.diff"),
+        """
+        diff --git a/fresh.ex b/fresh.ex
+        new file (untracked)
+        --- /dev/null
+        +++ b/fresh.ex
+        @@ -0,0 +1 @@
+        +new
+        """,
+        [:append]
+      )
+
       send(view.pid, {:output_saved, task.id})
       eventually(fn -> assert has_element?(view, "[data-qa='diff-file-row']", "fresh.ex") end)
     end
@@ -3168,8 +3285,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "says so when the engineer has changed nothing", %{conn: conn, task: task, repo: repo} do
-      git!(repo, ["checkout", "main"])
-      {:ok, _reset} = Pipeline.update_task(task, %{worktree_path: repo})
+      File.write!(Path.join(repo, "branch.diff"), "")
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -3178,7 +3294,17 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "the filter switches between the branch and what is uncommitted", %{conn: conn, task: task, repo: repo} do
-      File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
+      wip = """
+      diff --git a/wip.ex b/wip.ex
+      new file (untracked)
+      --- /dev/null
+      +++ b/wip.ex
+      @@ -0,0 +1 @@
+      +uncommitted
+      """
+
+      File.write!(Path.join(repo, "branch.diff"), wip, [:append])
+      File.write!(Path.join(repo, "uncommitted.diff"), wip)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -3204,7 +3330,11 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='diff-file-row']", "shipped.ex")
     end
 
-    test "marking a file read collapses it, for this reader only", %{conn: conn, task: task, scope: scope} do
+    test "marking a file read collapses it, for this reader only, and selecting it in the tree opens it again", %{
+      conn: conn,
+      task: task,
+      scope: scope
+    } do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       view |> element("[data-qa='diff-viewed-checkbox']") |> render_click()
@@ -3216,25 +3346,38 @@ defmodule RailWeb.TaskLiveTest do
 
       view |> element("[data-qa='diff_collapse_toggle']") |> render_click()
       assert has_element?(view, "[data-qa='diff_line_row']")
+
+      view |> element("[data-qa='diff_collapse_toggle']") |> render_click()
+      refute has_element?(view, "[data-qa='diff_line_row']")
+
+      _clicked = view |> element("[data-qa='diff-file-row']") |> render_click()
+
+      assert has_element?(view, "[data-qa='diff_line_row']")
+      assert has_element?(view, "[data-qa='diff-file-row'][aria-current='true']", "shipped.ex")
+      assert_push_event(view, "diff:scroll_to", %{path: "shipped.ex"})
+
+      # The file a finding sent the reader to stays open however read it is.
+      assert {:ok, sent, _html} = live(conn, ~p"/tasks/#{task.id}?file=shipped.ex")
+      assert has_element?(sent, "[data-qa='diff_line_row']")
     end
 
-    # Reading and highlighting a large branch is the slow part, and the first page
-    # is thrown away the moment the live view connects.
-    test "the first page leaves the diff to the live view", %{conn: conn, task: task} do
-      html = conn |> get(~p"/tasks/#{task.id}") |> html_response(200)
-
-      assert html =~ "diff_loading"
-      refute html =~ "diff_file_section"
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "[data-qa='diff_file_section']", "shipped.ex")
-      refute has_element?(view, "[data-qa='diff_loading']")
-    end
-
-    test "marking a file reviewed does not read the diff again", %{conn: conn, task: task, repo: repo} do
-      File.write!(Path.join(repo, "zeta.ex"), "also committed\n")
-      git!(repo, ["add", "."])
-      git!(repo, ["commit", "-m", "more work"])
+    test "marking a file reviewed goes on to the next unreviewed file, without reading the diff again", %{
+      conn: conn,
+      task: task,
+      repo: repo
+    } do
+      File.write!(
+        Path.join(repo, "branch.diff"),
+        """
+        diff --git a/zeta.ex b/zeta.ex
+        new file mode 100644
+        --- /dev/null
+        +++ b/zeta.ex
+        @@ -0,0 +1 @@
+        +also committed
+        """,
+        [:append]
+      )
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       reject(&Git.load_diff/3)
@@ -3246,6 +3389,7 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "#diff-file-shipped-ex [data-qa='diff_line_row']")
       assert has_element?(view, "[data-qa='diff_viewed_progress']", "1/2")
       assert_push_event(view, "diff:scroll_to", %{path: "zeta.ex"})
+      assert has_element?(view, "[data-qa='diff-file-row'][aria-current='true']", "zeta.ex")
     end
 
     # The browser morphs every element under a component a patch names, so a click
@@ -3255,9 +3399,18 @@ defmodule RailWeb.TaskLiveTest do
       task: task,
       repo: repo
     } do
-      File.write!(Path.join(repo, "zeta.ex"), "also committed\n")
-      git!(repo, ["add", "."])
-      git!(repo, ["commit", "-m", "more work"])
+      File.write!(
+        Path.join(repo, "branch.diff"),
+        """
+        diff --git a/zeta.ex b/zeta.ex
+        new file mode 100644
+        --- /dev/null
+        +++ b/zeta.ex
+        @@ -0,0 +1 @@
+        +also committed
+        """,
+        [:append]
+      )
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -3303,9 +3456,18 @@ defmodule RailWeb.TaskLiveTest do
       task: task,
       repo: repo
     } do
-      File.write!(Path.join(repo, "zeta.ex"), "also committed\n")
-      git!(repo, ["add", "."])
-      git!(repo, ["commit", "-m", "more work"])
+      File.write!(
+        Path.join(repo, "branch.diff"),
+        """
+        diff --git a/zeta.ex b/zeta.ex
+        new file mode 100644
+        --- /dev/null
+        +++ b/zeta.ex
+        @@ -0,0 +1 @@
+        +also committed
+        """,
+        [:append]
+      )
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       view |> element("#diff-header-shipped-ex [data-qa='diff-viewed-checkbox']") |> render_click()
@@ -3323,7 +3485,17 @@ defmodule RailWeb.TaskLiveTest do
       engineer_run: run,
       repo: repo
     } do
-      File.write!(Path.join(repo, "wip.ex"), "first draft\n")
+      wip = """
+      diff --git a/wip.ex b/wip.ex
+      new file (untracked)
+      --- /dev/null
+      +++ b/wip.ex
+      @@ -0,0 +1 @@
+      +first draft
+      """
+
+      File.write!(Path.join(repo, "branch.diff"), wip, [:append])
+      File.write!(Path.join(repo, "uncommitted.diff"), wip)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -3333,7 +3505,11 @@ defmodule RailWeb.TaskLiveTest do
       {_ref, _topic, proxy} = view.proxy
       1 = :erlang.trace(proxy, true, [:receive])
 
-      File.write!(Path.join(repo, "wip.ex"), "second draft\n")
+      for patch <- ["branch.diff", "uncommitted.diff"] do
+        path = Path.join(repo, patch)
+        File.write!(path, path |> File.read!() |> String.replace("+first draft", "+second draft"))
+      end
+
       send(view.pid, {:run_events, run.id, []})
       # The page forwards to the stage, and the stage to the file it changed, each
       # on a turn of its own, so each needs a sync before the file can be read.
@@ -3380,7 +3556,8 @@ defmodule RailWeb.TaskLiveTest do
         |> Floki.parse_fragment!()
         |> Floki.attribute("[data-qa='diff-viewed-checkbox']", "phx-value-digest")
 
-      File.write!(Path.join(repo, "shipped.ex"), "rewritten\n")
+      branch = Path.join(repo, "branch.diff")
+      File.write!(branch, branch |> File.read!() |> String.replace("+committed", "+rewritten"))
       send(view.pid, {:run_events, run.id, []})
       _settled = render(view)
 
@@ -3402,7 +3579,8 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("[data-qa='diff-viewed-checkbox']") |> render_click()
       assert has_element?(view, "[data-qa='diff-viewed-checkbox'][aria-pressed='true']")
 
-      File.write!(Path.join(repo, "shipped.ex"), "rewritten\n")
+      branch = Path.join(repo, "branch.diff")
+      File.write!(branch, branch |> File.read!() |> String.replace("+committed", "+rewritten"))
       send(view.pid, {:run_events, run.id, []})
       # The page forwards to the stage, and the stage to the file it changed, each
       # on a turn of its own, so each needs a sync before the file can be read.
@@ -3418,7 +3596,17 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "the toolbar puts the file list away and narrows it down", %{conn: conn, task: task, repo: repo} do
-      File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
+      wip = """
+      diff --git a/wip.ex b/wip.ex
+      new file (untracked)
+      --- /dev/null
+      +++ b/wip.ex
+      @@ -0,0 +1 @@
+      +uncommitted
+      """
+
+      File.write!(Path.join(repo, "branch.diff"), wip, [:append])
+      File.write!(Path.join(repo, "uncommitted.diff"), wip)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -3433,58 +3621,29 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "#diff-file-tree")
     end
 
-    test "selecting a file in the tree marks it and goes there", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      _clicked = view |> element("[data-qa='diff-file-row']") |> render_click()
-
-      assert has_element?(view, "[data-qa='diff-file-row'][aria-current='true']", "shipped.ex")
-      assert_push_event(view, "diff:scroll_to", %{path: "shipped.ex"})
-    end
-
-    test "marking a file reviewed goes on to the next unreviewed file", %{conn: conn, task: task, repo: repo} do
-      File.write!(Path.join(repo, "zeta.ex"), "also committed\n")
-      git!(repo, ["add", "."])
-      git!(repo, ["commit", "-m", "more work"])
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("#diff-header-shipped-ex [data-qa='diff-viewed-checkbox']") |> render_click()
-
-      assert_push_event(view, "diff:scroll_to", %{path: "zeta.ex"})
-      assert has_element?(view, "[data-qa='diff-file-row'][aria-current='true']", "zeta.ex")
-    end
-
-    test "selecting a file opens it again if reading it had folded it away", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("[data-qa='diff-viewed-checkbox']") |> render_click()
-      refute has_element?(view, "[data-qa='diff_line_row']")
-
-      _clicked = view |> element("[data-qa='diff-file-row']") |> render_click()
-
-      assert has_element?(view, "[data-qa='diff_line_row']")
-    end
-
-    test "the file a finding sent the reader to stays open however read it is", %{conn: conn, task: task} do
-      assert {:ok, read, _html} = live(conn, ~p"/tasks/#{task.id}")
-      read |> element("[data-qa='diff-viewed-checkbox']") |> render_click()
-      refute has_element?(read, "[data-qa='diff_line_row']")
-
-      assert {:ok, sent, _html} = live(conn, ~p"/tasks/#{task.id}?file=shipped.ex")
-
-      assert has_element?(sent, "[data-qa='diff_line_row']")
-    end
-
     test "expanding a gap fills in the lines the diff left out", %{conn: conn, task: task, repo: repo} do
-      File.write!(Path.join(repo, "wide.ex"), Enum.map_join(1..60, "", &"line #{&1}\n"))
-      git!(repo, ["add", "."])
-      git!(repo, ["commit", "-m", "wide"])
+      File.write!(Path.join(repo, "uncommitted.diff"), """
+      diff --git a/wide.ex b/wide.ex
+      --- a/wide.ex
+      +++ b/wide.ex
+      @@ -1,4 +1,4 @@
+      -line 1
+      +changed 1
+       line 2
+       line 3
+       line 4
+      @@ -57,4 +57,4 @@
+       line 57
+       line 58
+       line 59
+      -line 60
+      +changed 60
+      """)
 
-      File.write!(
-        Path.join(repo, "wide.ex"),
-        Enum.map_join(1..60, "", fn n -> if n in [1, 60], do: "changed #{n}\n", else: "line #{n}\n" end)
-      )
+      # Read off disk, as the file is now.
+      stub(Git, :expand_diff_gap, fn _task, "wide.ex", gap_index, start_line, end_line, :worktree ->
+        {"wide.ex:#{gap_index}", for(n <- start_line..end_line, do: %{text: "line #{n}", html: nil})}
+      end)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -3501,6 +3660,7 @@ defmodule RailWeb.TaskLiveTest do
 
     test "a cleaned-up worktree has no diff left to read", %{conn: conn, task: task} do
       {:ok, _gone} = Pipeline.update_task(task, %{worktree_path: "/tmp/gone_#{System.unique_integer([:positive])}"})
+      stub(Git, :load_diff, fn _scope, _task, _filter, _previous -> {:error, :no_worktree} end)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -3519,14 +3679,38 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       refute has_element?(view, "[data-qa='diff-file-row']", "midway.ex")
 
-      File.write!(Path.join(repo, "midway.ex"), "midway\n")
+      File.write!(
+        Path.join(repo, "branch.diff"),
+        """
+        diff --git a/midway.ex b/midway.ex
+        new file (untracked)
+        --- /dev/null
+        +++ b/midway.ex
+        @@ -0,0 +1 @@
+        +midway
+        """,
+        [:append]
+      )
+
       send(view.pid, {:run_events, run.id, []})
       _settled = render(view)
 
       assert has_element?(view, "[data-qa='diff-file-row']", "midway.ex")
 
       # A second batch inside the window does not go back to git.
-      File.write!(Path.join(repo, "later.ex"), "later\n")
+      File.write!(
+        Path.join(repo, "branch.diff"),
+        """
+        diff --git a/later.ex b/later.ex
+        new file (untracked)
+        --- /dev/null
+        +++ b/later.ex
+        @@ -0,0 +1 @@
+        +later
+        """,
+        [:append]
+      )
+
       send(view.pid, {:run_events, run.id, []})
       _settled = render(view)
 
@@ -3538,18 +3722,24 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       refute has_element?(view, "[data-qa='diff-file-row']", "later.ex")
 
-      File.write!(Path.join(repo, "later.ex"), "later\n")
+      File.write!(
+        Path.join(repo, "branch.diff"),
+        """
+        diff --git a/later.ex b/later.ex
+        new file (untracked)
+        --- /dev/null
+        +++ b/later.ex
+        @@ -0,0 +1 @@
+        +later
+        """,
+        [:append]
+      )
+
       send(view.pid, {:os_process_finished, run, %{}})
 
       # The page forwards to the component, which renders on its own turn.
       _settled = render(view)
       assert has_element?(view, "[data-qa='diff-file-row']", "later.ex")
-    end
-
-    test "offers a comment on each line of the diff", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "#diff-file-shipped-ex[data-comment-target] [data-qa='diff_comment_add']")
     end
 
     test "a comment saved on a line sits under it unsent, in either view, and tells the engineer nothing", %{
@@ -3558,9 +3748,30 @@ defmodule RailWeb.TaskLiveTest do
       engineer_run: run,
       repo: repo
     } do
-      File.write!(Path.join(repo, "tracked.txt"), "one\ntwo\n")
-      git!(repo, ["commit", "-am", "a second line"])
-      File.write!(Path.join(repo, "tracked.txt"), "two\nthree\n")
+      # tracked.txt was "one" on main, the branch committed "one\ntwo", and "two\nthree" is not committed yet.
+      File.write!(
+        Path.join(repo, "branch.diff"),
+        """
+        diff --git a/tracked.txt b/tracked.txt
+        --- a/tracked.txt
+        +++ b/tracked.txt
+        @@ -1 +1,2 @@
+        -one
+        +two
+        +three
+        """,
+        [:append]
+      )
+
+      File.write!(Path.join(repo, "uncommitted.diff"), """
+      diff --git a/tracked.txt b/tracked.txt
+      --- a/tracked.txt
+      +++ b/tracked.txt
+      @@ -1,2 +1,2 @@
+      -one
+       two
+      +three
+      """)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       stage = with_target(view, "#diff-view")
@@ -3710,7 +3921,8 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      File.write!(Path.join(repo, "shipped.ex"), "rewritten\n")
+      branch = Path.join(repo, "branch.diff")
+      File.write!(branch, branch |> File.read!() |> String.replace("+committed", "+rewritten"))
       send(view.pid, {:run_events, run.id, []})
       _settled = render(view)
       _settled = render(view)
@@ -3725,16 +3937,23 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#diff-file-shipped-ex [data-qa='diff_comment_quote']", "committed")
     end
 
-    test "a removed comment is gone, and a remove from a page drawn before it changes nothing", %{
-      conn: conn,
-      task: task,
-      scope: scope
-    } do
+    test "an unsent comment cannot be resolved, and a removed one is gone, a remove from a page drawn before it changing nothing",
+         %{conn: conn, task: task, scope: scope} do
       comment = %{path: "shipped.ex", line_kind: :added, line: 1, line_text: "committed", filter: :branch}
       {:ok, kept} = Pipeline.create_diff_comment(scope, task, Map.put(comment, :body, "Keep this one."))
       {:ok, dropped} = Pipeline.create_diff_comment(scope, task, Map.put(comment, :body, "Drop this one."))
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#diff-comment-#{kept.id} [data-qa='diff_comment_remove']")
+      refute has_element?(view, "#diff-comment-#{kept.id} [data-qa='diff_comment_resolve']")
+      view |> with_target("#diff-view") |> render_click("resolve_diff_comment", %{"id" => kept.id, "resolved" => "true"})
+
+      view
+      |> with_target("#diff-view")
+      |> render_click("resolve_diff_comment", %{"id" => "dcm_gone", "resolved" => "true"})
+
+      assert has_element?(view, "#diff-comment-#{kept.id}", "Not sent")
 
       view |> element("[data-qa='diff_comment_remove'][phx-value-id='#{dropped.id}']") |> render_click()
       refute has_element?(view, "[data-qa='diff_comment']", "Drop this one.")
@@ -3748,10 +3967,19 @@ defmodule RailWeb.TaskLiveTest do
       assert Pipeline.list_diff_comments(scope, task) == []
     end
 
-    test "the comment being written can be put away, and is not saved blank", %{conn: conn, task: task} do
+    test "every line of the diff offers a comment, which can be put away and is not saved blank", %{
+      conn: conn,
+      task: task
+    } do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#diff-file-shipped-ex[data-comment-target] [data-qa='diff_comment_add']")
+
       stage = with_target(view, "#diff-view")
       open = %{"path" => "shipped.ex", "kind" => "added", "old_line" => "", "new_line" => "1"}
+
+      render_click(stage, "open_diff_comment", open)
+      view |> element("[data-qa='diff_comment_body']") |> render_keydown(%{"key" => "Escape"})
+      refute has_element?(view, "[data-qa='diff_comment_form']")
 
       render_click(stage, "open_diff_comment", open)
       view |> form("[data-qa='diff_comment_form']", %{"body" => "Half a thought"}) |> render_change()
@@ -3787,7 +4015,19 @@ defmodule RailWeb.TaskLiveTest do
       task: task,
       repo: repo
     } do
-      File.write!(Path.join(repo, "tracked.txt"), "two\nthree\n")
+      File.write!(
+        Path.join(repo, "branch.diff"),
+        """
+        diff --git a/tracked.txt b/tracked.txt
+        --- a/tracked.txt
+        +++ b/tracked.txt
+        @@ -1 +1,2 @@
+        -one
+        +two
+        +three
+        """,
+        [:append]
+      )
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       stage = with_target(view, "#diff-view")
@@ -3820,23 +4060,6 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "#diff-comment-form-shipped-ex-added-1")
       assert [_one] = view |> render() |> Floki.parse_fragment!() |> Floki.find("[data-qa='diff_comment_form']")
-    end
-
-    test "Escape puts the comment being written away", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view
-      |> with_target("#diff-view")
-      |> render_click("open_diff_comment", %{
-        "path" => "shipped.ex",
-        "kind" => "added",
-        "old_line" => "",
-        "new_line" => "1"
-      })
-
-      view |> element("[data-qa='diff_comment_body']") |> render_keydown(%{"key" => "Escape"})
-
-      refute has_element?(view, "[data-qa='diff_comment_form']")
     end
 
     # The Review tray sends what is in the database, so every tab the person has open has to show exactly that.
@@ -3923,7 +4146,8 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(again, "#diff-comment-#{id}[aria-expanded='false']", "Resolved")
 
       # Lifted once the engineer rewrites the line, it quotes the line when opened.
-      File.write!(Path.join(repo, "shipped.ex"), "rewritten\n")
+      branch = Path.join(repo, "branch.diff")
+      File.write!(branch, branch |> File.read!() |> String.replace("+committed", "+rewritten"))
       assert {:ok, lifted, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(
@@ -3966,7 +4190,8 @@ defmodule RailWeb.TaskLiveTest do
       Phoenix.PubSub.broadcast(Rail.PubSub, "diff_comments:#{task.id}", {:diff_comments_changed, task.id})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      File.write!(Path.join(repo, "shipped.ex"), "rewritten\n")
+      branch = Path.join(repo, "branch.diff")
+      File.write!(branch, branch |> File.read!() |> String.replace("+committed", "+rewritten"))
       send(view.pid, {:run_events, run.id, []})
       _settled = render(view)
       _settled = render(view)
@@ -3977,30 +4202,6 @@ defmodule RailWeb.TaskLiveTest do
         assert has_element?(page, "#diff-comment-#{id} [data-qa='diff_comment_quote']", "committed")
         refute has_element?(page, "[data-qa='diff_comments_lifted']", "on a line that has changed")
       end
-    end
-
-    test "an unsent comment cannot be resolved", %{conn: conn, task: task, scope: scope} do
-      {:ok, %{id: id}} =
-        Pipeline.create_diff_comment(scope, task, %{
-          path: "shipped.ex",
-          line_kind: :added,
-          line: 1,
-          line_text: "committed",
-          filter: :branch,
-          body: "Say what was committed."
-        })
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "#diff-comment-#{id} [data-qa='diff_comment_remove']")
-      refute has_element?(view, "#diff-comment-#{id} [data-qa='diff_comment_resolve']")
-
-      view |> with_target("#diff-view") |> render_click("resolve_diff_comment", %{"id" => id, "resolved" => "true"})
-
-      view
-      |> with_target("#diff-view")
-      |> render_click("resolve_diff_comment", %{"id" => "dcm_gone", "resolved" => "true"})
-
-      assert has_element?(view, "#diff-comment-#{id}", "Not sent")
     end
 
     test "the comments list beside the diff jumps to a comment, unfolding what hides it", %{
@@ -4074,24 +4275,20 @@ defmodule RailWeb.TaskLiveTest do
 
       Pipeline.append_run_events(working.id, nil, ["[tool read_file] lib/rail.ex"])
 
-      {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+      # Git is only ever asked through Rail.Git, so the worktree is a directory, on a branch git cannot read.
+      worktree = Path.join(task.scratch_path, "worktree")
+      File.mkdir_p!(worktree)
+      {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
+
+      stub(Git, :load_branch_history, fn _task, _rounds ->
+        %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
+      end)
 
       %{task: task, run: working, other_role: other_role, other_run: other_run}
     end
 
-    test "switches to another agent on request, and stays there while the stage does", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
-
-      view |> element("#conversation-agent-engineer") |> render_click()
-      assert_patch(view, ~p"/tasks/#{task.id}?item=plan&agent=engineer")
-      assert has_element?(view, "#metadata-run-conversation-id", "sess_engineer")
-
-      send(view.pid, :task_changed)
-      assert has_element?(view, "#metadata-run-conversation-id", "sess_engineer")
-    end
-
     # One scroller serves every tab, so the scroll hook tells another run from a patch by its id.
-    test "the conversation's scrollers name the run they show", %{
+    test "switches to another agent on request, and stays there while the stage does, its scrollers naming the run", %{
       conn: conn,
       task: task,
       run: run,
@@ -4101,7 +4298,12 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#chat-messages[data-run-id='#{run.id}']")
 
       view |> element("#conversation-agent-engineer") |> render_click()
+      assert_patch(view, ~p"/tasks/#{task.id}?item=plan&agent=engineer")
+      assert has_element?(view, "#metadata-run-conversation-id", "sess_engineer")
       assert has_element?(view, "#chat-messages[data-run-id='#{other_run.id}']")
+
+      send(view.pid, :task_changed)
+      assert has_element?(view, "#metadata-run-conversation-id", "sess_engineer")
 
       view |> element("#toggle-raw-log") |> render_click()
       assert has_element?(view, "#raw-log-container[data-run-id='#{other_run.id}']")
@@ -4134,20 +4336,6 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#chat-composer-form")
     end
 
-    test "log lines for another run on the task stay out of the one being read", %{
-      conn: conn,
-      task: task,
-      other_run: other_run
-    } do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
-
-      send(view.pid, {:run_events, other_run.id, [%{id: "evt_designer", line: "The designer's line"}]})
-
-      _settled = render(view)
-      refute render(view) =~ "The designer&#39;s line"
-      refute render(view) =~ "The designer's line"
-    end
-
     test "stopping with nothing queued leaves the composer as it was", %{conn: conn, task: task, run: run} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
@@ -4156,17 +4344,6 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#chat-input")
       refute has_element?(view, "#chat-input", "Please")
       assert %Run{status: :finished} = Repo.reload!(run)
-    end
-
-    test "stopping puts the undelivered message ahead of the draft", %{conn: conn, task: task, run: run} do
-      {:ok, _queued} = Pipeline.update_run(run, %{pending_chat: "Please add a test"})
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
-
-      view |> element("#chat-composer-form") |> render_change(%{"message" => "Also this"})
-      view |> element("#cancel-queued-message") |> render_click()
-
-      assert render(view) =~ "Please add a test\n\nAlso this"
     end
 
     test "each tool step carries an icon for its kind", %{conn: conn, task: task, run: run} do
@@ -4221,8 +4398,15 @@ defmodule RailWeb.TaskLiveTest do
       assert length(String.split(bubble, "it is connected now")) == 2
     end
 
-    test "the raw log colors each line by its source", %{conn: conn, task: task, run: run} do
-      Pipeline.append_run_events(run.id, nil, ["[error] bad", "[human] hi", "[rail] note", "plain words"])
+    test "shows the raw log on request, colored by source, wrapped in the height its column leaves, and the chat again after",
+         %{conn: conn, task: task, run: run} do
+      Pipeline.append_run_events(run.id, nil, [
+        "[error] bad",
+        "[human] hi",
+        "[rail] note",
+        "plain words",
+        ~s({"type":"assistant","message":{"content":[{"type":"text","text":"#{String.duplicate("x", 400)}"}]}})
+      ])
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
@@ -4233,44 +4417,18 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='raw-log-line'].text-amber-300", "[human] hi")
       assert has_element?(view, "[data-qa='raw-log-line'].text-green-400", "[rail] note")
       assert has_element?(view, "[data-qa='raw-log-line'].text-zinc-300", "plain words")
-    end
 
-    test "the raw log takes whatever height its column leaves", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
-
-      view |> element("#toggle-raw-log") |> render_click()
-
-      assert [class] =
-               view |> render() |> Floki.parse_fragment!() |> Floki.attribute("#raw-log-container", "class")
-
-      assert "min-h-0" in String.split(class)
-      refute "min-h-[400px]" in String.split(class)
-    end
-
-    test "the raw log wraps long lines and never scrolls sideways", %{conn: conn, task: task, run: run} do
-      Pipeline.append_run_events(run.id, nil, [
-        ~s({"type":"assistant","message":{"content":[{"type":"text","text":"#{String.duplicate("x", 400)}"}]}})
-      ])
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
-
-      view |> element("#toggle-raw-log") |> render_click()
-
+      # It takes whatever height its column leaves, wraps long lines and never scrolls sideways.
       doc = view |> render() |> Floki.parse_fragment!()
       assert [class] = Floki.attribute(doc, "#raw-log-container", "class")
+      assert "min-h-0" in String.split(class)
+      refute "min-h-[400px]" in String.split(class)
       assert ["overflow-y-auto", "overflow-x-hidden"] -- String.split(class) == []
 
       assert [_first | _rest] = line_classes = Floki.attribute(doc, "[data-qa='raw-log-line']", "class")
       assert Enum.all?(line_classes, &("wrap-break-word" in String.split(&1)))
 
       assert "[tool read_file] lib/rail.ex" in (doc |> Floki.find("[data-qa='raw-log-line']") |> Enum.map(&Floki.text/1))
-    end
-
-    test "shows the raw log on request, and the chat again after", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
-
-      view |> element("#toggle-raw-log") |> render_click()
-      assert has_element?(view, "[data-qa='raw-log-line']")
 
       view |> element("#toggle-raw-log") |> render_click()
       assert has_element?(view, "[data-qa='chat-pane']")
@@ -4359,8 +4517,16 @@ defmodule RailWeb.TaskLiveTest do
       end)
     end
 
-    test "a message typed while the agent works waits on its run", %{conn: conn, task: task, run: run} do
+    test "a message typed while the agent works waits on its run, and an empty one is not a message", %{
+      conn: conn,
+      task: task,
+      run: run
+    } do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+      view |> element("#chat-composer-form") |> render_submit(%{"message" => "   "})
+      assert %Run{pending_chat: nil} = Repo.reload!(run)
+      refute has_element?(view, "#queued-banner")
 
       view |> element("#chat-composer-form") |> render_change(%{"message" => "Please add a test"})
       view |> element("#chat-composer-form") |> render_submit(%{"message" => "Please add a test"})
@@ -4380,6 +4546,17 @@ defmodule RailWeb.TaskLiveTest do
       assert %Run{pending_chat: nil, status: :finished} = Repo.reload!(run)
     end
 
+    test "stopping puts the undelivered message ahead of the draft", %{conn: conn, task: task, run: run} do
+      {:ok, _queued} = Pipeline.update_run(run, %{pending_chat: "Please add a test"})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+      view |> element("#chat-composer-form") |> render_change(%{"message" => "Also this"})
+      view |> element("#cancel-queued-message") |> render_click()
+
+      assert render(view) =~ "Please add a test\n\nAlso this"
+    end
+
     test "send now cuts the turn short and delivers what was queued", %{conn: conn, task: task, run: run} do
       {:ok, _queued} = Pipeline.update_run(run, %{pending_chat: "Please add a test"})
 
@@ -4392,22 +4569,20 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#conversation-tab-root")
     end
 
-    test "an empty message is not a message", %{conn: conn, task: task, run: run} do
+    test "new log lines reach the conversation while it is open, and lines for another run, on the task or not, stay out",
+         %{conn: conn, task: task, run: run, other_run: other_run} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
 
-      view |> element("#chat-composer-form") |> render_submit(%{"message" => "   "})
-
-      assert %Run{pending_chat: nil} = Repo.reload!(run)
-    end
-
-    test "new log lines reach the conversation while it is open", %{conn: conn, task: task, run: run} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
-
+      send(view.pid, {:run_events, other_run.id, [%{id: "evt_designer", line: "The designer's line"}]})
+      send(view.pid, {:run_events, "run_somebody_else", [%{line: "Not for this page"}]})
       send(view.pid, {:run_events, run.id, [%{id: UXID.generate!(), line: "A fresh line of output"}]})
 
       # The page forwards to the component, which renders on its own turn.
       _settled = render(view)
       assert render(view) =~ "A fresh line of output"
+      refute render(view) =~ "The designer&#39;s line"
+      refute render(view) =~ "The designer's line"
+      refute render(view) =~ "Not for this page"
     end
 
     # The turns are read once and again only when a turn nobody has seen shows
@@ -4433,14 +4608,6 @@ defmodule RailWeb.TaskLiveTest do
       end
 
       assert render(view) =~ "the second thing it said"
-    end
-
-    test "log lines for a run the page is not following are ignored", %{conn: conn, task: task} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
-
-      send(view.pid, {:run_events, "run_somebody_else", [%{line: "Not for this page"}]})
-
-      refute render(view) =~ "Not for this page"
     end
 
     test "a queued message going out shows the run working", %{conn: conn, task: task, run: run} do
@@ -4495,7 +4662,37 @@ defmodule RailWeb.TaskLiveTest do
     setup %{project: project, task: task} do
       {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
       {:ok, engineer_role} = Roles.get_role(project_id: project.id, stage: :engineer)
-      {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
+
+      # Git is only ever asked through Rail.Git, so the worktree is a directory, and the branch one git cannot
+      # read against main: on one commit, with no history to label and no change. A test that needs a change
+      # writes it as the patch in branch.diff, which the diff is read from.
+      worktree = Path.join(task.scratch_path, "worktree")
+      File.mkdir_p!(worktree)
+      File.write!(Path.join(worktree, "branch.diff"), "")
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: worktree})
+
+      stub(Git, :branch_fingerprint, fn _worktree_path ->
+        %{head_sha: String.duplicate("b", 40), dirty_digest: "clean"}
+      end)
+
+      stub(Git, :load_branch_history, fn _task, _rounds ->
+        %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
+      end)
+
+      # Rows come back unhighlighted, which the pane draws as their text.
+      read_diff = fn scope, task ->
+        viewed = Git.list_viewed_files(scope, task, :diff)
+
+        {:ok,
+         for file <- task.worktree_path |> Path.join("branch.diff") |> File.read!() |> parse_diff() do
+           rows = Enum.map(file.rows, &Map.put(&1, :html, nil))
+           Map.merge(file, %{rows: rows, viewed?: viewed[file.path] == file.digest})
+         end}
+      end
+
+      stub(Git, :load_diff, fn scope, task, _filter -> read_diff.(scope, task) end)
+      stub(Git, :load_diff, fn scope, task, _filter, _previous -> read_diff.(scope, task) end)
+      stub(Git, :worktree_dirty?, fn _worktree_path -> false end)
 
       {:ok, _engineer_run} =
         Pipeline.create_run(%{
@@ -4956,12 +5153,28 @@ defmodule RailWeb.TaskLiveTest do
       task: task,
       code: code
     } do
+      # The branch is one commit, HEAD, which the finding is raised on.
+      stub(Git, :load_branch_history, fn _task, _rounds ->
+        commit = %{
+          sha: String.duplicate("b", 40),
+          short_sha: "bbbbbbb",
+          parent: String.duplicate("0", 40),
+          subject: "the change under review",
+          at: DateTime.utc_now(),
+          label: "Implement",
+          merge?: false,
+          main?: false,
+          merged: nil,
+          conflicts: [],
+          files: 1,
+          additions: 1,
+          deletions: 1
+        }
+
+        %{base: "main", head: "bbbbbbb", commits: [commit], files: 1, additions: 1, deletions: 1}
+      end)
+
       File.mkdir_p!(Path.join(task.worktree_path, "lib/rail"))
-      File.write!(Path.join(task.worktree_path, "lib/rail/example.ex"), Enum.map_join(1..20, "", &"line #{&1}\n"))
-      git!(task.worktree_path, ["add", "."])
-      git!(task.worktree_path, ["commit", "-m", "before"])
-      git!(task.worktree_path, ["update-ref", "refs/remotes/origin/main", "HEAD"])
-      git!(task.worktree_path, ["checkout", "-b", "feature"])
 
       File.write!(
         Path.join(task.worktree_path, "lib/rail/example.ex"),
@@ -4971,8 +5184,20 @@ defmodule RailWeb.TaskLiveTest do
         end)
       )
 
-      git!(task.worktree_path, ["add", "."])
-      git!(task.worktree_path, ["commit", "-m", "the change under review"])
+      File.write!(Path.join(task.worktree_path, "branch.diff"), """
+      diff --git a/lib/rail/example.ex b/lib/rail/example.ex
+      --- a/lib/rail/example.ex
+      +++ b/lib/rail/example.ex
+      @@ -9,7 +9,7 @@ line 8
+       line 9
+       line 10
+       line 11
+      -line 12
+      +the line the finding points at
+       line 13
+       line 14
+       line 15
+      """)
 
       {:ok, _saved} = Pipeline.save_finding(task, code)
       {:ok, _pass} = Pipeline.save_review(task)
@@ -4981,14 +5206,12 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "[data-qa='finding_diff']", "lib/rail/example.ex")
       assert has_element?(view, "[data-qa='diff_line_row']", "the line the finding points at")
-
-      short = task.worktree_path |> git!(["rev-parse", "--short", "HEAD"]) |> String.trim()
-      assert has_element?(view, "#finding-open-in-diff", "Open #{short} in Diff")
+      assert has_element?(view, "#finding-open-in-diff", "Open bbbbbbb in Diff")
 
       view |> element("#finding-open-in-diff") |> render_click()
 
       assert has_element?(view, "#review-pane[data-item='diff']")
-      assert has_element?(view, "#diff-commit-picker", short)
+      assert has_element?(view, "#diff-commit-picker", "bbbbbbb")
       assert has_element?(view, "#diff-scroller[data-scroll-to='lib/rail/example.ex']")
       assert has_element?(view, "[data-qa='diff_file_section'][data-path='lib/rail/example.ex']")
     end
@@ -4996,13 +5219,6 @@ defmodule RailWeb.TaskLiveTest do
     # Only the lines the finding names and a few either side are shown, so the pane has
     # to say what it left out rather than let the reader take it for the whole change.
     test "a finding's code says what it left out", %{conn: conn, task: task, code: code} do
-      File.mkdir_p!(Path.join(task.worktree_path, "lib/rail"))
-      File.write!(Path.join(task.worktree_path, "lib/rail/example.ex"), Enum.map_join(1..80, "", &"line #{&1}\n"))
-      git!(task.worktree_path, ["add", "."])
-      git!(task.worktree_path, ["commit", "-m", "before"])
-      git!(task.worktree_path, ["update-ref", "refs/remotes/origin/main", "HEAD"])
-      git!(task.worktree_path, ["checkout", "-b", "feature"])
-
       after_change =
         Enum.map_join(1..80, "", fn
           n when n in 8..40 -> "rewritten line #{n}\n"
@@ -5010,9 +5226,22 @@ defmodule RailWeb.TaskLiveTest do
           n -> "line #{n}\n"
         end)
 
+      File.mkdir_p!(Path.join(task.worktree_path, "lib/rail"))
       File.write!(Path.join(task.worktree_path, "lib/rail/example.ex"), after_change)
-      git!(task.worktree_path, ["add", "."])
-      git!(task.worktree_path, ["commit", "-m", "the change under review"])
+
+      # The patch git writes for it: two hunks, each with three lines either side.
+      File.write!(
+        Path.join(task.worktree_path, "branch.diff"),
+        "diff --git a/lib/rail/example.ex b/lib/rail/example.ex\n--- a/lib/rail/example.ex\n+++ b/lib/rail/example.ex\n" <>
+          "@@ -5,39 +5,39 @@ line 4\n" <>
+          Enum.map_join(5..7, "", &" line #{&1}\n") <>
+          Enum.map_join(8..40, "", &"-line #{&1}\n") <>
+          Enum.map_join(8..40, "", &"+rewritten line #{&1}\n") <>
+          Enum.map_join(41..43, "", &" line #{&1}\n") <>
+          "@@ -67,7 +67,7 @@ line 66\n" <>
+          Enum.map_join(67..69, "", &" line #{&1}\n") <>
+          "-line 70\n+changed near the bottom\n" <> Enum.map_join(71..73, "", &" line #{&1}\n")
+      )
 
       {:ok, _saved} = Pipeline.save_finding(task, %{code | key: "long-hunk", title: "A long change", line: 20})
 
@@ -5302,7 +5531,11 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     # A double click's second click lands on the finding just moved to, which nobody has read.
-    test "a double click rules only the finding that was read", %{conn: conn, task: task, code: code} do
+    test "a double click rules only the finding that was read, and the one moved to is ruled once it has been seen", %{
+      conn: conn,
+      task: task,
+      code: code
+    } do
       # The page reads time off a clock the test holds still, however slow the machine is.
       stub(@clock, :monotonic_ms, fn -> 0 end)
 
@@ -5324,25 +5557,13 @@ defmodule RailWeb.TaskLiveTest do
                "#finding-a-major[aria-current='true'] [data-qa='review_finding_state']",
                "Needs your call"
              )
-    end
 
-    test "the finding moved to can be ruled on once it has been seen", %{conn: conn, task: task, code: code} do
-      # The page reads time off a clock the test holds still, however slow the machine is.
-      stub(@clock, :monotonic_ms, fn -> 0 end)
-
-      for {key, severity} <- [{"a-blocker", :blocker}, {"a-major", :major}],
-          do: {:ok, _saved} = Pipeline.save_finding(task, %{code | key: key, title: key, severity: severity})
-
-      {:ok, _pass} = Pipeline.save_review(task)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("#decide-fix-a-blocker") |> render_click()
       # The clock has moved past the double-click window.
       stub(@clock, :monotonic_ms, fn -> 1_000 end)
       view |> element("#decide-fix-a-major") |> render_click()
 
-      assert [%{key: "a-blocker", decision: :fix}, %{key: "a-major", decision: :fix}] = Pipeline.list_findings(task)
+      assert [%{key: "a-blocker", decision: :fix}, %{key: "a-major", decision: :fix}, %{key: "a-nit", decision: nil}] =
+               Pipeline.list_findings(task)
     end
 
     test "the row being read keeps itself in view", %{conn: conn, task: task, code: code} do
@@ -5381,7 +5602,11 @@ defmodule RailWeb.TaskLiveTest do
 
     # A frame goes to the client rather than through the render, because it
     # arrives several times a second and nothing else on the page moves with it.
-    test "a frame from the browser is pushed straight to the client", %{conn: conn, task: task} do
+    # A frame for a task nobody is reading is nothing to send anywhere.
+    test "a frame from the browser is pushed straight to the client, and one for another task is ignored", %{
+      conn: conn,
+      task: task
+    } do
       Repo.insert!(%BrowserSession{
         task_id: task.id,
         name: "explorer-1",
@@ -5392,10 +5617,12 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       view |> element("#review-item-browser") |> render_click()
 
+      send(view.pid, {:browser_frame, "tsk_somebody_else", "explorer-1", "somebody else's"})
       send(view.pid, {:browser_frame, task.id, "explorer-1", "some-base64"})
       _settled = render(view)
 
       assert_push_event(view, "browser:frame", %{data: "some-base64"})
+      refute_push_event(view, "browser:frame", %{data: "somebody else's"}, 100)
     end
 
     # An animated page paints dozens of frames a second, more than the socket can
@@ -5636,24 +5863,6 @@ defmodule RailWeb.TaskLiveTest do
 
       refute has_element?(view, "#review-browser-explorer-1")
       refute has_element?(view, "[data-qa=review_screencast]")
-    end
-
-    # A frame for a task nobody is reading is nothing to send anywhere.
-    test "a frame for another task is ignored", %{conn: conn, task: task} do
-      Repo.insert!(%BrowserSession{
-        task_id: task.id,
-        name: "explorer-1",
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#review-item-browser") |> render_click()
-
-      send(view.pid, {:browser_frame, "tsk_somebody_else", "explorer-1", "some-base64"})
-      _settled = render(view)
-
-      refute_push_event(view, "browser:frame", %{data: "some-base64"}, 100)
     end
   end
 
@@ -5911,16 +6120,36 @@ defmodule RailWeb.TaskLiveTest do
       parent: parent,
       first: first
     } do
-      remote = create_temp_git_repo(prefix: "rail_git_remote", initial_commit: false)
-      git!(remote, ["config", "receive.denyCurrentBranch", "ignore"])
-      repo = create_temp_git_repo()
-      git!(repo, ["remote", "add", "origin", remote])
-      git!(repo, ["push", "origin", "main"])
-      git!(repo, ["checkout", "-b", "feature"])
-      File.write!(Path.join(repo, "shipped.ex"), "committed\n")
-      git!(repo, ["add", "."])
-      git!(repo, ["commit", "-m", "the engineer's work"])
+      # Git is only ever asked through Rail.Git, so the worktree is a directory whose branch adds shipped.ex, and
+      # whose history git cannot read. Rows come back unhighlighted, which the pane draws as their text.
+      repo = Path.join(first.scratch_path, "worktree")
+      File.mkdir_p!(repo)
       {:ok, _child} = Pipeline.update_task(first, %{worktree_path: repo})
+
+      shipped =
+        for file <-
+              parse_diff("""
+              diff --git a/shipped.ex b/shipped.ex
+              new file mode 100644
+              --- /dev/null
+              +++ b/shipped.ex
+              @@ -0,0 +1 @@
+              +committed
+              """),
+            do: Map.merge(file, %{rows: Enum.map(file.rows, &Map.put(&1, :html, nil)), viewed?: false})
+
+      stub(Git, :load_diff, fn _scope, _task, _filter, _previous -> {:ok, shipped} end)
+
+      stub(Git, :load_branch_history, fn _task, _rounds ->
+        %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
+      end)
+
+      stub(Git, :branch_fingerprint, fn _worktree_path ->
+        %{head_sha: String.duplicate("a", 40), dirty_digest: "clean"}
+      end)
+
+      stub(Git, :worktree_dirty?, fn _worktree_path -> false end)
+      stub(Git, :branch_unpushed?, fn _worktree_path -> false end)
 
       to = ~p"/tasks/#{parent.id}?child=TLV-11&item=diff&file=shipped.ex"
 
@@ -5939,8 +6168,15 @@ defmodule RailWeb.TaskLiveTest do
     } do
       {:ok, %{id: lead_id}} = Roles.get_role(project_id: project.id, stage: :review_lead)
 
+      # Git is only ever asked through Rail.Git, so each worktree is a directory, on a branch git cannot read.
+      stub(Git, :load_branch_history, fn _task, _rounds ->
+        %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
+      end)
+
       for child <- [first, third] do
-        {:ok, _reviewing} = Pipeline.update_task(child, %{stage: :review, worktree_path: create_temp_git_repo()})
+        worktree = Path.join(child.scratch_path, "worktree")
+        File.mkdir_p!(worktree)
+        {:ok, _reviewing} = Pipeline.update_task(child, %{stage: :review, worktree_path: worktree})
 
         {:ok, _lead} =
           Pipeline.create_run(%{
@@ -6214,16 +6450,6 @@ defmodule RailWeb.TaskLiveTest do
       end)
     end
 
-    test "a child's Children item shows its parent's board", %{conn: conn, parent: parent} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-11")
-
-      view |> element("#review-item-children") |> render_click()
-
-      assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-11&item=children")
-      assert has_element?(view, "#split-board")
-      assert has_element?(view, "#split-row-TLV-12")
-    end
-
     test "the switcher lists every child with where it stands, and steps to its neighbors", %{
       conn: conn,
       parent: parent,
@@ -6265,13 +6491,22 @@ defmodule RailWeb.TaskLiveTest do
       assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-12")
     end
 
-    test "a selected child's items keep it in the URL", %{conn: conn, parent: parent} do
+    test "a selected child's items keep it in the URL, and its Children item shows its parent's board", %{
+      conn: conn,
+      parent: parent
+    } do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-11")
 
       assert has_element?(view, "#child-switcher")
 
       view |> element("#review-item-issue") |> render_click()
       assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-11&item=issue")
+
+      view |> element("#review-item-children") |> render_click()
+
+      assert_patch(view, ~p"/tasks/#{parent.id}?child=TLV-11&item=children")
+      assert has_element?(view, "#split-board")
+      assert has_element?(view, "#split-row-TLV-12")
     end
 
     test "a child moving on or merging updates its row without a reload", %{

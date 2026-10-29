@@ -3,6 +3,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
 
   import Phoenix.LiveViewTest
 
+  alias Rail.Git
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
@@ -385,14 +386,11 @@ defmodule RailWeb.Settings.RolesLiveTest do
     admin_conn: conn,
     admin_user: admin_user
   } do
-    remote = create_temp_git_repo(prefix: "rail_roles_live_remote")
-    File.mkdir_p!(Path.join(remote, ".rail/prompts"))
-    File.write!(Path.join(remote, ".rail/prompts/engineer.md"), "From the repo.\n")
-    git!(remote, ["add", "."])
-    git!(remote, ["commit", "-m", "add prompt"])
-    clone = create_temp_git_repo(prefix: "rail_roles_live_clone")
-    git!(clone, ["remote", "add", "origin", remote])
-    git!(clone, ["fetch", "origin", "main"])
+    # The default branch, as fetched, holds the engineer's prompt and no other stage's.
+    stub(Git, :read_default_branch_file, fn
+      _project, ".rail/prompts/engineer.md" -> {:ok, "From the repo.\n"}
+      _project, path -> {:error, "fatal: path '#{path}' does not exist in 'refs/remotes/origin/main'"}
+    end)
 
     {:ok, project} =
       Projects.create_project(system_scope(), %{
@@ -401,7 +399,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_030,
         key: "P13030",
         default_branch: "main",
-        clone_path: clone,
+        clone_path: "/tmp/repos/roles-live-13030",
         linear_state_ids: %{"triage" => "st_triage"}
       })
 
