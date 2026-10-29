@@ -105,6 +105,22 @@ defmodule Rail.Pipeline.Actions.ListCommentsTest do
            ] = Pipeline.list_comments(grace, task)
   end
 
+  test "a design pick is not listed, while a typed message that starts with the same words is",
+       %{task: task, plan_run: plan_run, ada: %{user: %{id: ada_id}} = ada, grace: grace} do
+    {:ok, _delivery, _run} = Pipeline.send_message(ada, Repo.reload!(plan_run), "I picked One list (one-list).")
+
+    {:ok, _delivery, _run} =
+      Pipeline.send_message(ada, Repo.reload!(plan_run), "I picked One list (one-list). Fold the tray too.")
+
+    assert [
+             %{
+               kind: :message,
+               user: %{id: ^ada_id},
+               comment: %{body: "I picked One list (one-list). Fold the tray too."}
+             }
+           ] = Pipeline.list_comments(grace, task)
+  end
+
   test "a Review Send is listed as its comments to everyone, never as a message",
        %{task: task, lead_run: lead_run, ada: %{user: %{id: ada_id}} = ada, grace: grace} do
     {:ok, %{id: screen_id}} = Pipeline.create_screen_comment(ada, task, %{"key" => "tray", "body" => "Fold it."})

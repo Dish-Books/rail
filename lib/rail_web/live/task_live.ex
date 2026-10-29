@@ -418,7 +418,9 @@ defmodule RailWeb.TaskLive do
     socket = assign(socket, :plan_tab, opts[:tab])
 
     socket =
-      if opts[:agent], do: push_patch(socket, to: task_path(socket, item: "plan", agent: opts[:agent])), else: socket
+      if opts[:agent],
+        do: push_patch(socket, to: task_path(socket, item: "plan", agent: opts[:agent]), replace: true),
+        else: socket
 
     send_update(TaskDetail, id: "task-detail", open_plan: if(opts[:tab], do: "1"))
     {:noreply, socket}

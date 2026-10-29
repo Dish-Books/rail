@@ -17,6 +17,8 @@ defmodule Rail.Pipeline.Actions.ListComments do
   alias Rail.Users
 
   @sender ~r/\A\[human:([^\]\s]+)\] ?/
+  # The one line `PickDesignOption` sends for the person who picked; nobody typed it.
+  @pick ~r/\AI picked [^\n]+ \([a-z0-9-]+\)\.\z/
 
   @doc """
   Returns `%{kind:, id:, at:, user:, comment:}` for each comment on `task` the scope user sees, oldest first. A
@@ -37,7 +39,7 @@ defmodule Rail.Pipeline.Actions.ListComments do
     do: %{kind: kind, id: comment.id, at: comment.inserted_at, user: comment.user, comment: comment}
 
   # One send writes every line of a message at one time, and a plan comment round or a round of answers is listed as
-  # its comments or not at all.
+  # its comments or not at all. A design pick is not listed either.
   defp messages(scope, %Task{id: task_id} = task) do
     lines =
       Repo.all(
@@ -58,7 +60,8 @@ defmodule Rail.Pipeline.Actions.ListComments do
 
     for [{first, role} | _rest] = message <- grouped,
         body = Enum.map_join(message, "\n", fn {event, _role} -> Regex.replace(@sender, event.line, "") end),
-        PlanComment.parse_message(body) == nil and Question.parse_answers_message(body, questions) == nil do
+        PlanComment.parse_message(body) == nil and Question.parse_answers_message(body, questions) == nil,
+        not Regex.match?(@pick, String.trim(body)) do
       %{
         kind: :message,
         id: first.id,
