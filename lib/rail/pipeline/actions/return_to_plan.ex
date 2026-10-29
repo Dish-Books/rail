@@ -1,16 +1,18 @@
 defmodule Rail.Pipeline.Actions.ReturnToPlan do
   @moduledoc """
-  Back to Plan, Discard's other choice: erases the work as Discard does but keeps the task with its ticket, design
-  and plan, and starts the Planner on them on a new conversation.
+  Back to Plan, Discard's other choice: erases the work as Discard does but keeps the task with its ticket, design,
+  plan and the custom stages before Plan, and starts the Planner on them on a new conversation.
   """
 
   import Ecto.Query
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.ClearBranch
+  import Rail.Pipeline.Utils.StageOutputPath
 
   alias Rail.Git
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Finding
@@ -21,6 +23,7 @@ defmodule Rail.Pipeline.Actions.ReturnToPlan do
   alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
+  alias Rail.Roles.Schemas.Role
   alias Rail.Scope
   alias Rail.Tools
 
@@ -46,17 +49,34 @@ defmodule Rail.Pipeline.Actions.ReturnToPlan do
         do: {:ok, _stopped, _queued} = Pipeline.stop_run(scope, run)
 
     :ok = Tools.stop_browser_session(task)
-    remove_work(task)
+    sequence = Issue.calculate_stages(issue)
+
+    # A custom stage before Plan is what Plan was given, so its approved run, file and comments stay, as the design does.
+    kept =
+      if :plan in sequence, do: for({:custom, name} <- Enum.take_while(sequence, &(&1 != :plan)), do: name), else: []
+
+    remove_work(task, kept)
 
     {:ok, planning} =
       Repo.transaction(fn ->
+        kept_roles =
+          from(role in Role, where: role.project_id == ^task.project_id and role.custom_stage in ^kept, select: role.id)
+
         # A run's processes, events, questions and retrievals cascade from it.
-        Repo.delete_all(from(r in Run, where: r.task_id == ^task_id))
+        Repo.delete_all(from(r in Run, where: r.task_id == ^task_id and r.role_id not in subquery(kept_roles)))
         Repo.delete_all(from(r in Round, where: r.task_id == ^task_id and r.number > 1))
         task.rounds |> Enum.find(&(&1.number == 1)) |> Round.return_to_plan_changeset() |> Repo.update!()
 
-        for schema <- [FindingComment, DiffComment, ScreenComment, PlanComment, Finding],
+        for schema <- [FindingComment, DiffComment, ScreenComment, Finding],
             do: Repo.delete_all(from(row in schema, where: row.task_id == ^task_id))
+
+        Repo.delete_all(
+          from(c in PlanComment,
+            where:
+              c.task_id == ^task_id and
+                (c.target != :output or is_nil(c.custom_stage) or c.custom_stage not in ^kept)
+          )
+        )
 
         :ok = Git.delete_viewed_files(task)
         {:ok, _reset} = reset_ticket(issue)
@@ -73,16 +93,20 @@ defmodule Rail.Pipeline.Actions.ReturnToPlan do
     {:ok, Repo.reload!(planning)}
   end
 
-  # The design folder is the picked design's pages, which Plan carries on from.
-  defp remove_work(%Task{project: project, scratch_path: scratch_path} = task) do
+  # The design folder is the picked design's pages, which Plan carries on from, as it does the kept stages' files.
+  defp remove_work(%Task{project: project, scratch_path: scratch_path} = task, kept) do
     if is_binary(project.clone_path) do
       Git.remove_worktree(project.clone_path, task.worktree_path)
       Git.delete_branch(project.clone_path, task.worktree_name)
     end
 
     for path <- Path.wildcard(Path.join(scratch_path, "*"), match_dot: true),
-        Path.basename(path) != "design",
+        Path.basename(path) not in ["design", "stages"],
         do: File.rm_rf!(path)
+
+    for {%IssueStage{stage: :custom, name: name}, position} <- Enum.with_index(task.issue.stages, 1),
+        name not in kept,
+        do: File.rm_rf!(stage_output_path(task, position, name))
   end
 
   defp reset_ticket(%Issue{state: state} = issue) do

@@ -2,8 +2,8 @@ defmodule Rail.Pipeline.Actions.CreatePlanComment do
   @moduledoc """
   Saves a comment on the Plan step's output, unsent, for the person writing it. A design comment is only for the
   picked option, a ticket or plan comment only once that document is saved, one on the next round's plan only while
-  it waits on approval, one on a custom stage's output only while the task is at that stage with its file saved, and
-  any comment only while the run can take a message, as typing in its chat can.
+  it waits on approval, one on a custom stage's output only while the task is at that stage with its file saved, naming
+  that stage, and any comment only while the run can take a message, as typing in its chat can.
   """
 
   import Rail.Pipeline.Utils.BroadcastPlanComments
@@ -30,9 +30,13 @@ defmodule Rail.Pipeline.Actions.CreatePlanComment do
     # Read again, so a page drawn before the chat closed cannot write after it.
     with %Run{} = run <- Repo.get(Run, run.id),
          true <- Run.can_chat?(run) || {:error, :chat_unavailable},
-         :ok <- Task |> Repo.get!(run.task_id) |> Repo.preload(:issue) |> validate_target(changeset),
+         %Task{} = task <- Task |> Repo.get!(run.task_id) |> Repo.preload(:issue),
+         :ok <- validate_target(task, changeset),
          :ok <- validate_run(run, changeset),
-         {:ok, comment} <- changeset |> Ecto.Changeset.put_change(:task_id, run.task_id) |> Repo.insert() do
+         # An output comment names the stage whose file it is on, so the Comments item opens it there later.
+         stage = if(Ecto.Changeset.get_field(changeset, :target) == :output, do: task.custom_stage),
+         {:ok, comment} <-
+           changeset |> Ecto.Changeset.change(task_id: run.task_id, custom_stage: stage) |> Repo.insert() do
       broadcast_plan_comments(run.task_id, user_id)
       {:ok, comment}
     else

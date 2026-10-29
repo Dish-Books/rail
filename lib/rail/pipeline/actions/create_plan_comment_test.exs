@@ -190,7 +190,7 @@ defmodule Rail.Pipeline.Actions.CreatePlanCommentTest do
     {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Recordings", description: "Recordings open blank."})
     {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan})
 
-    assert {:ok, %PlanComment{target: :ticket, element_label: "Paragraph 1"}} =
+    assert {:ok, %PlanComment{target: :ticket, element_label: "Paragraph 1", custom_stage: nil}} =
              Pipeline.create_plan_comment(ada, run, ticket)
 
     assert {:ok, %PlanComment{target: :plan, element_text: "One module decides."}} =
@@ -302,7 +302,9 @@ defmodule Rail.Pipeline.Actions.CreatePlanCommentTest do
 
     {:ok, _saved} = Pipeline.save_stage_output(task, %{markdown: "sweet_xml 0.7.5 is AGPL-3.0."})
     assert {:error, :no_output} = Pipeline.create_plan_comment(ada, plan_run, attrs)
-    assert {:ok, %PlanComment{target: :output, status: :unsent}} = Pipeline.create_plan_comment(ada, run, attrs)
+
+    assert {:ok, %PlanComment{target: :output, status: :unsent, custom_stage: "License check"}} =
+             Pipeline.create_plan_comment(ada, run, attrs)
 
     assert %{element_label: ["can't be blank"]} =
              errors_on(PlanComment.changeset(%PlanComment{}, Map.delete(attrs, :element_label)))

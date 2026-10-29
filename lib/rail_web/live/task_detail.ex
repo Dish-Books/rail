@@ -923,7 +923,7 @@ defmodule RailWeb.Live.TaskDetail do
   # Everything the open item shows is read off the rows and the disk again; what only one item needs is
   # read only while it is the one open.
   defp load(socket) do
-    %{task: task, current_scope: scope} = socket.assigns
+    %{task: task} = socket.assigns
     findings = Pipeline.list_findings(task)
     passes = Pipeline.read_review(task)
     runs = role_runs(task)
@@ -966,10 +966,13 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign_selected(selected, findings)
     |> assign(:commentable, task.stage in [:review, :finalize, :merged] and is_nil(task.cleaned_up_at))
     |> assign_finding_comments()
-    |> assign(:comments, if(socket.assigns.item == :comments, do: Pipeline.list_comments(scope, task), else: []))
+    |> assign_comments()
     |> watch()
     |> tray(findings, passes, phase)
   end
+
+  defp assign_comments(%{assigns: %{task: task, item: item, current_scope: scope}} = socket),
+    do: assign(socket, :comments, if(item == :comments, do: Pipeline.list_comments(scope, task), else: []))
 
   # The custom stage item open, with its run beside it, and whether the stage the task is at waits on its Approve.
   defp assign_custom_stage(%{assigns: %{task: task, item: item, current_scope: scope}} = socket) do
@@ -1018,6 +1021,13 @@ defmodule RailWeb.Live.TaskDetail do
     socket |> pick(:findings) |> assign(:selected_key, finding.key) |> assign(:filed_index, 0) |> load()
   end
 
+  # A comment on a custom stage's file, or a message to its agent, opens the stage's item while its sequence has it.
+  defp open_comment(socket, %{kind: :plan, comment: %PlanComment{target: :output, custom_stage: name}}),
+    do: open_stage(socket, name)
+
+  defp open_comment(socket, %{kind: :message, comment: %{role: %Role{custom_stage: "" <> name}}}),
+    do: open_stage(socket, name)
+
   defp open_comment(socket, %{kind: :plan, comment: %PlanComment{target: :fix_plan}}) do
     item = if waiting_plan?(socket.assigns), do: :fix_plan, else: :plan
     socket |> pick(item) |> assign(:plan_round, nil) |> load()
@@ -1032,6 +1042,13 @@ defmodule RailWeb.Live.TaskDetail do
   defp open_comment(socket, %{kind: :message, comment: %{role: role}}) do
     send(self(), {:open_plan, %{agent: Atom.to_string(role.stage)}})
     socket
+  end
+
+  defp open_stage(%{assigns: %{task: task}} = socket, name) do
+    case custom_stage_item(task.issue, {:custom, name}) do
+      %{key: key} -> socket |> pick(key) |> load()
+      nil -> socket
+    end
   end
 
   # The round's plan, what changed in its rulings and whether it can be approved. Its item opens only while there is one.

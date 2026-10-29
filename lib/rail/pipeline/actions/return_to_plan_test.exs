@@ -5,6 +5,7 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
   alias Rail.Git
   alias Rail.GitHub.Client
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Learnings
   alias Rail.Learnings.Schemas.Observation
@@ -241,6 +242,64 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
 
     assert %Issue{state: :in_progress, state_name: nil} = Repo.get!(Issue, issue_id)
     assert_enqueued(worker: SyncIssue, args: %{issue_id: issue_id, fields: ["state", "state_name"]})
+  end
+
+  test "keeps the run, file and comments of a custom stage before Plan, and erases one after it", %{
+    scope: scope,
+    task: task,
+    issue: issue,
+    reader: reader
+  } do
+    stages = [
+      %IssueStage{stage: :custom, name: "Missing strings", prompt: "List the keys with no translation."},
+      %IssueStage{stage: :plan},
+      %IssueStage{stage: :engineer},
+      %IssueStage{stage: :custom, name: "License check", prompt: "Check each license."},
+      %IssueStage{stage: :review}
+    ]
+
+    issue |> Ecto.Changeset.change() |> Ecto.Changeset.put_embed(:stages, stages) |> Repo.update!()
+
+    [{%Run{id: kept_run_id}, %PlanComment{id: kept_comment_id}}, {%Run{id: gone_run_id}, %PlanComment{id: gone_id}}] =
+      for name <- ["Missing strings", "License check"] do
+        {:ok, task} = Pipeline.update_task(task, %{stage: :custom, custom_stage: name})
+        {:ok, _saved} = Pipeline.save_stage_output(task, %{markdown: "#{name} found nothing."})
+        {:ok, role} = Roles.get_custom_stage_role(task.project_id, name)
+
+        {:ok, run} =
+          Pipeline.create_run(%{
+            task_id: task.id,
+            role_id: role.id,
+            status: :finished,
+            stage_outcome: :done,
+            started_at: DateTime.utc_now()
+          })
+
+        comment =
+          Repo.insert!(%PlanComment{
+            task_id: task.id,
+            user_id: reader.id,
+            target: :output,
+            custom_stage: name,
+            status: :sent,
+            body: "Say more."
+          })
+
+        {run, comment}
+      end
+
+    {:ok, task} = Pipeline.get_task(task.id)
+
+    assert {:ok, %Task{stage: :plan, custom_stage: nil} = planning} = Pipeline.return_to_plan(scope, task)
+
+    runs = Repo.all(from(r in Run, where: r.task_id == ^task.id))
+    assert Enum.any?(runs, &(&1.id == kept_run_id))
+    refute Enum.any?(runs, &(&1.id == gone_run_id))
+    assert %PlanComment{custom_stage: "Missing strings"} = Repo.get(PlanComment, kept_comment_id)
+    assert Repo.get(PlanComment, gone_id) == nil
+
+    assert [%{name: "Missing strings", markdown: "Missing strings found nothing."}] =
+             Pipeline.read_stage_outputs(planning)
   end
 
   test "a run started while GitHub closed the pull request is stopped before its row goes", %{

@@ -499,7 +499,7 @@ defmodule RailWeb.TaskLive do
   # conversation reads.
   def handle_info({:review_item, item}, socket) do
     agent = if item in [:plan, :fix_plan], do: socket.assigns.agent
-    path = task_path(socket, item: Atom.to_string(item), agent: agent)
+    path = task_path(socket, item: to_string(item), agent: agent)
     socket = socket |> assign(:plan_tab, nil) |> push_patch(to: path, replace: true)
     {:noreply, socket}
   end
@@ -826,6 +826,12 @@ defmodule RailWeb.TaskLive do
 
   # The tab that sent the task back navigates from its own handle_async; leaving first would kill the action.
   defp follow_back_to_plan(%{assigns: %{discarding: true}} = socket, _was, _task), do: socket
+
+  # A custom stage before Plan reaches Plan by its Approve; only one after Plan comes back to it.
+  defp follow_back_to_plan(socket, %Task{id: id, stage: :custom} = was, %Task{id: id, stage: :plan}) do
+    after_plan = was.issue |> Issue.calculate_stages() |> Enum.drop_while(&(&1 != :plan))
+    if Task.current_stage(was) in after_plan, do: push_navigate(socket, to: ~p"/tasks/#{id}?item=plan"), else: socket
+  end
 
   defp follow_back_to_plan(socket, %Task{id: id, stage: was}, %Task{id: id, stage: :plan})
        when was in [:engineer, :review, :finalize], do: push_navigate(socket, to: ~p"/tasks/#{id}?item=plan")

@@ -62,6 +62,8 @@ defmodule Rail.Pipeline.Schemas.PlanComment do
     field :element_kind, Ecto.Enum, values: @element_kinds
     field :element_label, :string
     field :element_occurrence, :integer
+    # The custom stage whose file an output comment is on, set by the caller.
+    field :custom_stage, :string
 
     embeds_one :capture, PlanCommentCapture, on_replace: :update
 

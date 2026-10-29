@@ -61,7 +61,7 @@ defmodule Rail.Pipeline.Workers.StartEngineerTest do
 
   test "a task deleted while the job waited on its lock starts nothing", %{task: %Task{id: task_id} = task} do
     reject(Tools, :start_os_process, 2)
-    reject(Rail.Git, :get_or_create_worktree, 2)
+    reject(Git, :get_or_create_worktree, 2)
 
     pending =
       with_task_lock(task_id, fn ->

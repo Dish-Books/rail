@@ -188,6 +188,15 @@ defmodule RailWeb.Components.CommentList do
     """
   end
 
+  # A row written before comments named their stage has none, so it reads as the output it is on.
+  defp place(%{entry: %{kind: :plan, comment: %{target: :output} = comment}} = assigns) do
+    assigns = assign(assigns, :what, comment.custom_stage || "Output")
+
+    ~H"""
+    <.on icon="pi-puzzle-piece" what={@what} detail={@entry.comment.element_label} />
+    """
+  end
+
   attr :icon, :string, required: true
   attr :what, :string, required: true
   attr :detail, :string, required: true
@@ -218,6 +227,10 @@ defmodule RailWeb.Components.CommentList do
     do: if(shot_gone?(entry, screen_keys), do: "Open Screens", else: "Open the screen")
 
   defp opens(%{kind: :finding}, _screen_keys), do: "Open the finding"
+
+  defp opens(%{kind: :plan, comment: %{target: :output, custom_stage: name}}, _screen_keys),
+    do: if(is_binary(name), do: "Open in #{name}", else: "Open its stage")
+
   defp opens(%{kind: :plan}, _screen_keys), do: "Open in Plan"
 
   defp unsent?(%{comment: %{status: :unsent}}), do: true

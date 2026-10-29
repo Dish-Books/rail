@@ -17,6 +17,7 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
@@ -1431,6 +1432,56 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("#discard-choice-plan input") |> render_click()
       view |> element("#confirm-discard") |> render_click()
       assert_redirect(view, ~p"/tasks/#{task_id}?item=plan", 1_000)
+
+      assert_redirect(other, ~p"/tasks/#{task_id}?item=plan", 1_000)
+    end
+
+    test "another page open on a custom stage after Plan goes to the plan when the task goes back", %{
+      conn: conn,
+      scope: scope,
+      project: project
+    } do
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{"id" => "lin_task_live_license", "identifier" => "TLV-3", "title" => "Dependency updates"}
+            }
+          }
+        })
+      end)
+
+      stages = [
+        %IssueStage{stage: :plan},
+        %IssueStage{stage: :engineer},
+        %IssueStage{stage: :custom, name: "License check", prompt: "Check each license."},
+        %IssueStage{stage: :review}
+      ]
+
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Dependency updates", stages: stages})
+      {:ok, %Task{id: task_id} = task} = Pipeline.create_task(issue, {:custom, "License check"})
+      {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+      Repo.insert!(%Round{
+        task_id: task_id,
+        number: 1,
+        plan: @plan,
+        approved_at: DateTime.utc_now(),
+        ticket: %Round.Ticket{title: "Dependency updates", description: "The ticket."}
+      })
+
+      {:ok, role} = Roles.get_custom_stage_role(project.id, "License check")
+
+      {:ok, _checked} =
+        Pipeline.create_run(%{task_id: task_id, role_id: role.id, status: :finished, started_at: DateTime.utc_now()})
+
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      assert {:ok, other, _html} = live(conn, ~p"/tasks/#{task_id}?item=stage-3")
+      assert has_element?(other, "#review-item-stage-3[aria-current='true']")
+
+      assert {:ok, %Task{stage: :plan}} = Pipeline.return_to_plan(scope, task)
 
       assert_redirect(other, ~p"/tasks/#{task_id}?item=plan", 1_000)
     end
@@ -7057,6 +7108,60 @@ defmodule RailWeb.TaskLiveTest do
 
       {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=stage-9")
       assert has_element?(view, "#review-item-stage-1[aria-current='true']")
+    end
+
+    test "clicking the stage's item from another item opens its file", %{conn: conn, task: task} do
+      {:ok, _saved} = Pipeline.save_stage_output(task, %{markdown: "12 keys have no German entry."})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=issue")
+
+      view |> element("#review-item-stage-1") |> render_click()
+
+      assert_patch(view, ~p"/tasks/#{task.id}?item=stage-1")
+      assert has_element?(view, "#review-item-stage-1[aria-current='true']")
+      assert has_element?(view, "#custom-stage-output", "12 keys have no German entry.")
+    end
+
+    test "the Comments item names the stage on a comment on its file and a message to its agent, and opens the stage", %{
+      conn: conn,
+      scope: scope,
+      task: task,
+      run: run
+    } do
+      {:ok, _saved} = Pipeline.save_stage_output(task, %{markdown: "12 keys have no German entry."})
+
+      {:ok, %{id: comment_id}} =
+        Pipeline.create_plan_comment(scope, run, %{
+          target: :output,
+          body: "Say which screens.",
+          element_kind: :paragraph,
+          element_label: "Paragraph 1",
+          element_occurrence: 1,
+          element_text: "12 keys have no German entry."
+        })
+
+      [%{id: message_id}] = Pipeline.append_run_events(run.id, nil, ["[human:#{scope.user.id}] Also French."])
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=comments")
+
+      assert has_element?(view, "#comment-#{comment_id}", "Missing strings")
+      assert has_element?(view, "#comment-#{comment_id}", "Paragraph 1")
+      assert has_element?(view, "#comment-#{comment_id} [data-qa=comment_opens]", "Open in Missing strings")
+      assert has_element?(view, "#comment-#{message_id}", "Missing strings")
+
+      view |> element("#comment-#{comment_id}") |> render_click()
+      assert_patch(view, ~p"/tasks/#{task.id}?item=stage-1")
+      assert has_element?(view, "#review-item-stage-1[aria-current='true']")
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=comments")
+      view |> element("#comment-#{message_id}") |> render_click()
+      assert_patch(view, ~p"/tasks/#{task.id}?item=stage-1")
+      assert has_element?(view, "#review-item-stage-1[aria-current='true']")
+
+      # A row from before comments named their stage opens nothing, leaving the list where it is.
+      Repo.update_all(from(c in PlanComment, where: c.id == ^comment_id), set: [custom_stage: nil])
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=comments")
+      assert has_element?(view, "#comment-#{comment_id} [data-qa=comment_opens]", "Open its stage")
+      view |> element("#comment-#{comment_id}") |> render_click()
+      assert has_element?(view, "#review-item-comments[aria-current='true']")
     end
   end
 
