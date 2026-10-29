@@ -4,6 +4,7 @@ defmodule Rail.Workflows.Actions.StartWorkflowTest do
 
   alias Rail.GitHub.Client
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Projects
   alias Rail.Users
   alias Rail.Workflows
@@ -110,6 +111,50 @@ defmodule Rail.Workflows.Actions.StartWorkflowTest do
     set_skip.([:demo])
 
     assert %Issue{skipped_steps: [:product, :design]} = Repo.get!(Issue, issue_id)
+  end
+
+  test "the issue a workflow opens keeps its file's stages, custom ones with their prompts, whatever the file says later",
+       %{workflow: workflow} do
+    stub(DateTime, :utc_now, fn -> ~U[2026-10-12 09:00:30.000000Z] end)
+
+    stages = [
+      %IssueStage{stage: :plan},
+      %IssueStage{stage: :engineer},
+      %IssueStage{stage: :custom, name: "License check", prompt: "Check each license."},
+      %IssueStage{stage: :review}
+    ]
+
+    set_stages = fn stages ->
+      Repo.update_all(from(w in Workflow, where: w.id == ^workflow.id),
+        set: [definition: %{workflow.definition | stages: stages}]
+      )
+    end
+
+    set_stages.(stages)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_wf_stages", "identifier" => "TST-86", "title" => "Dependency updates 2026-10-12"}
+          }
+        }
+      })
+    end)
+
+    assert {:ok, %Issue{id: issue_id}} = Workflows.start_workflow(workflow)
+
+    set_stages.([])
+
+    assert %Issue{
+             stages: [
+               %IssueStage{stage: :plan},
+               %IssueStage{stage: :engineer},
+               %IssueStage{stage: :custom, name: "License check", prompt: "Check each license."},
+               %IssueStage{stage: :review}
+             ]
+           } = Repo.get!(Issue, issue_id)
   end
 
   test "the issue a workflow opens is owned by its file's assignee, or by nobody when they have no Rail account", %{

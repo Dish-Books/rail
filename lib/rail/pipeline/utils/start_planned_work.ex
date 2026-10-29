@@ -1,8 +1,8 @@
 defmodule Rail.Pipeline.Utils.StartPlannedWork do
   @moduledoc """
   Starts the work a task's plan describes, as approving it or starting without approval both do: the ticket, with
-  its priority and estimate, and the picked design are published to the issue, and the task moves to Engineer,
-  where a `StartEngineer` job committed with the move starts the engineer. Unsent plan comments are deleted, since
+  its priority and estimate, and the picked design are published to the issue, and the task moves to the stage after
+  Plan, Engineer or a custom stage, where a `StartEngineer` job committed with the move starts its agent. Unsent plan comments are deleted, since
   the conversation they would go to closes. Nothing starts while a question waits on an answer.
 
   Starting is a one-way door. The task row is locked and the next stage claimed inside the same transaction, so a
@@ -47,7 +47,7 @@ defmodule Rail.Pipeline.Utils.StartPlannedWork do
 
           authors = delete_unsent_comments(task)
           {:ok, run} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
-          {:ok, task} = Pipeline.enter_stage(task, :engineer, start: false)
+          {:ok, task} = Pipeline.enter_stage(task, Issue.calculate_next_stage(task.issue, :plan), start: false)
           # Committed with the move, so the start does not depend on the caller outliving it.
           {:ok, _job} = Oban.insert(StartEngineer.new(%{task_id: task.id}))
           {run, task, authors}

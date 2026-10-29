@@ -2,9 +2,12 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  import Ecto.Query
+
   alias Rail.Git
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Round
@@ -12,6 +15,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.StartEngineer
   alias Rail.Roles
+  alias Rail.Roles.Schemas.Role
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
@@ -155,6 +159,32 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
     plan = String.trim(@plan)
 
     assert %Round{number: 1, plan: ^plan, approved_at: %DateTime{}, approved_by_id: nil} = Pipeline.read_plan(task)
+  end
+
+  test "a sequence placing a custom stage after Plan moves the task there, and the job committed with it starts it", %{
+    task: %{id: task_id} = task,
+    roles: roles,
+    run: run
+  } do
+    stages = [
+      %IssueStage{stage: :plan},
+      %IssueStage{stage: :custom, name: "Schema review", prompt: "Read the migrations."},
+      %IssueStage{stage: :engineer},
+      %IssueStage{stage: :review}
+    ]
+
+    Issue
+    |> Repo.get!(task.issue_id)
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.put_embed(:stages, stages)
+    |> Repo.update!()
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_plan(system_scope(), run)
+    assert %Task{stage: :custom, custom_stage: "Schema review"} = Repo.reload!(task)
+    assert :ok = perform_job(StartEngineer, %{task_id: task_id})
+
+    assert [%Run{status: :running, role: %Role{custom_stage: "Schema review"}}] =
+             Repo.all(from r in Run, where: r.task_id == ^task_id and r.role_id != ^roles[:plan].id, preload: :role)
   end
 
   test "with a pick it adds the picked design's section and screenshot to the ticket in one write", %{

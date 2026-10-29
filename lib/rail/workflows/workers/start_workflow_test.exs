@@ -52,7 +52,9 @@ defmodule Rail.Workflows.Workers.StartWorkflowTest do
   test "a job for a workflow not due finishes quietly", %{workflow: %{id: workflow_id}} do
     stub(DateTime, :utc_now, fn -> ~U[2026-10-12 08:30:00.000000Z] end)
 
-    assert capture_log(fn -> assert :ok = perform_job(StartWorkflow, %{workflow_id: workflow_id}) end) == ""
+    # Other async tests log at the same moment, so only this workflow's line is looked for.
+    log = capture_log(fn -> assert :ok = perform_job(StartWorkflow, %{workflow_id: workflow_id}) end)
+    refute log =~ "dependency-updates.yml"
     assert %Workflow{next_run_at: ~U[2026-10-12 09:00:00Z]} = Repo.get!(Workflow, workflow_id)
   end
 

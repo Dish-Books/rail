@@ -16,6 +16,9 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
 
     assert names[:engineer] ==
              ["browser_connect", "browser_problems", "browser_close", "save_report", "ask_questions", "knowledge_search"]
+
+    assert %Role{custom_stage: "License check"} |> mcp_tools() |> Enum.map(& &1["name"]) ==
+             ["save_stage_output", "ask_questions", "knowledge_search"]
   end
 
   test "only the Plan, Engineer and Review leads are offered ask_questions, a list of prompts with options", %{

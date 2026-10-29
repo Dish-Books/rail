@@ -161,4 +161,26 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
     assert {:error, {:invalid_stage, :review}} = Pipeline.send_message(system_scope(), run, "One more thing")
     assert [] = Pipeline.list_run_events(run)
   end
+
+  test "a custom stage's conversation takes messages at its stage, and closes once the task moves past it", %{
+    project: project,
+    task: task
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :custom, custom_stage: "License check"})
+    {:ok, role} = Roles.get_custom_stage_role(project.id, "License check")
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :running,
+        conversation_id: "sess_send_custom",
+        started_at: DateTime.utc_now()
+      })
+
+    assert {:ok, :queued, %Run{}} = Pipeline.send_message(system_scope(), run, "Say which screens.")
+
+    {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
+    assert {:error, {:invalid_stage, :review}} = Pipeline.send_message(system_scope(), run, "One more thing")
+  end
 end

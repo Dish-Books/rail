@@ -22,8 +22,8 @@ defmodule Rail.Workflows.Utils.OpenWorkflowIssue do
   require Logger
 
   @doc """
-  Opens `workflow`'s issue in its project's tracker, owned by its file's assignee and without the steps it skips, and queues its
-  task's start with the issue. A `:scheduled` start goes ahead only while the row is due and moves the due time on whether it opens
+  Opens `workflow`'s issue in its project's tracker, owned by its file's assignee, with the steps its file skips and the
+  stages it names, and queues its task's start with the issue. A `:scheduled` start goes ahead only while the row is due and moves the due time on whether it opens
   anything or not; `:now` leaves the due time alone and ignores the pause.
 
   Returns `{:ok, issue}`, or why nothing was opened: `{:error, {:unfinished, issue}}`, `{:error, :project_inactive}`,
@@ -47,7 +47,8 @@ defmodule Rail.Workflows.Utils.OpenWorkflowIssue do
                    description: workflow.definition.instructions,
                    owner_user_id: owner_user_id(workflow),
                    workflow_id: workflow.id,
-                   skipped_steps: workflow.definition.skip
+                   skipped_steps: workflow.definition.skip,
+                   stages: workflow.definition.stages
                  }) do
             Oban.insert!(StartWorkflowTask.new(%{issue_id: issue.id}))
             {:ok, issue}

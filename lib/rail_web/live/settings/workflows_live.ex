@@ -15,6 +15,13 @@ defmodule RailWeb.Settings.WorkflowsLive do
   assignee: dana                # a GitHub login: who owns the issue
   instructions: |               # the issue's description
     Update Elixir and npm dependencies to their latest compatible versions.
+  stages:                       # plan, implement, review, in this order
+    - plan
+    - implement
+    - name: License check       # a custom stage, anywhere before review
+      prompt: |
+        Check each changed dependency against LICENSES.md.
+    - review
   """
 
   def mount(_params, _session, socket) do
@@ -145,6 +152,7 @@ defmodule RailWeb.Settings.WorkflowsLive do
                     <.stage_sequence
                       id={"workflow-stages-#{workflow.id}"}
                       skipped={workflow.definition.skip}
+                      stages={workflow.definition.stages}
                     />
                   </td>
 

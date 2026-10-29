@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
 
   alias Rail.Git
   alias Rail.Issues
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Learnings.Schemas.LearningRetrieval
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
@@ -484,5 +485,32 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
       assert {:ok, %OsProcess{}} = Pipeline.start_engineer_run(%{run | pending_answer: "Blue."})
       assert [] = Repo.all(from r in LearningRetrieval, where: r.run_id == ^run.id)
     end
+  end
+
+  test "the engineer is handed the file each earlier custom stage saved, under its stage's name", %{
+    task: task,
+    run: run
+  } do
+    stages = [
+      %IssueStage{stage: :plan},
+      %IssueStage{stage: :engineer},
+      %IssueStage{stage: :custom, name: "License check", prompt: "Check each license."},
+      %IssueStage{stage: :review}
+    ]
+
+    Repo.preload(task, :issue).issue
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.put_embed(:stages, stages)
+    |> Repo.update!()
+
+    File.mkdir_p!(Path.join(task.scratch_path, "stages"))
+    File.write!(Path.join([task.scratch_path, "stages", "3-license-check.md"]), "sweet_xml 0.7.5 is AGPL-3.0.\n")
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ ~s(<stage_output stage="License check">\nsweet_xml 0.7.5 is AGPL-3.0.\n</stage_output>)
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_engineer_run(run)
   end
 end

@@ -151,14 +151,14 @@ defmodule Rail.Issues.Workers.AdvanceTrackerStateTest do
       assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue.id})
     end
 
-    test "Plan moves a Todo ticket to In Progress", %{
+    test "Plan and a custom stage each move a Todo ticket to In Progress", %{
       issue: issue,
       task: task,
       nodes: nodes,
       states: states
     } do
-      for stage <- [:plan] do
-        {:ok, _task} = Pipeline.update_task(task, %{stage: stage})
+      for stage <- [:plan, :custom] do
+        {:ok, _task} = Pipeline.update_task(task, %{stage: stage, custom_stage: "License check"})
 
         Req.Test.expect(Rail.Linear, fn conn ->
           Req.Test.json(conn, %{

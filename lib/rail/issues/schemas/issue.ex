@@ -3,6 +3,7 @@ defmodule Rail.Issues.Schemas.Issue do
   use Rail.Schema
 
   alias Rail.Issues.Schemas.Comment
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline.Schemas.Task
@@ -41,6 +42,8 @@ defmodule Rail.Issues.Schemas.Issue do
     field :pr_title, :string
     # Copied from the workflow's file when it opened the issue, so a later change to the file leaves its task alone.
     field :skipped_steps, {:array, Ecto.Enum}, values: @optional_steps, default: []
+    # The stages its workflow's file named, custom ones with their prompts, copied the same way; empty runs the built-ins.
+    embeds_many :stages, IssueStage, on_replace: :delete
 
     belongs_to :project, Project
     belongs_to :owner_user, User
@@ -157,10 +160,28 @@ defmodule Rail.Issues.Schemas.Issue do
   def step_label(:architect), do: "architect"
   def step_label(:demo), do: "demo"
 
-  @doc "The stages the issue's task runs, in order: Plan is left out when Product, Design and Architect are all off."
-  def calculate_stages(%__MODULE__{skipped_steps: skipped}) do
-    if Enum.all?(@plan_steps, &(&1 in skipped)), do: [:engineer, :review], else: [:plan, :engineer, :review]
+  @doc """
+  The stages the issue's task runs, in order, a custom one as `{:custom, name}`: Plan, Engineer and Review when its
+  workflow named none, and Plan left out when Product, Design and Architect are all off.
+  """
+  def calculate_stages(%__MODULE__{skipped_steps: skipped, stages: stages}) do
+    sequence =
+      case stages do
+        [_first | _rest] -> Enum.map(stages, &sequence_stage/1)
+        _none -> [:plan, :engineer, :review]
+      end
+
+    if Enum.all?(@plan_steps, &(&1 in skipped)), do: List.delete(sequence, :plan), else: sequence
   end
+
+  @doc "The stage the issue's task enters after `stage`, as `calculate_stages/1` names them, or nil after the last."
+  def calculate_next_stage(%__MODULE__{} = issue, stage) do
+    issue |> calculate_stages() |> Enum.drop_while(&(&1 != stage)) |> Enum.at(1)
+  end
+
+  @doc "The custom stage of the issue's sequence named `name`, with its prompt, or nil."
+  def custom_stage(%__MODULE__{stages: stages}, name) when is_list(stages),
+    do: Enum.find(stages, &match?(%IssueStage{stage: :custom, name: ^name}, &1))
 
   def finished_state?(state) when is_atom(state), do: state in @finished_states
   def finished_state?(_other), do: false
@@ -207,4 +228,7 @@ defmodule Rail.Issues.Schemas.Issue do
   end
 
   defp advance_when_claimed(%Ecto.Changeset{} = changeset), do: changeset
+
+  defp sequence_stage(%IssueStage{stage: :custom, name: name}), do: {:custom, name}
+  defp sequence_stage(%IssueStage{stage: stage}), do: stage
 end

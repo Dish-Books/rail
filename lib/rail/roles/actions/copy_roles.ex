@@ -8,10 +8,13 @@ defmodule Rail.Roles.Actions.CopyRoles do
 
   def copy_roles(_scope, target_project_id, source_project_id, opts)
       when is_binary(target_project_id) and is_binary(source_project_id) do
-    # Stored prompts, not repo files: a copy is of the roles as configured.
+    # Stored prompts, not repo files: a copy is of the roles as configured. A custom stage's role is made by its stage.
     source_roles =
       Repo.all(
-        from(r in Role, where: r.project_id == ^source_project_id, order_by: [asc: r.position, asc: r.inserted_at])
+        from(r in Role,
+          where: r.project_id == ^source_project_id and is_nil(r.custom_stage),
+          order_by: [asc: r.position, asc: r.inserted_at]
+        )
       )
 
     replace_all = Keyword.get(opts, :replace_all, false)

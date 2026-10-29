@@ -592,6 +592,20 @@ defmodule Rail.Mcp.Utils.McpTools do
     }
   ]
 
+  @stage_output_tools [
+    %{
+      "name" => "save_stage_output",
+      "description" =>
+        "Save this stage's output: one markdown file, the whole of it. The person reviewing the stage reads it, and " <>
+          "every later stage is given it. Each save replaces the last, so save the whole file every time.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{"markdown" => %{"type" => "string", "description" => "The whole file, in markdown."}},
+        "required" => ["markdown"]
+      }
+    }
+  ]
+
   @question_tools [
     %{
       "name" => "ask_questions",
@@ -645,7 +659,8 @@ defmodule Rail.Mcp.Utils.McpTools do
 
   @doc """
   The tools Rail serves this run itself: the save tools each agent hands its output over with, the browser for
-  the three that drive the app, `ask_questions` for the agents a person talks to, and the knowledge base for all.
+  the three that drive the app, `ask_questions` for the agents a person talks to, and the knowledge base for all. A
+  custom stage's role saves its file with `save_stage_output`.
   """
   def mcp_tools(%Role{stage: :plan}), do: @design_tools ++ @plan_tools ++ @question_tools ++ @knowledge_tools
   def mcp_tools(%Role{stage: :engineer}), do: @browser_tools ++ @report_tools ++ @question_tools ++ @knowledge_tools
@@ -656,6 +671,9 @@ defmodule Rail.Mcp.Utils.McpTools do
 
   def mcp_tools(%Role{stage: :review_lead}),
     do: @review_lead_tools ++ @design_tools ++ @question_tools ++ @knowledge_tools
+
+  def mcp_tools(%Role{custom_stage: name}) when is_binary(name),
+    do: @stage_output_tools ++ @question_tools ++ @knowledge_tools
 
   def mcp_tools(%Role{}), do: @knowledge_tools
 end

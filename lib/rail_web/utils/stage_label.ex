@@ -53,17 +53,16 @@ defmodule RailWeb.Utils.StageLabel do
   end
 
   # Read off its status before the state it shares with a run waiting for a sandbox.
-  def stage_label(%Task{stage: stage}, %Run{status: :waiting_for_usage}),
-    do: "#{Task.stage_label(stage)} waiting for usage"
+  def stage_label(%Task{} = task, %Run{status: :waiting_for_usage}), do: "#{Task.stage_label(task)} waiting for usage"
 
-  def stage_label(%Task{stage: stage} = task, run) do
+  def stage_label(%Task{} = task, run) do
     case Run.state(run) do
-      :queued -> "Queued for #{Task.stage_label(stage)}"
-      :running -> "#{Task.stage_label(stage)} running"
-      :waiting -> "#{Task.stage_label(stage)} waiting for resources"
-      :blocked -> "#{Task.stage_label(stage)} needs an answer"
-      :failed -> "#{Task.stage_label(stage)} failed"
-      :stopped -> "#{Task.stage_label(stage)} stopped"
+      :queued -> "Queued for #{Task.stage_label(task)}"
+      :running -> "#{Task.stage_label(task)} running"
+      :waiting -> "#{Task.stage_label(task)} waiting for resources"
+      :blocked -> "#{Task.stage_label(task)} needs an answer"
+      :failed -> "#{Task.stage_label(task)} failed"
+      :stopped -> stopped_label(task, run)
       :done -> approval_label(task)
     end
   end
@@ -111,6 +110,16 @@ defmodule RailWeb.Utils.StageLabel do
 
   def review_waiting?(_task, _run), do: false
 
+  @doc """
+  True when `task` is at a custom stage whose agent has stopped with its file saved, so the file waits on a person's
+  Approve.
+  """
+  def custom_stage_waiting?(%Task{stage: :custom} = task, run) do
+    Run.state(run) == :stopped and Enum.any?(Pipeline.read_stage_outputs(task), &(&1.name == task.custom_stage))
+  end
+
+  def custom_stage_waiting?(_task, _run), do: false
+
   @doc "True when `task` has design options saved and none of them picked yet."
   def waiting_on_pick?(%Task{} = task) do
     match?(%{options: [_first | _rest], picked: nil}, Pipeline.read_design(task, pages: false))
@@ -132,6 +141,13 @@ defmodule RailWeb.Utils.StageLabel do
   end
 
   def fix_plan_waiting?(%Task{}), do: false
+
+  # A custom stage moves on only by approval, so its stopped agent waits on a person either way.
+  defp stopped_label(%Task{stage: :custom} = task, run) do
+    if custom_stage_waiting?(task, run), do: "Review #{task.custom_stage}", else: "#{task.custom_stage} needs you"
+  end
+
+  defp stopped_label(%Task{} = task, _run), do: "#{Task.stage_label(task)} stopped"
 
   # Read only off a task whose issue is loaded, which names the review file.
   defp review_finished?(%Task{issue: %Issue{}} = task) do

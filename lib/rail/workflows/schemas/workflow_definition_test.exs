@@ -1,6 +1,7 @@
 defmodule Rail.Workflows.Schemas.WorkflowDefinitionTest do
   use ExUnit.Case, async: true
 
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Workflows.Schemas.WorkflowDefinition
 
   test "a file with a name, instructions and a cron schedule parses" do
@@ -103,5 +104,67 @@ defmodule Rail.Workflows.Schemas.WorkflowDefinitionTest do
     assert "0 9 * * 1-5" = label.("0 9 * * 1-5")
     assert "0 9 1 * *" = label.("0 9 1 * *")
     assert "*/15 * * * *" = label.("*/15 * * * *")
+  end
+
+  test "a file placing a License check after implement parses with every stage in order" do
+    text = """
+    name: Dependency updates
+    schedule: "0 9 * * 1"
+    instructions: Update the dependencies.
+    stages:
+      - plan
+      - implement
+      - name: License check
+        prompt: |
+          Check each changed dependency against LICENSES.md.
+      - review
+    """
+
+    assert {:ok,
+            %WorkflowDefinition{
+              stages: [
+                %IssueStage{stage: :plan, name: nil},
+                %IssueStage{stage: :engineer},
+                %IssueStage{
+                  stage: :custom,
+                  name: "License check",
+                  prompt: "Check each changed dependency against LICENSES.md."
+                },
+                %IssueStage{stage: :review}
+              ]
+            }} = WorkflowDefinition.parse(text)
+
+    assert {:ok, %WorkflowDefinition{stages: []}} =
+             WorkflowDefinition.parse("name: Sweep\nschedule: \"0 6 * * *\"\ninstructions: Go\n")
+  end
+
+  test "stages out of order, repeated, unknown, after review or without a prompt make the file invalid" do
+    head = "name: Sweep\nschedule: \"0 6 * * *\"\ninstructions: Go\nstages:\n"
+    custom = "  - name: License check\n    prompt: Check.\n"
+
+    assert {:error, "stages places a custom stage after review"} =
+             WorkflowDefinition.parse(head <> "  - plan\n  - implement\n  - review\n" <> custom)
+
+    assert {:error, "stages must name plan, implement and review once each, in that order"} =
+             WorkflowDefinition.parse(head <> "  - implement\n  - plan\n  - review\n")
+
+    assert {:error, "stages must name plan, implement and review once each, in that order"} =
+             WorkflowDefinition.parse(head <> "  - plan\n  - implement\n  - implement\n  - review\n")
+
+    assert {:error, "stages names the custom stage License check twice"} =
+             WorkflowDefinition.parse(head <> "  - plan\n" <> custom <> custom <> "  - implement\n  - review\n")
+
+    assert {:error, "stages has a custom stage that is not a name and a prompt"} =
+             WorkflowDefinition.parse(head <> "  - plan\n  - name: License check\n  - implement\n  - review\n")
+
+    assert {:error, "stages has a custom stage that is not a name and a prompt"} =
+             WorkflowDefinition.parse(
+               head <> "  - plan\n  - name: A\n    prompt: B\n    model: C\n  - implement\n  - review\n"
+             )
+
+    assert {:error, "stages names qa, [1]; the stages are plan, implement and review" <> _hint} =
+             WorkflowDefinition.parse(head <> "  - qa\n  - [1]\n  - plan\n  - implement\n  - review\n")
+
+    assert {:error, "stages is not a list; the stages are" <> _hint} = WorkflowDefinition.parse(head <> "  plan: 1\n")
   end
 end

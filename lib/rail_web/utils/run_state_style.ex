@@ -7,7 +7,7 @@ defmodule RailWeb.Utils.RunStateStyle do
   `:blocked` is.
   """
 
-  import RailWeb.Utils.StageLabel, only: [finalize_label: 1, review_waiting?: 2]
+  import RailWeb.Utils.StageLabel, only: [custom_stage_waiting?: 2, finalize_label: 1, review_waiting?: 2]
 
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -51,6 +51,17 @@ defmodule RailWeb.Utils.RunStateStyle do
       chip_class: classes(color, :chip),
       pill_label: finalize_label(state)
     }
+  end
+
+  # A custom stage's stopped agent waits on a person, for its Approve or for a message to save its file.
+  def run_state_style(run, %Task{stage: :custom} = task) do
+    style = run_state_style(run)
+
+    cond do
+      custom_stage_waiting?(task, run) -> %{style | icon: "pi-hand-pointing", text_class: classes(:amber, :text)}
+      Run.state(run) == :stopped -> %{style | icon: "pi-warning-circle", text_class: classes(:amber, :text)}
+      true -> style
+    end
   end
 
   def run_state_style(run, task) do

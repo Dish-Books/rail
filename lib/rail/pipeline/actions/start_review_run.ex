@@ -8,6 +8,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
   """
 
   import Rail.Pipeline.Utils.ChangeContext
+  import Rail.Pipeline.Utils.FormatStageOutputs
   import Rail.Pipeline.Utils.LearningsBrief
 
   alias Rail.Git
@@ -100,7 +101,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
 
     - Ask everything at once. Ask every question you could not close in one `ask_questions` call before you end your turn, each with its options, your recommended answer first. Leave the options out where the answer is free text. A question you can settle from the code, the ticket or the plan is not a question.
 
-    #{learnings_brief(run, fn -> file_queries(task) end)}
+    #{format_stage_outputs(task, "Earlier stages of this task's workflow saved these files, each under its stage's name. Read them with the ticket and the plan:")}#{learnings_brief(run, fn -> file_queries(task) end)}
     """)
   end
 

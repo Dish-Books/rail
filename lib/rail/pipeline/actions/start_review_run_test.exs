@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
 
   alias Rail.Git
   alias Rail.Issues
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.Round
@@ -79,6 +80,33 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     end)
 
     assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_review_run(run)
+  end
+
+  test "the review agent is handed the file each earlier custom stage saved, under its stage's name", %{
+    task: task,
+    run: run
+  } do
+    stages = [
+      %IssueStage{stage: :plan},
+      %IssueStage{stage: :engineer},
+      %IssueStage{stage: :custom, name: "License check", prompt: "Check each license."},
+      %IssueStage{stage: :review}
+    ]
+
+    Repo.preload(task, :issue).issue
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.put_embed(:stages, stages)
+    |> Repo.update!()
+
+    File.mkdir_p!(Path.join(task.scratch_path, "stages"))
+    File.write!(Path.join([task.scratch_path, "stages", "3-license-check.md"]), "sweet_xml 0.7.5 is AGPL-3.0.\n")
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ ~s(<stage_output stage="License check">\nsweet_xml 0.7.5 is AGPL-3.0.\n</stage_output>)
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_review_run(run)
   end
 
   test "the brief lists the findings already on the task with their rounds, rulings, places and notes", %{

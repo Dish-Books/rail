@@ -9,6 +9,8 @@ defmodule Rail.Roles do
 
   defdelegate get_role(by), to: Actions.GetRole
 
+  defdelegate get_custom_stage_role(project_id, name), to: Actions.GetCustomStageRole
+
   @decorate can?(resource: :roles, action: :manage)
   defdelegate create_role(scope, project, attrs), to: Actions.CreateRole
 

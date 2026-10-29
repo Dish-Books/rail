@@ -181,6 +181,39 @@ defmodule RailWeb.Components.CommentListTest do
     assert Floki.attribute(doc, "#comment-order-newest", "aria-pressed") == ["true"]
   end
 
+  test "a comment on a custom stage's file names the stage and its line and opens in it, or in its stage with none", %{
+    entries: [%{at: at} | _rest]
+  } do
+    output = %PlanComment{target: :output, element_label: "Paragraph 2", body: "Say saxy.", status: :sent}
+
+    html =
+      render_component(&CommentList.comment_list/1,
+        comments: [
+          %{
+            kind: :plan,
+            id: "pcm_license",
+            at: at,
+            user: nil,
+            comment: %{output | custom_stage: "License check"}
+          },
+          %{kind: :plan, id: "pcm_older", at: at, user: nil, comment: output}
+        ],
+        order: "newest",
+        screen_keys: [],
+        reader_id: "usr_ada",
+        target: nil
+      )
+
+    doc = Floki.parse_fragment!(html)
+    text = fn id -> doc |> Floki.find("#comment-#{id}") |> Floki.text() |> String.split() |> Enum.join(" ") end
+    opens = fn id -> doc |> Floki.find("#comment-#{id} [data-qa=comment_opens]") |> Floki.text() |> String.trim() end
+
+    assert text.("pcm_license") =~ "License check Paragraph 2"
+    assert opens.("pcm_license") == "Open in License check"
+    assert text.("pcm_older") =~ "Output Paragraph 2"
+    assert opens.("pcm_older") == "Open its stage"
+  end
+
   test "with no comments it says there are none yet" do
     html =
       render_component(&CommentList.comment_list/1,

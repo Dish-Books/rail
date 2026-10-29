@@ -318,6 +318,62 @@ defmodule Rail.Pipeline.Schemas.PlanCommentTest do
              [ticket] |> PlanComment.calculate_message(nil) |> PlanComment.parse_message()
   end
 
+  test "a custom stage's output comments come after the plan's, grouped under the output, and read back" do
+    plan = %PlanComment{
+      id: "pcm_1",
+      target: :plan,
+      element_kind: :file,
+      element_label: "File 1",
+      element_occurrence: 1,
+      element_text: "lib/rail.ex",
+      body: "Keep it.",
+      inserted_at: ~U[2026-10-28 10:00:00.000000Z]
+    }
+
+    output = %{
+      plan
+      | id: "pcm_0",
+        target: :output,
+        element_kind: :paragraph,
+        element_label: "Paragraph 2",
+        element_text: "sweet_xml 0.7.5 is AGPL-3.0.",
+        body: "Say to replace it with saxy.",
+        inserted_at: ~U[2026-10-28 09:00:00.000000Z]
+    }
+
+    assert [^plan, ^output] = PlanComment.calculate_round([output, plan])
+
+    message = PlanComment.calculate_message([plan, output], nil)
+
+    assert message == """
+           2 comments on the plan and the output
+
+           On the plan:
+
+           1. File 1
+           | lib/rail.ex
+           > Keep it.
+
+           On the output:
+
+           2. Paragraph 2
+           | sweet_xml 0.7.5 is AGPL-3.0.
+           > Say to replace it with saxy.\
+           """
+
+    assert %{
+             count: 2,
+             sections: [
+               %{target: :plan},
+               %{
+                 target: :output,
+                 title: "Output",
+                 comments: [%{number: 2, label: "Paragraph 2", body: "Say to replace it with saxy."}]
+               }
+             ]
+           } = PlanComment.parse_message(message)
+  end
+
   test "a comment on the next round's plan needs its line as a plan comment does" do
     changeset =
       PlanComment.changeset(%PlanComment{}, %{

@@ -7,6 +7,7 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
   """
 
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
+  import Rail.Pipeline.Utils.CheckUnsent
   import Rail.Pipeline.Utils.StartPlannedWork
 
   alias Rail.Pipeline
@@ -33,15 +34,6 @@ defmodule Rail.Pipeline.Actions.ApprovePlan do
   defp allowed(%Scope{} = scope, %Task{} = task, %Round{} = round) do
     with :ok <- check_unsent(scope, task), do: sent(scope, task, round)
   end
-
-  defp check_unsent(%Scope{user: %{id: _user_id}} = scope, %Task{} = task) do
-    case length(Pipeline.list_plan_comments(scope, task)) do
-      0 -> :ok
-      count -> {:error, {:unsent_comments, count}}
-    end
-  end
-
-  defp check_unsent(%Scope{}, %Task{}), do: :ok
 
   defp sent(%Scope{system: true}, %Task{}, %Round{}), do: :ok
   defp sent(%Scope{}, %Task{}, %Round{ready_at: %DateTime{}}), do: :ok

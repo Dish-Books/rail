@@ -6,8 +6,8 @@ defmodule RailWeb.TaskLive do
   demo and the browser; a split adds its children. The item, the agent the conversation reads and a split's child
   are in the URL, so a refresh comes back to them.
 
-  The conversation takes messages for Plan until its plan is approved, then for the review agent; every other
-  agent's run is read there as the record of what it did.
+  The conversation takes messages for Plan until its plan is approved, for a custom stage beside its file until that
+  is approved, then for the review agent; every other agent's run is read there as the record of what it did.
 
   The page owns what the components cannot: the subscriptions. A LiveComponent may not subscribe, so log lines
   arrive here and are forwarded to the conversation, and a saved output to the open item, with `send_update/2`.
@@ -15,6 +15,7 @@ defmodule RailWeb.TaskLive do
   use RailWeb, :live_view
 
   import RailWeb.Utils.ChildStatus
+  import RailWeb.Utils.CustomStageItem
   import RailWeb.Utils.HandleIssueEvent
 
   alias Rail.Issues
@@ -30,6 +31,7 @@ defmodule RailWeb.TaskLive do
   alias Rail.Scope
   alias Rail.Tools
   alias Rail.Users
+  alias RailWeb.Live.CustomStage
   alias RailWeb.Live.DiffView
   alias RailWeb.Live.PlanStage
   alias RailWeb.Live.RunConversation
@@ -46,8 +48,9 @@ defmodule RailWeb.TaskLive do
   # picture but a load any viewer's connection can keep up with.
   @frame_interval_ms 250
 
-  # The items the URL can name; any other opens what the task is waiting on.
+  # The items the URL can name, and `stage-<position>` for a custom stage; any other opens what the task waits on.
   @items ["issue", "plan", "children", "comments", "findings", "fix_plan", "diff", "screens", "demo", "browser"]
+  @plan_closed "Only Plan, and then the review agent, take messages. This is a record of what this agent did."
 
   # The agents whose runs the conversation reads, in the order a task meets them.
   @agents [:plan, :engineer, :qa, :review, :demo, :review_lead]
@@ -74,6 +77,10 @@ defmodule RailWeb.TaskLive do
       |> assign(:stage_run, nil)
       |> assign(:line, nil)
       |> assign(:conversation_run, nil)
+      |> assign(:sidebar_run, nil)
+      |> assign(:sidebar_closed, false)
+      |> assign(:sidebar_closed_reason, @plan_closed)
+      |> assign(:beside, false)
       |> assign(:diff_refreshed_at, nil)
       |> assign(:approvable, false)
       |> assign(:issue, nil)
@@ -259,27 +266,17 @@ defmodule RailWeb.TaskLive do
               chat_run={@chat_run}
             />
             <.conversation_sidebar
-              compact={@open_item not in [:plan, :fix_plan]}
+              compact={not @beside}
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
               questions={@conversation_questions}
               round_questions={@round_questions}
               suggestions={@suggestions}
-              conversation_run={
-                if @open_item in [:plan, :fix_plan], do: @conversation_run, else: @chat_run
-              }
-              closed={
-                @open_item in [:plan, :fix_plan] and @conversation_run != nil and
-                  @conversation_run != @chat_run
-              }
-              closed_reason="Only Plan, and then the review agent, take messages. This is a record of what this agent did."
-              review_pane={
-                match?(
-                  %Run{role: %Role{stage: :review_lead}},
-                  if(@open_item in [:plan, :fix_plan], do: @conversation_run, else: @chat_run)
-                )
-              }
+              conversation_run={@sidebar_run}
+              closed={@sidebar_closed}
+              closed_reason={@sidebar_closed_reason}
+              review_pane={match?(%Run{role: %Role{stage: :review_lead}}, @sidebar_run)}
             />
           </:conversation>
           <:children>
@@ -452,13 +449,17 @@ defmodule RailWeb.TaskLive do
   end
 
   # The reader's unsent plan comments moved, in another tab or this one: the Plan stage, or the next round's plan,
-  # draws their markers, the conversation their tray and the header whether Approve plan waits on them, and each
+  # draws their markers, the conversation their tray and the header whether Approve waits on them, and each
   # reads its own.
   def handle_info({:plan_comments_changed, task_id}, socket) do
     # The conversation is drawn under every item, as its trays at least, so it always reads them.
     with %{task_id: ^task_id, open_item: item} <- socket.assigns do
       if item == :plan, do: send_update(PlanStage, id: "plan-stage", reload_comments: true)
-      if item in [:fix_plan, :comments], do: send_update(TaskDetail, id: "task-detail", reload: true)
+      if is_binary(item), do: send_update(CustomStage, id: "custom-#{item}", reload_comments: true)
+
+      if item in [:fix_plan, :comments] or match?(%Task{stage: :custom}, socket.assigns.task),
+        do: send_update(TaskDetail, id: "task-detail", reload: true)
+
       send_update(RunConversation, id: "run-conversation", reload_plan_comments: true)
       send_update(TaskActions, id: "task-actions")
     end
@@ -498,7 +499,7 @@ defmodule RailWeb.TaskLive do
   # conversation reads.
   def handle_info({:review_item, item}, socket) do
     agent = if item in [:plan, :fix_plan], do: socket.assigns.agent
-    path = task_path(socket, item: Atom.to_string(item), agent: agent)
+    path = task_path(socket, item: to_string(item), agent: agent)
     socket = socket |> assign(:plan_tab, nil) |> push_patch(to: path, replace: true)
     {:noreply, socket}
   end
@@ -778,6 +779,7 @@ defmodule RailWeb.TaskLive do
     with %{task: %Task{} = task, open_item: item} <- socket.assigns do
       send_update(TaskDetail, id: "task-detail", reload: true)
       if item == :plan, do: send_update(PlanStage, id: "plan-stage", task: task)
+      if is_binary(item), do: send_update(CustomStage, id: "custom-#{item}", reload: true)
       if item == :diff, do: send_update(DiffView, id: "diff-view", reload: true)
     end
 
@@ -824,6 +826,12 @@ defmodule RailWeb.TaskLive do
 
   # The tab that sent the task back navigates from its own handle_async; leaving first would kill the action.
   defp follow_back_to_plan(%{assigns: %{discarding: true}} = socket, _was, _task), do: socket
+
+  # A custom stage before Plan reaches Plan by its Approve; only one after Plan comes back to it.
+  defp follow_back_to_plan(socket, %Task{id: id, stage: :custom} = was, %Task{id: id, stage: :plan}) do
+    after_plan = was.issue |> Issue.calculate_stages() |> Enum.drop_while(&(&1 != :plan))
+    if Task.current_stage(was) in after_plan, do: push_navigate(socket, to: ~p"/tasks/#{id}?item=plan"), else: socket
+  end
 
   defp follow_back_to_plan(socket, %Task{id: id, stage: was}, %Task{id: id, stage: :plan})
        when was in [:engineer, :review, :finalize], do: push_navigate(socket, to: ~p"/tasks/#{id}?item=plan")
@@ -898,6 +906,7 @@ defmodule RailWeb.TaskLive do
     |> assign(:open_item, open_item(socket.assigns.item, task, socket.assigns.parent))
     |> assign(:rounds, rounds)
     |> assign_runs(runs, task)
+    |> assign_sidebar(runs, task)
     |> assign_questions(task)
     |> assign_family(task)
     |> assign(:show_discard, discardable?(task))
@@ -911,8 +920,17 @@ defmodule RailWeb.TaskLive do
   # The run the conversation takes messages for, the one it reads (the URL's agent, or else that one), and the
   # run the header says the task is waiting on.
   defp assign_runs(socket, runs, %Task{} = task) do
-    chat_run = if task.stage == :plan, do: runs[:plan], else: runs[:review_lead]
-    picked = Enum.find_value(runs, fn {stage, run} -> to_string(stage) == socket.assigns.agent && run end)
+    chat_run =
+      case task.stage do
+        :plan -> runs[:plan]
+        :custom -> runs[Task.current_stage(task)]
+        _later -> runs[:review_lead]
+      end
+
+    # A custom stage's conversation is beside its own item, so the URL's agent names only a built-in one.
+    picked =
+      Enum.find_value(runs, fn {stage, run} -> (is_atom(stage) and to_string(stage) == socket.assigns.agent) && run end)
+
     stage_run = stage_run(runs, task)
 
     socket
@@ -926,15 +944,43 @@ defmodule RailWeb.TaskLive do
     |> assign(:approvable, task.stage == :review and not Run.running?(runs[:review_lead]))
   end
 
+  # What the conversation reads under the open item: the agent picked under Plan, a custom stage's own run beside
+  # its file, closed once the stage is approved, and the run taking messages under every other item.
+  defp assign_sidebar(socket, runs, %Task{} = task) do
+    %{open_item: item, conversation_run: picked, chat_run: chat_run} = socket.assigns
+
+    custom = custom_stage_item(task.issue, item)
+
+    {run, closed, reason} =
+      cond do
+        custom != nil ->
+          run = runs[{:custom, custom.name}]
+          closed = run != nil and not Task.works_stage?(task, run.role)
+          {run, closed, "#{custom.name} was approved, so this conversation is closed."}
+
+        item in [:plan, :fix_plan] ->
+          {picked, picked != nil and picked != chat_run, @plan_closed}
+
+        true ->
+          {chat_run, false, @plan_closed}
+      end
+
+    socket
+    |> assign(:beside, item in [:plan, :fix_plan] or is_binary(item))
+    |> assign(:sidebar_run, run)
+    |> assign(:sidebar_closed, closed)
+    |> assign(:sidebar_closed_reason, reason)
+  end
+
   defp assign_questions(socket, %Task{} = task) do
-    %{chat_run: chat_run, conversation_run: conversation_run} = socket.assigns
+    %{chat_run: chat_run, sidebar_run: sidebar_run} = socket.assigns
     asked = Pipeline.list_questions(task, order_by: [asc: :inserted_at, asc: :id])
-    round_questions = round_questions(asked, conversation_run)
+    round_questions = round_questions(asked, sidebar_run)
 
     socket
     |> assign(:chat_questions, Enum.count(asked, &((&1.status == :pending and chat_run) && &1.run_id == chat_run.id)))
     |> assign(:round_questions, round_questions)
-    |> assign(:conversation_questions, run_questions(asked, conversation_run))
+    |> assign(:conversation_questions, run_questions(asked, sidebar_run))
     |> assign(:suggestions, suggestions(round_questions))
   end
 
@@ -983,25 +1029,41 @@ defmodule RailWeb.TaskLive do
 
   # The item the stage opens: the URL's, or else what the task is waiting on now, as the stage reads it.
   defp open_item(nil, %Task{id: id}, %Task{id: id}), do: :children
+
+  defp open_item(nil, %Task{stage: :custom} = task, _parent),
+    do: custom_stage_item(task.issue, Task.current_stage(task)).key
+
   defp open_item(nil, %Task{stage: :plan}, _parent), do: :plan
   defp open_item(nil, %Task{stage: :engineer}, _parent), do: :diff
   defp open_item(nil, %Task{}, _parent), do: :findings
   # The conversation was an item of its own; it is the Plan item's sidebar now.
   defp open_item("conversation", %Task{}, _parent), do: :plan
   defp open_item(item, %Task{}, _parent) when item in @items, do: String.to_existing_atom(item)
+
+  defp open_item("stage-" <> _number = item, %Task{} = task, parent) do
+    case custom_stage_item(task.issue, item) do
+      %{key: key} -> key
+      nil -> open_item(nil, task, parent)
+    end
+  end
+
   defp open_item(_unknown, %Task{} = task, parent), do: open_item(nil, task, parent)
 
   # Each role read through its latest run: an earlier one is the same conversation before the stage sent the work
   # back.
   defp role_runs(roles, %Task{runs: runs}) do
-    for %Role{} = role <- roles, %Run{} = run <- [role_run(runs, role)], into: %{}, do: {role.stage, run}
+    for %Role{} = role <- roles, %Run{} = run <- [role_run(runs, role)], into: %{}, do: {role_key(role), run}
   end
+
+  defp role_key(%Role{custom_stage: name}) when is_binary(name), do: {:custom, name}
+  defp role_key(%Role{stage: stage}), do: stage
 
   # The header says where the task is: at Review, whichever agent is checking the round, else the review agent.
   defp stage_run(runs, %Task{stage: :review}) do
     Enum.find_value([:qa, :review, :demo], &(Run.running?(runs[&1]) && runs[&1])) || runs[:review_lead]
   end
 
+  defp stage_run(runs, %Task{stage: :custom} = task), do: runs[Task.current_stage(task)]
   defp stage_run(runs, %Task{stage: stage}), do: runs[Task.role_stage(stage)]
 
   # What the stage's run waits on: its account's usage, or its place in the line for a sandbox.

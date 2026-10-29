@@ -4,6 +4,7 @@ defmodule Rail.Pipeline.Actions.RetryRunTest do
   import Rail.Pipeline.Utils.WithTaskLock
 
   alias Rail.Git
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Roles
@@ -73,6 +74,32 @@ defmodule Rail.Pipeline.Actions.RetryRunTest do
     end)
 
     assert {:ok, %Run{id: ^lead_id}} = Pipeline.retry_run(system_scope(), lead)
+  end
+
+  test "a failed custom stage starts again at its stage, with the issue's copy of its prompt", %{
+    project: project,
+    task: task
+  } do
+    stages = [%IssueStage{stage: :custom, name: "License check", prompt: "Check each license."}]
+    task.issue |> Ecto.Changeset.change() |> Ecto.Changeset.put_embed(:stages, stages) |> Repo.update!()
+    {:ok, task} = Pipeline.update_task(task, %{stage: :custom, custom_stage: "License check"})
+    {:ok, role} = Roles.get_custom_stage_role(project.id, "License check")
+
+    {:ok, %Run{id: run_id} = failed} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :finished,
+        error: "It broke.",
+        started_at: DateTime.utc_now()
+      })
+
+    expect(Tools, :start_os_process, fn %Run{id: ^run_id} = spawned, argv ->
+      assert "Check each license." in argv
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{id: ^run_id}} = Pipeline.retry_run(system_scope(), failed)
   end
 
   test "a run deleted while the retry waited on the task's lock is not retried", %{task: task, run: run} do

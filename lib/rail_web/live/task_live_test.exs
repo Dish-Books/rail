@@ -14,9 +14,11 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
@@ -1496,6 +1498,64 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("#discard-choice-plan input") |> render_click()
       view |> element("#confirm-discard") |> render_click()
       assert_redirect(view, ~p"/tasks/#{task_id}?item=plan", 1_000)
+
+      assert_redirect(other, ~p"/tasks/#{task_id}?item=plan", 1_000)
+    end
+
+    test "another page open on a custom stage after Plan goes to the plan when the task goes back", %{
+      conn: conn,
+      scope: scope,
+      project: project
+    } do
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{"id" => "lin_task_live_license", "identifier" => "TLV-3", "title" => "Dependency updates"}
+            }
+          }
+        })
+      end)
+
+      stages = [
+        %IssueStage{stage: :plan},
+        %IssueStage{stage: :engineer},
+        %IssueStage{stage: :custom, name: "License check", prompt: "Check each license."},
+        %IssueStage{stage: :review}
+      ]
+
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Dependency updates", stages: stages})
+      {:ok, %Task{id: task_id} = task} = Pipeline.create_task(issue, {:custom, "License check"})
+      worktree = Path.join(task.scratch_path, "worktree")
+      File.mkdir_p!(worktree)
+      {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+      stub(Git, :load_branch_history, fn _task, _rounds ->
+        %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
+      end)
+
+      stub(Git, :branch_fingerprint, fn _worktree_path -> nil end)
+
+      Repo.insert!(%Round{
+        task_id: task_id,
+        number: 1,
+        plan: @plan,
+        approved_at: DateTime.utc_now(),
+        ticket: %Round.Ticket{title: "Dependency updates", description: "The ticket."}
+      })
+
+      {:ok, role} = Roles.get_custom_stage_role(project.id, "License check")
+
+      {:ok, _checked} =
+        Pipeline.create_run(%{task_id: task_id, role_id: role.id, status: :finished, started_at: DateTime.utc_now()})
+
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      assert {:ok, other, _html} = live(conn, ~p"/tasks/#{task_id}?item=stage-3")
+      assert has_element?(other, "#review-item-stage-3[aria-current='true']")
+
+      assert {:ok, %Task{stage: :plan}} = Pipeline.return_to_plan(scope, task)
 
       assert_redirect(other, ~p"/tasks/#{task_id}?item=plan", 1_000)
     end
@@ -7014,6 +7074,352 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#review-items")
       refute has_element?(view, "#review-item-children")
       refute has_element?(view, "#child-switcher")
+    end
+  end
+
+  describe "a custom stage" do
+    setup %{project: project} do
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{"id" => "lin_task_live_custom", "identifier" => "TLV-2", "title" => "Translation sync"}
+            }
+          }
+        })
+      end)
+
+      stages = [
+        %IssueStage{stage: :custom, name: "Missing strings", prompt: "List the keys with no translation."},
+        %IssueStage{stage: :plan},
+        %IssueStage{stage: :engineer},
+        %IssueStage{stage: :review}
+      ]
+
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Translation sync", stages: stages})
+      {:ok, task} = Pipeline.create_task(issue, {:custom, "Missing strings"})
+      # Git is only ever asked through Rail.Git, so the worktree is a directory, on a branch git cannot read.
+      worktree = Path.join(task.scratch_path, "worktree")
+      File.mkdir_p!(worktree)
+      {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+      stub(Git, :load_branch_history, fn _task, _rounds ->
+        %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
+      end)
+
+      stub(Git, :branch_fingerprint, fn _worktree_path -> nil end)
+      {:ok, role} = Roles.get_custom_stage_role(project.id, "Missing strings")
+
+      {:ok, run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: role.id,
+          status: :finished,
+          conversation_id: "sess_task_live_custom",
+          started_at: DateTime.utc_now()
+        })
+
+      %{task: task, run: run}
+    end
+
+    test "the task opens on the stage's item, which reads running, shows no file yet and takes a message", %{
+      conn: conn,
+      task: task,
+      run: run
+    } do
+      {:ok, _working} = Pipeline.update_run(run, %{status: :running})
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#review-item-stage-1[aria-current='true'][title='Missing strings: running']")
+      assert has_element?(view, "#custom-stage-no-output", "No file yet")
+      assert has_element?(view, "#custom-stage-no-output", "The markdown Missing strings saves shows here.")
+      assert has_element?(view, "#task-status-chip", "Missing strings running")
+      assert has_element?(view, "#plan-chat #conversation-tab-root")
+
+      view |> with_target("#conversation-tab-root") |> render_click("send_chat", %{"message" => "Also French."})
+      assert %Run{pending_chat: "Also French."} = Repo.reload!(run)
+    end
+
+    test "a saved file shows with when and who gets it, and Approve moves the task on and closes the stage", %{
+      conn: conn,
+      task: task
+    } do
+      {:ok, _saved} = Pipeline.save_stage_output(task, %{markdown: "## Missing strings\n\n12 keys have no German entry."})
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#custom-stage-saved", "Plan, Implement and Review get this file once you approve it")
+      assert has_element?(view, "#custom-stage-output", "12 keys have no German entry.")
+      assert has_element?(view, "#review-item-stage-1[title='Missing strings: waiting on you']")
+      assert has_element?(view, "#task-status-chip", "Review Missing strings")
+
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+      view |> element("#approve-custom-stage") |> render_click()
+
+      assert %Task{stage: :plan} = Repo.reload!(task)
+      assert_patch(view, ~p"/tasks/#{task.id}?item=plan")
+      refute has_element?(view, "#approve-custom-stage")
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=stage-1")
+      assert has_element?(view, "#review-item-stage-1[title='Missing strings: approved']")
+      assert has_element?(view, "#custom-stage-saved", "Plan, Implement and Review get this file")
+      refute has_element?(view, "#custom-stage-saved", "once you approve it")
+      assert has_element?(view, "#conversation-closed", "Missing strings was approved, so this conversation is closed.")
+      refute has_element?(view, "[data-qa=line_comment_add]")
+    end
+
+    test "a line of the file takes a comment, which Send delivers to the stage's agent, and a revised save replaces it",
+         %{conn: conn, scope: scope, task: task, run: run} do
+      {:ok, _saved} = Pipeline.save_stage_output(task, %{markdown: "12 keys have no German entry."})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=stage-1")
+      key = "paragraph-#{:erlang.phash2({"12 keys have no German entry.", 1})}"
+
+      view |> element("#line-output-#{key} [data-qa=line_comment_add]") |> render_click()
+      view |> form("#document-comment-form-#{key}", %{"body" => "Say which screens."}) |> render_submit()
+
+      assert has_element?(view, "#line-output-#{key} + [data-qa=line_comments]", "Not sent")
+      assert has_element?(view, "#line-output-#{key} + [data-qa=line_comments]", "Say which screens.")
+      render(view)
+      assert has_element?(view, "#send-plan-comments", "Send 1 comment")
+
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+      view |> element("#send-plan-comments") |> render_click()
+
+      assert [_sent | _rest] = Pipeline.list_run_events(run)
+      assert [] = Pipeline.list_plan_comments(scope, task)
+
+      {:ok, _revised} = Pipeline.save_stage_output(task, %{markdown: "12 keys, on the settings and dispatch screens."})
+      render(view)
+      assert has_element?(view, "#custom-stage-output", "12 keys, on the settings and dispatch screens.")
+      refute has_element?(view, "#custom-stage-output", "12 keys have no German entry.")
+    end
+
+    test "a comment box keeps a blank comment open, cancels, and a saved comment can be removed, from code and tables too",
+         %{conn: conn, task: task, run: run} do
+      markdown = "Keys:\n\n```\ndispatch.route.eta_late\n```\n\n| Key | German |\n| --- | --- |\n| eta_late | none |\n"
+      {:ok, _saved} = Pipeline.save_stage_output(task, %{markdown: markdown})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=stage-1")
+      key = "paragraph-#{:erlang.phash2({"Keys:", 1})}"
+
+      assert has_element?(view, "#custom-stage-output [data-kind=code]", "dispatch.route.eta_late")
+      assert has_element?(view, "#custom-stage-output [data-kind=table_row]", "eta_late")
+
+      view |> element("#line-output-#{key} [data-qa=line_comment_add]") |> render_click()
+      view |> form("#document-comment-form-#{key}", %{"body" => "Half"}) |> render_change()
+      view |> form("#document-comment-form-#{key}", %{"body" => " "}) |> render_submit()
+      assert has_element?(view, "#document-comment-form-#{key}")
+
+      view |> element("#document-comment-form-#{key} [data-qa=document_comment_cancel]") |> render_click()
+      refute has_element?(view, "#document-comment-form-#{key}")
+
+      view |> element("#line-output-#{key} [data-qa=line_comment_add]") |> render_click()
+      view |> form("#document-comment-form-#{key}", %{"body" => "Group them by screen."}) |> render_submit()
+      render(view)
+      view |> element("#plan-comment-tray-fold") |> render_click()
+      assert has_element?(view, "#plan-comment-tray", "Missing strings")
+
+      view |> element("#line-output-#{key} + [data-qa=line_comments] [phx-click=remove_plan_comment]") |> render_click()
+      refute has_element?(view, "[data-qa=document_comment]")
+
+      # A page drawn before the comment was removed elsewhere, or the file was approved, takes nothing.
+      custom = "#custom-stage-1"
+      view |> with_target(custom) |> render_click("remove_plan_comment", %{"id" => "pcm_gone"})
+      view |> with_target(custom) |> render_click("change_plan_comment", %{"body" => "No box."})
+      view |> with_target(custom) |> render_click("save_plan_comment", %{"body" => "No box."})
+      view |> with_target(custom) |> render_click("open_document_comment", %{"doc" => "output", "key" => "gone"})
+      refute has_element?(view, "[data-qa=document_comment_form]")
+
+      view |> element("#line-output-#{key} [data-qa=line_comment_add]") |> render_click()
+      Repo.update_all(from(r in Run, where: r.id == ^run.id), set: [conversation_id: nil])
+      view |> form("#document-comment-form-#{key}", %{"body" => "Nobody to send it to."}) |> render_submit()
+      assert has_element?(view, "#custom-stage-1-error", "This stage cannot take a comment until it can be messaged.")
+
+      Repo.update_all(from(r in Run, where: r.id == ^run.id), set: [conversation_id: "sess_task_live_custom"])
+      render(view)
+      view |> element("#line-output-#{key} [data-qa=line_comment_add]") |> render_click()
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
+      view |> form("#document-comment-form-#{key}", %{"body" => "Too late."}) |> render_submit()
+      assert has_element?(view, "#custom-stage-1-error", "This stage's file was approved, so it takes no more comments.")
+    end
+
+    test "the reader's own unsent comments hold Approve until they are removed, and an Approve sent anyway is refused",
+         %{conn: conn, scope: scope, task: task, run: run} do
+      {:ok, _saved} = Pipeline.save_stage_output(task, %{markdown: "12 keys have no German entry."})
+
+      [first_id, second_id] =
+        for body <- ["Say which screens.", "Group them by screen."] do
+          {:ok, %{id: id}} =
+            Pipeline.create_plan_comment(scope, run, %{
+              target: :output,
+              body: body,
+              element_kind: :paragraph,
+              element_label: "Paragraph 1",
+              element_occurrence: 1,
+              element_text: "12 keys have no German entry."
+            })
+
+          id
+        end
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#approve-custom-stage[disabled][title='Send or remove your 2 unsent comments first.']")
+
+      reject(Tools, :start_os_process, 2)
+      view |> with_target("#task-detail") |> render_click("approve_stage_output", %{})
+      assert has_element?(view, "#review-error", "Send or remove your 2 unsent comments first.")
+      assert %Task{stage: :custom} = Repo.reload!(task)
+
+      render(view)
+      view |> element("#plan-comment-tray-fold") |> render_click()
+      view |> element("#remove-plan-comment-#{first_id}") |> render_click()
+      render(view)
+      assert has_element?(view, "#approve-custom-stage[disabled][title='Send or remove your unsent comment first.']")
+
+      view |> element("#remove-plan-comment-#{second_id}") |> render_click()
+      render(view)
+      assert has_element?(view, "#approve-custom-stage")
+      refute has_element?(view, "#approve-custom-stage[disabled]")
+    end
+
+    test "Approve says why it did nothing on a page drawn before the file, before another tab's Approve, or after it", %{
+      conn: conn,
+      task: task,
+      run: run
+    } do
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      detail = with_target(view, "#task-detail")
+
+      render_click(detail, "approve_stage_output", %{})
+      assert has_element?(view, "#review-error", "Nothing is saved to approve yet.")
+
+      {:ok, _saved} = Pipeline.save_stage_output(task, %{markdown: "12 keys."})
+      {:ok, _latched} = Pipeline.update_run(run, %{stage_outcome: :done})
+      render_click(detail, "approve_stage_output", %{})
+      assert has_element?(view, "#review-error", "That stage was already approved.")
+
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :plan})
+      render_click(detail, "approve_stage_output", %{})
+      assert has_element?(view, "#review-error", "That stage was already approved.")
+
+      # Once the page itself has heard the task moved on, it asks nothing.
+      send(view.pid, :task_changed)
+      render(view)
+      reject(Pipeline, :approve_stage_output, 2)
+      render_click(detail, "approve_stage_output", %{})
+      assert has_element?(view, "#review-error", "That stage was already approved.")
+    end
+
+    test "a turn that saved no file, a failed run and a question each say so on the stage's item", %{
+      conn: conn,
+      task: task,
+      run: run
+    } do
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#review-item-stage-1[title='Missing strings: no file saved']")
+      assert has_element?(view, "#custom-stage-no-output", "Finished without saving its file")
+      assert has_element?(view, "#custom-stage-no-output", "Message Missing strings to pick up where it left off.")
+      assert has_element?(view, "#task-status-chip", "Missing strings needs you")
+
+      {:ok, _failed} = Pipeline.update_run(run, %{error: "It broke."})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#review-item-stage-1[title='Missing strings: failed']")
+
+      {:ok, _blocked} = Pipeline.update_run(run, %{error: nil, status: :blocked_on_input})
+      Repo.insert!(%Question{task_id: task.id, run_id: run.id, prompt: "German only, or French too?"})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#review-item-stage-1[title='Missing strings: needs an answer']")
+      assert has_element?(view, "#review-item-stage-1 [data-qa='review_item_badge']", "1")
+      refute has_element?(view, "#review-item-plan [data-qa='review_item_badge']")
+      assert has_element?(view, "#plan-chat [data-qa='question-card']", "German only, or French too?")
+    end
+
+    test "a workflow's task names the custom stage in its sequence, and a hand-filed task has no custom stage item", %{
+      conn: conn,
+      project: project,
+      task: task
+    } do
+      workflow =
+        Repo.insert!(%Workflow{
+          project_id: project.id,
+          path: ".rail/workflows/translation-sync.yml",
+          definition: %WorkflowDefinition{name: "Translation sync", schedule: "0 3 * * *", instructions: "Sync."},
+          next_run_at: ~U[2026-10-12 03:00:00Z]
+        })
+
+      Repo.preload(task, :issue).issue |> Ecto.Changeset.change(workflow_id: workflow.id) |> Repo.update!()
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert view |> element("#task-stage-sequence-stages") |> render() |> Floki.parse_fragment!() |> Floki.text() ==
+               "Missing strings › Plan › Implement › Review"
+    end
+
+    test "a hand-filed task has no custom stage item, and a URL naming none opens what the task waits on", %{
+      conn: conn,
+      issue: hand_filed,
+      task: task
+    } do
+      {:ok, hand_task} = Pipeline.create_task(hand_filed, :plan)
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{hand_task.id}?item=stage-1")
+      refute has_element?(view, "[id^='review-item-stage-']")
+      assert has_element?(view, "#review-item-plan[aria-current='true']")
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=stage-9")
+      assert has_element?(view, "#review-item-stage-1[aria-current='true']")
+    end
+
+    test "clicking the stage's item from another item opens its file", %{conn: conn, task: task} do
+      {:ok, _saved} = Pipeline.save_stage_output(task, %{markdown: "12 keys have no German entry."})
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=issue")
+
+      view |> element("#review-item-stage-1") |> render_click()
+
+      assert_patch(view, ~p"/tasks/#{task.id}?item=stage-1")
+      assert has_element?(view, "#review-item-stage-1[aria-current='true']")
+      assert has_element?(view, "#custom-stage-output", "12 keys have no German entry.")
+    end
+
+    test "the Comments item names the stage on a comment on its file and a message to its agent, and opens the stage", %{
+      conn: conn,
+      scope: scope,
+      task: task,
+      run: run
+    } do
+      {:ok, _saved} = Pipeline.save_stage_output(task, %{markdown: "12 keys have no German entry."})
+
+      {:ok, %{id: comment_id}} =
+        Pipeline.create_plan_comment(scope, run, %{
+          target: :output,
+          body: "Say which screens.",
+          element_kind: :paragraph,
+          element_label: "Paragraph 1",
+          element_occurrence: 1,
+          element_text: "12 keys have no German entry."
+        })
+
+      [%{id: message_id}] = Pipeline.append_run_events(run.id, nil, ["[human:#{scope.user.id}] Also French."])
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=comments")
+
+      assert has_element?(view, "#comment-#{comment_id}", "Missing strings")
+      assert has_element?(view, "#comment-#{comment_id}", "Paragraph 1")
+      assert has_element?(view, "#comment-#{comment_id} [data-qa=comment_opens]", "Open in Missing strings")
+      assert has_element?(view, "#comment-#{message_id}", "Missing strings")
+
+      view |> element("#comment-#{comment_id}") |> render_click()
+      assert_patch(view, ~p"/tasks/#{task.id}?item=stage-1")
+      assert has_element?(view, "#review-item-stage-1[aria-current='true']")
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=comments")
+      view |> element("#comment-#{message_id}") |> render_click()
+      assert_patch(view, ~p"/tasks/#{task.id}?item=stage-1")
+      assert has_element?(view, "#review-item-stage-1[aria-current='true']")
+
+      # A row from before comments named their stage opens nothing, leaving the list where it is.
+      Repo.update_all(from(c in PlanComment, where: c.id == ^comment_id), set: [custom_stage: nil])
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=comments")
+      assert has_element?(view, "#comment-#{comment_id} [data-qa=comment_opens]", "Open its stage")
+      view |> element("#comment-#{comment_id}") |> render_click()
+      assert has_element?(view, "#review-item-comments[aria-current='true']")
     end
   end
 

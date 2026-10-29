@@ -37,6 +37,13 @@ defmodule RailWeb.Components.UpNext do
           into: MapSet.new(),
           do: run.id
 
+    # A custom stage's saved file is on disk too, and its agent stops once it is saved.
+    approving =
+      for %Run{task: %Task{stage: :custom} = task} = run <- assigns.runs,
+          custom_stage_waiting?(task, run),
+          into: MapSet.new(),
+          do: run.id
+
     # Marking ready is one click, not something to read, so it is never the card that leads.
     featured = Enum.find(assigns.runs, &(not finalizing?(&1) or MapSet.member?(fix_plans, &1.id)))
 
@@ -46,6 +53,7 @@ defmodule RailWeb.Components.UpNext do
       |> assign(:rest, List.delete(assigns.runs, featured))
       |> assign(:picking, picking)
       |> assign(:fix_plans, fix_plans)
+      |> assign(:approving, approving)
       |> assign(:featured_icon, featured_icon(featured, fix_plans))
 
     ~H"""
@@ -72,15 +80,16 @@ defmodule RailWeb.Components.UpNext do
                 data-qa="up-next-chip"
                 class={[
                   "inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider",
-                  tone(@featured).chip
+                  tone(@featured, @approving).chip
                 ]}
               >
                 <.icon :if={@featured_icon} name={@featured_icon} class="size-3 -ml-0.5 mr-1" />{chip(
-                  @featured
+                  @featured,
+                  @approving
                 )}
               </span>
               <span class="font-mono text-xs text-slate-600 dark:text-slate-400 truncate">
-                {@featured.task.issue.identifier} · {Task.stage_label(@featured.task.stage)}
+                {@featured.task.issue.identifier} · {Task.stage_label(@featured.task)}
                 <span :if={parent_identifier(@featured)} class="text-slate-500 dark:text-slate-400">
                   in {parent_identifier(@featured)}
                 </span>
@@ -92,7 +101,7 @@ defmodule RailWeb.Components.UpNext do
             </h3>
 
             <p data-qa="up-next-summary" class="mt-1 text-sm text-slate-600 dark:text-slate-400">
-              {summary(@featured, @picking, @fix_plans)}
+              {summary(@featured, @picking, @fix_plans, @approving)}
             </p>
           </div>
 
@@ -100,13 +109,14 @@ defmodule RailWeb.Components.UpNext do
             data-qa="up-next-action"
             class={[
               "self-start @lg:self-center shrink-0 inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold transition-colors",
-              tone(@featured).action
+              tone(@featured, @approving).action
             ]}
           >
             <.icon :if={@featured_icon} name={@featured_icon} class="size-[15px] mr-1.5" />{verb(
               @featured,
               @picking,
-              @fix_plans
+              @fix_plans,
+              @approving
             )}
           </span>
         </div>
@@ -124,7 +134,12 @@ defmodule RailWeb.Components.UpNext do
         </span>
         <span class="min-w-0 flex-1 truncate text-sm text-slate-900 dark:text-slate-100">
           {run.task.issue.title} ·
-          <span class="text-slate-500 dark:text-slate-400">{detail(run, @picking, @fix_plans)}</span>
+          <span class="text-slate-500 dark:text-slate-400">{detail(
+            run,
+            @picking,
+            @fix_plans,
+            @approving
+          )}</span>
         </span>
         <span
           :if={parent_identifier(run)}
@@ -134,7 +149,7 @@ defmodule RailWeb.Components.UpNext do
           in {parent_identifier(run)}
         </span>
         <span class="shrink-0 text-sm font-semibold text-blue-600 dark:text-blue-400 group-hover:underline">
-          {verb(run, @picking, @fix_plans)}
+          {verb(run, @picking, @fix_plans, @approving)}
         </span>
       </.link>
 
@@ -169,7 +184,8 @@ defmodule RailWeb.Components.UpNext do
 
   # Review is what the merge is decided on, so a change ready for it opens on its findings, and one at Finalize on
   # the task, whose header merges it. A question is answered in its agent's conversation, beside the plan, which the
-  # task opens on by itself only for the agent taking messages: Plan at Plan, the review agent after.
+  # task opens on by itself only for the agent taking messages: Plan at Plan, a custom stage at its own, the review
+  # agent after.
   defp destination(run, fix_plans) do
     cond do
       MapSet.member?(fix_plans, run.id) ->
@@ -188,6 +204,9 @@ defmodule RailWeb.Components.UpNext do
         [navigate: ~p"/tasks/#{run.task_id}"]
     end
   end
+
+  defp chat_run?(%Run{role: %Role{custom_stage: name}, task: %Task{} = task} = run) when is_binary(name),
+    do: Task.works_stage?(task, run.role)
 
   defp chat_run?(%Run{role: %Role{stage: stage}, task: %Task{stage: :plan}}), do: stage == :plan
   defp chat_run?(%Run{role: %Role{stage: stage}}), do: stage == :review_lead
@@ -219,16 +238,16 @@ defmodule RailWeb.Components.UpNext do
   # produced the work of its stage and waits on that being read. A blocked run
   # waits on its questions. A run that failed or stopped waits on someone picking
   # it up, and says nothing about itself until they do.
-  defp chip(run) do
-    case Run.state(run) do
+  defp chip(run, approving) do
+    case state(run, approving) do
       :done -> if ready_to_merge?(run), do: "Ready to merge", else: "Ready for review"
       :blocked -> "Needs an answer"
       _stalled -> "Needs a fix"
     end
   end
 
-  defp verb(run, picking, fix_plans) do
-    case Run.state(run) do
+  defp verb(run, picking, fix_plans, approving) do
+    case state(run, approving) do
       :done ->
         cond do
           MapSet.member?(fix_plans, run.id) -> "Review"
@@ -246,11 +265,12 @@ defmodule RailWeb.Components.UpNext do
     end
   end
 
-  defp summary(run, picking, fix_plans) do
-    case Run.state(run) do
+  defp summary(run, picking, fix_plans, approving) do
+    case state(run, approving) do
       :done ->
         cond do
           MapSet.member?(fix_plans, run.id) -> "Waiting on you to approve the fix plan."
+          MapSet.member?(approving, run.id) -> "Waiting on you to approve the #{run.task.custom_stage} file."
           ready_to_merge?(run) -> "The review is finished, and the pull request is waiting on you to merge it."
           MapSet.member?(picking, run.id) -> "Waiting on you to pick a design."
           true -> "Waiting on you to read the #{work(run)}."
@@ -264,11 +284,12 @@ defmodule RailWeb.Components.UpNext do
     end
   end
 
-  defp detail(run, picking, fix_plans) do
-    case Run.state(run) do
+  defp detail(run, picking, fix_plans, approving) do
+    case state(run, approving) do
       :done ->
         cond do
           MapSet.member?(fix_plans, run.id) -> "fix plan to approve"
+          MapSet.member?(approving, run.id) -> "#{run.task.custom_stage} file to approve"
           finalizing?(run) or ready_to_merge?(run) -> "review finished"
           MapSet.member?(picking, run.id) -> "pick a design"
           true -> "#{work(run)} ready for review"
@@ -309,13 +330,16 @@ defmodule RailWeb.Components.UpNext do
   end
 
   # A stage that stalled is a problem rather than a queue, and reads as one.
-  defp tone(run) do
-    if Run.state(run) in [:failed, :stopped] do
+  defp tone(run, approving) do
+    if state(run, approving) in [:failed, :stopped] do
       %{chip: "bg-red-500 text-white", action: "bg-red-500 text-slate-950 group-hover:bg-red-400"}
     else
       %{chip: "bg-amber-500 text-slate-950", action: "bg-amber-500 text-slate-950 group-hover:bg-amber-400"}
     end
   end
+
+  # A custom stage waiting on Approve has stopped with its file saved, which is its work done.
+  defp state(run, approving), do: if(MapSet.member?(approving, run.id), do: :done, else: Run.state(run))
 
   defp work(%Run{task: %Task{stage: :plan}}), do: "plan"
   defp work(%Run{task: %Task{stage: :engineer}}), do: "diff"

@@ -215,7 +215,7 @@ defmodule Rail.Pipeline.Schemas.Run do
   """
   def needs_attention?(%__MODULE__{role: %Role{} = role, task: %Task{issue: %Issue{} = issue} = task} = run) do
     task.stage != :merged and is_nil(task.merged_at) and is_nil(issue.completed_at) and
-      issue.state not in [:canceled, :duplicate] and waiting_state?(state(run), role.stage, task)
+      issue.state not in [:canceled, :duplicate] and waiting_state?(state(run), role, task)
   end
 
   # A run read as its issue was deleted has no issue left to wait on anyone for.
@@ -267,10 +267,10 @@ defmodule Rail.Pipeline.Schemas.Run do
 
   def can_chat?(_other), do: false
 
-  defp waiting_state?(state, stage, %Task{} = task) do
+  defp waiting_state?(state, %Role{} = role, %Task{} = task) do
     cond do
-      task.stage == :review and stage in Task.check_stages() -> state in [:failed, :stopped]
-      stage == Task.role_stage(task.stage) -> waiting_state?(state, task)
+      task.stage == :review and role.stage in Task.check_stages() -> state in [:failed, :stopped]
+      Task.works_stage?(task, role) -> waiting_state?(state, task)
       true -> false
     end
   end

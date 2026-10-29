@@ -5,6 +5,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
   alias Rail.Git
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Issues.Workers.AdvanceTrackerState
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -38,7 +39,14 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Enter Stage Issue"})
+    stages = [
+      %IssueStage{stage: :plan},
+      %IssueStage{stage: :engineer},
+      %IssueStage{stage: :custom, name: "License check", prompt: "Check each changed dependency's license."},
+      %IssueStage{stage: :review}
+    ]
+
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Enter Stage Issue", stages: stages})
     {:ok, task} = Pipeline.create_task(issue, :plan)
 
     %{project: project, task: task, roles: roles}
@@ -63,6 +71,24 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     end)
 
     %{task: task}
+  end
+
+  test "entering a custom stage records it and spawns its run on its own role, with Engineer's model and its prompt",
+       %{task: task, roles: roles} do
+    %{model: model, id: engineer_id} = roles[:engineer]
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
+      assert "Check each changed dependency's license." in argv
+      assert model in argv
+      {:ok, %OsProcess{run: spawned, task: task}}
+    end)
+
+    assert {:ok, %Run{status: :running, role: %Role{id: role_id, custom_stage: "License check"}}} =
+             Pipeline.enter_stage(task, {:custom, "License check"})
+
+    assert role_id != engineer_id
+    assert %Task{stage: :custom, custom_stage: "License check"} = Repo.reload!(task)
+    assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: task.issue_id})
   end
 
   test "entering a stage, started or not, tells whoever is watching the pipeline", %{task: %Task{id: task_id} = task} do

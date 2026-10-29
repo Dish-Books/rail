@@ -3,7 +3,7 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinished do
   Where a finished engineer turn leaves its task.
 
   The engineer commits its own work, and a turn that ends with commits the remote has not had is the work
-  handed over: Rail sends it through CI where the project has it, pushes it, and sends it to Review. A later
+  handed over: Rail sends it through CI where the project has it, pushes it, and sends it on to the next stage. A later
   round whose plan changes no code, such as one that only retakes the screens, has nothing to commit, so a turn
   that leaves it clean and pushed sends it to Review as a CI pass does, running CI first where HEAD has not
   passed it. In the first round a turn that committed nothing, such as one answering a message, leaves the stage
@@ -48,7 +48,7 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinished do
   end
 
   defp send_as_it_stands(%Run{} = run) do
-    case Pipeline.send_to_review(run) do
+    case Pipeline.send_to_next_stage(run) do
       {:ok, %Run{} = sent} ->
         %{sent | task: run.task, role: run.role}
 

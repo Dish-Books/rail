@@ -7,6 +7,7 @@ defmodule RailWeb.Live.PlanStageTest do
 
   alias Rail.Git
   alias Rail.Issues
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Repo
@@ -130,6 +131,49 @@ defmodule RailWeb.Live.PlanStageTest do
 
     refute has_element?(view, "[data-qa='plan_tab_off']")
     refute has_element?(view, "#plan-ticket-from-issue")
+  end
+
+  test "a file a custom stage saved before Plan heads the tabs, saying when it was saved and which stages get it", %{
+    conn: conn,
+    task: task
+  } do
+    stages = [
+      %IssueStage{stage: :custom, name: "Missing strings", prompt: "List the keys."},
+      %IssueStage{stage: :plan},
+      %IssueStage{stage: :engineer},
+      %IssueStage{stage: :custom, name: "License check", prompt: "Check each license."},
+      %IssueStage{stage: :review}
+    ]
+
+    Repo.preload(task, :issue).issue
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.put_embed(:stages, stages)
+    |> Repo.update!()
+
+    File.mkdir_p!(Path.join(task.scratch_path, "stages"))
+
+    File.write!(
+      Path.join([task.scratch_path, "stages", "1-missing-strings.md"]),
+      "12 keys in `en.json` have no German entry.\n"
+    )
+
+    File.write!(Path.join([task.scratch_path, "stages", "4-license-check.md"]), "Not Plan's to show.\n")
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+
+    assert ["plan-tab-stage-1", "plan-tab-ticket", "plan-tab-design", "plan-tab-plan"] ==
+             view |> render() |> Floki.parse_document!() |> Floki.attribute("[data-qa='plan_tab']", "id")
+
+    assert has_element?(view, "#plan-tab-stage-1", "Missing strings")
+    assert has_element?(view, "#plan-earlier-stage-1", "Earlier stage")
+    assert has_element?(view, "#plan-earlier-stage-1", "Plan, Implement, License check and Review get this file")
+    assert has_element?(view, "#plan-earlier-stage-1 code", "en.json")
+    refute has_element?(view, "#plan-section-stage-4")
+
+    # Before Plan has saved its plan, the earlier stage's file is what the tab opens on.
+    Repo.update_all(from(r in Round, where: r.task_id == ^task.id), set: [plan: nil])
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+    assert has_element?(view, "#plan-tab-stage-1[aria-selected='true']")
   end
 
   describe "a task whose workflow turned steps off" do

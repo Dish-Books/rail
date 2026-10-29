@@ -5,6 +5,7 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
 
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
@@ -92,5 +93,35 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
 
     assert {:error, {:worktree_failed, :clone_missing}} = Pipeline.start_task(issue)
     assert [] = Repo.all(from t in Task, where: t.issue_id == ^issue.id)
+  end
+
+  test "an issue whose sequence starts with a custom stage starts there, on its own role, with no round", %{
+    project: project,
+    attrs: attrs
+  } do
+    stages = [
+      %IssueStage{stage: :custom, name: "Missing strings", prompt: "List the keys with no translation."},
+      %IssueStage{stage: :plan},
+      %IssueStage{stage: :engineer},
+      %IssueStage{stage: :review}
+    ]
+
+    issue = %Issue{stages: stages} |> Issue.tracker_changeset(attrs) |> Repo.insert!()
+    {:ok, %Role{id: engineer_id}} = Roles.get_role(project_id: project.id, stage: :engineer)
+
+    stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+
+    expect(Tools, :start_os_process, fn %Run{} = run, argv ->
+      assert "List the keys with no translation." in argv
+      {:ok, %OsProcess{task_id: run.task_id, run: run}}
+    end)
+
+    assert {:ok, %Task{id: task_id, stage: :custom, custom_stage: "Missing strings"}} = Pipeline.start_task(issue)
+
+    assert [%Run{role: %Role{custom_stage: "Missing strings", id: role_id}}] =
+             Repo.all(from r in Run, where: r.task_id == ^task_id, preload: :role)
+
+    assert role_id != engineer_id
+    assert [] = Repo.all(from r in Round, where: r.task_id == ^task_id)
   end
 end

@@ -2,7 +2,8 @@ defmodule Rail.Pipeline.Actions.CreatePlanComment do
   @moduledoc """
   Saves a comment on the Plan step's output, unsent, for the person writing it. A design comment is only for the
   picked option, a ticket or plan comment only once that document is saved, one on the next round's plan only while
-  it waits on approval, and any comment only while the run can take a message, as typing in its chat can.
+  it waits on approval, one on a custom stage's output only while the task is at that stage with its file saved, naming
+  that stage, and any comment only while the run can take a message, as typing in its chat can.
   """
 
   import Rail.Pipeline.Utils.BroadcastPlanComments
@@ -14,6 +15,7 @@ defmodule Rail.Pipeline.Actions.CreatePlanComment do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
+  alias Rail.Roles.Schemas.Role
   alias Rail.Scope
 
   @doc """
@@ -28,8 +30,13 @@ defmodule Rail.Pipeline.Actions.CreatePlanComment do
     # Read again, so a page drawn before the chat closed cannot write after it.
     with %Run{} = run <- Repo.get(Run, run.id),
          true <- Run.can_chat?(run) || {:error, :chat_unavailable},
-         :ok <- Task |> Repo.get!(run.task_id) |> Repo.preload(:issue) |> validate_target(changeset),
-         {:ok, comment} <- changeset |> Ecto.Changeset.put_change(:task_id, run.task_id) |> Repo.insert() do
+         %Task{} = task <- Task |> Repo.get!(run.task_id) |> Repo.preload(:issue),
+         :ok <- validate_target(task, changeset),
+         :ok <- validate_run(run, changeset),
+         # An output comment names the stage whose file it is on, so the Comments item opens it there later.
+         stage = if(Ecto.Changeset.get_field(changeset, :target) == :output, do: task.custom_stage),
+         {:ok, comment} <-
+           changeset |> Ecto.Changeset.change(task_id: run.task_id, custom_stage: stage) |> Repo.insert() do
       broadcast_plan_comments(run.task_id, user_id)
       {:ok, comment}
     else
@@ -54,10 +61,26 @@ defmodule Rail.Pipeline.Actions.CreatePlanComment do
         if match?(%FixPlan{plan: plan, approved_at: nil} when is_binary(plan), Pipeline.read_fix_plan(task)),
           do: :ok,
           else: {:error, :no_fix_plan}
+
+      :output ->
+        if task.stage == :custom and Enum.any?(Pipeline.read_stage_outputs(task), &(&1.name == task.custom_stage)),
+          do: :ok,
+          else: {:error, :no_output}
     end
   end
 
   defp validate_target(_task, changeset), do: {:error, changeset}
+
+  # An output comment goes to the stage's own agent, so it is taken only through that stage's run.
+  defp validate_run(%Run{} = run, changeset) do
+    with :output <- Ecto.Changeset.get_field(changeset, :target),
+         %Run{role: %Role{} = role, task: %Task{} = task} <- Repo.preload(run, [:role, :task]),
+         false <- Task.works_stage?(task, role) do
+      {:error, :no_output}
+    else
+      _other_target_or_its_run -> :ok
+    end
+  end
 
   defp validate_pick(%Task{} = task, key) do
     case Pipeline.read_design(task, pages: false) do

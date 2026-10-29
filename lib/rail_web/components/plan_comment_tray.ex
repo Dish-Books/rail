@@ -1,8 +1,8 @@
 defmodule RailWeb.Components.PlanCommentTray do
   @moduledoc """
-  The reader's unsent ticket, design, plan and next round's plan comments, above the composer as the message they will become, with
-  Send beside them while their agent can take a message: Plan, and once the work started the review agent. Only
-  their author sees them.
+  The reader's unsent ticket, design, plan, next round's plan and custom stage output comments, above the composer as
+  the message they will become, with Send beside them while their agent can take a message: Plan, a custom stage's
+  agent, and once the work started the review agent. Only their author sees them.
   """
   use RailWeb, :html
 
@@ -12,7 +12,11 @@ defmodule RailWeb.Components.PlanCommentTray do
   attr :open, :boolean, default: true
   attr :can_send, :boolean, required: true
   attr :plan_running, :boolean, required: true
-  attr :agent, :string, default: "Plan", doc: "who the comments go to: Plan, and once the work started the review agent"
+
+  attr :agent, :string,
+    default: "Plan",
+    doc: "who the comments go to: Plan, a custom stage by its name, and once the work started the review agent"
+
   attr :target, :any, required: true
 
   def plan_comment_tray(assigns) do
@@ -87,7 +91,7 @@ defmodule RailWeb.Components.PlanCommentTray do
                 :if={comment.target != :design}
                 class="shrink-0 font-sans font-semibold text-slate-600 dark:text-slate-300"
               >
-                {target_label(comment.target)}
+                {target_label(comment.target, @agent)}
               </span>
               <span :if={comment.target != :design} class="truncate">{comment.element_label}</span>
               <span :if={comment.target == :design} class="truncate" title={comment.selector}>
@@ -156,7 +160,9 @@ defmodule RailWeb.Components.PlanCommentTray do
   defp noun(1), do: " comment"
   defp noun(_count), do: " comments"
 
-  defp target_label(:ticket), do: "Ticket"
-  defp target_label(:plan), do: "Plan"
-  defp target_label(:fix_plan), do: "Next round's plan"
+  # A custom stage's file is named for its stage, which is the agent the comments go to.
+  defp target_label(:output, agent), do: agent
+  defp target_label(:ticket, _agent), do: "Ticket"
+  defp target_label(:plan, _agent), do: "Plan"
+  defp target_label(:fix_plan, _agent), do: "Next round's plan"
 end

@@ -134,6 +134,43 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert_received {:pipeline_changed, ^task_id}
   end
 
+  test "a custom stage's turn leaves the task at the stage, saved file or not, since only Approve moves it on", %{
+    project: project,
+    task: task
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :custom, custom_stage: "License check"})
+    {:ok, role} = Roles.get_custom_stage_role(project.id, "License check")
+
+    for _turn <- 1..2 do
+      {:ok, run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: role.id,
+          status: :running,
+          conversation_id: "sess_custom_stage",
+          started_at: DateTime.utc_now()
+        })
+
+      {:ok, os_process} =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: task.id,
+          stream_path: "/tmp/run_finished/#{run.id}.ndjson",
+          status: :running,
+          started_at: DateTime.utc_now()
+        })
+        |> Repo.insert()
+
+      assert {:ok, %Run{status: :finished, stage_outcome: :in_progress, error: nil}} =
+               Pipeline.run_finished(os_process, %{exit_code: 0})
+
+      assert %Task{stage: :custom, custom_stage: "License check"} = Repo.reload!(task)
+      Repo.delete!(Repo.reload!(os_process))
+      Repo.delete!(Repo.reload!(run))
+    end
+  end
+
   test "usage accumulates across the processes a run is carried by", %{exited: exited} do
     {run, os_process} = exited.(:plan, %{usage: %Run.Usage{input_tokens: 10, output_tokens: 5}})
 
