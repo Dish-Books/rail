@@ -56,8 +56,11 @@ defmodule Rail.Pipeline.Actions.StartPlanTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "The raw ask."})
     {:ok, task} = Pipeline.create_task(issue, :plan)
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    # Starting the work only queues the engineer, so the worktree is a plain directory nothing asks git about.
+    worktree_path = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree_path)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     {:ok, _saved} = Pipeline.save_plan(task, %{title: "The ticket", description: "Its body.", plan: @plan})
 
     {:ok, run} =

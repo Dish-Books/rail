@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.SaveFindingTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
@@ -21,9 +22,13 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Save Finding"})
     {:ok, task} = Pipeline.create_task(issue, :review)
-    worktree = create_temp_git_repo()
+    # HEAD is asked of Rail.Git, so the worktree is a plain directory and the stub says which commit it is on.
+    # A test that moves the branch stubs it again with the new commit.
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
-    head = worktree |> git!(["rev-parse", "HEAD"]) |> String.trim()
+    head = String.duplicate("a", 40)
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: head, dirty_digest: "clean"} end)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
     Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task.id}")
 
@@ -51,10 +56,12 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
   end
 
   test "a new finding is raised in the round running against HEAD's commit, and broadcast", %{
-    task: %{id: task_id} = task,
+    task: %{id: task_id, worktree_path: worktree} = task,
     head: head,
     attrs: attrs
   } do
+    expect(Git, :branch_fingerprint, fn ^worktree -> %{head_sha: head, dirty_digest: "clean"} end)
+
     assert {:ok,
             %Finding{
               key: "send-twice",
@@ -82,15 +89,14 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
 
   test "a finding saved on a commit after round 1 was closed is raised in round 2", %{task: task, attrs: attrs} do
     {:ok, %{round: 1}} = Pipeline.save_review(task)
-    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 1"])
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: String.duplicate("b", 40), dirty_digest: "clean"} end)
 
     assert {:ok, %Finding{round: 2, notes: [%FindingNote{round: 2}]}} = Pipeline.save_finding(task, attrs)
   end
 
-  test "a new finding without evidence, over a limit or holding markup is refused naming the field", %{
-    task: task,
-    attrs: attrs
-  } do
+  # The lead saves it again in the same turn, which it can only do knowing which piece is wrong and why.
+  test "a new finding without evidence, over a limit, holding markup or with a bad evidence entry is refused naming the field, the entry and what is wrong",
+       %{task: task, attrs: attrs} do
     assert {:error, changeset} = Pipeline.save_finding(task, Map.delete(attrs, "evidence"))
     assert %{evidence: ["needs at least one highlighted code range, screenshot, file or note"]} = errors_on(changeset)
 
@@ -100,14 +106,6 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
     assert {:error, changeset} = Pipeline.save_finding(task, %{attrs | "problem" => "</invoke> sent twice"})
     assert %{problem: ["holds tool-call markup; write it as plain text"]} = errors_on(changeset)
 
-    assert Pipeline.list_findings(task) == []
-  end
-
-  # The lead saves it again in the same turn, which it can only do knowing which piece is wrong and why.
-  test "a new finding with a bad evidence entry is refused naming the entry and what is wrong", %{
-    task: task,
-    attrs: attrs
-  } do
     for {entry, said} <- [
           {%{"name" => "passwd", "kind" => "log", "path" => "../../../../etc/passwd"},
            %{path: ["cannot climb out of the QA directory"]}},
@@ -119,6 +117,8 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
       assert {:error, changeset} = Pipeline.save_finding(task, %{attrs | "evidence" => [entry]})
       assert %{evidence: [^said]} = errors_on(changeset)
     end
+
+    assert Pipeline.list_findings(task) == []
   end
 
   # Copied rather than pointed at, so a later pass writing over the original changes nothing the human was shown.
@@ -345,8 +345,8 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
   } do
     {:ok, %Finding{id: id}} = Pipeline.save_finding(task, %{attrs | "recommendation" => "skip"})
     {:ok, %{round: 1}} = Pipeline.save_review(task)
-    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 1"])
-    head = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
+    head = String.duplicate("b", 40)
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: head, dirty_digest: "clean"} end)
 
     assert {:ok,
             %Finding{
@@ -378,7 +378,7 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
     {:ok, _raised} = Pipeline.save_finding(task, %{attrs | "recommendation" => "skip"})
     fixed = %{"key" => "send-twice", "status" => "fixed"}
     {:ok, %Finding{fixed_in: ^head}} = Pipeline.save_finding(task, fixed)
-    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Later"])
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: String.duplicate("b", 40), dirty_digest: "clean"} end)
 
     assert {:ok, %Finding{status: :fixed, fixed_in: ^head}} = Pipeline.save_finding(task, fixed)
 
@@ -390,12 +390,12 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
        %{task: task, attrs: attrs} do
     {:ok, raised} = Pipeline.save_finding(task, %{attrs | "recommendation" => "skip"})
     Repo.update!(change(raised, status: :fixed))
-    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Later"])
+    later = String.duplicate("b", 40)
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: later, dirty_digest: "clean"} end)
     fixed = %{"key" => "send-twice", "status" => "fixed"}
 
     assert {:ok, %Finding{status: :fixed, fixed_in: nil}} = Pipeline.save_finding(task, fixed)
 
-    later = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
     {:ok, %Finding{fixed_in: nil}} = Pipeline.save_finding(task, %{fixed | "status" => "not_fixed"})
 
     assert {:ok, %Finding{status: :fixed, fixed_in: ^later}} = Pipeline.save_finding(task, fixed)
@@ -408,7 +408,7 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
     {:ok, raised} = Pipeline.save_finding(task, attrs)
     {:ok, %{round: 1}} = Pipeline.save_review(task)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), raised, :fix)
-    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 1"])
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: String.duplicate("b", 40), dirty_digest: "clean"} end)
     still_failing = %{"key" => "send-twice", "status" => "not_fixed", "note" => "Still sends twice."}
 
     assert {:ok,
@@ -501,24 +501,19 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
                })
     end
 
-    test "that covers no place is refused", %{task: task, report: report} do
+    test "that covers no place, names no test, or leaves a place without a reason or unaccounted for is refused, and saves nothing",
+         %{task: task, report: report} do
       assert {:error, changeset} = Pipeline.save_finding(task, Map.delete(report, "covered"))
       assert %{covered: ["is the numbers of the places, from 1, the fix covers"]} = errors_on(changeset)
-    end
 
-    test "that names no test is refused", %{task: task, report: report} do
       for test <- [nil, %{"file" => "test/send_test.exs"}, %{"file" => " ", "name" => "sends once"}] do
         assert {:error, changeset} = Pipeline.save_finding(task, %{report | "test" => test})
         assert %{test: ["is the `file` and `name` of the test that failed before the fix"]} = errors_on(changeset)
       end
-    end
 
-    test "that leaves a place without a reason is refused", %{task: task, report: report} do
       assert {:error, changeset} = Pipeline.save_finding(task, %{report | "left" => [%{"place" => 2, "reason" => " "}]})
       assert %{left: ["needs the reason the fix leaves each place it lists"]} = errors_on(changeset)
-    end
 
-    test "that leaves a place unaccounted for is refused, and saves nothing", %{task: task, report: report} do
       assert {:error, changeset} = Pipeline.save_finding(task, Map.delete(report, "left"))
 
       assert %{
@@ -570,6 +565,7 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
 
   test "a task with no worktree on disk raises with no commit", %{task: task, attrs: attrs} do
     {:ok, gone} = Pipeline.update_task(task, %{worktree_path: "/nonexistent/svf"})
+    reject(Git, :branch_fingerprint, 1)
 
     assert {:ok, %Finding{raised_in: nil}} =
              Pipeline.save_finding(gone, Map.new(attrs, fn {k, v} -> {String.to_existing_atom(k), v} end))

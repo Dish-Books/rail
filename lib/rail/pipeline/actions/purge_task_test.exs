@@ -1,15 +1,23 @@
 defmodule Rail.Pipeline.Actions.PurgeTaskTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.RunEvent
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools.Schemas.BrowserSession
   alias Rail.Tools.Schemas.OsProcess
+
+  # Git is faked at its boundary: removing a worktree or a branch for real is for `Rail.Git`'s own tests.
+  setup do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :remove_worktree, fn _repo_path, _worktree_path -> :ok end)
+    stub(Git, :delete_branch, fn _repo_path, _branch -> :ok end)
+    :ok
+  end
 
   test "stops only the runs still going and stamps nothing on the task", %{project: project} do
     {:ok, %Task{id: task_id} = task} =
@@ -116,30 +124,11 @@ defmodule Rail.Pipeline.Actions.PurgeTaskTest do
     assert %Run{id: ^other_run_id} = Repo.get(Run, other_run_id)
   end
 
-  # Its own project, because the worktree is removed from a real clone.
-  test "removes the task's worktree, branch and scratch folder", %{project: %{linear_workspace_id: workspace_id}} do
-    clone_path = create_temp_git_repo(prefix: "rail_purge_main")
+  test "removes the task's worktree, branch and scratch folder", %{project: %{clone_path: clone_path} = project} do
     worktree_path = Path.join(System.tmp_dir!(), "rail_purge_wt_#{System.unique_integer([:positive])}")
-    git!(clone_path, ["worktree", "add", "-b", "purge-branch", worktree_path])
-
     scratch_dir = Path.join(System.tmp_dir!(), "rail_purge_scratch_#{System.unique_integer([:positive])}")
     File.mkdir_p!(scratch_dir)
     File.write!(Path.join(scratch_dir, "notes.md"), "temporary content")
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_purge"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Purge Task Project",
-        github_repo: "org/purge-task",
-        github_installation_id: 8706,
-        key: "PRG",
-        default_branch: "main",
-        clone_path: clone_path,
-        linear_workspace_id: workspace_id
-      })
 
     {:ok, task} =
       %Issue{}
@@ -161,10 +150,11 @@ defmodule Rail.Pipeline.Actions.PurgeTaskTest do
         scratch_path: scratch_dir
       })
 
+    expect(Git, :remove_worktree, fn ^clone_path, ^worktree_path -> :ok end)
+    expect(Git, :delete_branch, fn ^clone_path, "purge-branch" -> :ok end)
+
     assert :ok = Pipeline.purge_task(task)
 
-    refute File.exists?(worktree_path)
     refute File.exists?(scratch_dir)
-    assert "" = git!(clone_path, ["branch", "--list", "purge-branch"])
   end
 end

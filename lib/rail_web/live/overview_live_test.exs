@@ -25,6 +25,9 @@ defmodule RailWeb.OverviewLiveTest do
     # would spawn git: these pages see nothing on the default branch, as when there is no clone.
     stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
     stub(Rail.Git, :list_default_branch_paths, fn _project, paths -> if paths == [], do: MapSet.new() end)
+    # A task cleaned up or deleted with its issue takes its worktree and branch in that clone with it.
+    stub(Rail.Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
+    stub(Rail.Git, :delete_branch, fn _clone_path, _branch -> :ok end)
 
     :ok
   end
@@ -2302,6 +2305,14 @@ defmodule RailWeb.OverviewLiveIssueEventsTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Users
+
+  setup do
+    # A role's prompt is read from the project's clone, which another test may have made, so reading it here
+    # would spawn git: this sees no prompt file on the default branch, as when there is no clone.
+    stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
+    :ok
+  end
 
   test "a new issue or a comment on one moves no task, so the page is left as it was", %{
     conn: conn,

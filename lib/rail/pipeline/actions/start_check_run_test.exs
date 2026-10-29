@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.StartCheckRunTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
@@ -10,9 +11,17 @@ defmodule Rail.Pipeline.Actions.StartCheckRunTest do
 
   setup %{project: project} do
     task = learnings_task(project, "SCR-1", :review)
-    worktree = create_temp_git_repo()
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+    # Git is only ever asked through Rail.Git, so the worktree is a plain directory, on the commit whose sha is all
+    # a's. A round's start is `base`, which a test says how HEAD came from.
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
+
+    stub(Git, :branch_fingerprint, fn ^worktree ->
+      %{head_sha: String.duplicate("a", 40), dirty_digest: String.duplicate("0", 64)}
+    end)
 
     runs =
       Map.new([:qa, :review, :demo], fn stage ->
@@ -21,7 +30,7 @@ defmodule Rail.Pipeline.Actions.StartCheckRunTest do
         {stage, %{run | role: role}}
       end)
 
-    %{task: task, runs: runs}
+    %{task: task, runs: runs, worktree: worktree, base: String.duplicate("b", 40)}
   end
 
   test "QA is spawned fresh on its own model, told to drive its own browser and save a report", %{
@@ -64,9 +73,13 @@ defmodule Rail.Pipeline.Actions.StartCheckRunTest do
     assert {:ok, %OsProcess{}} = Pipeline.start_check_run(runs.review)
   end
 
-  test "QA re-checks a later round's own change, not every acceptance criterion", %{task: task, runs: runs} do
-    base = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
-    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "the fix"])
+  test "QA re-checks a later round's own change, not every acceptance criterion", %{
+    task: task,
+    runs: runs,
+    worktree: worktree,
+    base: base
+  } do
+    stub(Git, :commits_since, fn ^worktree, ^base -> {:ok, %{merges: false}} end)
     Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Filter by vendor.", approved_at: DateTime.utc_now()})
 
     Repo.insert!(%Round{
@@ -94,12 +107,8 @@ defmodule Rail.Pipeline.Actions.StartCheckRunTest do
   end
 
   test "a round that merged the default branch points its checkers at what the merge changed in the branch's files",
-       %{task: task, runs: runs} do
-    base = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
-    git!(task.worktree_path, ["checkout", "--quiet", "-b", "upstream"])
-    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "the default branch's work"])
-    git!(task.worktree_path, ["checkout", "--quiet", "main"])
-    git!(task.worktree_path, ["merge", "--quiet", "--no-ff", "--no-edit", "upstream"])
+       %{task: task, runs: runs, worktree: worktree, base: base} do
+    stub(Git, :commits_since, fn ^worktree, ^base -> {:ok, %{merges: true}} end)
 
     Repo.insert!(%Round{
       task_id: task.id,
@@ -129,12 +138,14 @@ defmodule Rail.Pipeline.Actions.StartCheckRunTest do
     assert {:ok, %OsProcess{}} = Pipeline.start_check_run(runs.qa)
   end
 
+  # A rebase since the round started leaves its start out of the branch.
   test "QA walks every acceptance criterion again when the round's start is no longer in the branch", %{
     task: task,
-    runs: runs
+    runs: runs,
+    worktree: worktree,
+    base: base
   } do
-    base = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
-    git!(task.worktree_path, ["commit", "--quiet", "--amend", "--allow-empty", "-m", "initial commit, rebased"])
+    stub(Git, :commits_since, fn ^worktree, ^base -> {:error, :not_ancestor} end)
 
     Repo.insert!(%Round{
       task_id: task.id,

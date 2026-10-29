@@ -3,6 +3,7 @@ defmodule Rail.Workflows.Actions.SyncWorkflowsTest do
 
   import ExUnit.CaptureLog
 
+  alias Rail.Git
   alias Rail.Projects
   alias Rail.Workflows
   alias Rail.Workflows.Schemas.Workflow
@@ -14,28 +15,34 @@ defmodule Rail.Workflows.Actions.SyncWorkflowsTest do
   instructions: Update the dependencies.
   """
 
-  setup %{project: project} do
-    remote = create_temp_git_repo(prefix: "rail_wf_remote")
-    clone = create_temp_git_repo(prefix: "rail_wf_clone")
-    git!(clone, ["remote", "add", "origin", remote])
+  setup do
+    # The files on the project's fetched default branch, as `Rail.Git` lists and reads them.
+    branch = start_supervised!({Agent, fn -> %{} end})
 
-    # Merges `files` to the remote's default branch, writing nil as a removal, and fetches it into the clone.
+    stub(Git, :list_default_branch_files, fn _project, ".rail/workflows" ->
+      {:ok, Enum.sort(Agent.get(branch, &Map.keys/1))}
+    end)
+
+    stub(Git, :read_default_branch_file, fn _project, path ->
+      with :error <- Agent.get(branch, &Map.fetch(&1, path)),
+           do: {:error, "fatal: path '#{path}' does not exist in 'refs/remotes/origin/main'"}
+    end)
+
+    # Merges `files` to the default branch, writing nil as a removal.
     merge = fn files ->
-      for {path, text} <- files do
-        full = Path.join(remote, path)
-        if text, do: File.mkdir_p!(Path.dirname(full)) && File.write!(full, text), else: File.rm!(full)
-      end
-
-      git!(remote, ["add", "-A"])
-      git!(remote, ["commit", "--allow-empty", "-m", "workflows"])
-      git!(clone, ["fetch", "origin", "main"])
+      Agent.update(branch, fn merged ->
+        Enum.reduce(files, merged, fn
+          {path, nil}, merged -> Map.delete(merged, path)
+          {path, text}, merged -> Map.put(merged, path, text)
+        end)
+      end)
     end
 
     # 2026-10-12 is a Monday.
     stub(DateTime, :utc_now, fn -> ~U[2026-10-12 08:00:00.000000Z] end)
     Phoenix.PubSub.subscribe(Rail.PubSub, "workflows")
 
-    %{project: %{project | clone_path: clone}, merge: merge}
+    %{merge: merge}
   end
 
   test "a merged workflow file becomes a row with its definition and next due time", %{
@@ -106,7 +113,7 @@ defmodule Rail.Workflows.Actions.SyncWorkflowsTest do
 
   test "a file git cannot read starts nothing, the same as one that does not parse", %{project: project, merge: merge} do
     merge.(%{".rail/workflows/dependency-updates.yml" => @weekly})
-    expect(Rail.Git, :read_default_branch_file, fn _project, _path -> {:error, "fatal: bad object"} end)
+    expect(Git, :read_default_branch_file, fn _project, _path -> {:error, "fatal: bad object"} end)
 
     assert capture_log(fn -> assert {:ok, 1} = Workflows.sync_workflows(project) end) =~ "fatal: bad object"
     assert {:ok, [%Workflow{definition: nil, next_run_at: nil}]} = Workflows.list_workflows(system_scope(), [])
@@ -177,9 +184,11 @@ defmodule Rail.Workflows.Actions.SyncWorkflowsTest do
   end
 
   test "a project whose clone never fetched its default branch says so and changes nothing", %{project: project} do
-    clone = create_temp_git_repo(prefix: "rail_wf_unfetched")
+    expect(Git, :list_default_branch_files, fn _project, ".rail/workflows" ->
+      {:error, "fatal: Not a valid object name refs/remotes/origin/main"}
+    end)
 
-    assert {:error, _output} = Workflows.sync_workflows(%{project | clone_path: clone})
+    assert {:error, "fatal: Not a valid object name refs/remotes/origin/main"} = Workflows.sync_workflows(project)
     assert [] = Repo.all(Workflow)
   end
 end

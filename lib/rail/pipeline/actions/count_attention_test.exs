@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
 
   import Rail.Pipeline.Utils.BuildTask
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -10,6 +11,8 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
   alias Rail.Roles.Schemas.Role
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     roles =
       Map.new(Role.canonical_stages(), fn stage ->
         {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)

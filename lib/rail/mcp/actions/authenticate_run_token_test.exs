@@ -1,6 +1,7 @@
 defmodule Rail.Mcp.Actions.AuthenticateRunTokenTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Issues.Schemas.Issue
   alias Rail.Mcp
   alias Rail.Mcp.RunContext
@@ -14,6 +15,12 @@ defmodule Rail.Mcp.Actions.AuthenticateRunTokenTest do
   alias Rail.Users.Schemas.User
 
   setup %{project: project} do
+    # Roles are read with their prompts from the default branch, and a triage pass checks it out, both through
+    # Rail.Git. No project here has a clone, so these answer as git would for a default branch with no .rail/prompts.
+    stub(Git, :checkout_detached_worktree, fn _project, worktree_path -> {:ok, worktree_path} end)
+    stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     scope = system_scope()
     unique = System.unique_integer([:positive])
 

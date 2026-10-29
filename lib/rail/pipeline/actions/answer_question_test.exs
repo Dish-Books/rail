@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
@@ -10,6 +11,9 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
   alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -38,6 +42,15 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
         conversation_id: "sess_answer_question",
         started_at: DateTime.utc_now()
       })
+
+    test_pid = self()
+
+    # A sent round resumes the run in the background, which each test that sends one waits for, so it never outlives
+    # the test's stubs.
+    stub(Tools, :start_os_process, fn spawned, _argv ->
+      send(test_pid, {:resumed, spawned.id})
+      {:ok, %OsProcess{run: spawned}}
+    end)
 
     run = Repo.preload(run, task: :issue)
 
@@ -79,9 +92,8 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
     question = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
     {:ok, _answered} = Pipeline.answer_question(system_scope(), question, "Postgres")
 
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-
     {:ok, :sent, %Run{}} = Pipeline.send_answers(system_scope(), Repo.reload!(run))
+    assert_receive {:resumed, _run_id}
 
     assert {:error, :already_sent} = Pipeline.answer_question(system_scope(), Repo.reload!(question), "Sqlite")
     assert %Question{answer: "Postgres"} = Repo.reload!(question)
@@ -92,9 +104,8 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
     {:ok, answered} = Pipeline.answer_question(system_scope(), question, "Postgres")
     {:ok, _replaced} = Pipeline.answer_question(system_scope(), answered, "Sqlite")
 
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-
     {:ok, :sent, %Run{}} = Pipeline.send_answers(system_scope(), Repo.reload!(run))
+    assert_receive {:resumed, _run_id}
 
     lines = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
     assert lines =~ "The answer is: Sqlite"
@@ -121,9 +132,8 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
     {:ok, _answered} = Pipeline.answer_question(system_scope(), first, "Postgres")
     {:ok, _dismissed} = Pipeline.dismiss_question(second)
 
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-
     assert {:ok, :sent, %Run{}} = Pipeline.send_answers(system_scope(), Repo.reload!(run))
+    assert_receive {:resumed, _run_id}
 
     assert %Question{delivered_at: %DateTime{}} = Repo.reload!(first)
     assert %Question{delivered_at: %DateTime{}} = Repo.reload!(second)
@@ -152,9 +162,8 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
     only = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which database?"})
     {:ok, _answered} = Pipeline.answer_question(system_scope(), only, "Postgres")
 
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-
     assert {:ok, :sent, %Run{}} = Pipeline.send_answers(system_scope(), Repo.reload!(run))
+    assert_receive {:resumed, _run_id}
 
     lines = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
     assert lines =~ "You asked: Which database?"

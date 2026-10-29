@@ -4,17 +4,22 @@ defmodule Rail.Pipeline.Workers.CleanupMergedTaskTest do
 
   import Rail.Pipeline.Utils.BuildTask
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.Workers.CleanupMergedTask
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Users
 
+  # Git is faked at its boundary: removing a worktree or a branch for real is for `Rail.Git`'s own tests.
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :remove_worktree, fn _repo_path, _worktree_path -> :ok end)
+    stub(Git, :delete_branch, fn _repo_path, _branch -> :ok end)
+
     Req.Test.stub(Rail.Linear, fn conn ->
       n = System.unique_integer([:positive])
 
@@ -38,56 +43,29 @@ defmodule Rail.Pipeline.Workers.CleanupMergedTaskTest do
     %{task: task, engineer: engineer}
   end
 
-  # Its own project, because cleanup removes the worktree and branch from a real clone.
   test "a merged task with nothing running loses its worktree, branch, scratch folder and unsent comments", %{
-    project: %{linear_workspace_id: workspace_id}
+    project: %{clone_path: clone_path},
+    task: task
   } do
-    clone_path = create_temp_git_repo(prefix: "rail_cmt_main")
     worktree_path = Path.join(System.tmp_dir!(), "rail_cmt_wt_#{System.unique_integer([:positive])}")
-    git!(clone_path, ["worktree", "add", "-b", "cmt-branch", worktree_path])
-    on_exit(fn -> File.rm_rf(clone_path) end)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Cleanup Merged Project",
-        github_repo: "org/cleanup-merged",
-        github_installation_id: 8706,
-        key: "CMT",
-        default_branch: "main",
-        clone_path: clone_path,
-        linear_workspace_id: workspace_id
-      })
-
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Merged on Finalize"})
-    {:ok, task} = Pipeline.create_task(issue, :finalize)
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(task, %{
-        stage: :merged,
-        merged_at: DateTime.utc_now(),
-        worktree_name: "cmt-branch",
-        worktree_path: worktree_path
-      })
+      Pipeline.update_task(task, %{worktree_name: "cmt-branch", worktree_path: worktree_path})
 
-    File.mkdir_p!(task.scratch_path)
     File.write!(Path.join(task.scratch_path, "demo.webm"), "video")
 
     {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_cmt_ada", login: "cmt-ada", email: "cmt@example.com"})
     diff = %{path: "lib/a.ex", line_kind: :added, line: 1, line_text: "x", filter: :branch, body: "Name it."}
     {:ok, _unsent} = Pipeline.create_diff_comment(user_scope(user: ada), task, diff)
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+    expect(Git, :remove_worktree, fn ^clone_path, ^worktree_path -> :ok end)
+    expect(Git, :delete_branch, fn ^clone_path, "cmt-branch" -> :ok end)
 
     assert :ok = perform_job(CleanupMergedTask, %{task_id: task.id})
 
     assert %Task{cleaned_up_at: %DateTime{}} = Repo.reload!(task)
     assert_received {:pipeline_changed, ^task_id}
-    refute File.exists?(worktree_path)
     refute File.exists?(task.scratch_path)
-    assert "" = git!(clone_path, ["branch", "--list", "cmt-branch"])
     assert [] = Repo.all(from(c in DiffComment, where: c.task_id == ^task_id))
   end
 

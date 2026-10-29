@@ -1,6 +1,7 @@
 defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Mcp
   alias Rail.Mcp.RunContext
   alias Rail.Pipeline
@@ -11,9 +12,15 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
 
   setup %{project: project} do
     task = learnings_task(project, "RSS-1", :review)
-    worktree = create_temp_git_repo()
+    # Only checked for, so a plain directory; what git says of it is stubbed.
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    head = Base.encode16(:crypto.strong_rand_bytes(20), case: :lower)
+    stub(Git, :worktree_dirty?, fn ^worktree -> false end)
+    stub(Git, :branch_fingerprint, fn ^worktree -> %{head_sha: head, dirty_digest: "clean"} end)
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
     {:ok, qa} = Roles.get_role(project_id: project.id, stage: :qa)
 
     # A blank tab all one white, and Rail's Learnings with nothing to review, which is sparse but not blank.
@@ -33,7 +40,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
       task: task,
       worktree: worktree,
       context: context,
-      head: worktree |> git!(["rev-parse", "HEAD"]) |> String.trim(),
+      head: head,
       flat: flat,
       viewport: viewport
     }
@@ -193,7 +200,7 @@ defmodule Rail.Mcp.Utils.RunToolSaveScreenTest do
 
   # A picture of uncommitted work belongs to no commit, so it could never say which one it shows.
   test "a worktree with uncommitted changes is refused before any browser", %{context: context, worktree: worktree} do
-    File.write!(Path.join(worktree, "wip.ex"), "uncommitted\n")
+    expect(Git, :worktree_dirty?, fn ^worktree -> true end)
     reject(Tools, :start_browser_session, 3)
 
     assert {:error, {:refused, "Refused, nothing saved. The worktree has uncommitted changes" <> _rest}} =

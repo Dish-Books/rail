@@ -5,7 +5,10 @@ defmodule Rail.Projects.Actions.SaveEnvFileTest do
   alias Rail.Projects.Schemas.Project
 
   setup do
-    clone = create_temp_git_repo(prefix: "rail_save_env_clone")
+    # The .env is a plain file in the clone, so the clone is a plain directory.
+    clone = Path.join(System.tmp_dir!(), "rail_save_env_clone_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(clone)
+    on_exit(fn -> File.rm_rf(clone) end)
     File.write!(Path.join(clone, ".env"), "OLD=1\n")
 
     %{project: %Project{id: "prj_save_env_file_test", clone_path: clone}}

@@ -5,6 +5,16 @@ defmodule Rail.Learnings.Workers.CurateLearningsTest do
   alias Rail.GitHub.Client
   alias Rail.Learnings.Workers.CurateLearnings
 
+  # A pass reads its role's prompt from the default branch and checks that branch out, then removes the
+  # checkout, all in the project's clone: these answer as git would, with no git run.
+  setup do
+    stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Rail.Git, :checkout_detached_worktree, fn _project, path -> {:ok, path} end)
+    stub(Rail.Git, :remove_worktree, fn _repo, _path -> :ok end)
+
+    :ok
+  end
+
   test "a pass that cannot run is reported, and a project that is gone has none", %{project: project} do
     Req.Test.stub(Client, &Req.Test.json(Plug.Conn.put_status(&1, 401), %{"message" => "Bad credentials"}))
 
@@ -13,9 +23,6 @@ defmodule Rail.Learnings.Workers.CurateLearningsTest do
   end
 
   test "a pass that finishes is done", %{project: project} do
-    stub(Rail.Git, :checkout_detached_worktree, fn _project, path -> {:ok, path} end)
-    stub(Rail.Git, :remove_worktree, fn _repo, _path -> :ok end)
-
     Req.Test.stub(Client, fn conn ->
       case conn.request_path do
         "/app/installations/" <> _rest -> Req.Test.json(conn, %{"token" => "ghs_token"})
@@ -32,9 +39,6 @@ defmodule Rail.Learnings.Workers.CurateLearningsTest do
   end
 
   test "a pass that waits for usage runs again once the account resets", %{project: project} do
-    stub(Rail.Git, :checkout_detached_worktree, fn _project, path -> {:ok, path} end)
-    stub(Rail.Git, :remove_worktree, fn _repo, _path -> :ok end)
-
     Req.Test.stub(Client, fn conn ->
       case conn.request_path do
         "/app/installations/" <> _rest -> Req.Test.json(conn, %{"token" => "ghs_token"})

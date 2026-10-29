@@ -19,47 +19,27 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.RunEvent
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
-  # A project of its own, because the branch is pushed to and deleted from a real `origin`.
-  setup %{project: %{id: shared_project_id, linear_workspace_id: workspace_id}} do
-    origin = Path.join(System.tmp_dir!(), "rail_discard_origin_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(origin)
-    on_exit(fn -> File.rm_rf(origin) end)
-    git!(origin, ["init", "--bare", "--quiet", "-b", "main"])
+  # Git is faked at its boundary: deleting a branch or a worktree for real is for `Rail.Git`'s own tests.
+  setup %{project: %{id: project_id, github_repo: repo, github_installation_id: installation_id} = project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :delete_remote_branch, fn _project, _branch -> :ok end)
+    stub(Git, :remove_worktree, fn _repo_path, _worktree_path -> :ok end)
+    stub(Git, :delete_branch, fn _repo_path, _branch -> :ok end)
 
-    clone = create_temp_git_repo(prefix: "rail_discard_clone")
-    git!(clone, ["remote", "add", "origin", origin])
-    git!(clone, ["push", "--quiet", "origin", "main"])
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_discard"}]}}})
-    end)
-
-    # Keyed and named per test, since a key, repo or login two open sandboxes both insert waits on the other's.
+    # Named per test, since a login two open sandboxes both insert waits on the other's.
     n = System.unique_integer([:positive])
-    repo = "org/discard-#{n}"
     pull_path = "/repos/#{repo}/pulls/212"
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Discard Project #{n}",
-        github_repo: repo,
-        github_installation_id: 8707,
-        key: "dsc#{n}",
-        default_branch: "main",
-        clone_path: clone,
-        linear_workspace_id: workspace_id
-      })
+    token_path = "/app/installations/#{installation_id}/access_tokens"
 
     issue =
       %Issue{}
       |> Issue.tracker_changeset(%{
-        project_id: project.id,
+        project_id: project_id,
         external_id: "lin_discard_1",
         identifier: "DSC-1",
         title: "Discard me",
@@ -71,20 +51,15 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
       |> Repo.preload(:project)
 
     {:ok, task} = Pipeline.create_task(issue, :review)
-    git!(clone, ["worktree", "add", "--quiet", "-b", task.worktree_name, task.worktree_path])
-    File.write!(Path.join(task.worktree_path, "work.ex"), "work\n")
-    git!(task.worktree_path, ["add", "."])
-    git!(task.worktree_path, ["commit", "--quiet", "-m", "Work"])
-    git!(task.worktree_path, ["push", "--quiet", "origin", task.worktree_name])
     File.mkdir_p!(task.scratch_path)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
-    {:ok, engineer} = Roles.get_role(project_id: shared_project_id, stage: :engineer)
-    {:ok, lead} = Roles.get_role(project_id: shared_project_id, stage: :review_lead)
+    {:ok, engineer} = Roles.get_role(project_id: project_id, stage: :engineer)
+    {:ok, lead} = Roles.get_role(project_id: project_id, stage: :review_lead)
     test_pid = self()
 
     Req.Test.stub(Client, fn
-      %{method: "POST", request_path: "/app/installations/8707/access_tokens"} = conn ->
+      %{method: "POST", request_path: ^token_path} = conn ->
         Req.Test.json(conn, %{"token" => "ghs_discard"})
 
       %{method: "GET", request_path: ^pull_path} = conn ->
@@ -109,22 +84,27 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
       scope: user_scope(project_ids: [project.id]),
       issue: issue,
       task: task,
-      origin: origin,
       engineer: engineer,
       lead: lead
     }
   end
 
-  test "stops every run, closes the pull request, deletes the branch, files and task, and resets the ticket", %{
-    scope: scope,
-    task: task,
-    issue: %Issue{id: issue_id} = issue,
-    origin: origin,
-    engineer: engineer,
-    lead: lead,
-    reader: reader
-  } do
-    {:ok, %Task{id: task_id} = task} = Pipeline.update_task(task, %{pr_number: 212})
+  test "stops every run, closes the pull request, deletes the branch, files and task, resets the ticket, and a new task for the issue takes the same branch name",
+       %{
+         scope: scope,
+         task: task,
+         issue: %Issue{id: issue_id, project: %{id: project_id, clone_path: clone}} = issue,
+         engineer: engineer,
+         lead: lead,
+         reader: reader
+       } do
+    {:ok, %Task{id: task_id, worktree_name: branch, worktree_path: worktree_path} = task} =
+      Pipeline.update_task(task, %{pr_number: 212})
+
+    expect(Git, :delete_remote_branch, fn %{id: ^project_id}, ^branch -> :ok end)
+    expect(Git, :remove_worktree, fn ^clone, ^worktree_path -> :ok end)
+    expect(Git, :delete_branch, fn ^clone, ^branch -> :ok end)
+
     now = DateTime.utc_now()
 
     runs =
@@ -198,11 +178,12 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
     assert Repo.get(DiffComment, comment_id) == nil
     assert Repo.get(Observation, observation_id) == nil
     assert %Learning{id: ^rule_id} = Repo.get(Learning, rule_id)
-    assert "" = git!(origin, ["branch", "--list", task.worktree_name])
-    refute File.exists?(task.worktree_path)
     refute File.exists?(task.scratch_path)
     assert %Issue{state: :todo, state_name: nil} = Repo.get!(Issue, issue_id)
     assert_enqueued(worker: SyncIssue, args: %{issue_id: issue_id})
+
+    {:ok, %Task{id: new_id, worktree_name: ^branch}} = Pipeline.create_task(issue, :plan)
+    assert new_id != task_id
   end
 
   test "a pull request opened while Discard waited on the task's lock is closed too", %{scope: scope, task: task} do
@@ -218,41 +199,21 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
     assert_receive {:pull_request_changed, 212, %{"state" => "closed"}}
   end
 
-  test "a new task for the issue pushes onto the same branch name cleanly", %{scope: scope, task: task, issue: issue} do
-    assert {:ok, %Task{}} = Pipeline.discard_task(scope, task)
-
-    {:ok, %Task{id: new_id} = new_task} = Pipeline.create_task(issue, :plan)
-    assert new_id != task.id
-    assert new_task.worktree_name == task.worktree_name
-    git!(issue.project.clone_path, ["worktree", "add", "--quiet", "-b", new_task.worktree_name, new_task.worktree_path])
-    File.write!(Path.join(new_task.worktree_path, "fresh.ex"), "fresh\n")
-    git!(new_task.worktree_path, ["add", "."])
-    git!(new_task.worktree_path, ["commit", "--quiet", "-m", "Fresh start"])
-
-    assert :ok = Git.check_push(new_task)
-  end
-
-  test "a task whose branch was never pushed is discarded", %{scope: scope, task: task, origin: origin} do
-    git!(origin, ["branch", "-D", task.worktree_name])
-
-    assert {:ok, %Task{}} = Pipeline.discard_task(scope, task)
-    assert Repo.get(Task, task.id) == nil
-  end
-
-  test "a process still live after the stops leaves everything as it was", %{scope: scope, task: task, origin: origin} do
+  test "a process still live after the stops leaves everything as it was", %{scope: scope, task: task} do
     stub(Tools, :list_os_processes, fn [task_id: _id, status: _live] -> [%OsProcess{status: :starting}] end)
+    reject(Git, :delete_remote_branch, 2)
 
     assert {:error, :task_busy} = Pipeline.discard_task(scope, task)
-    assert git!(origin, ["branch", "--list", task.worktree_name]) =~ task.worktree_name
     assert %Task{cleaned_up_at: nil} = Repo.reload!(task)
   end
 
   test "a run still working when the lock is taken leaves everything as it was", %{
     scope: scope,
     task: task,
-    engineer: engineer,
-    origin: origin
+    engineer: engineer
   } do
+    reject(Git, :delete_remote_branch, 2)
+
     pending =
       with_task_lock(task.id, fn ->
         pending = Elixir.Task.async(fn -> Pipeline.discard_task(scope, task) end)
@@ -267,26 +228,23 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
     {pending, %Run{id: run_id}} = pending
     assert {:error, :task_busy} = Elixir.Task.await(pending)
     assert %Run{status: :running} = Repo.get!(Run, run_id)
-    assert git!(origin, ["branch", "--list", task.worktree_name]) =~ task.worktree_name
   end
 
   test "a remote that refuses the delete leaves the worktree, the task and the ticket as they were", %{
     scope: scope,
     task: task,
     issue: %Issue{id: issue_id},
-    origin: origin,
     engineer: engineer
   } do
     {:ok, %Run{id: run_id}} =
       Pipeline.create_run(%{task_id: task.id, role_id: engineer.id, status: :failed, started_at: DateTime.utc_now()})
 
-    hook = Path.join([origin, "hooks", "pre-receive"])
-    File.write!(hook, "#!/bin/sh\necho 'Repository rule violations found' >&2\nexit 1\n")
-    File.chmod!(hook, 0o755)
+    expect(Git, :delete_remote_branch, fn _project, _branch -> {:error, "remote: Repository rule violations found"} end)
+    reject(Git, :remove_worktree, 2)
 
-    assert {:error, {:branch_not_deleted, output}} = Pipeline.discard_task(scope, task)
-    assert output =~ "Repository rule violations found"
-    assert File.exists?(task.worktree_path)
+    assert {:error, {:branch_not_deleted, "remote: Repository rule violations found"}} =
+             Pipeline.discard_task(scope, task)
+
     assert %Task{cleaned_up_at: nil} = Repo.reload!(task)
     assert %Issue{state: :in_review, state_name: "In Review"} = Repo.get!(Issue, issue_id)
     assert %Run{} = Repo.get(Run, run_id)
@@ -301,10 +259,12 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
       conn -> conn |> Plug.Conn.put_status(403) |> Req.Test.json(%{"message" => "Resource not accessible"})
     end)
 
+    reject(Git, :delete_remote_branch, 2)
+    reject(Git, :remove_worktree, 2)
+
     assert {:error, {:pull_request_not_closed, {:github_api_error, 403, _body}}} =
              Pipeline.discard_task(scope, task)
 
-    assert File.exists?(task.worktree_path)
     assert %Task{cleaned_up_at: nil} = Repo.reload!(task)
   end
 
@@ -398,11 +358,11 @@ defmodule Rail.Pipeline.Actions.DiscardTaskTest do
       assert %Task{} = Repo.get(Task, task.id)
     end
 
-    test "a task merged but still at Finalize keeps its branch", %{scope: scope, task: task, origin: origin} do
+    test "a task merged but still at Finalize keeps its branch", %{scope: scope, task: task} do
       {:ok, task} = Pipeline.update_task(task, %{stage: :finalize, merged_at: DateTime.utc_now()})
+      reject(Git, :delete_remote_branch, 2)
 
       assert {:error, :not_discardable} = Pipeline.discard_task(scope, task)
-      assert git!(origin, ["branch", "--list", task.worktree_name]) =~ task.worktree_name
       assert %Task{} = Repo.get(Task, task.id)
     end
 

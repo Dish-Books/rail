@@ -12,9 +12,20 @@ defmodule Rail.Pipeline.Actions.RetryRunTest do
 
   setup %{project: project} do
     task = learnings_task(project, "RTR-1", :review)
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
-    stub(Git, :get_or_create_worktree, fn _project, _task -> {:ok, task.worktree_path} end)
+
+    # Git is only ever asked through Rail.Git, so the worktree is a plain directory, on the commit whose sha is all a's
+    # with nothing changed against main.
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
+    stub(Git, :get_or_create_worktree, fn _project, _task -> {:ok, worktree} end)
+
+    stub(Git, :branch_fingerprint, fn ^worktree ->
+      %{head_sha: String.duplicate("a", 40), dirty_digest: String.duplicate("0", 64)}
+    end)
+
+    stub(Git, :load_diff, fn _scope, %{worktree_path: ^worktree}, :branch -> {:ok, []} end)
 
     run = fn stage, attrs ->
       {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)

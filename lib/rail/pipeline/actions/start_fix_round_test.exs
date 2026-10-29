@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.StartFixRoundTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Learnings.Schemas.LearningProposal
@@ -35,9 +36,15 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Start Fix Round"})
     {:ok, task} = Pipeline.create_task(issue, :review)
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo(), pr_number: 9, pr_is_draft: true})
+    # HEAD is asked of Rail.Git, so the worktree is a plain directory and the stub says which commit it is on.
+    # A test that moves the branch stubs it again with the new commit.
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree, pr_number: 9, pr_is_draft: true})
     task = Repo.preload(task, :issue)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    head = String.duplicate("a", 40)
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: head, dirty_digest: "clean"} end)
 
     {:ok, run} =
       Pipeline.create_run(%{
@@ -68,7 +75,7 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
     {:ok, nit} = Pipeline.save_finding(task, Map.merge(attrs, %{key: "a-nit", title: "A nit", severity: :nit}))
     {:ok, %{round: 1}} = Pipeline.save_review(task)
 
-    %{task: task, run: run, crash: crash, nit: nit}
+    %{task: task, head: head, run: run, crash: crash, nit: nit}
   end
 
   test "with findings ruled Fix it resumes the Review run on them, their rules and places, and the task stays at Review",
@@ -104,7 +111,7 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
   } do
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
-    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 1"])
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: String.duplicate("b", 40), dirty_digest: "clean"} end)
 
     {:ok, _fixed} =
       Pipeline.save_finding(task, %{
@@ -116,7 +123,7 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
       })
 
     {:ok, %{round: 2}} = Pipeline.save_review(task)
-    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Merge main"])
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: String.duplicate("c", 40), dirty_digest: "clean"} end)
     {:ok, %Finding{carried_round: 3}} = Pipeline.save_finding(task, %{key: "nil-crash", status: "not_fixed"})
     {:ok, %{round: 3}} = Pipeline.save_review(task)
 
@@ -193,6 +200,7 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
   test "on a project with CI, nothing ruled Fix finishes only once CI passed on HEAD", %{
     project: project,
     task: task,
+    head: head,
     run: run,
     crash: crash,
     nit: nit
@@ -200,7 +208,6 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
     {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
-    head = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
 
     Repo.insert!(%OsProcess{
       run_id: run.id,
@@ -314,8 +321,7 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
       %{
         ada: user_scope(user: ada),
         grace: user_scope(user: grace),
-        diff: %{path: "lib/a.ex", line_kind: :added, line: 3, line_text: "x = 1", filter: :branch},
-        head: task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
+        diff: %{path: "lib/a.ex", line_kind: :added, line: 3, line_text: "x = 1", filter: :branch}
       }
     end
 
@@ -577,8 +583,8 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :skip)
       {:ok, _comment} = Pipeline.create_screen_comment(ada, task, %{"key" => "file-list", "body" => "Fold it."})
-      git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Retake"])
-      retaken = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
+      retaken = String.duplicate("b", 40)
+      stub(Git, :branch_fingerprint, fn _path -> %{head_sha: retaken, dirty_digest: "clean"} end)
       File.write!(Path.join([task.scratch_path, "qa", "screens/file-list/2.jpg"]), "jpeg")
       {:ok, _shot} = Pipeline.save_screen(task, %{key: "file-list", label: "File list", file: "screens/file-list/2.jpg"})
       picture = Path.join([task.scratch_path, "qa", "screens/file-list/2.jpg"])
@@ -806,11 +812,10 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
     end
 
     test "a Send of two Fix findings and a diff comment asks the lead for a plan only and writes the round's snapshot",
-         %{task: task, run: run, crash: crash, nit: nit, ada: ada, diff: diff} do
+         %{task: task, head: head, run: run, crash: crash, nit: nit, ada: ada, diff: diff} do
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :fix)
       {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :fix)
       {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "Name it."))
-      head = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
 
       expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
         assert prompt =~ "Sent 2 findings and 1 comment.\n\nStart fix round 1."

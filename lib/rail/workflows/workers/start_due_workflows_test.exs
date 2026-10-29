@@ -11,54 +11,57 @@ defmodule Rail.Workflows.Workers.StartDueWorkflowsTest do
   alias Rail.Workflows.Workers.StartDueWorkflows
   alias Rail.Workflows.Workers.StartWorkflow
 
-  setup %{project: project} do
-    remote = create_temp_git_repo(prefix: "rail_wf_remote")
-    File.mkdir_p!(Path.join(remote, ".rail/workflows"))
+  setup %{project: %{id: project_id} = project, github_project: %{id: github_id}} do
+    # The seeded project's fetched default branch has two workflow files; the GitHub project's clone
+    # never fetched one, so its branch cannot be listed.
+    stub(Git, :list_default_branch_files, fn
+      %Project{id: ^project_id}, ".rail/workflows" ->
+        {:ok, [".rail/workflows/a-weekly.yml", ".rail/workflows/b-daily.yml"]}
 
-    File.write!(Path.join(remote, ".rail/workflows/a-weekly.yml"), """
-    name: Dependency updates
-    schedule: "0 9 * * 1"
-    instructions: Update the dependencies.
-    """)
+      %Project{id: ^github_id}, ".rail/workflows" ->
+        {:error, "fatal: Not a valid object name refs/remotes/origin/main"}
+    end)
 
-    File.write!(Path.join(remote, ".rail/workflows/b-daily.yml"), """
-    name: Flaky test sweep
-    schedule: "0 6 * * *"
-    instructions: Fix the flaky tests.
-    """)
+    stub(Git, :read_default_branch_file, fn
+      %Project{id: ^project_id}, ".rail/workflows/a-weekly.yml" ->
+        {:ok,
+         """
+         name: Dependency updates
+         schedule: "0 9 * * 1"
+         instructions: Update the dependencies.
+         """}
 
-    git!(remote, ["add", "."])
-    git!(remote, ["commit", "-m", "workflows"])
-    clone = create_temp_git_repo(prefix: "rail_wf_clone")
-    git!(clone, ["remote", "add", "origin", remote])
-    git!(clone, ["fetch", "origin", "main"])
+      %Project{id: ^project_id}, ".rail/workflows/b-daily.yml" ->
+        {:ok,
+         """
+         name: Flaky test sweep
+         schedule: "0 6 * * *"
+         instructions: Fix the flaky tests.
+         """}
+    end)
 
-    # The seeded project's clone is not on disk, so it is pointed at this one.
-    Repo.update_all(from(p in Project, where: p.id == ^project.id), set: [clone_path: clone])
     stub(DateTime, :utc_now, fn -> ~U[2026-10-12 08:00:00.000000Z] end)
-    {:ok, 2} = Workflows.sync_workflows(%{project | clone_path: clone})
+    {:ok, 2} = Workflows.sync_workflows(project)
 
     [%Workflow{id: weekly_id}, %Workflow{id: daily_id}] =
       Repo.all(from(w in Workflow, where: w.project_id == ^project.id, order_by: w.path))
 
-    %{weekly_id: weekly_id, daily_id: daily_id, clone: clone}
+    %{weekly_id: weekly_id, daily_id: daily_id}
   end
 
   test "syncs each cloned project, then queues one start per due workflow", %{
     project: project,
     github_project: github,
     weekly_id: weekly_id,
-    daily_id: daily_id,
-    clone: clone
+    daily_id: daily_id
   } do
     # A row gone from the table comes back only through a sync.
     Repo.delete_all(from(w in Workflow, where: w.id == ^daily_id))
-    stub(Git, :git_repo?, fn path -> path in [clone, github.clone_path] end)
+    stub(Git, :git_repo?, fn path -> path in [project.clone_path, github.clone_path] end)
     stub(DateTime, :utc_now, fn -> ~U[2026-10-12 09:00:30.000000Z] end)
 
     log = capture_log(fn -> assert :ok = perform_job(StartDueWorkflows, %{}) end)
 
-    # The GitHub project's clone is not on disk, so its branch cannot be listed.
     assert log =~ "Could not read Test GitHub Project's workflows"
 
     assert [

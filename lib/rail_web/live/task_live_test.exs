@@ -70,6 +70,9 @@ defmodule RailWeb.TaskLiveTest do
     # would spawn git: these pages see nothing on the default branch, as when there is no clone.
     stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
     stub(Git, :list_default_branch_paths, fn _project, paths -> if paths == [], do: MapSet.new() end)
+    # A task discarded, cleaned up or sent back to Plan takes its worktree and branch in that clone with it.
+    stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
+    stub(Git, :delete_branch, fn _clone_path, _branch -> :ok end)
 
     {:ok, user} =
       Users.register_oauth_user(%{
@@ -1218,7 +1221,13 @@ defmodule RailWeb.TaskLiveTest do
     end
   end
 
-  test "cleaning up releases the disk the task was holding", %{conn: conn, task: task} do
+  test "cleaning up releases the disk the task was holding", %{
+    conn: conn,
+    project: %{clone_path: clone_path},
+    task: %{worktree_path: worktree_path, worktree_name: branch} = task
+  } do
+    expect(Git, :remove_worktree, fn ^clone_path, ^worktree_path -> :ok end)
+    expect(Git, :delete_branch, fn ^clone_path, ^branch -> :ok end)
     assert File.dir?(task.scratch_path)
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
@@ -1282,10 +1291,13 @@ defmodule RailWeb.TaskLiveTest do
 
     test "sits before Clean up, and confirming stops the runs, deletes the task and opens the issue", %{
       conn: conn,
-      task: task,
+      project: %{clone_path: clone_path},
+      task: %{worktree_path: worktree_path, worktree_name: branch} = task,
       running: %Run{id: run_id}
     } do
-      expect(Git, :delete_remote_branch, fn _project, branch when branch == task.worktree_name -> :ok end)
+      expect(Git, :delete_remote_branch, fn _project, ^branch -> :ok end)
+      expect(Git, :remove_worktree, fn ^clone_path, ^worktree_path -> :ok end)
+      expect(Git, :delete_branch, fn ^clone_path, ^branch -> :ok end)
       assert File.dir?(task.scratch_path)
 
       assert {:ok, view, html} = live(conn, ~p"/tasks/#{task.id}")
@@ -7081,7 +7093,19 @@ defmodule RailWeb.TaskLiveTest do
   describe "the Comments item" do
     setup %{project: project, task: task, run: run} do
       {:ok, lead_role} = Roles.get_role(project_id: project.id, stage: :review_lead)
-      {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
+      # Git is only ever asked through Rail.Git, so the worktree is a directory, on one commit with no history.
+      worktree = Path.join(task.scratch_path, "worktree")
+      File.mkdir_p!(worktree)
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: worktree})
+
+      stub(Git, :branch_fingerprint, fn _worktree_path ->
+        %{head_sha: String.duplicate("b", 40), dirty_digest: "clean"}
+      end)
+
+      stub(Git, :load_branch_history, fn _task, _rounds ->
+        %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
+      end)
+
       {:ok, plan_run} = Pipeline.update_run(run, %{conversation_id: "sess_comments_plan"})
       {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Comments", description: "- List every comment."})
       {:ok, _plan} = Pipeline.save_plan(task, %{plan: @plan})
