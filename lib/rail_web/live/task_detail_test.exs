@@ -3,6 +3,7 @@ defmodule RailWeb.Live.TaskDetailTest do
   use Oban.Testing, repo: Rail.Repo
 
   import Phoenix.LiveViewTest
+  import Rail.Git.Utils.ParseDiff
 
   alias Rail.Git
   alias Rail.Pipeline
@@ -24,6 +25,11 @@ defmodule RailWeb.Live.TaskDetailTest do
   @clock RailWeb.Utils.MonotonicMs
 
   setup %{conn: conn, project: project} do
+    # What is merged is read from the project's clone, which another test may have made, so reading it here
+    # would spawn git: these pages see nothing on the default branch, as when there is no clone.
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :list_default_branch_paths, fn _project, paths -> if paths == [], do: MapSet.new() end)
+
     id = System.unique_integer([:positive])
 
     {:ok, user} =
@@ -38,9 +44,58 @@ defmodule RailWeb.Live.TaskDetailTest do
     {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
     {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
     task = learnings_task(project, "RST-1", :review)
-    worktree = create_temp_git_repo()
+
+    # Git is only ever asked through Rail.Git, so the worktree is a directory the stubs answer from: HEAD names the
+    # commit it is on, which a test moves on by writing another, and branch.diff is what the branch changed, as
+    # <sha>.diff is what one commit did. With no origin/main fetched to fork from, git cannot read the branch's commits.
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
+    head = Base.encode16(:crypto.strong_rand_bytes(20), case: :lower)
+    File.write!(Path.join(worktree, "HEAD"), head)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
-    head = worktree |> git!(["rev-parse", "HEAD"]) |> String.trim()
+
+    stub(Git, :branch_fingerprint, fn worktree_path ->
+      case File.read(Path.join(worktree_path, "HEAD")) do
+        {:ok, head} -> %{head_sha: head, dirty_digest: "clean"}
+        {:error, _gone} -> nil
+      end
+    end)
+
+    stub(Git, :load_branch_history, fn _task, _rounds ->
+      %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
+    end)
+
+    # Rows come back unhighlighted, which the pane draws as their text.
+    load_diff = fn scope, task, filter, _previous ->
+      if Task.worktree_present?(task) do
+        viewed = Git.list_viewed_files(scope, task, :diff)
+
+        name =
+          case filter do
+            {:commit, sha} -> "#{sha}.diff"
+            _branch -> "branch.diff"
+          end
+
+        # A commit the branch never made, or a branch that changed nothing, has no patch.
+        patch =
+          case File.read(Path.join(task.worktree_path, name)) do
+            {:ok, patch} -> patch
+            {:error, :enoent} -> ""
+          end
+
+        {:ok,
+         for file <- parse_diff(patch) do
+           rows = Enum.map(file.rows, &Map.put(&1, :html, nil))
+           Map.merge(file, %{rows: rows, viewed?: viewed[file.path] == file.digest})
+         end}
+      else
+        {:error, :no_worktree}
+      end
+    end
+
+    stub(Git, :load_diff, load_diff)
+    stub(Git, :load_diff, fn scope, task, filter -> load_diff.(scope, task, filter, []) end)
+    stub(Git, :worktree_dirty?, fn _worktree_path -> false end)
 
     {:ok, engineer_run} =
       Pipeline.create_run(%{
@@ -150,7 +205,7 @@ defmodule RailWeb.Live.TaskDetailTest do
     {:ok, _pass} = Pipeline.save_review(task)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), carried, :fix)
     # A round is a read of a new HEAD, so each fix round commits before its pass.
-    git!(worktree, ["commit", "--allow-empty", "-m", "fix round 1"])
+    File.write!(Path.join(worktree, "HEAD"), Base.encode16(:crypto.strong_rand_bytes(20), case: :lower))
 
     {:ok, _fixed} =
       Pipeline.save_finding(task, %{
@@ -161,7 +216,7 @@ defmodule RailWeb.Live.TaskDetailTest do
       })
 
     {:ok, _pass} = Pipeline.save_review(task)
-    git!(worktree, ["commit", "--allow-empty", "-m", "fix round 2"])
+    File.write!(Path.join(worktree, "HEAD"), Base.encode16(:crypto.strong_rand_bytes(20), case: :lower))
     {:ok, _new} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
     {:ok, %Finding{carried_round: 3}} = Pipeline.save_finding(task, %{key: "send-twice", status: "not_fixed"})
     {:ok, _pass} = Pipeline.save_review(task)
@@ -436,7 +491,8 @@ defmodule RailWeb.Live.TaskDetailTest do
     assert Pipeline.list_finding_comments(user_scope(user: user), task) == []
   end
 
-  test "a finding comment a task that moved on refuses says why, and closes the box", %{
+  # The page hides Fix and Don't fix once the review finishes, so only a ruling made as it finishes is refused.
+  test "a finding comment a task that moved on refuses says why, and closes the box, as a refused ruling says why", %{
     conn: conn,
     task: task,
     code: code
@@ -457,6 +513,11 @@ defmodule RailWeb.Live.TaskDetailTest do
       assert has_element?(view, "#review-error", said)
       refute has_element?(view, "#finding-comment-form")
     end
+
+    expect(Pipeline, :decide_finding, fn _scope, _finding, :fix -> {:error, :review_finished} end)
+    view |> element("#decide-fix-view-only-send") |> render_click()
+
+    assert has_element?(view, "#review-error", "The review is finished, so its rulings are settled.")
   end
 
   test "a task that has left Review offers no + on its findings", %{conn: conn, task: task, code: code} do
@@ -820,8 +881,8 @@ defmodule RailWeb.Live.TaskDetailTest do
 
   test "the next round's status names the commit it re-reviews", %{conn: conn, task: task, run: run} do
     {:ok, _pass} = Pipeline.save_review(task)
-    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 1"])
-    head = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
+    head = Base.encode16(:crypto.strong_rand_bytes(20), case: :lower)
+    File.write!(Path.join(task.worktree_path, "HEAD"), head)
     {:ok, _working} = Pipeline.update_run(run, %{status: :running})
 
     stub(Pipeline, :get_ci_status, fn _run ->
@@ -863,12 +924,19 @@ defmodule RailWeb.Live.TaskDetailTest do
     assert has_element?(view, "[data-qa=demo_beat_criterion]", "AC 1")
   end
 
-  test "with nothing recorded the Demo item says so", %{conn: conn, task: task} do
+  test "with nothing recorded the Demo item says so, and with no browser open the Browser item says so", %{
+    conn: conn,
+    task: task
+  } do
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
     view |> element("#review-item-demo") |> render_click()
 
     assert has_element?(view, "#review-demo [data-qa=review_demo_header]", "None recorded")
     assert has_element?(view, "[data-qa=review_demo_none]", "No demo was recorded.")
+
+    view |> element("#review-item-browser") |> render_click()
+
+    assert has_element?(view, "[data-qa=review_browser_none]")
   end
 
   test "the URL names the item picked, without reading the task again", %{conn: conn, task: task} do
@@ -959,30 +1027,36 @@ defmodule RailWeb.Live.TaskDetailTest do
     assert has_element?(view, "#review-screencast-demo")
   end
 
-  test "with no browser open the Browser item says so", %{conn: conn, task: task} do
-    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-    view |> element("#review-item-browser") |> render_click()
-
-    assert has_element?(view, "[data-qa=review_browser_none]")
-  end
-
   test "a code finding brackets its whole range, and no line outside it or replaced", %{
     conn: conn,
     task: %{worktree_path: worktree} = task,
+    head: head,
     code: code
   } do
-    File.write!(Path.join(worktree, "example.ex"), Enum.map_join(1..12, "", &"line #{&1}\n"))
-    git!(worktree, ["add", "."])
-    git!(worktree, ["commit", "-m", "before"])
-    git!(worktree, ["update-ref", "refs/remotes/origin/main", "HEAD"])
-
+    # The branch changed lines 3 to 5 of a twelve-line file.
     File.write!(
       Path.join(worktree, "example.ex"),
       Enum.map_join(1..12, "", &if(&1 in 3..5, do: "changed #{&1}\n", else: "line #{&1}\n"))
     )
 
-    git!(worktree, ["commit", "-am", "the change"])
-    head = worktree |> git!(["rev-parse", "HEAD"]) |> String.trim()
+    File.write!(Path.join(worktree, "branch.diff"), """
+    diff --git a/example.ex b/example.ex
+    index 1111111..2222222 100644
+    --- a/example.ex
+    +++ b/example.ex
+    @@ -1,8 +1,8 @@
+     line 1
+     line 2
+    -line 3
+    -line 4
+    -line 5
+    +changed 3
+    +changed 4
+    +changed 5
+     line 6
+     line 7
+     line 8
+    """)
 
     {:ok, _finding} =
       Pipeline.save_finding(task, Map.put(%{code | file: "example.ex", line: 3, end_line: 5}, :key, "range"))
@@ -993,14 +1067,15 @@ defmodule RailWeb.Live.TaskDetailTest do
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
     view |> element("#finding-range") |> render_click()
 
-    assert [{"start", "+ changed3"}, {"middle", "+ changed4"}, {"end", "+ changed5"}] =
+    # The rows come back unhighlighted, so each reads as its marker and its line's text.
+    assert [{"start", "+ changed 3"}, {"middle", "+ changed 4"}, {"end", "+ changed 5"}] =
              view
              |> render()
              |> Floki.parse_document!()
              |> Floki.find("[data-qa=finding_diff] [data-bracket]")
              |> Enum.map(fn row ->
                {row |> Floki.attribute("data-bracket") |> hd(),
-                row |> Floki.text() |> String.split() |> Enum.take(-2) |> Enum.join(" ")}
+                row |> Floki.text() |> String.split() |> Enum.take(-3) |> Enum.join(" ")}
              end)
 
     refute has_element?(view, "[data-qa=finding_diff] [data-qa=finding_code_unchanged_chip]")
@@ -1020,12 +1095,15 @@ defmodule RailWeb.Live.TaskDetailTest do
     task: %{worktree_path: worktree} = task,
     code: code
   } do
-    File.write!(Path.join(worktree, "gone.ex"), Enum.map_join(1..12, "", &"line #{&1}\n"))
-    git!(worktree, ["add", "."])
-    git!(worktree, ["commit", "-m", "before"])
-    git!(worktree, ["update-ref", "refs/remotes/origin/main", "HEAD"])
-    git!(worktree, ["rm", "gone.ex"])
-    git!(worktree, ["commit", "-m", "the deletion"])
+    File.write!(Path.join(worktree, "branch.diff"), """
+    diff --git a/gone.ex b/gone.ex
+    deleted file mode 100644
+    index 1111111..0000000
+    --- a/gone.ex
+    +++ /dev/null
+    @@ -1,12 +0,0 @@
+    #{Enum.map_join(1..12, "", &"-line #{&1}\n")}\
+    """)
 
     {:ok, _finding} =
       Pipeline.save_finding(task, Map.put(%{code | file: "gone.ex", line: 3, end_line: 5}, :key, "deleted"))
@@ -1092,7 +1170,7 @@ defmodule RailWeb.Live.TaskDetailTest do
     view |> element("#finding-second") |> render_click()
     verify!()
 
-    git!(worktree, ["commit", "--allow-empty", "-m", "moved on"])
+    File.write!(Path.join(worktree, "HEAD"), Base.encode16(:crypto.strong_rand_bytes(20), case: :lower))
 
     expect(Git, :load_diff_hunks, fn scope, task, ranges ->
       call_original(Git, :load_diff_hunks, [scope, task, ranges])
@@ -1199,18 +1277,6 @@ defmodule RailWeb.Live.TaskDetailTest do
 
       assert has_element?(view, "#review-send-tray-hint", said)
     end
-  end
-
-  # The page hides Fix and Don't fix once the review finishes, so only a ruling made as it finishes is refused.
-  test "a ruling that is refused says why", %{conn: conn, task: task, code: code} do
-    {:ok, _finding} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
-    {:ok, _pass} = Pipeline.save_review(task)
-    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-    expect(Pipeline, :decide_finding, fn _scope, _finding, :fix -> {:error, :review_finished} end)
-    view |> element("#decide-fix-view-only-send") |> render_click()
-
-    assert has_element?(view, "#review-error", "The review is finished, so its rulings are settled.")
   end
 
   describe "the Comments item" do
@@ -1326,19 +1392,90 @@ defmodule RailWeb.Live.TaskDetailTest do
   end
 
   describe "with the branch's commits" do
-    # The branch forked from origin/main at the first commit, then the engineer committed, round 1 read it,
-    # and the fix round it led to committed.
+    # The branch forked from origin/main, then the engineer committed, round 1 read it, and the fix round it led to
+    # committed. The log lists the branch's commits oldest first, each with the label the rounds give it, and a test
+    # commits by adding one and moving HEAD to it.
     setup %{task: %{worktree_path: worktree} = task} do
-      git!(worktree, ["update-ref", "refs/remotes/origin/main", "HEAD"])
+      engineer = Base.encode16(:crypto.strong_rand_bytes(20), case: :lower)
+      fix = Base.encode16(:crypto.strong_rand_bytes(20), case: :lower)
+
+      a = """
+      diff --git a/a.ex b/a.ex
+      new file mode 100644
+      index 0000000..1111111
+      --- /dev/null
+      +++ b/a.ex
+      @@ -0,0 +1,2 @@
+      +defmodule A do
+      +end
+      """
+
+      b = """
+      diff --git a/b.ex b/b.ex
+      new file mode 100644
+      index 0000000..2222222
+      --- /dev/null
+      +++ b/b.ex
+      @@ -0,0 +1,2 @@
+      +defmodule B do
+      +end
+      """
+
       File.write!(Path.join(worktree, "a.ex"), "defmodule A do\nend\n")
-      git!(worktree, ["add", "."])
-      git!(worktree, ["commit", "-m", "Send comments as one round"])
-      engineer = worktree |> git!(["rev-parse", "HEAD"]) |> String.trim()
+      File.write!(Path.join(worktree, "#{engineer}.diff"), a)
+      File.write!(Path.join(worktree, "log"), "#{engineer} Implement\n")
+      File.write!(Path.join(worktree, "HEAD"), engineer)
       {:ok, %{round: 1}} = Pipeline.save_review(task)
       File.write!(Path.join(worktree, "b.ex"), "defmodule B do\nend\n")
-      git!(worktree, ["add", "."])
-      git!(worktree, ["commit", "-m", "Fix 1 finding from round 1"])
-      fix = worktree |> git!(["rev-parse", "HEAD"]) |> String.trim()
+      File.write!(Path.join(worktree, "#{fix}.diff"), b)
+      File.write!(Path.join(worktree, "log"), "#{fix} Fix round 1\n", [:append])
+      File.write!(Path.join(worktree, "HEAD"), fix)
+      File.write!(Path.join(worktree, "branch.diff"), a <> b)
+
+      # Each commit carries its own patch's stat, and the branch the whole diff's.
+      stub(Git, :load_branch_history, fn task, _rounds ->
+        stat = fn name ->
+          files =
+            case File.read(Path.join(task.worktree_path, name)) do
+              {:ok, patch} -> parse_diff(patch)
+              {:error, :enoent} -> []
+            end
+
+          %{
+            files: length(files),
+            additions: Enum.sum_by(files, & &1.additions),
+            deletions: Enum.sum_by(files, & &1.deletions)
+          }
+        end
+
+        case File.read(Path.join(task.worktree_path, "log")) do
+          {:ok, log} ->
+            commits =
+              for line <- log |> String.split("\n", trim: true) |> Enum.reverse(),
+                  [sha, label] <- [String.split(line, " ", parts: 2)] do
+                Map.merge(
+                  %{
+                    sha: sha,
+                    short_sha: String.slice(sha, 0, 7),
+                    parent: String.duplicate("0", 40),
+                    subject: label,
+                    at: DateTime.utc_now(),
+                    label: label,
+                    merge?: false,
+                    main?: false,
+                    merged: nil,
+                    conflicts: 0
+                  },
+                  stat.("#{sha}.diff")
+                )
+              end
+
+            Map.merge(%{base: "main", head: hd(commits).short_sha, commits: commits}, stat.("branch.diff"))
+
+          {:error, _unreadable} ->
+            %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
+        end
+      end)
 
       %{engineer: engineer, fix: fix}
     end
@@ -1363,7 +1500,9 @@ defmodule RailWeb.Live.TaskDetailTest do
       assert_push_event(view, "diff:scroll_to", %{id: "diff-comment-" <> ^id})
     end
 
-    test "the Diff item counts the commits and lines, and opens on the whole branch", %{conn: conn, task: task} do
+    test "the Diff item counts the commits and lines and opens on the whole branch, and with no screens the " <>
+           "Screens item says so, where a state a stale page names opens nothing",
+         %{conn: conn, task: task} do
       {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(view, "#review-item-diff[title='Diff: 2 commits · +4 -0']")
@@ -1373,6 +1512,16 @@ defmodule RailWeb.Live.TaskDetailTest do
       assert has_element?(view, "#review-pane[data-item=diff] #diff-commit-picker", "Whole branch")
       assert has_element?(view, "[data-qa='diff_file_section'][data-path='a.ex']")
       assert has_element?(view, "[data-qa='diff_file_section'][data-path='b.ex']")
+
+      view |> element("#review-item-screens") |> render_click()
+
+      assert has_element?(view, "[data-qa=review_screens_count]", "0")
+      assert has_element?(view, "[data-qa=review_screens_none]", "No screens yet.")
+      refute has_element?(view, "[data-qa=review_screens_on]")
+
+      view |> with_target("#task-detail") |> render_click("open_screen", %{"key" => "gone"})
+
+      assert has_element?(view, "[data-qa=review_screens_none]")
     end
 
     # Round 1 read the fix commit, which never touched a.ex, so Raised in lands on the branch that has it.
@@ -1454,8 +1603,9 @@ defmodule RailWeb.Live.TaskDetailTest do
       screen: screen
     } do
       {:ok, %{round: 2}} = Pipeline.save_review(task)
-      git!(worktree, ["commit", "--allow-empty", "-m", "Fix 1 finding from round 2"])
-      latest = worktree |> git!(["rev-parse", "HEAD"]) |> String.trim()
+      latest = Base.encode16(:crypto.strong_rand_bytes(20), case: :lower)
+      File.write!(Path.join(worktree, "log"), "#{latest} Fix round 2\n", [:append])
+      File.write!(Path.join(worktree, "HEAD"), latest)
 
       for {key, label} <- [{"toolbar", "Toolbar"}, {"file-list-after-send", "File list just after Send"}] do
         File.mkdir_p!(Path.join([task.scratch_path, "qa", "screens", key]))
@@ -1624,22 +1774,6 @@ defmodule RailWeb.Live.TaskDetailTest do
       end
     end
 
-    test "with no screens the Screens item says so, and a state a stale page names opens nothing", %{
-      conn: conn,
-      task: task
-    } do
-      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#review-item-screens") |> render_click()
-
-      assert has_element?(view, "[data-qa=review_screens_count]", "0")
-      assert has_element?(view, "[data-qa=review_screens_none]", "No screens yet.")
-      refute has_element?(view, "[data-qa=review_screens_on]")
-
-      view |> with_target("#task-detail") |> render_click("open_screen", %{"key" => "gone"})
-
-      assert has_element?(view, "[data-qa=review_screens_none]")
-    end
-
     # Its worktree cleaned up, the branch has nothing on disk left to diff.
     test "the Diff item of a task whose worktree is gone says nothing has changed", %{conn: conn, task: task} do
       {:ok, _gone} = Pipeline.update_task(task, %{worktree_path: "/tmp/gone_#{System.unique_integer([:positive])}"})
@@ -1761,13 +1895,8 @@ defmodule RailWeb.Live.TaskDetailTest do
     end
 
     # A rebase leaves the branch without the commit the demo was recorded on, which is when it is most out of date.
-    test "a demo on a commit the branch no longer has is stale, with nothing to open", %{
-      conn: conn,
-      task: %{worktree_path: worktree} = task
-    } do
-      git!(worktree, ["commit", "--allow-empty", "-m", "Rebased away"])
-      gone = worktree |> git!(["rev-parse", "HEAD"]) |> String.trim()
-      git!(worktree, ["reset", "--quiet", "--hard", "HEAD~1"])
+    test "a demo on a commit the branch no longer has is stale, with nothing to open", %{conn: conn, task: task} do
+      gone = Base.encode16(:crypto.strong_rand_bytes(20), case: :lower)
       demo_dir = Path.join(task.scratch_path, "demo")
       File.mkdir_p!(demo_dir)
       File.write!(Path.join(demo_dir, "demo.webm"), "webm")
@@ -1809,7 +1938,9 @@ defmodule RailWeb.Live.TaskDetailTest do
         Jason.encode!(%{title: "Filters", summary: "It filters.", commit: engineer})
       )
 
-      git!(worktree, ["commit", "--allow-empty", "-m", "later"])
+      later = Base.encode16(:crypto.strong_rand_bytes(20), case: :lower)
+      File.write!(Path.join(worktree, "log"), "#{later} Fix round 1\n", [:append])
+      File.write!(Path.join(worktree, "HEAD"), later)
 
       {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       view |> element("#review-item-demo") |> render_click()
@@ -1848,6 +1979,11 @@ defmodule RailWeb.Live.TaskDetailTest do
 
   describe "the fix plan" do
     setup %{task: task, run: run, user: user, code: code, screen: screen} do
+      # A file the branch changed is one the worktree has.
+      stub(Git, :list_branch_paths, fn task, paths ->
+        MapSet.new(Enum.filter(paths, &File.regular?(Path.join(task.worktree_path, &1))))
+      end)
+
       {:ok, view_only} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
       {:ok, twice} = Pipeline.save_finding(task, Map.put(screen, :key, "send-twice"))
       {:ok, _pass} = Pipeline.save_review(task)
@@ -1964,7 +2100,8 @@ defmodule RailWeb.Live.TaskDetailTest do
       refute has_element?(view, "#approve-fix-plan")
     end
 
-    test "a waiting plan reads under Findings, opens full pane with its items and files, and Approve sits in the header",
+    test "a waiting plan reads under Findings, opens full pane with its items and files, and Approve sits in the " <>
+           "header, which says why for every refusal but a replaced plan",
          %{conn: conn, task: task, run: run, plan: plan} do
       {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
       {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
@@ -1989,6 +2126,20 @@ defmodule RailWeb.Live.TaskDetailTest do
       assert has_element?(view, "#fix-plan-group-web #fix-plan-card-2", "lib/rail_web/tray.ex")
       assert has_element?(view, "#fix-plan-item-send-twice a[href='#fix-plan-card-2']", "tray.ex")
       assert_patch(view, ~p"/tasks/#{task.id}?item=fix_plan")
+
+      for {reason, said} <- [
+            {{:fix_plan_not_waiting, :outdated}, "A ruling changed since that plan was saved. Nothing started."},
+            {{:fix_plan_not_waiting, :approved}, "That fix plan is already approved."},
+            {{:fix_plan_not_waiting, :revising}, "The lead is revising that fix plan. Nothing started."},
+            {:no_fix_plan, "There is no fix plan waiting on approval."},
+            {{:unanswered_questions, 1}, "Answer or dismiss the open question first. Nothing started."},
+            {{:unanswered_questions, 2}, "Answer or dismiss the 2 open questions first. Nothing started."},
+            {:stage_running, "Something is still running on this task."}
+          ] do
+        expect(Pipeline, :approve_fix_plan, fn _scope, _run, 1 -> {:error, reason} end)
+        view |> element("#approve-fix-plan") |> render_click()
+        assert has_element?(view, "#review-error", said)
+      end
     end
 
     test "a card for a file the task already changed opens it in the Diff item",
@@ -2055,12 +2206,16 @@ defmodule RailWeb.Live.TaskDetailTest do
       assert has_element?(view, "#review-pane[data-item=fix_plan] #fix-plan-pane")
     end
 
-    test "a line of the waiting plan takes a comment for the review agent, shown under it and in the tray, until removed",
+    test "the fix_plan item in the URL opens the plan on load, where a line takes a comment for the review agent, " <>
+           "shown under it and in the tray, until removed",
          %{conn: conn, task: task, run: run, plan: plan, user: user} do
       {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
       {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
       {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=fix_plan")
       key = "paragraph-#{:erlang.phash2({"Check the role.", 1})}"
+
+      assert has_element?(view, "#review-item-plan[aria-current=true]")
+      assert has_element?(view, "#fix-plan-sheet")
 
       assert has_element?(view, "#plan-chat #conversation-tab-root")
       view |> element("#line-fix_plan-#{key} [data-qa=line_comment_add]") |> render_click()
@@ -2128,15 +2283,6 @@ defmodule RailWeb.Live.TaskDetailTest do
       {:ok, _approved} = Pipeline.approve_fix_plan(system_scope(), run, saved.version)
       {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=fix_plan")
       refute has_element?(view, "[data-qa=line_comment_add]")
-    end
-
-    test "the fix_plan item in the URL opens the plan on load", %{conn: conn, task: task, run: run, plan: plan} do
-      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
-      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
-      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=fix_plan")
-
-      assert has_element?(view, "#review-item-plan[aria-current=true]")
-      assert has_element?(view, "#fix-plan-sheet")
     end
 
     test "ruling a Fix finding Don't fix withdraws Approve and marks the change everywhere, and ruling it back undoes it",
@@ -2327,26 +2473,6 @@ defmodule RailWeb.Live.TaskDetailTest do
       assert has_element?(view, "#review-error", "That fix plan was replaced at")
       assert has_element?(view, "#review-error", "Nothing started. Read the plan on screen, then start the round.")
       assert %{status: :finished} = Repo.reload!(run)
-    end
-
-    test "every other refusal of an Approve says why in the header", %{conn: conn, task: task, run: run, plan: plan} do
-      {:ok, _saved} = Pipeline.save_fix_plan(task, %{"plan" => plan})
-      {:ok, _done} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished, stage_outcome: :done})
-      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      for {reason, said} <- [
-            {{:fix_plan_not_waiting, :outdated}, "A ruling changed since that plan was saved. Nothing started."},
-            {{:fix_plan_not_waiting, :approved}, "That fix plan is already approved."},
-            {{:fix_plan_not_waiting, :revising}, "The lead is revising that fix plan. Nothing started."},
-            {:no_fix_plan, "There is no fix plan waiting on approval."},
-            {{:unanswered_questions, 1}, "Answer or dismiss the open question first. Nothing started."},
-            {{:unanswered_questions, 2}, "Answer or dismiss the 2 open questions first. Nothing started."},
-            {:stage_running, "Something is still running on this task."}
-          ] do
-        expect(Pipeline, :approve_fix_plan, fn _scope, _run, 1 -> {:error, reason} end)
-        view |> element("#approve-fix-plan") |> render_click()
-        assert has_element?(view, "#review-error", said)
-      end
     end
 
     test "a second tab updates when a plan is saved, when a ruling changes and when the plan is approved", %{

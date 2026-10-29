@@ -6,8 +6,13 @@ defmodule Rail.Projects.Actions.ReadEnvFileTest do
   alias Rail.Projects.Schemas.EnvFile.Variable
   alias Rail.Projects.Schemas.Project
 
+  # The .env is a plain file in the clone, so the clone is a plain directory.
   setup do
-    %{project: %Project{clone_path: create_temp_git_repo(prefix: "rail_read_env_clone")}}
+    clone = Path.join(System.tmp_dir!(), "rail_read_env_clone_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(clone)
+    on_exit(fn -> File.rm_rf(clone) end)
+
+    %{project: %Project{clone_path: clone}}
   end
 
   test "an admin reads the variables the clone's .env sets", %{project: project} do

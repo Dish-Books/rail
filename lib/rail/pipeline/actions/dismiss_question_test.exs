@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
 
   import Rail.Pipeline.Utils.QuestionQueue
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
@@ -10,8 +11,12 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Tools
+  alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
         "data" => %{
@@ -74,7 +79,16 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
     assert pending_questions(task.id) == []
     refute Repo.get!(Question, q.id).delivered_at
 
+    test_pid = self()
+
+    # The round resumes the run in the background, which is waited for, so it never outlives the test's stubs.
+    stub(Tools, :start_os_process, fn spawned, _argv ->
+      send(test_pid, {:resumed, spawned.id})
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
     {:ok, :sent, %Run{id: ^run_id} = sent} = Pipeline.send_answers(system_scope(), Repo.reload!(run))
+    assert_receive {:resumed, ^run_id}
 
     assert Repo.get!(Question, q.id).delivered_at
 

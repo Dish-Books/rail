@@ -43,6 +43,11 @@ defmodule RailWeb.Live.PlanStageTest do
   """
 
   setup %{conn: conn, project: project} do
+    # What is merged is read from the project's clone, which another test may have made, so reading it here
+    # would spawn git: these pages see nothing on the default branch, as when there is no clone.
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :list_default_branch_paths, fn _project, paths -> if paths == [], do: MapSet.new() end)
+
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_plan_stage",

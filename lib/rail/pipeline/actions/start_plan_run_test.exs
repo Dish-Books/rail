@@ -18,13 +18,14 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
+  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
-  # Its own project, because starting a run adds a worktree to a real clone.
+  # Its own project, because starting a run adds a worktree to its clone.
   # The smallest plan the structure allows: one decision, one card and one criterion, and no data changes.
   @plan """
   ## Implementation plan
@@ -54,8 +55,8 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
 
   setup %{project: %{linear_workspace_id: workspace_id}} do
     scope = system_scope()
-    clone_path = create_temp_git_repo()
-    git!(clone_path, ["remote", "add", "origin", create_temp_git_repo(prefix: "rail_start_plan_remote")])
+    clone_path = Path.join(System.tmp_dir!(), "rail_start_plan_#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf(clone_path) end)
     Req.Test.stub(Rail.GitHub.Client, &Req.Test.json(&1, %{"token" => "ghs_token"}))
 
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -108,6 +109,21 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
 
     {:ok, issue} =
       Issues.create_issue(system_scope(), project, %{description: "Attachments follow their source document"})
+
+    # Git is only ever asked through Rail.Git, so a worktree is a plain directory where the task says it goes, on the
+    # commit whose sha is all a's, and the repo has no prompts of its own.
+    stub(Git, :get_or_create_worktree, fn %Project{clone_path: ^clone_path}, %Task{worktree_path: path} ->
+      File.mkdir_p!(path)
+      {:ok, path}
+    end)
+
+    stub(Git, :branch_fingerprint, fn _path ->
+      %{head_sha: String.duplicate("a", 40), dirty_digest: String.duplicate("0", 64)}
+    end)
+
+    stub(Git, :read_default_branch_file, fn %Project{clone_path: ^clone_path}, path ->
+      {:error, "fatal: path '#{path}' does not exist in 'refs/remotes/origin/main'"}
+    end)
 
     %{project: project, roles: roles, issue: issue}
   end
@@ -168,15 +184,16 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     assert_received {:pipeline_changed, ^task_id}
   end
 
-  test "a worktree that cannot be made leaves no task and broadcasts nothing", %{project: project, issue: issue} do
-    File.rm_rf!(Path.join(project.clone_path, ".git"))
+  test "a worktree that cannot be made leaves no task and broadcasts nothing", %{issue: issue} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
     test_pid = self()
 
     # The task is rolled back, so its id is only known from the attempt at its worktree.
-    stub(Git, :get_or_create_worktree, fn project, task ->
+    expect(Git, :get_or_create_worktree, fn _project, task ->
       send(test_pid, {:worktree_for, task.id})
-      call_original(Git, :get_or_create_worktree, [project, task])
+
+      {:error,
+       "Failed to create worktree at #{task.worktree_path} (git worktree add exited 128): fatal: not a git repository"}
     end)
 
     assert {:error, {:worktree_failed, _reason}} = Pipeline.start_plan_run(issue)
@@ -193,9 +210,10 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     issue: issue
   } do
     {:ok, task} = Pipeline.create_task(Repo.preload(issue, :project), :plan)
-    worktree_path = create_temp_git_repo()
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    worktree_path = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree_path)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
 
     {:ok, _ticket} = Pipeline.save_plan(task, %{title: "Attachments follow", description: "Body."})
     design = Path.join(task.scratch_path, "design")

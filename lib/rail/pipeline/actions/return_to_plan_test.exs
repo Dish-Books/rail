@@ -18,45 +18,25 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.RunEvent
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Users
 
   @plan "## Implementation plan\n\nFilter by vendor."
 
-  # A project of its own, because the branch is pushed to and deleted from a real `origin`.
-  setup %{project: %{id: seeded_id, linear_workspace_id: workspace_id}} do
-    origin = Path.join(System.tmp_dir!(), "rail_return_origin_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(origin)
-    on_exit(fn -> File.rm_rf(origin) end)
-    git!(origin, ["init", "--bare", "--quiet", "-b", "main"])
+  # Git is faked at its boundary: deleting a branch or a worktree, or making one, for real is for `Rail.Git`'s own
+  # tests. The Planner's worktree is where it belongs, with nothing on disk to fingerprint.
+  setup %{project: %{github_repo: repo, github_installation_id: installation_id} = project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :delete_remote_branch, fn _project, _branch -> :ok end)
+    stub(Git, :remove_worktree, fn _repo_path, _worktree_path -> :ok end)
+    stub(Git, :delete_branch, fn _repo_path, _branch -> :ok end)
+    stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    stub(Git, :branch_fingerprint, fn _worktree_path -> nil end)
 
-    clone = create_temp_git_repo(prefix: "rail_return_clone")
-    git!(clone, ["remote", "add", "origin", origin])
-    git!(clone, ["push", "--quiet", "origin", "main"])
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_return"}]}}})
-    end)
-
-    # Keyed and named per test, since a key, repo or login two open sandboxes both insert waits on the other's.
+    # Named per test, since a login two open sandboxes both insert waits on the other's.
     n = System.unique_integer([:positive])
-    repo = "org/return-#{n}"
     pull_path = "/repos/#{repo}/pulls/212"
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Return Project #{n}",
-        github_repo: repo,
-        github_installation_id: 8708,
-        key: "rtp#{n}",
-        default_branch: "main",
-        clone_path: clone,
-        linear_workspace_id: workspace_id
-      })
-
-    # The Planner starts on the project's own roles, which a new project has none of.
-    {:ok, _roles} = Roles.copy_roles(system_scope(), project.id, seeded_id)
+    token_path = "/app/installations/#{installation_id}/access_tokens"
 
     issue =
       %Issue{}
@@ -73,11 +53,6 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
       |> Repo.preload(:project)
 
     {:ok, task} = Pipeline.create_task(issue, :review)
-    git!(clone, ["worktree", "add", "--quiet", "-b", task.worktree_name, task.worktree_path])
-    File.write!(Path.join(task.worktree_path, "work.ex"), "work\n")
-    git!(task.worktree_path, ["add", "."])
-    git!(task.worktree_path, ["commit", "--quiet", "-m", "Work"])
-    git!(task.worktree_path, ["push", "--quiet", "origin", task.worktree_name])
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     for folder <- ["design", "reviews", "qa"], do: File.mkdir_p!(Path.join(task.scratch_path, folder))
@@ -106,7 +81,7 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
     test_pid = self()
 
     Req.Test.stub(Client, fn
-      %{method: "POST", request_path: "/app/installations/8708/access_tokens"} = conn ->
+      %{method: "POST", request_path: ^token_path} = conn ->
         Req.Test.json(conn, %{"token" => "ghs_return"})
 
       %{method: "GET", request_path: ^pull_path} = conn ->
@@ -131,26 +106,33 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
       reader_scope: user_scope(user: reader),
       issue: issue,
       task: task,
-      origin: origin,
+      token_path: token_path,
       lead: lead,
       plan_role: plan_role,
       first_id: first_id
     }
   end
 
-  test "erases the work, keeps the ticket, design and plan, and starts the Planner on a new conversation", %{
-    scope: scope,
-    task: task,
-    issue: %Issue{id: issue_id} = issue,
-    origin: origin,
-    lead: lead,
-    plan_role: %{id: plan_role_id} = plan_role,
-    reader: reader,
-    reader_scope: reader_scope,
-    first_id: first_id
-  } do
-    {:ok, %Task{id: task_id} = task} = Pipeline.update_task(task, %{pr_number: 212})
+  test "erases the work and the branch, keeps the ticket, design and plan, and starts the Planner on a new conversation in a worktree made again",
+       %{
+         scope: scope,
+         task: task,
+         issue: %Issue{id: issue_id, project: %{id: project_id, clone_path: clone}} = issue,
+         lead: lead,
+         plan_role: %{id: plan_role_id} = plan_role,
+         reader: reader,
+         reader_scope: reader_scope,
+         first_id: first_id
+       } do
+    {:ok, %Task{id: task_id, worktree_name: branch, worktree_path: worktree_path} = task} =
+      Pipeline.update_task(task, %{pr_number: 212})
+
     now = DateTime.utc_now()
+
+    expect(Git, :delete_remote_branch, fn %{id: ^project_id}, ^branch -> :ok end)
+    expect(Git, :remove_worktree, fn ^clone, ^worktree_path -> :ok end)
+    expect(Git, :delete_branch, fn ^clone, ^branch -> :ok end)
+    expect(Git, :get_or_create_worktree, fn %{id: ^project_id}, %Task{id: ^task_id} -> {:ok, worktree_path} end)
 
     {:ok, %Run{id: old_plan_id}} =
       Pipeline.create_run(%{
@@ -236,9 +218,6 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
 
     assert task.scratch_path |> File.ls!() |> Enum.reject(&(&1 == "streams")) == ["design"]
     assert File.read!(Path.join([task.scratch_path, "design", "picked"])) == "rows"
-    refute File.exists?(Path.join(task.worktree_path, "work.ex"))
-    refute git!(task.worktree_path, ["log", "--format=%s"]) =~ "Work"
-    assert "" = git!(origin, ["branch", "--list", task.worktree_name])
 
     assert %Issue{state: :in_progress, state_name: nil} = Repo.get!(Issue, issue_id)
     assert_enqueued(worker: SyncIssue, args: %{issue_id: issue_id, fields: ["state", "state_name"]})
@@ -306,6 +285,7 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
     scope: scope,
     task: task,
     issue: issue,
+    token_path: token_path,
     lead: lead
   } do
     {:ok, %Task{id: task_id} = task} = Pipeline.update_task(task, %{pr_number: 212})
@@ -314,7 +294,7 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
 
     # Runs in the test process, so the subscription is the test's.
     Req.Test.stub(Client, fn
-      %{method: "POST", request_path: "/app/installations/8708/access_tokens"} = conn ->
+      %{method: "POST", request_path: ^token_path} = conn ->
         Req.Test.json(conn, %{"token" => "ghs_return"})
 
       %{method: "GET", request_path: ^pull_path} = conn ->
@@ -343,22 +323,12 @@ defmodule Rail.Pipeline.Actions.ReturnToPlanTest do
     assert %Round{plan: @plan, approved_at: nil} = Repo.get!(Round, first_id)
   end
 
-  test "a new push after Back to Plan goes up cleanly on the same branch name", %{scope: scope, task: task} do
-    assert {:ok, %Task{} = planning} = Pipeline.return_to_plan(scope, task)
-
-    File.write!(Path.join(planning.worktree_path, "fresh.ex"), "fresh\n")
-    git!(planning.worktree_path, ["add", "."])
-    git!(planning.worktree_path, ["commit", "--quiet", "-m", "Fresh start"])
-
-    assert :ok = Git.check_push(planning)
-  end
-
   describe "a task it refuses" do
-    test "a task at Plan", %{scope: scope, task: task, origin: origin} do
+    test "a task at Plan, whose branch is kept", %{scope: scope, task: task} do
       {:ok, task} = Pipeline.update_task(task, %{stage: :plan})
+      reject(Git, :delete_remote_branch, 2)
 
       assert {:error, :not_discardable} = Pipeline.return_to_plan(scope, task)
-      assert git!(origin, ["branch", "--list", task.worktree_name]) =~ task.worktree_name
     end
 
     test "a task whose first round holds no plan", %{scope: scope, task: task, first_id: first_id} do

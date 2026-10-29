@@ -2,6 +2,7 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  alias Rail.Git
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Pipeline
@@ -11,6 +12,8 @@ defmodule Rail.Pipeline.Workers.EncodeDemoTest do
   alias Rail.Tools
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :demo)
 
     Req.Test.expect(Rail.Linear, fn conn ->

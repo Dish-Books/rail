@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Actions.SendToNextStageTest do
 
   import Ecto.Query
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
@@ -35,17 +36,22 @@ defmodule Rail.Pipeline.Actions.SendToNextStageTest do
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "Send To Review"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
-    # A branch review can read is a branch the remote has, so the worktree here is
-    # one that has actually been pushed.
-    remote = create_temp_git_repo(prefix: "rail_git_remote", initial_commit: false)
-    git!(remote, ["config", "receive.denyCurrentBranch", "ignore"])
-
-    worktree_path = create_temp_git_repo()
-    git!(worktree_path, ["remote", "add", "origin", remote])
-    git!(worktree_path, ["push", "--set-upstream", "origin", "main"])
-
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+    # Git is only ever asked through Rail.Git, so the worktree is a plain directory. A branch review can read is a
+    # branch the remote has, so it answers as one that has been pushed, up to date with main, on one commit.
+    worktree_path = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree_path)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
+
+    stub(Git, :branch_unpushed?, fn ^worktree_path -> false end)
+    stub(Git, :base_status, fn ^worktree_path, "main" -> %{behind: false, conflicts: []} end)
+
+    stub(Git, :branch_fingerprint, fn ^worktree_path ->
+      %{head_sha: String.duplicate("a", 40), dirty_digest: String.duplicate("0", 64)}
+    end)
+
+    stub(Git, :commits_since, fn ^worktree_path, _sha -> {:ok, %{merges: false}} end)
 
     {:ok, run} =
       Pipeline.create_run(%{
@@ -66,9 +72,17 @@ defmodule Rail.Pipeline.Actions.SendToNextStageTest do
     }
   end
 
-  test "hands the task to review and latches the engineer run", %{task: task, run: run} do
+  # The engineer commits its own work, so what it left uncommitted stays behind rather than holding Review up.
+  test "hands the task to review and latches the engineer run, with work left uncommitted beside it", %{
+    task: task,
+    run: run,
+    worktree_path: repo
+  } do
+    File.write!(Path.join(repo, "uncommitted.ex"), "one\n")
+
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.send_to_next_stage(run)
     assert %Task{stage: :review} = Repo.reload!(task)
+    assert File.exists?(Path.join(repo, "uncommitted.ex"))
   end
 
   test "hands the task to the custom stage its sequence places after Engineer, then past it once it is approved", %{
@@ -180,7 +194,7 @@ defmodule Rail.Pipeline.Actions.SendToNextStageTest do
           started_at: DateTime.utc_now()
         })
 
-      base = repo |> git!(["rev-parse", "HEAD"]) |> String.trim()
+      base = String.duplicate("b", 40)
       Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Filter.", approved_at: DateTime.utc_now()})
 
       Repo.insert!(%Round{
@@ -199,18 +213,14 @@ defmodule Rail.Pipeline.Actions.SendToNextStageTest do
         {:ok, %OsProcess{run: spawned}}
       end)
 
-      commit = fn files ->
-        for {path, body} <- files do
-          File.mkdir_p!(Path.dirname(Path.join(repo, path)))
-          File.write!(Path.join(repo, path), body)
-        end
-
-        git!(repo, ["add", "."])
-        git!(repo, ["commit", "-m", "round 2"])
-        git!(repo, ["push", "origin", "main"])
+      # The round started at `base` and merged nothing in since, so the files it changed are asked of git from there.
+      changed = fn paths ->
+        expect(Git, :list_round_paths, fn %Task{worktree_path: ^repo}, %{number: 2, base: ^base, merged: false} ->
+          {:ok, paths}
+        end)
       end
 
-      %{qa_run: qa_run, commit: commit}
+      %{qa_run: qa_run, changed: changed}
     end
 
     # Nothing a person sees moved, so walking the app again only spends QA's minutes.
@@ -218,9 +228,9 @@ defmodule Rail.Pipeline.Actions.SendToNextStageTest do
       task: task,
       run: run,
       qa_run: qa_run,
-      commit: commit
+      changed: changed
     } do
-      commit.([{"test/bill_test.exs", "test\n"}, {"README.md", "docs\n"}])
+      changed.(["README.md", "test/bill_test.exs"])
 
       assert {:ok, %Run{}} = Pipeline.send_to_next_stage(run)
 
@@ -233,17 +243,18 @@ defmodule Rail.Pipeline.Actions.SendToNextStageTest do
       assert ["[qa] " <> ^line] = qa_run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
     end
 
-    test "that changed a file the app runs starts QA and the demo too", %{run: run, commit: commit} do
-      commit.([{"test/bill_test.exs", "test\n"}, {"lib/bill.ex", "code\n"}])
+    test "that changed a file the app runs starts QA and the demo too", %{run: run, changed: changed} do
+      changed.(["lib/bill.ex", "test/bill_test.exs"])
 
       assert {:ok, %Run{}} = Pipeline.send_to_next_stage(run)
 
       for stage <- [:qa, :review, :demo], do: assert_received({:started, ^stage})
     end
 
-    test "of a project that names no unseen files starts QA", %{project: project, run: run, commit: commit} do
+    # With nothing to match them against, the round's files are never asked for.
+    test "of a project that names no unseen files starts QA", %{project: project, run: run} do
       {:ok, _project} = Projects.update_project(system_scope(), project, %{qa_skip_paths: []})
-      commit.([{"test/bill_test.exs", "test\n"}])
+      reject(Git, :list_round_paths, 2)
 
       assert {:ok, %Run{}} = Pipeline.send_to_next_stage(run)
 
@@ -252,12 +263,9 @@ defmodule Rail.Pipeline.Actions.SendToNextStageTest do
   end
 
   # The first round checks every acceptance criterion, whatever it changed.
-  test "round 1 starts QA though it changed only tests", %{task: task, run: run, worktree_path: repo} do
+  test "round 1 starts QA without asking what it changed", %{task: task, run: run} do
     Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Test it.", approved_at: DateTime.utc_now()})
-    File.write!(Path.join(repo, "bill_test.exs"), "test\n")
-    git!(repo, ["add", "."])
-    git!(repo, ["commit", "-m", "round 1"])
-    git!(repo, ["push", "origin", "main"])
+    reject(Git, :list_round_paths, 2)
     test_pid = self()
 
     stub(Tools, :start_os_process, fn %Run{} = spawned, _argv ->
@@ -270,21 +278,9 @@ defmodule Rail.Pipeline.Actions.SendToNextStageTest do
     assert_received {:started, :qa}
   end
 
-  # The engineer commits its own work, so what it left uncommitted stays behind rather than holding Review up.
-  test "sends the pushed work on with work left uncommitted beside it", %{task: task, run: run, worktree_path: repo} do
-    File.write!(Path.join(repo, "uncommitted.ex"), "one\n")
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-
-    assert {:ok, %Run{}} = Pipeline.send_to_next_stage(run)
-    assert %Task{stage: :review} = Repo.reload!(task)
-    assert File.exists?(Path.join(repo, "uncommitted.ex"))
-  end
-
   # A commit nobody else can see is not a change anyone can review.
   test "refuses commits the remote has never been told about", %{task: task, run: run, worktree_path: repo} do
-    File.write!(Path.join(repo, "local.ex"), "one\n")
-    git!(repo, ["add", "."])
-    git!(repo, ["commit", "-m", "never pushed"])
+    expect(Git, :branch_unpushed?, fn ^repo -> true end)
 
     assert {:error, :unpushed_changes} = Pipeline.send_to_next_stage(run)
     assert %Task{stage: :engineer} = Repo.reload!(task)
@@ -318,11 +314,8 @@ defmodule Rail.Pipeline.Actions.SendToNextStageTest do
     assert %Task{stage: :engineer} = Repo.reload!(task)
   end
 
-  test "a pass for an earlier commit is not a pass for this one", %{
-    project: project,
-    run: run,
-    worktree_path: worktree_path
-  } do
+  # The setup has the worktree on the commit whose sha is all a's.
+  test "a pass for an earlier commit is not a pass for this one", %{project: project, run: run} do
     {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
 
     %OsProcess{}
@@ -345,7 +338,7 @@ defmodule Rail.Pipeline.Actions.SendToNextStageTest do
       run_id: run.id,
       task_id: run.task_id,
       kind: :ci,
-      head_sha: String.trim(git!(worktree_path, ["rev-parse", "HEAD"])),
+      head_sha: String.duplicate("a", 40),
       exit_code: 0,
       stream_path: "/tmp/#{run.id}-again.log",
       status: :finished,

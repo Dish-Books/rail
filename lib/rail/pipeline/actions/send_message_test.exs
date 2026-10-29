@@ -11,6 +11,9 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
   alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
+    stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Rail.Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -49,10 +52,15 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
 
   test "a message to an idle run goes out now", %{idle: idle} do
     run = idle.()
+    test = self()
 
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    # The spawn is in the background; waited on, so it never outlives the test's stubs.
+    stub(Tools, :start_os_process, fn spawned, _argv ->
+      send(test, {:spawned, spawned.id}) && {:ok, %OsProcess{run: spawned}}
+    end)
 
-    assert {:ok, :sent, %Run{}} = Pipeline.send_message(system_scope(), run, "Please add a test")
+    assert {:ok, :sent, %Run{id: run_id}} = Pipeline.send_message(system_scope(), run, "Please add a test")
+    assert_receive {:spawned, ^run_id}
   end
 
   test "a message whose run is deleted while it waits on the task's lock starts nothing", %{idle: idle} do

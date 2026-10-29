@@ -27,7 +27,11 @@ defmodule Rail.Pipeline.Utils.PrepareTurnTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Prepare Turn"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    # Git is only ever asked through Rail.Git, so the worktree is a plain directory.
+    worktree_path = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree_path)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
     {:ok, run} =
@@ -39,26 +43,16 @@ defmodule Rail.Pipeline.Utils.PrepareTurnTest do
     %{run: %{run | task: task}, task: task}
   end
 
-  test "fetches the default branch into the worktree and sets who it commits as", %{
-    run: run,
-    task: %Task{id: task_id, worktree_path: worktree_path}
-  } do
+  # Update is how a branch is brought up to date, as a round of its own, so a turn is never told to merge first, and
+  # whether the branch is behind the default branch is never asked.
+  test "fetches the default branch into the worktree and sets who it commits as, saying nothing of a branch behind it",
+       %{run: run, task: %Task{id: task_id, worktree_path: worktree_path}} do
     expect(Git, :fetch_default_branch, fn %Project{default_branch: "main"}, ^worktree_path -> :ok end)
     expect(Git, :set_commit_identity, fn %Task{id: ^task_id} -> :ok end)
+    reject(&Git.base_status/2)
 
     assert "" = prepare_turn(run)
     assert [] = Pipeline.list_run_events(run)
-  end
-
-  # Update is how a branch is brought up to date, as a round of its own, so a turn is never told to merge first.
-  test "says nothing of a branch behind the default branch", %{run: run, task: %Task{worktree_path: worktree_path}} do
-    git!(worktree_path, ["commit", "--allow-empty", "-m", "landed on main"])
-    git!(worktree_path, ["update-ref", "refs/remotes/origin/main", "HEAD"])
-    git!(worktree_path, ["reset", "--quiet", "--hard", "HEAD~1"])
-    expect(Git, :fetch_default_branch, fn _project, _path -> :ok end)
-    expect(Git, :set_commit_identity, fn _task -> :ok end)
-
-    assert "" = prepare_turn(run)
   end
 
   # The agent can still work on the copy it fetched last, so a failure is said rather than stopping the turn.

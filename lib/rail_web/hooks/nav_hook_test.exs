@@ -3,6 +3,7 @@ defmodule RailWeb.Hooks.NavHookTest do
 
   import Phoenix.LiveViewTest
 
+  alias Rail.Git
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Projects
@@ -13,6 +14,18 @@ defmodule RailWeb.Hooks.NavHookTest do
   alias Rail.Users
 
   setup %{conn: conn, project: project} do
+    # Roles are read with their prompts from the default branch, a triage pass checks it out, and a task page reads
+    # its branch, all through Rail.Git. No project here has a clone, so these answer as git would for none: no
+    # .rail/prompts, and a branch it cannot read.
+    stub(Git, :checkout_detached_worktree, fn _project, worktree_path -> {:ok, worktree_path} end)
+    stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :list_default_branch_paths, fn _project, paths -> if paths == [], do: MapSet.new() end)
+
+    stub(Git, :load_branch_history, fn _task, _rounds ->
+      %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
+    end)
+
     {:ok, other_project} =
       Projects.create_project(system_scope(), %{
         name: "Nav Hook Other Project",

@@ -21,6 +21,18 @@ defmodule RailWeb.OverviewLiveTest do
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
+  setup do
+    # What is merged is read from the project's clone, which another test may have made, so reading it here
+    # would spawn git: these pages see nothing on the default branch, as when there is no clone.
+    stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Rail.Git, :list_default_branch_paths, fn _project, paths -> if paths == [], do: MapSet.new() end)
+    # A task cleaned up or deleted with its issue takes its worktree and branch in that clone with it.
+    stub(Rail.Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
+    stub(Rail.Git, :delete_branch, fn _clone_path, _branch -> :ok end)
+
+    :ok
+  end
+
   test "redirects an unauthenticated user to the sign-in page", %{conn: conn} do
     assert {:error, {:redirect, %{to: "/sign-in"}}} = live(conn, ~p"/")
   end
@@ -300,7 +312,7 @@ defmodule RailWeb.OverviewLiveTest do
 
   # The Theme hook flips <html data-theme> itself and reports the result back, so the
   # server only ever reacts to "theme_changed".
-  test "follows the theme the client reports", %{conn: conn} do
+  test "follows the theme the client reports, and opens and closes the new issue modal", %{conn: conn} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_overview_live_5",
@@ -320,20 +332,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     render_hook(view, "theme_changed", %{"theme" => "dark"})
     assert has_element?(view, "#theme-toggle-button[title='Switch to Light mode']")
-  end
 
-  test "opens and closes new issue modal", %{conn: conn} do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_overview_live_6",
-        login: "overview_live_user_6",
-        email: "overview_live_user_6@example.com",
-        admin: true
-      })
-
-    authed_conn = log_in_user(conn, user)
-
-    assert {:ok, view, _html} = live(authed_conn, ~p"/")
     refute has_element?(view, "#new-issue-modal")
 
     # Open modal
@@ -346,26 +345,7 @@ defmodule RailWeb.OverviewLiveTest do
     refute has_element?(view, "#new-issue-modal")
   end
 
-  test "close_project_switcher event closes open dialog", %{conn: conn} do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_overview_live_7",
-        login: "overview_live_user_7",
-        email: "overview_live_user_7@example.com",
-        admin: true
-      })
-
-    authed_conn = log_in_user(conn, user)
-
-    assert {:ok, view, _html} = live(authed_conn, ~p"/")
-    view |> element("#project-switcher-button") |> render_click()
-    assert has_element?(view, "#project-switcher-dialog")
-
-    render_hook(view, "close_project_switcher", %{})
-    refute has_element?(view, "#project-switcher-dialog")
-  end
-
-  test "the project switcher closes on Escape or a click outside it", %{conn: conn} do
+  test "the project switcher closes on Escape or a click outside it, which sends close_project_switcher", %{conn: conn} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_overview_live_8",
@@ -387,6 +367,12 @@ defmodule RailWeb.OverviewLiveTest do
     assert has_element?(view, "#project-switcher-dialog[phx-key='Escape']")
 
     view |> element("#project-switcher-dialog") |> render_keydown(%{"key" => "Escape"})
+    refute has_element?(view, "#project-switcher-dialog")
+
+    view |> element("#project-switcher-button") |> render_click()
+    assert has_element?(view, "#project-switcher-dialog")
+
+    render_hook(view, "close_project_switcher", %{})
     refute has_element?(view, "#project-switcher-dialog")
   end
 
@@ -481,8 +467,12 @@ defmodule RailWeb.OverviewLiveTest do
       roles: roles,
       task_for: task_for
     } do
-      task = task_for.("Comments go as one round", %{stage: :review, worktree_path: create_temp_git_repo()})
+      task = task_for.("Comments go as one round", %{stage: :review})
       on_exit(fn -> File.rm_rf(task.scratch_path) end)
+      # Nothing here asks git, so the worktree only has to be there.
+      worktree = Path.join(task.scratch_path, "worktree")
+      File.mkdir_p!(worktree)
+      {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
 
       {:ok, run} =
         Pipeline.create_run(%{
@@ -2394,6 +2384,14 @@ defmodule RailWeb.OverviewLiveIssueEventsTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Users
+
+  setup do
+    # A role's prompt is read from the project's clone, which another test may have made, so reading it here
+    # would spawn git: this sees no prompt file on the default branch, as when there is no clone.
+    stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
+    :ok
+  end
 
   test "a new issue or a comment on one moves no task, so the page is left as it was", %{
     conn: conn,

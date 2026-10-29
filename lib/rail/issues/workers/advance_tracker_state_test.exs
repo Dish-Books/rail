@@ -12,6 +12,14 @@ defmodule Rail.Issues.Workers.AdvanceTrackerStateTest do
   # DataCase verifies Mimic, not Req.Test: without this a move that never went out would pass.
   setup {Req.Test, :verify_on_exit!}
 
+  # A cleaned-up task's worktree and branch are removed from the project's clone through Rail.Git.
+  setup do
+    stub(Rail.Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
+    stub(Rail.Git, :delete_branch, fn _clone_path, _branch -> :ok end)
+
+    :ok
+  end
+
   describe "a Linear issue" do
     setup %{project: project} do
       Req.Test.expect(Rail.Linear, fn conn ->

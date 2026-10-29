@@ -1,23 +1,29 @@
 defmodule Rail.Pipeline.Actions.SaveScreenTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Pipeline
 
   setup %{project: project} do
     task = learnings_task(project, "SSC-1", :review)
-    worktree = create_temp_git_repo()
+    # HEAD is asked of Rail.Git, so the worktree is a plain directory and the stub names its commit.
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
     Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:#{task.id}")
+    head = String.duplicate("a", 40)
+    stub(Git, :branch_fingerprint, fn _worktree_path -> %{head_sha: head, dirty_digest: "clean"} end)
 
-    %{task: task, head: worktree |> git!(["rev-parse", "HEAD"]) |> String.trim()}
+    %{task: task, head: head}
   end
 
   # When and on which commit are Rail's to say, written beside the picture it describes.
   test "records the shot against HEAD's commit beside its picture, and tells the open page", %{
-    task: %{id: task_id} = task,
+    task: %{id: task_id, worktree_path: worktree} = task,
     head: head
   } do
+    expect(Git, :branch_fingerprint, fn ^worktree -> %{head_sha: head, dirty_digest: "clean"} end)
     file = "screens/toolbar/1760000000000000.jpg"
 
     assert {:ok,
@@ -59,6 +65,7 @@ defmodule Rail.Pipeline.Actions.SaveScreenTest do
 
   test "a task whose worktree is gone records a shot on no commit", %{task: task} do
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: "/tmp/gone_#{System.unique_integer([:positive])}"})
+    reject(Git, :branch_fingerprint, 1)
 
     assert {:ok, %{commit: nil}} =
              Pipeline.save_screen(task, %{key: "toolbar", label: "Toolbar", file: "screens/toolbar/1.jpg"})

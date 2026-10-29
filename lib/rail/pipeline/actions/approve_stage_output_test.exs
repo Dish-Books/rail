@@ -4,6 +4,7 @@ defmodule Rail.Pipeline.Actions.ApproveStageOutputTest do
 
   import Ecto.Query
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
@@ -46,8 +47,12 @@ defmodule Rail.Pipeline.Actions.ApproveStageOutputTest do
       })
 
     {:ok, task} = Pipeline.create_task(issue, {:custom, "Missing strings"})
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+    # HEAD is asked of Rail.Git, so the worktree is a plain directory on a branch with nothing changed.
+    worktree_path = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree_path)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: String.duplicate("a", 40), dirty_digest: "clean"} end)
     {:ok, role} = Roles.get_custom_stage_role(project.id, "Missing strings")
 
     {:ok, run} =

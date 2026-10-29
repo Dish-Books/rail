@@ -14,6 +14,10 @@ defmodule Rail.Workflows.Workers.StartWorkflowTaskTest do
   alias Rail.Workflows.Workers.StartWorkflowTask
 
   setup %{project: project} do
+    # A role's prompt is read from the project's clone, which another test may have made, so reading it here
+    # would spawn git: these see no prompt file on the default branch, as when there is no clone.
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     Phoenix.PubSub.subscribe(Rail.PubSub, "workflows")
 
     workflow =

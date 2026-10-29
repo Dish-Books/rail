@@ -1125,12 +1125,15 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
   end
 
   describe "a project's .env" do
-    # Each project on a clone of its own, so no other test's worktree sees its .env.
+    # Each project on a clone of its own, so no other test's worktree sees its .env. Reading and saving
+    # the .env only touch files, so the clone and its worktrees are plain directories.
     setup do
       projects =
         for {name, worktree_count} <- [two: 2, one: 1, none: 0], into: %{} do
           unique = System.unique_integer([:positive])
-          clone = create_temp_git_repo(prefix: "rail_env_live_#{name}")
+          clone = Path.join(System.tmp_dir!(), "rail_env_live_#{name}_#{unique}")
+          File.mkdir_p!(clone)
+          on_exit(fn -> File.rm_rf(clone) end)
 
           {:ok, %Project{id: project_id} = project} =
             Projects.create_project(system_scope(), %{
@@ -1146,7 +1149,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
             for number <- 1..worktree_count//1 do
               branch = "env-live-#{name}-#{number}-#{unique}"
               path = Path.join(clone, ".worktrees/#{branch}")
-              git!(clone, ["worktree", "add", "-b", branch, path])
+              File.mkdir_p!(path)
 
               issue =
                 Repo.insert!(
@@ -1214,12 +1217,13 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
       refute has_element?(view, "#env-file-saved")
     end
 
-    test "a project with no .env says it has no variables yet, and saves the rows added", %{
+    test "a project with no .env says it has no variables yet, saves the rows added, and reopened reads it afresh", %{
       admin_conn: conn,
       env: %{none: %{project: project}}
     } do
       assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
       view |> element("#env-file-project-#{project.id}") |> render_click()
+      assert has_element?(view, "#env-file-modal")
 
       assert has_element?(view, "#env-file-empty", "No variables yet.")
       assert has_element?(view, "#env-file-empty", Path.join(project.clone_path, ".env"))
@@ -1235,6 +1239,13 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                "Saved to the clone"
 
       assert File.read!(Path.join(project.clone_path, ".env")) == "ONLY=\n"
+
+      view |> element("#close-env-file-button") |> render_click()
+      refute has_element?(view, "#env-file-modal")
+
+      File.write!(Path.join(project.clone_path, ".env"), "LATER=1\n")
+      view |> element("#env-file-project-#{project.id}") |> render_click()
+      assert has_element?(view, "input[aria-label=Name][value=LATER]")
     end
 
     test "a removed row is gone from the file, and every row removed empties it", %{
@@ -1366,22 +1377,6 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
 
       view |> form("#env-file-form") |> render_change()
       refute has_element?(view, "#env-file-refused-0")
-    end
-
-    test "closing the modal removes it, and opening it again reads the file afresh", %{
-      admin_conn: conn,
-      env: %{none: %{project: project}}
-    } do
-      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
-      view |> element("#env-file-project-#{project.id}") |> render_click()
-      assert has_element?(view, "#env-file-modal")
-
-      view |> element("#close-env-file-button") |> render_click()
-      refute has_element?(view, "#env-file-modal")
-
-      File.write!(Path.join(project.clone_path, ".env"), "LATER=1\n")
-      view |> element("#env-file-project-#{project.id}") |> render_click()
-      assert has_element?(view, "input[aria-label=Name][value=LATER]")
     end
   end
 end

@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.StartReviewRunTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
@@ -36,9 +37,14 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Filter invoices by vendor."})
     {:ok, task} = Pipeline.create_task(issue, :review)
-    worktree_path = create_temp_git_repo()
+    # HEAD and the diff are asked of Rail.Git, so the worktree is a plain directory and the stubs answer for a
+    # branch on one commit with nothing changed.
+    worktree_path = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree_path)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: String.duplicate("a", 40), dirty_digest: "clean"} end)
+    stub(Git, :load_diff, fn _scope, _task, :branch -> {:ok, []} end)
 
     {:ok, run} = Pipeline.start_or_resume_run(task, role, worktree_path)
     # Between rounds, where the human rules.
@@ -48,19 +54,28 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
   end
 
   # Each of the others is a run Rail started, so the review agent is spawned alone, on what they reported.
-  test "spawns the review agent on its own model with no agents of its own, handed the round's reports", %{
-    task: task,
-    run: run
-  } do
+  test "spawns the review agent on its own model with no agents of its own, handed the round's reports and not the design page or its images",
+       %{task: task, run: run} do
     File.mkdir_p!(Path.join(task.scratch_path, "reports"))
     File.write!(Path.join([task.scratch_path, "reports", "qa.md"]), "Saving twice shows two rows.")
     File.write!(Path.join([task.scratch_path, "reports", "review.md"]), "Nothing to report.")
+    design_dir = Path.join(task.scratch_path, "design")
+    File.mkdir_p!(design_dir)
+    File.write!(Path.join(design_dir, "manifest.json"), ~s({"options": [{"key": "cards", "title": "Cards"}]}))
+    File.write!(Path.join(design_dir, "picked"), "cards")
+
+    File.write!(
+      Path.join(design_dir, "cards.html"),
+      ~s(<h1>REVIEW-DESIGN-MARKER</h1><img src="data:image/png;base64,#{String.duplicate("iVBORw0K", 1_000)}">)
+    )
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt, "--model", "claude-opus-5-5" | _rest] = argv ->
       refute "--agents" in argv
       assert prompt =~ "The report QA saved this round:\n\n<report from=\"qa\">\nSaving twice shows two rows.\n</report>"
       assert prompt =~ "<report from=\"review\">\nNothing to report.\n</report>"
       refute prompt =~ "<report from=\"engineer\">"
+      refute prompt =~ "REVIEW-DESIGN-MARKER"
+      refute prompt =~ "data:image"
       {:ok, %OsProcess{run: spawned}}
     end)
 
@@ -94,26 +109,6 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     assert {:ok, %OsProcess{}} = Pipeline.start_review_run(run)
   end
 
-  test "the review agent is not handed the design page or its images", %{task: task, run: run} do
-    design_dir = Path.join(task.scratch_path, "design")
-    File.mkdir_p!(design_dir)
-    File.write!(Path.join(design_dir, "manifest.json"), ~s({"options": [{"key": "cards", "title": "Cards"}]}))
-    File.write!(Path.join(design_dir, "picked"), "cards")
-
-    File.write!(
-      Path.join(design_dir, "cards.html"),
-      ~s(<h1>REVIEW-DESIGN-MARKER</h1><img src="data:image/png;base64,#{String.duplicate("iVBORw0K", 1_000)}">)
-    )
-
-    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
-      refute prompt =~ "REVIEW-DESIGN-MARKER"
-      refute prompt =~ "data:image"
-      {:ok, %OsProcess{run: spawned}}
-    end)
-
-    assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_review_run(run)
-  end
-
   test "the brief lists the findings already on the task with their rounds, rulings, places and notes", %{
     task: task,
     run: run
@@ -139,9 +134,9 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
 
     {:ok, %{round: 1}} = Pipeline.save_review(task)
     {:ok, _ruled} = Pipeline.decide_finding(system_scope(), finding, :fix)
-    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 1"])
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: String.duplicate("b", 40), dirty_digest: "clean"} end)
     {:ok, %{round: 2}} = Pipeline.save_review(task)
-    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 2"])
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: String.duplicate("c", 40), dirty_digest: "clean"} end)
     {:ok, _carried} = Pipeline.save_finding(task, %{key: "send-twice", status: "not_fixed", note: "Still twice."})
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
@@ -152,10 +147,10 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
       assert prompt =~ "  Rule: A round is sent once, however many times Send is pressed."
       assert prompt =~ "  Place 1: Engineer tab, Diff toolbar, Send button"
       assert prompt =~ "  Place 2: lib/a.ex:22"
-      assert prompt =~ ~r/  Round 1, raised on [0-9a-f]{7}: Seen by explorer-1\./
+      assert prompt =~ "  Round 1, raised on aaaaaaa: Seen by explorer-1."
       assert prompt =~ "  Round 1, ruled Fix"
-      assert prompt =~ ~r/  Round 3, not_fixed on [0-9a-f]{7}: Still twice\./
-      assert prompt =~ ~r/  Round 3, carried on [0-9a-f]{7}/
+      assert prompt =~ "  Round 3, not_fixed on ccccccc: Still twice."
+      assert prompt =~ "  Round 3, carried on ccccccc"
 
       {:ok, %OsProcess{run: spawned}}
     end)
@@ -293,7 +288,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     } do
       stub_vertex(%{"Repo.insert!" => vector([1.0])})
 
-      stub(Rail.Git, :load_diff, fn _scope, _task, :branch ->
+      stub(Git, :load_diff, fn _scope, _task, :branch ->
         {:ok,
          [
            %{
@@ -326,7 +321,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     end
 
     test "a worktree that is gone gives no per-file rules", %{project: project, run: run} do
-      stub(Rail.Git, :load_diff, fn _scope, _task, :branch -> {:error, :no_worktree} end)
+      stub(Git, :load_diff, fn _scope, _task, :branch -> {:error, :no_worktree} end)
       learning(project, %{rule: "Pinned anyway", kind: :convention, pinned: true})
 
       expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->

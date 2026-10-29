@@ -72,18 +72,13 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
   end
 
   test "copies a role's stored prompt, not the one its source repo's .rail/prompts stands in for", %{
-    source: source,
+    source: %{id: source_id} = source,
     target: target
   } do
-    remote = create_temp_git_repo(prefix: "rail_copy_roles_remote")
-    File.mkdir_p!(Path.join(remote, ".rail/prompts"))
-    File.write!(Path.join(remote, ".rail/prompts/engineer.md"), "From the source repo.\n")
-    git!(remote, ["add", "."])
-    git!(remote, ["commit", "-m", "add prompt"])
-    clone = create_temp_git_repo(prefix: "rail_copy_roles_clone")
-    git!(clone, ["remote", "add", "origin", remote])
-    git!(clone, ["fetch", "origin", "main"])
-    {:ok, source} = Projects.update_project(system_scope(), source, %{clone_path: clone})
+    stub(Rail.Git, :read_default_branch_file, fn
+      %{id: ^source_id}, ".rail/prompts/engineer.md" -> {:ok, "From the source repo.\n"}
+      _project, path -> {:error, "fatal: path '#{path}' does not exist in 'refs/remotes/origin/main'"}
+    end)
 
     {:ok, _source_engineer} =
       Roles.create_role(system_scope(), source, %{

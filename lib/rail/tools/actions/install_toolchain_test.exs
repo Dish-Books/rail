@@ -3,7 +3,6 @@ defmodule Rail.Tools.Actions.InstallToolchainTest do
   use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Git
-  alias Rail.GitHub.Client
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Tools
@@ -11,21 +10,25 @@ defmodule Rail.Tools.Actions.InstallToolchainTest do
   alias Rail.Tools.Workers.InstallToolchain
 
   setup do
-    stub(Git, :git_repo?, &call_original(Git, :git_repo?, [&1]))
-    Req.Test.stub(Client, &Req.Test.json(&1, %{"token" => "ghs_token"}))
-
-    remote = create_temp_git_repo(prefix: "rail_toolchain_remote")
-    File.write!(Path.join(remote, ".tool-versions"), "erlang 28.5.0.7\n")
-    git!(remote, ["add", "."])
-    git!(remote, ["commit", "-m", "pin erlang"])
-    clone = create_temp_git_repo(prefix: "rail_toolchain_clone")
-    git!(clone, ["remote", "add", "origin", remote])
-    git!(clone, ["fetch", "origin", "main"])
-
     tmp_dir = Path.join(System.tmp_dir!(), "install_toolchain_test_#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp_dir)
     on_exit(fn -> File.rm_rf(tmp_dir) end)
     id = System.unique_integer([:positive])
+    # Only checked out from, never read, so the clone is a path under the test's directory.
+    clone = Path.join(tmp_dir, "clone")
+    head_sha = Base.encode16(:crypto.strong_rand_bytes(20), case: :lower)
+
+    # Which commit the fetched default branch is at is asked of git directly, not through `Rail.Git`.
+    stub(Tools, :run, fn
+      "git", ["rev-parse", "--verify", "--quiet", "refs/remotes/origin/main"], [cd: ^clone] -> {head_sha <> "\n", 0}
+      "git", ["rev-parse", "--verify", "--quiet", "refs/remotes/origin/" <> _unfetched], [cd: ^clone] -> {"", 1}
+      executable, args, opts -> call_original(Tools, :run, [executable, args, opts])
+    end)
+
+    stub(Git, :checkout_detached_worktree, fn _project, path ->
+      File.mkdir_p!(path)
+      {:ok, path}
+    end)
 
     project =
       %Project{}
@@ -40,15 +43,21 @@ defmodule Rail.Tools.Actions.InstallToolchainTest do
       })
       |> Repo.insert!()
 
-    %{project: project, clone: clone, tmp_dir: tmp_dir}
+    %{project: project, tmp_dir: tmp_dir, head_sha: head_sha}
   end
 
   test "the command runs once for a commit of the default branch, in a checkout of it", %{
     project: %Project{id: project_id} = project,
-    clone: clone,
-    tmp_dir: tmp_dir
+    tmp_dir: tmp_dir,
+    head_sha: head_sha
   } do
-    head_sha = clone |> git!(["rev-parse", "origin/main"]) |> String.trim()
+    checkout_path = ToolchainInstall.checkout_path(project)
+
+    expect(Git, :checkout_detached_worktree, fn %Project{id: ^project_id}, ^checkout_path ->
+      File.mkdir_p!(checkout_path)
+      File.write!(Path.join(checkout_path, ".tool-versions"), "erlang 28.5.0.7\n")
+      {:ok, checkout_path}
+    end)
 
     assert {:ok, %ToolchainInstall{id: install_id, status: :queued, head_sha: ^head_sha}} =
              Tools.ensure_toolchain(project)
@@ -101,14 +110,16 @@ defmodule Rail.Tools.Actions.InstallToolchainTest do
     assert {:error, :no_command} = Tools.retry_toolchain_install(system_scope(), failed)
   end
 
-  test "a default branch that cannot be checked out fails the install with what git said", %{
-    project: project,
-    clone: clone
-  } do
+  test "a default branch that cannot be checked out fails the install with what git said", %{project: project} do
     assert {:ok, %ToolchainInstall{id: install_id}} = Tools.ensure_toolchain(project)
-    git!(clone, ["remote", "set-url", "origin", "/tmp/nowhere_#{System.unique_integer([:positive])}"])
 
-    assert {:ok, %ToolchainInstall{status: :failed, output: "" <> _what_git_said}} = Tools.install_toolchain(install_id)
+    expect(Git, :checkout_detached_worktree, fn _project, _path ->
+      {:error, "fatal: unable to access '/tmp/nowhere/': Could not resolve host"}
+    end)
+
+    assert {:ok,
+            %ToolchainInstall{status: :failed, output: "fatal: unable to access '/tmp/nowhere/': Could not resolve host"}} =
+             Tools.install_toolchain(install_id)
   end
 
   test "a project with no command, or no fetched default branch, has nothing queued", %{project: project} do

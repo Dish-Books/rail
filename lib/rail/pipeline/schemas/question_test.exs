@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Schemas.QuestionTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
@@ -10,6 +11,8 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
   alias Rail.Roles
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     {:ok, backend} =
       Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 

@@ -4,6 +4,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
   import Rail.Pipeline.Utils.BuildTask
 
+  alias Rail.Git
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Issues.Workers.AdvanceTrackerState
@@ -16,6 +17,8 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
   alias Rail.Users
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     Req.Test.stub(Rail.Linear, fn conn ->
       n = System.unique_integer([:positive])
 

@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.SaveReviewTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -9,17 +10,25 @@ defmodule Rail.Pipeline.Actions.SaveReviewTest do
 
   setup do
     scratch = Path.join(System.tmp_dir!(), "save_review_#{System.unique_integer([:positive])}")
-    worktree = create_temp_git_repo()
+    # HEAD is asked of Rail.Git, so the worktree is a plain directory and the stub says which commit it is on.
+    worktree = Path.join(scratch, "worktree")
+    File.mkdir_p!(worktree)
     on_exit(fn -> File.rm_rf(scratch) end)
+    head = String.duplicate("a", 40)
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: head, dirty_digest: "clean"} end)
 
     %{
       task: %Task{id: "tsk_svr", scratch_path: scratch, worktree_path: worktree, issue: %Issue{identifier: "SVR-1"}},
-      head: worktree |> git!(["rev-parse", "HEAD"]) |> String.trim()
+      head: head
     }
   end
 
-  test "a pass is saved with its round, when, and the commit it read, and said to the page", %{task: task, head: head} do
+  test "a pass is saved with its round, when, and the commit it read, and said to the page", %{
+    task: %{worktree_path: worktree} = task,
+    head: head
+  } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "outputs:tsk_svr")
+    expect(Git, :branch_fingerprint, fn ^worktree -> %{head_sha: head, dirty_digest: "clean"} end)
 
     assert Pipeline.read_review(task) == []
     assert {:ok, %{round: 1, head: ^head, finished_at: nil, saved_at: %DateTime{}}} = Pipeline.save_review(task)
@@ -38,8 +47,8 @@ defmodule Rail.Pipeline.Actions.SaveReviewTest do
 
   test "a save after a new commit is the next round", %{task: task, head: head} do
     {:ok, %{round: 1}} = Pipeline.save_review(task)
-    git!(task.worktree_path, ["commit", "--allow-empty", "-m", "Fix round 1"])
-    moved = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
+    moved = String.duplicate("b", 40)
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: moved, dirty_digest: "clean"} end)
 
     assert {:ok, %{round: 2, head: ^moved}} = Pipeline.save_review(task)
     assert [%{round: 1, head: ^head}, %{round: 2, head: ^moved}] = Pipeline.read_review(task)
@@ -69,15 +78,17 @@ defmodule Rail.Pipeline.Actions.SaveReviewTest do
   end
 
   test "a worktree no longer on disk saves a pass with no commit", %{task: task} do
+    reject(Git, :branch_fingerprint, 1)
     assert {:ok, %{round: 1, head: nil}} = Pipeline.save_review(%{task | worktree_path: "/nonexistent/svr"})
   end
 
   # Cleanup takes the review file with the scratch folder, and learnings still compare against that commit.
-  test "the commit read is kept on the task's Review lead run, and on no other", %{project: project} do
+  test "the commit read is kept on the task's Review lead run, and on no other", %{project: project, head: head} do
     task = learnings_task(project, "SVR-2", :review)
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
-    head = task.worktree_path |> git!(["rev-parse", "HEAD"]) |> String.trim()
     {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
     {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
 

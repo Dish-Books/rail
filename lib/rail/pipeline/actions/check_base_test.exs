@@ -7,7 +7,11 @@ defmodule Rail.Pipeline.Actions.CheckBaseTest do
 
   setup %{project: project} do
     task = learnings_task(project, "CKB-1", :review)
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+    # Git is stubbed, so the worktree is only looked for: a plain directory stands in for it.
+    worktree_path = Path.join(System.tmp_dir!(), "rail_ckb_wt_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(worktree_path)
+    on_exit(fn -> File.rm_rf(worktree_path) end)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
     %{task: task}
   end

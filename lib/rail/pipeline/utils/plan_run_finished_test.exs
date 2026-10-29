@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Utils.PlanRunFinishedTest do
 
   import Rail.Pipeline.Utils.PlanRunFinished
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
@@ -38,6 +39,8 @@ defmodule Rail.Pipeline.Utils.PlanRunFinishedTest do
   """
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
     Req.Test.expect(Rail.Linear, fn conn ->

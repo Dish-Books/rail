@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Schemas.TaskTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.IssueStage
@@ -13,6 +14,8 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   alias Rail.Roles.Schemas.Role
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -143,6 +146,10 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   end
 
   test "worktree_present?/1 answers for the directory, not the path", %{task: task} do
+    refute Task.worktree_present?(task)
+
+    # Not under the seeded project's clone path, which once on disk is where every later test's real git runs.
+    task = %{task | worktree_path: Path.join(System.tmp_dir!(), "rail_wtp_#{System.unique_integer([:positive])}")}
     refute Task.worktree_present?(task)
 
     File.mkdir_p!(task.worktree_path)

@@ -4,6 +4,7 @@ defmodule RailWeb.Live.RunConversationTest do
   import Ecto.Query
   import Phoenix.LiveViewTest
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
@@ -17,6 +18,11 @@ defmodule RailWeb.Live.RunConversationTest do
   alias RailWeb.Live.RunConversation
 
   setup %{project: project} do
+    # What is merged is read from the project's clone, which another test may have made, so reading it here
+    # would spawn git: these pages see nothing on the default branch, as when there is no clone.
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :list_default_branch_paths, fn _project, paths -> if paths == [], do: MapSet.new() end)
+
     roles =
       Map.new([:plan, :engineer, :review_lead], fn stage ->
         {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
@@ -299,6 +305,8 @@ defmodule RailWeb.Live.RunConversationTest do
 
       second = Repo.insert!(%Question{task_id: run.task_id, run_id: run.id, prompt: "Which region?"})
       stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      # Sending answers resumes the run, in a worktree the project has no clone to make.
+      stub(Git, :get_or_create_worktree, fn _project, _task -> {:error, "There is no clone to make it from."} end)
 
       {:ok, reader} =
         Users.register_oauth_user(%{github_id: "gh_cnv_qst", login: "nell", name: "Nell", email: "n@example.com"})
@@ -1678,7 +1686,22 @@ defmodule RailWeb.Live.RunConversationTest do
 
   describe "the Review tray" do
     setup %{conn: conn, project: project, task: task, roles: roles} do
-      {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
+      # Git is only ever asked through Rail.Git, so the worktree is a plain directory, on a branch that has
+      # changed nothing against main yet: no commits, an empty diff, nothing uncommitted.
+      worktree = Path.join(task.scratch_path, "worktree")
+      File.mkdir_p!(worktree)
+
+      stub(Git, :load_branch_history, fn _task, _rounds ->
+        %{base: "main", head: nil, commits: [], files: 0, additions: 0, deletions: 0}
+      end)
+
+      stub(Git, :load_diff, fn _scope, _task, _filter, _previous -> {:ok, []} end)
+      # Nothing the findings name is on the branch, so none of their places has lines to show.
+      stub(Git, :load_diff_hunks, fn _scope, _task, ranges -> Enum.map(ranges, fn _range -> nil end) end)
+      stub(Git, :branch_fingerprint, fn _worktree_path -> %{head_sha: String.duplicate("a", 40), dirty_digest: ""} end)
+      stub(Git, :worktree_dirty?, fn _worktree_path -> false end)
+
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: worktree})
       on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
       {:ok, run} =
@@ -1803,12 +1826,11 @@ defmodule RailWeb.Live.RunConversationTest do
       assert has_element?(grace_view, "#review-tray-finding-a-nit")
     end
 
-    test "Open shows the finding in Findings, and a Screen row opens its state in the screen view", %{
-      task: task,
-      ada: ada,
-      ada_conn: ada_conn
-    } do
+    # Cleanup in another tab takes the branch away under a page still showing Send.
+    test "Open shows the finding in Findings, a Screen row opens its state in the screen view, and a Send on a page drawn before the task was cleaned up says so and sends nothing",
+         %{task: task, ada: ada, ada_conn: ada_conn, diff: diff} do
       {:ok, _mine} = Pipeline.create_screen_comment(ada, task, %{"key" => "toolbar", "body" => "Fold it."})
+      {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "One more thing."))
       {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
       _settled = render(view)
       view |> element("#review-item-screens") |> render_click()
@@ -1825,14 +1847,17 @@ defmodule RailWeb.Live.RunConversationTest do
 
       assert has_element?(view, "#screen-view-name", "Toolbar")
       assert has_element?(view, "#screen-view [data-qa=screen_comment]", "Fold it.")
+
+      {:ok, _cleaned} = Pipeline.update_task(task, %{cleaned_up_at: DateTime.utc_now()})
+      reject(Tools, :start_os_process, 2)
+
+      view |> element("#send-review-tray") |> render_click()
+
+      assert has_element?(view, "#review-send-tray-hint", "cleaned up")
     end
 
-    test "Remove takes a comment out, and one saved in another tab appears without a reload", %{
-      task: task,
-      ada: ada,
-      ada_conn: ada_conn,
-      diff: diff
-    } do
+    test "Remove takes a comment out, and a diff, screen or finding comment saved in another tab appears without a reload, a finding's opening its finding",
+         %{task: task, ada: ada, grace: grace, ada_conn: ada_conn, diff: diff} do
       {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
       refute has_element?(view, "[data-qa=review_tray_comment]")
 
@@ -1857,11 +1882,7 @@ defmodule RailWeb.Live.RunConversationTest do
       |> render_click("remove_review_tray_comment", %{"kind" => "diff", "id" => "x"})
 
       refute has_element?(view, "[data-qa=review_tray_comment]")
-    end
 
-    test "a finding comment saved in another tab appears without a reload, opens its finding, and Remove takes it out",
-         %{task: task, ada: ada, grace: grace, ada_conn: ada_conn} do
-      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
       view |> element("#review-item-screens") |> render_click()
       nit = Repo.get_by!(Finding, task_id: task.id, key: "a-nit")
 
@@ -1873,7 +1894,6 @@ defmodule RailWeb.Live.RunConversationTest do
 
       _settled = render(view)
 
-      view |> element("#review-send-tray-fold") |> render_click()
       assert has_element?(view, "#review-tray-finding-#{comment_id}", "A nit")
       assert has_element?(view, "#review-tray-finding-#{comment_id}", "Rule")
       refute has_element?(view, "#review-send-tray", "Grace's.")
@@ -1893,10 +1913,9 @@ defmodule RailWeb.Live.RunConversationTest do
       assert Pipeline.list_finding_comments(ada, task) == []
     end
 
-    test "the tray opens folded and unfolds and folds again, and a Send refused says why in its hint", %{
-      task: task,
-      ada_conn: ada_conn
-    } do
+    # A tab that lost a Send to another one was told the lead works, and still says so after the lead stopped.
+    test "the tray opens folded and unfolds and folds again, a Send refused says why in its hint, and the reason goes once the stage hands on a new gate",
+         %{task: task, run: run, ada_conn: ada_conn} do
       {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
       _settled = render(view)
 
@@ -1915,16 +1934,7 @@ defmodule RailWeb.Live.RunConversationTest do
       view |> element("#send-review-tray") |> render_click()
 
       assert has_element?(view, "#review-send-tray-hint", "Dispatch is off, so the Review lead was not resumed.")
-    end
 
-    # A tab that lost a Send to another one was told the lead works, and still says so after the lead stopped.
-    test "a refused Send's reason goes once the stage hands on a new gate", %{
-      task: task,
-      run: run,
-      ada_conn: ada_conn
-    } do
-      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
-      _settled = render(view)
       expect(Pipeline, :start_fix_round, fn _scope, _run -> {:error, :stage_running} end)
       view |> element("#send-review-tray") |> render_click()
       assert has_element?(view, "#review-send-tray-hint", "The Review lead is working. Send waits until it stops.")
@@ -1946,23 +1956,6 @@ defmodule RailWeb.Live.RunConversationTest do
              )
 
       assert has_element?(view, "#send-review-tray:not([disabled])")
-    end
-
-    # Cleanup in another tab takes the branch away under a page still showing Send.
-    test "a Send on a page drawn before the task was cleaned up says so and sends nothing", %{
-      task: task,
-      ada: ada,
-      ada_conn: ada_conn,
-      diff: diff
-    } do
-      {:ok, _comment} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "One more thing."))
-      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
-      {:ok, _cleaned} = Pipeline.update_task(task, %{cleaned_up_at: DateTime.utc_now()})
-      reject(Tools, :start_os_process, 2)
-
-      view |> element("#send-review-tray") |> render_click()
-
-      assert has_element?(view, "#review-send-tray-hint", "cleaned up")
     end
 
     test "after Finish review the conversation stays open, and a comment's Send resumes the lead", %{

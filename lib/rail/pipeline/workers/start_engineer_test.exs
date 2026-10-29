@@ -16,6 +16,8 @@ defmodule Rail.Pipeline.Workers.StartEngineerTest do
   alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :branch_fingerprint, fn _worktree_path -> nil end)
     stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
 
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -136,7 +138,9 @@ defmodule Rail.Pipeline.Workers.StartEngineerTest do
 
   describe "an approved custom stage's job on a task it moved to Review" do
     setup %{task: task} do
-      {:ok, reviewing} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
+      worktree_path = Path.join(task.scratch_path, "worktree")
+      File.mkdir_p!(worktree_path)
+      {:ok, reviewing} = Pipeline.update_task(task, %{stage: :review, worktree_path: worktree_path})
       on_exit(fn -> File.rm_rf(reviewing.scratch_path) end)
       stub(Git, :base_status, fn _path, _base -> %{behind: true, conflicts: []} end)
       %{task: reviewing}

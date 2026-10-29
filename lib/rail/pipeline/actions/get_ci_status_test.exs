@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.GetCiStatusTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
@@ -42,7 +43,13 @@ defmodule Rail.Pipeline.Actions.GetCiStatusTest do
       })
       |> Repo.insert!()
 
-    worktree_path = create_temp_git_repo()
+    # Git is only ever asked through Rail.Git, so the worktree is a plain directory, on the commit whose sha is all a's.
+    worktree_path = Path.join(System.tmp_dir!(), "ci_status_worktree_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(worktree_path)
+    on_exit(fn -> File.rm_rf(worktree_path) end)
+    head_sha = String.duplicate("a", 40)
+
+    stub(Git, :branch_fingerprint, fn ^worktree_path -> %{head_sha: head_sha, dirty_digest: String.duplicate("0", 64)} end)
 
     task =
       %Task{}
@@ -85,7 +92,7 @@ defmodule Rail.Pipeline.Actions.GetCiStatusTest do
       |> Repo.insert!()
     end
 
-    %{project: project, task: task, run: run, ci: ci, head_sha: String.trim(git!(worktree_path, ["rev-parse", "HEAD"]))}
+    %{project: project, task: task, run: run, ci: ci, head_sha: head_sha}
   end
 
   test "a project without CI has no status to give", %{project: project, run: run} do
