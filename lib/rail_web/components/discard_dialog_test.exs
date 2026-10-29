@@ -150,7 +150,8 @@ defmodule RailWeb.Components.DiscardDialogTest do
 
     assert [_checked] = Floki.find(offered, "#discard-choice-discard input[checked]")
     assert offered |> Floki.find("#discard-files") |> Floki.text() =~ "Deletes the task, its worktree and scratch folder"
-    assert offered |> Floki.find("#discard-files") |> Floki.text() =~ "Clean up keeps them."
+    assert offered |> Floki.find("#discard-files") |> Floki.text() =~ "Its runs, questions, findings and comments go too."
+    refute offered |> Floki.find("#discard-files") |> Floki.text() =~ "Clean up"
 
     doc = Floki.parse_fragment!(render_component(&DiscardDialog.discard_dialog/1, task: task, back_to_plan: false))
     assert [] = Floki.find(doc, "[role=radiogroup]")
