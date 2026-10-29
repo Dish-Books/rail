@@ -9,6 +9,7 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
+  alias Rail.Projects.Schemas.Project
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
@@ -16,24 +17,16 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
   setup %{project: %{linear_workspace_id: workspace_id}} do
     scope = system_scope()
 
-    # The pull request's branch is on the remote alone, as one pushed from someone's own checkout is.
-    remote = create_temp_git_repo(prefix: "rail_adopt_remote")
-    git!(remote, ["checkout", "--quiet", "-b", "outside/vendor-filter"])
-    File.write!(Path.join(remote, "filter.ex"), "vendor\n")
-    git!(remote, ["add", "."])
-    git!(remote, ["commit", "-m", "Add the vendor filter"])
-    git!(remote, ["checkout", "--quiet", "main"])
-
-    clone_path = create_temp_git_repo(initial_commit: false)
-    git!(clone_path, ["remote", "add", "origin", remote])
-    git!(clone_path, ["fetch", "--quiet", "origin", "main"])
-    git!(clone_path, ["checkout", "--quiet", "-B", "main", "origin/main"])
+    # Git is only ever asked through Rail.Git, so the clone is a plain directory, and a worktree made from it one
+    # under it.
+    clone_path = Path.join(System.tmp_dir!(), "rail_adopt_#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf(clone_path) end)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
     end)
 
-    {:ok, project} =
+    {:ok, %Project{id: project_id} = project} =
       Projects.create_project(scope, %{
         name: "Adopt Project",
         github_repo: "org/adopt",
@@ -88,15 +81,36 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
     # Every task's scratch directory is under its project's, and this project is the test's own.
     on_exit(fn -> File.rm_rf(Path.join(Application.fetch_env!(:rail, :scratch_root), project.id)) end)
 
-    %{scope: scope, project: project, issue: issue, remote: remote, pull_request: pull_request}
+    # The pull request's branch is on the remote alone, as one pushed from someone's own checkout is, so it is
+    # fetched into the clone and the task's worktree made on it.
+    stub(Git, :fetch_branch, fn %Project{id: ^project_id}, "outside/vendor-filter" -> :ok end)
+
+    stub(Git, :get_or_create_worktree, fn %Project{id: ^project_id},
+                                          %Task{worktree_name: "outside/vendor-filter", worktree_path: path} ->
+      File.mkdir_p!(path)
+      {:ok, path}
+    end)
+
+    stub(Git, :base_status, fn _path, "main" -> %{behind: false, conflicts: []} end)
+
+    # The repo merged no prompts of its own, so each role keeps its stored one.
+    stub(Git, :read_default_branch_file, fn %Project{id: ^project_id}, path ->
+      {:error, "fatal: path '#{path}' does not exist in 'refs/remotes/origin/main'"}
+    end)
+
+    stub(Git, :branch_fingerprint, fn _path ->
+      %{head_sha: String.duplicate("a", 40), dirty_digest: String.duplicate("0", 64)}
+    end)
+
+    %{scope: scope, project: project, issue: issue, pull_request: pull_request}
   end
 
   test "starts the issue's task at Review on the pull request's branch, with QA and the code reviewer checking it", %{
     scope: scope,
-    project: project,
-    issue: issue,
-    remote: remote
+    project: %Project{id: project_id} = project,
+    issue: issue
   } do
+    expect(Git, :fetch_branch, fn %Project{id: ^project_id}, "outside/vendor-filter" -> :ok end)
     expect(Tools, :start_os_process, 2, fn %Run{} = run, _argv -> {:ok, %OsProcess{run: run}} end)
 
     assert {:ok, %Task{} = task} = Pipeline.adopt_pull_request(scope, issue)
@@ -114,8 +128,7 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
            } = Repo.reload!(task)
 
     assert is_integer(slot)
-    assert git!(worktree_path, ["rev-parse", "HEAD"]) == git!(remote, ["rev-parse", "outside/vendor-filter"])
-    refute Git.branch_unpushed?(worktree_path)
+    assert File.dir?(worktree_path)
 
     # Nothing was planned, so the issue is the ticket and the round counts as approved.
     assert [
@@ -232,7 +245,12 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
     assert {:error, :pull_request_taken} = Pipeline.adopt_pull_request(scope, other)
   end
 
-  test "leaves the issue without a task when the branch will not check out", %{scope: scope, issue: issue} do
+  test "leaves the issue without a task when the branch will not fetch or check out", %{scope: scope, issue: issue} do
+    expect(Git, :fetch_branch, fn _project, _branch -> {:error, "no fetch"} end)
+
+    assert {:error, "no fetch"} = Pipeline.adopt_pull_request(scope, issue)
+    refute Repo.get_by(Task, issue_id: issue.id)
+
     expect(Git, :get_or_create_worktree, fn _project, _task -> {:error, "no checkout"} end)
 
     assert {:error, "no checkout"} = Pipeline.adopt_pull_request(scope, issue)

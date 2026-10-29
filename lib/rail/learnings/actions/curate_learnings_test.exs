@@ -2,6 +2,7 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  alias Rail.Git
   alias Rail.GitHub.Client
   alias Rail.Learnings
   alias Rail.Learnings.Schemas.CuratorPass
@@ -15,6 +16,12 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
   alias Rail.Tools
 
   setup do
+    # A pass checks the default branch out and reads its role's prompt from it, both through Rail.Git.
+    # The project has no clone, so these answer as git would for a default branch with no .rail/prompts.
+    stub(Git, :checkout_detached_worktree, fn _project, worktree_path -> {:ok, worktree_path} end)
+    stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     %{project: project} = triage_project()
 
     {:ok, _curator} =
@@ -827,8 +834,20 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     assert %LearningProposal{status: :pending} = Repo.reload!(proposal)
   end
 
-  test "the pass's folder is gone after it, whether it finished or failed", %{project: project} do
+  test "the pass's folder and its checkout of the default branch are gone after it, whether it finished or failed", %{
+    project: %{id: project_id, clone_path: clone_path} = project
+  } do
     test = self()
+
+    expect(Git, :checkout_detached_worktree, 2, fn %{id: ^project_id}, checkout ->
+      send(test, {:checked_out, checkout})
+      {:ok, checkout}
+    end)
+
+    expect(Git, :remove_worktree, 2, fn ^clone_path, checkout ->
+      send(test, {:removed, checkout})
+      :ok
+    end)
 
     expect(Tools, :run_agent, fn _role, _argv, opts ->
       send(test, {:dir, opts[:cd]})
@@ -839,6 +858,8 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     assert {:ok, _pass} = Learnings.curate_learnings(project)
     assert_received {:dir, dir}
     refute File.exists?(dir)
+    assert_received {:checked_out, checkout}
+    assert_received {:removed, ^checkout}
 
     expect(Tools, :run_agent, fn _role, _argv, opts ->
       send(test, {:dir, opts[:cd]})
@@ -848,6 +869,8 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     assert {:error, _failed} = Learnings.curate_learnings(project)
     assert_received {:dir, failed_dir}
     refute File.exists?(failed_dir)
+    assert_received {:checked_out, failed_checkout}
+    assert_received {:removed, ^failed_checkout}
   end
 
   test "an add citing a sighting that made a provisional rule leaves the sighting with that rule", %{

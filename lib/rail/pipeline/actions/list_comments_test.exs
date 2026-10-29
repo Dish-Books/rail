@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.ListCommentsTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Question
@@ -12,6 +13,9 @@ defmodule Rail.Pipeline.Actions.ListCommentsTest do
   alias Rail.Users
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+
     task = learnings_task(project, "LCM-1", :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
     {:ok, plan_role} = Roles.get_role(project_id: project.id, stage: :plan)
@@ -60,7 +64,14 @@ defmodule Rail.Pipeline.Actions.ListCommentsTest do
       })
 
     {:ok, _pass} = Pipeline.save_review(task)
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    test_pid = self()
+
+    # A message to an idle run resumes it in the background, which each test that sends one waits for, so it never
+    # outlives the test's stubs; what is sent after it waits on the run.
+    stub(Tools, :start_os_process, fn spawned, _argv ->
+      send(test_pid, {:resumed, spawned.id})
+      {:ok, %OsProcess{run: spawned}}
+    end)
 
     {:ok, ada} =
       Users.register_oauth_user(%{github_id: "gh_lcm_ada", login: "ada-lcm", name: "Ada", email: "ada-lcm@example.com"})
@@ -92,6 +103,7 @@ defmodule Rail.Pipeline.Actions.ListCommentsTest do
        %{task: task, plan_run: plan_run, ticket: ticket, ada: %{user: %{id: ada_id}} = ada, grace: grace} do
     {:ok, %PlanComment{id: comment_id}} = Pipeline.create_plan_comment(ada, plan_run, ticket)
     {:ok, :sent, _run} = Pipeline.send_plan_comments(ada, plan_run)
+    assert_receive {:resumed, _run_id}
 
     question = Repo.insert!(%Question{task_id: task.id, run_id: plan_run.id, prompt: "Which list?"})
     {:ok, _answered} = Pipeline.answer_question(ada, question, "The task's.")
@@ -107,7 +119,8 @@ defmodule Rail.Pipeline.Actions.ListCommentsTest do
 
   test "a design pick is not listed, while a typed message that starts with the same words is",
        %{task: task, plan_run: plan_run, ada: %{user: %{id: ada_id}} = ada, grace: grace} do
-    {:ok, _delivery, _run} = Pipeline.send_message(ada, Repo.reload!(plan_run), "I picked One list (one-list).")
+    {:ok, :sent, _run} = Pipeline.send_message(ada, Repo.reload!(plan_run), "I picked One list (one-list).")
+    assert_receive {:resumed, _run_id}
 
     {:ok, _delivery, _run} =
       Pipeline.send_message(ada, Repo.reload!(plan_run), "I picked One list (one-list). Fold the tray too.")

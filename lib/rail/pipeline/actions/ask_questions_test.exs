@@ -4,12 +4,15 @@ defmodule Rail.Pipeline.Actions.AskQuestionsTest do
   import Rail.Pipeline.Utils.QuestionQueue
   import Rail.Pipeline.Utils.UnsentRound
 
+  alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Roles
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     task = learnings_task(project, "ASK-1")
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 

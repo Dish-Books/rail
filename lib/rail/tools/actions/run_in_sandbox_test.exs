@@ -9,6 +9,10 @@ defmodule Rail.Tools.Actions.RunInSandboxTest do
   alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
+    # A role's prompt is read from the project's clone, which another test may have made, so reading it here
+    # would spawn git: these see no prompt file on the default branch, as when there is no clone.
+    stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
         "data" => %{
@@ -26,7 +30,9 @@ defmodule Rail.Tools.Actions.RunInSandboxTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Seed"})
     {:ok, task} = Pipeline.create_task(issue, :review)
-    task = task |> Ecto.Changeset.change(worktree_slot: 3) |> Repo.update!()
+    # Out of the seeded project's clone, so making the worktree does not make the clone too.
+    worktree_path = Path.join(task.scratch_path, "worktree")
+    task = task |> Ecto.Changeset.change(worktree_slot: 3, worktree_path: worktree_path) |> Repo.update!()
     File.mkdir_p!(task.worktree_path)
     on_exit(fn -> File.rm_rf(task.worktree_path) end)
 

@@ -31,10 +31,14 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Review Finished"})
     {:ok, task} = Pipeline.create_task(issue, :review)
-    worktree = create_temp_git_repo()
+    # HEAD is asked of Rail.Git, so the worktree is a plain directory and the stub says which commit it is on.
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree, pr_number: 42, pr_is_draft: true})
     task = Repo.preload(task, :issue)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    head = String.duplicate("a", 40)
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: head, dirty_digest: "clean"} end)
 
     # Review takes a branch the engineer's hand-over pushed, so a turn sends on only what it committed.
     stub(Git, :branch_unpushed?, fn _path -> false end)
@@ -51,7 +55,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
 
     %{
       task: task,
-      worktree: worktree,
+      head: head,
       run: Repo.preload(run, [:task, :role]),
       finding: %{
         key: "unhandled-nil",
@@ -218,22 +222,19 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
     assert [%{finished_at: %DateTime{}}] = Pipeline.read_review(task)
   end
 
-  test "a turn that ends without saving its review records that, and moves nothing", %{task: task, run: run} do
+  # A fix round's commit owes a round, so the last pass does not stand for it.
+  test "a turn that ends without saving its review, or after a fix round's commit, records that and moves nothing", %{
+    task: task,
+    run: run
+  } do
     assert %Run{error: "The review agent did not save its review."} = review_run_finished(run, [])
     assert %Task{stage: :review} = Repo.reload!(task)
-  end
 
-  test "a turn after a fix round's commit owes a round, so the last pass does not stand for it", %{
-    task: task,
-    run: run,
-    worktree: worktree
-  } do
     {:ok, _closed} = Pipeline.save_review(task)
-    File.write!(Path.join(worktree, "fixed.ex"), "fixed\n")
-    git!(worktree, ["add", "."])
-    git!(worktree, ["commit", "-m", "Fix round 1"])
+    stub(Git, :branch_fingerprint, fn _path -> %{head_sha: String.duplicate("b", 40), dirty_digest: "clean"} end)
 
     assert %Run{error: "The review agent did not save its review."} = review_run_finished(run, [])
+    assert %Task{stage: :review} = Repo.reload!(task)
   end
 
   test "a pass with no commit is taken at its word", %{task: task, run: run, finding: finding} do
@@ -244,10 +245,9 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
   end
 
   # Only the engineer changes the branch, so a review agent's commit is held for a person to see.
-  test "a turn that committed is failed, and nothing is sent on", %{task: task, run: run, worktree: worktree} do
+  test "a turn that committed is failed, and nothing is sent on", %{task: %{worktree_path: worktree} = task, run: run} do
     {:ok, _closed} = Pipeline.save_review(task)
-    git!(worktree, ["commit", "--allow-empty", "-m", "Guard the nil"])
-    stub(Git, :branch_unpushed?, fn _path -> true end)
+    expect(Git, :branch_unpushed?, fn ^worktree -> true end)
     reject(&Pipeline.hand_over_work/2)
 
     assert %Run{error: "The review agent committed. Only the engineer changes the branch, so nothing was sent on."} =
@@ -255,11 +255,10 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
   end
 
   describe "a turn on a fix round's plan" do
-    setup %{task: task, worktree: worktree} do
+    setup %{task: task, head: head} do
       {:ok, _closed} = Pipeline.save_review(task)
       path = Path.join([task.scratch_path, "fix_plans", "RFN-1.json"])
       File.mkdir_p!(Path.dirname(path))
-      head = worktree |> git!(["rev-parse", "HEAD"]) |> String.trim()
       # As a Send of one comment leaves it.
       File.write!(
         path,

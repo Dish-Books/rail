@@ -47,7 +47,11 @@ defmodule Rail.Pipeline.Actions.RunCiTest do
       })
       |> Repo.insert!()
 
-    worktree_path = create_temp_git_repo()
+    # Git is only ever asked through Rail.Git, so the worktree is a plain directory, clean, on the commit whose sha is
+    # all a's.
+    worktree_path = Path.join(System.tmp_dir!(), "run_ci_worktree_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(worktree_path)
+    on_exit(fn -> File.rm_rf(worktree_path) end)
 
     task =
       %Task{}
@@ -74,6 +78,11 @@ defmodule Rail.Pipeline.Actions.RunCiTest do
       })
 
     stub(Git, :credential_env, fn _project -> {:ok, %{"RAIL_GIT_TOKEN" => "ghs_token"}} end)
+    stub(Git, :worktree_dirty?, fn _path -> false end)
+
+    stub(Git, :branch_fingerprint, fn _path ->
+      %{head_sha: String.duplicate("a", 40), dirty_digest: String.duplicate("0", 64)}
+    end)
 
     %{project: project, role: role, run: run, worktree_path: worktree_path}
   end
@@ -115,7 +124,8 @@ defmodule Rail.Pipeline.Actions.RunCiTest do
   test "a CI waiting in line keeps its reservation when the project's is raised", %{
     project: project,
     role: role,
-    run: %{id: run_id} = run
+    run: %{id: run_id} = run,
+    worktree_path: worktree_path
   } do
     stub(Rail, :local_cpus, fn -> 8 end)
     {:ok, project} = Projects.update_project(system_scope(), project, %{ci_reserved_cpus: 4})
@@ -176,7 +186,7 @@ defmodule Rail.Pipeline.Actions.RunCiTest do
           issue_id: other_issue.id,
           stage: :engineer,
           worktree_name: "oci-1",
-          worktree_path: create_temp_git_repo(),
+          worktree_path: worktree_path,
           scratch_path: Path.join(System.tmp_dir!(), "run_ci_#{System.unique_integer([:positive])}")
         },
         other_project.id
@@ -218,7 +228,7 @@ defmodule Rail.Pipeline.Actions.RunCiTest do
   end
 
   test "uncommitted work is committed first, not run past", %{run: run, worktree_path: worktree_path} do
-    File.write!(Path.join(worktree_path, "loose.ex"), "one\n")
+    expect(Git, :worktree_dirty?, fn ^worktree_path -> true end)
 
     assert {:error, :uncommitted_changes} = Pipeline.run_ci(system_scope(), run)
   end

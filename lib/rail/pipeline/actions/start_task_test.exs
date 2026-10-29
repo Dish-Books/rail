@@ -15,6 +15,9 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
   alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :branch_fingerprint, fn _worktree_path -> nil end)
+
     attrs = %{
       project_id: project.id,
       external_id: "lin_start_task",

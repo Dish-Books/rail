@@ -1,7 +1,8 @@
 defmodule RailWeb.DiffImageControllerTest do
   use RailWeb.ConnCase, async: true
 
-  alias Rail.Pipeline
+  alias Rail.Git
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Users
@@ -15,16 +16,17 @@ defmodule RailWeb.DiffImageControllerTest do
       })
 
     {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
-    repo = create_temp_git_repo()
-    File.write!(Path.join(repo, "logo.png"), "png bytes")
     task = learnings_task(project, "DIC-1", :review)
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: repo})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     %{conn: log_in_user(conn, user), task: task}
   end
 
-  test "serves a side of a picture the diff changed, never sniffed or cached", %{conn: conn, task: task} do
+  test "serves a side of a picture the diff changed, never sniffed or cached", %{conn: conn, task: %{id: task_id} = task} do
+    expect(Git, :read_diff_image, fn %Task{id: ^task_id}, "logo.png", :new, :uncommitted ->
+      {:ok, "image/png", "png bytes"}
+    end)
+
     conn = get(conn, ~p"/tasks/#{task.id}/diff/new?#{[path: "logo.png", view: "uncommitted"]}")
 
     assert response(conn, 200) == "png bytes"
@@ -33,7 +35,13 @@ defmodule RailWeb.DiffImageControllerTest do
     assert ["private, no-cache"] = get_resp_header(conn, "cache-control")
   end
 
-  test "serves nothing that is not a side of a picture", %{conn: conn, task: task} do
+  # Only a side git could not find is asked of it; a sha that is no sha is git's to refuse.
+  test "serves nothing that is not a side of a picture", %{conn: conn, task: %{id: task_id} = task} do
+    expect(Git, :read_diff_image, 2, fn
+      %Task{id: ^task_id}, "missing.png", :new, :branch -> {:error, :not_found}
+      %Task{id: ^task_id}, "logo.png", :new, {:commit, "--output=x"} -> {:error, :not_found}
+    end)
+
     assert conn |> get(~p"/tasks/#{task.id}/diff/new?#{[path: "missing.png"]}") |> response(404)
     assert conn |> get(~p"/tasks/#{task.id}/diff/both?#{[path: "logo.png"]}") |> response(404)
     assert conn |> get(~p"/tasks/#{task.id}/diff/new") |> response(404)
@@ -53,6 +61,7 @@ defmodule RailWeb.DiffImageControllerTest do
       })
 
     {:ok, _moved} = task |> Ecto.Changeset.change(project_id: other.id) |> Repo.update()
+    reject(Git, :read_diff_image, 4)
 
     assert conn |> get(~p"/tasks/#{task.id}/diff/new?#{[path: "logo.png"]}") |> response(404)
   end

@@ -1,5 +1,6 @@
 defmodule Rail.Tools.Actions.RunTest do
-  use ExUnit.Case, async: true
+  # Not async: one test puts a stand-in git on PATH, which is the whole VM's.
+  use ExUnit.Case, async: false
 
   alias Rail.Tools
 
@@ -14,10 +15,21 @@ defmodule Rail.Tools.Actions.RunTest do
   end
 
   test "git never takes the index lock for a read, unless the caller says otherwise" do
-    print_env = ["-c", "alias.printenv=!printenv GIT_OPTIONAL_LOCKS", "printenv"]
+    # Found on PATH ahead of the real one, it prints the variable git would have read.
+    bin = Path.join(System.tmp_dir!(), "run_test_bin_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(bin)
+    File.write!(Path.join(bin, "git"), "#!/bin/sh\nprintenv GIT_OPTIONAL_LOCKS\n")
+    File.chmod!(Path.join(bin, "git"), 0o755)
+    path = System.get_env("PATH")
+    System.put_env("PATH", bin <> ":" <> path)
 
-    assert {"0\n", 0} = Tools.run("git", print_env)
-    assert {"1\n", 0} = Tools.run("git", print_env, env: %{"GIT_OPTIONAL_LOCKS" => "1"})
+    on_exit(fn ->
+      System.put_env("PATH", path)
+      File.rm_rf(bin)
+    end)
+
+    assert {"0\n", 0} = Tools.run("git", [])
+    assert {"1\n", 0} = Tools.run("git", [], env: %{"GIT_OPTIONAL_LOCKS" => "1"})
     assert {"", 1} = Tools.run("sh", ["-c", "printenv GIT_OPTIONAL_LOCKS"])
   end
 

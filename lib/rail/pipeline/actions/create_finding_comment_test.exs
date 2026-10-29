@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.CreateFindingCommentTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.FindingComment
   alias Rail.Pipeline.Schemas.Task
@@ -8,6 +9,8 @@ defmodule Rail.Pipeline.Actions.CreateFindingCommentTest do
   alias Rail.Users
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     task = learnings_task(project, "CFC-1", :review)
     other = learnings_task(project, "CFC-2", :review)
     on_exit(fn -> Enum.each([task, other], &File.rm_rf(&1.scratch_path)) end)

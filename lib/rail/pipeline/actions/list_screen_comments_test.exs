@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.ListScreenCommentsTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Roles
@@ -9,6 +10,8 @@ defmodule Rail.Pipeline.Actions.ListScreenCommentsTest do
   alias Rail.Users
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     task = learnings_task(project, "LSM-1", :review)
     other = learnings_task(project, "LSM-2", :review)
     on_exit(fn -> Enum.each([task, other], &File.rm_rf(&1.scratch_path)) end)

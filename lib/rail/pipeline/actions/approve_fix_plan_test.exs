@@ -2,6 +2,7 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.FixPlan
@@ -20,6 +21,10 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
           "### File-level changes\n\n#### `lib/a.ex`\n\nGuards nil. For `nil-crash`."
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    stub(Git, :branch_fingerprint, fn _worktree_path -> %{head_sha: String.duplicate("a", 40), dirty_digest: "clean"} end)
+
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :review_lead)
 
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -35,7 +40,11 @@ defmodule Rail.Pipeline.Actions.ApproveFixPlanTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Approve Fix Plan"})
     {:ok, task} = Pipeline.create_task(issue, :review)
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+    # Git is stubbed, so the worktree is only ever looked for: a plain directory stands in for it.
+    worktree_path = Path.join(System.tmp_dir!(), "rail_afp_wt_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(worktree_path)
+    on_exit(fn -> File.rm_rf(worktree_path) end)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     task = Repo.preload(task, :issue)
     # The round the review read, built on the plan the lead approved.
     Repo.insert!(%Round{task_id: task.id, number: 1, plan: "Filter by vendor.", approved_at: DateTime.utc_now()})

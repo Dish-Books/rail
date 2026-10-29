@@ -11,7 +11,11 @@ defmodule Rail.Pipeline.Workers.CheckBasesTest do
     tasks =
       Map.new([review: "CBS-1", finalize: "CBS-2", engineer: "CBS-3", merged: "CBS-4"], fn {stage, identifier} ->
         task = learnings_task(project, identifier, stage)
-        {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+        # Git is stubbed, so each worktree is only looked for: a plain directory stands in for it.
+        worktree_path = Path.join(System.tmp_dir!(), "rail_cbs_wt_#{System.unique_integer([:positive])}")
+        File.mkdir_p!(worktree_path)
+        on_exit(fn -> File.rm_rf(worktree_path) end)
+        {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
         on_exit(fn -> File.rm_rf(task.scratch_path) end)
         {stage, task}
       end)

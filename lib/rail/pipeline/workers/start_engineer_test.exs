@@ -14,6 +14,8 @@ defmodule Rail.Pipeline.Workers.StartEngineerTest do
   alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
+    stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Rail.Git, :branch_fingerprint, fn _worktree_path -> nil end)
     stub(Rail.Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
 
     Req.Test.expect(Rail.Linear, fn conn ->

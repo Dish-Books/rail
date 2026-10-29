@@ -3,17 +3,22 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
 
   import Rail.Pipeline.Utils.BuildTask
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.FindingComment
   alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Users
 
+  # Git is faked at its boundary: removing a worktree or a branch for real is for `Rail.Git`'s own tests.
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :remove_worktree, fn _repo_path, _worktree_path -> :ok end)
+    stub(Git, :delete_branch, fn _repo_path, _branch -> :ok end)
+
     {:ok, engineer_role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -191,52 +196,11 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     assert_received {:pipeline_changed, ^task_id}
   end
 
-  # Its own project, because cleanup removes the worktree from a real clone.
-  test "cleans up worktree, branch and scratch directory, and broadcasts", %{
-    project: %{linear_workspace_id: workspace_id},
-    task: _task
-  } do
-    clone_path = create_temp_git_repo(prefix: "rail_cleanup_main")
+  test "cleans up worktree, branch and scratch directory", %{project: %{clone_path: clone_path}, task: task} do
     worktree_path = Path.join(System.tmp_dir!(), "rail_cleanup_wt_#{System.unique_integer([:positive])}")
-    git!(clone_path, ["worktree", "add", "-b", "cleanup-branch", worktree_path])
-
     scratch_dir = Path.join(System.tmp_dir!(), "rail_cleanup_scratch_#{System.unique_integer([:positive])}")
     File.mkdir_p!(scratch_dir)
     File.write!(Path.join(scratch_dir, "scratch.txt"), "temporary content")
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Cleanup Task Project",
-        github_repo: "org/cleanup-task",
-        github_installation_id: 8705,
-        key: "CLN",
-        default_branch: "main",
-        clone_path: clone_path,
-        linear_workspace_id: workspace_id
-      })
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{
-              "id" => "lin_task_cleanup_task_8707",
-              "identifier" => "TSK-8707",
-              "title" => "Task 8707"
-            }
-          }
-        }
-      })
-    end)
-
-    {:ok, issue_8707} = Issues.create_issue(system_scope(), project, %{description: "Task 8707"})
-
-    {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_8707, :plan)
 
     {:ok, %Task{} = task} =
       Pipeline.update_task(task, %{
@@ -246,12 +210,11 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         scratch_path: scratch_dir
       })
 
-    assert {:ok, %Task{worktree_path: ^worktree_path} = cleaned} =
-             Pipeline.cleanup_task(task)
+    expect(Git, :remove_worktree, fn ^clone_path, ^worktree_path -> :ok end)
+    expect(Git, :delete_branch, fn ^clone_path, "cleanup-branch" -> :ok end)
 
-    refute Task.worktree_present?(cleaned)
+    assert {:ok, %Task{worktree_path: ^worktree_path}} = Pipeline.cleanup_task(task)
 
-    refute File.exists?(worktree_path)
     refute File.exists?(scratch_dir)
   end
 

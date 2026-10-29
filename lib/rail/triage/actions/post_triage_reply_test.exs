@@ -1,6 +1,7 @@
 defmodule Rail.Triage.Actions.PostTriageReplyTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Projects
   alias Rail.Scope
   alias Rail.Tools
@@ -10,6 +11,12 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
   alias Rail.Triage.Schemas.Thread
 
   setup context do
+    # A pass checks the default branch out and reads the Triage prompt from it, both through Rail.Git.
+    # The project has no clone, so these answer as git would for a default branch with no .rail/prompts.
+    stub(Git, :checkout_detached_worktree, fn _project, worktree_path -> {:ok, worktree_path} end)
+    stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     %{project: project} = triage_project()
     %{workspace: workspace, channel: channel} = connect_slack_channel(project, external: context[:external] == true)
     {:ok, thread} = Triage.handle_slack_event(workspace, slack_message_event(channel, %{}))
@@ -78,13 +85,6 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
     assert {:error, :slack_not_linked} = Triage.post_triage_reply(Scope.for_user(%{id: "usr_none"}), item, %{})
   end
 
-  test "a reply waiting on its issue's link cannot go out before the issue exists", %{thread: thread, scope: scope} do
-    %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug()]})
-
-    assert {:error, :needs_issue_link} = Triage.post_triage_reply(scope, item, %{"reply_text" => "Mine, {issue link}"})
-    assert %Item{reply_text: "Thanks Priya, we reproduced this. Filed as {issue link}."} = Repo.get!(Item, item.id)
-  end
-
   test "an item being triaged again is locked", %{thread: thread, scope: scope} do
     %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug(%{"issue" => nil})]})
     {:ok, _note} = Triage.add_triage_note(scope, item, %{"text" => "Wrong project."})
@@ -92,8 +92,14 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
     assert {:error, :locked} = Triage.post_triage_reply(scope, item, %{})
   end
 
-  test "a reply waiting on its issue's link goes out with it once the issue exists", %{thread: thread, scope: scope} do
+  test "a reply waiting on its issue's link cannot go out before the issue exists, and goes out with it once it does", %{
+    thread: thread,
+    scope: scope
+  } do
     %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug()]})
+
+    assert {:error, :needs_issue_link} = Triage.post_triage_reply(scope, item, %{"reply_text" => "Mine, {issue link}"})
+    assert %Item{reply_text: "Thanks Priya, we reproduced this. Filed as {issue link}."} = Repo.get!(Item, item.id)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

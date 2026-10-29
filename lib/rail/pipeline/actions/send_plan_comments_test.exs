@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline
@@ -40,6 +41,17 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
   @line %{element_kind: :list_item, element_label: "Item 1", element_occurrence: 1, element_text: "Group by project."}
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+    stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    test_pid = self()
+
+    # A message to an idle Plan resumes it in the background, which each test that sends one waits for, so it never
+    # outlives the test's stubs.
+    stub(Tools, :start_os_process, fn spawned, _argv ->
+      send(test_pid, {:resumed, spawned.id})
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :plan)
 
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -55,7 +67,11 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Plan Comments"})
     {:ok, task} = Pipeline.create_task(issue, :plan)
-    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+    # Git is stubbed, so the worktree is only ever looked for: a plain directory stands in for it.
+    worktree_path = Path.join(System.tmp_dir!(), "rail_spc_wt_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(worktree_path)
+    on_exit(fn -> File.rm_rf(worktree_path) end)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     dir = Path.join(task.scratch_path, "design")
     File.mkdir_p!(dir)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
@@ -129,11 +145,14 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
           body: "Amber only past an hour."
       })
 
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-
     assert {:ok, :sent, %Run{}} = Pipeline.send_plan_comments(ada, run)
+    assert_receive {:resumed, _run_id}
 
-    assert Enum.map(Pipeline.list_run_events(run), & &1.line) ==
+    # The resume says what it sent along with the comments.
+    {sent, [picked]} = run |> Pipeline.list_run_events() |> Enum.map(& &1.line) |> Enum.split(-1)
+    assert picked == "[rail] Sent with the pick: Lanes by what they wait on (waiting-lanes)."
+
+    assert sent ==
              Enum.map(
                String.split(
                  """
@@ -157,8 +176,8 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
 
   test "a second Send finds nothing to send", %{run: run, ada: ada, attrs: attrs} do
     {:ok, _only} = Pipeline.create_plan_comment(ada, run, attrs)
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
     {:ok, :sent, _run} = Pipeline.send_plan_comments(ada, run)
+    assert_receive {:resumed, _run_id}
     events = Pipeline.list_run_events(run)
 
     assert {:error, :nothing_to_send} = Pipeline.send_plan_comments(ada, run)
@@ -224,8 +243,6 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
     {:ok, %{id: id}} = Pipeline.create_plan_comment(ada, run, attrs)
     {:ok, running} = Pipeline.update_run(run, %{status: :running})
     {:ok, :queued, _run} = Pipeline.send_plan_comments(ada, running)
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-
     assert {:ok, :sent, _run} = Pipeline.stop_and_send_message(ada, running, async: false)
 
     assert %PlanComment{status: :sent} = Repo.get!(PlanComment, id)
@@ -244,12 +261,6 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
   } do
     {:ok, _only} = Pipeline.create_plan_comment(ada, run, attrs)
     {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
-    test_pid = self()
-
-    stub(Tools, :start_os_process, fn spawned, _argv ->
-      send(test_pid, {:resumed, spawned.id})
-      {:ok, %OsProcess{run: spawned}}
-    end)
 
     assert {:ok, :sent, %Run{id: ^run_id}} = Pipeline.send_plan_comments(ada, run)
     assert_receive {:resumed, ^run_id}
@@ -264,9 +275,8 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
     {:ok, %{id: kept_id}} = Pipeline.create_plan_comment(ada, run, attrs)
     {:ok, removed} = Pipeline.create_plan_comment(ada, run, %{attrs | body: "Never mind."})
     {:ok, _removed} = Pipeline.delete_plan_comment(ada, removed)
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-
     {:ok, :sent, _run} = Pipeline.send_plan_comments(ada, run)
+    assert_receive {:resumed, _run_id}
     {:error, :nothing_to_send} = Pipeline.send_plan_comments(ada, run)
 
     assert [
@@ -304,9 +314,8 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
   } do
     {:ok, _adas} = Pipeline.create_plan_comment(ada, run, %{attrs | body: "Ada's"})
     {:ok, %{id: graces_id}} = Pipeline.create_plan_comment(grace, run, %{attrs | body: "Grace's"})
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-
     assert {:ok, :sent, %Run{}} = Pipeline.send_plan_comments(ada, run)
+    assert_receive {:resumed, _run_id}
 
     lines = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
     assert lines =~ "1 comment on the design"
@@ -326,12 +335,16 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "plan_comments:#{task_id}:#{ada.user.id}")
     Phoenix.PubSub.subscribe(Rail.PubSub, "plan_comments:#{task_id}:#{grace.user.id}")
 
+    test_pid = self()
+
     stub(Tools, :start_os_process, fn spawned, _argv ->
       refute_received {:plan_comments_changed, _task_id}
+      send(test_pid, {:resumed, spawned.id})
       {:ok, %OsProcess{run: spawned}}
     end)
 
     assert {:ok, :sent, %Run{}} = Pipeline.send_plan_comments(ada, run)
+    assert_receive {:resumed, _run_id}
     assert_receive {:plan_comments_changed, ^task_id}
     refute_receive {:plan_comments_changed, ^task_id}
   end
@@ -347,9 +360,8 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
     {:ok, %{id: design_id}} = Pipeline.create_plan_comment(ada, run, attrs)
     {:ok, %{id: plan_id}} = Pipeline.create_plan_comment(ada, run, Map.merge(@line, %{target: :plan, body: "Why?"}))
     {:ok, %{id: ticket_id}} = Pipeline.create_plan_comment(ada, run, Map.merge(@line, %{target: :ticket, body: "Who?"}))
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-
     assert {:ok, :sent, %Run{}} = Pipeline.send_plan_comments(ada, run)
+    assert_receive {:resumed, _run_id}
 
     assert run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line) ==
              Enum.map_join(
@@ -378,7 +390,7 @@ defmodule Rail.Pipeline.Actions.SendPlanCommentsTest do
                ),
                "\n",
                &"[human:#{ada.user.id}] #{&1}"
-             )
+             ) <> "\n[rail] Sent with the pick: Lanes by what they wait on (waiting-lanes)."
 
     assert [
              %Observation{source_id: ^design_id, source_kind: :design_comment},

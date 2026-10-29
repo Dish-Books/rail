@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.StopRunTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -118,7 +119,19 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
     project: project,
     task: task
   } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+    # Git is only ever asked through Rail.Git, so the worktree is a plain directory, on the commit whose sha is all a's
+    # with nothing changed against main.
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: worktree})
+
+    stub(Git, :branch_fingerprint, fn ^worktree ->
+      %{head_sha: String.duplicate("a", 40), dirty_digest: String.duplicate("0", 64)}
+    end)
+
+    stub(Git, :load_diff, fn _scope, %{worktree_path: ^worktree}, :branch -> {:ok, []} end)
     {:ok, lead} = Roles.get_role(project_id: project.id, stage: :review_lead)
 
     {:ok, %Run{id: run_id} = run} =

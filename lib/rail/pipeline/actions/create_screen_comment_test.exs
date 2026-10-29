@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.CreateScreenCommentTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
@@ -8,6 +9,8 @@ defmodule Rail.Pipeline.Actions.CreateScreenCommentTest do
   alias Rail.Users
 
   setup %{project: project} do
+    stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
+
     task = learnings_task(project, "CSC-1", :review)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
     folder = Path.join([task.scratch_path, "qa", "screens", "file-list"])
