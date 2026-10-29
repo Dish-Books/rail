@@ -85,11 +85,17 @@ defmodule Rail.Pipeline.Actions.GetCiStatusTest do
       |> Repo.insert!()
     end
 
-    %{project: project, run: run, ci: ci, head_sha: String.trim(git!(worktree_path, ["rev-parse", "HEAD"]))}
+    %{project: project, task: task, run: run, ci: ci, head_sha: String.trim(git!(worktree_path, ["rev-parse", "HEAD"]))}
   end
 
   test "a project without CI has no status to give", %{project: project, run: run} do
     project |> Project.changeset(%{ci_command: ""}) |> Repo.update!()
+
+    assert Pipeline.get_ci_status(run) == nil
+  end
+
+  test "a run whose task was deleted has no status to give", %{task: task, run: run} do
+    Repo.delete!(task)
 
     assert Pipeline.get_ci_status(run) == nil
   end

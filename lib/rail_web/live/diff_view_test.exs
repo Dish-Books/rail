@@ -221,6 +221,62 @@ defmodule RailWeb.Live.DiffViewTest do
     refute has_element?(view, "[data-qa='diff_file_section'][data-path='fix.ex']")
   end
 
+  test "a link naming a resolved comment opens its view with the comment unfolded under its line", %{
+    conn: conn,
+    user: user,
+    task: task,
+    engineer: engineer
+  } do
+    comment = %{path: "rows.ex", line_kind: :added, line: 3, line_text: "line 3", filter: :commit, commit: engineer}
+    {:ok, %{id: id}} = Pipeline.create_diff_comment(user_scope(user: user), task, Map.put(comment, :body, "Done."))
+    Repo.update_all(from(c in DiffComment, where: c.id == ^id), set: [status: :resolved])
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    Phoenix.LiveView.send_update(view.pid, DiffView,
+      id: "diff-view",
+      open: %{view: {:commit, engineer}, comment: id, at: 1},
+      focus_file: "rows.ex"
+    )
+
+    assert has_element?(view, "#diff-commit-picker", "Implement")
+    assert has_element?(view, "#diff-comment-#{id} [data-qa=diff_comment_fold]")
+    refute has_element?(view, "[data-qa=diff_comments_lifted] #diff-comment-#{id}")
+    assert_push_event(view, "diff:scroll_to", %{id: "diff-comment-" <> ^id})
+  end
+
+  test "a link naming a comment whose commit was rebased away opens the branch, scrolled to it at the top of its file",
+       %{conn: conn, user: user, task: task} do
+    comment = %{path: "rows.ex", line_kind: :added, line: 3, line_text: "line 3", filter: :commit, commit: "abc1234"}
+    {:ok, %{id: id}} = Pipeline.create_diff_comment(user_scope(user: user), task, Map.put(comment, :body, "Gone."))
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    Phoenix.LiveView.send_update(view.pid, DiffView,
+      id: "diff-view",
+      open: %{view: {:commit, "abc1234"}, comment: id, at: 1},
+      focus_file: "rows.ex"
+    )
+
+    assert has_element?(view, "#diff-commit-picker", "Whole branch")
+    assert has_element?(view, "[data-qa=diff_comments_lifted] #diff-comment-#{id}")
+    assert_push_event(view, "diff:scroll_to", %{id: "diff-comment-" <> ^id})
+  end
+
+  test "a link to the uncommitted changes once they hold nothing of its file opens the whole branch", %{
+    conn: conn,
+    task: task
+  } do
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    Phoenix.LiveView.send_update(view.pid, DiffView,
+      id: "diff-view",
+      open: %{view: :uncommitted, comment: "dcm_gone", at: 1},
+      focus_file: "rows.ex"
+    )
+
+    assert has_element?(view, "#diff-commit-picker", "Whole branch")
+    assert has_element?(view, "[data-qa='diff_file_section'][data-path='rows.ex']")
+  end
+
   test "a merge's view shows what main brought in and takes no comment, and picking a commit shows only what it changed, where a comment keeps its commit",
        %{conn: conn, task: task, engineer: engineer, merge: merge} do
     {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")

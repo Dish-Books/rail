@@ -70,6 +70,14 @@ defmodule Rail.Workflows.Schemas.WorkflowDefinitionTest do
              WorkflowDefinition.parse("name: Sweep\nschedule: \"0 6 * * *\"\ninstructions: Go\nskip: design\n")
   end
 
+  test "a file naming an assignee parses with their login, and one without has none" do
+    assert {:ok, %WorkflowDefinition{assignee: "dana"}} =
+             WorkflowDefinition.parse(~s(name: Sweep\nschedule: "0 6 * * *"\ninstructions: Go\nassignee: " dana "\n))
+
+    assert {:ok, %WorkflowDefinition{assignee: nil}} =
+             WorkflowDefinition.parse("name: Sweep\nschedule: \"0 6 * * *\"\ninstructions: Go\n")
+  end
+
   test "a schedule that is not a cron expression is refused" do
     assert {:error, "schedule is not a cron expression: " <> _reason} =
              WorkflowDefinition.parse("name: Sweep\nschedule: every monday\ninstructions: Go\n")

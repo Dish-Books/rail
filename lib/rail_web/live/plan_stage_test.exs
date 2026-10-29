@@ -240,6 +240,24 @@ defmodule RailWeb.Live.PlanStageTest do
     assert Enum.all?(tabs, &(Jason.decode!(&1) == [["ignore_attrs", %{"attrs" => ["aria-selected"]}]]))
   end
 
+  test "a tab the page names opens in place of the one it would pick, and one it does not show is passed over", %{
+    conn: conn,
+    task: task
+  } do
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=issue")
+    send(view.pid, {:open_plan, %{tab: "design"}})
+    _settled = render(view)
+
+    assert has_element?(view, "#plan-tab-design[aria-selected='true']")
+    assert has_element?(view, "#plan-section-design:not(.hidden)")
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=issue")
+    send(view.pid, {:open_plan, %{tab: "split"}})
+    _settled = render(view)
+
+    assert has_element?(view, "#plan-tab-plan[aria-selected='true']")
+  end
+
   test "the page opens on Ticket before a plan is saved, and a plan saved after leaves it there", %{
     conn: conn,
     task: task

@@ -9,6 +9,8 @@ defmodule Rail.Pipeline.Workers.StartEngineer do
     max_attempts: 5,
     unique: [keys: [:task_id], states: :incomplete, period: :infinity]
 
+  import Rail.Pipeline.Utils.WithTaskLock
+
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -18,13 +20,16 @@ defmodule Rail.Pipeline.Workers.StartEngineer do
 
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"task_id" => task_id}, inserted_at: approved_at}) do
-    with %Task{stage: :engineer} = task <- Repo.get(Task, task_id),
-         false <- spawned?(task, approved_at) do
-      {:ok, _started} = Pipeline.enter_stage(task, :engineer, fresh: true)
-      :ok
-    else
-      _gone_moved_on_or_spawned -> :ok
-    end
+    # Read under the task's lock, so a task discarded or sent back to Plan while the job waited starts nothing.
+    with_task_lock(task_id, fn ->
+      with %Task{stage: :engineer, cleaned_up_at: nil} = task <- Repo.get(Task, task_id),
+           false <- spawned?(task, approved_at) do
+        {:ok, _started} = Pipeline.enter_stage(task, :engineer, fresh: true)
+        :ok
+      else
+        _gone_moved_on_or_spawned -> :ok
+      end
+    end)
   end
 
   # An attempt that died before its spawn left a run with no process, which nothing else recovers; one that

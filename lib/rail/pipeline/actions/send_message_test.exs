@@ -1,6 +1,8 @@
 defmodule Rail.Pipeline.Actions.SendMessageTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.WithTaskLock
+
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -51,6 +53,23 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
     assert {:ok, :sent, %Run{}} = Pipeline.send_message(system_scope(), run, "Please add a test")
+  end
+
+  test "a message whose run is deleted while it waits on the task's lock starts nothing", %{idle: idle} do
+    %Run{id: run_id, task_id: task_id} = run = idle.()
+    test = self()
+    stub(Rail.Git, :get_or_create_worktree, fn _project, task -> send(test, :worktree) && {:ok, task.worktree_path} end)
+    stub(Tools, :start_os_process, fn spawned, _argv -> send(test, :spawned) && {:ok, %OsProcess{run: spawned}} end)
+
+    with_task_lock(task_id, fn ->
+      assert {:ok, :sent, %Run{}} = Pipeline.send_message(system_scope(), run, "Please add a test")
+      # Long enough for a dispatch that took no lock to have made its worktree.
+      refute_receive :worktree, 200
+      Repo.delete_all(from(r in Run, where: r.id == ^run_id))
+    end)
+
+    refute_receive :worktree, 300
+    refute_received :spawned
   end
 
   test "a message to a working run waits on it", %{idle: idle} do

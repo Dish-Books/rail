@@ -141,7 +141,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
     end
   end
 
-  # Every task, cleaned up or not, is discarded first: its runs have no foreign key to go with it.
+  # Every task, cleaned up or not, is purged first: its runs have no foreign key to go with it.
   # A split parent's issue keeps its row, since deleting it would take the children's tasks with it.
   defp delete_issue(projects, external_id) do
     project_ids = Enum.map(projects, & &1.id)
@@ -160,11 +160,11 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
       Logger.warning("Linear removed #{external_id}, which Rail split into child tasks, so Rail keeps it")
       :ok
     else
-      discard_and_delete(project_ids, external_id)
+      purge_and_delete(project_ids, external_id)
     end
   end
 
-  defp discard_and_delete(project_ids, external_id) do
+  defp purge_and_delete(project_ids, external_id) do
     tasks =
       Repo.all(
         from(t in Task,
@@ -173,7 +173,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
         )
       )
 
-    Enum.each(tasks, &(:ok = Pipeline.discard_task(&1)))
+    Enum.each(tasks, &(:ok = Pipeline.purge_task(&1)))
 
     result =
       delete_and_broadcast(

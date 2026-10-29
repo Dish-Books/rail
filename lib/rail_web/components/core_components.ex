@@ -18,6 +18,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate changed_comments(assigns), to: Components.ChangedComments
   defdelegate child_switcher(assigns), to: Components.ChildSwitcher
   defdelegate comment_box(assigns), to: Components.CommentBox
+  defdelegate comment_list(assigns), to: Components.CommentList
   defdelegate commentable_line(assigns), to: Components.CommentableLine
   defdelegate commit_picker(assigns), to: Components.CommitPicker
   defdelegate design_comment_control(assigns), to: Components.DesignCommentControl
@@ -28,6 +29,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate diff_row(assigns), to: Components.DiffRow
   defdelegate diff_stat(assigns), to: Components.DiffStat
   defdelegate demo_player(assigns), to: Components.DemoPlayer
+  defdelegate discard_dialog(assigns), to: Components.DiscardDialog
   defdelegate dispatch_banner(assigns), to: Components.DispatchBanner
   defdelegate document_comment(assigns), to: Components.DocumentComment
   defdelegate element_preview(assigns), to: Components.ElementPreview
