@@ -1218,69 +1218,13 @@ defmodule RailWeb.TaskLiveTest do
     end
   end
 
-  test "cleaning up releases the disk the task was holding", %{conn: conn, task: task} do
-    assert File.dir?(task.scratch_path)
-
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-    view |> element("#cleanup-task") |> render_click()
-
-    assert_redirect(view, ~p"/issues/#{task.issue_id}", 1_000)
-    refute File.dir?(task.scratch_path)
-    assert {:ok, %Task{cleaned_up_at: %DateTime{}}} = Pipeline.get_task(task.id)
-  end
-
-  test "cleaning up warns when Linear has not marked the issue done", %{conn: conn, task: task, issue: issue} do
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-    assert has_element?(
-             view,
-             "#cleanup-task[data-confirm='TLV-1 is not marked done in Linear. Clean up this task anyway? Its worktree and scratch files will be deleted.']"
-           )
-
-    issue |> Issue.tracker_changeset(%{state: :done}) |> Repo.update!()
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-    assert has_element?(
-             view,
-             "#cleanup-task[data-confirm='Clean up this task? Its worktree and scratch files will be deleted.']"
-           )
-  end
-
-  # The worktree this would delete is the one every run on the task is working
-  # in, so nothing is released while any of them is still in it.
-  test "a task with something running cannot be cleaned up", %{conn: conn, task: task, run: run} do
-    {:ok, _running} = Pipeline.update_run(run, %{status: :running})
-
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-    view |> element("#cleanup-task") |> render_click()
-    render_async(view, 5_000)
-
-    assert render(view) =~ "Stop the task&#39;s run before cleaning it up"
-    assert File.dir?(task.scratch_path)
-  end
-
-  # Whatever went wrong down there, the reader is told rather than left with a
-  # button that stays spinning.
-  test "a cleanup that falls over says so", %{conn: conn, task: task} do
-    stub(Git, :remove_worktree, fn _clone_path, _worktree -> raise "the disk went away" end)
-
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-    view |> element("#cleanup-task") |> render_click()
-    render_async(view, 5_000)
-
-    assert render(view) =~ "Could not clean up the task"
-  end
-
   describe "Discard" do
     setup %{run: run} do
       {:ok, running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
       %{running: running}
     end
 
-    test "sits before Clean up, and confirming stops the runs, deletes the task and opens the issue", %{
+    test "is offered with no Clean up beside it, and confirming stops the runs, deletes the task and opens the issue", %{
       conn: conn,
       task: task,
       running: %Run{id: run_id}
@@ -1288,10 +1232,9 @@ defmodule RailWeb.TaskLiveTest do
       expect(Git, :delete_remote_branch, fn _project, branch when branch == task.worktree_name -> :ok end)
       assert File.dir?(task.scratch_path)
 
-      assert {:ok, view, html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "#cleanup-task")
-      assert [_before, after_discard] = String.split(html, ~s(id="discard-task"), parts: 2)
-      assert after_discard =~ ~s(id="cleanup-task")
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#discard-task")
+      refute has_element?(view, "#cleanup-task")
       refute has_element?(view, "#discard-dialog")
 
       view |> element("#discard-task") |> render_click()
@@ -1305,6 +1248,16 @@ defmodule RailWeb.TaskLiveTest do
       refute File.dir?(task.scratch_path)
       assert {:error, :not_found} = Pipeline.get_task(task.id)
       assert Repo.get(Run, run_id) == nil
+    end
+
+    test "is the header's only way to end a task at Plan, Engineer, Review and Finalize", %{conn: conn, task: task} do
+      for stage <- [:plan, :engineer, :review, :finalize] do
+        {:ok, _moved} = Pipeline.update_task(task, %{stage: stage})
+
+        assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+        assert has_element?(view, "#discard-task")
+        refute has_element?(view, "#cleanup-task")
+      end
     end
 
     test "another page open on the task, its dialog open, says the task is gone without a reload", %{
@@ -5189,7 +5142,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     # The merge queues the cleanup, and a page left open on the task hears it run.
-    test "a page open on a merged task drops Clean up and its comment tray once the cleanup job runs", %{
+    test "a page open on a merged task drops its comment tray once the cleanup job runs", %{
       conn: conn,
       scope: scope,
       task: task
@@ -5201,7 +5154,7 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       _settled = render(view)
-      assert has_element?(view, "#cleanup-task")
+      refute has_element?(view, "#cleanup-task")
       refute has_element?(view, "#discard-task")
       assert has_element?(view, "#send-review-tray", "Send 1")
 
@@ -7005,34 +6958,14 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#claim-task")
     end
 
-    test "a split is cleaned up from its parent, which warns until Linear has marked every child done", %{
-      conn: conn,
-      parent: parent,
-      first: first,
-      second: second,
-      third: third
-    } do
+    test "neither a split parent nor its child offers Discard or Clean up", %{conn: conn, parent: parent} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-11")
+      refute has_element?(view, "#discard-task")
       refute has_element?(view, "#cleanup-task")
 
-      first.issue |> Issue.tracker_changeset(%{state: :done}) |> Repo.update!()
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
-
-      assert view |> element("#cleanup-task") |> render() =~
-               "2 of 3 children are not marked done in Linear: TLV-12, TLV-13. Clean up this task and all of its children anyway?"
-
-      for child <- [second, third], do: child.issue |> Issue.tracker_changeset(%{state: :done}) |> Repo.update!()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
-      assert view |> element("#cleanup-task") |> render() =~ "Clean up this task and its 3 children?"
-    end
-
-    test "neither a split parent nor its child offers Discard", %{conn: conn, parent: parent} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}?child=TLV-11")
-      refute has_element?(view, "#discard-task")
-
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{parent.id}")
       refute has_element?(view, "#discard-task")
+      refute has_element?(view, "#cleanup-task")
     end
 
     test "a child building on a canceled sibling reads Blocked by it, on its row and in its header", %{
