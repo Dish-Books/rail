@@ -12,6 +12,7 @@ defmodule RailWeb.Settings.WorkflowsLive do
   name: Dependency updates      # the issue title adds the date
   schedule: "0 9 * * 1"         # cron, in UTC: Mondays at 09:00
   skip: [product, design]       # any of product, design, architect, demo
+  assignee: dana                # a GitHub login: who owns the issue
   instructions: |               # the issue's description
     Update Elixir and npm dependencies to their latest compatible versions.
   stages:                       # plan, implement, review, in this order

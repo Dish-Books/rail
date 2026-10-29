@@ -151,6 +151,48 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     assert Task.worktree_present?(task)
   end
 
+  test "return_to_plan_changeset/1 puts the task at Plan and clears what belonged to its work" do
+    now = DateTime.utc_now()
+
+    task = %Task{
+      stage: :finalize,
+      pr_number: 212,
+      pr_url: "https://github.com/org/repo/pull/212",
+      pr_is_draft: false,
+      worktree_slot: 7,
+      worktree_setup_at: now,
+      marked_ready_at: now,
+      marked_ready_by_id: "usr_ready",
+      base_behind: true,
+      base_conflicts: ["lib/a.ex"],
+      base_checked_at: now,
+      merge_started_at: now,
+      merge_error: "Refused",
+      merge_error_at: now,
+      merge_sha: "abc",
+      worktree_name: "dsc-1-kept"
+    }
+
+    assert %Task{
+             stage: :plan,
+             pr_number: nil,
+             pr_url: nil,
+             pr_is_draft: nil,
+             worktree_slot: nil,
+             worktree_setup_at: nil,
+             marked_ready_at: nil,
+             marked_ready_by_id: nil,
+             base_behind: false,
+             base_conflicts: [],
+             base_checked_at: nil,
+             merge_started_at: nil,
+             merge_error: nil,
+             merge_error_at: nil,
+             merge_sha: nil,
+             worktree_name: "dsc-1-kept"
+           } = task |> Task.return_to_plan_changeset() |> Ecto.Changeset.apply_changes()
+  end
+
   test "stages/0 keeps every stage a row could have been written with" do
     assert :plan in Task.stages()
     refute :product in Task.stages()

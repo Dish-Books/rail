@@ -294,7 +294,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     assert {:ok, %Task{}} = Pipeline.cleanup_task(task)
   end
 
-  # Cleaning up twice is ordinary: two people can press it, and the second press
+  # Cleaning up twice is ordinary: two cleanups can race, and the second
   # must not rewrite when the first one happened.
   test "a task already cleaned up keeps the time it was", %{project: project} do
     Req.Test.expect(Rail.Linear, fn conn ->

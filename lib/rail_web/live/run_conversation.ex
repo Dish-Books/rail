@@ -1269,14 +1269,17 @@ defmodule RailWeb.Live.RunConversation do
 
   # With no conversation there is nothing a message could resume, so the stage is
   # entered again: the run goes back to running and its role starts on the brief.
+  # Read again, so a task Discard or Back to Plan erased since this page drew starts nothing.
   def handle_event("retry_run", _params, socket) do
-    %{task: task, selected_run: run, roles_map: roles_map} = socket.assigns
+    %{task: %{id: task_id}, selected_run: %Run{id: run_id}, roles_map: roles_map} = socket.assigns
 
-    if retryable?(run, task, roles_map) do
+    with {:ok, task} <- Pipeline.get_task(task_id),
+         %Run{} = run <- Enum.find(task.runs, &(&1.id == run_id)),
+         true <- retryable?(run, task, roles_map) do
       {:ok, %Run{} = run} = Pipeline.enter_stage(task, Task.current_stage(task))
       {:noreply, select(socket, run)}
     else
-      {:noreply, socket}
+      _gone_or_not_retryable -> {:noreply, socket}
     end
   end
 

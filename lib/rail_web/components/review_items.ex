@@ -23,7 +23,7 @@ defmodule RailWeb.Components.ReviewItems do
     <nav
       id="review-items"
       aria-label="Review"
-      class="shrink-0 flex @xl:flex-col gap-1 p-1.5 @xl:w-[76px] border-b @xl:border-b-0 @xl:border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/30"
+      class="shrink-0 flex @xl:flex-col gap-1 p-1.5 @xl:w-[80px] border-b @xl:border-b-0 @xl:border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/30"
     >
       <button
         :for={item <- @items}
@@ -36,7 +36,7 @@ defmodule RailWeb.Components.ReviewItems do
         phx-value-item={item.key}
         phx-target={@target}
         class={[
-          "flex-1 @xl:flex-none min-w-0 flex flex-col items-center gap-1 px-1 py-2 rounded-lg cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500",
+          "flex-1 @xl:flex-none min-w-0 flex flex-col items-center gap-1 px-1 @xl:px-0 py-2 rounded-lg cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500",
           item.key == @picked &&
             "bg-blue-50 dark:bg-blue-950/40 ring-1 ring-blue-200 dark:ring-blue-800 text-blue-800 dark:text-blue-200",
           item.key != @picked && item.mark != :off &&
@@ -110,7 +110,7 @@ defmodule RailWeb.Components.ReviewItems do
           </span>
         </span>
         <span class={[
-          "max-w-full truncate text-[11px]",
+          "max-w-full truncate text-[11px] tracking-tight",
           item.key == @picked && "font-bold",
           item.key != @picked && "font-semibold"
         ]}>

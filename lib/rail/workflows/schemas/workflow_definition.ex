@@ -9,7 +9,7 @@ defmodule Rail.Workflows.Schemas.WorkflowDefinition do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.IssueStage
 
-  @keys ["name", "schedule", "instructions", "skip", "stages"]
+  @keys ["name", "schedule", "instructions", "skip", "stages", "assignee"]
   @built_ins %{"plan" => :plan, "implement" => :engineer, "review" => :review}
   @stages_hint "the stages are plan, implement and review, with custom stages of a name and a prompt before review"
   @steps Enum.map(Issue.optional_steps(), &Atom.to_string/1)
@@ -23,6 +23,8 @@ defmodule Rail.Workflows.Schemas.WorkflowDefinition do
     field :schedule, :string
     # The steps its tasks run without, copied onto each issue it opens.
     field :skip, {:array, Ecto.Enum}, values: Issue.optional_steps(), default: []
+    # The GitHub login of the Rail user who owns the issues it opens; nil leaves them unowned.
+    field :assignee, :string
     # Its tasks' stages in order, copied onto each issue it opens; none runs Plan, Engineer and Review.
     embeds_many :stages, IssueStage, on_replace: :delete
   end
@@ -33,12 +35,13 @@ defmodule Rail.Workflows.Schemas.WorkflowDefinition do
   """
   def changeset(definition, attrs) do
     definition
-    |> cast(attrs, [:name, :instructions, :schedule])
+    |> cast(attrs, [:name, :instructions, :schedule, :assignee])
     |> cast_skip(attrs["skip"])
     |> cast_stages(attrs["stages"])
     |> update_change(:name, &String.trim/1)
     |> update_change(:instructions, &String.trim/1)
     |> update_change(:schedule, &String.trim/1)
+    |> update_change(:assignee, &String.trim/1)
     |> validate_required([:name, :instructions, :schedule])
     |> validate_change(:schedule, fn :schedule, schedule ->
       # `@reboot` parses, but has no next time to start at.

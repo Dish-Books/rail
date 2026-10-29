@@ -9,6 +9,7 @@ defmodule Rail.Pipeline.Actions.RetryRun do
   """
 
   import Rail.Pipeline.Utils.StartRoleRun
+  import Rail.Pipeline.Utils.WithTaskLock
 
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -22,12 +23,19 @@ defmodule Rail.Pipeline.Actions.RetryRun do
   @doc """
   Starts `run`'s role again on its task for the scope's user. Returns `{:ok, run}` as it now stands, or
   `{:error, reason}`: `:not_found`, `:stage_running` while anything works on the task, or `:not_retryable` for a
-  run that has neither failed nor been skipped, or belongs to no step the task is at.
+  run that is gone, has neither failed nor been skipped, or belongs to no step the task is at.
   """
-  def retry_run(%Scope{} = scope, %Run{} = run) do
-    %Run{task: %Task{} = task, role: %Role{} = role} =
-      run = Run |> Repo.get!(run.id) |> Repo.preload([:role, :questions, task: :runs])
+  def retry_run(%Scope{} = scope, %Run{id: run_id, task_id: task_id}) do
+    # Under the task's lock, so a run Discard or Back to Plan deletes cannot be started again around it.
+    with_task_lock(task_id, fn ->
+      case Run |> Repo.get(run_id) |> Repo.preload([:role, :questions, task: :runs]) do
+        %Run{} = run -> retry(scope, run)
+        nil -> {:error, :not_retryable}
+      end
+    end)
+  end
 
+  defp retry(scope, %Run{task: %Task{} = task, role: %Role{} = role} = run) do
     cond do
       not Scope.can_access_project?(scope, task.project_id) -> {:error, :not_found}
       Task.running?(task) -> {:error, :stage_running}

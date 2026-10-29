@@ -135,6 +135,30 @@ defmodule Rail.Pipeline.Schemas.Task do
   end
 
   @doc """
+  A changeset putting the task back at Plan for Back to Plan: its pull request, worktree slot and setup, Finalize
+  and merge fields and base check are cleared, since all of them belong to the work it erases.
+  """
+  def return_to_plan_changeset(%__MODULE__{} = task) do
+    change(task,
+      stage: :plan,
+      pr_number: nil,
+      pr_url: nil,
+      pr_is_draft: nil,
+      worktree_slot: nil,
+      worktree_setup_at: nil,
+      marked_ready_at: nil,
+      marked_ready_by_id: nil,
+      base_behind: false,
+      base_conflicts: [],
+      base_checked_at: nil,
+      merge_started_at: nil,
+      merge_error: nil,
+      merge_error_at: nil,
+      merge_sha: nil
+    )
+  end
+
+  @doc """
   True when the scope's user owns the task's issue. Requires `issue` to be preloaded.
   """
   def owned_by?(%__MODULE__{issue: %Issue{owner_user_id: owner_id}}, %Scope{user: user}),

@@ -13,13 +13,17 @@ defmodule Rail.Workflows.Utils.OpenWorkflowIssue do
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Scope
+  alias Rail.Users
+  alias Rail.Users.Schemas.User
   alias Rail.Workflows.Schemas.Workflow
   alias Rail.Workflows.Schemas.WorkflowDefinition
   alias Rail.Workflows.Workers.StartWorkflowTask
 
+  require Logger
+
   @doc """
-  Opens `workflow`'s issue in its project's tracker, with no owner and the steps its file skips and names, and queues its
-  task's start with the issue. A `:scheduled` start goes ahead only while the row is due and moves the due time on whether it opens
+  Opens `workflow`'s issue in its project's tracker, owned by its file's assignee, with the steps its file skips and the
+  stages it names, and queues its task's start with the issue. A `:scheduled` start goes ahead only while the row is due and moves the due time on whether it opens
   anything or not; `:now` leaves the due time alone and ignores the pause.
 
   Returns `{:ok, issue}`, or why nothing was opened: `{:error, {:unfinished, issue}}`, `{:error, :project_inactive}`,
@@ -41,6 +45,7 @@ defmodule Rail.Workflows.Utils.OpenWorkflowIssue do
                  Issues.create_issue(Scope.for_system(), workflow.project, %{
                    title: "#{workflow.definition.name} #{Date.to_iso8601(date)}",
                    description: workflow.definition.instructions,
+                   owner_user_id: owner_user_id(workflow),
                    workflow_id: workflow.id,
                    skipped_steps: workflow.definition.skip,
                    stages: workflow.definition.stages
@@ -63,6 +68,20 @@ defmodule Rail.Workflows.Utils.OpenWorkflowIssue do
       {:error, reason} ->
         broadcast_workflows_changed(workflow.project)
         {:error, reason}
+    end
+  end
+
+  # An assignee with no Rail account opens the issue unowned rather than not at all.
+  defp owner_user_id(%Workflow{definition: %WorkflowDefinition{assignee: nil}}), do: nil
+
+  defp owner_user_id(%Workflow{definition: %WorkflowDefinition{assignee: login}} = workflow) do
+    case Users.list_users_by_logins([login]) do
+      [%User{id: id}] ->
+        id
+
+      [] ->
+        Logger.warning("#{workflow.project.name}'s #{workflow.path} assigns #{login}, who has no Rail account")
+        nil
     end
   end
 

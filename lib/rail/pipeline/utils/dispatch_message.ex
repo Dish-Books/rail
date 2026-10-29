@@ -16,6 +16,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   import Rail.Pipeline.Utils.PrepareTurn
   import Rail.Pipeline.Utils.PrepareWorktree
   import Rail.Pipeline.Utils.StartWorktreeSetup
+  import Rail.Pipeline.Utils.WithTaskLock
 
   alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Issues.Schemas.Issue
@@ -33,9 +34,8 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   @doc """
   Dispatches `run`'s queued message.
 
-  Spawns in the background by default. `async: false` runs it inline and returns
-  `{:ok, os_process}`, which is what a caller that needs to see the spawn itself
-  should pass.
+  Spawns in the background, under the task's lock, by default. `async: false` runs it inline in the caller's process,
+  taking no lock, and returns `{:ok, os_process}`, which is what a caller that needs to see the spawn itself passes.
   """
   def dispatch_message(%Run{} = run, opts \\ []) do
     # Plan comments queued in the message count as sent the moment it goes out, as one sent at once does.
@@ -44,9 +44,10 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
     if Keyword.get(opts, :async, true) do
       caller = self()
 
+      # Under the task's lock, so a message to a run Discard or Back to Plan deleted meanwhile finds no run.
       Elixir.Task.Supervisor.start_child(Rail.TaskSupervisor, fn ->
         allow_sandbox(caller)
-        execute(run, opts)
+        with_task_lock(run.task_id, fn -> execute(run, opts) end)
       end)
 
       {:ok, run}

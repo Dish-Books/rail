@@ -113,7 +113,9 @@ defmodule Rail.Pipeline do
   defdelegate update_task(task, attrs), to: Actions.UpdateTask
   defdelegate get_task(id), to: Actions.GetTask
   defdelegate cleanup_task(task), to: Actions.CleanupTask
-  defdelegate discard_task(task), to: Actions.DiscardTask
+  defdelegate purge_task(task), to: Actions.PurgeTask
+  defdelegate discard_task(scope, task), to: Actions.DiscardTask
+  defdelegate return_to_plan(scope, task), to: Actions.ReturnToPlan
 
   defdelegate ask_questions(run, questions), to: Actions.AskQuestions
   defdelegate answer_question(scope, question, answer), to: Actions.AnswerQuestion
@@ -129,14 +131,15 @@ defmodule Rail.Pipeline do
   defdelegate delete_diff_comment(scope, comment), to: Actions.DeleteDiffComment
   defdelegate set_diff_comment_resolved(scope, comment, resolved?), to: Actions.SetDiffCommentResolved
   defdelegate create_screen_comment(scope, task, attrs), to: Actions.CreateScreenComment
-  defdelegate list_screen_comments(scope, task), to: Actions.ListScreenComments
+  defdelegate list_screen_comments(scope, task, opts \\ []), to: Actions.ListScreenComments
   defdelegate delete_screen_comment(scope, comment), to: Actions.DeleteScreenComment
   defdelegate create_finding_comment(scope, task, attrs), to: Actions.CreateFindingComment
-  defdelegate list_finding_comments(scope, task), to: Actions.ListFindingComments
+  defdelegate list_finding_comments(scope, task, opts \\ []), to: Actions.ListFindingComments
   defdelegate delete_finding_comment(scope, comment), to: Actions.DeleteFindingComment
   defdelegate create_plan_comment(scope, run, attrs), to: Actions.CreatePlanComment
-  defdelegate list_plan_comments(scope, task), to: Actions.ListPlanComments
+  defdelegate list_plan_comments(scope, task, opts \\ []), to: Actions.ListPlanComments
   defdelegate delete_plan_comment(scope, comment), to: Actions.DeletePlanComment
+  defdelegate list_comments(scope, task), to: Actions.ListComments
   defdelegate send_plan_comments(scope, run), to: Actions.SendPlanComments
   defdelegate stop_and_send_message(scope, run, opts \\ []), to: Actions.StopAndSendMessage
   defdelegate stop_run(scope, run, opts \\ []), to: Actions.StopRun

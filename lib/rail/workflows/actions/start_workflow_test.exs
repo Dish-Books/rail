@@ -6,6 +6,7 @@ defmodule Rail.Workflows.Actions.StartWorkflowTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.IssueStage
   alias Rail.Projects
+  alias Rail.Users
   alias Rail.Workflows
   alias Rail.Workflows.Schemas.Workflow
   alias Rail.Workflows.Schemas.WorkflowDefinition
@@ -154,6 +155,60 @@ defmodule Rail.Workflows.Actions.StartWorkflowTest do
                %IssueStage{stage: :review}
              ]
            } = Repo.get!(Issue, issue_id)
+  end
+
+  test "the issue a workflow opens is owned by its file's assignee, or by nobody when they have no Rail account", %{
+    workflow: workflow
+  } do
+    stub(DateTime, :utc_now, fn -> ~U[2026-10-12 09:00:30.000000Z] end)
+
+    {:ok, %{id: owner_id} = owner} =
+      Users.register_oauth_user(%{github_id: "gh_wf_assignee", login: "wf_assignee", email: "wf_assignee@example.com"})
+
+    owner |> Ecto.Changeset.change(linear_user_id: "lin_usr_wf_assignee") |> Repo.update!()
+
+    set_assignee = fn assignee ->
+      Repo.update_all(from(w in Workflow, where: w.id == ^workflow.id),
+        set: [definition: %{workflow.definition | assignee: assignee}, next_run_at: ~U[2026-10-12 09:00:00Z]]
+      )
+    end
+
+    set_assignee.("wf_assignee")
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"assigneeId" => "lin_usr_wf_assignee"} = Jason.decode!(body)["variables"]["input"]
+
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_wf_owned", "identifier" => "TST-86", "title" => "Dependency updates 2026-10-12"}
+          }
+        }
+      })
+    end)
+
+    assert {:ok, %Issue{id: issue_id, owner_user_id: ^owner_id}} = Workflows.start_workflow(workflow)
+
+    Repo.update_all(from(i in Issue, where: i.id == ^issue_id), set: [state: :done])
+    set_assignee.("nobody_here")
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      refute Map.has_key?(Jason.decode!(body)["variables"]["input"], "assigneeId")
+
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_wf_unowned", "identifier" => "TST-87", "title" => "Dependency updates 2026-10-12"}
+          }
+        }
+      })
+    end)
+
+    assert {:ok, %Issue{owner_user_id: nil}} = Workflows.start_workflow(workflow)
   end
 
   test "a workflow on a GitHub project opens its issue in that repository", %{github_project: project} do

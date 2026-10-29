@@ -2,6 +2,8 @@ defmodule Rail.Pipeline.Workers.StartEngineerTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  import Rail.Pipeline.Utils.WithTaskLock
+
   alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
@@ -55,6 +57,22 @@ defmodule Rail.Pipeline.Workers.StartEngineerTest do
 
     assert %Run{status: :running, stage_outcome: :in_progress} =
              Repo.get_by(Run, task_id: task.id, role_id: engineer.id)
+  end
+
+  test "a task deleted while the job waited on its lock starts nothing", %{task: %Task{id: task_id} = task} do
+    reject(Tools, :start_os_process, 2)
+    reject(Rail.Git, :get_or_create_worktree, 2)
+
+    pending =
+      with_task_lock(task_id, fn ->
+        pending = Elixir.Task.async(fn -> perform_job(StartEngineer, %{task_id: task_id}) end)
+        refute Elixir.Task.yield(pending, 100)
+        Repo.delete!(task)
+        pending
+      end)
+
+    assert :ok = Elixir.Task.await(pending)
+    assert Repo.all(from(r in Run, where: r.task_id == ^task_id)) == []
   end
 
   test "an attempt that died before its spawn is started again on the retry", %{
@@ -149,6 +167,15 @@ defmodule Rail.Pipeline.Workers.StartEngineerTest do
 
       assert [%OsProcess{}, %OsProcess{}] = Tools.list_os_processes(task_id: task.id)
     end
+  end
+
+  # A plan approved just before Discard must not rebuild the worktree and push the branch again.
+  test "a task cleaned up after the job was queued is left alone", %{task: task} do
+    reject(&Tools.start_os_process/2)
+    {:ok, %Task{}} = Pipeline.update_task(task, %{cleaned_up_at: DateTime.utc_now()})
+
+    assert :ok = perform_job(StartEngineer, %{task_id: task.id})
+    assert [] = Repo.preload(task, :runs, force: true).runs
   end
 
   test "a task that is gone needs nothing" do

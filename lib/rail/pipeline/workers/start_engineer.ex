@@ -4,7 +4,7 @@ defmodule Rail.Pipeline.Workers.StartEngineer do
   whole of what it is given. A task whose sequence puts a custom stage after Plan starts that stage's agent instead,
   and an approved custom stage's job, naming the stage it moved the task to, starts Plan or Review too. The job is
   committed with the approval, so the stage starts even if the page that approved is gone, and is retried if the
-  start dies part way.
+  start dies part way. A task discarded or sent back to Plan while the job waited starts nothing.
   """
   use Oban.Worker,
     queue: :issues,
@@ -12,6 +12,7 @@ defmodule Rail.Pipeline.Workers.StartEngineer do
     unique: [keys: [:task_id], states: :incomplete, period: :infinity]
 
   import Rail.Pipeline.Utils.StartChecks
+  import Rail.Pipeline.Utils.WithTaskLock
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -22,13 +23,16 @@ defmodule Rail.Pipeline.Workers.StartEngineer do
 
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"task_id" => task_id} = args, inserted_at: approved_at}) do
-    with %Task{stage: stage} = task <- Repo.get(Task, task_id),
-         true <- stage in [:engineer, :custom] or stage in moved_to(args),
-         false <- spawned?(task, approved_at) do
-      :ok = start(task)
-    else
-      _gone_moved_on_or_spawned -> :ok
-    end
+    # Read under the task's lock, so a task discarded or sent back to Plan while the job waited starts nothing.
+    with_task_lock(task_id, fn ->
+      with %Task{stage: stage, cleaned_up_at: nil} = task <- Repo.get(Task, task_id),
+           true <- stage in [:engineer, :custom] or stage in moved_to(args),
+           false <- spawned?(task, approved_at) do
+        :ok = start(task)
+      else
+        _gone_moved_on_or_spawned -> :ok
+      end
+    end)
   end
 
   # Only an approved custom stage's job moves a task on to Plan or Review.

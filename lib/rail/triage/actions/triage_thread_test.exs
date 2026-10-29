@@ -484,6 +484,39 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     assert :ok = Triage.triage_thread(thread)
   end
 
+  test "a pass whose MCP server does not answer snoozes without failing, and runs once it does", %{
+    project: project,
+    thread: %{id: thread_id} = thread,
+    role: role,
+    result_path: result_path
+  } do
+    {:ok, server} = Mcp.create_server(system_scope(), %{name: "tt_down", url: "https://down.example.com/mcp"})
+    {:ok, _role} = Roles.update_role(system_scope(), role, %{mcp_tools: ["tt_down__list_issues"]})
+    {:ok, user} = Users.register_oauth_user(%{github_id: "gh_td", login: "td", email: "td@example.com"})
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{"triage_user_id" => user.id})
+    Repo.insert!(%McpConnection{user_id: user.id, mcp_server_id: server.id, access_token: "at_td"})
+
+    Req.Test.stub(Mcp, &Plug.Conn.send_resp(&1, 500, "down"))
+
+    assert {:snooze, 30} = Triage.triage_thread(thread)
+    assert %Thread{status: :triaging, error: nil, triage_started_at: nil} = Repo.get!(Thread, thread_id)
+
+    Req.Test.stub(Mcp, fn conn ->
+      case conn |> Req.Test.raw_body() |> Jason.decode!() do
+        %{"method" => "notifications/initialized"} -> Plug.Conn.send_resp(conn, 202, "")
+        %{"id" => id} -> Req.Test.json(conn, %{"jsonrpc" => "2.0", "id" => id, "result" => %{}})
+      end
+    end)
+
+    expect(Tools, :run_agent, fn _role, _argv, _opts ->
+      File.write!(result_path, Jason.encode!(%{"items" => []}))
+      {:ok, ""}
+    end)
+
+    assert :ok = Triage.triage_thread(thread)
+    assert %Thread{error: nil} = Repo.get!(Thread, thread_id)
+  end
+
   test "a thread with nothing new to read never runs an agent", %{project: project} do
     %{workspace: workspace, channel: channel} = connect_slack_channel(project)
 
@@ -531,12 +564,12 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
       assert %Thread{status: :waiting, error: "This project has no Triage role."} = Repo.get!(Thread, thread_id)
     end
 
-    test "when the role's MCP servers need reconnecting, or cannot be reached", %{
+    test "when the role's MCP servers need reconnecting", %{
       project: project,
       thread: %{id: thread_id} = thread,
       role: role
     } do
-      {:ok, server} =
+      {:ok, _server} =
         Mcp.create_server(system_scope(), %{
           name: "tt_linear",
           url: "https://linear.example.com/mcp",
@@ -560,14 +593,6 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
       assert %Thread{
                error: "tt_linear needs reconnecting for tt. Reconnect it under Settings → Connected accounts, then retry."
              } = Repo.get!(Thread, thread_id)
-
-      Repo.insert!(%McpConnection{user_id: user.id, mcp_server_id: server.id, access_token: "at_tt"})
-      Req.Test.stub(Mcp, &Plug.Conn.send_resp(&1, 500, "down"))
-
-      assert :ok = Triage.triage_thread(thread)
-
-      assert %Thread{error: "Could not reach tt_linear, so triage did not run. Retry once it answers."} =
-               Repo.get!(Thread, thread_id)
     end
 
     test "when the agent fails, times out or is not dispatched", %{thread: %{id: thread_id} = thread} do
