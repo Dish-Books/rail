@@ -131,4 +131,27 @@ defmodule Rail.Pipeline.Actions.ListPlanCommentsTest do
 
     assert [%{id: ^first_design}, %{id: ^later_design}, %{id: ^ticket_id}] = Pipeline.list_plan_comments(ada, task)
   end
+
+  test "sent: true adds everyone's queued and sent comments with their authors, never another person's unsent one", %{
+    task: task,
+    run: run,
+    ada: ada,
+    grace: %{user: %{id: grace_id}} = grace,
+    attrs: attrs
+  } do
+    {:ok, %{id: sent_id}} = Pipeline.create_plan_comment(grace, run, %{attrs | body: "Sent."})
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    {:ok, :sent, _run} = Pipeline.send_plan_comments(grace, run)
+    {:ok, %{id: queued_id}} = Pipeline.create_plan_comment(grace, run, %{attrs | body: "Queued."})
+    {:ok, _running} = Pipeline.update_run(Repo.reload!(run), %{status: :running})
+    {:ok, :queued, _run} = Pipeline.send_plan_comments(grace, Repo.reload!(run))
+    {:ok, _unsent} = Pipeline.create_plan_comment(grace, run, %{attrs | body: "Not sent."})
+    {:ok, %{id: adas_id}} = Pipeline.create_plan_comment(ada, run, attrs)
+
+    assert [
+             %PlanComment{id: ^sent_id, status: :sent, user: %{id: ^grace_id}},
+             %PlanComment{id: ^queued_id, status: :queued, user: %{id: ^grace_id}},
+             %PlanComment{id: ^adas_id, status: :unsent}
+           ] = Pipeline.list_plan_comments(ada, task, sent: true)
+  end
 end

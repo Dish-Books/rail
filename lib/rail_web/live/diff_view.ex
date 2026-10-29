@@ -66,9 +66,17 @@ defmodule RailWeb.Live.DiffView do
     # highlighting the diff for it would be doing the slowest part twice.
     socket =
       cond do
-        not connected?(socket) -> socket
-        picked? or socket.assigns.fingerprint != fingerprint(socket.assigns.task) -> load_diff(socket, picked?)
-        true -> sync_pane(socket)
+        not connected?(socket) ->
+          socket
+
+        picked? and is_binary(socket.assigns.open[:comment]) ->
+          socket |> load_diff(true) |> select_comment(socket.assigns.open.comment)
+
+        picked? or socket.assigns.fingerprint != fingerprint(socket.assigns.task) ->
+          load_diff(socket, picked?)
+
+        true ->
+          sync_pane(socket)
       end
 
     {:ok, socket}
@@ -331,34 +339,12 @@ defmodule RailWeb.Live.DiffView do
     {:noreply, socket}
   end
 
-  # Jumping to a comment is asking to read it, so whatever would hide it is undone:
-  # its file's fold, its own fold if resolved, and a filter its file falls outside.
-  def handle_event("select_diff_comment", %{"id" => id}, socket) do
-    %{comments: comments, query: query} = socket.assigns
+  def handle_event("select_diff_comment", %{"id" => id}, socket), do: {:noreply, select_comment(socket, id)}
 
-    case Enum.find(comments, &(&1.id == id)) do
-      %{path: path} = comment ->
-        hidden? = not String.contains?(String.downcase(path), String.downcase(query))
-
-        socket =
-          socket
-          |> assign(:selected_comment, id)
-          |> assign(:collapsed, toggle(socket.assigns.collapsed, path, false))
-          |> assign(:open_comments, toggle(socket.assigns.open_comments, id, comment.status == :resolved))
-          |> assign(:query, if(hidden?, do: "", else: query))
-          |> push_event("diff:scroll_to", %{id: "diff-comment-#{id}"})
-          |> sync_pane()
-
-        {:noreply, socket}
-
-      nil ->
-        {:noreply, socket}
-    end
-  end
-
-  # A link from a finding names a commit and a file; each new one is followed once.
+  # A link from a finding names a commit and a file, and one from the Comments item a view and a comment; each new
+  # one is followed once.
   defp open(%{assigns: %{open: %{at: at} = open, opened: opened}} = socket) when at != opened do
-    view = if is_binary(open[:commit]), do: {:commit, open.commit}, else: :branch
+    view = open[:view] || if(is_binary(open[:commit]), do: {:commit, open.commit}, else: :branch)
     {socket |> new_view(view) |> assign(:opened, at), true}
   end
 
@@ -391,7 +377,8 @@ defmodule RailWeb.Live.DiffView do
     previous = Enum.concat(Map.values(highlighted))
     files = diff(scope, task, view, previous)
 
-    # A link names the commit a round read, which need not touch the file the reader came for; the branch has it.
+    # A link names the commit a round read, or the uncommitted changes a comment was written in, which need not touch
+    # the file the reader came for; the branch has it.
     {view, files} =
       if followed? and lacks_file?(view, files, socket.assigns.focus_file),
         do: {:branch, diff(scope, task, :branch, previous)},
@@ -412,8 +399,32 @@ defmodule RailWeb.Live.DiffView do
     |> sync_pane()
   end
 
-  defp lacks_file?({:commit, _sha}, files, file) when is_binary(file), do: not Enum.any?(files, &(&1.path == file))
+  defp lacks_file?(view, files, file) when view != :branch and is_binary(file),
+    do: not Enum.any?(files, &(&1.path == file))
+
   defp lacks_file?(_view, _files, _file), do: false
+
+  # Jumping to a comment is asking to read it, so whatever would hide it is undone:
+  # its file's fold, its own fold if resolved, and a filter its file falls outside.
+  defp select_comment(socket, id) do
+    %{comments: comments, query: query} = socket.assigns
+
+    case Enum.find(comments, &(&1.id == id)) do
+      %{path: path} = comment ->
+        hidden? = not String.contains?(String.downcase(path), String.downcase(query))
+
+        socket
+        |> assign(:selected_comment, id)
+        |> assign(:collapsed, toggle(socket.assigns.collapsed, path, false))
+        |> assign(:open_comments, toggle(socket.assigns.open_comments, id, comment.status == :resolved))
+        |> assign(:query, if(hidden?, do: "", else: query))
+        |> push_event("diff:scroll_to", %{id: "diff-comment-#{id}"})
+        |> sync_pane()
+
+      nil ->
+        socket
+    end
+  end
 
   defp sync_pane(socket) do
     pane = socket.assigns |> pane_state() |> calculate_diff_pane()

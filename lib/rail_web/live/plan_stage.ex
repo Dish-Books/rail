@@ -1293,12 +1293,15 @@ defmodule RailWeb.Live.PlanStage do
   end
 
   # Picked once for the task the page shows and never from the server again, so a save cannot move the reader.
-  # A rejoin picks again, but the browser keeps the tab it shows.
+  # A rejoin picks again, but the browser keeps the tab it shows. The page names one when a comment opens it.
   defp assign_open_tab(%{assigns: %{open_tab: %{task_id: id}}} = socket, %Task{id: id}, _tabs, _plan), do: socket
 
   defp assign_open_tab(socket, task, tabs, plan) do
+    named = socket.assigns[:tab]
+
     tab =
       cond do
+        Enum.any?(tabs, &(&1.id == named)) -> named
         Enum.any?(tabs, &(&1.mark == :pick)) -> "design"
         plan != nil -> "plan"
         true -> "ticket"
