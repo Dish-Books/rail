@@ -1,6 +1,7 @@
 defmodule Rail.Users.Schemas.UserTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Scope
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
@@ -86,8 +87,65 @@ defmodule Rail.Users.Schemas.UserTest do
              linear_name: nil,
              linear_access_token: nil,
              linear_refresh_token: nil,
-             linear_token_expires_at: nil
+             linear_token_expires_at: nil,
+             # No Slack account to message, so notifications are written off with any change.
+             slack_notifications: false
            }
+  end
+
+  describe "Slack notifications" do
+    setup do
+      unique = System.unique_integer([:positive])
+
+      {:ok, user} =
+        Users.register_oauth_user(%{github_id: "sn_#{unique}", login: "sn_#{unique}", email: "sn_#{unique}@example.com"})
+
+      %{user: user}
+    end
+
+    test "turn on for someone with a Slack account to message", %{user: user} do
+      {:ok, linked} = Users.update_user(system_scope(), user, %{slack_user_id: "U1", slack_team_id: "T1"})
+
+      assert {:ok, %User{slack_notifications: true}} =
+               linked |> User.slack_notifications_changeset(%{slack_notifications: true}) |> Repo.update()
+    end
+
+    test "refuse to turn on without a Slack account", %{user: user} do
+      changeset = User.slack_notifications_changeset(user, %{slack_notifications: true})
+
+      assert %{slack_notifications: ["connect Slack first"]} = errors_on(changeset)
+    end
+
+    test "can be turned off without a Slack account", %{user: user} do
+      assert User.slack_notifications_changeset(user, %{slack_notifications: false}).valid?
+    end
+
+    test "need a value", %{user: user} do
+      assert %{slack_notifications: ["can't be blank"]} =
+               errors_on(User.slack_notifications_changeset(user, %{slack_notifications: nil}))
+    end
+
+    test "an admin's edit of the user leaves them as they were", %{user: user} do
+      {:ok, linked} = Users.update_user(system_scope(), user, %{slack_user_id: "U1", slack_team_id: "T1"})
+      {:ok, _on} = linked |> User.slack_notifications_changeset(%{slack_notifications: true}) |> Repo.update()
+
+      assert {:ok, %User{slack_notifications: true}} =
+               Users.update_user(system_scope(), Repo.reload!(linked), %{name: "Renamed", slack_notifications: false})
+
+      assert {:ok, %User{slack_notifications: false}} =
+               Users.update_user(system_scope(), user, %{name: "Renamed", slack_notifications: true})
+    end
+
+    test "unlinking Slack through a stale user still turns them off", %{user: user} do
+      {:ok, linked} =
+        Users.update_user(system_scope(), user, %{slack_user_id: "U1", slack_team_id: "T1", slack_access_token: "xoxp-1"})
+
+      {:ok, _on} = linked |> User.slack_notifications_changeset(%{slack_notifications: true}) |> Repo.update()
+
+      # The page's scope was loaded before notifications were turned on, so its user still reads off.
+      assert {:ok, %User{}} = Users.unlink_slack(Scope.for_user(linked))
+      assert %User{slack_notifications: false, slack_user_id: nil} = Repo.reload!(user)
+    end
   end
 
   test "redacts sensitive fields on inspect" do

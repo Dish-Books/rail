@@ -22,6 +22,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
       |> assign(:linear_name, user && user.linear_name)
       |> assign(:slack_connected, Scope.slack_linked?(current_scope))
       |> assign(:slack_name, user && user.slack_name)
+      |> assign(:slack_notifications, user != nil and user.slack_notifications)
       |> assign(:signing_error, nil)
       |> assign(:repository_access, repository_access(socket.assigns.projects))
       |> assign(:mcp_servers, Enum.filter(Mcp.list_servers(), &(&1.enabled and &1.auth == :oauth)))
@@ -262,52 +263,116 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
 
             <div
               id="slack-account-section"
-              class="flex items-center gap-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 p-4"
+              class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 overflow-hidden"
             >
-              <.account_avatar label="S" src={nil} id="slack-avatar" />
+              <div class="flex items-center gap-4 p-4">
+                <.account_avatar label="S" src={nil} id="slack-avatar" />
 
-              <div class="min-w-0 flex-1">
-                <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Slack</h3>
+                <div class="min-w-0 flex-1">
+                  <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Slack</h3>
 
-                <p
+                  <p
+                    :if={@slack_connected}
+                    id="slack-connected-details"
+                    class="mt-0.5 text-sm text-slate-500 dark:text-slate-400 truncate"
+                  >
+                    <span id="slack-user-name">{@slack_name || "Slack User"}</span>
+                    · replies you accept in triage post as you
+                  </p>
+
+                  <p
+                    :if={!@slack_connected}
+                    id="slack-disconnected-message"
+                    class="mt-0.5 text-sm text-slate-500 dark:text-slate-400"
+                  >
+                    Not connected - you cannot post from triage until you connect.
+                  </p>
+                </div>
+
+                <span :if={@slack_connected} class="text-sm text-emerald-600 dark:text-emerald-400">
+                  Connected
+                </span>
+
+                <.button
                   :if={@slack_connected}
-                  id="slack-connected-details"
-                  class="mt-0.5 text-sm text-slate-500 dark:text-slate-400 truncate"
+                  variant="secondary"
+                  phx-click="disconnect_slack"
+                  id="disconnect-slack-button"
                 >
-                  <span id="slack-user-name">{@slack_name || "Slack User"}</span>
-                  · replies you accept in triage post as you
-                </p>
+                  Disconnect
+                </.button>
 
-                <p
+                <.button
                   :if={!@slack_connected}
-                  id="slack-disconnected-message"
-                  class="mt-0.5 text-sm text-slate-500 dark:text-slate-400"
+                  variant="primary"
+                  href={~p"/auth/slack"}
+                  id="connect-slack-button"
                 >
-                  Not connected - you cannot post from triage until you connect.
-                </p>
+                  Connect Slack
+                </.button>
               </div>
 
-              <span :if={@slack_connected} class="text-sm text-emerald-600 dark:text-emerald-400">
-                Connected
-              </span>
-
-              <.button
-                :if={@slack_connected}
-                variant="secondary"
-                phx-click="disconnect_slack"
-                id="disconnect-slack-button"
+              <div
+                id="slack-notifications"
+                class="flex items-center gap-4 border-t border-slate-200 dark:border-slate-700 px-4 py-3"
               >
-                Disconnect
-              </.button>
+                <div class="size-11 shrink-0 flex items-center justify-center">
+                  <.icon
+                    name={if @slack_connected, do: "pi-bell-ringing", else: "pi-bell-slash"}
+                    class={[
+                      "size-[18px]",
+                      @slack_connected && "text-slate-400",
+                      not @slack_connected && "text-slate-500"
+                    ]}
+                  />
+                </div>
 
-              <.button
-                :if={!@slack_connected}
-                variant="primary"
-                href={~p"/auth/slack"}
-                id="connect-slack-button"
-              >
-                Connect Slack
-              </.button>
+                <div class="min-w-0 flex-1">
+                  <h4 class={[
+                    "text-sm font-semibold",
+                    @slack_connected && "text-slate-900 dark:text-slate-100",
+                    not @slack_connected && "text-slate-500 dark:text-slate-400"
+                  ]}>
+                    Notify me about my tasks
+                  </h4>
+                  <p
+                    id="slack-notifications-message"
+                    class="mt-0.5 text-sm text-slate-500 dark:text-slate-400"
+                  >
+                    {slack_notifications_message(@slack_connected, @slack_notifications)}
+                  </p>
+                </div>
+
+                <span
+                  id="slack-notifications-state"
+                  class={[
+                    "text-xs w-7 text-right",
+                    @slack_notifications && "font-semibold text-slate-700 dark:text-slate-200",
+                    not @slack_notifications && "text-slate-500 dark:text-slate-400"
+                  ]}
+                >
+                  {if @slack_notifications, do: "On", else: "Off"}
+                </span>
+
+                <label class={[
+                  "inline-flex items-center gap-2 text-xs",
+                  @slack_connected && "cursor-pointer",
+                  not @slack_connected && "cursor-not-allowed opacity-50"
+                ]}>
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    id="slack-notifications-switch"
+                    checked={@slack_notifications}
+                    disabled={not @slack_connected}
+                    phx-click="set_slack_notifications"
+                    phx-value-on={to_string(not @slack_notifications)}
+                    aria-label="Notify me about my tasks in Slack"
+                    class="peer sr-only"
+                  />
+                  <span class="relative h-5 w-9 shrink-0 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-indigo-600 after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-indigo-500"></span>
+                </label>
+              </div>
             </div>
 
             <div
@@ -420,12 +485,30 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
           |> assign(:current_user, updated_user)
           |> assign(:slack_connected, false)
           |> assign(:slack_name, nil)
+          |> assign(:slack_notifications, updated_user.slack_notifications)
 
         {:noreply, socket}
 
       {:error, _reason} ->
         {:noreply, socket}
     end
+  end
+
+  def handle_event("set_slack_notifications", %{"on" => on}, socket) do
+    socket =
+      case Users.set_slack_notifications(socket.assigns.current_scope, on == "true") do
+        {:ok, user} ->
+          apply_user(socket, user)
+
+        # Slack was disconnected in another tab, so the page catches up with it.
+        {:error, %Ecto.Changeset{data: %User{} = user}} ->
+          socket
+          |> apply_user(user)
+          |> assign(:slack_connected, Scope.slack_linked?(Scope.for_user(user)))
+          |> assign(:slack_name, user.slack_name)
+      end
+
+    {:noreply, socket}
   end
 
   def handle_event("disconnect_mcp", %{"id" => server_id}, socket) do
@@ -468,7 +551,15 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
     |> assign(:current_user, user)
     |> assign(:signing_key?, User.signing?(user))
     |> assign(:signing_fingerprint, User.signing_fingerprint(user))
+    |> assign(:slack_notifications, user.slack_notifications)
   end
+
+  defp slack_notifications_message(false, _on?), do: "Connect Slack to get notifications."
+
+  defp slack_notifications_message(true, true),
+    do: "Rail messages you when a task you own waits on you, and when someone else merges it."
+
+  defp slack_notifications_message(true, false), do: "Off. Rail sends you nothing in Slack."
 
   defp signing_message(:missing_scope) do
     "Rail's GitHub App is missing the SSH signing keys permission. An admin grants it on the app, then you authorize it again."

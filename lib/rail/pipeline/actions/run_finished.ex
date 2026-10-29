@@ -39,6 +39,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Workers.NotifyOwner
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
@@ -58,6 +59,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
           |> finish(os_process, opts)
           |> drain_queued_message(os_process, opts)
           |> send_rail_answers(os_process)
+          |> notify_owner(os_process)
           |> broadcast_pipeline_changed()
 
         {:ok, run}
@@ -230,6 +232,24 @@ defmodule Rail.Pipeline.Actions.RunFinished do
     else
       run
     end
+  end
+
+  # Against the run as the turn found it, so a chat reply to a run already done starts no wait. The worker reads
+  # it again when it runs, by when a round Rail answered itself has gone back.
+  defp notify_owner(%Run{} = run, %OsProcess{ended_reason: :stopped}), do: run
+
+  defp notify_owner(%Run{} = run, %OsProcess{id: os_process_id, run: %Run{} = before}) do
+    settled = Repo.get!(Run, run.id)
+
+    started_waiting? =
+      (settled.status == :blocked_on_input and before.status != :blocked_on_input) or
+        (settled.stage_outcome == :done and before.stage_outcome != :done) or
+        (is_binary(settled.error) and is_nil(before.error) and settled.stage_outcome != :done)
+
+    if started_waiting?,
+      do: {:ok, _job} = %{run_id: run.id, os_process_id: os_process_id} |> NotifyOwner.new() |> Oban.insert()
+
+    run
   end
 
   # This run is idle now, so whatever the human queued on it while it worked goes
