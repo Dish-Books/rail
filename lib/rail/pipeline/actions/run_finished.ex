@@ -57,9 +57,9 @@ defmodule Rail.Pipeline.Actions.RunFinished do
           |> settle_run(outcome)
           |> end_turn(os_process)
           |> finish(os_process, opts)
+          |> notify_owner(os_process)
           |> drain_queued_message(os_process, opts)
           |> send_rail_answers(os_process)
-          |> notify_owner(os_process)
           |> broadcast_pipeline_changed()
 
         {:ok, run}
@@ -219,26 +219,11 @@ defmodule Rail.Pipeline.Actions.RunFinished do
     %{latched | task: run.task, role: run.role}
   end
 
-  # A round Rail answered whole from past answers waits on nobody, so it goes back at
-  # once; one a person still has to answer waits, as does one whose turn was stopped.
-  defp send_rail_answers(%Run{} = run, %OsProcess{ended_reason: reason}) when reason in [:stopped, :handed_over], do: run
-
-  defp send_rail_answers(%Run{} = run, %OsProcess{}) do
-    round = unsent_round(run)
-
-    if round != [] and Enum.all?(round, &(&1.status == :answered and &1.answered_by_rail)) do
-      _sent = Pipeline.send_answers(Scope.for_system(), run)
-      %{Repo.get!(Run, run.id) | task: run.task, role: run.role}
-    else
-      run
-    end
-  end
-
-  # Against the run as the turn found it, so a chat reply to a run already done starts no wait. The worker reads
-  # it again when it runs, by when a round Rail answered itself has gone back.
+  # Before anything goes back to the agent, so the dispatch's timing cannot decide it, and by the checks that decide
+  # the sending. Against the run as the turn found it, so a chat reply to a run already done starts no wait.
   defp notify_owner(%Run{} = run, %OsProcess{ended_reason: :stopped}), do: run
 
-  defp notify_owner(%Run{} = run, %OsProcess{id: os_process_id, run: %Run{} = before}) do
+  defp notify_owner(%Run{} = run, %OsProcess{id: os_process_id, run: %Run{} = before} = os_process) do
     settled = Repo.get!(Run, run.id)
 
     started_waiting? =
@@ -246,30 +231,48 @@ defmodule Rail.Pipeline.Actions.RunFinished do
         (settled.stage_outcome == :done and before.stage_outcome != :done) or
         (is_binary(settled.error) and is_nil(before.error) and settled.stage_outcome != :done)
 
-    if started_waiting?,
+    if started_waiting? and not drains?(settled, os_process) and not rail_answers_whole_round?(settled, os_process),
       do: {:ok, _job} = %{run_id: run.id, os_process_id: os_process_id} |> NotifyOwner.new() |> Oban.insert()
 
     run
   end
 
+  defp drain_queued_message(%Run{} = run, %OsProcess{} = os_process, opts) do
+    if drains?(run, os_process), do: dispatch_message(run, opts)
+    run
+  end
+
   # This run is idle now, so whatever the human queued on it while it worked goes
   # out. A run parked on a question is not idle: the answer goes first.
-  defp drain_queued_message(%Run{pending_chat: nil} = run, %OsProcess{}, _opts), do: run
+  defp drains?(%Run{pending_chat: nil}, %OsProcess{}), do: false
 
   # A setup that failed keeps its message until a person retries or writes again: sending it would only start the
   # setup again, which fails the same way.
-  defp drain_queued_message(%Run{error: error} = run, %OsProcess{kind: :setup}, _opts) when is_binary(error), do: run
+  defp drains?(%Run{error: error}, %OsProcess{kind: :setup}) when is_binary(error), do: false
 
   # Finishing started another process on this run, running or in line, and the
   # message waits for it.
-  defp drain_queued_message(%Run{status: status} = run, %OsProcess{}, _opts)
-       when status in [:running, :waiting_for_resources, :waiting_for_usage], do: run
+  defp drains?(%Run{status: status}, %OsProcess{}) when status in [:running, :waiting_for_resources, :waiting_for_usage],
+    do: false
 
-  defp drain_queued_message(%Run{} = run, %OsProcess{}, opts) do
-    if pending_questions(run.task_id) == [] do
-      dispatch_message(run, opts)
+  defp drains?(%Run{task_id: task_id}, %OsProcess{}), do: pending_questions(task_id) == []
+
+  defp send_rail_answers(%Run{} = run, %OsProcess{} = os_process) do
+    if rail_answers_whole_round?(run, os_process) do
+      _sent = Pipeline.send_answers(Scope.for_system(), run)
+      %{Repo.get!(Run, run.id) | task: run.task, role: run.role}
+    else
+      run
     end
+  end
 
-    run
+  # A round Rail answered whole from past answers waits on nobody, so it goes back at
+  # once; one a person still has to answer waits, as does one whose turn was stopped.
+  defp rail_answers_whole_round?(%Run{}, %OsProcess{ended_reason: reason}) when reason in [:stopped, :handed_over],
+    do: false
+
+  defp rail_answers_whole_round?(%Run{} = run, %OsProcess{}) do
+    round = unsent_round(run)
+    round != [] and Enum.all?(round, &(&1.status == :answered and &1.answered_by_rail))
   end
 end

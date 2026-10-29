@@ -73,8 +73,10 @@ defmodule Rail.Users.Schemas.User do
     |> unique_constraint(:github_id)
     |> unique_constraint(:login)
     |> unique_constraint(:email)
-    # Forced rather than changed, so a stale struct that still reads off clears a column another tab turned on.
-    |> then(&if(get_field(&1, :slack_user_id), do: &1, else: force_change(&1, :slack_notifications, false)))
+    # Removing the Slack link turns notifications off, forced so a stale struct that still reads off clears them too.
+    |> then(
+      &if(fetch_change(&1, :slack_user_id) == {:ok, nil}, do: force_change(&1, :slack_notifications, false), else: &1)
+    )
   end
 
   @doc """

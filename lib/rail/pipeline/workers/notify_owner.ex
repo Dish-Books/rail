@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Workers.NotifyOwner do
   @moduledoc """
   Sends a task's owner one Slack direct message when a turn left the task waiting on them, or someone else merged
-  it. It decides when it runs, so a round Rail answered itself, or a wait someone already ended, sends nothing.
+  it. It reads the run again when it runs, so a wait someone already ended, or notifications turned off, sends nothing.
   """
   use Oban.Worker, queue: :issues, max_attempts: 3, unique: [period: :infinity]
 

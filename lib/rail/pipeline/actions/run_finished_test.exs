@@ -181,6 +181,19 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert Enum.any?(argv, &(&1 =~ "Please also add a test"))
   end
 
+  test "a turn that has its say with a message queued tells nobody, since the message goes straight back", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, _task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+    {_run, os_process} = exited.(:plan, %{pending_chat: "Please also add a test"})
+
+    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0}, async: false)
+    refute_enqueued(worker: NotifyOwner)
+  end
+
   test "a run that came back clean latches done and moves nothing", %{task: task, exited: exited} do
     {%Run{id: run_id} = run, %OsProcess{id: os_process_id} = os_process} = exited.(:plan, %{})
 
@@ -750,6 +763,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
                Pipeline.run_finished(os_process, %{exit_code: 1, error: "Exited with code 1"}, async: false)
 
       assert %Run{pending_chat: "Also check the logs"} = Repo.reload!(run)
+      assert_enqueued(worker: NotifyOwner, args: %{run_id: run.id})
     end
   end
 
@@ -1170,6 +1184,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
       refute Enum.any?(lines, &String.starts_with?(&1, "[human]"))
       refute Enum.any?(lines, &(&1 =~ "When asked"))
+      refute_enqueued(worker: NotifyOwner)
     end
 
     test "waits while a person still has a question to answer", %{task: task, exited: exited} do

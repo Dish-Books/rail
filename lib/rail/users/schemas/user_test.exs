@@ -87,9 +87,7 @@ defmodule Rail.Users.Schemas.UserTest do
              linear_name: nil,
              linear_access_token: nil,
              linear_refresh_token: nil,
-             linear_token_expires_at: nil,
-             # No Slack account to message, so notifications are written off with any change.
-             slack_notifications: false
+             linear_token_expires_at: nil
            }
   end
 
@@ -132,8 +130,9 @@ defmodule Rail.Users.Schemas.UserTest do
       assert {:ok, %User{slack_notifications: true}} =
                Users.update_user(system_scope(), Repo.reload!(linked), %{name: "Renamed", slack_notifications: false})
 
-      assert {:ok, %User{slack_notifications: false}} =
-               Users.update_user(system_scope(), user, %{name: "Renamed", slack_notifications: true})
+      # `user` was loaded before Slack was linked, as an admin's user list can be.
+      assert {:ok, %User{}} = Users.update_user(system_scope(), user, %{name: "Renamed", slack_notifications: true})
+      assert %User{slack_notifications: true} = Repo.reload!(user)
     end
 
     test "unlinking Slack through a stale user still turns them off", %{user: user} do
