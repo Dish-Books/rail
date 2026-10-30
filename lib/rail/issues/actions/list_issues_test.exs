@@ -243,6 +243,32 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
              Issues.list_issues(show_finished: true, completed_after: ~U[2026-09-01 00:00:00Z])
   end
 
+  test "list_issues leaves out an archived issue no task holds, unless asked for every one", %{project: project} do
+    issue = fn external_id, archived_at ->
+      %Issue{}
+      |> Issue.changeset(%{
+        project_id: project.id,
+        external_id: external_id,
+        identifier: "LI1-#{external_id}",
+        title: external_id,
+        state: :done,
+        archived_at: archived_at
+      })
+      |> Repo.insert!()
+      |> Repo.preload(:project)
+    end
+
+    %Issue{id: live_id} = issue.("live", nil)
+    %Issue{id: untasked_id} = issue.("archived_untasked", ~U[2026-10-06 00:00:00Z])
+    %Issue{id: tasked_id} = tasked = issue.("archived_tasked", ~U[2026-10-06 00:00:00Z])
+    {:ok, _task} = Pipeline.create_task(tasked, :merged)
+
+    ids = fn opts -> opts |> Issues.list_issues() |> Map.fetch!(:issues) |> Enum.map(& &1.id) |> Enum.sort() end
+
+    assert ids.(show_finished: true) == Enum.sort([live_id, tasked_id])
+    assert ids.(show_finished: true, archived: true) == Enum.sort([live_id, untasked_id, tasked_id])
+  end
+
   test "list_issues narrows to the issues a user owns", %{project: project} do
     {:ok, %{id: owner_id}} =
       Rail.Users.register_oauth_user(%{github_id: "gh_list_owner", login: "list_owner", email: "list_owner@example.com"})

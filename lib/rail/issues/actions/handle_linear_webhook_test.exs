@@ -504,7 +504,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
     assert Repo.get(Task, task_id) == nil
   end
 
-  test "an archive deletes an issue with no task and broadcasts, and inserts nothing for one Rail never had", %{
+  test "an archive keeps an issue with no task as archived and broadcasts, and inserts one Rail never had", %{
     project: project,
     workspace: workspace
   } do
@@ -539,10 +539,10 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
 
     assert {:ok, %Issue{id: ^issue_id}} = archive.("lin_wh_archived")
     assert_receive {:issue_changed, ^issue_id}
-    assert Repo.get(Issue, issue_id) == nil
+    assert %Issue{archived_at: ~U[2026-10-06 10:00:00Z]} = Repo.get(Issue, issue_id)
 
-    assert :ok = archive.("lin_wh_never_had")
-    assert Repo.get_by(Issue, external_id: "lin_wh_never_had") == nil
+    assert {:ok, %Issue{}} = archive.("lin_wh_never_had")
+    assert %Issue{archived_at: ~U[2026-10-06 10:00:00Z]} = Repo.get_by(Issue, external_id: "lin_wh_never_had")
   end
 
   test "an archive keeps an issue with a task, even a cleaned-up one, and upserts it as any update", %{

@@ -709,14 +709,14 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
       refute_receive {:issues_synced, ^project_id}, 50
     end
 
-    test "an archived node is written only with a task, and the one without is removed", %{
+    test "an archived node is written with when it was completed and archived, with a task or without", %{
       project: %{id: project_id},
       insert: insert,
       last_page: last_page
     } do
-      %Issue{id: kept_id} = kept = insert.("lin_archived_kept", :in_review)
-      {:ok, %Task{id: task_id}} = Pipeline.create_task(kept, :review)
-      %Issue{id: dropped_id} = insert.("lin_archived_dropped", :done)
+      %Issue{id: tasked_id} = tasked = insert.("lin_archived_tasked", :in_review)
+      {:ok, %Task{id: task_id}} = Pipeline.create_task(tasked, :review)
+      %Issue{id: untasked_id} = insert.("lin_archived_untasked", :done)
       started_at = DateTime.to_iso8601(DateTime.utc_now())
 
       archived = fn external_id ->
@@ -725,19 +725,22 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
           "identifier" => external_id,
           "title" => "Archived #{external_id}",
           "state" => %{"id" => "st_done", "name" => "Done", "type" => "completed"},
+          "completedAt" => "2026-09-01T09:00:00.000Z",
           "archivedAt" => "2026-10-06T09:00:00.000Z",
           "trashed" => nil
         }
       end
 
-      last_page.([archived.("lin_archived_kept"), archived.("lin_archived_dropped"), archived.("lin_archived_new")])
+      last_page.([archived.("lin_archived_tasked"), archived.("lin_archived_untasked"), archived.("lin_archived_new")])
 
       assert :ok = perform_job(LinearSync, %{project_id: project_id, cursor: "cursor_last", started_at: started_at})
 
-      assert %Issue{id: ^kept_id, title: "Archived lin_archived_kept", state: :done} = Repo.get(Issue, kept_id)
-      assert %Task{issue_id: ^kept_id} = Repo.get(Task, task_id)
-      assert Repo.get(Issue, dropped_id) == nil
-      assert Repo.get_by(Issue, external_id: "lin_archived_new") == nil
+      assert %Issue{id: ^tasked_id, title: "Archived lin_archived_tasked", state: :done} = Repo.get(Issue, tasked_id)
+      assert %Task{issue_id: ^tasked_id} = Repo.get(Task, task_id)
+
+      for issue <- [Repo.get(Issue, untasked_id), Repo.get_by(Issue, external_id: "lin_archived_new")] do
+        assert %Issue{completed_at: ~U[2026-09-01 09:00:00Z], archived_at: ~U[2026-10-06 09:00:00Z]} = issue
+      end
     end
 
     test "a trashed node is never written, and with a task it is removed with it", %{

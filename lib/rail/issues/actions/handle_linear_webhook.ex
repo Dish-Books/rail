@@ -30,10 +30,9 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
   @doc """
   Applies `payload` for `workspace`, its projects preloaded. Issue creates and
   updates are upserted onto the project on the issue's team and broadcast as
-  `{:issue_changed, issue_id}` on `"issues"`. A remove or a trash deletes the
-  issue and its task, and so does an archive when no task references it, both
-  broadcast the same way. Anything else, including a team no project is on or an
-  update older than the row, is ignored.
+  `{:issue_changed, issue_id}` on `"issues"`, an archive among them. A remove or
+  a trash deletes the issue and its task, broadcast the same way. Anything else,
+  including a team no project is on or an update older than the row, is ignored.
   """
   def handle_linear_webhook(%LinearWorkspace{projects: projects}, %{
         "type" => "Issue",
@@ -42,17 +41,6 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
       })
       when action in ["create", "update"] do
     delete_issue(projects, external_id)
-  end
-
-  def handle_linear_webhook(
-        %LinearWorkspace{projects: projects},
-        %{"type" => "Issue", "action" => action, "data" => %{"id" => external_id, "archivedAt" => archived_at} = data} =
-          payload
-      )
-      when action in ["create", "update"] and is_binary(archived_at) do
-    if Repo.exists?(from(t in Task, join: i in assoc(t, :issue), where: i.external_id == ^external_id)),
-      do: upsert_issue(projects, action, data, payload["updatedFrom"]),
-      else: delete_issue_without_task(projects, external_id)
   end
 
   def handle_linear_webhook(
@@ -183,19 +171,6 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
     # Sent only now, so nothing reloads while a task is still there without its issue.
     if tasks != [], do: Phoenix.PubSub.broadcast(Rail.PubSub, "sandboxes", :sandboxes_changed)
     result
-  end
-
-  defp delete_issue_without_task(projects, external_id) do
-    project_ids = Enum.map(projects, & &1.id)
-
-    delete_and_broadcast(
-      from(i in Issue,
-        as: :issue,
-        where: i.external_id == ^external_id and i.project_id in ^project_ids,
-        where: not exists(from(t in Task, where: t.issue_id == parent_as(:issue).id)),
-        select: i
-      )
-    )
   end
 
   # One statement, so a second remove or a task started meanwhile finds nothing to delete.

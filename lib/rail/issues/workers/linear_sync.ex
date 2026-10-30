@@ -9,8 +9,8 @@ defmodule Rail.Issues.Workers.LinearSync do
   was asked for are pruned, and `{:issues_synced, project_id}` goes out on the
   `"issues"` topic.
 
-  An archived issue is kept only while a Rail task references it, and a trashed
-  one never is: Linear has deleted it.
+  An archived issue is kept with its `archived_at`, so what it shipped still
+  counts, and a trashed one never is: Linear has deleted it.
 
   Rows are written straight to the tables rather than through the changesets:
   this is Linear telling us what it has, and nothing here should be pushed back.
@@ -47,6 +47,7 @@ defmodule Rail.Issues.Workers.LinearSync do
     :branch_name,
     :url,
     :completed_at,
+    :archived_at,
     :external_updated_at,
     :cycle_external_id,
     :parent_external_id,
@@ -86,31 +87,7 @@ defmodule Rail.Issues.Workers.LinearSync do
     end
   end
 
-  defp written(nodes) do
-    archived = for %{"archivedAt" => at} = node <- nodes, is_binary(at), node["trashed"] != true, do: node["id"]
-    with_task = external_ids_with_task(archived)
-
-    Enum.filter(nodes, fn node ->
-      cond do
-        node["trashed"] == true -> false
-        is_binary(node["archivedAt"]) -> MapSet.member?(with_task, node["id"])
-        true -> true
-      end
-    end)
-  end
-
-  defp external_ids_with_task([]), do: MapSet.new()
-
-  defp external_ids_with_task(external_ids) do
-    from(t in Task,
-      join: i in Issue,
-      on: i.id == t.issue_id,
-      where: i.external_id in ^external_ids,
-      select: i.external_id
-    )
-    |> Repo.all()
-    |> MapSet.new()
-  end
+  defp written(nodes), do: Enum.reject(nodes, &(&1["trashed"] == true))
 
   # A job queued before syncs were stamped has no start to prune against.
   defp prune(_project, nil), do: :ok

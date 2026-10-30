@@ -30,6 +30,9 @@ defmodule Rail.Issues.Schemas.Issue do
     field :branch_name, :string
     field :url, :string
     field :completed_at, :utc_datetime
+
+    # Set while the tracker has it archived. It still counts as shipped, but leaves the Issues list unless a task holds it.
+    field :archived_at, :utc_datetime
     # Copied from the project when the issue is made, so it keeps talking to the tracker it came from.
     field :tracker, Ecto.Enum, values: [:linear, :github], default: :linear
     # GitHub's issue number, which its REST paths take; nil for Linear.
@@ -70,6 +73,7 @@ defmodule Rail.Issues.Schemas.Issue do
   end
 
   @cast_fields [
+    :archived_at,
     :branch_name,
     :completed_at,
     :description,
