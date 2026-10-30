@@ -75,9 +75,15 @@ defmodule RailWeb.Components.FindingList do
               <span :if={!@changed[finding.key] and state_line(finding, @running)} class="block">
                 <span
                   data-qa="review_finding_state"
-                  class={["text-[10px] font-semibold", state_class(finding)]}
+                  class={[
+                    "inline-flex items-center gap-1 text-[10px] font-semibold",
+                    state_class(finding)
+                  ]}
                 >
-                  {state_line(finding, @running)}
+                  <.icon :if={state_icon(finding)} name={state_icon(finding)} class="size-[11px]" />{state_line(
+                    finding,
+                    @running
+                  )}
                 </span>
               </span>
               <span :if={Finding.where(finding)} class="flex items-center gap-1 min-w-0">
@@ -132,11 +138,21 @@ defmodule RailWeb.Components.FindingList do
       :fixed -> if finding.fixed_in, do: "Fixed in #{short(finding.fixed_in)}", else: "Fixed"
       :dismissed -> "Don't fix"
       :suppressed -> "Suppressed"
+      :new_issue -> if finding.issue_id, do: "New issue · #{finding.issue.identifier}", else: "New issue · filed on Send"
+    end
+  end
+
+  defp state_icon(%Finding{} = finding) do
+    cond do
+      Finding.state(finding) != :new_issue -> nil
+      finding.issue_id -> "pi-arrow-square-out-bold"
+      true -> "pi-plus-square-bold"
     end
   end
 
   defp ruling(:fix), do: "Fix"
   defp ruling(:skip), do: "Don't fix"
+  defp ruling(:new_issue), do: "New issue"
 
   defp on(nil), do: ""
   defp on(commit), do: " on #{short(commit)}"
@@ -161,7 +177,7 @@ defmodule RailWeb.Components.FindingList do
   defp dot(%Finding{} = finding) do
     case {Finding.state(finding), finding.severity} do
       {:fixed, _severity} -> "bg-emerald-500"
-      {state, _severity} when state in [:dismissed, :suppressed] -> "bg-slate-300 dark:bg-slate-600"
+      {state, _severity} when state in [:dismissed, :suppressed, :new_issue] -> "bg-slate-300 dark:bg-slate-600"
       {_state, :blocker} -> "bg-red-500"
       {_state, :major} -> "bg-amber-500"
       {_state, :minor} -> "bg-amber-400"

@@ -3,6 +3,7 @@ defmodule RailWeb.Components.FindingDetailTest do
 
   import Phoenix.LiveViewTest
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.FindingEvidence
@@ -144,6 +145,59 @@ defmodule RailWeb.Components.FindingDetailTest do
     end
   end
 
+  test "New issue sits beside Fix and Don't fix, and ruled New issue shows the issue Send files above Problem" do
+    finding = %{
+      @finding
+      | decision: :new_issue,
+        notes: [%FindingNote{round: 1, kind: :ruling, at: @at, decision: :new_issue, by_id: "usr_1"}]
+    }
+
+    doc =
+      (&FindingDetail.finding_detail/1)
+      |> render_component(
+        [
+          finding: finding,
+          preview: %{title: "Send twice", description: "**Problem.** Sends twice.", priority: :medium},
+          project_name: "Rail",
+          viewer_id: "usr_1"
+        ] ++ @attrs
+      )
+      |> Floki.parse_fragment!()
+
+    assert ["false", "false", "true"] =
+             doc |> Floki.find("[data-qa^=decide_]") |> Floki.attribute("aria-pressed")
+
+    assert doc |> Floki.find("[data-qa=decide_new_issue]") |> Floki.text() =~ "New issue"
+
+    assert "New issue · filed when you send" =
+             doc |> Floki.find("[data-qa=finding_state]") |> Floki.text() |> String.trim()
+
+    assert [_card] = Floki.find(doc, "[data-qa=finding_issue][data-filed=false]")
+    assert doc |> Floki.find("[data-qa=finding_severity]") |> Floki.attribute("class") |> hd() =~ "ring-slate-200"
+    assert doc |> Floki.find("[data-qa=finding_note]") |> Floki.text() =~ "You ruled New issue"
+  end
+
+  test "once filed, the header links the issue it became and the ruling buttons are gone" do
+    issue = %Issue{
+      identifier: "RAIL-152",
+      url: "https://linear.app/x/issue/RAIL-152",
+      title: "Send twice",
+      state: :triage,
+      priority: :low,
+      tracker: :linear
+    }
+
+    doc =
+      (&FindingDetail.finding_detail/1)
+      |> render_component([finding: %{@finding | decision: :new_issue, issue_id: "iss_1", issue: issue}] ++ @attrs)
+      |> Floki.parse_fragment!()
+
+    assert [] = Floki.find(doc, "[data-qa^=decide_]")
+    assert "New issue · filed as RAIL-152" = doc |> Floki.find("[data-qa=finding_state]") |> Floki.text() |> String.trim()
+    assert ["https://linear.app/x/issue/RAIL-152"] = doc |> Floki.find("#finding-issue-link") |> Floki.attribute("href")
+    assert [_card] = Floki.find(doc, "[data-qa=finding_issue][data-filed=true]")
+  end
+
   test "a suppressed finding names the rule that suppressed it, and offers only Fix" do
     finding = %{@finding | suppressed_by_id: "lrn_quiet"}
 
@@ -157,6 +211,7 @@ defmodule RailWeb.Components.FindingDetailTest do
     assert doc |> Floki.find("[data-qa=finding_suppressor]") |> Floki.text() =~ "Don't flag a missing @doc"
     assert [_fix] = Floki.find(doc, "[data-qa=decide_fix]")
     assert [] = Floki.find(doc, "[data-qa=decide_skip]")
+    assert [] = Floki.find(doc, "[data-qa=decide_new_issue]")
     assert "Suppressed" = doc |> Floki.find("[data-qa=finding_state]") |> Floki.text() |> String.trim()
   end
 

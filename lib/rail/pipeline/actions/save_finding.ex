@@ -3,7 +3,7 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
   Saves what the Review lead says about one finding. A new key is raised in the current round against HEAD's
   commit and checked whole; a known key only gets a dated note in the round it is said in, and its status,
   so nothing it said when raised is ever rewritten. A Fix finding a pass finds still failing is carried into
-  that round with its ruling, and one ruled Don't fix is not argued again. A fixed finding saved open again, as a
+  that round with its ruling, and one ruled Don't fix or New issue is not argued again. A fixed finding saved open again, as a
   later decision can reopen one, loses its ruling, so the human rules it afresh. A Fix finding saved fixed is the
   fix round's report on it, refused until it names every place covered or left, the test that failed first
   and the files it changed. A finding saved fixed names HEAD's commit as the one it was fixed in.
@@ -40,6 +40,12 @@ defmodule Rail.Pipeline.Actions.SaveFinding do
       case is_binary(attrs["key"]) && Repo.get_by(Finding, task_id: task.id, key: attrs["key"]) do
         %Finding{decision: :skip} = finding ->
           {:error, finding |> change() |> add_error(:key, "was ruled Don't fix by the human, so leave it be")}
+
+        %Finding{decision: :new_issue} = finding ->
+          {:error,
+           finding
+           |> change()
+           |> add_error(:key, "was ruled New issue by the human, a follow-up outside this task, so leave it be")}
 
         %Finding{} = finding ->
           if Finding.outstanding?(finding) and to_string(attrs["status"]) == "fixed",

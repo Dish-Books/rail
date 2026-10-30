@@ -159,6 +159,14 @@ defmodule RailWeb.Components.FixPlanSheetTest do
              "Now Don't fix"
 
     assert Floki.find(doc, "#fix-plan-item-send-drops [data-qa=fix_plan_item_changed]") == []
+
+    doc =
+      (&FixPlanSheet.fix_plan_sheet/1)
+      |> render_component(sheet: sheet, changed: %{"tray-count" => :new_issue})
+      |> Floki.parse_fragment!()
+
+    assert doc |> Floki.find("#fix-plan-item-tray-count [data-qa=fix_plan_item_changed]") |> Floki.text() =~
+             "Now New issue"
   end
 
   test "a plan sent on since it was saved lists what it covers with that check not ticked", %{fix_plan: fix_plan} do

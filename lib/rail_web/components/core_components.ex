@@ -37,6 +37,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate element_preview(assigns), to: Components.ElementPreview
   defdelegate finding_code(assigns), to: Components.FindingCode
   defdelegate finding_detail(assigns), to: Components.FindingDetail
+  defdelegate finding_issue(assigns), to: Components.FindingIssue
   defdelegate finding_list(assigns), to: Components.FindingList
   defdelegate fix_plan_sheet(assigns), to: Components.FixPlanSheet
   defdelegate icon(assigns), to: Components.Icon

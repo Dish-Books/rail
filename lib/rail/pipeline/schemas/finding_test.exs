@@ -1,10 +1,12 @@
 defmodule Rail.Pipeline.Schemas.FindingTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.FindingEvidence
   alias Rail.Pipeline.Schemas.FindingNote
   alias Rail.Pipeline.Schemas.FindingPlace
+  alias Rail.Pipeline.Schemas.Task
 
   setup do
     %{
@@ -151,15 +153,78 @@ defmodule Rail.Pipeline.Schemas.FindingTest do
     assert Finding.state(%Finding{suppressed_by_id: "lrn_1"}) == :suppressed
     assert Finding.state(%Finding{}) == :undecided
     assert Finding.state(%Finding{decision: :fix}) == :to_fix
+    assert Finding.state(%Finding{decision: :new_issue}) == :new_issue
+    assert Finding.state(%Finding{decision: :new_issue, issue_id: "iss_1"}) == :new_issue
 
     assert Finding.undecided?(%Finding{})
     refute Finding.undecided?(%Finding{suppressed_by_id: "lrn_1"})
     refute Finding.undecided?(%Finding{status: :fixed})
     refute Finding.outstanding?(%Finding{status: :fixed, decision: :fix})
     refute Finding.outstanding?(%Finding{decision: :skip})
+    refute Finding.outstanding?(%Finding{decision: :new_issue})
+    refute Finding.undecided?(%Finding{decision: :new_issue})
     assert Finding.suppressed?(%Finding{suppressed_by_id: "lrn_1"})
     refute Finding.suppressed?(%Finding{suppressed_by_id: "lrn_1", decision: :fix})
     refute Finding.suppressed?(%Finding{suppressed_by_id: "lrn_1", status: :fixed})
+  end
+
+  test "a finding ruled New issue awaits its issue until it is filed" do
+    assert Finding.awaiting_issue?(%Finding{decision: :new_issue})
+    refute Finding.awaiting_issue?(%Finding{decision: :new_issue, issue_id: "iss_1"})
+    refute Finding.awaiting_issue?(%Finding{decision: :new_issue, status: :fixed})
+    refute Finding.awaiting_issue?(%Finding{decision: :skip})
+    refute Finding.awaiting_issue?(%Finding{})
+  end
+
+  test "the issue a finding is filed as carries what it says and links back to the task and its pull request" do
+    task = %Task{
+      issue: %Issue{identifier: "RAIL-131", url: "https://linear.app/x/issue/RAIL-131"},
+      pr_number: 219,
+      pr_url: "https://github.com/x/rail/pull/219"
+    }
+
+    finding = %Finding{
+      kind: :code,
+      title: "Issues page re-sorts after every sync",
+      problem: "The sort resets.",
+      file: "lib/rail_web/live/issues_live.ex",
+      line: 214,
+      end_line: 226,
+      fix: "Reload with the sort in the filters.",
+      why: "It predates this branch.",
+      severity: :blocker
+    }
+
+    expected =
+      Enum.join(
+        [
+          "**Problem.** The sort resets.",
+          "**Where.** `lib/rail_web/live/issues_live.ex:214-226`",
+          "**Fix.** Reload with the sort in the filters.",
+          "**Why.** It predates this branch.",
+          "Raised in Review of [RAIL-131](https://linear.app/x/issue/RAIL-131) · [PR #219](https://github.com/x/rail/pull/219)"
+        ],
+        "\n\n"
+      )
+
+    assert %{title: "Issues page re-sorts after every sync", priority: :high, description: ^expected} =
+             Finding.calculate_issue(finding, task)
+
+    screen = %{
+      finding
+      | kind: :screen,
+        file: nil,
+        screen: "Task page, header",
+        steps: ["Open a task", "Narrow to 1280px"]
+    }
+
+    assert %{priority: :medium, description: description} =
+             Finding.calculate_issue(%{screen | severity: :major}, %{task | pr_url: nil})
+
+    assert description =~ "**Where.** Task page, header\n\n1. Open a task\n2. Narrow to 1280px"
+    assert description =~ ~r/Raised in Review of \[RAIL-131\]\([^)]+\)\z/
+    assert %{priority: :low} = Finding.calculate_issue(%{finding | severity: :minor}, task)
+    assert %{priority: :low} = Finding.calculate_issue(%{finding | severity: :nit}, task)
   end
 
   test "a place reads covered or left by the latest fix, and neither before any fix" do
@@ -194,6 +259,8 @@ defmodule Rail.Pipeline.Schemas.FindingTest do
   test "a ruling is the human's, with who made it" do
     assert %{changes: %{decision: :skip, decided_by_id: "usr_1"}} =
              Finding.decision_changeset(%Finding{}, :skip, "usr_1")
+
+    assert %{changes: %{decision: :new_issue}} = Finding.decision_changeset(%Finding{}, :new_issue, "usr_1")
   end
 
   test "evidence paths and pictures are read by name" do

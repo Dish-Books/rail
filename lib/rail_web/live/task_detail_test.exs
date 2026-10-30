@@ -518,6 +518,77 @@ defmodule RailWeb.Live.TaskDetailTest do
     view |> element("#decide-fix-view-only-send") |> render_click()
 
     assert has_element?(view, "#review-error", "The review is finished, so its rulings are settled.")
+
+    expect(Pipeline, :decide_finding, fn _scope, _finding, :new_issue -> {:error, :issue_filed} end)
+    view |> element("#decide-new_issue-view-only-send") |> render_click()
+
+    assert has_element?(
+             view,
+             "#review-error",
+             "That finding is filed as a new issue, so its ruling can no longer change."
+           )
+  end
+
+  test "ruling New issue shows the issue Send files, in the list and the tray, and a Send elsewhere shows it filed", %{
+    conn: conn,
+    task: task,
+    run: run,
+    code: code,
+    screen: screen
+  } do
+    {:ok, code_finding} = Pipeline.save_finding(task, Map.put(code, :key, "view-only-send"))
+    {:ok, _screen} = Pipeline.save_finding(task, Map.put(screen, :key, "send-twice"))
+    {:ok, _pass} = Pipeline.save_review(task)
+    {:ok, _ruled} = Pipeline.decide_finding(system_scope(), code_finding, :fix)
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    view |> element("#finding-send-twice") |> render_click()
+    assert has_element?(view, "#decide-new_issue-send-twice[aria-pressed=false]", "New issue")
+    refute has_element?(view, "#finding-issue")
+
+    view |> element("#decide-new_issue-send-twice") |> render_click()
+    _settled = render(view)
+
+    assert has_element?(view, "#decide-new_issue-send-twice[aria-pressed=true]")
+    assert has_element?(view, "#finding-outcome", "New issue · filed when you send")
+    assert has_element?(view, "#finding-issue[data-filed=false]", "Filed when you send")
+    assert has_element?(view, "#finding-issue", "Test Project · Triage · Medium priority")
+    assert has_element?(view, "#finding-issue", "A second click sends the same comments twice.")
+    assert has_element?(view, "#finding-issue", "Raised in Review of RST-1")
+    assert has_element?(view, "#finding-send-twice [data-qa=review_finding_state]", "New issue · filed on Send")
+    assert has_element?(view, "#review-finding-footer", "1 to fix · 1 new issue")
+    view |> element("#review-send-tray-fold") |> render_click()
+    assert has_element?(view, "#review-tray-new-issue-send-twice", "Send stays enabled while a round is on its way")
+    assert has_element?(view, "#review-send-tray-hint", "and files 1 new issue.")
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_rst_2",
+              "identifier" => "RST-2",
+              "title" => "Send stays enabled while a round is on its way",
+              "url" => "https://linear.app/rst/issue/RST-2"
+            }
+          }
+        }
+      })
+    end)
+
+    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: %{spawned | status: :running}}} end)
+    # Sent from this process, as another tab would, so the page hears of it only from the broadcast.
+    {:ok, _started} = Pipeline.start_fix_round(system_scope(), run)
+    _settled = render(view)
+
+    assert has_element?(view, "#finding-outcome", "New issue · filed as RST-2")
+    assert has_element?(view, "#finding-issue-link[href='https://linear.app/rst/issue/RST-2']", "RST-2")
+    assert has_element?(view, "#finding-issue[data-filed=true]", "Its ruling can no longer change.")
+    assert has_element?(view, "#finding-send-twice [data-qa=review_finding_state]", "New issue · RST-2")
+    refute has_element?(view, "#decide-fix-send-twice")
+    refute has_element?(view, "#decide-new_issue-send-twice")
+    refute has_element?(view, "#review-tray-new-issue-send-twice")
   end
 
   test "a task that has left Review offers no + on its findings", %{conn: conn, task: task, code: code} do
@@ -2333,6 +2404,11 @@ defmodule RailWeb.Live.TaskDetailTest do
                "#fix-plan-outdated",
                "view-only-send changed from Fix to Don't fix and send-twice changed from Fix to Don't fix after"
              )
+
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), twice, :new_issue)
+      view |> element("#review-item-plan") |> render_click()
+      assert has_element?(view, "#fix-plan-outdated", "send-twice changed from Fix to New issue after")
+      assert has_element?(view, "#fix-plan-item-send-twice [data-qa=fix_plan_item_changed]", "Now New issue")
     end
 
     test "a Send while the plan waits leaves the plan revising on what it carried, with no Approve", %{

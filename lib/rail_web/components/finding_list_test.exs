@@ -3,6 +3,7 @@ defmodule RailWeb.Components.FindingListTest do
 
   import Phoenix.LiveViewTest
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.FindingNote
   alias RailWeb.Components.FindingList
@@ -45,6 +46,61 @@ defmodule RailWeb.Components.FindingListTest do
              doc
              |> Floki.find("[data-qa=review_finding] > span:first-child")
              |> Enum.map(&(&1 |> Floki.attribute("class") |> hd() |> String.split() |> Enum.drop(4)))
+  end
+
+  test "a finding ruled New issue reads filed on Send until a Send files it, then its identifier, its dot quiet" do
+    findings = [
+      %Finding{
+        key: "resort",
+        kind: :code,
+        round: 1,
+        title: "A",
+        file: "a.ex",
+        line: 1,
+        severity: :blocker,
+        decision: :new_issue
+      },
+      %Finding{
+        key: "branch",
+        kind: :code,
+        round: 1,
+        title: "B",
+        file: "b.ex",
+        line: 2,
+        severity: :major,
+        decision: :new_issue,
+        issue_id: "iss_1",
+        issue: %Issue{identifier: "RAIL-152"}
+      },
+      %Finding{
+        key: "tray",
+        kind: :code,
+        round: 1,
+        title: "C",
+        file: "c.ex",
+        line: 3,
+        severity: :major,
+        decision: :new_issue
+      }
+    ]
+
+    doc =
+      (&FindingList.finding_list/1)
+      |> render_component(findings: findings, running: false, tally: "", changed: %{"tray" => :new_issue}, target: nil)
+      |> Floki.parse_fragment!()
+
+    assert ["New issue · filed on Send", "New issue · RAIL-152", "New issue · changed since the plan"] =
+             doc |> Floki.find("[data-qa=review_finding_state]") |> Enum.map(&(&1 |> Floki.text() |> String.trim()))
+
+    assert [_plus] = Floki.find(doc, "#finding-resort .pi-plus-square-bold")
+    assert [_out] = Floki.find(doc, "#finding-branch .pi-arrow-square-out-bold")
+
+    assert [["bg-slate-300", "dark:bg-slate-600"], ["bg-slate-300", "dark:bg-slate-600"] | _changed] =
+             doc
+             |> Floki.find("[data-qa=review_finding] > span:first-child")
+             |> Enum.map(&(&1 |> Floki.attribute("class") |> hd() |> String.split() |> Enum.drop(4)))
+
+    assert [] = Floki.find(doc, "[data-qa=review_finding].opacity-60")
   end
 
   # Send lives in the conversation's tray, so the footer only counts.

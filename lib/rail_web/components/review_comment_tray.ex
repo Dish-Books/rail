@@ -1,11 +1,11 @@
 defmodule RailWeb.Components.ReviewCommentTray do
   @moduledoc """
-  What the Review tray's Send will send, above the Review lead's composer in send order: the findings ruled Fix,
-  which every reader sees, then the reader's own unsent finding, diff and screen comments, numbered, with the gate's
-  reason under them. Empty while the review is open and idle it offers Finish review; empty once finished it draws
+  What the Review tray's Send will send, above the Review lead's composer in send order: the findings ruled Fix, then
+  those ruled New issue that Send files, which every reader sees, then the reader's own unsent finding, diff and
+  screen comments, numbered, with the gate's reason under them. Empty while the review is open and idle it offers Finish review; empty once finished it draws
   nothing. While a fix plan waits on approval it lists only what changed since the last Send: each ruling changed,
   then new comments, and offers no Finish review, unless the rulings have left the plan nothing to fix and no comment
-  is going, when Finish review drops the plan.
+  is going, when Finish review drops the plan. New issues show either way, and alone they leave Finish review offered.
   """
   use RailWeb, :html
 
@@ -15,6 +15,7 @@ defmodule RailWeb.Components.ReviewCommentTray do
   @plan_unchanged "Changed rulings and comments you send now go to the lead, which saves a revised fix plan in place of this one."
 
   attr :fix, :list, required: true, doc: "the findings ruled Fix, in the Findings list's order"
+  attr :new_issues, :list, default: [], doc: "the findings ruled New issue that Send files, in the list's order"
   attr :finding_comments, :list, required: true, doc: "the reader's unsent finding comments, in send order"
   attr :diff_comments, :list, required: true, doc: "the reader's unsent diff comments, in send order"
   attr :screen_comments, :list, required: true, doc: "the reader's unsent screen comments, in send order"
@@ -29,11 +30,14 @@ defmodule RailWeb.Components.ReviewCommentTray do
   attr :target, :any, required: true
 
   def review_comment_tray(assigns) do
-    %{fix: fix, finding_comments: finding, diff_comments: diff, screen_comments: screen, gate: gate} = assigns
+    %{fix: fix, new_issues: new_issues, finding_comments: finding, diff_comments: diff, screen_comments: screen} = assigns
+    gate = assigns.gate
     comments = Enum.map(finding, &{:finding, &1}) ++ Enum.map(diff, &{:diff, &1}) ++ Enum.map(screen, &{:screen, &1})
-    count = length(fix) + length(assigns.rulings) + length(comments)
-    {hint, working} = hint(gate, fix ++ assigns.rulings, comments, assigns.error)
-    finish = not gate.working and comments == [] and ((count == 0 and not gate.plan) or (gate.plan and gate.emptied))
+    count = length(fix) + length(assigns.rulings) + length(new_issues) + length(comments)
+    {hint, working} = hint(gate, fix ++ assigns.rulings, new_issues, comments, assigns.error)
+    # Finish review files the new issues too, so they alone leave it offered.
+    unfixed = fix == [] and assigns.rulings == []
+    finish = not gate.working and comments == [] and ((unfixed and not gate.plan) or (gate.plan and gate.emptied))
 
     assigns =
       assigns
@@ -137,6 +141,43 @@ defmodule RailWeb.Components.ReviewCommentTray do
           <span class="min-w-0 flex-1">
             <span class="flex items-center gap-1.5 min-w-0 text-[10.5px] text-slate-500 dark:text-slate-400">
               <span class="shrink-0 font-semibold text-slate-600 dark:text-slate-300">Fix finding</span>
+              <span
+                :if={Finding.where(finding)}
+                class={["truncate", finding.kind == :code && "font-mono"]}
+                title={Finding.where(finding)}
+              >
+                {where(finding)}
+              </span>
+              <span class="ml-auto shrink-0 inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                Open<.icon name="pi-arrow-right" class="size-3" />
+              </span>
+            </span>
+            <span class="block mt-0.5 text-[12.5px] leading-[18px] truncate text-slate-800 dark:text-slate-100">
+              {finding.title}
+            </span>
+          </span>
+        </button>
+
+        <button
+          :for={finding <- @new_issues}
+          type="button"
+          id={"review-tray-new-issue-#{finding.key}"}
+          data-qa="review_tray_new_issue"
+          title="Open in Findings"
+          phx-click="open_tray_finding"
+          phx-value-key={finding.key}
+          phx-target={@target}
+          class="w-full flex items-start gap-2.5 px-2 py-2 rounded-lg text-left hover:bg-slate-200/50 dark:hover:bg-slate-700/40 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+        >
+          <span
+            aria-hidden="true"
+            class="mt-0.5 size-[18px] shrink-0 grid place-items-center rounded-full ring-1 ring-inset ring-slate-400 dark:ring-slate-500 text-slate-600 dark:text-slate-300"
+          >
+            <.icon name="pi-plus-square-bold" class="size-[11px]" />
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="flex items-center gap-1.5 min-w-0 text-[10.5px] text-slate-500 dark:text-slate-400">
+              <span class="shrink-0 font-semibold text-slate-600 dark:text-slate-300">New issue</span>
               <span
                 :if={Finding.where(finding)}
                 class={["truncate", finding.kind == :code && "font-mono"]}
@@ -289,38 +330,69 @@ defmodule RailWeb.Components.ReviewCommentTray do
   end
 
   # What the gate says, first match winning, and whether the lead is the reason.
-  defp hint(gate, fix, comments, error) do
+  defp hint(gate, fix, new_issues, comments, error) do
     cond do
-      is_binary(error) -> {error, false}
-      gate.working -> {"The Review lead is working. Send waits until it stops.", true}
-      not gate.saved -> {"Send waits for the first round to finish.", false}
-      gate.plan and gate.emptied and comments == [] -> {emptied_hint(gate), false}
-      gate.plan -> {plan_hint(fix ++ comments), false}
-      fix == [] and comments == [] -> {empty_hint(gate), false}
-      gate.finished -> {"The review is finished. Send reopens it with a fix round on your comments.", false}
-      fix == [] -> {"Nothing to fix. Send starts a fix round on your comments.", false}
-      true -> {"The Review lead is idle and starts a fix round on these at once.", false}
+      is_binary(error) ->
+        {error, false}
+
+      gate.working ->
+        {"The Review lead is working. Send waits until it stops.", true}
+
+      not gate.saved ->
+        {"Send waits for the first round to finish.", false}
+
+      gate.plan ->
+        {plan_hint(gate, fix, new_issues, comments), false}
+
+      fix == [] and comments == [] ->
+        {empty_hint(gate, new_issues), false}
+
+      gate.finished ->
+        {"The review is finished. Send reopens it with a fix round on your comments.", false}
+
+      fix == [] ->
+        {"Nothing to fix. Send starts a fix round on your comments" <> and_files(new_issues), false}
+
+      true ->
+        {"The Review lead is idle and starts a fix round on these at once" <> and_files(new_issues), false}
     end
   end
 
-  defp plan_hint([]), do: @plan_unchanged
-  defp plan_hint(_changes), do: "The fix plan is out of date. Send asks the lead to revise it."
+  defp plan_hint(%{emptied: true} = gate, _fix, new_issues, []), do: emptied_hint(gate, new_issues)
+  defp plan_hint(%{}, [], [], []), do: @plan_unchanged
 
-  defp emptied_hint(%{ci_failed: false, undecided: 0}),
+  defp plan_hint(%{}, [], new_issues, []),
+    do: "Send files #{issues(new_issues)} and leaves the fix plan waiting on approval."
+
+  defp plan_hint(%{}, _fix, new_issues, _comments),
+    do: "The fix plan is out of date. Send asks the lead to revise it" <> and_files(new_issues)
+
+  defp emptied_hint(%{ci_failed: false, undecided: 0}, []),
     do: "Nothing is ruled Fix now. Finish review drops the fix plan and closes the review."
 
-  defp emptied_hint(gate), do: empty_hint(gate)
+  defp emptied_hint(%{ci_failed: false, undecided: 0}, new_issues),
+    do: "Nothing is ruled Fix now. Finish review drops the fix plan, files #{issues(new_issues)} and closes the review."
 
-  defp empty_hint(%{ci_failed: true}), do: "CI failed on the fix commit"
+  defp emptied_hint(gate, new_issues), do: empty_hint(gate, new_issues)
 
-  defp empty_hint(%{undecided: count}) when count > 0,
+  defp empty_hint(%{ci_failed: true}, _new_issues), do: "CI failed on the fix commit"
+
+  defp empty_hint(%{undecided: count}, _new_issues) when count > 0,
     do:
       "Rule every finding before the review can finish: #{count} still #{if count == 1, do: "needs", else: "need"} a ruling."
 
-  defp empty_hint(_gate), do: "Nothing to fix. Finish review closes the review."
+  defp empty_hint(_gate, []), do: "Nothing to fix. Finish review closes the review."
+  defp empty_hint(_gate, new_issues), do: "Finish review files #{issues(new_issues)} and closes the review."
+
+  defp and_files([]), do: "."
+  defp and_files(new_issues), do: ", and files #{issues(new_issues)}."
+
+  defp issues([_one]), do: "1 new issue"
+  defp issues(new_issues), do: "#{length(new_issues)} new issues"
 
   defp ruling(:fix), do: "Fix"
   defp ruling(:skip), do: "Don't fix"
+  defp ruling(:new_issue), do: "New issue"
 
   # A code finding's place reads by its file's name, its full path in the title.
   defp where(%Finding{kind: :code, file: file, line: line}) when is_binary(file) and is_integer(line),

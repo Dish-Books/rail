@@ -319,6 +319,8 @@ defmodule RailWeb.Live.TaskDetail do
                       names={@names}
                       viewer_id={@current_scope.user && @current_scope.user.id}
                       suppressor={@suppressor}
+                      preview={@preview}
+                      project_name={@task.project.name}
                       neighbours={@neighbours}
                       comments={@finding_placed}
                       draft={@finding_draft}
@@ -1165,11 +1167,18 @@ defmodule RailWeb.Live.TaskDetail do
     # The Fix findings went out with the Send, so they come back only if the round ends with them still outstanding.
     # A fix commit moves HEAD past the pass, and the gate then reads :round, so every working phase hides them.
     fix = if gate.working or plan or stage != :review, do: [], else: Enum.filter(findings, &Finding.outstanding?/1)
+    # A Send files these whether or not a plan waits, so only a working lead hides them.
+    new_issues = if gate.working or stage != :review, do: [], else: Enum.filter(findings, &Finding.awaiting_issue?/1)
 
     # Comments are taken until cleanup, so a cleaned-up task, or one not yet at Review, sends nothing from it.
     tray =
       if stage in [:review, :finalize, :merged] and is_nil(cleaned_up_at),
-        do: %{fix: fix, rulings: if(gate.working, do: [], else: socket.assigns.ruling_changes.unsent), gate: gate}
+        do: %{
+          fix: fix,
+          new_issues: new_issues,
+          rulings: if(gate.working, do: [], else: socket.assigns.ruling_changes.unsent),
+          gate: gate
+        }
 
     send(self(), {:review_tray, tray})
     socket
@@ -1261,6 +1270,7 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign(:filed, [])
     |> assign(:names, %{})
     |> assign(:suppressor, nil)
+    |> assign(:preview, nil)
   end
 
   defp assign_selected(socket, %Finding{} = selected, findings) do
@@ -1278,6 +1288,8 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign(:filed, if(open?, do: filed(socket, selected), else: []))
     |> assign(:names, if(open?, do: names(socket, selected), else: %{}))
     |> assign(:suppressor, if(open?, do: suppressor(selected)))
+    # The issue a Send would file, read the way the filing reads it.
+    |> assign(:preview, if(Finding.awaiting_issue?(selected), do: Finding.calculate_issue(selected, socket.assigns.task)))
     |> assign_code(if(open?, do: selected))
   end
 
@@ -1544,6 +1556,7 @@ defmodule RailWeb.Live.TaskDetail do
 
   defp ruling(:fix), do: "Fix"
   defp ruling(:skip), do: "Don't fix"
+  defp ruling(:new_issue), do: "New issue"
 
   # Approve starts the engineer, so it is offered only on the latest plan while it waits and nothing works on the
   # task, the checks included, as the approval itself requires.
@@ -1630,6 +1643,7 @@ defmodule RailWeb.Live.TaskDetail do
       # An unruled finding goes to the round on its recommendation, but is counted as still to rule.
       fix: Enum.count(findings, &(Finding.outstanding?(&1) and not Finding.undecided?(&1))),
       fixed: Enum.count(findings, &(&1.status == :fixed)),
+      new_issues: Enum.count(findings, &(Finding.state(&1) == :new_issue)),
       dismissed: Enum.count(findings, &(Finding.state(&1) in [:dismissed, :suppressed]))
     }
   end
@@ -1638,7 +1652,13 @@ defmodule RailWeb.Live.TaskDetail do
     do: "#{counts.total} so far · rule once round #{length(passes) + 1} finishes"
 
   defp tally(phase, counts, _findings, _passes) when phase in [:fixing, :ci],
-    do: said([{counts.fix, "fixing"}, {counts.fixed, "fixed"}, {counts.dismissed, "not fixing"}])
+    do:
+      said([
+        {counts.fix, "fixing"},
+        {counts.fixed, "fixed"},
+        {counts.new_issues, new_issues(counts.new_issues)},
+        {counts.dismissed, "not fixing"}
+      ])
 
   defp tally(_phase, %{total: 0}, _findings, _passes), do: "No findings"
 
@@ -1647,9 +1667,13 @@ defmodule RailWeb.Live.TaskDetail do
       {counts.undecided, "to rule"},
       {counts.fix, "to fix"},
       {counts.fixed, "fixed"},
+      {counts.new_issues, new_issues(counts.new_issues)},
       {counts.dismissed, "not fixing"}
     ])
   end
+
+  defp new_issues(1), do: "new issue"
+  defp new_issues(_count), do: "new issues"
 
   defp said(parts) do
     parts
@@ -1675,7 +1699,7 @@ defmodule RailWeb.Live.TaskDetail do
     do: findings_state(:ruling, counts, assigns)
 
   defp findings_state(:ruling, counts, _assigns) do
-    case said([{counts.undecided, "to rule"}, {counts.fix, "to fix"}]) do
+    case said([{counts.undecided, "to rule"}, {counts.fix, "to fix"}, {counts.new_issues, new_issues(counts.new_issues)}]) do
       "" -> "Nothing to rule"
       state -> state
     end
@@ -1917,6 +1941,7 @@ defmodule RailWeb.Live.TaskDetail do
 
   defp decision("fix"), do: :fix
   defp decision("skip"), do: :skip
+  defp decision("new_issue"), do: :new_issue
 
   defp message_for(:already_approved), do: "That stage was already approved."
   defp message_for(:no_output), do: "Nothing is saved to approve yet."
@@ -1926,6 +1951,7 @@ defmodule RailWeb.Live.TaskDetail do
   defp message_for(:chat_unavailable), do: "The Review lead has no conversation to ask yet."
   defp message_for({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not Review."
   defp message_for(:review_finished), do: "The review is finished, so its rulings are settled."
+  defp message_for(:issue_filed), do: "That finding is filed as a new issue, so its ruling can no longer change."
   defp message_for(:cleaned_up), do: "This task is cleaned up, so it takes no more comments."
   defp message_for(:not_found), do: "That screen is gone: a retake or a cleanup removed it."
   defp message_for({:unanswered_questions, 1}), do: "Answer or dismiss the open question first. Nothing started."

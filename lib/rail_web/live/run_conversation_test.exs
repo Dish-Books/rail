@@ -1913,6 +1913,30 @@ defmodule RailWeb.Live.RunConversationTest do
       assert Pipeline.list_finding_comments(ada, task) == []
     end
 
+    test "a Send the tracker refuses names the finding, sends nothing and leaves its New issue row", %{
+      task: task,
+      ada: ada,
+      ada_conn: ada_conn,
+      diff: diff
+    } do
+      nit = Repo.get_by!(Finding, task_id: task.id, key: "a-nit")
+      {:ok, _ruled} = Pipeline.decide_finding(system_scope(), nit, :new_issue)
+      {:ok, _mine} = Pipeline.create_diff_comment(ada, task, Map.put(diff, :body, "Ada's."))
+
+      {:ok, view, _html} = live(ada_conn, ~p"/tasks/#{task.id}")
+      _settled = render(view)
+      view |> element("#review-send-tray-fold") |> render_click()
+      assert has_element?(view, "#review-tray-new-issue-a-nit", "A nit")
+
+      Req.Test.expect(Rail.Linear, &Plug.Conn.send_resp(&1, 500, "down"))
+      reject(Tools, :start_os_process, 2)
+      view |> element("#send-review-tray", "Send 3") |> render_click()
+
+      assert has_element?(view, "#review-send-tray-hint", "Rail could not file the issue for “A nit”. Nothing was sent.")
+      assert has_element?(view, "#review-tray-new-issue-a-nit")
+      assert has_element?(view, "#review-send-tray [data-kind=diff]", "Ada's.")
+    end
+
     # A tab that lost a Send to another one was told the lead works, and still says so after the lead stopped.
     test "the tray opens folded and unfolds and folds again, a Send refused says why in its hint, and the reason goes once the stage hands on a new gate",
          %{task: task, run: run, ada_conn: ada_conn} do

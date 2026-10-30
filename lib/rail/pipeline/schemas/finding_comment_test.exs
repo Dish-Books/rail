@@ -106,6 +106,11 @@ defmodule Rail.Pipeline.Schemas.FindingCommentTest do
              %{label: "Round 4 pass, checked fixed", quote: "Checked fixed"},
              %{label: "Round 4 pass, still open", quote: "Still open"}
            ] = Enum.map(0..8, &FindingComment.calculate_piece(finding, :note, &1))
+
+    new_issue = %{finding | notes: [%FindingNote{round: 2, kind: :ruling, at: @at, decision: :new_issue}]}
+
+    assert %{label: "Round 2, ruled New issue", quote: "Ruled New issue"} =
+             FindingComment.calculate_piece(new_issue, :note, 0)
   end
 
   test "a piece the finding does not have is nil", %{finding: finding} do
@@ -157,5 +162,8 @@ defmodule Rail.Pipeline.Schemas.FindingCommentTest do
     assert fixed =~ "Fix"
     refute fixed =~ "Don't fix"
     assert FindingComment.calculate_block(%{comment | finding: %{finding | decision: nil}}) =~ "Not ruled"
+
+    assert FindingComment.calculate_block(%{comment | finding: %{finding | decision: :new_issue}}) =~
+             ~s(ruling="New issue")
   end
 end

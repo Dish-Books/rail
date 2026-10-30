@@ -2,6 +2,7 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
   use Rail.DataCase, async: true
 
   alias Rail.Pipeline.Schemas.Finding
+  alias Rail.Pipeline.Schemas.FindingNote
   alias Rail.Pipeline.Schemas.FixPlan
   alias Rail.Pipeline.Schemas.Task
 
@@ -242,6 +243,22 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
                FixPlan.calculate_ruling_changes(sent, task, findings)
     end
 
+    test "New issue reads on either side of a change, the earlier side from the finding's previous ruling", %{
+      fix_plan: fix_plan,
+      task: task,
+      findings: [send, tray, focus]
+    } do
+      rulings = [%FindingNote{kind: :ruling, decision: :new_issue}, %FindingNote{kind: :ruling, decision: :fix}]
+      findings = [send, %{tray | decision: :new_issue}, %{focus | decision: :fix, notes: rulings}]
+
+      assert %{
+               unsent: [
+                 %{key: "tray-count-skips-finding-comments", was: :fix, now: :new_issue},
+                 %{key: "composer-focus", was: :new_issue, now: :fix}
+               ]
+             } = FixPlan.calculate_ruling_changes(fix_plan, task, findings)
+    end
+
     test "nothing changes before a plan is saved against what was sent, once approved, or past Review", %{
       fix_plan: fix_plan,
       task: task,
@@ -430,6 +447,33 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
                  %{key: "focus", was: "Don't fix", now: "Fix"}
                ],
                comments: [%{number: 4, text: "Also this."}]
+             } = FixPlan.parse_note(note)
+    end
+
+    test "reads the issues a Send filed by identifier and title, none of them a finding to fix" do
+      note = """
+      Sent 1 finding and 2 new issues.
+
+      <finding key="nil-crash" severity="major" kind="code">
+      Nil crashes the page
+      </finding>
+
+      <new_issue key="resort" identifier="RAIL-152">
+      Issues page re-sorts after every sync
+      </new_issue>
+
+      <new_issue key="branch" identifier="RAIL-153">
+      A long branch name pushes the pull request link off
+      </new_issue>
+      """
+
+      assert %{
+               summary: "1 finding and 2 new issues",
+               findings: ["Nil crashes the page"],
+               issues: [
+                 %{identifier: "RAIL-152", title: "Issues page re-sorts after every sync"},
+                 %{identifier: "RAIL-153", title: "A long branch name pushes the pull request link off"}
+               ]
              } = FixPlan.parse_note(note)
     end
 

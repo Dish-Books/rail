@@ -4,7 +4,8 @@ defmodule Rail.Pipeline.Schemas.Finding do
 
   What a finding said when it was raised is never rewritten: its title, Problem, Where, Fix, Why, rule and
   places stay as raised, and every later pass, ruling and fix appends a dated note, in its round, to `notes`.
-  The lead recommends and the human decides; `decision` is only ever written by a person.
+  The lead recommends and the human decides; `decision` is only ever written by a person. A finding ruled New issue
+  is filed as `issue` on Send, and once filed its ruling no longer changes.
 
   `key` is the lead's own stable name for the problem, which lets a later pass note the same row rather than
   raise it twice. `rule_id` is the checklist rule it came from; one a calibration rule says not to raise is
@@ -12,6 +13,7 @@ defmodule Rail.Pipeline.Schemas.Finding do
   """
   use Rail.Schema
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Pipeline.Schemas.FindingEvidence
   alias Rail.Pipeline.Schemas.FindingNote
@@ -23,6 +25,7 @@ defmodule Rail.Pipeline.Schemas.Finding do
   @raised_by [:code_reviewer, :explorer, :review_lead]
   @severities [:blocker, :major, :minor, :nit]
   @recommendations [:fix, :skip]
+  @decisions [:fix, :skip, :new_issue]
   @statuses [:open, :fixed, :not_fixed]
   @key ~r/\A[a-z0-9][a-z0-9-]*\z/
   # What a model's own tool calls look like when they leak into the text it writes.
@@ -51,7 +54,7 @@ defmodule Rail.Pipeline.Schemas.Finding do
     field :severity, Ecto.Enum, values: @severities
     field :recommendation, Ecto.Enum, values: @recommendations
     field :status, Ecto.Enum, values: @statuses, default: :open
-    field :decision, Ecto.Enum, values: @recommendations
+    field :decision, Ecto.Enum, values: @decisions
     field :raised_in, :string
     field :fixed_in, :string
 
@@ -64,6 +67,7 @@ defmodule Rail.Pipeline.Schemas.Finding do
 
     belongs_to :suppressed_by, Learning
     belongs_to :decided_by, User
+    belongs_to :issue, Issue
 
     timestamps()
   end
@@ -140,7 +144,7 @@ defmodule Rail.Pipeline.Schemas.Finding do
   @doc """
   Builds a changeset for the human's call on a finding, and who made it.
   """
-  def decision_changeset(finding, decision, decided_by_id) when decision in @recommendations do
+  def decision_changeset(finding, decision, decided_by_id) when decision in @decisions do
     change(finding, decision: decision, decided_by_id: decided_by_id)
   end
 
@@ -174,9 +178,17 @@ defmodule Rail.Pipeline.Schemas.Finding do
   def undecided?(%__MODULE__{}), do: false
 
   @doc """
+  True when this finding is ruled New issue and the next Send still has to file it.
+  """
+  def awaiting_issue?(%__MODULE__{status: :fixed}), do: false
+  def awaiting_issue?(%__MODULE__{decision: :new_issue, issue_id: nil}), do: true
+  def awaiting_issue?(%__MODULE__{}), do: false
+
+  @doc """
   Where a finding sits right now, as the one word the list groups and colors by.
   """
   def state(%__MODULE__{status: :fixed}), do: :fixed
+  def state(%__MODULE__{decision: :new_issue}), do: :new_issue
   def state(%__MODULE__{decision: :skip}), do: :dismissed
   def state(%__MODULE__{decision: nil, suppressed_by_id: rule_id}) when is_binary(rule_id), do: :suppressed
   def state(%__MODULE__{decision: nil}), do: :undecided
@@ -200,6 +212,28 @@ defmodule Rail.Pipeline.Schemas.Finding do
 
   def where(%__MODULE__{screen: screen}), do: screen
 
+  @doc """
+  The issue `finding` is filed as, `%{title:, description:, priority:}`, linking back to `task`, its issue loaded.
+  The preview card and the filing both read it, so the card shows what Send files.
+  """
+  def calculate_issue(%__MODULE__{} = finding, %Task{issue: %Issue{} = issue} = task) do
+    pr = if task.pr_url, do: " · [PR ##{task.pr_number}](#{task.pr_url})", else: ""
+
+    description =
+      Enum.join(
+        [
+          "**Problem.** #{finding.problem}",
+          "**Where.** #{where_markdown(finding)}",
+          "**Fix.** #{finding.fix}",
+          "**Why.** #{finding.why}",
+          "Raised in Review of [#{issue.identifier}](#{issue.url})#{pr}"
+        ],
+        "\n\n"
+      )
+
+    %{title: finding.title, description: description, priority: issue_priority(finding.severity)}
+  end
+
   def severities, do: @severities
   def kinds, do: @kinds
   def raised_by, do: @raised_by
@@ -208,6 +242,17 @@ defmodule Rail.Pipeline.Schemas.Finding do
   def severity_label(:major), do: "Major"
   def severity_label(:minor), do: "Minor"
   def severity_label(:nit), do: "Nit"
+
+  defp where_markdown(%__MODULE__{kind: :code} = finding), do: "`#{where(finding)}`"
+
+  defp where_markdown(%__MODULE__{steps: steps} = finding) do
+    numbered = steps |> Enum.with_index(1) |> Enum.map_join("\n", fn {step, n} -> "#{n}. #{step}" end)
+    "#{where(finding)}\n\n#{numbered}"
+  end
+
+  defp issue_priority(:blocker), do: :high
+  defp issue_priority(:major), do: :medium
+  defp issue_priority(_minor_or_nit), do: :low
 
   # A code finding is read off its range, and a screen finding is reproduced from its steps.
   defp validate_where(changeset) do
