@@ -244,6 +244,71 @@ defmodule RailWeb.Live.TaskActionsTest do
     end)
   end
 
+  test "Merge puts the open diff away before GitHub is asked, and the merged task keeps it away", %{
+    conn: conn,
+    task: task,
+    dan: dan,
+    priya: priya
+  } do
+    {:ok, _marked} = Pipeline.mark_ready(Scope.for_user(dan), task)
+    test = self()
+
+    # GitHub answers only once the test has looked at the page, so what it sees is the page mid-merge.
+    Req.Test.expect(Client, fn conn ->
+      send(test, {:merging, self()})
+      assert_receive :answer, 2_000
+      Req.Test.json(conn, %{"merged" => true, "sha" => "3c9a1f0e2b"})
+    end)
+
+    assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}?item=diff")
+    assert has_element?(view, "#diff-pane")
+
+    view |> element("#task-merge") |> render_click()
+    assert_receive {:merging, github}, 2_000
+
+    assert has_element?(view, "#diff-put-away", "Merging into main.")
+    refute has_element?(view, "#diff-pane")
+    send(github, :answer)
+
+    eventually(fn ->
+      assert has_element?(view, "#task-merged")
+      assert has_element?(view, "#diff-put-away", "Merged into main.")
+      assert has_element?(view, "#diff-put-away a[href='#{task.pr_url}']", "Open the pull request")
+      refute has_element?(view, "#diff-pane")
+    end)
+  end
+
+  test "a refused merge brings the diff back", %{conn: conn, task: task, dan: dan, priya: priya} do
+    {:ok, _marked} = Pipeline.mark_ready(Scope.for_user(dan), task)
+
+    Req.Test.expect(Client, 3, fn conn ->
+      case conn.method do
+        "PUT" -> conn |> Plug.Conn.put_status(405) |> Req.Test.json(%{"message" => "Base branch was modified."})
+        "POST" -> Req.Test.json(conn, %{"token" => "ghs_app"})
+        "GET" -> Req.Test.json(conn, %{"number" => 151, "merged" => false, "merge_commit_sha" => nil})
+      end
+    end)
+
+    assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}?item=diff")
+    view |> element("#task-merge") |> render_click()
+
+    eventually(fn ->
+      assert has_element?(view, "#task-merge-error")
+      assert has_element?(view, "#diff-pane [data-path='round.ex']")
+      refute has_element?(view, "#diff-put-away")
+    end)
+  end
+
+  test "a merged task's Diff opens put away, without reading the diff", %{conn: conn, task: task, priya: priya} do
+    {:ok, _merged} = Pipeline.update_task(task, %{merged_at: DateTime.utc_now()})
+    reject(Git, :load_diff, 4)
+
+    assert {:ok, view, _html} = live(log_in_user(conn, priya), ~p"/tasks/#{task.id}?item=diff")
+
+    assert has_element?(view, "#diff-put-away", "Merged into main.")
+    refute has_element?(view, "#diff-loading")
+  end
+
   # Each is a page drawn before another tab moved the task on, or an event sent past the hidden button.
   test "a mark or a merge the task no longer takes says why", %{conn: conn, task: task, dan: dan, priya: priya} do
     assert {:ok, as_dan, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")

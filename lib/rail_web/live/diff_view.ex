@@ -8,6 +8,10 @@ defmodule RailWeb.Live.DiffView do
   worktree's status has moved since; a file whose digest has not moved keeps its highlighting. Marking a
   file read is per person and pinned to the file as it was read. Each part of the pane is an assign of its
   own, so an event's reply redraws every part it moved and no other.
+
+  A merge puts the diff away: the header's Merge says so with `merging` before it starts, and a task merging
+  or merged keeps it away. The browser walks every row of a large diff each time the page around it changes,
+  which a merge does several times; a refused merge brings it back.
   """
   use RailWeb, :live_component
 
@@ -22,14 +26,21 @@ defmodule RailWeb.Live.DiffView do
   # they moved, so the diff is not read again.
   @impl true
   def update(%{reload_comments: true}, socket) do
-    socket = socket |> assign_comments() |> sync_pane()
+    socket = if put_away?(socket.assigns), do: socket, else: socket |> assign_comments() |> sync_pane()
 
     {:ok, socket}
   end
 
   # The page saw the worktree move under a run, which a status that did not change can hide.
   def update(%{reload: true}, socket) do
-    socket = if socket.assigns.loading?, do: socket, else: load_diff(socket)
+    socket = if socket.assigns.loading? or put_away?(socket.assigns), do: socket, else: load_diff(socket)
+
+    {:ok, socket}
+  end
+
+  # Sent by Merge before the merge starts, so the diff leaves the page ahead of the merge's own redraws.
+  def update(%{merging: merging}, socket) do
+    socket = socket |> assign(:merging, merging) |> refresh()
 
     {:ok, socket}
   end
@@ -58,28 +69,12 @@ defmodule RailWeb.Live.DiffView do
       |> assign_new(:selected_comment, fn -> nil end)
       |> assign_new(:draft, fn -> nil end)
       |> assign_new(:loading?, fn -> true end)
+      |> assign_new(:merging, fn -> false end)
 
     socket = if socket.assigns.focus_file, do: assign(socket, :selected_file, socket.assigns.focus_file), else: socket
     {socket, picked?} = open(socket)
 
-    # The first page is thrown away once the live view connects, so reading and
-    # highlighting the diff for it would be doing the slowest part twice.
-    socket =
-      cond do
-        not connected?(socket) ->
-          socket
-
-        picked? and is_binary(socket.assigns.open[:comment]) ->
-          socket |> load_diff(true) |> select_comment(socket.assigns.open.comment)
-
-        picked? or socket.assigns.fingerprint != fingerprint(socket.assigns.task) ->
-          load_diff(socket, picked?)
-
-        true ->
-          sync_pane(socket)
-      end
-
-    {:ok, socket}
+    {:ok, refresh(socket, picked?)}
   end
 
   @impl true
@@ -87,7 +82,35 @@ defmodule RailWeb.Live.DiffView do
     ~H"""
     <div id="diff-view" data-qa="diff_view" class="h-full flex flex-col min-h-0">
       <div
-        :if={@loading?}
+        :if={@put_away}
+        id="diff-put-away"
+        data-qa="diff_put_away"
+        class="flex-1 flex flex-col items-center justify-center text-center p-8"
+      >
+        <.icon name="pi-git-merge" class="w-12 h-12 text-slate-400 dark:text-slate-500 mb-3" />
+        <p class="text-sm font-medium text-slate-900 dark:text-slate-100">
+          {if Task.finalize_state(@task) == :merged,
+            do: "Merged into #{@task.project.default_branch}.",
+            else: "Merging into #{@task.project.default_branch}."}
+        </p>
+        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          {if Task.finalize_state(@task) == :merged,
+            do: "The pull request keeps the diff.",
+            else: "The diff comes back if GitHub refuses the merge."}
+        </p>
+        <.link
+          :if={@task.pr_url}
+          href={@task.pr_url}
+          target="_blank"
+          rel="noopener"
+          class="mt-3 text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+        >
+          Open the pull request
+        </.link>
+      </div>
+
+      <div
+        :if={@loading? and not @put_away}
         id="diff-loading"
         data-qa="diff_loading"
         aria-busy="true"
@@ -100,7 +123,7 @@ defmodule RailWeb.Live.DiffView do
         />
       </div>
 
-      <div :if={not @loading?} class="flex-1 min-h-0">
+      <div :if={not @loading? and not @put_away} class="flex-1 min-h-0">
         <.diff_pane
           frame={@frame}
           toolbar={@toolbar}
@@ -340,6 +363,30 @@ defmodule RailWeb.Live.DiffView do
   end
 
   def handle_event("select_diff_comment", %{"id" => id}, socket), do: {:noreply, select_comment(socket, id)}
+
+  # The first page is thrown away once the live view connects, so reading and
+  # highlighting the diff for it would be doing the slowest part twice. A diff put
+  # away is not read at all.
+  defp refresh(socket, picked? \\ false) do
+    put_away = put_away?(socket.assigns)
+    socket = assign(socket, :put_away, put_away)
+
+    cond do
+      not connected?(socket) or put_away ->
+        socket
+
+      picked? and is_binary(socket.assigns.open[:comment]) ->
+        socket |> load_diff(true) |> select_comment(socket.assigns.open.comment)
+
+      picked? or socket.assigns.fingerprint != fingerprint(socket.assigns.task) ->
+        load_diff(socket, picked?)
+
+      true ->
+        sync_pane(socket)
+    end
+  end
+
+  defp put_away?(%{merging: merging, task: task}), do: merging or Task.finalize_state(task) in [:merging, :merged]
 
   # A link from a finding names a commit and a file, and one from the Comments item a view and a comment; each new
   # one is followed once.

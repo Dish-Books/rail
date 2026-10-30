@@ -23,6 +23,7 @@ defmodule RailWeb.Live.TaskActions do
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
   alias Rail.Users
+  alias RailWeb.Live.DiffView
 
   @impl true
   def update(assigns, socket) do
@@ -276,8 +277,10 @@ defmodule RailWeb.Live.TaskActions do
 
   def handle_event("merge", _params, %{assigns: %{merging: true}} = socket), do: {:noreply, socket}
 
+  # The open diff is put away first: its update is queued ahead of every redraw the merge sends.
   def handle_event("merge", _params, socket) do
     %{current_scope: scope, task: task} = socket.assigns
+    send_update(DiffView, id: "diff-view", merging: true)
 
     socket =
       socket
@@ -315,6 +318,7 @@ defmodule RailWeb.Live.TaskActions do
   @impl true
   def handle_async(:merge, {:ok, result}, socket) do
     send(self(), :task_changed)
+    send_update(DiffView, id: "diff-view", merging: false)
 
     error =
       case result do
@@ -329,6 +333,7 @@ defmodule RailWeb.Live.TaskActions do
 
   def handle_async(:merge, {:exit, _reason}, socket) do
     send(self(), :task_changed)
+    send_update(DiffView, id: "diff-view", merging: false)
     socket = socket |> assign(:merging, false) |> assign(:error, "The merge did not finish. Try again.")
     {:noreply, socket}
   end
