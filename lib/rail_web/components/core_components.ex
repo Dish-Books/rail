@@ -21,6 +21,8 @@ defmodule RailWeb.CoreComponents do
   defdelegate comment_list(assigns), to: Components.CommentList
   defdelegate commentable_line(assigns), to: Components.CommentableLine
   defdelegate commit_picker(assigns), to: Components.CommitPicker
+  defdelegate cycle_chart(assigns), to: Components.CycleChart
+  defdelegate cycle_panel(assigns), to: Components.CyclePanel
   defdelegate design_comment_control(assigns), to: Components.DesignCommentControl
   defdelegate diff_comment(assigns), to: Components.DiffComment
   defdelegate diff_comment_list(assigns), to: Components.DiffCommentList
@@ -41,6 +43,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate in_progress_tasks(assigns), to: Components.InProgressTasks
   defdelegate input(assigns), to: Components.Input
   defdelegate issue_card(assigns), to: Components.IssueCard
+  defdelegate issue_relation_list(assigns), to: Components.IssueRelationList
   defdelegate issue_view(assigns), to: Components.IssueView
   defdelegate learning_detail(assigns), to: Components.LearningDetail
   defdelegate learning_form_modal(assigns), to: Components.LearningFormModal

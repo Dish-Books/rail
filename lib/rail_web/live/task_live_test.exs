@@ -75,6 +75,8 @@ defmodule RailWeb.TaskLiveTest do
     # A task discarded, cleaned up or sent back to Plan takes its worktree and branch in that clone with it.
     stub(Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
     stub(Git, :delete_branch, fn _clone_path, _branch -> :ok end)
+    # The Issue tab reads blockers from Linear, which no test here asks unless it says.
+    stub(Issues, :get_blockers, fn _issues -> %{} end)
 
     {:ok, user} =
       Users.register_oauth_user(%{
@@ -1780,6 +1782,136 @@ defmodule RailWeb.TaskLiveTest do
 
     assert %Issue{owner_user_id: nil} = Repo.get!(Issue, task.issue_id)
     assert has_element?(view, "#task-page")
+  end
+
+  test "the Issue tab lists sub-issues and blockers, reads blockers once per opening, and follows a sub-issue", %{
+    conn: conn,
+    task: task,
+    issue: issue,
+    project: project
+  } do
+    sub_issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_task_live_sub",
+        identifier: "TLV-2",
+        title: "A piece of it",
+        state: :todo,
+        parent_external_id: issue.external_id
+      })
+      |> Repo.insert!()
+
+    test_pid = self()
+
+    stub(Issues, :get_blockers, fn [%Issue{external_id: external_id}] ->
+      send(test_pid, :blockers_read)
+      blocker = %Issue{id: "iss_tlv_b", external_id: "lin_tlv_b", identifier: "TLV-9", title: "First", state: :todo}
+      %{external_id => %{blocked_by: [%{issue: blocker, in_project: true}], blocks: []}}
+    end)
+
+    {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=issue")
+    render_async(view)
+    assert_received :blockers_read
+
+    assert has_element?(view, "#issue-sub-issues", "0/1")
+    assert has_element?(view, "#issue-sub-issues a[href='/issues/TLV-2']", "A piece of it")
+    assert has_element?(view, "#issue-blocked-by a[href='/issues/TLV-9']", "First")
+
+    # A run event reads the issue again, but not its blockers.
+    send(view.pid, {:run_changed, "run_elsewhere"})
+    render_async(view)
+    refute_received :blockers_read
+
+    assert {:ok, _issue} =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Issue",
+               "action" => "update",
+               "data" => %{
+                 "id" => sub_issue.external_id,
+                 "teamId" => "lin_team_id",
+                 "identifier" => "TLV-2",
+                 "title" => "A piece of it",
+                 "state" => %{"name" => "Done", "type" => "completed"}
+               }
+             })
+
+    assert has_element?(view, "#issue-sub-issues", "1/1")
+    refute_received :blockers_read
+
+    # Its own issue changing reads its blockers again, and so does opening the tab again.
+    send(view.pid, {:issue_changed, task.issue_id})
+    render_async(view)
+    assert_received :blockers_read
+
+    render_patch(view, ~p"/tasks/#{task.id}?item=plan")
+    refute has_element?(view, "#issue-page")
+    render_patch(view, ~p"/tasks/#{task.id}?item=issue")
+    render_async(view)
+    assert_received :blockers_read
+    assert has_element?(view, "#issue-blocked-by")
+
+    # Linear failing leaves the last answer where it was.
+    stub(Issues, :get_blockers, fn _issues -> raise "Linear is down" end)
+    send(view.pid, {:issue_changed, task.issue_id})
+    render_async(view)
+    assert has_element?(view, "#issue-blocked-by")
+  end
+
+  test "the Issue tab lands on the cleaned-up page when Linear deletes its issue", %{
+    conn: conn,
+    task: task,
+    project: project
+  } do
+    {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+    assert {:ok, %{pid: view_pid} = view, _html} = live(conn, ~p"/tasks/#{task.id}?item=issue")
+    render_async(view)
+    assert has_element?(view, "#issue-page")
+
+    assert {:ok, %Issue{}} =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Issue",
+               "action" => "remove",
+               "data" => %{"id" => "lin_task_live_1"}
+             })
+
+    assert has_element?(view, "#task-cleaned-up")
+    refute has_element?(view, "#issue-page")
+    assert Process.alive?(view_pid)
+  end
+
+  test "an Issue tab whose task another tab discarded stays cleaned up when the issue then changes", %{
+    conn: conn,
+    task: task,
+    project: project
+  } do
+    stub(Git, :delete_remote_branch, fn _project, _branch -> :ok end)
+    {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+    assert {:ok, %{pid: view_pid} = view, _html} = live(conn, ~p"/tasks/#{task.id}?item=issue")
+    render_async(view)
+    assert {:ok, other, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    other |> element("#discard-task") |> render_click()
+    other |> element("#confirm-discard") |> render_click()
+    assert_redirect(other, ~p"/issues/#{task.issue_id}", 1_000)
+    eventually(fn -> assert has_element?(view, "#task-cleaned-up") end)
+
+    assert {:ok, %Issue{}} =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Issue",
+               "action" => "update",
+               "data" => %{
+                 "id" => "lin_task_live_1",
+                 "teamId" => "lin_team_id",
+                 "identifier" => "TLV-1",
+                 "title" => "Retitled after the discard",
+                 "state" => %{"name" => "Todo", "type" => "unstarted"}
+               }
+             })
+
+    assert has_element?(view, "#task-cleaned-up")
+    assert Process.alive?(view_pid)
   end
 
   test "a question that belongs to another task cannot be answered or dismissed from this one", %{

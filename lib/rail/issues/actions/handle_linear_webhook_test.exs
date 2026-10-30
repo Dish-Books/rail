@@ -66,6 +66,96 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
            } = Repo.get_by(Issue, external_id: "lin_wh_1")
   end
 
+  test "an update moves the cycle and parent, clears them only when updatedFrom names them, and else keeps them", %{
+    project: project,
+    workspace: workspace
+  } do
+    %Issue{id: issue_id} =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_wh_cycle",
+        identifier: "HWH-40",
+        title: "In a cycle",
+        state: :todo,
+        cycle_external_id: "cyc_1",
+        parent_external_id: "lin_wh_parent_1"
+      })
+      |> Repo.insert!()
+
+    update = fn data, updated_from ->
+      %{
+        "type" => "Issue",
+        "action" => "update",
+        "data" =>
+          Map.merge(
+            %{
+              "id" => "lin_wh_cycle",
+              "teamId" => "lin_team_id",
+              "identifier" => "HWH-40",
+              "title" => "In a cycle",
+              "state" => %{"name" => "Todo", "type" => "unstarted"}
+            },
+            data
+          ),
+        "updatedFrom" => updated_from
+      }
+    end
+
+    # Silent on both, so both stay where they were.
+    assert {:ok, _issue} = Issues.handle_linear_webhook(workspace, update.(%{"title" => "Renamed"}, %{"title" => "Old"}))
+
+    assert %Issue{title: "Renamed", cycle_external_id: "cyc_1", parent_external_id: "lin_wh_parent_1"} =
+             Repo.get!(Issue, issue_id)
+
+    assert {:ok, _issue} =
+             Issues.handle_linear_webhook(
+               workspace,
+               update.(%{"cycleId" => "cyc_2", "parentId" => "lin_wh_parent_2"}, %{"cycleId" => "cyc_1"})
+             )
+
+    assert %Issue{cycle_external_id: "cyc_2", parent_external_id: "lin_wh_parent_2"} = Repo.get!(Issue, issue_id)
+
+    assert {:ok, _issue} =
+             Issues.handle_linear_webhook(
+               workspace,
+               update.(%{}, %{"cycleId" => "cyc_2", "parentId" => "lin_wh_parent_2"})
+             )
+
+    assert %Issue{cycle_external_id: nil, parent_external_id: nil} = Repo.get!(Issue, issue_id)
+  end
+
+  test "an archived issue leaves the cycle Linear cleared", %{project: project, workspace: workspace} do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_wh_cycle_archived",
+        identifier: "HWH-41",
+        title: "Archived in a cycle",
+        state: :done,
+        cycle_external_id: "cyc_1"
+      })
+      |> Repo.insert!()
+
+    assert {:ok, _issue} =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Issue",
+               "action" => "update",
+               "data" => %{
+                 "id" => "lin_wh_cycle_archived",
+                 "teamId" => "lin_team_id",
+                 "identifier" => "HWH-41",
+                 "title" => "Archived in a cycle",
+                 "archivedAt" => "2026-10-30T10:00:00.000Z",
+                 "state" => %{"name" => "Done", "type" => "completed"}
+               },
+               "updatedFrom" => %{"cycleId" => "cyc_1"}
+             })
+
+    assert %Issue{cycle_external_id: nil, archived_at: ~U[2026-10-30 10:00:00Z]} = Repo.reload!(issue)
+  end
+
   test "an issue update changes the existing row and pushes nothing back to Linear", %{
     project: project,
     workspace: workspace

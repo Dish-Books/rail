@@ -17,6 +17,7 @@ defmodule RailWeb.TaskLive do
   import RailWeb.Utils.ChildStatus
   import RailWeb.Utils.CustomStageItem
   import RailWeb.Utils.HandleIssueEvent
+  import RailWeb.Utils.IssueRelative
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
@@ -84,6 +85,8 @@ defmodule RailWeb.TaskLive do
       |> assign(:diff_refreshed_at, nil)
       |> assign(:approvable, false)
       |> assign(:issue, nil)
+      |> assign(:blockers, nil)
+      |> assign(:blockers_for, nil)
       |> assign(:assignees, [])
       |> assign(:assignee_query, "")
       |> assign(:comment_nonce, 0)
@@ -240,6 +243,7 @@ defmodule RailWeb.TaskLive do
               comment_nonce={@comment_nonce}
               show_task={false}
               owner_editable={@task.parent_task_id == nil}
+              blockers={@blockers}
             />
           </:issue>
           <:plan>
@@ -559,14 +563,31 @@ defmodule RailWeb.TaskLive do
 
   def handle_info({:workflows_changed, _project_id}, socket), do: {:noreply, socket}
 
-  # A child's issue completing in Linear is what merges it.
-  def handle_info({:issue_changed, issue_id}, socket) do
-    if MapSet.member?(socket.assigns.family_issue_ids, issue_id),
-      do: {:noreply, refresh_task(socket)},
-      else: {:noreply, socket}
+  # A child's issue completing in Linear is what merges it. The open Issue tab follows its parent, sub-issues and
+  # blockers, and reads blockers again when its issue or one of them changes, since Linear sends nothing for those.
+  def handle_info({event, issue_id}, socket) when event in [:issue_changed, :issue_created] do
+    %{family_issue_ids: family, issue: issue, blockers: blockers} = socket.assigns
+
+    cond do
+      event == :issue_changed and MapSet.member?(family, issue_id) ->
+        {:noreply, refresh_task(socket)}
+
+      issue != nil and issue_relative?(issue, blockers, issue_id) ->
+        blocker_ids = for %{issue: %Issue{id: id}} <- (blockers && blockers.blocked_by ++ blockers.blocks) || [], do: id
+        socket = load_issue(socket, socket.assigns.task)
+
+        cond do
+          is_nil(socket.assigns.issue) -> {:noreply, refresh_task(socket)}
+          issue_id == issue.id or issue_id in blocker_ids -> {:noreply, read_blockers(socket, true)}
+          true -> {:noreply, socket}
+        end
+
+      true ->
+        {:noreply, socket}
+    end
   end
 
-  def handle_info({event, _id}, socket) when event in [:issue_created, :issue_comments_changed, :issues_synced] do
+  def handle_info({event, _id}, socket) when event in [:issue_comments_changed, :issues_synced] do
     {:noreply, socket}
   end
 
@@ -642,6 +663,12 @@ defmodule RailWeb.TaskLive do
     do: {:noreply, show_frame(socket, data)}
 
   def handle_async({:held_frame, _topic}, _none_or_stale, socket), do: {:noreply, socket}
+
+  # An answer read for an issue the tab no longer shows is dropped.
+  def handle_async(:blockers, {:ok, {issue_id, blockers}}, %{assigns: %{issue: %Issue{id: issue_id}}} = socket),
+    do: {:noreply, assign(socket, :blockers, blockers)}
+
+  def handle_async(:blockers, _stale_or_failed, socket), do: {:noreply, socket}
 
   attr :task, :any, required: true
 
@@ -820,7 +847,8 @@ defmodule RailWeb.TaskLive do
       |> show_task(task)
       |> follow_back_to_plan(socket.assigns.task, task)
     else
-      _missing -> assign(socket, :task, nil)
+      _missing ->
+        socket |> assign(:task, nil) |> assign(:issue, nil) |> assign(:blockers, nil) |> assign(:blockers_for, nil)
     end
   end
 
@@ -1014,17 +1042,66 @@ defmodule RailWeb.TaskLive do
   # The issue is an item of its own and costs a query of its own, so it is read
   # only while it is the one being looked at.
   defp load_issue(socket, %Task{} = task) do
-    preload = [:project, :owner_user, task: [runs: :role], comments: [:author_user, replies: :author_user]]
+    preload = [
+      :project,
+      :owner_user,
+      :parent,
+      :children,
+      task: [runs: :role],
+      comments: [:author_user, replies: :author_user]
+    ]
 
     case socket.assigns.open_item do
-      :issue -> assign(socket, :issue, read_issue(task.issue_id, preload))
-      _other_item -> assign(socket, :issue, nil)
+      :issue ->
+        socket
+        |> assign(:issue, read_issue(task.issue_id, preload))
+        |> watch_issues()
+        |> read_blockers(false)
+
+      _other_item ->
+        socket
+        |> assign(:issue, nil)
+        |> assign(:blockers, nil)
+        |> assign(:blockers_for, nil)
     end
   end
 
+  # One subscription serves the Issue tab and a split's family alike, so neither hears a message twice.
+  defp watch_issues(%{assigns: %{watching_issues: false}} = socket) do
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+      assign(socket, :watching_issues, true)
+    else
+      socket
+    end
+  end
+
+  defp watch_issues(socket), do: socket
+
+  # `load_issue/2` runs on every run event, so blockers are read once per opening of the tab unless `force`; the
+  # last answer stays on screen until the next lands, unless it was for another issue.
+  defp read_blockers(%{assigns: %{issue: %Issue{id: id}, blockers_for: id}} = socket, false), do: socket
+
+  defp read_blockers(%{assigns: %{issue: %Issue{} = issue, blockers_for: read_for}} = socket, _force) do
+    if connected?(socket) do
+      socket
+      |> assign(:blockers, if(read_for == issue.id, do: socket.assigns.blockers))
+      |> assign(:blockers_for, issue.id)
+      |> start_async(:blockers, fn ->
+        {issue.id, Map.get(Issues.get_blockers([issue]), issue.external_id, %{blocked_by: [], blocks: []})}
+      end)
+    else
+      socket
+    end
+  end
+
+  defp read_blockers(socket, _force), do: socket
+
   defp read_issue(issue_id, preload) do
-    {:ok, issue} = Issues.get_issue(issue_id, preload: preload)
-    issue
+    case Issues.get_issue(issue_id, preload: preload) do
+      {:ok, issue} -> issue
+      {:error, :not_found} -> nil
+    end
   end
 
   # The item the stage opens: the URL's, or else what the task is waiting on now, as the stage reads it.

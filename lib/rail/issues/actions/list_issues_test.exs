@@ -23,6 +23,35 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
     %{project: project, other_project: other_project}
   end
 
+  test "list_issues narrows to a cycle before the priority counts are taken", %{project: %Project{id: project_id}} do
+    insert = fn external_id, cycle, priority ->
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project_id,
+        external_id: external_id,
+        identifier: external_id,
+        title: external_id,
+        state: :todo,
+        priority: priority,
+        cycle_external_id: cycle
+      })
+      |> Repo.insert!()
+    end
+
+    %Issue{id: high_id} = insert.("lin_lc1", "cyc_list", :high)
+    %Issue{id: low_id} = insert.("lin_lc2", "cyc_list", :low)
+    insert.("lin_lc3", "cyc_other", :high)
+    insert.("lin_lc4", nil, :high)
+
+    assert %{issues: [%Issue{id: ^high_id}], total: 1, priority_counts: %{high: 1, low: 1} = counts} =
+             Issues.list_issues(project_id: project_id, cycle_id: "cyc_list", priority: :high)
+
+    assert map_size(counts) == 2
+
+    assert %{total: 2, issues: issues} = Issues.list_issues(project_id: project_id, cycle_id: "cyc_list")
+    assert Enum.sort([high_id, low_id]) == issues |> Enum.map(& &1.id) |> Enum.sort()
+  end
+
   test "list_issues filters by project, state and whether finished issues show", %{
     project: %Project{id: project_id},
     other_project: other_project

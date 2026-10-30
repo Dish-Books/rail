@@ -43,12 +43,29 @@ defmodule Rail.Linear.Client do
     name
     type
   }
+  cycle {
+    id
+  }
+  parent {
+    id
+  }
   branchName
   url
   completedAt
   updatedAt
   archivedAt
   trashed
+  """
+
+  @relation_fields """
+  id
+  identifier
+  title
+  url
+  state {
+    name
+    type
+  }
   """
 
   @comment_fields """
@@ -200,6 +217,86 @@ defmodule Rail.Linear.Client do
 
     with {:ok, token} <- token(project, opts) do
       execute_query(token, query, %{"teamKey" => project.key}, opts)
+    end
+  end
+
+  @doc """
+  Fetches the project's team by its id, with whether it runs cycles, its default estimate, its statuses and up to
+  100 cycles that ended within the past year or are still to come, each with its daily history.
+  """
+  def cycles(%Project{} = project, opts \\ []) do
+    query = """
+    query Cycles($teamId: String!, $since: DateTimeOrDuration!) {
+      team(id: $teamId) {
+        cyclesEnabled
+        defaultIssueEstimate
+        states {
+          nodes {
+            id
+            name
+            type
+            position
+          }
+        }
+        cycles(first: 100, filter: {endsAt: {gt: $since}}) {
+          nodes {
+            id
+            number
+            name
+            startsAt
+            endsAt
+            scopeHistory
+            inProgressScopeHistory
+            completedScopeHistory
+          }
+        }
+      }
+    }
+    """
+
+    since = DateTime.utc_now() |> DateTime.shift(day: -365) |> DateTime.to_iso8601()
+
+    with {:ok, token} <- token(project, opts) do
+      execute_query(token, query, %{"teamId" => project.linear_team_id, "since" => since}, opts)
+    end
+  end
+
+  @doc """
+  Fetches up to 100 of the issues `external_ids` names that block or are blocked by another, each with up to 20
+  relations each way.
+  """
+  def issue_relations(%Project{} = project, external_ids, opts \\ []) when is_list(external_ids) do
+    query = """
+    query IssueRelations($ids: [ID!]!) {
+      issues(
+        first: 100
+        filter: {id: {in: $ids}, or: [{hasBlockedByRelations: {eq: true}}, {hasBlockingRelations: {eq: true}}]}
+      ) {
+        nodes {
+          id
+          relations(first: 20) {
+            nodes {
+              type
+              relatedIssue {
+                #{@relation_fields}
+              }
+            }
+          }
+          inverseRelations(first: 20) {
+            nodes {
+              type
+              issue {
+                #{@relation_fields}
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+
+    with {:ok, token} <- token(project, opts) do
+      execute_query(token, query, %{"ids" => external_ids}, opts)
     end
   end
 

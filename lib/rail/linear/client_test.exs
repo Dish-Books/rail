@@ -311,6 +311,44 @@ defmodule Rail.Linear.ClientTest do
     end
   end
 
+  describe "cycles/2" do
+    test "asks for the team's cycles from the past year on, with their history and the team's statuses", %{
+      project: project
+    } do
+      stub(DateTime, :utc_now, fn -> ~U[2026-10-30 12:00:00Z] end)
+
+      Req.Test.expect(Linear, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+        assert %{"query" => query, "variables" => %{"teamId" => "lin_team_uuid", "since" => "2025-10-30T12:00:00Z"}} =
+                 Jason.decode!(body)
+
+        assert query =~ "cycles(first: 100, filter: {endsAt: {gt: $since}})"
+        assert query =~ "completedScopeHistory"
+        assert query =~ "defaultIssueEstimate"
+        Req.Test.json(conn, %{"data" => %{"team" => %{"cyclesEnabled" => false}}})
+      end)
+
+      assert {:ok, %{"team" => %{"cyclesEnabled" => false}}} =
+               Client.cycles(%{project | linear_team_id: "lin_team_uuid"})
+    end
+  end
+
+  describe "issue_relations/3" do
+    test "asks for the given issues' relations each way", %{project: project} do
+      Req.Test.expect(Linear, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        assert %{"query" => query, "variables" => %{"ids" => ["lin_iss_1", "lin_iss_2"]}} = Jason.decode!(body)
+        assert query =~ "hasBlockedByRelations"
+        assert query =~ "inverseRelations(first: 20)"
+        assert query =~ "relatedIssue"
+        Req.Test.json(conn, %{"data" => %{"issues" => %{"nodes" => []}}})
+      end)
+
+      assert {:ok, %{"issues" => %{"nodes" => []}}} = Client.issue_relations(project, ["lin_iss_1", "lin_iss_2"])
+    end
+  end
+
   describe "issue_workflow/3" do
     test "asks for the issue's state and its own team's states", %{project: project} do
       workflow = %{

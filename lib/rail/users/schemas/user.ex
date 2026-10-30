@@ -29,6 +29,8 @@ defmodule Rail.Users.Schemas.User do
     field :slack_access_token, EncryptedBinary, redact: true
     # Only `slack_notifications_changeset/2` turns it on, so an admin editing a user cannot.
     field :slack_notifications, :boolean, default: false
+    # The Issues page's filters as the URL parameters that set them; only `issues_filters_changeset/2` writes it.
+    field :issues_filters, :map, default: %{}
     field :signing_key, EncryptedBinary, redact: true
     field :signing_public_key, :string
     field :signing_key_github_id, :integer
@@ -37,6 +39,8 @@ defmodule Rail.Users.Schemas.User do
 
     timestamps()
   end
+
+  @issues_filter_keys ["priority", "mine", "finished", "cycle", "owner"]
 
   @updatable_fields [
     :github_id,
@@ -88,6 +92,19 @@ defmodule Rail.Users.Schemas.User do
     if get_field(changeset, :slack_notifications) == true and is_nil(get_field(changeset, :slack_user_id)),
       do: add_error(changeset, :slack_notifications, "connect Slack first"),
       else: changeset
+  end
+
+  @doc """
+  Replaces the Issues filters the user last set, keeping only the remembered keys with string values.
+  """
+  def issues_filters_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:issues_filters])
+    |> validate_required([:issues_filters])
+    |> update_change(
+      :issues_filters,
+      &Map.filter(Map.take(&1, @issues_filter_keys), fn {_key, value} -> is_binary(value) end)
+    )
   end
 
   @doc """

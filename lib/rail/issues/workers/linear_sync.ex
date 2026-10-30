@@ -49,6 +49,8 @@ defmodule Rail.Issues.Workers.LinearSync do
     :completed_at,
     :archived_at,
     :external_updated_at,
+    :cycle_external_id,
+    :parent_external_id,
     :updated_at
   ]
 

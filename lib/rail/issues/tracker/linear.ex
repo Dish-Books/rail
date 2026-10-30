@@ -159,6 +159,36 @@ defmodule Rail.Issues.Tracker.Linear do
   @impl true
   def get_asset(%Issue{project: project}, path), do: Linear.get_asset(project, path)
 
+  @impl true
+  def get_cycles(%Project{linear_team_id: nil}), do: {:ok, %{cycles: [], statuses: []}}
+
+  def get_cycles(%Project{} = project) do
+    case Linear.cycles(project) do
+      {:ok, %{"team" => %{"cyclesEnabled" => true} = team}} -> {:ok, format_cycles(team, Date.utc_today())}
+      {:ok, %{"team" => _off_or_missing}} -> {:ok, %{cycles: [], statuses: []}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # A related ticket is read as any other, so its status and In Review show the same way.
+  @impl true
+  def get_issue_relations(%Project{} = project, external_ids) do
+    case Linear.issue_relations(project, external_ids) do
+      {:ok, %{"issues" => %{"nodes" => nodes}}} ->
+        {:ok,
+         Map.new(nodes, fn node ->
+           {node["id"],
+            %{
+              blocked_by: blocking(node, "inverseRelations", "issue"),
+              blocks: blocking(node, "relations", "relatedIssue")
+            }}
+         end)}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
   # Linear hears about an owner through the user's Linear id.
   @impl true
   def check_assignable(%User{linear_user_id: linear_user_id}) when is_binary(linear_user_id), do: :ok
@@ -185,6 +215,58 @@ defmodule Rail.Issues.Tracker.Linear do
       end
 
     {type_rank, position}
+  end
+
+  # The current cycle is the one running, or else the next to start. Linear's end is the moment after the last day.
+  defp format_cycles(team, today) do
+    estimate = round(team["defaultIssueEstimate"] || 0)
+
+    cycles =
+      team
+      |> get_in(["cycles", "nodes"])
+      |> Enum.map(fn node ->
+        starts_on = node["startsAt"] |> DateTime.from_iso8601() |> elem(1) |> DateTime.to_date()
+        ends_on = node["endsAt"] |> DateTime.from_iso8601() |> elem(1) |> DateTime.to_date() |> Date.add(-1)
+
+        status =
+          cond do
+            Date.before?(today, starts_on) -> :upcoming
+            Date.after?(today, ends_on) -> :ended
+            true -> :running
+          end
+
+        %{
+          id: node["id"],
+          number: trunc(node["number"]),
+          name: node["name"],
+          starts_on: starts_on,
+          ends_on: ends_on,
+          status: status,
+          current: false,
+          scope_history: node["scopeHistory"] || [],
+          # Linear's in-progress history drops an issue once it is done, and Started counts done work.
+          started_history:
+            Enum.zip_with(node["inProgressScopeHistory"] || [], node["completedScopeHistory"] || [], &(&1 + &2)),
+          completed_history: node["completedScopeHistory"] || [],
+          default_estimate: estimate
+        }
+      end)
+      |> Enum.sort_by(& &1.starts_on, Date)
+
+    current = Enum.find(cycles, &(&1.status == :running)) || Enum.find(cycles, &(&1.status == :upcoming))
+
+    statuses =
+      team
+      |> get_in(["states", "nodes"])
+      |> Enum.map(&%{name: &1["name"], type: &1["type"], position: &1["position"]})
+      |> Enum.sort_by(& &1.position)
+
+    %{cycles: Enum.map(cycles, &%{&1 | current: &1 == current}), statuses: statuses}
+  end
+
+  defp blocking(node, field, side) do
+    for %{"type" => "blocks", ^side => %{} = related} <- get_in(node, [field, "nodes"]) || [],
+        do: struct(Issue, Map.put(format_linear_issue(related), :tracker, :linear))
   end
 
   # An assignee with no linked Rail user leaves the issue unowned, as the full sync does.
