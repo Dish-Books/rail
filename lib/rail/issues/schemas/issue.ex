@@ -216,9 +216,10 @@ defmodule Rail.Issues.Schemas.Issue do
 
   @doc """
   The cycle's issues in status groups: Linear's statuses, started ones furthest along first and finished ones last,
-  then Rail's label for any status Linear does not list. Each has its rows, its count and its points.
+  then Rail's label for any status Linear does not list. Each has its rows, its count and its points, an unestimated
+  issue counting its own project's default estimate from `default_estimates`.
   """
-  def calculate_status_groups(issues, statuses, default_estimate) when is_list(issues) do
+  def calculate_status_groups(issues, statuses, default_estimates) when is_list(issues) do
     names = MapSet.new(statuses, & &1.name)
     {named, unnamed} = Enum.split_with(issues, &MapSet.member?(names, &1.state_name))
 
@@ -237,7 +238,7 @@ defmodule Rail.Issues.Schemas.Issue do
         state: state,
         rows: build_tree(members, "group-#{index}"),
         count: length(members),
-        points: members |> Enum.map(&(&1.estimate || default_estimate)) |> Enum.sum()
+        points: members |> Enum.map(&(&1.estimate || default_estimates[&1.project_id])) |> Enum.sum()
       }
     end)
   end

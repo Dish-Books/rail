@@ -13,6 +13,7 @@ defmodule RailWeb.Components.CycleChart do
   attr :cycle, :map, required: true
   attr :label, :string, required: true
   attr :today, :any, required: true
+  attr :id_prefix, :string, default: "cycle"
 
   def cycle_chart(assigns) do
     %{cycle: cycle, today: today} = assigns
@@ -40,7 +41,7 @@ defmodule RailWeb.Components.CycleChart do
       |> assign(:date_labels, date_labels(cycle, days, x))
 
     ~H"""
-    <figure id="cycle-chart" class="m-0 max-w-sm">
+    <figure id={"#{@id_prefix}-chart"} class="m-0 max-w-sm">
       <svg viewBox="0 0 320 150" class="w-full h-auto" role="img" aria-label={@summary}>
         <line
           :for={line_y <- @grid}
@@ -54,7 +55,7 @@ defmodule RailWeb.Components.CycleChart do
         />
         <line
           :if={@today_x}
-          id="cycle-chart-today"
+          id={"#{@id_prefix}-chart-today"}
           x1={@today_x}
           x2={@today_x}
           y1="8"
