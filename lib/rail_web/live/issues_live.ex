@@ -11,7 +11,6 @@ defmodule RailWeb.IssuesLive do
   alias RailWeb.Components.CaptureIssueModal
 
   @page_size 50
-  @no_cycles %{cycles: [], statuses: []}
   # The URL parameters a person's Issues page reopens on; search, the page and which cycle is open are not among them.
   @remembered ["priority", "mine", "finished", "cycle", "owner"]
   @preload [
@@ -32,6 +31,7 @@ defmodule RailWeb.IssuesLive do
 
     # The navigation only selects a project it lists, so the selection is always one of these.
     project = Enum.find(socket.assigns.projects, &(&1.id == socket.assigns.current_project_id))
+    cycle_projects = if project, do: [project], else: Enum.filter(socket.assigns.projects, & &1.active)
     %User{issues_filters: saved_filters} = socket.assigns.current_scope.user
 
     socket =
@@ -45,7 +45,7 @@ defmodule RailWeb.IssuesLive do
       |> assign(:restore_filters, true)
       |> assign(:blockers, %{})
       |> assign(:blockers_for, [])
-      |> load_cycles(project)
+      |> load_cycles(cycle_projects)
 
     {:ok, socket}
   end
@@ -73,6 +73,7 @@ defmodule RailWeb.IssuesLive do
         |> assign(:show_finished, params["finished"] == "true")
         |> assign(:mine, mine)
         |> assign(:cycle_param, params["cycle"])
+        |> assign(:cycle_offset, cycle_offset(params["offset"]))
         # A link naming both keeps My issues.
         |> assign(:owner_param, if(mine, do: nil, else: params["owner"]))
         |> assign(:page, page_number(params["page"]))
@@ -197,7 +198,7 @@ defmodule RailWeb.IssuesLive do
           <div class="h-4 w-px bg-slate-300 dark:bg-slate-600 mx-1"></div>
 
           <button
-            :if={@show_cycle_chip and is_nil(@cycle)}
+            :if={@show_cycle_chip and not @cycle_on}
             type="button"
             id="cycle-toggle"
             data-qa="issues-cycle-toggle"
@@ -209,7 +210,7 @@ defmodule RailWeb.IssuesLive do
           </button>
 
           <div
-            :if={@show_cycle_chip and @cycle != nil}
+            :if={@show_cycle_chip and @cycle_on}
             id="cycle-filter"
             class="inline-flex items-center gap-0.5 pl-1 pr-0.5 h-[26px] rounded-full text-xs font-semibold bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 border border-blue-600 dark:border-blue-500"
           >
@@ -250,6 +251,19 @@ defmodule RailWeb.IssuesLive do
               <.icon name="pi-caret-right-bold" class="h-3 w-3" />
             </button>
           </div>
+
+          <button
+            :if={@show_owner_chip}
+            type="button"
+            id="cycle-owner-chip"
+            title="Clear filter"
+            phx-click="pick_owner"
+            phx-value-user_id={@owner}
+            class="inline-flex items-center gap-1.5 max-w-48 px-3 py-1 rounded-full text-xs font-semibold cursor-pointer bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 border border-blue-600 dark:border-blue-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+          >
+            <span class="truncate">{@owner_name}</span>
+            <.icon name="pi-x-bold" class="h-3 w-3 shrink-0" />
+          </button>
 
           <button
             type="button"
@@ -345,7 +359,18 @@ defmodule RailWeb.IssuesLive do
                 </section>
               </div>
             </div>
-            <.cycle_panel cycle={@cycle} progress={@progress} owner={@owner} />
+            <.cycle_panel
+              :if={@current_project}
+              cycle={hd(@sections).cycle}
+              progress={hd(@sections).progress}
+              owner={@owner}
+            />
+            <.cycle_panels
+              :if={is_nil(@current_project)}
+              sections={@sections}
+              owner={@owner}
+              closed_panels={@closed_panels}
+            />
           </div>
 
           <.empty_state :if={@view == :list and @issues == []} title={@empty_title} />
@@ -429,16 +454,30 @@ defmodule RailWeb.IssuesLive do
   def handle_event("toggle_cycle", _params, socket) do
     changes =
       case socket.assigns do
-        %{cycle: nil, current_cycle: %{number: number}} -> [cycle: number, page: 1]
+        %{cycle_on: false, current_project: nil} -> [cycle: "current", page: 1]
+        %{cycle_on: false, current_cycle: %{number: number}} -> [cycle: number, page: 1]
         _on -> [cycle: nil, owner: nil, page: 1]
       end
 
     {:noreply, save_and_patch(socket, changes)}
   end
 
-  # Which cycle is open is not remembered, so stepping saves nothing.
+  # Which cycle is open is not remembered, so stepping saves nothing. Across projects the arrows carry an offset.
   def handle_event("step_cycle", %{"number" => number}, socket) do
-    {:noreply, push_patch(socket, to: issues_path(socket.assigns, cycle: number, page: 1))}
+    key = if socket.assigns.current_project, do: :cycle, else: :offset
+    {:noreply, push_patch(socket, to: issues_path(socket.assigns, [{key, number}, {:page, 1}]))}
+  end
+
+  # The id only goes into the set of closed panels, so it is never queried.
+  def handle_event("toggle_cycle_panel", %{"project_id" => project_id}, socket) do
+    closed = socket.assigns.closed_panels
+
+    closed =
+      if MapSet.member?(closed, project_id),
+        do: MapSet.delete(closed, project_id),
+        else: MapSet.put(closed, project_id)
+
+    {:noreply, assign(socket, :closed_panels, closed)}
   end
 
   def handle_event("pick_owner", %{"user_id" => user_id}, socket) do
@@ -491,21 +530,33 @@ defmodule RailWeb.IssuesLive do
 
   def handle_info({:workflows_changed, _project_id}, socket), do: {:noreply, reload_data(socket)}
 
-  # A cycle the URL names only as the current one is written as its number, so a reload opens the same one.
-  def handle_async(:cycles, {:ok, {:ok, cycles}}, socket) do
-    socket = socket |> assign(:cycles, cycles) |> reload_data()
+  # `:cycles` stays nil until every project has answered, so the view never gains a project after it shows. One
+  # project's cycle named only as the current one is written as its number, so a reload opens the same one.
+  def handle_async({:cycles, project_id}, result, socket) do
+    answer =
+      case result do
+        {:ok, {:ok, %{cycles: cycles, statuses: statuses}}} -> %{cycles: cycles, statuses: statuses, failed: false}
+        _failed -> %{cycles: [], statuses: [], failed: true}
+      end
 
-    socket =
-      if socket.assigns.cycle_param == "current" and socket.assigns.cycle != nil,
-        do: push_patch(socket, to: issues_path(socket.assigns, []), replace: true),
-        else: socket
+    answers = Map.put(socket.assigns.cycle_answers, project_id, answer)
+    socket = assign(socket, :cycle_answers, answers)
+    projects = socket.assigns.cycle_projects
 
-    {:noreply, socket}
-  end
+    if Enum.all?(projects, &Map.has_key?(answers, &1.id)) do
+      entries = for project <- projects, do: Map.put(answers[project.id], :project, project)
+      socket = socket |> assign(:cycles, entries) |> reload_data()
+      %{current_project: current_project, cycle_param: cycle_param, cycle_on: cycle_on} = socket.assigns
 
-  def handle_async(:cycles, _failed, socket) do
-    socket = socket |> assign(:cycles, @no_cycles) |> reload_data()
-    {:noreply, socket}
+      socket =
+        if current_project != nil and cycle_param == "current" and cycle_on,
+          do: push_patch(socket, to: issues_path(socket.assigns, []), replace: true),
+          else: socket
+
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
   end
 
   # An answer for issues the page no longer shows is dropped: a newer read is under way.
@@ -574,6 +625,42 @@ defmodule RailWeb.IssuesLive do
     """
   end
 
+  attr :sections, :list, required: true
+  attr :owner, :string, default: nil
+  attr :closed_panels, :any, required: true
+
+  # Open panels are taller than a screen, so the column scrolls with the page rather than sticking.
+  defp cycle_panels(assigns) do
+    ~H"""
+    <aside
+      id="cycle-panels"
+      aria-label="Cycles"
+      class="w-full lg:w-[340px] shrink-0 order-first lg:order-none rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 divide-y divide-slate-200 dark:divide-slate-700 overflow-hidden"
+    >
+      <%= for section <- @sections do %>
+        <.cycle_panel
+          :if={section.cycle}
+          cycle={section.cycle}
+          progress={section.progress}
+          owner={@owner}
+          project={section.project}
+          open={not MapSet.member?(@closed_panels, section.project.id)}
+          id_prefix={"cycle-#{section.project.key}"}
+        />
+        <p
+          :if={section.failed}
+          id={"cycle-#{section.project.key}-failed"}
+          class="flex items-center gap-2.5 px-3 py-2.5 text-xs text-slate-600 dark:text-slate-300"
+        >
+          <.project_badge project={section.project} />
+          <.icon name="pi-warning-circle" class="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
+          <span class="min-w-0">Linear did not answer, so these issues are not listed.</span>
+        </p>
+      <% end %>
+    </aside>
+    """
+  end
+
   # Picked out of the runs already loaded rather than queried per row.
   defp stage_run(%Task{} = task), do: Task.stage_run(task)
   defp stage_run(nil), do: nil
@@ -588,70 +675,126 @@ defmodule RailWeb.IssuesLive do
 
   # --- Private Helpers ---
 
-  # Only a Linear project has cycles to ask for; the page does not wait on the answer.
-  defp load_cycles(socket, %Project{tracker: :linear} = project) do
-    socket = assign(socket, :cycles, nil)
-    if connected?(socket), do: start_async(socket, :cycles, fn -> Issues.get_cycles(project) end), else: socket
-  end
-
-  defp load_cycles(socket, _github_or_all), do: assign(socket, :cycles, @no_cycles)
-
-  defp reload_data(socket) do
-    assigns = socket.assigns
-    cycles = assigns.cycles || @no_cycles
-    current = Enum.find(cycles.cycles, & &1.current)
-    cycle = find_cycle(cycles.cycles, current, assigns.cycle_param)
+  # Only a Linear project has cycles to ask for, each in a read of its own so one failing loses no other's answer.
+  defp load_cycles(socket, projects) do
+    linear = for %Project{tracker: :linear} = project <- projects, do: project
 
     socket =
       socket
-      |> assign(:cycle, cycle)
+      |> assign(:cycle_projects, linear)
+      |> assign(:cycle_answers, %{})
+      |> assign(:closed_panels, MapSet.new())
+      |> assign(:cycles, if(linear == [], do: []))
+
+    if connected?(socket), do: Enum.reduce(linear, socket, &read_cycles/2), else: socket
+  end
+
+  defp read_cycles(project, socket), do: start_async(socket, {:cycles, project.id}, fn -> Issues.get_cycles(project) end)
+
+  # A section is one project's cycle on show, if any, beside what Linear answered for it.
+  defp reload_data(socket) do
+    assigns = socket.assigns
+    entries = assigns.cycles || []
+    sections = for entry <- entries, do: Map.put(entry, :cycle, pick_cycle(entry, assigns))
+    current = Enum.find_value(entries, fn entry -> Enum.find(entry.cycles, & &1.current) end)
+    open = Enum.find(sections, & &1.cycle)
+    offset = assigns.cycle_offset
+
+    {label, previous, next} =
+      cond do
+        is_nil(open) ->
+          {nil, nil, nil}
+
+        assigns.current_project != nil ->
+          {cycle_label(open.cycle), neighbor(open.cycles, open.cycle, -1), neighbor(open.cycles, open.cycle, 1)}
+
+        true ->
+          # An arrow steps to where at least one project has a cycle.
+          [previous, next] =
+            for step <- [offset - 1, offset + 1], do: if(Enum.any?(entries, &cycle_at(&1.cycles, step)), do: step)
+
+          {offset_label(offset), previous, next}
+      end
+
+    socket =
+      socket
+      |> assign(:sections, sections)
+      |> assign(:cycle_on, open != nil)
       |> assign(:current_cycle, current)
-      |> assign(:show_cycle_chip, current != nil or cycle != nil)
-      |> assign(:cycle_label, cycle && cycle_label(cycle))
-      |> assign(:previous_cycle, cycle && neighbor(cycles.cycles, cycle, -1))
-      |> assign(:next_cycle, cycle && neighbor(cycles.cycles, cycle, 1))
+      |> assign(:show_cycle_chip, current != nil or open != nil)
+      |> assign(:cycle_label, label)
+      |> assign(:previous_cycle, previous)
+      |> assign(:next_cycle, next)
 
     cond do
       # Linear has not answered yet, so the whole list never flashes up before the cycle's.
       is_binary(assigns.cycle_param) and is_nil(assigns.cycles) ->
         socket
         |> assign(:view, :loading)
-        |> assign(:owner, nil)
+        |> assign_no_owner()
         |> assign_counts([], 0, %{})
 
-      cycle != nil ->
-        load_cycle(socket, cycle, cycles.statuses)
+      open != nil ->
+        load_cycle(socket, sections)
 
       true ->
-        socket |> assign(:owner, nil) |> load_page()
+        socket |> assign_no_owner() |> load_page()
     end
   end
 
-  defp load_cycle(socket, cycle, statuses) do
+  defp load_cycle(socket, sections) do
     assigns = socket.assigns
-    progress = Issues.get_cycle_progress(assigns.current_project, cycle)
-    # An owner with nothing in the cycle is no filter at all.
-    owner = if Enum.any?(progress.owners, &(&1.user.id == assigns.owner_param)), do: assigns.owner_param
+
+    sections =
+      for section <- sections,
+          do: Map.put(section, :progress, section.cycle && Issues.get_cycle_progress(section.project, section.cycle))
+
+    shown = Enum.filter(sections, & &1.cycle)
+    # An owner with nothing in the cycles shown is no filter at all.
+    picked = shown |> Enum.flat_map(& &1.progress.owners) |> Enum.find(&(&1.user.id == assigns.owner_param))
 
     %{issues: issues, total: total, priority_counts: priority_counts} =
       Issues.list_issues(
-        project_id: assigns.current_project.id,
-        cycle_id: cycle.id,
-        owner_user_id: owner || if(assigns.mine, do: assigns.current_scope.user.id),
+        project_id: Enum.map(shown, & &1.project.id),
+        cycle_id: Enum.map(shown, & &1.cycle.id),
+        owner_user_id: (picked && picked.user.id) || if(assigns.mine, do: assigns.current_scope.user.id),
         show_finished: assigns.show_finished,
         search: assigns.search,
         priority: assigns.filter_priority,
         preload: @preload
       )
 
+    empty_title =
+      if assigns.current_project,
+        do: "No issues in #{cycle_label(hd(shown).cycle)}",
+        else: "No issues in these cycles"
+
     socket
     |> assign(:view, :cycle)
-    |> assign(:owner, owner)
-    |> assign(:progress, progress)
-    |> assign(:groups, Issue.calculate_status_groups(issues, statuses, cycle.default_estimate))
-    |> assign(:empty_title, "No issues in #{cycle_label(cycle)}")
+    |> assign(:sections, sections)
+    |> assign(:owner, picked && picked.user.id)
+    |> assign(:owner_name, picked && (picked.user.name || picked.user.login))
+    |> assign(:show_owner_chip, picked != nil and is_nil(assigns.current_project))
+    |> assign(:groups, status_groups(issues, shown, assigns.current_project))
+    |> assign(:empty_title, empty_title)
     |> assign_counts(issues, total, priority_counts)
     |> watch_blockers()
+  end
+
+  # Across projects the most pressing come first; the sort is stable, so the latest update still breaks ties.
+  defp status_groups(issues, shown, current_project) do
+    rank = Issue.priorities() |> Enum.with_index() |> Map.new()
+    rows = if current_project, do: issues, else: Enum.sort_by(issues, &rank[&1.priority])
+    statuses = shown |> Enum.flat_map(& &1.statuses) |> Enum.uniq_by(& &1.name)
+    estimates = Map.new(shown, &{&1.project.id, &1.cycle.default_estimate})
+    Issue.calculate_status_groups(rows, statuses, estimates)
+  end
+
+  defp assign_no_owner(socket) do
+    socket
+    |> assign(:owner, nil)
+    |> assign(:owner_name, nil)
+    |> assign(:show_owner_chip, false)
   end
 
   defp load_page(socket) do
@@ -733,6 +876,22 @@ defmodule RailWeb.IssuesLive do
 
   defp row_issues(rows), do: Enum.flat_map(rows, fn row -> [row.issue | Enum.map(row.sub_issues, & &1.issue)] end)
 
+  defp pick_cycle(%{cycles: cycles}, %{current_project: nil, cycle_param: "current", cycle_offset: offset}),
+    do: cycle_at(cycles, offset)
+
+  # No one number names several teams' cycles.
+  defp pick_cycle(_entry, %{current_project: nil}), do: nil
+
+  defp pick_cycle(%{cycles: cycles}, assigns),
+    do: find_cycle(cycles, Enum.find(cycles, & &1.current), assigns.cycle_param)
+
+  # Counted from the project's current cycle, so a project with none has nowhere to count from.
+  defp cycle_at(cycles, offset) do
+    current = Enum.find_index(cycles, & &1.current)
+    index = current && current + offset
+    if is_integer(index) and index >= 0, do: Enum.at(cycles, index)
+  end
+
   defp find_cycle(_cycles, current, "current"), do: current
 
   defp find_cycle(cycles, _current, number) when is_binary(number),
@@ -746,6 +905,12 @@ defmodule RailWeb.IssuesLive do
   end
 
   defp cycle_label(cycle), do: cycle.name || "Cycle #{cycle.number}"
+
+  defp offset_label(0), do: "Current cycles"
+  defp offset_label(-1), do: "Previous cycles"
+  defp offset_label(1), do: "Next cycles"
+  defp offset_label(offset) when offset < 0, do: "#{-offset} cycles back"
+  defp offset_label(offset), do: "#{offset} cycles ahead"
 
   # Every remembered filter is saved as it will now read, replacing what was there, before the patch shows it.
   defp save_and_patch(socket, changes) do
@@ -774,14 +939,15 @@ defmodule RailWeb.IssuesLive do
 
   defp issues_path(assigns, changes), do: assigns |> issue_params(changes) |> params_path()
 
-  # Defaults stay out of the URL, so the plain list is still just /issues. The cycle is its number once Linear has
-  # answered, and dropped when the project has no such cycle; the owner goes with it.
+  # Defaults stay out of the URL, so the plain list is still just /issues. One project's cycle is its number once
+  # Linear has answered, every project's is current and an offset, and either is dropped when nothing shows.
   defp issue_params(assigns, changes) do
-    {cycle, owner} =
+    {cycle, offset, owner} =
       cond do
-        assigns.cycle != nil -> {assigns.cycle.number, assigns.owner}
-        is_nil(assigns.cycles) -> {assigns.cycle_param, assigns.owner_param}
-        true -> {nil, nil}
+        assigns.cycle_on and assigns.current_project != nil -> {hd(assigns.sections).cycle.number, 0, assigns.owner}
+        assigns.cycle_on -> {"current", assigns.cycle_offset, assigns.owner}
+        is_nil(assigns.cycles) -> {assigns.cycle_param, assigns.cycle_offset, assigns.owner_param}
+        true -> {nil, 0, nil}
       end
 
     current = [
@@ -790,14 +956,22 @@ defmodule RailWeb.IssuesLive do
       mine: assigns.mine,
       finished: assigns.show_finished,
       cycle: cycle,
+      offset: offset,
       owner: owner,
       page: assigns.page
     ]
 
     # Each key keeps its place, so the same filters always read as the same URL.
     params = for {key, value} <- current, do: {key, Keyword.get(changes, key, value)}
-    params = if params[:cycle] in [nil, ""], do: Keyword.put(params, :owner, nil), else: params
-    Enum.reject(params, fn {key, value} -> value in [nil, "", false, "all"] or {key, value} == {:page, 1} end)
+
+    params =
+      if params[:cycle] in [nil, ""],
+        do: params |> Keyword.put(:owner, nil) |> Keyword.put(:offset, 0),
+        else: params
+
+    Enum.reject(params, fn {key, value} ->
+      value in [nil, "", false, "all"] or {key, to_string(value)} in [{:page, "1"}, {:offset, "0"}]
+    end)
   end
 
   defp params_path([]), do: ~p"/issues"
@@ -826,4 +1000,13 @@ defmodule RailWeb.IssuesLive do
   end
 
   defp page_number(_missing), do: 1
+
+  defp cycle_offset(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {offset, ""} -> offset
+      _invalid -> 0
+    end
+  end
+
+  defp cycle_offset(_missing), do: 0
 end
