@@ -58,4 +58,21 @@ defmodule Rail.Issues.Utils.FormatLinearIssueTest do
 
     assert %{state: :backlog, state_name: nil} = format_linear_issue(%{})
   end
+
+  test "reads the cycle and the parent as the API nests them or a webhook flattens them, and nothing when it says nothing" do
+    assert %{cycle_external_id: "cyc_1", parent_external_id: "lin_p"} =
+             format_linear_issue(%{"cycle" => %{"id" => "cyc_1"}, "parent" => %{"id" => "lin_p"}})
+
+    assert %{cycle_external_id: nil, parent_external_id: nil} = format_linear_issue(%{"cycle" => nil, "parent" => nil})
+
+    assert %{cycle_external_id: "cyc_2", parent_external_id: "lin_q"} =
+             format_linear_issue(%{"cycleId" => "cyc_2", "parentId" => "lin_q"})
+
+    assert %{cycle_external_id: nil, parent_external_id: nil} =
+             format_linear_issue(%{"cycleId" => nil, "parentId" => nil})
+
+    attrs = format_linear_issue(%{"id" => "lin_1"})
+    refute Map.has_key?(attrs, :cycle_external_id)
+    refute Map.has_key?(attrs, :parent_external_id)
+  end
 end

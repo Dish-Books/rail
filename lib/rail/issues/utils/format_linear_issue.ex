@@ -6,12 +6,15 @@ defmodule Rail.Issues.Utils.FormatLinearIssue do
 
   @doc """
   The issue attributes `node` describes. Where it belongs and who owns it are
-  the caller's to add.
+  the caller's to add. The cycle and the parent are left out when `node` says nothing of them.
   """
   def format_linear_issue(%{} = node) do
     state = node["state"] || %{}
 
-    %{
+    node
+    |> cycle()
+    |> Map.merge(parent(node))
+    |> Map.merge(%{
       external_id: node["id"],
       identifier: node["identifier"],
       title: node["title"],
@@ -24,8 +27,19 @@ defmodule Rail.Issues.Utils.FormatLinearIssue do
       url: node["url"],
       completed_at: completed_at(node["completedAt"]),
       external_updated_at: external_updated_at(node["updatedAt"])
-    }
+    })
   end
+
+  # The API nests each as an object, a webhook flattens it to an id.
+  defp cycle(%{"cycle" => %{"id" => id}}), do: %{cycle_external_id: id}
+  defp cycle(%{"cycle" => nil}), do: %{cycle_external_id: nil}
+  defp cycle(%{"cycleId" => id}), do: %{cycle_external_id: id}
+  defp cycle(_no_cycle_keys), do: %{}
+
+  defp parent(%{"parent" => %{"id" => id}}), do: %{parent_external_id: id}
+  defp parent(%{"parent" => nil}), do: %{parent_external_id: nil}
+  defp parent(%{"parentId" => id}), do: %{parent_external_id: id}
+  defp parent(_no_parent_keys), do: %{}
 
   # The column holds microseconds and `insert_all` writes the value without casting it.
   defp external_updated_at(timestamp) when is_binary(timestamp) do

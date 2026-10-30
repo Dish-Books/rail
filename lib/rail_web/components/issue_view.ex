@@ -27,8 +27,22 @@ defmodule RailWeb.Components.IssueView do
   # The workflow that opened the issue, named under its title; only admins can follow it to Settings.
   attr :workflow, :any, default: nil
   attr :link_workflow, :boolean, default: false
+  # What blocks the issue and what it blocks, as `Rail.Issues.get_blockers/1` reads them; nil until Linear answers.
+  attr :blockers, :any, default: nil
 
   def issue_view(assigns) do
+    blocked_by = (assigns.blockers && assigns.blockers.blocked_by) || []
+    {done, total} = Issue.calculate_sub_issue_count(assigns.issue)
+
+    assigns =
+      assigns
+      |> assign(:parent, Issue.calculate_parent(assigns.issue))
+      |> assign(:blocked_by, blocked_by)
+      |> assign(:open_blocker_count, length(Issue.calculate_open_blockers(blocked_by)))
+      |> assign(:blocks, (assigns.blockers && assigns.blockers.blocks) || [])
+      |> assign(:sub_issues, Enum.map(Issue.calculate_children(assigns.issue), &%{issue: &1, in_project: true}))
+      |> assign(:sub_issue_count, "#{done}/#{total}")
+
     ~H"""
     <div id="issue-page" data-qa="issue-page" class="max-w-5xl mx-auto space-y-6">
       <nav class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
@@ -40,6 +54,16 @@ defmodule RailWeb.Components.IssueView do
           Issues
         </.link>
         <.icon name="pi-caret-right" class="h-3 w-3" />
+        <.link
+          :if={@parent}
+          navigate={~p"/issues/#{@parent.identifier}"}
+          id="issue-parent-link"
+          title={@parent.title}
+          class="font-mono hover:text-slate-900 dark:hover:text-slate-100"
+        >
+          {@parent.identifier}
+        </.link>
+        <.icon :if={@parent} name="pi-caret-right" class="h-3 w-3" />
         <span id="issue-identifier" class="font-mono">{@issue.identifier}</span>
       </nav>
 
@@ -90,6 +114,31 @@ defmodule RailWeb.Components.IssueView do
               No description
             </p>
           </div>
+
+          <.issue_relation_list
+            :if={@blocked_by != []}
+            id="issue-blocked-by"
+            title="Blocked by"
+            count={to_string(@open_blocker_count)}
+            entries={@blocked_by}
+            blocked
+          />
+
+          <.issue_relation_list
+            :if={@blocks != []}
+            id="issue-blocks"
+            title="Blocks"
+            count={to_string(length(@blocks))}
+            entries={@blocks}
+          />
+
+          <.issue_relation_list
+            :if={@sub_issues != []}
+            id="issue-sub-issues"
+            title="Sub-issues"
+            count={@sub_issue_count}
+            entries={@sub_issues}
+          />
 
           <section
             id="issue-comments"
@@ -207,7 +256,7 @@ defmodule RailWeb.Components.IssueView do
             <h2 class="text-xs font-medium text-slate-500 dark:text-slate-400">Properties</h2>
 
             <div id="issue-status" data-qa="issue-status" class="flex items-center gap-2.5">
-              <.status_icon state={@issue.state} />
+              <.status_icon state={Issue.calculate_shown_state(@issue)} />
               <span>{@issue.state_name || Issue.state_label(@issue.state)}</span>
             </div>
 

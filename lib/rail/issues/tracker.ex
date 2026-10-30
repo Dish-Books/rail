@@ -76,6 +76,20 @@ defmodule Rail.Issues.Tracker do
   @callback check_assignable(User.t()) :: :ok | {:error, term()}
 
   @doc """
+  The project's cycles oldest first, each with its id, number, name, dates, status (`:running`, `:upcoming` or
+  `:ended`), whether it is the current one, its daily scope, started and completed history and the team's default
+  estimate, and the team's statuses in the tracker's order.
+  """
+  @callback get_cycles(Project.t()) :: {:ok, %{cycles: [map()], statuses: [map()]}} | {:error, term()}
+
+  @doc """
+  What blocks each of the tickets `external_ids` names on `project`, and what each blocks, keyed by external id.
+  Each related ticket is an unsaved `Issue`.
+  """
+  @callback get_issue_relations(Project.t(), [String.t()]) ::
+              {:ok, %{String.t() => %{blocked_by: [Issue.t()], blocks: [Issue.t()]}}} | {:error, term()}
+
+  @doc """
   The tracker module for a project, an issue, or a Linear workspace.
   """
   def tracker(%Project{tracker: tracker}), do: Map.fetch!(@trackers, tracker)

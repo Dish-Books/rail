@@ -43,6 +43,8 @@ defmodule RailWeb.IssueLiveTest do
 
     # An issue with no task looks for a pull request to start at Review on, which no test here has unless it says.
     stub(Issues, :link_pull_request, fn _scope, _issue -> {:ok, nil} end)
+    # Blockers are read from Linear, which no test here asks unless it says.
+    stub(Issues, :get_blockers, fn _issues -> %{} end)
 
     %{conn: log_in_user(conn, user), user: user, project: project}
   end
@@ -573,7 +575,7 @@ defmodule RailWeb.IssueLiveTest do
       }
     end
 
-    # Another issue closing leaves this page as it was.
+    # An unrelated issue closing leaves this page as it was.
     assert {:ok, _other} = Issues.handle_linear_webhook(workspace, duplicate.("lin_page_other", "IPG-22"))
     assert has_element?(view, "#issue-status", "Todo")
     assert has_element?(view, "#issue-start")
@@ -929,5 +931,193 @@ defmodule RailWeb.IssueLiveTest do
     dead = get(conn, ~p"/issues/#{issue.identifier}")
     assert redirected_to(dead) == "/issues"
     refute dead.resp_body =~ "A secret title"
+  end
+
+  describe "parents, sub-issues and blockers" do
+    setup %{project: project} do
+      insert = fn identifier, attrs ->
+        %Issue{}
+        |> Issue.tracker_changeset(
+          Map.merge(
+            %{
+              project_id: project.id,
+              external_id: "lin_#{identifier}",
+              identifier: identifier,
+              title: "Title #{identifier}",
+              state: :todo
+            },
+            attrs
+          )
+        )
+        |> Repo.insert!()
+      end
+
+      {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+      parent = insert.("REL-1", %{})
+
+      %{
+        insert: insert,
+        workspace: workspace,
+        parent: parent,
+        done_child: insert.("REL-2", %{parent_external_id: parent.external_id, state: :done, state_name: "Done"}),
+        open_child:
+          insert.("REL-3", %{parent_external_id: parent.external_id, state: :in_progress, state_name: "In Review"})
+      }
+    end
+
+    test "a parent lists its sub-issues with their done count, and what blocks it and what it blocks", %{
+      conn: conn,
+      parent: parent,
+      open_child: open_child
+    } do
+      blocker = %Issue{external_id: "lin_rel_b", identifier: "REL-9", title: "Blocking", state: :todo, id: "iss_rel_b"}
+
+      finished = %Issue{
+        external_id: "lin_rel_f",
+        identifier: "REL-8",
+        title: "Was blocking",
+        state: :done,
+        id: "iss_rel_f"
+      }
+
+      elsewhere = %Issue{
+        external_id: "lin_oth",
+        identifier: "OTH-1",
+        state: :in_progress,
+        url: "https://linear.app/OTH-1"
+      }
+
+      waiting = %Issue{external_id: "lin_rel_w", identifier: "REL-7", title: "Waiting", state: :todo, id: "iss_rel_w"}
+
+      stub(Issues, :get_blockers, fn [%Issue{id: id}] when id == parent.id ->
+        %{
+          parent.external_id => %{
+            blocked_by: [
+              %{issue: blocker, in_project: true},
+              %{issue: elsewhere, in_project: false},
+              %{issue: finished, in_project: true}
+            ],
+            blocks: [%{issue: waiting, in_project: true}]
+          }
+        }
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues/#{parent.identifier}")
+      render_async(view)
+
+      refute has_element?(view, "#issue-parent-link")
+      assert has_element?(view, "#issue-sub-issues", "1/2")
+      assert has_element?(view, "#issue-sub-issues a[href='/issues/#{open_child.identifier}']", "In Review")
+      assert has_element?(view, "#issue-blocked-by h2", "2")
+      assert has_element?(view, "#issue-blocked-by a[href='/issues/REL-9']", "Blocking")
+      assert has_element?(view, "#issue-blocked-by a[href='https://linear.app/OTH-1']", "In another project")
+      assert has_element?(view, "#issue-blocked-by a[href='/issues/REL-8'] .text-slate-500", "Was blocking")
+      assert has_element?(view, "#issue-blocks a[href='/issues/REL-7']", "Waiting")
+    end
+
+    test "a sub-issue links its parent and shows no empty sections", %{conn: conn, parent: parent, open_child: open_child} do
+      # Linear failing on blockers leaves their sections out and nothing else.
+      stub(Issues, :get_blockers, fn _issues -> raise "Linear is down" end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues/#{open_child.identifier}")
+      render_async(view)
+
+      assert has_element?(view, "#issue-parent-link[title='Title REL-1'][href='/issues/#{parent.identifier}']", "REL-1")
+      assert has_element?(view, "#issue-status .text-emerald-500")
+      refute has_element?(view, "#issue-sub-issues")
+      refute has_element?(view, "#issue-blocked-by")
+      refute has_element?(view, "#issue-blocks")
+    end
+
+    test "a sub-issue changing or a new one arriving from Linear updates the parent's open page", %{
+      conn: conn,
+      parent: parent,
+      open_child: open_child,
+      workspace: workspace
+    } do
+      {:ok, view, _html} = live(conn, ~p"/issues/#{parent.identifier}")
+      render_async(view)
+      assert has_element?(view, "#issue-sub-issues", "1/2")
+
+      webhook = fn action, external_id, identifier, state, extra ->
+        %{
+          "type" => "Issue",
+          "action" => action,
+          "data" =>
+            Map.merge(
+              %{
+                "id" => external_id,
+                "teamId" => "lin_team_id",
+                "identifier" => identifier,
+                "title" => "Title #{identifier}",
+                "state" => state
+              },
+              extra
+            )
+        }
+      end
+
+      assert {:ok, _issue} =
+               Issues.handle_linear_webhook(
+                 workspace,
+                 webhook.("update", open_child.external_id, "REL-3", %{"name" => "Done", "type" => "completed"}, %{})
+               )
+
+      assert has_element?(view, "#issue-sub-issues", "2/2")
+
+      assert {:ok, _issue} =
+               Issues.handle_linear_webhook(
+                 workspace,
+                 webhook.("create", "lin_REL-4", "REL-4", %{"name" => "Todo", "type" => "unstarted"}, %{
+                   "parentId" => parent.external_id
+                 })
+               )
+
+      assert has_element?(view, "#issue-sub-issues", "2/3")
+      assert has_element?(view, "#issue-sub-issues a[href='/issues/REL-4']")
+    end
+
+    test "a blocker finishing through the webhook reads blockers again", %{
+      conn: conn,
+      parent: parent,
+      insert: insert,
+      workspace: workspace
+    } do
+      blocker = insert.("REL-5", %{})
+      test_pid = self()
+
+      stub(Issues, :get_blockers, fn [issue] ->
+        send(test_pid, :blockers_read)
+        %{issue.external_id => %{blocked_by: [%{issue: Repo.get!(Issue, blocker.id), in_project: true}], blocks: []}}
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues/#{parent.identifier}")
+      render_async(view)
+      assert_received :blockers_read
+      assert has_element?(view, "#issue-blocked-by h2", "1")
+
+      assert {:ok, _issue} =
+               Issues.handle_linear_webhook(workspace, %{
+                 "type" => "Issue",
+                 "action" => "update",
+                 "data" => %{
+                   "id" => blocker.external_id,
+                   "teamId" => "lin_team_id",
+                   "identifier" => "REL-5",
+                   "title" => "Title REL-5",
+                   "state" => %{"name" => "Done", "type" => "completed"}
+                 }
+               })
+
+      render_async(view)
+      assert_received :blockers_read
+      assert has_element?(view, "#issue-blocked-by h2", "0")
+
+      # An unrelated issue changing reads neither the issue nor its blockers.
+      unrelated = insert.("REL-6", %{})
+      send(view.pid, {:issue_changed, unrelated.id})
+      render_async(view)
+      refute_received :blockers_read
+    end
   end
 end

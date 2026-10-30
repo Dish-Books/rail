@@ -95,13 +95,28 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
         "data" => %{
           "issueCreate" => %{
             "success" => true,
-            "issue" => %{"id" => "lin_child_1", "identifier" => "ENG-310", "title" => "A child", "estimate" => 3}
+            "issue" => %{
+              "id" => "lin_child_1",
+              "identifier" => "ENG-310",
+              "title" => "A child",
+              "estimate" => 3,
+              "cycle" => %{"id" => "cyc_12"},
+              "parent" => %{"id" => "lin_parent_1"}
+            }
           }
         }
       })
     end)
 
-    assert {:ok, %Issue{state: :todo, state_name: "Todo", estimate: 3, owner_user_id: ^owner_id}} =
+    assert {:ok,
+            %Issue{
+              state: :todo,
+              state_name: "Todo",
+              estimate: 3,
+              owner_user_id: ^owner_id,
+              cycle_external_id: "cyc_12",
+              parent_external_id: "lin_parent_1"
+            }} =
              Issues.create_issue(system_scope(), project, %{
                title: "A child",
                estimate: 3,
@@ -217,6 +232,41 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
              })
 
     assert %Issue{workflow_id: ^workflow_id, skipped_steps: [:product, :demo]} = Repo.get!(Issue, mirrored_id)
+  end
+
+  test "create_issue/2 keeps the cycle and parent a webhook saved first", %{project: project} do
+    %Issue{id: mirrored_id} =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_TST-85",
+        identifier: "TST-85",
+        title: "Planned already",
+        state: :triage,
+        cycle_external_id: "cyc_9",
+        parent_external_id: "lin_parent_9"
+      })
+      |> Repo.insert!()
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_TST-85",
+              "identifier" => "TST-85",
+              "title" => "Planned already",
+              "cycle" => nil,
+              "parent" => nil
+            }
+          }
+        }
+      })
+    end)
+
+    assert {:ok, %Issue{id: ^mirrored_id, cycle_external_id: "cyc_9", parent_external_id: "lin_parent_9"}} =
+             Issues.create_issue(system_scope(), project, %{title: "Planned already"})
   end
 
   test "create_issue/2 returns an error when Linear does not create it", %{project: project} do

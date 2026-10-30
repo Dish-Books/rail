@@ -216,4 +216,136 @@ defmodule Rail.Issues.Schemas.IssueTest do
              :review
            ]
   end
+
+  describe "cycles and parents" do
+    test "only the tracker's changeset takes the cycle and the parent, so a local edit queues no push Linear refuses" do
+      attrs = %{cycle_external_id: "cyc_1", parent_external_id: "lin_parent"}
+
+      assert %{changes: %{cycle_external_id: "cyc_1", parent_external_id: "lin_parent"}} =
+               Issue.tracker_changeset(%Issue{}, attrs)
+
+      assert %{changes: changes} = Issue.changeset(%Issue{}, attrs)
+      refute Map.has_key?(changes, :cycle_external_id)
+      refute Map.has_key?(changes, :parent_external_id)
+    end
+
+    test "a parent and sub-issues count only in the issue's own project" do
+      parent = %Issue{id: "iss_p", project_id: "prj_a"}
+      elsewhere = %Issue{id: "iss_x", project_id: "prj_b"}
+
+      assert %Issue{id: "iss_p"} = Issue.calculate_parent(%Issue{project_id: "prj_a", parent: parent})
+      assert nil == Issue.calculate_parent(%Issue{project_id: "prj_a", parent: elsewhere})
+      assert nil == Issue.calculate_parent(%Issue{project_id: "prj_a"})
+
+      assert [%Issue{id: "iss_p"}] =
+               Issue.calculate_children(%Issue{project_id: "prj_a", children: [parent, elsewhere]})
+
+      assert [] = Issue.calculate_children(%Issue{project_id: "prj_a"})
+    end
+
+    test "a parent's done count leaves out canceled and duplicate sub-issues" do
+      children =
+        for state <- [:done, :in_progress, :todo, :canceled, :duplicate, :done],
+            do: %Issue{project_id: "prj_a", state: state}
+
+      assert {2, 4} = Issue.calculate_sub_issue_count(%Issue{project_id: "prj_a", children: children})
+      assert {0, 0} = Issue.calculate_sub_issue_count(%Issue{project_id: "prj_a", children: []})
+    end
+
+    test "a sub-issue nests under its parent's row, or under a dimmed copy when the parent is not a top-level row" do
+      grandparent = %Issue{id: "iss_g", project_id: "prj_a", parent: nil}
+      parent = %Issue{id: "iss_p", project_id: "prj_a", parent: nil}
+      child = %Issue{id: "iss_c", project_id: "prj_a", parent: parent}
+      apart = %Issue{id: "iss_s", project_id: "prj_a", parent: grandparent}
+      foreign = %Issue{id: "iss_f", project_id: "prj_a", parent: %Issue{id: "iss_o", project_id: "prj_b"}}
+      middle = %Issue{id: "iss_m", project_id: "prj_a", parent: grandparent}
+      grandchild = %Issue{id: "iss_gc", project_id: "prj_a", parent: middle}
+
+      # The child comes first, newest first, so its tree takes the child's place.
+      assert [
+               %{issue: %Issue{id: "iss_p"}, key: "iss_p", dimmed: false, sub_issues: [%{issue: %Issue{id: "iss_c"}}]},
+               %{issue: %Issue{id: "iss_g"}, key: "iss_g-above-iss_s", dimmed: true, sub_issues: [_apart, _middle]},
+               %{issue: %Issue{id: "iss_f"}, dimmed: false, sub_issues: []},
+               %{issue: %Issue{id: "iss_m"}, key: "iss_m-above-iss_gc", dimmed: true, sub_issues: [_grandchild]}
+             ] = Issue.calculate_issue_tree([child, parent, apart, foreign, middle, grandchild])
+    end
+
+    test "groups follow Linear's statuses, started furthest along first, and Rail's label for any it does not list" do
+      statuses = [
+        %{name: "Backlog", type: "backlog", position: 0},
+        %{name: "Ready for Dev", type: "unstarted", position: 1},
+        %{name: "In Progress", type: "started", position: 2},
+        %{name: "In Review", type: "started", position: 3},
+        %{name: "Triage", type: "triage", position: -1},
+        %{name: "Done", type: "completed", position: 4},
+        %{name: "Canceled", type: "canceled", position: 5}
+      ]
+
+      issue = fn id, state, name, estimate ->
+        %Issue{id: id, project_id: "prj_a", state: state, state_name: name, estimate: estimate, parent: nil}
+      end
+
+      issues = [
+        issue.("iss_1", :backlog, "Backlog", 1),
+        issue.("iss_2", :in_progress, "In Progress", nil),
+        issue.("iss_3", :in_progress, "In Review", 3),
+        issue.("iss_4", :backlog, "Ready for Dev", 2),
+        issue.("iss_5", :todo, nil, 1),
+        issue.("iss_6", :done, "Done", 5),
+        issue.("iss_7", :triage, "Triage", 1)
+      ]
+
+      assert [
+               %{label: "In Review", state: :in_review, count: 1, points: 3},
+               %{label: "In Progress", state: :in_progress, count: 1, points: 2},
+               %{label: "Ready for Dev", state: :todo, count: 1, points: 2},
+               %{label: "Backlog", state: :backlog, count: 1, points: 1},
+               %{label: "Triage", state: :triage},
+               %{label: "Done", state: :done},
+               %{label: "Todo", state: :todo, count: 1}
+             ] = Issue.calculate_status_groups(issues, statuses, 2)
+
+      assert [%{label: "Canceled", state: :canceled}, %{label: "Paused", state: :backlog}] =
+               Issue.calculate_status_groups(
+                 [issue.("iss_8", :canceled, "Canceled", 1), issue.("iss_9", :backlog, "Paused", 1)],
+                 [%{name: "Paused", type: "paused", position: 9}, %{name: "Canceled", type: "canceled", position: 5}],
+                 0
+               )
+    end
+
+    test "a dimmed copy adds nothing to a group, and each copy of a parent has its own key" do
+      statuses = [%{name: "In Progress", type: "started", position: 1}, %{name: "Todo", type: "unstarted", position: 0}]
+      parent = %Issue{id: "iss_p", project_id: "prj_a", state: :done, state_name: "Done", estimate: 8, parent: nil}
+
+      started = %Issue{
+        id: "iss_a",
+        project_id: "prj_a",
+        state: :in_progress,
+        state_name: "In Progress",
+        estimate: 1,
+        parent: parent
+      }
+
+      waiting = %Issue{id: "iss_b", project_id: "prj_a", state: :backlog, state_name: "Todo", estimate: 2, parent: parent}
+
+      assert [
+               %{count: 1, points: 1, rows: [%{dimmed: true, key: "group-0-iss_p-above-iss_a"}]},
+               %{count: 1, points: 2, rows: [%{dimmed: true, key: "group-1-iss_p-above-iss_b"}]}
+             ] = Issue.calculate_status_groups([started, waiting], statuses, 0)
+    end
+
+    test "an In Progress issue under a status named In Review shows as In Review" do
+      assert :in_review = Issue.calculate_shown_state(%Issue{state: :in_progress, state_name: "In Review"})
+      assert :in_progress = Issue.calculate_shown_state(%Issue{state: :in_progress, state_name: "In Progress"})
+      assert :in_progress = Issue.calculate_shown_state(%Issue{state: :in_progress, state_name: nil})
+      assert :in_review = Issue.calculate_shown_state(%Issue{state: :in_review})
+    end
+
+    test "only unfinished blockers are open" do
+      entries = for state <- [:todo, :done, :canceled, :duplicate, :in_progress], do: %{issue: %Issue{state: state}}
+
+      assert [%{issue: %Issue{state: :todo}}, %{issue: %Issue{state: :in_progress}}] =
+               Issue.calculate_open_blockers(entries)
+    end
+  end
 end

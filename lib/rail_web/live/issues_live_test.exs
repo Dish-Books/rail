@@ -16,6 +16,7 @@ defmodule RailWeb.IssuesLiveTest do
   alias Rail.Roles
   alias Rail.Scope
   alias Rail.Users
+  alias Rail.Users.Schemas.User
   alias Rail.Workflows.Schemas.Workflow
   alias Rail.Workflows.Schemas.WorkflowDefinition
 
@@ -26,6 +27,9 @@ defmodule RailWeb.IssuesLiveTest do
     stub(Rail.Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
     stub(Rail.Git, :remove_worktree, fn _clone_path, _worktree_path -> :ok end)
     stub(Rail.Git, :delete_branch, fn _clone_path, _branch -> :ok end)
+    # The seeded project is on Linear, so the page asks it for cycles and blockers; these tests are about neither.
+    stub(Issues, :get_cycles, fn _project -> {:ok, %{cycles: [], statuses: []}} end)
+    stub(Issues, :get_blockers, fn _issues -> %{} end)
 
     :ok
   end
@@ -1277,5 +1281,579 @@ defmodule RailWeb.IssuesLiveTest do
              live(init_test_session(authed_conn, %{selected_project_id: "prj_nonexistent"}), ~p"/issues")
 
     assert has_element?(view_bad, "#issues-subtitle", "Issues across all projects")
+  end
+
+  describe "remembered filters" do
+    setup %{conn: conn} do
+      {:ok, user} =
+        Users.register_oauth_user(%{
+          github_id: "gh_issues_live_saved",
+          login: "issues_live_saved",
+          email: "issues_live_saved@example.com",
+          admin: true
+        })
+
+      %{conn: log_in_user(conn, user), user: user}
+    end
+
+    test "a bare /issues opens on the filters last set, without the search, and a teammate's page keeps its own", %{
+      conn: conn,
+      user: user
+    } do
+      {:ok, view, _html} = live(conn, ~p"/issues")
+
+      view |> element("#filter-priority-high") |> render_click()
+      view |> element("#issues-show-finished") |> render_click()
+      view |> element("#issues-search-form") |> render_change(%{"q" => "login"})
+      assert_patched(view, ~p"/issues?#{[q: "login", priority: "high", finished: true]}")
+
+      assert %User{issues_filters: %{"priority" => "high", "finished" => "true"} = saved} =
+               Repo.reload!(user)
+
+      assert map_size(saved) == 2
+
+      assert {:error, {:live_redirect, %{to: "/issues?priority=high&finished=true"}}} = live(conn, ~p"/issues")
+
+      # Back from the nav within the same visit reads what was saved since the page opened.
+      {:ok, view, _html} = live(conn, ~p"/issues?priority=high&finished=true")
+      view |> element("#filter-priority-urgent") |> render_click()
+      assert {:error, {:live_redirect, %{to: "/issues?priority=urgent&finished=true"}}} = live(conn, ~p"/issues")
+
+      {:ok, teammate} =
+        Users.register_oauth_user(%{
+          github_id: "gh_issues_live_teammate",
+          login: "issues_live_teammate",
+          email: "issues_live_teammate@example.com",
+          admin: true
+        })
+
+      assert {:ok, _view, _html} = live(log_in_user(build_conn(), teammate), ~p"/issues")
+    end
+
+    test "a link's filters apply without saving, and clearing every filter keeps /issues bare", %{
+      conn: conn,
+      user: user
+    } do
+      {:ok, _user} = Users.set_issues_filters(Scope.for_user(user), %{"mine" => "true"})
+
+      {:ok, view, _html} = live(conn, ~p"/issues?priority=low")
+      assert has_element?(view, "#filter-priority-low.bg-blue-600")
+      assert %User{issues_filters: %{"mine" => "true"}} = Repo.reload!(user)
+
+      # A search or page in the URL comes along when the saved filters are applied.
+      assert {:error, {:live_redirect, %{to: "/issues?q=crash&mine=true"}}} = live(conn, ~p"/issues?q=crash")
+
+      {:ok, view, _html} = live(conn, ~p"/issues?mine=true")
+      view |> element("#issues-mine") |> render_click()
+      assert_patched(view, ~p"/issues")
+      cleared = %{}
+      assert %User{issues_filters: ^cleared} = Repo.reload!(user)
+
+      assert {:ok, _view, _html} = live(conn, ~p"/issues")
+    end
+  end
+
+  describe "cycle view" do
+    setup %{conn: conn, project: project} do
+      people =
+        for name <- ["Ana", "Bo"] do
+          {:ok, user} =
+            Users.register_oauth_user(%{
+              github_id: "gh_cycle_#{name}",
+              login: "cycle_#{name}",
+              name: name,
+              email: "cycle_#{name}@example.com"
+            })
+
+          user
+        end
+
+      {:ok, viewer} =
+        Users.register_oauth_user(%{
+          github_id: "gh_cycle_viewer",
+          login: "cycle_viewer",
+          email: "cycle_viewer@example.com",
+          admin: true
+        })
+
+      cycle = fn id, number, status, current ->
+        %{
+          id: id,
+          number: number,
+          name: nil,
+          starts_on: ~D[2026-10-26],
+          ends_on: ~D[2026-11-08],
+          status: status,
+          current: current,
+          scope_history: [5.0, 6.0],
+          started_history: [1.0, 2.0],
+          completed_history: [+0.0, 1.0],
+          default_estimate: 1
+        }
+      end
+
+      cycles = %{
+        cycles: [
+          cycle.("cyc_11", 11, :ended, false),
+          cycle.("cyc_12", 12, :running, true),
+          cycle.("cyc_13", 13, :upcoming, false)
+        ],
+        statuses: [
+          %{name: "Backlog", type: "backlog", position: 0},
+          %{name: "Ready for Dev", type: "unstarted", position: 1},
+          %{name: "In Progress", type: "started", position: 2},
+          %{name: "In Review", type: "started", position: 3},
+          %{name: "Done", type: "completed", position: 4}
+        ]
+      }
+
+      stub(Issues, :get_cycles, fn _project -> {:ok, cycles} end)
+
+      insert = fn identifier, attrs ->
+        %Issue{}
+        |> Issue.tracker_changeset(
+          Map.merge(
+            %{
+              project_id: project.id,
+              external_id: "lin_#{identifier}",
+              identifier: identifier,
+              title: "Title #{identifier}",
+              state: :backlog
+            },
+            attrs
+          )
+        )
+        |> Repo.insert!()
+      end
+
+      [ana, bo] = people
+
+      %{
+        conn: conn |> log_in_user(viewer) |> init_test_session(%{selected_project_id: project.id}),
+        viewer: viewer,
+        ana: ana,
+        bo: bo,
+        cycles: cycles,
+        insert: insert,
+        reviewing:
+          insert.("CYC-1", %{
+            state: :in_progress,
+            state_name: "In Review",
+            cycle_external_id: "cyc_12",
+            owner_user_id: ana.id,
+            estimate: 3,
+            priority: :high
+          }),
+        working:
+          insert.("CYC-2", %{
+            state: :in_progress,
+            state_name: "In Progress",
+            cycle_external_id: "cyc_12",
+            owner_user_id: bo.id,
+            estimate: 2
+          }),
+        ready:
+          insert.("CYC-3", %{
+            state: :backlog,
+            state_name: "Ready for Dev",
+            cycle_external_id: "cyc_12",
+            owner_user_id: ana.id
+          }),
+        outside: insert.("CYC-4", %{state: :backlog, state_name: "Backlog"})
+      }
+    end
+
+    test "the chip opens the current cycle grouped by Linear's statuses beside its figures, and turns back off", %{
+      conn: conn,
+      viewer: viewer,
+      reviewing: reviewing,
+      working: working,
+      ready: ready,
+      outside: outside
+    } do
+      {:ok, view, _html} = live(conn, ~p"/issues")
+      render_async(view)
+
+      assert has_element?(view, "#cycle-toggle[aria-pressed='false']", "Current cycle")
+      view |> element("#cycle-toggle") |> render_click()
+      assert_patched(view, ~p"/issues?cycle=12")
+      assert %User{issues_filters: %{"cycle" => "current"}} = Repo.reload!(viewer)
+
+      assert has_element?(view, "#cycle-toggle[aria-pressed='true']", "Cycle 12")
+      assert has_element?(view, "#cycle-issues section[aria-label='In Review']", "1 issue")
+      assert has_element?(view, "#cycle-issues section[aria-label='In Review'] #issue-card-#{reviewing.id}")
+      assert has_element?(view, "#issue-card-#{reviewing.id} .text-emerald-500")
+      assert has_element?(view, "#cycle-issues section[aria-label='In Progress'] #issue-card-#{working.id}")
+      assert has_element?(view, "#cycle-issues section[aria-label='Ready for Dev'] #issue-card-#{ready.id}")
+      refute has_element?(view, "#issue-card-#{outside.id}")
+      refute has_element?(view, "#issues-pagination")
+
+      html = render(view)
+      [_before, after_review] = String.split(html, ~s(aria-label="In Review"), parts: 2)
+      assert after_review =~ ~s(aria-label="In Progress")
+      [_before, after_progress] = String.split(after_review, ~s(aria-label="In Progress"), parts: 2)
+      assert after_progress =~ ~s(aria-label="Ready for Dev")
+
+      # Three, two and the team's default of one.
+      assert has_element?(view, "#cycle-panel[aria-label='Cycle 12']")
+      assert has_element?(view, "#cycle-scope", "6")
+      assert has_element?(view, "#cycle-started", "5")
+      assert has_element?(view, "#cycle-scope", "+20% since Oct 26")
+      assert has_element?(view, "#cycle-chart")
+      assert has_element?(view, "#filter-priority-all", "All (3)")
+      assert has_element?(view, "#filter-priority-high", "High (1)")
+
+      view |> element("#cycle-toggle") |> render_click()
+      assert_patched(view, ~p"/issues")
+      assert has_element?(view, "#issue-card-#{outside.id}")
+      assert %User{issues_filters: %{}} = Repo.reload!(viewer)
+    end
+
+    test "picking an owner narrows the list while the figures stay the cycle's, and nothing matching names the cycle", %{
+      conn: conn,
+      ana: ana,
+      bo: bo,
+      reviewing: reviewing,
+      working: working
+    } do
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12&mine=true")
+      render_async(view)
+
+      view |> element("#cycle-owner-#{bo.id}") |> render_click()
+      assert_patched(view, ~p"/issues?cycle=12&owner=#{bo.id}")
+      assert has_element?(view, "#issue-card-#{working.id}")
+      refute has_element?(view, "#issue-card-#{reviewing.id}")
+      assert has_element?(view, "#cycle-owner-#{bo.id}[aria-pressed='true']", "Clear filter")
+      assert has_element?(view, "#cycle-scope", "6")
+
+      view |> element("#filter-priority-high") |> render_click()
+      assert_patched(view, ~p"/issues?priority=high&cycle=12&owner=#{bo.id}")
+      assert has_element?(view, "[data-qa='empty-state-title']", "No issues in Cycle 12")
+      refute has_element?(view, "#issues-list")
+      assert has_element?(view, "#cycle-panel")
+
+      view |> element("#cycle-owner-#{bo.id}") |> render_click()
+      assert_patched(view, ~p"/issues?priority=high&cycle=12")
+      assert has_element?(view, "#issue-card-#{reviewing.id}")
+
+      # My issues and an owner exclude each other.
+      view |> element("#cycle-owner-#{ana.id}") |> render_click()
+      view |> element("#issues-mine") |> render_click()
+      assert_patched(view, ~p"/issues?priority=high&mine=true&cycle=12")
+
+      # An owner with nothing in the cycle is no filter at all, and a link naming both keeps My issues.
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12&owner=usr_nobody")
+      render_async(view)
+      assert has_element?(view, "#issue-card-#{working.id}")
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12&mine=true&owner=#{bo.id}")
+      render_async(view)
+      refute has_element?(view, "#issue-card-#{working.id}")
+    end
+
+    test "the arrows step through cycles and stop at either end, and a search keeps narrowing inside one", %{
+      conn: conn,
+      insert: insert,
+      viewer: viewer,
+      reviewing: reviewing
+    } do
+      ended = insert.("CYC-5", %{state: :done, state_name: "Done", cycle_external_id: "cyc_11"})
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+
+      view |> element("#cycle-previous") |> render_click()
+      assert_patched(view, ~p"/issues?cycle=11")
+      assert has_element?(view, "#cycle-toggle", "Cycle 11")
+      assert has_element?(view, "#cycle-previous[disabled]")
+      assert has_element?(view, "[data-qa='empty-state-title']", "No issues in Cycle 11")
+      assert %User{issues_filters: %{}} = Repo.reload!(viewer)
+
+      view |> element("#issues-show-finished") |> render_click()
+      assert has_element?(view, "#cycle-issues section[aria-label='Done'] #issue-card-#{ended.id}")
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=13")
+      render_async(view)
+      assert has_element?(view, "#cycle-next[disabled]")
+      assert has_element?(view, "#cycle-panel", "Planned so far")
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12&q=CYC-1")
+      render_async(view)
+      assert has_element?(view, "#issue-card-#{reviewing.id}")
+      assert has_element?(view, "#filter-priority-all", "All (1)")
+    end
+
+    test "a cycle moving its only issue out shows the empty state, not the whole list", %{
+      conn: conn,
+      project: project,
+      insert: insert,
+      outside: outside
+    } do
+      only = insert.("CYC-6", %{state: :backlog, state_name: "Backlog", cycle_external_id: "cyc_13"})
+      {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=13")
+      render_async(view)
+      assert has_element?(view, "#issue-card-#{only.id}")
+
+      assert {:ok, _issue} =
+               Issues.handle_linear_webhook(workspace, %{
+                 "type" => "Issue",
+                 "action" => "update",
+                 "data" => %{
+                   "id" => only.external_id,
+                   "teamId" => "lin_team_id",
+                   "identifier" => "CYC-6",
+                   "title" => "Title CYC-6",
+                   "state" => %{"name" => "Backlog", "type" => "backlog"}
+                 },
+                 "updatedFrom" => %{"cycleId" => "cyc_13"}
+               })
+
+      refute has_element?(view, "#issue-card-#{only.id}")
+      refute has_element?(view, "#issue-card-#{outside.id}")
+      assert has_element?(view, "[data-qa='empty-state-title']", "No issues in Cycle 13")
+
+      # Into the cycle again, with its figures following.
+      assert {:ok, _issue} =
+               Issues.handle_linear_webhook(workspace, %{
+                 "type" => "Issue",
+                 "action" => "update",
+                 "data" => %{
+                   "id" => only.external_id,
+                   "teamId" => "lin_team_id",
+                   "identifier" => "CYC-6",
+                   "title" => "Title CYC-6",
+                   "cycleId" => "cyc_13",
+                   "estimate" => 4,
+                   "state" => %{"name" => "Backlog", "type" => "backlog"}
+                 }
+               })
+
+      assert has_element?(view, "#issue-card-#{only.id}")
+      assert has_element?(view, "#cycle-scope", "4")
+    end
+
+    test "a saved cycle view opens on the current cycle by its number", %{conn: conn, viewer: viewer} do
+      {:ok, _viewer} = Users.set_issues_filters(Scope.for_user(viewer), %{"cycle" => "current"})
+
+      assert {:error, {:live_redirect, %{to: "/issues?cycle=current"}}} = live(conn, ~p"/issues")
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=current")
+      render_async(view)
+      assert_patch(view, ~p"/issues?cycle=12")
+    end
+
+    test "until Linear answers a cycle's link lists nothing, and a cycle the project lacks is ignored", %{
+      conn: conn,
+      outside: outside
+    } do
+      html = conn |> get(~p"/issues?cycle=12") |> html_response(200)
+      assert html =~ "issues-filters-bar"
+      refute html =~ "issues-list"
+      refute html =~ "issues-empty-state"
+      refute html =~ "cycle-toggle"
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=99&owner=usr_x")
+      render_async(view)
+      assert has_element?(view, "#issue-card-#{outside.id}")
+      assert has_element?(view, "#cycle-toggle[aria-pressed='false']")
+
+      view |> element("#filter-priority-medium") |> render_click()
+      assert_patched(view, ~p"/issues?priority=medium")
+    end
+
+    test "Linear not answering shows no chip and lists issues as before", %{
+      conn: conn,
+      cycles: cycles,
+      outside: outside
+    } do
+      stub(Issues, :get_cycles, fn _project -> {:error, :timeout} end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+      refute has_element?(view, "#cycle-toggle")
+      assert has_element?(view, "#issue-card-#{outside.id}")
+      assert has_element?(view, "#issues-pagination")
+
+      stub(Issues, :get_cycles, fn _project -> raise "Linear is down" end)
+      {:ok, view, _html} = live(conn, ~p"/issues")
+      render_async(view)
+      refute has_element?(view, "#cycle-toggle")
+
+      stub(Issues, :get_cycles, fn _project -> {:ok, cycles} end)
+      {:ok, view, _html} = live(conn, ~p"/issues")
+      render_async(view)
+      assert has_element?(view, "#cycle-toggle")
+    end
+
+    test "one parent shows dimmed in each status group of its sub-issues, each with its own id, done count and mark", %{
+      conn: conn,
+      insert: insert
+    } do
+      parent = insert.("CYC-7", %{state: :done, state_name: "Done"})
+
+      started =
+        insert.("CYC-8", %{
+          state: :in_progress,
+          state_name: "In Progress",
+          cycle_external_id: "cyc_12",
+          parent_external_id: parent.external_id
+        })
+
+      waiting =
+        insert.("CYC-9", %{
+          state: :backlog,
+          state_name: "Ready for Dev",
+          cycle_external_id: "cyc_12",
+          parent_external_id: parent.external_id
+        })
+
+      stub(Issues, :get_blockers, fn _issues ->
+        %{parent.external_id => %{blocked_by: [%{issue: %Issue{identifier: "CYC-50", state: :todo}, in_project: true}]}}
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+      render_async(view)
+
+      for {group, child} <- [{"In Progress", started}, {"Ready for Dev", waiting}] do
+        copy = "#cycle-issues section[aria-label='#{group}'] [data-context='true'][data-qa~='issue-card-#{parent.id}']"
+        assert has_element?(view, copy)
+        assert has_element?(view, "#{copy} [data-qa='issue-sub-issue-count']", "0/2")
+        assert has_element?(view, "#{copy} [data-qa='issue-blocked'][title='Blocked by CYC-50']", "1")
+        refute has_element?(view, "#{copy} [data-qa^='task-link']")
+        assert has_element?(view, "#cycle-issues section[aria-label='#{group}'] #issue-card-#{child.id}")
+      end
+
+      html = render(view)
+      ids = ~r/id="(issue-card-[^"]+)"/ |> Regex.scan(html, capture: :all_but_first) |> List.flatten()
+      assert ids == Enum.uniq(ids)
+      assert has_element?(view, "#cycle-issues section[aria-label='In Progress']", "2 issues")
+    end
+  end
+
+  describe "sub-issues and blockers in All issues" do
+    setup %{conn: conn, project: project} do
+      {:ok, user} =
+        Users.register_oauth_user(%{
+          github_id: "gh_nest_viewer",
+          login: "nest_viewer",
+          email: "nest_viewer@example.com",
+          admin: true
+        })
+
+      insert = fn identifier, attrs ->
+        %Issue{}
+        |> Issue.tracker_changeset(
+          Map.merge(
+            %{
+              project_id: project.id,
+              external_id: "lin_#{identifier}",
+              identifier: identifier,
+              title: "Title #{identifier}",
+              state: :todo
+            },
+            attrs
+          )
+        )
+        |> Repo.insert!()
+      end
+
+      %{conn: log_in_user(conn, user), insert: insert}
+    end
+
+    test "a sub-issue sits under its parent's row, or under a dimmed copy the page range does not count", %{
+      conn: conn,
+      insert: insert
+    } do
+      parent = insert.("NST-1", %{priority: :low})
+      done = insert.("NST-2", %{priority: :high, parent_external_id: parent.external_id, state: :done})
+      child = insert.("NST-3", %{priority: :high, parent_external_id: parent.external_id})
+
+      {:ok, view, _html} = live(conn, ~p"/issues")
+
+      assert has_element?(view, "#issue-card-#{parent.id}:not([data-context])")
+      assert has_element?(view, "#issue-card-#{parent.id} [data-qa='issue-sub-issue-count']", "1/2")
+      assert has_element?(view, "#issue-card-#{child.id} .border-l")
+      refute has_element?(view, "#issue-card-#{done.id}")
+      [_before, after_parent] = String.split(render(view), ~s(id="issue-card-#{parent.id}"), parts: 2)
+      assert after_parent =~ ~s(id="issue-card-#{child.id}")
+
+      view |> element("#filter-priority-high") |> render_click()
+      assert has_element?(view, "#issue-card-#{parent.id}-above-#{child.id}[data-context='true']")
+      assert has_element?(view, "#issue-card-#{child.id}")
+      assert has_element?(view, "#issues-page-range", "Showing 1–1 of 1")
+    end
+
+    test "a blocked row carries a red mark naming its open blockers, and none once every blocker is finished", %{
+      conn: conn,
+      insert: insert,
+      project: project
+    } do
+      blocked = insert.("NST-4", %{})
+      blocker = insert.("NST-5", %{})
+      finished = %Issue{identifier: "NST-6", state: :done}
+
+      stub(Issues, :get_blockers, fn _issues ->
+        %{
+          blocked.external_id => %{
+            blocked_by: [
+              %{issue: Repo.get!(Issue, blocker.id), in_project: true},
+              %{issue: finished, in_project: false}
+            ],
+            blocks: []
+          }
+        }
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues?finished=true")
+      render_async(view)
+
+      assert has_element?(view, "#issue-card-#{blocked.id} [data-qa='issue-blocked'][title='Blocked by NST-5']", "1")
+      refute has_element?(view, "#issue-card-#{blocker.id} [data-qa='issue-blocked']")
+
+      # The blocker finishing in Linear takes the mark off, read again since Linear sends nothing for relations.
+      {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+
+      assert {:ok, _issue} =
+               Issues.handle_linear_webhook(workspace, %{
+                 "type" => "Issue",
+                 "action" => "update",
+                 "data" => %{
+                   "id" => blocker.external_id,
+                   "teamId" => "lin_team_id",
+                   "identifier" => "NST-5",
+                   "title" => "Title NST-5",
+                   "state" => %{"name" => "Done", "type" => "completed"}
+                 }
+               })
+
+      render_async(view)
+      refute has_element?(view, "#issue-card-#{blocked.id} [data-qa='issue-blocked']")
+    end
+
+    test "blockers Linear fails to read leave the rows unmarked", %{conn: conn, insert: insert} do
+      blocked = insert.("NST-7", %{})
+      stub(Issues, :get_blockers, fn _issues -> raise "Linear is down" end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues")
+      render_async(view)
+
+      assert has_element?(view, "#issue-card-#{blocked.id}")
+      refute has_element?(view, "[data-qa='issue-blocked']")
+    end
+
+    test "a GitHub project and All projects offer no cycle and ask nobody for one", %{
+      conn: conn,
+      github_project: github_project
+    } do
+      reject(&Issues.get_cycles/1)
+
+      {:ok, view, _html} = live(conn, ~p"/issues")
+      refute has_element?(view, "#cycle-toggle")
+
+      {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: github_project.id}), ~p"/issues")
+      refute has_element?(view, "#cycle-toggle")
+    end
   end
 end

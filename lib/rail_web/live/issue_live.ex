@@ -8,6 +8,7 @@ defmodule RailWeb.IssueLive do
   use RailWeb, :live_view
 
   import RailWeb.Utils.HandleIssueEvent
+  import RailWeb.Utils.IssueRelative
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
@@ -34,6 +35,7 @@ defmodule RailWeb.IssueLive do
       |> assign(:assignee_query, "")
       |> assign(:comment_nonce, 0)
       |> assign(:checking_pull_request, false)
+      |> assign(:blockers, nil)
 
     {:ok, socket}
   end
@@ -47,7 +49,8 @@ defmodule RailWeb.IssueLive do
         do: assign(socket, :assignees, Users.list_assignable_users(project_id: issue.project_id, tracker: issue.tracker)),
         else: socket
 
-    {:noreply, link_pull_request(socket)}
+    socket = socket |> link_pull_request() |> read_blockers()
+    {:noreply, socket}
   end
 
   def render(assigns) do
@@ -65,6 +68,7 @@ defmodule RailWeb.IssueLive do
         }
         workflow={@issue.workflow}
         link_workflow={Scope.admin?(@current_scope)}
+        blockers={@blockers}
       />
     </Layouts.app>
     """
@@ -109,14 +113,16 @@ defmodule RailWeb.IssueLive do
 
   def handle_info({:issue_comments_changed, _other_issue_id}, socket), do: {:noreply, socket}
 
-  # The tracker may have closed the issue, which takes away the offer to start it.
-  def handle_info({:issue_changed, issue_id}, %{assigns: %{issue: %{id: issue_id}}} = socket) do
-    {:noreply, load_issue(socket, issue_id)}
+  # The tracker may have closed the issue, which takes away the offer to start it, or changed its parent, a sub-issue
+  # or a blocker. Linear sends nothing for a relation, so blockers are read again when this issue or one changes.
+  def handle_info({event, changed_id}, %{assigns: %{issue: %Issue{} = issue, blockers: blockers}} = socket)
+      when event in [:issue_changed, :issue_created] do
+    socket = if issue_relative?(issue, blockers, changed_id), do: load_issue(socket, issue.id), else: socket
+    blocker_ids = for %{issue: %Issue{id: id}} <- (blockers && blockers.blocked_by ++ blockers.blocks) || [], do: id
+
+    socket = if changed_id == issue.id or changed_id in blocker_ids, do: read_blockers(socket), else: socket
+    {:noreply, socket}
   end
-
-  def handle_info({:issue_changed, _other_issue_id}, socket), do: {:noreply, socket}
-
-  def handle_info({:issue_created, _issue_id}, socket), do: {:noreply, socket}
 
   # A sync may have renamed the workflow that opened this issue.
   def handle_info({:workflows_changed, project_id}, %{assigns: %{issue: %{project_id: project_id}}} = socket) do
@@ -135,11 +141,20 @@ defmodule RailWeb.IssueLive do
     {:noreply, assign(socket, :checking_pull_request, false)}
   end
 
+  # An answer read for an issue the page no longer shows is dropped.
+  def handle_async(:blockers, {:ok, {issue_id, blockers}}, %{assigns: %{issue: %Issue{id: issue_id}}} = socket) do
+    {:noreply, assign(socket, :blockers, blockers)}
+  end
+
+  def handle_async(:blockers, _stale_or_failed, socket), do: {:noreply, socket}
+
   defp load_issue(socket, id) do
     preload = [
       :project,
       :owner_user,
       :workflow,
+      :parent,
+      :children,
       task: [runs: :role, parent_task: [children: :issue]],
       comments: [:author_user, replies: :author_user]
     ]
@@ -179,6 +194,19 @@ defmodule RailWeb.IssueLive do
   end
 
   defp link_pull_request(socket), do: socket
+
+  # Read once connected, not in `load_issue/2`, which runs on every comment and sync.
+  defp read_blockers(%{assigns: %{issue: %Issue{} = issue}} = socket) do
+    if connected?(socket) do
+      start_async(socket, :blockers, fn ->
+        {issue.id, Map.get(Issues.get_blockers([issue]), issue.external_id, %{blocked_by: [], blocks: []})}
+      end)
+    else
+      socket
+    end
+  end
+
+  defp read_blockers(socket), do: socket
 
   defp start_error({:worktree_failed, reason}), do: "Could not create the worktree: #{reason}"
   defp start_error({:spawn_failed, reason, _run}), do: "Could not start the agent: #{inspect(reason)}"

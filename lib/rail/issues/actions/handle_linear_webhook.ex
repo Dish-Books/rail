@@ -44,24 +44,23 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
     delete_issue(projects, external_id)
   end
 
-  def handle_linear_webhook(%LinearWorkspace{projects: projects}, %{
-        "type" => "Issue",
-        "action" => action,
-        "data" => %{"id" => external_id, "archivedAt" => archived_at} = data
-      })
+  def handle_linear_webhook(
+        %LinearWorkspace{projects: projects},
+        %{"type" => "Issue", "action" => action, "data" => %{"id" => external_id, "archivedAt" => archived_at} = data} =
+          payload
+      )
       when action in ["create", "update"] and is_binary(archived_at) do
     if Repo.exists?(from(t in Task, join: i in assoc(t, :issue), where: i.external_id == ^external_id)),
-      do: upsert_issue(projects, action, data),
+      do: upsert_issue(projects, action, data, payload["updatedFrom"]),
       else: delete_issue_without_task(projects, external_id)
   end
 
-  def handle_linear_webhook(%LinearWorkspace{projects: projects}, %{
-        "type" => "Issue",
-        "action" => action,
-        "data" => %{"id" => _external_id, "teamId" => _team_id} = data
-      })
+  def handle_linear_webhook(
+        %LinearWorkspace{projects: projects},
+        %{"type" => "Issue", "action" => action, "data" => %{"id" => _external_id, "teamId" => _team_id} = data} = payload
+      )
       when action in ["create", "update"] do
-    upsert_issue(projects, action, data)
+    upsert_issue(projects, action, data, payload["updatedFrom"])
   end
 
   def handle_linear_webhook(%LinearWorkspace{projects: projects}, %{
@@ -104,11 +103,12 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
 
   def handle_linear_webhook(%LinearWorkspace{}, _payload), do: :ok
 
-  defp upsert_issue(projects, action, %{"id" => external_id} = data) do
+  defp upsert_issue(projects, action, %{"id" => external_id} = data, updated_from) do
     case Enum.find(projects, &(&1.linear_team_id == data["teamId"])) do
       %Project{id: project_id} ->
         attrs =
           data
+          |> with_cleared(updated_from)
           |> format_linear_issue()
           |> Map.merge(%{project_id: project_id, owner_user_id: owner_user_id(data["assigneeId"])})
 
@@ -209,6 +209,15 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
         :ok
     end
   end
+
+  # An update leaves out a field it set to null, so only `updatedFrom` naming it says it was cleared.
+  defp with_cleared(data, %{} = updated_from) do
+    Enum.reduce(["cycleId", "parentId"], data, fn key, data ->
+      if Map.has_key?(updated_from, key) and not Map.has_key?(data, key), do: Map.put(data, key, nil), else: data
+    end)
+  end
+
+  defp with_cleared(data, _no_updated_from), do: data
 
   defp finished?("update", %Issue{id: id, state: was}, %Issue{state: now}) when is_binary(id),
     do: not Issue.finished_state?(was) and Issue.finished_state?(now)

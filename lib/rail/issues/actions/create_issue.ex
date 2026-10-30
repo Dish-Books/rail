@@ -38,11 +38,17 @@ defmodule Rail.Issues.Actions.CreateIssue do
         })
 
       # A tracker's webhook can announce the ticket before this insert, so the row it saved is kept.
-      # Set on the struct rather than cast, so no tracker write can change it after.
-      %Issue{skipped_steps: attrs[:skipped_steps] || [], stages: attrs[:stages] || []}
+      # Set on the struct rather than cast, so no tracker write can change the steps after; `Issue.changeset/2`
+      # takes no cycle or parent, which GitHub never sends.
+      %Issue{
+        skipped_steps: attrs[:skipped_steps] || [],
+        stages: attrs[:stages] || [],
+        cycle_external_id: tracked[:cycle_external_id],
+        parent_external_id: tracked[:parent_external_id]
+      }
       |> Issue.changeset(local)
       |> Repo.insert(
-        on_conflict: {:replace_all_except, [:id, :branch_name, :inserted_at]},
+        on_conflict: {:replace_all_except, [:id, :branch_name, :inserted_at, :cycle_external_id, :parent_external_id]},
         conflict_target: :external_id,
         returning: true
       )

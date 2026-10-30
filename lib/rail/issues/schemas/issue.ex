@@ -44,6 +44,18 @@ defmodule Rail.Issues.Schemas.Issue do
     field :skipped_steps, {:array, Ecto.Enum}, values: @optional_steps, default: []
     # The stages its workflow's file named, custom ones with their prompts, copied the same way; empty runs the built-ins.
     embeds_many :stages, IssueStage, on_replace: :delete
+    # Linear's ids for its cycle and its parent, which only the tracker sets.
+    field :cycle_external_id, :string
+
+    belongs_to :parent, __MODULE__,
+      foreign_key: :parent_external_id,
+      references: :external_id,
+      type: :string
+
+    has_many :children, __MODULE__,
+      foreign_key: :parent_external_id,
+      references: :external_id,
+      preload_order: [asc: :inserted_at, asc: :id]
 
     belongs_to :project, Project
     belongs_to :owner_user, User
@@ -87,27 +99,23 @@ defmodule Rail.Issues.Schemas.Issue do
 
   def changeset(issue, attrs) do
     issue
-    |> tracker_changeset(attrs)
+    |> base_changeset(attrs)
     |> sync_to_tracker()
   end
 
   @doc """
   A changeset for what the tracker itself reports, such as a webhook or a poll. It is
   the same as `changeset/2` except that nothing is queued to push back to the tracker,
-  since the tracker is where the change came from.
+  since the tracker is where the change came from, and it also takes the cycle and the parent,
+  which Rail never sends.
 
   Either one, on giving an unowned issue an owner, queues
   `Rail.Issues.Workers.AdvanceTrackerState` to catch its tracker status up with its task.
   """
   def tracker_changeset(issue, attrs) do
     issue
-    |> cast(attrs, @cast_fields)
-    |> validate_required(@required_fields)
-    |> unique_constraint(:external_id)
-    |> foreign_key_constraint(:project_id)
-    |> foreign_key_constraint(:owner_user_id)
-    |> foreign_key_constraint(:workflow_id)
-    |> advance_when_claimed()
+    |> cast(attrs, [:cycle_external_id, :parent_external_id])
+    |> base_changeset(attrs)
   end
 
   @doc """
@@ -183,6 +191,71 @@ defmodule Rail.Issues.Schemas.Issue do
   def custom_stage(%__MODULE__{stages: stages}, name) when is_list(stages),
     do: Enum.find(stages, &match?(%IssueStage{stage: :custom, name: ^name}, &1))
 
+  @doc "The issue's parent when Rail holds it in the issue's own project, so no other project's title shows."
+  def calculate_parent(%__MODULE__{project_id: project_id, parent: %__MODULE__{project_id: project_id} = parent}),
+    do: parent
+
+  def calculate_parent(%__MODULE__{}), do: nil
+
+  @doc "The issue's sub-issues Rail holds in its own project, oldest first."
+  def calculate_children(%__MODULE__{project_id: project_id, children: children}) when is_list(children),
+    do: Enum.filter(children, &(&1.project_id == project_id))
+
+  def calculate_children(%__MODULE__{}), do: []
+
+  @doc "Its sub-issues in Done, out of all of them but canceled and duplicate ones, as `{done, total}`."
+  def calculate_sub_issue_count(%__MODULE__{} = issue) do
+    counted = issue |> calculate_children() |> Enum.reject(&(&1.state in [:canceled, :duplicate]))
+    {Enum.count(counted, &(&1.state == :done)), length(counted)}
+  end
+
+  @doc """
+  Nests `issues` one level deep, each tree where its first member was. A row is its issue, its key, whether it is a
+  dimmed copy of a parent that is not a top-level row of the list, and its sub-issues.
+  """
+  def calculate_issue_tree(issues) when is_list(issues), do: build_tree(issues, nil)
+
+  @doc """
+  The cycle's issues in status groups: Linear's statuses, started ones furthest along first and finished ones last,
+  then Rail's label for any status Linear does not list. Each has its rows, its count and its points.
+  """
+  def calculate_status_groups(issues, statuses, default_estimate) when is_list(issues) do
+    names = MapSet.new(statuses, & &1.name)
+    {named, unnamed} = Enum.split_with(issues, &MapSet.member?(names, &1.state_name))
+
+    linear_groups =
+      for status <- Enum.sort_by(statuses, &status_rank/1),
+          do: {status.name, status_state(status), Enum.filter(named, &(&1.state_name == status.name))}
+
+    rail_groups = for state <- @states, do: {state_label(state), state, Enum.filter(unnamed, &(&1.state == state))}
+
+    (linear_groups ++ rail_groups)
+    |> Enum.reject(&match?({_label, _state, []}, &1))
+    |> Enum.with_index(fn {label, state, members}, index ->
+      %{
+        key: "group-#{index}",
+        label: label,
+        state: state,
+        rows: build_tree(members, "group-#{index}"),
+        count: length(members),
+        points: members |> Enum.map(&(&1.estimate || default_estimate)) |> Enum.sum()
+      }
+    end)
+  end
+
+  @doc """
+  The state an issue's status icon shows: In Review for one Rail holds as In Progress under a status named In Review,
+  since Linear gives both the same type.
+  """
+  def calculate_shown_state(%__MODULE__{state: :in_progress, state_name: name}) when is_binary(name) do
+    if String.downcase(name) == "in review", do: :in_review, else: :in_progress
+  end
+
+  def calculate_shown_state(%__MODULE__{state: state}), do: state
+
+  @doc "The entries of a blocked-by list whose issue is not finished yet."
+  def calculate_open_blockers(entries) when is_list(entries), do: Enum.reject(entries, &finished_state?(&1.issue.state))
+
   def finished_state?(state) when is_atom(state), do: state in @finished_states
   def finished_state?(_other), do: false
 
@@ -191,6 +264,17 @@ defmodule Rail.Issues.Schemas.Issue do
 
   def active?(state) when is_atom(state), do: state in [:triage, :backlog, :todo, :in_progress, :in_review]
   def active?(_other), do: false
+
+  defp base_changeset(issue, attrs) do
+    issue
+    |> cast(attrs, @cast_fields)
+    |> validate_required(@required_fields)
+    |> unique_constraint(:external_id)
+    |> foreign_key_constraint(:project_id)
+    |> foreign_key_constraint(:owner_user_id)
+    |> foreign_key_constraint(:workflow_id)
+    |> advance_when_claimed()
+  end
 
   # Every write goes up to the tracker, so no caller can forget to say so. This runs
   # inside the write's own transaction, which is what makes the job and the row
@@ -228,6 +312,64 @@ defmodule Rail.Issues.Schemas.Issue do
   end
 
   defp advance_when_claimed(%Ecto.Changeset{} = changeset), do: changeset
+
+  defp build_tree(issues, prefix) do
+    by_id = Map.new(issues, &{&1.id, &1})
+
+    {roots, members} =
+      Enum.reduce(issues, {[], %{}}, fn issue, {roots, members} ->
+        {_kind, head} = root = tree_root(issue, by_id)
+
+        if Map.has_key?(members, head.id),
+          do: {roots, Map.update!(members, head.id, &[issue | &1])},
+          else: {[root | roots], Map.put(members, head.id, [issue])}
+      end)
+
+    roots
+    |> Enum.reverse()
+    |> Enum.map(fn {kind, head} -> tree_row(kind, head, Enum.reverse(members[head.id]), prefix) end)
+  end
+
+  # Only an issue with no parent of its own is a head, so nesting stays one level deep.
+  defp tree_root(issue, by_id) do
+    parent = calculate_parent(issue)
+    listed = parent && by_id[parent.id]
+
+    cond do
+      is_nil(parent) -> {:real, issue}
+      listed != nil and is_nil(calculate_parent(listed)) -> {:real, listed}
+      true -> {:copy, parent}
+    end
+  end
+
+  defp tree_row(:real, head, members, _prefix) do
+    sub_issues = for %{id: id} = issue <- members, id != head.id, do: %{issue: issue, key: id}
+    %{issue: head, key: head.id, dimmed: false, sub_issues: sub_issues}
+  end
+
+  # A parent can be copied above several groups' sub-issues, so its key names the group and the first of them.
+  defp tree_row(:copy, head, [first | _rest] = members, prefix) do
+    key = Enum.join(Enum.reject([prefix, head.id, "above", first.id], &is_nil/1), "-")
+    %{issue: head, key: key, dimmed: true, sub_issues: Enum.map(members, &%{issue: &1, key: &1.id})}
+  end
+
+  defp status_rank(%{type: "started", position: position}), do: {0, -position}
+  defp status_rank(%{type: type, position: position}), do: {type_rank(type), position}
+
+  defp type_rank("unstarted"), do: 1
+  defp type_rank("backlog"), do: 2
+  defp type_rank("triage"), do: 3
+  defp type_rank("completed"), do: 4
+  defp type_rank(_canceled_or_other), do: 5
+
+  defp status_state(%{type: "started", name: name}),
+    do: if(String.downcase(name) == "in review", do: :in_review, else: :in_progress)
+
+  defp status_state(%{type: "unstarted"}), do: :todo
+  defp status_state(%{type: "triage"}), do: :triage
+  defp status_state(%{type: "completed"}), do: :done
+  defp status_state(%{type: "canceled"}), do: :canceled
+  defp status_state(%{type: _backlog_or_other}), do: :backlog
 
   defp sequence_stage(%IssueStage{stage: :custom, name: name}), do: {:custom, name}
   defp sequence_stage(%IssueStage{stage: stage}), do: stage

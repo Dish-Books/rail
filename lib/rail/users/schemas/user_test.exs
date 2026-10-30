@@ -201,4 +201,34 @@ defmodule Rail.Users.Schemas.UserTest do
     refute User.signing?(%User{})
     assert User.signing?(%User{signing_key: "-----BEGIN OPENSSH PRIVATE KEY-----"})
   end
+
+  describe "Issues filters" do
+    setup do
+      unique = System.unique_integer([:positive])
+
+      {:ok, user} =
+        Users.register_oauth_user(%{github_id: "if_#{unique}", login: "if_#{unique}", email: "if_#{unique}@example.com"})
+
+      %{user: user}
+    end
+
+    test "are written by their own changeset, keeping only the remembered keys with string values", %{user: user} do
+      filters = %{"priority" => "high", "finished" => "true", "q" => "login", "page" => "2", "owner" => 7}
+
+      assert {:ok, %User{issues_filters: %{"priority" => "high", "finished" => "true"} = saved}} =
+               user |> User.issues_filters_changeset(%{issues_filters: filters}) |> Repo.update()
+
+      assert map_size(saved) == 2
+    end
+
+    test "need a map", %{user: user} do
+      assert %{issues_filters: ["can't be blank"]} =
+               errors_on(User.issues_filters_changeset(user, %{issues_filters: nil}))
+    end
+
+    test "an admin's edit of the user leaves them as they were", %{user: user} do
+      assert {:ok, %User{issues_filters: %{}}} =
+               Users.update_user(system_scope(), user, %{name: "Renamed", issues_filters: %{"priority" => "high"}})
+    end
+  end
 end

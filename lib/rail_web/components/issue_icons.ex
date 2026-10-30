@@ -105,7 +105,9 @@ defmodule RailWeb.Components.IssueIcons do
   defp status_icon_name(:canceled), do: "pi-x-circle-fill"
   defp status_icon_name(:duplicate), do: "pi-x-circle-fill"
 
-  defp status_color(state) when state in [:in_progress, :in_review], do: "text-amber-500"
+  # In Review is green, so amber stays In Progress's alone.
+  defp status_color(:in_review), do: "text-emerald-500"
+  defp status_color(:in_progress), do: "text-amber-500"
   defp status_color(:done), do: "text-indigo-500"
   defp status_color(_other), do: "text-slate-500 dark:text-slate-400"
 end

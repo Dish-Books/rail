@@ -11,6 +11,12 @@ defmodule RailWeb.Components.IssueIconsTest do
     assert render_component(&IssueIcons.status_icon/1, state: :duplicate) =~ "pi-x-circle-fill"
   end
 
+  test "In Review is green and In Progress amber, so the two read apart" do
+    assert render_component(&IssueIcons.status_icon/1, state: :in_review) =~ "text-emerald-500"
+    assert render_component(&IssueIcons.status_icon/1, state: :in_progress) =~ "text-amber-500"
+    refute render_component(&IssueIcons.status_icon/1, state: :in_review) =~ "amber"
+  end
+
   test "an assignee with an avatar is shown as it" do
     html =
       render_component(&IssueIcons.assignee/1,

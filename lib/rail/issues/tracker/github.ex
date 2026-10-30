@@ -129,6 +129,13 @@ defmodule Rail.Issues.Tracker.Github do
   @impl true
   def get_asset(%Issue{}, _path), do: {:error, :unsupported}
 
+  # Rail reads no milestones or dependencies from GitHub.
+  @impl true
+  def get_cycles(%Project{}), do: {:ok, %{cycles: [], statuses: []}}
+
+  @impl true
+  def get_issue_relations(%Project{}, _external_ids), do: {:ok, %{}}
+
   # Everyone signs in with GitHub, so anyone can own a GitHub issue.
   @impl true
   def check_assignable(%User{}), do: :ok

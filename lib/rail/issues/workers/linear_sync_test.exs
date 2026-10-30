@@ -118,6 +118,81 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
     refute_enqueued(worker: SyncIssue)
   end
 
+  test "an existing issue gains its cycle and parent, and a sub-issue synced before its parent nests once it lands", %{
+    project: project
+  } do
+    %Issue{id: existing_id} =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_cyc_existing",
+        identifier: "SPI-31",
+        title: "In a cycle",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    node = fn id, identifier, cycle, parent ->
+      %{
+        "id" => id,
+        "identifier" => identifier,
+        "title" => identifier,
+        "state" => %{"name" => "Todo", "type" => "unstarted"},
+        "cycle" => cycle,
+        "parent" => parent
+      }
+    end
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"query" => query} = Jason.decode!(body)
+      assert query =~ "cycle {"
+      assert query =~ "parent {"
+
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issues" => %{
+            "nodes" => [
+              node.("lin_cyc_existing", "SPI-31", %{"id" => "cyc_12"}, %{"id" => "lin_cyc_parent"}),
+              node.("lin_cyc_other", "SPI-32", nil, nil)
+            ],
+            "pageInfo" => %{"hasNextPage" => true, "endCursor" => "cursor_cyc"}
+          }
+        }
+      })
+    end)
+
+    assert :ok = perform_job(LinearSync, %{project_id: project.id, started_at: "2026-10-06T10:00:00.000000Z"})
+
+    assert %Issue{id: ^existing_id, cycle_external_id: "cyc_12", parent_external_id: "lin_cyc_parent", parent: nil} =
+             Issue |> Repo.get!(existing_id) |> Repo.preload(:parent)
+
+    assert %Issue{cycle_external_id: nil, parent_external_id: nil} = Repo.get_by(Issue, external_id: "lin_cyc_other")
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issues" => %{
+            "nodes" => [node.("lin_cyc_parent", "SPI-30", %{"id" => "cyc_12"}, nil)],
+            "pageInfo" => %{"hasNextPage" => true, "endCursor" => "cursor_cyc_2"}
+          }
+        }
+      })
+    end)
+
+    assert :ok =
+             perform_job(LinearSync, %{
+               project_id: project.id,
+               cursor: "cursor_cyc",
+               started_at: "2026-10-06T10:00:00.000000Z"
+             })
+
+    assert %Issue{parent: %Issue{identifier: "SPI-30"} = parent} =
+             sub_issue = Issue |> Repo.get!(existing_id) |> Repo.preload(:parent)
+
+    assert ^parent = Issue.calculate_parent(sub_issue)
+  end
+
   test "an issue a workflow opened keeps its workflow through a full sync", %{project: project} do
     %Workflow{id: workflow_id} =
       Repo.insert!(%Workflow{
