@@ -411,7 +411,7 @@ function startOverlay(win) {
   const markerLayer = root.querySelector(".markers");
 
   let state = { commenting: false, selected: null, markers: [], version: null, scale: 1 };
-  let hovered = null;
+  let pointer = null;
   let lastMissing = null;
   let scheduled = false;
 
@@ -429,7 +429,12 @@ function startOverlay(win) {
   const draw = () => {
     scheduled = false;
 
-    if (state.commenting && hovered?.isConnected) {
+    // Whatever is under the pointer now: a scroll, a tooltip that hides or a page that moves changes it with no
+    // pointer move, and the outline follows the pointer, not the element it last moved over.
+    const under = state.commenting && pointer ? doc.elementFromPoint(pointer.x, pointer.y) : null;
+    const hovered = under && !isOurs(under) ? under : null;
+
+    if (hovered) {
       place(hover, hovered);
       label.textContent = "";
       label.append(hovered.localName);
@@ -508,12 +513,17 @@ function startOverlay(win) {
   win.addEventListener(
     "pointermove",
     (event) => {
-      if (!state.commenting || isOurs(event.target)) return;
-      hovered = event.target;
-      schedule();
+      pointer = { x: event.clientX, y: event.clientY };
+      if (state.commenting) schedule();
     },
     true
   );
+
+  win.addEventListener("pointerout", (event) => {
+    if (event.relatedTarget) return;
+    pointer = null;
+    schedule();
+  });
 
   // While commenting, a click picks the element and the mockup never hears of it. Pointer events are only stopped:
   // cancelling one would cancel the click it leads to.
@@ -544,6 +554,9 @@ function startOverlay(win) {
   });
 
   win.addEventListener("scroll", schedule, true);
+  // A transition or animation moves the page with no mutation to hear.
+  win.addEventListener("transitionend", schedule, true);
+  win.addEventListener("animationend", schedule, true);
   win.addEventListener("resize", schedule);
   new win.MutationObserver(schedule).observe(doc.documentElement, {
     subtree: true,
