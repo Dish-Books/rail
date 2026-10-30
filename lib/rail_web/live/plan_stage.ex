@@ -676,6 +676,7 @@ defmodule RailWeb.Live.PlanStage do
           <div
             id={"design-frame-#{@option.key}"}
             phx-hook="DesignFrame"
+            phx-mounted={JS.ignore_attributes(["style"])}
             data-comments={to_string(@picked != nil)}
             data-commenting={to_string(@commenting)}
             data-selected={@draft && @draft.selector}
@@ -698,7 +699,8 @@ defmodule RailWeb.Live.PlanStage do
               title={@option.title}
               sandbox="allow-scripts"
               src={frame_src(@task, @option, @picked)}
-              class="absolute top-0 left-0 w-full h-full border-0"
+              phx-mounted={JS.ignore_attributes(["style"])}
+              class="absolute top-0 left-0 w-[1920px] h-[1080px] origin-top-left border-0"
             />
             <p
               :if={@option.html == nil}

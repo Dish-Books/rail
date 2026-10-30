@@ -343,7 +343,8 @@ export const DesignFrame = {
 
   fit() {
     const frame = this.el.querySelector("iframe");
-    if (!frame) return;
+    // A hidden tab has no width, and a frame scaled to nothing is fitted again when it shows.
+    if (!frame || this.el.clientWidth === 0) return;
 
     const scale = fitScale(this.el.clientWidth, VIEWPORT_WIDTH);
     this.scale = scale;
@@ -407,6 +408,7 @@ function startOverlay(win) {
 
   const hover = root.querySelector("[data-kind='hover']");
   const label = hover.querySelector(".label");
+  const layer = root.querySelector(".layer");
   const selectedOutline = root.querySelector("[data-kind='selected']");
   const markerLayer = root.querySelector(".markers");
 
@@ -428,6 +430,11 @@ function startOverlay(win) {
 
   const draw = () => {
     scheduled = false;
+
+    // A page that zooms its root zooms the overlay inside it too, so every box would be drawn that much larger and
+    // further out than the viewport pixels it is measured in; the layer undoes it.
+    const zoom = host.currentCSSZoom;
+    layer.style.zoom = typeof zoom === "number" && zoom > 0 ? String(1 / zoom) : "";
 
     // Whatever is under the pointer now: a scroll, a tooltip that hides or a page that moves changes it with no
     // pointer move, and the outline follows the pointer, not the element it last moved over.
