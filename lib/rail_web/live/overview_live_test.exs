@@ -1100,8 +1100,10 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#throughput-total", "0 total")
     end
 
-    test "the numbers across the top count what is in flight, what shipped and what waits", %{
+    test "the numbers across the top count what is in flight, what shipped, archived or not, and what waits", %{
       conn: conn,
+      user: user,
+      project: project,
       roles: roles,
       task_for: task_for
     } do
@@ -1122,11 +1124,25 @@ defmodule RailWeb.OverviewLiveTest do
       task_for.("Shipped this month", %{completed_at: DateTime.shift(now, day: -5)})
       task_for.("Shipped last month", %{completed_at: DateTime.shift(now, day: -45)})
 
+      # Linear archives what closed a while ago, and an issue Rail never ran still shipped.
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_overview_archived_shipped",
+        identifier: "OVR-900",
+        title: "Shipped and archived",
+        state: :done,
+        owner_user_id: user.id,
+        completed_at: DateTime.shift(now, day: -40),
+        archived_at: DateTime.shift(now, day: -2)
+      })
+      |> Repo.insert!()
+
       assert {:ok, view, _html} = live(conn, ~p"/")
 
       assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "1")
       assert has_element?(view, "#stat-shipped [data-qa='stat-value']", "2")
-      assert has_element?(view, "#stat-shipped-delta", "+1 vs prior 30")
+      assert has_element?(view, "#stat-shipped-delta", "same as prior 30")
       assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")
       assert has_element?(view, "#stat-oldest-waiting", "oldest 2h 14m")
 

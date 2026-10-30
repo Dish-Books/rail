@@ -187,12 +187,13 @@ defmodule RailWeb.OverviewLive do
     blocked_on_user = Enum.count(blocked, &(&1.status.task.issue.owner_user_id == user_id))
 
     # Shipped means the tracker completed the issue. Sixty days covers this month's
-    # count and the month it is compared with.
+    # count and the month it is compared with, by which time the tracker may have archived it.
     %{issues: completed} =
       Issues.list_issues(
         project_id: project_id,
         owner_user_id: owner_user_id,
         show_finished: true,
+        archived: true,
         completed_after: DateTime.shift(now, day: -60)
       )
 
