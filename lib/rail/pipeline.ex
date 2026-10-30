@@ -69,6 +69,7 @@ defmodule Rail.Pipeline do
   defdelegate save_finding(task, attrs), to: Actions.SaveFinding
   defdelegate list_findings(task), to: Actions.ListFindings
   defdelegate decide_finding(scope, finding, decision), to: Actions.DecideFinding
+  defdelegate file_finding_issues(scope, task, findings), to: Actions.FileFindingIssues
   defdelegate save_review(task), to: Actions.SaveReview
   defdelegate read_review(task), to: Actions.ReadReview
   defdelegate read_fix_plan(task), to: Actions.ReadFixPlan

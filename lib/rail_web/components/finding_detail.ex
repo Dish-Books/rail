@@ -2,12 +2,13 @@ defmodule RailWeb.Components.FindingDetail do
   @moduledoc """
   One finding, read whole: what is wrong, where, the fix that points the way and why, the evidence, the
   rule with every place it applies, each with its code and what the latest fix did there, the commits it
-  was raised and fixed in, and its dated history, a note per pass, ruling and fix, each in its round. Fix
-  and Don't fix sit in its header. Each commit on the branch opens in the Diff item at the finding's file.
+  was raised and fixed in, and its dated history, a note per pass, ruling and fix, each in its round. Fix,
+  Don't fix and New issue sit in its header, until a Send files it as a new issue. Each commit on the branch opens in the Diff item at the finding's file.
   Each piece of it takes the reader's comments, under it, as a line of the plan does.
   """
   use RailWeb, :html
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.FindingComment
   alias Rail.Pipeline.Schemas.FindingNote
@@ -33,6 +34,8 @@ defmodule RailWeb.Components.FindingDetail do
   attr :names, :map, default: %{}, doc: "who ruled, by user id"
   attr :viewer_id, :string, default: nil
   attr :suppressor, :any, default: nil
+  attr :preview, :map, default: nil, doc: "`Rail.Pipeline.Schemas.Finding.calculate_issue/2`, while ruled New issue"
+  attr :project_name, :string, default: nil
   attr :neighbours, :map, required: true
 
   attr :comments, :map,
@@ -80,7 +83,15 @@ defmodule RailWeb.Components.FindingDetail do
               {@outcome.text}<span
                 :if={@outcome.detail}
                 class="font-normal text-slate-500 dark:text-slate-400"
-              > · {@outcome.detail}</span>
+              > · {@outcome.detail}</span><a
+                :if={@outcome.issue}
+                id="finding-issue-link"
+                data-qa="finding_issue_link"
+                href={@outcome.issue.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="font-mono text-blue-600 dark:text-blue-400 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 rounded-sm"
+              >{@outcome.issue.identifier}</a>
             </span>
           </p>
           <p
@@ -128,7 +139,10 @@ defmodule RailWeb.Components.FindingDetail do
           </div>
         </div>
 
-        <div :if={@decidable and @finding.status != :fixed} class="shrink-0 flex gap-2">
+        <div
+          :if={@decidable and @finding.status != :fixed and is_nil(@finding.issue_id)}
+          class="shrink-0 flex gap-2"
+        >
           <button
             :for={{decision, label} <- decisions(@finding)}
             type="button"
@@ -140,13 +154,13 @@ defmodule RailWeb.Components.FindingDetail do
             phx-value-decision={decision}
             aria-pressed={to_string(@finding.decision == decision)}
             class={[
-              "px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500",
+              "inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500",
               @finding.decision == decision && "bg-blue-600 dark:bg-blue-500 text-white",
               @finding.decision != decision &&
                 "border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
             ]}
           >
-            {label}
+            <.icon :if={decision == :new_issue} name="pi-plus-square-bold" class="size-[13px]" />{label}
           </button>
         </div>
       </div>
@@ -155,6 +169,12 @@ defmodule RailWeb.Components.FindingDetail do
         <div class="max-w-4xl space-y-5">
           <%!-- The header does not scroll, so the title's comments open here, where any number of them fit. --%>
           <.under commenting={@commenting} piece={:title} caption="Title" qa="finding_title_comments" />
+          <.finding_issue
+            :if={Finding.state(@finding) == :new_issue}
+            finding={@finding}
+            preview={@preview}
+            project_name={@project_name}
+          />
           <div
             :if={Finding.suppressed?(@finding) and @suppressor != nil}
             id="finding-suppressor"
@@ -803,9 +823,7 @@ defmodule RailWeb.Components.FindingDetail do
   defp note(%{note: %FindingNote{kind: :ruling}} = assigns) do
     ~H"""
     <span class="text-[12.5px] text-slate-700 dark:text-slate-200">
-      {ruler(@note, @names, @viewer_id)} ruled {if @note.decision == :skip,
-        do: "Don't fix",
-        else: "Fix"}
+      {ruler(@note, @names, @viewer_id)} ruled {ruling(@note.decision)}
     </span>
     """
   end
@@ -916,12 +934,24 @@ defmodule RailWeb.Components.FindingDetail do
       :dismissed ->
         outcome("Don't fix", nil, "pi-prohibit-bold", "text-slate-700 dark:text-slate-300")
 
+      :new_issue ->
+        new_issue_outcome(finding)
+
       :suppressed ->
         outcome("Suppressed", nil, "pi-funnel-simple-bold", "text-slate-700 dark:text-slate-300")
     end
   end
 
-  defp outcome(text, detail, icon, class), do: %{text: text, detail: detail, icon: icon, class: class}
+  defp outcome(text, detail, icon, class), do: %{text: text, detail: detail, icon: icon, class: class, issue: nil}
+
+  defp new_issue_outcome(%Finding{issue: %Issue{} = issue}),
+    do: %{
+      outcome("New issue", "filed as ", "pi-arrow-square-out-bold", "text-slate-700 dark:text-slate-300")
+      | issue: issue
+    }
+
+  defp new_issue_outcome(%Finding{}),
+    do: outcome("New issue", "filed when you send", "pi-plus-square-bold", "text-slate-700 dark:text-slate-300")
 
   defp on_commit(nil), do: nil
   defp on_commit(commit), do: "on #{short(commit)}"
@@ -938,7 +968,7 @@ defmodule RailWeb.Components.FindingDetail do
     end
   end
 
-  defp settled?(%Finding{} = finding), do: Finding.state(finding) in [:fixed, :dismissed, :suppressed]
+  defp settled?(%Finding{} = finding), do: Finding.state(finding) in [:fixed, :dismissed, :suppressed, :new_issue]
 
   defp raised_by(%Finding{raised_by: :code_reviewer}), do: "Code reviewer"
   defp raised_by(%Finding{raised_by: :review_lead}), do: "Review lead"
@@ -952,7 +982,7 @@ defmodule RailWeb.Components.FindingDetail do
 
   # Leaving a suppressed finding alone is what the rule already did, so the only call left is Fix.
   defp decisions(%Finding{} = finding) do
-    if Finding.suppressed?(finding), do: [fix: "Fix"], else: [fix: "Fix", skip: "Don't fix"]
+    if Finding.suppressed?(finding), do: [fix: "Fix"], else: [fix: "Fix", skip: "Don't fix", new_issue: "New issue"]
   end
 
   defp evidence_icon(:screenshot), do: "pi-image"
@@ -992,4 +1022,5 @@ defmodule RailWeb.Components.FindingDetail do
 
   defp ruling(:fix), do: "Fix"
   defp ruling(:skip), do: "Don't fix"
+  defp ruling(:new_issue), do: "New issue"
 end

@@ -545,6 +545,16 @@ defmodule Rail.Pipeline.Actions.SaveFindingTest do
     assert %{key: ["was ruled Don't fix by the human, so leave it be"]} = errors_on(changeset)
   end
 
+  test "a finding ruled New issue is left for its own issue, never fixed in this task", %{task: task, attrs: attrs} do
+    {:ok, raised} = Pipeline.save_finding(task, attrs)
+    {:ok, _filed_later} = Pipeline.decide_finding(system_scope(), raised, :new_issue)
+
+    assert {:error, changeset} = Pipeline.save_finding(task, %{"key" => "send-twice", "status" => "fixed"})
+
+    assert %{key: ["was ruled New issue by the human, a follow-up outside this task, so leave it be"]} =
+             errors_on(changeset)
+  end
+
   test "a checklist rule's id links the finding, and a calibration rule's suppresses it", %{
     task: task,
     project: project,

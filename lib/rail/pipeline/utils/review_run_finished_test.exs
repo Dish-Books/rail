@@ -222,6 +222,32 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
     assert [%{finished_at: %DateTime{}}] = Pipeline.read_review(task)
   end
 
+  test "a finding ruled New issue holds the review open until a Send files it", %{task: task, run: run, finding: finding} do
+    {:ok, saved} = Pipeline.save_finding(task, Map.put(finding, :recommendation, :skip))
+    {:ok, _closed} = Pipeline.save_review(task)
+    {:ok, ruled} = Pipeline.decide_finding(system_scope(), saved, :new_issue)
+
+    assert %Run{error: nil} = review_run_finished(run, [])
+    assert [%{finished_at: nil}] = Pipeline.read_review(task)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_rrf_2", "identifier" => "RRF-2", "title" => "t"}
+          }
+        }
+      })
+    end)
+
+    {:ok, [_filed]} = Pipeline.file_finding_issues(system_scope(), Repo.preload(task, [:issue, :project]), [ruled])
+    {:ok, task} = Pipeline.update_task(task, %{pr_is_draft: false})
+
+    assert %Run{error: nil} = review_run_finished(%{run | task: task}, [])
+    assert [%{finished_at: %DateTime{}}] = Pipeline.read_review(task)
+  end
+
   # A fix round's commit owes a round, so the last pass does not stand for it.
   test "a turn that ends without saving its review, or after a fix round's commit, records that and moves nothing", %{
     task: task,

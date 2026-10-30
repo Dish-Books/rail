@@ -102,11 +102,11 @@ defmodule RailWeb.Components.FixPlanSheet do
                     {item.place}
                   </span>
                   <span
-                    :if={item.kind == :finding and @changed[item.key] == :skip}
+                    :if={item.kind == :finding and @changed[item.key] in [:skip, :new_issue]}
                     data-qa="fix_plan_item_changed"
                     class="ml-auto shrink-0 inline-flex items-center gap-1 font-semibold text-amber-700 dark:text-amber-300"
                   >
-                    <.icon name="pi-swap" class="size-3" />Now Don't fix
+                    <.icon name="pi-swap" class="size-3" />Now {now(@changed[item.key])}
                   </span>
                 </div>
                 <p
@@ -289,4 +289,7 @@ defmodule RailWeb.Components.FixPlanSheet do
   defp comments([]), do: nil
   defp comments([one]), do: "comment #{one}"
   defp comments(numbers), do: "comments #{Enum.join(Enum.drop(numbers, -1), ", ")} and #{List.last(numbers)}"
+
+  defp now(:skip), do: "Don't fix"
+  defp now(:new_issue), do: "New issue"
 end

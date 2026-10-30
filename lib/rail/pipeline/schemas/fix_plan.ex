@@ -15,7 +15,7 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
   # The item a change a person asked for, to the ticket or the design, goes under when no finding or comment carries it.
   @changes {:changes, :plan}
 
-  @counted "\\d+ (?:finding|changed ruling|comment)s?"
+  @counted "\\d+ (?:finding|changed ruling|new issue|comment)s?"
   @sent Regex.compile!("\\ASent (#{@counted}(?:(?:, | and )#{@counted})*)\\.\\n")
 
   @primary_key false
@@ -125,7 +125,8 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
 
   @doc """
   The findings whose ruling differs from what the round sent (`unsent`) and from what the saved plan covers
-  (`since_plan`), each `%{key:, title:, was:, now:}` with `:fix` or `:skip`. Nobody rules once approved or past Review.
+  (`since_plan`), each `%{key:, title:, was:, now:}` with `:fix`, `:skip` or `:new_issue`. Nobody rules once approved
+  or past Review.
   """
   def calculate_ruling_changes(%__MODULE__{approved_at: %DateTime{}}, %Task{}, _findings),
     do: %{unsent: [], since_plan: []}
@@ -198,7 +199,7 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
 
   @doc """
   Reads a Send's note back for the conversation: what its first line says was sent, the titles of the findings it
-  sent, the rulings it changed and its numbered comments' text. `nil` for any other message.
+  sent, the rulings it changed, the issues it filed and its numbered comments' text. `nil` for any other message.
   """
   def parse_note(text) when is_binary(text) do
     case Regex.run(@sent, String.trim_leading(text) <> "\n") do
@@ -222,7 +223,11 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
                 ),
               do: %{number: String.to_integer(number), text: comment_text(block)}
 
-        %{summary: summary, findings: findings, rulings: rulings, comments: comments}
+        issues =
+          for [_all, identifier, title] <- Regex.scan(~r/<new_issue key="[^"]+" identifier="([^"]+)">\n(.*)\n/, text),
+              do: %{identifier: identifier, title: title}
+
+        %{summary: summary, findings: findings, rulings: rulings, issues: issues, comments: comments}
 
       nil ->
         nil
@@ -258,13 +263,21 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
         do: %{
           key: finding.key,
           title: finding.title,
-          was: ruling(MapSet.member?(before, finding.key)),
-          now: ruling(MapSet.member?(now, finding.key))
+          was: if(MapSet.member?(before, finding.key), do: :fix, else: not_fix(previous_ruling(finding))),
+          now: if(MapSet.member?(now, finding.key), do: :fix, else: not_fix(finding.decision))
         }
   end
 
-  defp ruling(true), do: :fix
-  defp ruling(false), do: :skip
+  # The ruling before the one it has now, which is what a change to it moved away from.
+  defp previous_ruling(%Finding{notes: notes}) do
+    case notes |> Enum.filter(&(&1.kind == :ruling)) |> Enum.drop(-1) |> List.last() do
+      %{decision: decision} -> decision
+      nil -> nil
+    end
+  end
+
+  defp not_fix(:new_issue), do: :new_issue
+  defp not_fix(_skip_or_unruled), do: :skip
 
   defp validate_structure(changeset, %__MODULE__{} = fix_plan) do
     validate_change(changeset, :plan, fn :plan, plan ->

@@ -115,6 +115,44 @@ defmodule Rail.Pipeline.Actions.DecideFindingTest do
     assert [:raised, :ruling, :ruling] = Enum.map(notes, & &1.kind)
   end
 
+  test "New issue switches to Fix or Don't fix and back before a Send, and files nothing", %{finding: finding} do
+    # The tracker is never stubbed here, so a filing would fail the test.
+    {:ok, new_issue} = Pipeline.decide_finding(system_scope(), finding, :new_issue)
+    {:ok, fixed} = Pipeline.decide_finding(system_scope(), new_issue, :fix)
+    {:ok, dismissed} = Pipeline.decide_finding(system_scope(), fixed, :skip)
+
+    assert {:ok, %Finding{decision: :new_issue, issue_id: nil, notes: notes}} =
+             Pipeline.decide_finding(system_scope(), dismissed, :new_issue)
+
+    assert [nil, :new_issue, :fix, :skip, :new_issue] = Enum.map(notes, & &1.decision)
+  end
+
+  test "once filed as a new issue, no ruling changes it, the same one included", %{
+    task: task,
+    finding: %{id: finding_id} = finding
+  } do
+    {:ok, new_issue} = Pipeline.decide_finding(system_scope(), finding, :new_issue)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_dcf_2", "identifier" => "DCF-2", "title" => "Nil is not handled"}
+          }
+        }
+      })
+    end)
+
+    {:ok, [_filed]} = Pipeline.file_finding_issues(system_scope(), Repo.preload(task, [:issue, :project]), [new_issue])
+
+    for decision <- [:fix, :skip, :new_issue] do
+      assert {:error, :issue_filed} = Pipeline.decide_finding(system_scope(), new_issue, decision)
+    end
+
+    assert %Finding{decision: :new_issue, notes: [_raised, _ruled]} = Repo.get!(Finding, finding_id)
+  end
+
   test "a task that has left Review has nothing left to rule", %{task: task, finding: finding} do
     {:ok, _moved} = Pipeline.update_task(task, %{stage: :merged})
 

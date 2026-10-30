@@ -120,6 +120,7 @@ defmodule Rail.Pipeline.Schemas.FindingComment do
   # What the note is, so two notes of one round read apart in the card, the tray and the lead's note.
   defp note_label(%FindingNote{kind: :raised, round: round}), do: "Round #{round}, raised"
   defp note_label(%FindingNote{kind: :ruling, decision: :skip, round: round}), do: "Round #{round}, ruled Don't fix"
+  defp note_label(%FindingNote{kind: :ruling, decision: :new_issue, round: round}), do: "Round #{round}, ruled New issue"
   defp note_label(%FindingNote{kind: :ruling, round: round}), do: "Round #{round}, ruled Fix"
   defp note_label(%FindingNote{kind: :fix, round: round}), do: "Fix round #{round}, fix report"
   defp note_label(%FindingNote{kind: :carried, round: round}), do: "Round #{round}, carried"
@@ -130,6 +131,7 @@ defmodule Rail.Pipeline.Schemas.FindingComment do
   # As the finding's history reads it, short of who ruled, which the lead does not need.
   defp note_text(%FindingNote{kind: :raised} = note), do: "Raised#{on(note.commit)}#{words(note.text)}"
   defp note_text(%FindingNote{kind: :ruling, decision: :skip}), do: "Ruled Don't fix"
+  defp note_text(%FindingNote{kind: :ruling, decision: :new_issue}), do: "Ruled New issue"
   defp note_text(%FindingNote{kind: :ruling}), do: "Ruled Fix"
 
   defp note_text(%FindingNote{kind: :fix} = note),
@@ -152,5 +154,6 @@ defmodule Rail.Pipeline.Schemas.FindingComment do
 
   defp ruling(%Finding{decision: :fix}), do: "Fix"
   defp ruling(%Finding{decision: :skip}), do: "Don't fix"
+  defp ruling(%Finding{decision: :new_issue}), do: "New issue"
   defp ruling(%Finding{decision: nil}), do: "Not ruled"
 end
