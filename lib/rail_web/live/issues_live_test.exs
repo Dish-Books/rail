@@ -1351,6 +1351,61 @@ defmodule RailWeb.IssuesLiveTest do
 
       assert {:ok, _view, _html} = live(conn, ~p"/issues")
     end
+
+    test "Back from the first filter shows the bare list, keeps what was saved, and a fresh visit still restores it", %{
+      conn: conn,
+      user: user,
+      project: project
+    } do
+      low =
+        %Issue{}
+        |> Issue.tracker_changeset(%{
+          project_id: project.id,
+          external_id: "lin_back_low",
+          identifier: "BCK-1",
+          title: "A low one",
+          state: :todo,
+          priority: :low
+        })
+        |> Repo.insert!()
+
+      {:ok, view, _html} = live(conn, ~p"/issues")
+      view |> element("#filter-priority-high") |> render_click()
+      assert_patched(view, ~p"/issues?priority=high")
+      refute has_element?(view, "#issue-card-#{low.id}")
+
+      render_patch(view, ~p"/issues")
+      assert has_element?(view, "#issue-card-#{low.id}")
+      refute has_element?(view, "#filter-priority-high.bg-blue-600")
+      assert %User{issues_filters: %{"priority" => "high"}} = Repo.reload!(user)
+
+      assert {:error, {:live_redirect, %{to: "/issues?priority=high"}}} = live(conn, ~p"/issues")
+    end
+
+    test "where no chip shows, a filter click keeps the saved cycle view and owner, and My issues replaces the owner", %{
+      conn: conn,
+      user: %User{id: user_id} = user,
+      github_project: github_project
+    } do
+      {:ok, _user} = Users.set_issues_filters(Scope.for_user(user), %{"cycle" => "current", "owner" => user_id})
+      conn = init_test_session(conn, %{selected_project_id: github_project.id})
+
+      {:error, {:live_redirect, %{to: restored}}} = live(conn, ~p"/issues")
+      {:ok, view, _html} = live(conn, restored)
+      refute has_element?(view, "#cycle-toggle")
+
+      view |> element("#issues-show-finished") |> render_click()
+      assert_patched(view, ~p"/issues?finished=true")
+
+      finished = %{"cycle" => "current", "owner" => user_id, "finished" => "true"}
+      assert %User{issues_filters: ^finished} = Repo.reload!(user)
+
+      view |> element("#issues-mine") |> render_click()
+      assert_patched(view, ~p"/issues?mine=true&finished=true")
+
+      mine = %{"cycle" => "current", "mine" => "true", "finished" => "true"}
+      assert %User{issues_filters: ^mine} = Repo.reload!(user)
+    end
   end
 
   describe "cycle view" do
@@ -1386,7 +1441,7 @@ defmodule RailWeb.IssuesLiveTest do
           status: status,
           current: current,
           scope_history: [5.0, 6.0],
-          started_history: [1.0, 2.0],
+          started_history: [1.0, 3.0],
           completed_history: [+0.0, 1.0],
           default_estimate: 1
         }
@@ -1485,6 +1540,8 @@ defmodule RailWeb.IssuesLiveTest do
       assert has_element?(view, "#issue-card-#{reviewing.id} .text-emerald-500")
       assert has_element?(view, "#cycle-issues section[aria-label='In Progress'] #issue-card-#{working.id}")
       assert has_element?(view, "#cycle-issues section[aria-label='Ready for Dev'] #issue-card-#{ready.id}")
+      assert has_element?(view, "#cycle-issues section[aria-label='Ready for Dev'] > div:first-child .pi-circle-dashed")
+      assert has_element?(view, "#issue-card-#{ready.id} .pi-circle-dashed")
       refute has_element?(view, "#issue-card-#{outside.id}")
       refute has_element?(view, "#issues-pagination")
 
@@ -1827,6 +1884,74 @@ defmodule RailWeb.IssuesLiveTest do
                    "state" => %{"name" => "Done", "type" => "completed"}
                  }
                })
+
+      render_async(view)
+      refute has_element?(view, "#issue-card-#{blocked.id} [data-qa='issue-blocked']")
+    end
+
+    test "a blocker from another project finishing takes its mark off without a reload", %{
+      conn: conn,
+      insert: insert,
+      project: project
+    } do
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_other"}]}}})
+      end)
+
+      {:ok, other_project} =
+        Projects.create_project(system_scope(), %{
+          name: "Other Linear project",
+          github_repo: "example/other-linear",
+          github_installation_id: 557,
+          key: "OTH",
+          default_branch: "main",
+          clone_path: "/tmp/other-linear",
+          linear_workspace_id: project.linear_workspace_id
+        })
+
+      blocked = insert.("NST-7", %{})
+      blocker = insert.("OTH-1", %{project_id: other_project.id})
+
+      stub(Issues, :get_blockers, fn issues -> call_original(Issues, :get_blockers, [issues]) end)
+
+      Req.Test.stub(Rail.Linear, fn conn ->
+        state_type = if Repo.get!(Issue, blocker.id).state == :done, do: "completed", else: "started"
+
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issues" => %{
+              "nodes" => [
+                %{
+                  "id" => blocked.external_id,
+                  "relations" => %{"nodes" => []},
+                  "inverseRelations" => %{
+                    "nodes" => [
+                      %{
+                        "type" => "blocks",
+                        "issue" => %{
+                          "id" => blocker.external_id,
+                          "identifier" => "OTH-1",
+                          "title" => "Secret title",
+                          "url" => "https://linear.app/issue/OTH-1",
+                          "state" => %{"name" => state_type, "type" => state_type}
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        })
+      end)
+
+      conn = init_test_session(conn, %{selected_project_id: project.id})
+      {:ok, view, _html} = live(conn, ~p"/issues")
+      render_async(view)
+      assert has_element?(view, "#issue-card-#{blocked.id} [data-qa='issue-blocked'][title='Blocked by OTH-1']", "1")
+
+      blocker |> Issue.tracker_changeset(%{state: :done}) |> Repo.update!()
+      Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, blocker.id})
 
       render_async(view)
       refute has_element?(view, "#issue-card-#{blocked.id} [data-qa='issue-blocked']")

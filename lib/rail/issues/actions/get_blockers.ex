@@ -9,10 +9,8 @@ defmodule Rail.Issues.Actions.GetBlockers do
   alias Rail.Repo
 
   @doc """
-  What blocks each of `issues`, their projects loaded, and what each blocks, as a map from external id to
-  `%{blocked_by: entries, blocks: entries}`. An entry is `%{issue: issue, in_project: boolean}`, open ones first,
-  then by identifier; one Rail does not hold in the same project carries no title. A project whose tracker fails
-  adds nothing.
+  What blocks each of `issues`, their projects loaded, and what each blocks, by external id. An entry is
+  `%{issue: issue, in_project: boolean}`, open ones first, and carries a title only when it is in the same project.
   """
   def get_blockers(issues) when is_list(issues) do
     relations =
@@ -51,13 +49,15 @@ defmodule Rail.Issues.Actions.GetBlockers do
     |> Map.new()
   end
 
-  # Only a title from the project being shown may reach the page.
+  # Only a title from the project being shown may reach the page. An issue held in another project keeps Rail's id,
+  # which is how an open page hears that it changed.
   defp entries(issues, project_id, held) do
     issues
     |> Enum.map(fn issue ->
       case held[issue.external_id] do
         {id, ^project_id} -> %{issue: %{issue | id: id, project_id: project_id}, in_project: true}
-        _elsewhere -> %{issue: %{issue | title: nil}, in_project: false}
+        {id, _other_project_id} -> %{issue: %{issue | id: id, title: nil}, in_project: false}
+        nil -> %{issue: %{issue | title: nil}, in_project: false}
       end
     end)
     |> Enum.sort_by(&{Issue.finished_state?(&1.issue.state), &1.issue.identifier})

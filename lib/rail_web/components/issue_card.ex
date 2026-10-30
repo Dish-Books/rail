@@ -1,10 +1,7 @@
 defmodule RailWeb.Components.IssueCard do
   @moduledoc """
-  One issue as a single row of the issues list: priority, identifier, status and
-  title on the left, marked when a workflow opened it; its sub-issues done, its open
-  blockers, where its work stands, its points and who owns it on the right. Clicking
-  the row opens the issue's page. A sub-issue is indented, and a dimmed copy of a
-  parent is context only.
+  One issue as a single row of the issues list, which opens the issue's page when clicked.
+  A sub-issue is indented, and a dimmed copy of a parent is context only.
   """
   use RailWeb, :html
 

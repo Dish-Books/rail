@@ -9,9 +9,8 @@ defmodule Rail.Issues.Actions.GetCycleProgress do
   alias Rail.Users.Schemas.User
 
   @doc """
-  A cycle's figures from the project's issues in it, canceled and duplicate ones left out and an unestimated one
-  counted at the team's default: scope, started and completed points, the scope's change in percent since the
-  cycle's first day, or nil before it has one, and each owner's points and completed points, most points first.
+  A cycle's scope, started (done work included) and completed points, without canceled or duplicate issues and with an
+  unestimated one at the team's default, the scope's change since day one, and each owner's points, most first.
   """
   def get_cycle_progress(%Project{id: project_id}, %{id: cycle_id, default_estimate: estimate} = cycle) do
     rows =
@@ -23,7 +22,7 @@ defmodule Rail.Issues.Actions.GetCycleProgress do
           select: {
             i.owner_user_id,
             sum(coalesce(i.estimate, ^estimate)),
-            coalesce(filter(sum(coalesce(i.estimate, ^estimate)), i.state in ^[:in_progress, :in_review]), 0),
+            coalesce(filter(sum(coalesce(i.estimate, ^estimate)), i.state in ^[:in_progress, :in_review, :done]), 0),
             coalesce(filter(sum(coalesce(i.estimate, ^estimate)), i.state == ^:done), 0)
           }
         )

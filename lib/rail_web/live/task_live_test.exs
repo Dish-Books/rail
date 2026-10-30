@@ -1859,6 +1859,61 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "#issue-blocked-by")
   end
 
+  test "the Issue tab lands on the cleaned-up page when Linear deletes its issue", %{
+    conn: conn,
+    task: task,
+    project: project
+  } do
+    {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+    assert {:ok, %{pid: view_pid} = view, _html} = live(conn, ~p"/tasks/#{task.id}?item=issue")
+    render_async(view)
+    assert has_element?(view, "#issue-page")
+
+    assert {:ok, %Issue{}} =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Issue",
+               "action" => "remove",
+               "data" => %{"id" => "lin_task_live_1"}
+             })
+
+    assert has_element?(view, "#task-cleaned-up")
+    refute has_element?(view, "#issue-page")
+    assert Process.alive?(view_pid)
+  end
+
+  test "an Issue tab whose task another tab discarded stays cleaned up when the issue then changes", %{
+    conn: conn,
+    task: task,
+    project: project
+  } do
+    stub(Git, :delete_remote_branch, fn _project, _branch -> :ok end)
+    {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+    assert {:ok, %{pid: view_pid} = view, _html} = live(conn, ~p"/tasks/#{task.id}?item=issue")
+    render_async(view)
+    assert {:ok, other, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    other |> element("#discard-task") |> render_click()
+    other |> element("#confirm-discard") |> render_click()
+    assert_redirect(other, ~p"/issues/#{task.issue_id}", 1_000)
+    eventually(fn -> assert has_element?(view, "#task-cleaned-up") end)
+
+    assert {:ok, %Issue{}} =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Issue",
+               "action" => "update",
+               "data" => %{
+                 "id" => "lin_task_live_1",
+                 "teamId" => "lin_team_id",
+                 "identifier" => "TLV-1",
+                 "title" => "Retitled after the discard",
+                 "state" => %{"name" => "Todo", "type" => "unstarted"}
+               }
+             })
+
+    assert has_element?(view, "#task-cleaned-up")
+    assert Process.alive?(view_pid)
+  end
+
   test "a question that belongs to another task cannot be answered or dismissed from this one", %{
     conn: conn,
     task: task,

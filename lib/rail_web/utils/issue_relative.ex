@@ -1,8 +1,7 @@
 defmodule RailWeb.Utils.IssueRelative do
   @moduledoc """
-  Whether a changed issue touches the one a page shows: the issue itself, its parent, a sub-issue, a blocker or an
-  issue it blocks, or one that now names it as parent. `"issues"` carries every project's changes, so this decides
-  whether the page reads it again.
+  Whether a changed issue touches the one a page shows: itself, its parent, a sub-issue, a blocker, an issue it blocks
+  or one now naming it as parent. `"issues"` carries every project's changes, so this decides whether to read again.
   """
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue

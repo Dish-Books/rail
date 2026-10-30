@@ -125,7 +125,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
     assert %Issue{cycle_external_id: nil, parent_external_id: nil} = Repo.get!(Issue, issue_id)
   end
 
-  test "an archived issue with a task leaves the cycle Linear cleared", %{project: project, workspace: workspace} do
+  test "an archived issue leaves the cycle Linear cleared", %{project: project, workspace: workspace} do
     issue =
       %Issue{}
       |> Issue.tracker_changeset(%{
@@ -137,8 +137,6 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
         cycle_external_id: "cyc_1"
       })
       |> Repo.insert!()
-
-    {:ok, _task} = Pipeline.create_task(%{issue | project: project}, :engineer)
 
     assert {:ok, _issue} =
              Issues.handle_linear_webhook(workspace, %{
@@ -155,7 +153,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
                "updatedFrom" => %{"cycleId" => "cyc_1"}
              })
 
-    assert %Issue{cycle_external_id: nil} = Repo.reload!(issue)
+    assert %Issue{cycle_external_id: nil, archived_at: ~U[2026-10-30 10:00:00Z]} = Repo.reload!(issue)
   end
 
   test "an issue update changes the existing row and pushes nothing back to Linear", %{

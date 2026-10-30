@@ -57,7 +57,7 @@ defmodule Rail.Issues.Actions.GetCycleProgressTest do
     # Scope 3 + 2 + 2 + 2 + 1, against 8 on the first day.
     assert %{
              scope: 10,
-             started: 4,
+             started: 7,
              completed: 3,
              scope_change: 25,
              owners: [

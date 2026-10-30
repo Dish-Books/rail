@@ -14,13 +14,13 @@ defmodule RailWeb.Components.CyclePanelTest do
       ends_on: ~D[2026-11-08],
       status: :running,
       scope_history: [51.0, 57.0],
-      started_history: [4.0, 20.0],
+      started_history: [6.0, 43.0],
       completed_history: [2.0, 23.0]
     }
 
     progress = %{
       scope: 57,
-      started: 20,
+      started: 43,
       completed: 23,
       scope_change: 12,
       owners: [
@@ -42,7 +42,7 @@ defmodule RailWeb.Components.CyclePanelTest do
     assert html =~ "Current"
     assert html =~ "Oct 26 – Nov 8 · 10 days left"
     assert html =~ "+12% since Oct 26"
-    assert html =~ "35%"
+    assert html =~ "75%"
     assert html =~ "40%"
     assert html =~ ~s(id="cycle-chart")
     assert html =~ "Michael Kim"

@@ -108,13 +108,8 @@ defmodule Rail.Issues.Schemas.Issue do
   end
 
   @doc """
-  A changeset for what the tracker itself reports, such as a webhook or a poll. It is
-  the same as `changeset/2` except that nothing is queued to push back to the tracker,
-  since the tracker is where the change came from, and it also takes the cycle and the parent,
-  which Rail never sends.
-
-  Either one, on giving an unowned issue an owner, queues
-  `Rail.Issues.Workers.AdvanceTrackerState` to catch its tracker status up with its task.
+  For what the tracker itself reports: `changeset/2` with nothing queued to push back, plus the cycle and the parent,
+  which Rail never sends. Either one, giving an unowned issue an owner, queues `Workers.AdvanceTrackerState`.
   """
   def tracker_changeset(issue, attrs) do
     issue
@@ -369,7 +364,7 @@ defmodule Rail.Issues.Schemas.Issue do
   defp status_state(%{type: "started", name: name}),
     do: if(String.downcase(name) == "in review", do: :in_review, else: :in_progress)
 
-  defp status_state(%{type: "unstarted"}), do: :todo
+  defp status_state(%{type: "unstarted"}), do: :backlog
   defp status_state(%{type: "triage"}), do: :triage
   defp status_state(%{type: "completed"}), do: :done
   defp status_state(%{type: "canceled"}), do: :canceled

@@ -42,6 +42,7 @@ defmodule RailWeb.IssuesLive do
       |> assign(:syncing_project_ids, MapSet.new())
       |> assign(:is_syncing, false)
       |> assign(:saved_filters, saved_filters)
+      |> assign(:restore_filters, true)
       |> assign(:blockers, %{})
       |> assign(:blockers_for, [])
       |> load_cycles(project)
@@ -51,11 +52,13 @@ defmodule RailWeb.IssuesLive do
 
   # The search, filters and page are in the URL, so they can be linked to and
   # survive a reload; the project is the switcher's.
-  # A URL that names none of the remembered filters opens on the saved ones, replaced so Back still undoes a filter.
   def handle_params(params, _uri, socket) do
     saved = socket.assigns.saved_filters
+    restore? = socket.assigns.restore_filters
+    socket = assign(socket, :restore_filters, false)
 
-    if saved != %{} and Map.take(params, @remembered) == %{} do
+    # Only the first URL after mount opens on the saved filters, replaced so Back still undoes a filter.
+    if restore? and saved != %{} and Map.take(params, @remembered) == %{} do
       to = saved |> Map.merge(Map.take(params, ["q", "page"])) |> remembered_path()
       {:noreply, push_patch(socket, to: to, replace: true)}
     else
@@ -753,7 +756,16 @@ defmodule RailWeb.IssuesLive do
         {to_string(key), if(key == :cycle, do: "current", else: to_string(value))}
       end
 
-    {:ok, %User{issues_filters: saved}} = Users.set_issues_filters(socket.assigns.current_scope, filters)
+    # Where no chip shows, a saved cycle view and owner are kept, since the person could not have turned them off here.
+    kept =
+      cond do
+        socket.assigns.show_cycle_chip or Map.has_key?(filters, "cycle") -> %{}
+        Map.has_key?(filters, "mine") -> Map.take(socket.assigns.saved_filters, ["cycle"])
+        true -> Map.take(socket.assigns.saved_filters, ["cycle", "owner"])
+      end
+
+    {:ok, %User{issues_filters: saved}} =
+      Users.set_issues_filters(socket.assigns.current_scope, Map.merge(kept, filters))
 
     socket
     |> assign(:saved_filters, saved)

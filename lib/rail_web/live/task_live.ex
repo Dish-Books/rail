@@ -576,10 +576,11 @@ defmodule RailWeb.TaskLive do
         blocker_ids = for %{issue: %Issue{id: id}} <- (blockers && blockers.blocked_by ++ blockers.blocks) || [], do: id
         socket = load_issue(socket, socket.assigns.task)
 
-        socket =
-          if issue_id == issue.id or issue_id in blocker_ids, do: read_blockers(socket, true), else: socket
-
-        {:noreply, socket}
+        cond do
+          is_nil(socket.assigns.issue) -> {:noreply, refresh_task(socket)}
+          issue_id == issue.id or issue_id in blocker_ids -> {:noreply, read_blockers(socket, true)}
+          true -> {:noreply, socket}
+        end
 
       true ->
         {:noreply, socket}
@@ -846,7 +847,8 @@ defmodule RailWeb.TaskLive do
       |> show_task(task)
       |> follow_back_to_plan(socket.assigns.task, task)
     else
-      _missing -> assign(socket, :task, nil)
+      _missing ->
+        socket |> assign(:task, nil) |> assign(:issue, nil) |> assign(:blockers, nil) |> assign(:blockers_for, nil)
     end
   end
 
@@ -1093,9 +1095,13 @@ defmodule RailWeb.TaskLive do
     end
   end
 
+  defp read_blockers(socket, _force), do: socket
+
   defp read_issue(issue_id, preload) do
-    {:ok, issue} = Issues.get_issue(issue_id, preload: preload)
-    issue
+    case Issues.get_issue(issue_id, preload: preload) do
+      {:ok, issue} -> issue
+      {:error, :not_found} -> nil
+    end
   end
 
   # The item the stage opens: the URL's, or else what the task is waiting on now, as the stage reads it.

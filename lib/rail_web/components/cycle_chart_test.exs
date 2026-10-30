@@ -12,7 +12,7 @@ defmodule RailWeb.Components.CycleChartTest do
         ends_on: ~D[2026-11-08],
         status: :running,
         scope_history: [51.0, 54.4, 56.0, 57.0],
-        started_history: [4.0, 9.0, 15.0, 20.0],
+        started_history: [6.0, 17.0, 30.0, 43.0],
         completed_history: [2.0, 8.0, 15.0, 23.0]
       }
     }
@@ -21,9 +21,9 @@ defmodule RailWeb.Components.CycleChartTest do
   test "draws each day with a title reading its values in whole points, and a rule on today", %{cycle: cycle} do
     html = render_component(&CycleChart.cycle_chart/1, cycle: cycle, label: "Cycle 12", today: ~D[2026-10-29])
 
-    assert html =~ ~s(aria-label="Cycle 12: scope 57 points, started 20, completed 23")
-    assert html =~ "<title>Day 1: scope 51, started 4, completed 2</title>"
-    assert html =~ "<title>Day 2: scope 54, started 9, completed 8</title>"
+    assert html =~ ~s(aria-label="Cycle 12: scope 57 points, started 43, completed 23")
+    assert html =~ "<title>Day 1: scope 51, started 6, completed 2</title>"
+    assert html =~ "<title>Day 2: scope 54, started 17, completed 8</title>"
     refute html =~ "Day 5:"
     assert html =~ ~s(id="cycle-chart-today")
     assert html =~ ~s(opacity="0.5")

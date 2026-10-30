@@ -69,7 +69,7 @@ defmodule Rail.Issues.Actions.GetCyclesTest do
                   status: :running,
                   current: true,
                   scope_history: [10.0, 12.0],
-                  started_history: [1.0, 2.0],
+                  started_history: [1.0, 5.0],
                   completed_history: [+0.0, 3.0],
                   default_estimate: 2
                 },

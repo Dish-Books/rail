@@ -244,7 +244,9 @@ defmodule Rail.Issues.Tracker.Linear do
           status: status,
           current: false,
           scope_history: node["scopeHistory"] || [],
-          started_history: node["inProgressScopeHistory"] || [],
+          # Linear's in-progress history drops an issue once it is done, and Started counts done work.
+          started_history:
+            Enum.zip_with(node["inProgressScopeHistory"] || [], node["completedScopeHistory"] || [], &(&1 + &2)),
           completed_history: node["completedScopeHistory"] || [],
           default_estimate: estimate
         }

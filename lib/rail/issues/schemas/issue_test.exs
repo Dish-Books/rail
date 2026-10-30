@@ -298,7 +298,7 @@ defmodule Rail.Issues.Schemas.IssueTest do
       assert [
                %{label: "In Review", state: :in_review, count: 1, points: 3},
                %{label: "In Progress", state: :in_progress, count: 1, points: 2},
-               %{label: "Ready for Dev", state: :todo, count: 1, points: 2},
+               %{label: "Ready for Dev", state: :backlog, count: 1, points: 2},
                %{label: "Backlog", state: :backlog, count: 1, points: 1},
                %{label: "Triage", state: :triage},
                %{label: "Done", state: :done},

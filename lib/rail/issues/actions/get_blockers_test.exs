@@ -29,6 +29,7 @@ defmodule Rail.Issues.Actions.GetBlockersTest do
   test "reads what blocks an issue and what it blocks, open blockers first, keeping only blocks relations", %{
     issue: issue,
     held: %Issue{id: held_id},
+    elsewhere: %Issue{id: elsewhere_id},
     project: %{id: project_id}
   } do
     related = fn id, identifier, state_type, title ->
@@ -75,9 +76,12 @@ defmodule Rail.Issues.Actions.GetBlockersTest do
     assert %{
              "lin_gb_a" => %{
                blocked_by: [
-                 %{issue: %Issue{identifier: "OTH-3", title: nil, id: nil, state: :in_progress}, in_project: false},
+                 %{
+                   issue: %Issue{identifier: "OTH-3", title: nil, id: ^elsewhere_id, state: :in_progress},
+                   in_project: false
+                 },
                  %{issue: %Issue{identifier: "TST-12", id: ^held_id, project_id: ^project_id}, in_project: true},
-                 %{issue: %Issue{identifier: "TST-11", title: nil, state: :done}, in_project: false}
+                 %{issue: %Issue{identifier: "TST-11", id: nil, title: nil, state: :done}, in_project: false}
                ],
                blocks: [%{issue: %Issue{identifier: "TST-20", url: "https://linear.app/issue/TST-20"}, in_project: false}]
              }
