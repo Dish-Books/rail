@@ -9,11 +9,11 @@ defmodule Rail.Pipeline.Actions.CountAttention do
   @doc """
   Counts the tasks waiting on a human, across every project unless `:project_id` narrows it, the same way
   the Overview lists them: a task whose stage run waits, and a child of a split with no run
-  that a canceled or deleted sibling keeps from starting.
+  that a canceled or deleted sibling keeps from starting. `:owner_user_id` keeps those on issues that user owns.
   """
   def count_attention(opts \\ []) do
     waiting =
-      [project_id: opts[:project_id], preload: [:role, :questions, task: :issue]]
+      [project_id: opts[:project_id], owner_user_id: opts[:owner_user_id], preload: [:role, :questions, task: :issue]]
       |> Pipeline.list_runs()
       |> Enum.group_by(& &1.task_id)
       |> Enum.count(fn {_task_id, [%Run{task: task} | _rest] = runs} ->
@@ -24,7 +24,12 @@ defmodule Rail.Pipeline.Actions.CountAttention do
       end)
 
     blocked =
-      [project_id: opts[:project_id], split_child: true, preload: [:issue, :runs, parent_task: [children: :issue]]]
+      [
+        project_id: opts[:project_id],
+        owner_user_id: opts[:owner_user_id],
+        split_child: true,
+        preload: [:issue, :runs, parent_task: [children: :issue]]
+      ]
       |> Pipeline.list_tasks()
       |> Enum.count(&blocked?/1)
 

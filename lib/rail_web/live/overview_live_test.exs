@@ -2011,7 +2011,7 @@ defmodule RailWeb.OverviewLiveTest do
       shipped_elsewhere =
         task_for.("Shipped elsewhere", %{project: other_project, completed_at: DateTime.shift(now, hour: -2)})
 
-      for {task, role} <- [{own, roles[:plan]}, {elsewhere, other_role}] do
+      for {task, role} <- [{own, roles[:plan]}, {teammates, roles[:plan]}, {elsewhere, other_role}] do
         {:ok, _done} =
           Pipeline.create_run(%{
             task_id: task.id,
@@ -2050,7 +2050,8 @@ defmodule RailWeb.OverviewLiveTest do
       end
 
       assert has_element?(admin_view, "#activity-shipped-#{shipped_elsewhere.issue.id}")
-      assert has_element?(admin_view, "#attention-badge", "2")
+      # The badge is what waits on the user looking: the teammate's task, not the two the rival owns.
+      assert has_element?(admin_view, "#attention-badge", "1")
     end
 
     test "a row opens its task", %{conn: conn, task_for: task_for} do

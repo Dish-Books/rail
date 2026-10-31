@@ -189,6 +189,11 @@ defmodule RailWeb.Hooks.NavHookTest do
     } do
       {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
 
+      # The attention badge counts what waits on the user looking, so both issues are theirs.
+      for issue_id <- [issue.id, other_task.issue_id] do
+        Issue |> Repo.get!(issue_id) |> Ecto.Changeset.change(owner_user_id: user.id) |> Repo.update!()
+      end
+
       {:ok, admin} =
         Users.register_oauth_user(%{
           github_id: "gh_nav_hook_admin",
@@ -227,7 +232,7 @@ defmodule RailWeb.Hooks.NavHookTest do
       {:ok, thread} = Triage.handle_slack_event(workspace, slack_message_event(channel, %{}))
       triage_with(thread, %{"title" => "Elsewhere", "items" => [triage_bug()]})
 
-      %{conn: log_in_user(conn, user), admin_conn: log_in_user(conn, admin), triage_project: triage_project}
+      %{conn: log_in_user(conn, user), admin: admin, admin_conn: log_in_user(conn, admin), triage_project: triage_project}
     end
 
     test "sees only that project in the switcher, and the badges count only its work", %{
@@ -248,10 +253,17 @@ defmodule RailWeb.Hooks.NavHookTest do
 
     test "an admin sees every project, and the badges count all of them", %{
       admin_conn: admin_conn,
+      admin: admin,
+      issue: issue,
+      other_task: other_task,
       project: project,
       other_project: other_project,
       triage_project: triage_project
     } do
+      for issue_id <- [issue.id, other_task.issue_id] do
+        Issue |> Repo.get!(issue_id) |> Ecto.Changeset.change(owner_user_id: admin.id) |> Repo.update!()
+      end
+
       assert {:ok, view, _html} = live(admin_conn, ~p"/issues")
 
       view |> element("#project-switcher-button") |> render_click()

@@ -216,7 +216,10 @@ defmodule RailWeb.OverviewLive do
     |> assign(:throughput, throughput(completed, DateTime.to_date(now)))
     |> assign(:dispatch_disabled, Application.get_env(:rail, :no_dispatch, false))
     # The rail badge sits beside these stats, so it comes from the same reload.
-    |> assign(:attention_count, Pipeline.count_attention(project_id: Scope.project_ids(socket.assigns.current_scope)))
+    |> assign(
+      :attention_count,
+      Pipeline.count_attention(project_id: Scope.project_ids(socket.assigns.current_scope), owner_user_id: user_id)
+    )
   end
 
   # A split is one piece of work, so its children are read through their parent, which they are cleaned up with.

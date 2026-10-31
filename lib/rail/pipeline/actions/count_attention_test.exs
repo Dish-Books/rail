@@ -9,6 +9,7 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
   alias Rail.Pipeline
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
+  alias Rail.Users.Schemas.User
 
   setup %{project: project} do
     stub(Git, :read_default_branch_file, fn _project, path -> {:error, "fatal: path '#{path}' does not exist"} end)
@@ -69,6 +70,36 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
     assert Pipeline.count_attention(project_id: [project.id]) == 1
     assert Pipeline.count_attention(project_id: ["prj_other"]) == 0
     assert Pipeline.count_attention(project_id: []) == 0
+  end
+
+  test "with an owner, counts only what waits on issues that user owns", %{roles: roles, task_for: task_for} do
+    {:ok, owner} =
+      %User{}
+      |> User.changeset(%{
+        github_id: "gh_count_attention",
+        login: "ada-count-attention",
+        name: "Ada",
+        email: "ada-count-attention@example.com"
+      })
+      |> Repo.insert()
+
+    [mine, theirs] = [task_for.(:engineer), task_for.(:engineer)]
+    Repo.update_all(from(i in Issue, where: i.id == ^mine.issue_id), set: [owner_user_id: owner.id])
+
+    for task <- [mine, theirs] do
+      {:ok, _done} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:engineer].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.utc_now(),
+          completed_at: DateTime.utc_now()
+        })
+    end
+
+    assert Pipeline.count_attention() == 2
+    assert Pipeline.count_attention(owner_user_id: owner.id) == 1
   end
 
   # Review is worked by the Review lead, so it is the lead's runs that count there.
