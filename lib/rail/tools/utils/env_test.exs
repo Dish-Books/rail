@@ -31,8 +31,9 @@ defmodule Rail.Tools.Utils.EnvTest do
   end
 
   describe "Rail's own configuration" do
-    # Named for this module alone, so no other async test sees it.
-    @var "RAIL_ENV_TEST_SECRET"
+    # Named for this module alone, so no other async test sees it, and on no list:
+    # whatever Rail's environment carries that a tool does not read stays out.
+    @var "ENV_TEST_UNLISTED_SECRET"
 
     setup do
       System.put_env(@var, "secret")
@@ -54,9 +55,37 @@ defmodule Rail.Tools.Utils.EnvTest do
     end
   end
 
-  describe "the Google credentials Goth reads" do
+  describe "the secrets and settings Rail's .env and release set" do
     setup do
-      vars = ["GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_APPLICATION_CREDENTIALS_JSON", "ENABLE_GOTH"]
+      # Slack's and the tunnel's leaked once a denylist kept by hand missed them.
+      vars = [
+        "CLOAK_KEY_V1",
+        "DATABASE_URL",
+        "ECTO_IPV6",
+        "ENABLE_GOTH",
+        "GITHUB_APP_ID",
+        "GITHUB_APP_PRIVATE_KEY",
+        "GITHUB_CLIENT_ID",
+        "GITHUB_CLIENT_SECRET",
+        "GITHUB_WEBHOOK_SECRET",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "GOOGLE_APPLICATION_CREDENTIALS_JSON",
+        "LINEAR_CLIENT_ID",
+        "LINEAR_CLIENT_SECRET",
+        "MIX_ENV",
+        "PHX_HOST",
+        "PHX_SERVER",
+        "POOL_SIZE",
+        "PORT",
+        "POSTHOG_API_KEY",
+        "RAIL_ENV_TEST_SETTING",
+        "RELEASE_ENV_TEST_SETTING",
+        "SECRET_KEY_BASE",
+        "SLACK_CLIENT_ID",
+        "SLACK_CLIENT_SECRET",
+        "TUNNEL_TOKEN"
+      ]
+
       previous = Map.new(vars, &{&1, System.get_env(&1)})
       Enum.each(vars, &System.put_env(&1, "secret"))
 
@@ -77,6 +106,29 @@ defmodule Rail.Tools.Utils.EnvTest do
       for var <- vars do
         refute Map.has_key?(child, var)
         assert {var, false} in list
+      end
+    end
+  end
+
+  describe "what the tools on the machine read" do
+    # Named for this module alone; HOME and the like are already set.
+    @tool_vars %{"GIT_ENV_TEST" => "git", "LC_ENV_TEST" => "lc", "MISE_ENV_TEST" => "mise", "XDG_ENV_TEST" => "xdg"}
+
+    setup do
+      System.put_env(@tool_vars)
+      on_exit(fn -> Enum.each(Map.keys(@tool_vars), &System.delete_env/1) end)
+    end
+
+    test "passes through" do
+      child = env()
+      list = env_list(%{}, false)
+
+      assert child["HOME"] == System.get_env("HOME")
+      assert child["TMPDIR"] == System.get_env("TMPDIR")
+
+      for {var, value} <- @tool_vars do
+        assert child[var] == value
+        assert {var, value} in list
       end
     end
   end
