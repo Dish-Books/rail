@@ -93,7 +93,11 @@ defmodule Rail.Git.Actions.SetCommitIdentityTest do
     commit: commit
   } do
     key = Path.join(System.tmp_dir!(), "rail_signing_test_#{System.unique_integer([:positive])}")
-    on_exit(fn -> File.rm_rf(key) && File.rm_rf(key <> ".pub") end)
+
+    on_exit(fn ->
+      File.rm_rf(key)
+      File.rm_rf(key <> ".pub")
+    end)
 
     {_output, 0} =
       Tools.run("ssh-keygen", ["-t", "ed25519", "-N", "", "-C", "ada-set-commit-identity@example.com", "-f", key],

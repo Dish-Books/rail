@@ -157,7 +157,7 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidence do
   defp flat_rows?(<<>>, _prior, _stride, _channels, _first), do: true
 
   defp flat_rows?(pixels, prior, stride, channels, first) do
-    <<filter, line::binary-size(stride), rest::binary>> = pixels
+    <<filter, line::binary-size(^stride), rest::binary>> = pixels
     row = unfilter(filter, line, prior, channels, 0, <<>>)
     first = first || binary_part(row, 0, channels)
 
@@ -199,7 +199,7 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidence do
   defp near?(<<>>, _first), do: true
 
   defp near?(row, first) do
-    <<pixel::binary-size(byte_size(first)), rest::binary>> = row
+    <<pixel::binary-size(byte_size(^first)), rest::binary>> = row
 
     (pixel == first or
        pixel

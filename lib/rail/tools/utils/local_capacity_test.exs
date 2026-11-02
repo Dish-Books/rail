@@ -20,6 +20,6 @@ defmodule Rail.Tools.Utils.LocalCapacityTest do
   # Whatever this machine is, it answers with what it has now.
   test "reads this machine's memory in whole GB" do
     assert {_cpus, memory_gb} = local_capacity()
-    assert is_integer(memory_gb) and memory_gb >= 1
+    assert memory_gb >= 1
   end
 end

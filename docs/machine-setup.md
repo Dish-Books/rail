@@ -11,7 +11,7 @@ The deployed stack is different: `docker-compose.yml`, brought up by `scripts/de
 Elixir, Erlang, Node and the pre-push hook come from `mise.toml`.
 
 - Install: `mise install` in the checkout.
-- Check: `mise exec -- elixir --version` prints Elixir `1.19.5` on OTP `28`.
+- Check: `mise exec -- elixir --version` prints Elixir `1.20.5` on OTP `29`.
 
 ## 2. Postgres 17 on localhost
 

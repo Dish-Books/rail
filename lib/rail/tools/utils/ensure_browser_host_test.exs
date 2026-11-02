@@ -99,7 +99,10 @@ defmodule Rail.Tools.Utils.EnsureBrowserHostTest do
       {:ok, nil, os_pid}
     end)
 
-    stub(Tools, :terminate_os_process, fn os_pid, opts -> send(test_pid, {:terminated, os_pid, opts}) && :ok end)
+    stub(Tools, :terminate_os_process, fn os_pid, opts ->
+      send(test_pid, {:terminated, os_pid, opts})
+      :ok
+    end)
 
     assert {:error, {:devtools_never_answered, _log}} = ensure_browser_host(ready_timeout_ms: 200)
 

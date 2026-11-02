@@ -185,6 +185,12 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlanTest do
   end
 
   describe "build_sheet/1" do
+    test "keeps braces after inline code in a card's prose" do
+      plan = String.replace(sheet_plan(), "Refuses unless the task is at `:review` and idle.", "Holds `x`{.foo} open.")
+
+      assert %{cards: [%{prose: "New action. Holds `x`{.foo} open."} | _cards]} = ImplementationPlan.build_sheet(plan)
+    end
+
     test "splits a plan into its data changes, decisions, cards and numbered criteria" do
       assert %{
                approach: "Sending a task back is a stage move" <> _approach,

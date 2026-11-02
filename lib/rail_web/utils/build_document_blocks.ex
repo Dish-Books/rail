@@ -8,7 +8,7 @@ defmodule RailWeb.Utils.BuildDocumentBlocks do
   import Rail.Git.Utils.HighlightLines
   import RailWeb.Utils.RenderMarkdown
 
-  @extension [autolink: true, strikethrough: true, table: true, tasklist: true]
+  @extension [autolink: true, strikethrough: true, table: true, tasklist: true, inline_code_attributes: false]
 
   @line %{
     key: nil,

@@ -42,12 +42,25 @@ defmodule Rail.Git.Utils.HighlightLinesTest do
   end
 
   test "leaves a language it cannot highlight to the caller" do
-    assert highlight_lines(["some prose", "and more"], "notes/README") == [nil, nil]
+    assert highlight_lines(["some prose", "and more"], "notes/data.xyzzy") == [nil, nil]
   end
 
-  # Every parser but Elixir's is fetched on first use, which a test run must not
-  # do; `config :rail, :fetch_parsers, false` is what keeps the suite offline.
-  test "leaves a language it would have to fetch a parser for to the caller" do
-    assert highlight_lines(["const a = 1;"], "assets/js/app.js") == [nil]
+  test "highlights every language it has a parser for, not only Elixir" do
+    assert [html] = highlight_lines(["const a = 1;"], "assets/js/app.js")
+
+    assert html =~ ~s(<span class="l-keyword">const</span>)
+  end
+
+  # A hunk often ends on a blank line, and a block one line short would be thrown away.
+  test "keeps a blank line at the start, the middle or the end of the block" do
+    assert ["", code, "", last, ""] =
+             highlight_lines(["", "def x, do: 1", "", "def y, do: 2", ""], "lib/rail/thing.ex")
+
+    assert code =~ "l-keyword"
+    assert last =~ "l-keyword"
+  end
+
+  test "strips the line's own element and leaves the tokens inside it" do
+    assert [~s(<span class="l-variable">x</span>)] = highlight_lines(["x"], "lib/rail/thing.ex")
   end
 end

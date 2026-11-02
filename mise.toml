@@ -5,11 +5,11 @@
 _.file = ".env"
 
 [tools]
-elixir = "1.19.5-otp-28"
-erlang = "28.4.1"
-node = "24.15.0"
-pnpm = "10.15.1"
-prek = "0.4.14"
+elixir = "1.20.5-otp-29"
+erlang = "29.1.2"
+node = "26.13.0"
+pnpm = "12.16.1"
+prek = "0.5.9"
 
 [hooks]
 # Installs .git/hooks/pre-push, shared by every worktree. docs/local-ci.md.

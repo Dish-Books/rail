@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1
 
-ARG ELIXIR_IMAGE="hexpm/elixir:1.19.5-erlang-28.4.1-debian-bookworm-20260610-slim"
-ARG RUNNER_IMAGE="debian:bookworm-20260610-slim"
-ARG NODE_IMAGE="node:22-bookworm-slim"
+ARG ELIXIR_IMAGE="hexpm/elixir:1.20.5-erlang-29.1.2-debian-trixie-20261027-slim"
+ARG RUNNER_IMAGE="debian:trixie-20261027-slim"
+ARG NODE_IMAGE="node:26.13.0-trixie-slim"
 
-# Node for the sandbox. Bookworm's is 18, and the browser driver agents run needs the global
+# Node for the sandbox. Trixie's is 20, and the browser driver agents run needs the global
 # WebSocket that arrived in 22.
 FROM ${NODE_IMAGE} AS node
 
@@ -13,6 +13,9 @@ FROM ${NODE_IMAGE} AS node
 # ------------------------------------------------------------------------------
 FROM ${ELIXIR_IMAGE} AS build
 
+# Keep in step with mise.toml.
+ARG PNPM_VERSION=12.16.1
+
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
     build-essential \
     ca-certificates \
@@ -20,7 +23,7 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends \
     git \
     nodejs \
     npm \
-  && npm install -g pnpm \
+  && npm install -g "pnpm@${PNPM_VERSION}" \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -57,7 +60,8 @@ RUN mix release rail
 FROM ${RUNNER_IMAGE} AS sandbox
 
 # chromium for QA and demos; the build tools let mise compile a project's Erlang; python because
-# agents reach for it to script whatever the shell makes awkward.
+# agents reach for it to script whatever the shell makes awkward. The Postgres client is the shared
+# server's major version, because a project's pg_dump must match it.
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
     autoconf \
     build-essential \
@@ -75,6 +79,7 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends \
     m4 \
     openssh-client \
     openssl \
+    postgresql-client-17 \
     python-is-python3 \
     python3 \
     python3-pip \
@@ -85,15 +90,7 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends \
   && locale-gen \
   && rm -rf /var/lib/apt/lists/*
 
-# Postgres 17 client from PGDG: a project's pg_dump must match the shared server, and bookworm ships 15.
-RUN install -m 0755 -d /etc/apt/keyrings \
-  && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /etc/apt/keyrings/postgresql.asc \
-  && echo "deb [signed-by=/etc/apt/keyrings/postgresql.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
-  && apt-get update -y \
-  && apt-get install -y --no-install-recommends postgresql-client-17 \
-  && rm -rf /var/lib/apt/lists/*
-
-# Node 22 and npm, for the browser driver in QA and demos and for any project script that wants them.
+# Node and npm, for the browser driver in QA and demos and for any project script that wants them.
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
@@ -114,14 +111,14 @@ RUN curl -fsSL https://mise.run | sh
 
 # Claude Code, pinned: the layer is cached and the auto-updater is off, so the
 # version only moves when this does. Bump it to pick up a new model.
-ARG CLAUDE_CODE_VERSION=2.1.296
+ARG CLAUDE_CODE_VERSION=2.1.316
 RUN curl -fsSL https://claude.ai/install.sh | bash -s -- "${CLAUDE_CODE_VERSION}"
 
 # prek on PATH, not only through mise. A pre-push hook calls prek by the path it
 # was installed from, and falls back to a bare `prek` when that path is gone -
 # which it is whenever the hook was written from a mise data dir that did not
 # survive, such as a sandbox's own home. Keep in step with mise.toml.
-ARG PREK_VERSION=0.4.14
+ARG PREK_VERSION=0.5.9
 RUN curl --proto '=https' --tlsv1.2 -LsSf \
     "https://github.com/j178/prek/releases/download/v${PREK_VERSION}/prek-installer.sh" \
   | PREK_NO_MODIFY_PATH=1 sh
