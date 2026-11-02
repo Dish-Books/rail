@@ -6,10 +6,12 @@ defmodule RailWeb.IssuesLiveTest do
   import Phoenix.LiveViewTest
   import Rail.Pipeline.Utils.BuildTask
 
+  alias Phoenix.LiveView.Socket
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.IssueStage
   alias Rail.Issues.Workers.LinearSync
+  alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
@@ -25,6 +27,7 @@ defmodule RailWeb.IssuesLiveTest do
   alias Rail.Users.Schemas.User
   alias Rail.Workflows.Schemas.Workflow
   alias Rail.Workflows.Schemas.WorkflowDefinition
+  alias RailWeb.IssuesLive
 
   setup do
     # A role's prompt is read from the project's clone, which another test may have made, so reading it here
@@ -2295,6 +2298,35 @@ defmodule RailWeb.IssuesLiveTest do
       assert_redirect(view, ~p"/tasks/#{task_id}")
     end
 
+    test "Start makes a linked person the owner of an unassigned issue and queues its ticket's assignee", %{
+      conn: conn,
+      project: project,
+      insert: insert
+    } do
+      %{id: issue_id} =
+        issue = insert.("ROW-S", %{state: :backlog, state_name: "Ready for Dev", cycle_external_id: "cyc_12"})
+
+      {:ok, starter} =
+        Users.register_oauth_user(%{github_id: "gh_row_start", login: "row_start", email: "row_start@example.com"})
+
+      {:ok, starter} = Users.update_user(system_scope(), starter, %{project_ids: [project.id]})
+      %{id: starter_id} = starter = starter |> Ecto.Changeset.change(linear_user_id: "lin_usr_row") |> Repo.update!()
+
+      stub(Issues, :link_pull_request, fn _scope, _issue -> {:ok, nil} end)
+      expect(Rail.Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+      expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+      {:ok, view, _html} = live(log_in_user(conn, starter), ~p"/issues?cycle=12")
+      allow(Rail.Git, self(), view.pid)
+      allow(Tools, self(), view.pid)
+      render_async(view)
+
+      view |> element("#issue-start-#{issue_id}") |> render_click()
+
+      assert %Issue{owner_user_id: ^starter_id} = Repo.reload!(issue)
+      assert_enqueued(worker: SyncIssue, args: %{issue_id: issue_id, fields: ["owner_user_id"]})
+    end
+
     test "a stale row whose issue has since started opens the task and leaves its run alone", %{
       conn: conn,
       ready: ready,
@@ -2306,7 +2338,7 @@ defmodule RailWeb.IssuesLiveTest do
 
       # Sent as the event, since any other test's broadcast may have refreshed the row by now.
       {task, run} = open_task.(ready, :plan, %{status: :running})
-      reject(&Pipeline.start_task/1)
+      reject(&Pipeline.start_task/2)
       reject(&Tools.start_os_process/2)
       allow(Pipeline, self(), view.pid)
       allow(Tools, self(), view.pid)
@@ -2341,7 +2373,7 @@ defmodule RailWeb.IssuesLiveTest do
       hidden = insert.("OOR-1", %{project_id: hidden_id, state: :todo})
       finished = insert.("ROW-F", %{state: :done, state_name: "Done", cycle_external_id: "cyc_12"})
 
-      reject(&Pipeline.start_task/1)
+      reject(&Pipeline.start_task/2)
       reject(&Pipeline.adopt_pull_request/2)
       reject(&Issues.link_pull_request/2)
 
@@ -2401,7 +2433,7 @@ defmodule RailWeb.IssuesLiveTest do
       # The re-read has found no task, as it does while the first tab's start is still in its transaction.
       stub(Issues, :get_issue, fn _id, _opts -> {:ok, %{ready | task: nil, project: project}} end)
       stub(Issues, :link_pull_request, fn _scope, _issue -> {:ok, nil} end)
-      expect(Pipeline, :start_task, fn _issue -> {:error, refused} end)
+      expect(Pipeline, :start_task, fn _scope, _issue -> {:error, refused} end)
       allow(Issues, self(), view.pid)
       allow(Pipeline, self(), view.pid)
 
@@ -2505,17 +2537,11 @@ defmodule RailWeb.IssuesLiveTest do
       assert {:error, {:live_redirect, %{to: ^to}}} = view |> element("#issue-card-#{working.id}") |> render_click()
     end
 
-    test "the plain list does not reload on a run's change, which it does not show", %{
-      conn: conn,
-      insert: insert
-    } do
-      {:ok, view, _html} = live(conn, ~p"/issues")
-      render_async(view)
+    # Called directly: a live page also reloads on any other test's broadcast, so it could not show this.
+    test "the plain list does not reload on a run's change, which it does not show" do
+      socket = %Socket{assigns: %{__changed__: %{}, view: :list}}
 
-      late = insert.("ROW-L", %{})
-      send(view.pid, {:pipeline_changed, "tsk_elsewhere"})
-
-      refute render(view) =~ late.identifier
+      assert {:noreply, ^socket} = IssuesLive.handle_info({:pipeline_changed, "tsk_elsewhere"}, socket)
     end
   end
 

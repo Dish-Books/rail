@@ -37,7 +37,8 @@ defmodule Rail.Pipeline do
 
   defdelegate enter_stage(task, stage, opts \\ []), to: Actions.EnterStage
 
-  defdelegate start_plan_run(issue_or_run), to: Actions.StartPlanRun
+  defdelegate start_plan_run(scope, issue), to: Actions.StartPlanRun
+  defdelegate start_plan_run(run), to: Actions.StartPlanRun
   @decorate can?(resource: :tasks, action: :approve)
   defdelegate approve_plan(scope, run), to: Actions.ApprovePlan
 
@@ -107,7 +108,7 @@ defmodule Rail.Pipeline do
   defdelegate save_screen(task, attrs), to: Actions.SaveScreen
   defdelegate list_screens(task), to: Actions.ListScreens
 
-  defdelegate start_task(issue), to: Actions.StartTask
+  defdelegate start_task(scope, issue), to: Actions.StartTask
   defdelegate adopt_pull_request(scope, issue), to: Actions.AdoptPullRequest
   defdelegate create_task(issue, stage), to: Actions.CreateTask
   defdelegate list_tasks(opts \\ []), to: Actions.ListTasks
