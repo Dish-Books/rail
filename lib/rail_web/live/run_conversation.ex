@@ -128,6 +128,7 @@ defmodule RailWeb.Live.RunConversation do
         <.review_comment_tray
           :if={@show_review_tray}
           fix={@review_tray.fix}
+          new_issues={@review_tray.new_issues}
           finding_comments={@review_finding_comments}
           diff_comments={@review_diff_comments}
           screen_comments={@review_screen_comments}
@@ -293,6 +294,7 @@ defmodule RailWeb.Live.RunConversation do
             <.review_comment_tray
               :if={@show_review_tray}
               fix={@review_tray.fix}
+              new_issues={@review_tray.new_issues}
               finding_comments={@review_finding_comments}
               diff_comments={@review_diff_comments}
               screen_comments={@review_screen_comments}
@@ -1550,6 +1552,8 @@ defmodule RailWeb.Live.RunConversation do
     do: "#{count} #{if count == 1, do: "finding needs", else: "findings need"} a ruling before the review can finish."
 
   defp tray_message(:cleaned_up), do: "This task is cleaned up, so nothing more can be sent."
+
+  defp tray_message({:issue_not_filed, title}), do: "Rail could not file the issue for “#{title}”. Nothing was sent."
   defp tray_message({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not Review."
 
   # The log the component holds; the rendered lines and the turns read out of it

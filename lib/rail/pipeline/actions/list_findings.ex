@@ -14,12 +14,13 @@ defmodule Rail.Pipeline.Actions.ListFindings do
   alias Rail.Repo
 
   @doc """
-  Lists every finding on `task`, newest round first, worst first, oldest first, with `id` breaking any tie.
+  Lists every finding on `task`, newest round first, worst first, oldest first, with `id` breaking any tie, each
+  with the issue it was filed as.
   """
   def list_findings(%Task{id: task_id}) do
     rank = Finding.severities() |> Enum.with_index() |> Map.new()
 
-    from(f in Finding, where: f.task_id == ^task_id)
+    from(f in Finding, where: f.task_id == ^task_id, preload: [:issue])
     |> Repo.all()
     # A `DateTime` compares field by field in term order, not by time.
     |> Enum.sort_by(

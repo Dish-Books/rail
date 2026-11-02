@@ -227,6 +227,8 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
 
     {:ok, dismissed} = Pipeline.save_finding(task, Map.merge(attrs, %{key: "left-alone", title: "Left alone"}))
     {:ok, _dismissed} = Pipeline.decide_finding(system_scope(), dismissed, :skip)
+    {:ok, follow_up} = Pipeline.save_finding(task, Map.merge(attrs, %{key: "follow-up", title: "A follow-up"}))
+    {:ok, _filed_later} = Pipeline.decide_finding(system_scope(), follow_up, :new_issue)
 
     {:ok, _fixed} =
       Pipeline.save_finding(task, Map.merge(attrs, %{key: "already-fixed", title: "Already fixed"}))
@@ -258,6 +260,9 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
       assert prompt =~
                "- `left-alone` [round 1, minor code, human ruled: Don't fix, status: open] Left alone (lib/a.ex:3)"
+
+      assert prompt =~ "human ruled: New issue, status: open] A follow-up"
+      assert prompt =~ "  Round 1, ruled New issue"
 
       assert prompt =~
                "- `already-fixed` [round 1, minor code, human ruled: not yet, status: fixed, fixed in #{short}] Already fixed"
