@@ -402,6 +402,34 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(second, "#issue-task-link")
   end
 
+  test "a second page on an issue that starts at Engineer reads the run, not Queued", %{conn: conn, project: project} do
+    issue =
+      %Issue{skipped_steps: [:product, :design, :architect]}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_two_tabs_engineer",
+        identifier: "IPG-21",
+        title: "Open in two tabs at Engineer",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    stub(Git, :branch_fingerprint, fn _worktree_path -> nil end)
+    expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+    assert {:ok, starting, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    assert {:ok, second, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    allow(Git, self(), starting.pid)
+    allow(Tools, self(), starting.pid)
+
+    render_async(starting)
+    render_async(second)
+    starting |> element("#issue-start-plan") |> render_click()
+
+    assert has_element?(second, "#issue-task-link", "Implement running")
+  end
+
   test "a stale page whose issue has since started opens the task and leaves its run alone", %{
     conn: conn,
     project: project

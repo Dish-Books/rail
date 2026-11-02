@@ -34,6 +34,8 @@ defmodule Rail.Pipeline.Actions.StartTask do
         with {:ok, %Task{} = task} <- record_task(scope, Repo.preload(issue, :project), first, :plan in stages) do
           Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id})
           {:ok, _run} = Pipeline.enter_stage(task, first, fresh: true)
+          # Again now the run exists, so an open page reads it rather than Queued.
+          Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id})
           Pipeline.get_task(task.id)
         end
     end

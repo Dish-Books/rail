@@ -195,6 +195,26 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
     assert_received {:issue_changed, ^issue_id}
   end
 
+  test "an adoption tells open pages again once the checks' runs exist, so they do not stay at Queued", %{
+    issue: %{id: issue_id} = issue,
+    starter: starter
+  } do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+
+    stub(Git, :base_status, fn _path, "main" ->
+      assert_received {:issue_changed, ^issue_id}
+      %{behind: false, conflicts: []}
+    end)
+
+    stub(Tools, :start_os_process, fn %Run{} = run, _argv ->
+      refute_received {:issue_changed, ^issue_id}
+      {:ok, %OsProcess{run: run}}
+    end)
+
+    assert {:ok, %Task{}} = Pipeline.adopt_pull_request(Scope.for_user(starter), issue)
+    assert_received {:issue_changed, ^issue_id}
+  end
+
   test "a person who never linked Linear adopts it with the issue left unassigned", %{
     project: project,
     issue: issue

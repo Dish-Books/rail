@@ -41,6 +41,8 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequest do
       {:ok, task} = Pipeline.enter_stage(task, :review, start: false)
       {:ok, task} = Pipeline.check_base(task)
       :ok = start_checks(task)
+      # Again now the checks' runs exist, so an open page reads them rather than Queued.
+      Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id})
       {:ok, task}
     end
   end

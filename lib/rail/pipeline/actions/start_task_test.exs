@@ -179,6 +179,28 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
     assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
   end
 
+  test "an Engineer start tells open pages again once its run exists, so they do not stay at Queued", %{
+    attrs: attrs,
+    starter: starter
+  } do
+    %{id: issue_id} =
+      issue =
+      %Issue{skipped_steps: [:product, :design, :architect]} |> Issue.tracker_changeset(attrs) |> Repo.insert!()
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+
+    stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+
+    expect(Tools, :start_os_process, fn %Run{} = run, _argv ->
+      assert_received {:issue_changed, ^issue_id}
+      refute_received {:issue_changed, ^issue_id}
+      {:ok, %OsProcess{task_id: run.task_id, run: run}}
+    end)
+
+    assert {:ok, %Task{}} = Pipeline.start_task(Scope.for_user(starter), issue)
+    assert_received {:issue_changed, ^issue_id}
+  end
+
   test "the person who starts an issue at a custom stage owns it, and its ticket moves to In Progress", %{
     attrs: attrs,
     starter: %{id: starter_id} = starter
