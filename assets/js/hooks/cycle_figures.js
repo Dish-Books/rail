@@ -19,13 +19,33 @@ export const CycleFigures = {
       if (day) this.show(Number(day.dataset.day));
       else this.clear();
     });
-    this.el.addEventListener("pointerleave", () => this.clear());
+    // A lifted finger fires this too, so a tapped day stays until the next tap elsewhere.
+    this.el.addEventListener("pointerleave", (event) => {
+      if (event.pointerType !== "touch") this.clear();
+    });
+    this.el.addEventListener("pointercancel", () => this.clear());
+
+    // A finger's moves can stay on the rect it landed on, so the day is read from where it is now.
+    this.el.addEventListener("pointermove", (event) => {
+      if (event.pointerType !== "touch") return;
+      const day = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-day]");
+      if (this.el.contains(day)) this.show(Number(day.dataset.day));
+    });
+
+    this.onTap = (event) => {
+      if (!this.el.contains(event.target)) this.clear();
+    };
+    document.addEventListener("pointerdown", this.onTap);
 
     // Only a keyboard's focus shows a day, so a click on a day still to come keeps today's figures.
     this.el.addEventListener("focusin", (event) => {
       if (this.day === null && event.target.matches("svg[tabindex]:focus-visible")) this.show(this.lastDay());
     });
-    this.el.addEventListener("focusout", () => this.clear());
+    // A tap on the chart moves focus there after the finger lifts, which leaves its day showing.
+    this.el.addEventListener("focusout", (event) => {
+      const to = event.relatedTarget;
+      if (!(this.el.contains(to) && to.matches("svg[tabindex]"))) this.clear();
+    });
 
     this.el.addEventListener("keydown", (event) => {
       if (!event.target.matches("svg[tabindex]")) return;
@@ -44,6 +64,10 @@ export const CycleFigures = {
     } else if (this.day !== null) {
       this.show(this.day);
     }
+  },
+
+  destroyed() {
+    document.removeEventListener("pointerdown", this.onTap);
   },
 
   lastDay() {

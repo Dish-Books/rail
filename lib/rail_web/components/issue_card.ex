@@ -166,7 +166,6 @@ defmodule RailWeb.Components.IssueCard do
           id={"issue-start-#{@key}"}
           phx-click="start_issue"
           phx-value-issue_id={@issue.id}
-          phx-disable-with="Starting..."
           aria-label={"Start #{@issue.identifier}"}
           class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
         >

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { CycleFigures, stepDay } from "../js/hooks/cycle_figures.js";
 
 const panel = () => {
@@ -19,12 +19,19 @@ const panel = () => {
   ];
   const fields = [field("date", "Oct 26 – Nov 22"), field("scope", "369"), field("scopeChange", "+14%")];
   const markers = [marker(0), marker(1)];
+  const listeners = {};
 
   return {
     dataset: { cycle: "cyc_14" },
     attributes,
+    days,
     fields,
+    listeners,
     markers,
+    addEventListener: (name, listener) => {
+      listeners[name] = listener;
+    },
+    contains: (node) => node?.inside === true,
     toggleAttribute: (name, on) => (on ? attributes.add(name) : attributes.delete(name)),
     querySelector: (selector) => days[Number(selector.match(/data-day="(\d+)"/)[1])] ?? null,
     querySelectorAll: (selector) => {
@@ -36,6 +43,8 @@ const panel = () => {
 };
 
 const hook = (el) => Object.assign(Object.create(CycleFigures), { el, day: null, cycle: el.dataset.cycle });
+
+const dayNode = (index) => ({ inside: true, dataset: { day: String(index) }, closest: () => dayNode(index) });
 
 describe("stepDay", () => {
   it("moves one day either way and stays inside the days", () => {
@@ -141,5 +150,115 @@ describe("CycleFigures", () => {
 
   it("counts its days for the arrow keys", () => {
     assert.equal(hook(panel()).lastDay(), 1);
+  });
+});
+
+describe("CycleFigures listeners", () => {
+  const realDocument = globalThis.document;
+  const chart = { inside: true, matches: () => true };
+  const button = { inside: true, matches: () => false };
+  let el;
+  let figures;
+  let underFinger;
+  let onDocument;
+  let removed;
+
+  beforeEach(() => {
+    underFinger = null;
+    onDocument = {};
+    removed = {};
+    globalThis.document = {
+      addEventListener: (name, listener) => {
+        onDocument[name] = listener;
+      },
+      removeEventListener: (name, listener) => {
+        removed[name] = listener;
+      },
+      elementFromPoint: () => underFinger
+    };
+    el = panel();
+    figures = hook(el);
+    figures.mounted();
+    figures.show(1);
+  });
+
+  afterEach(() => {
+    globalThis.document = realDocument;
+  });
+
+  it("keeps a tapped day when the finger lifts and clears when a mouse leaves", () => {
+    el.listeners.pointerleave({ pointerType: "touch" });
+    assert.equal(figures.day, 1);
+
+    el.listeners.pointerleave({ pointerType: "mouse" });
+    assert.equal(figures.day, null);
+  });
+
+  it("clears when the browser takes the gesture for a scroll", () => {
+    el.listeners.pointercancel({ pointerType: "touch" });
+
+    assert.equal(figures.day, null);
+    assert.equal(el.fields[1].textContent, "369");
+  });
+
+  it("follows a sliding finger from day to day and keeps the last it read", () => {
+    underFinger = dayNode(0);
+    el.listeners.pointermove({ pointerType: "touch", clientX: 40, clientY: 60 });
+    assert.equal(figures.day, 0);
+
+    underFinger = { closest: () => null };
+    el.listeners.pointermove({ pointerType: "touch", clientX: 40, clientY: 140 });
+    assert.equal(figures.day, 0);
+
+    underFinger = null;
+    el.listeners.pointermove({ pointerType: "touch", clientX: 4000, clientY: 60 });
+    assert.equal(figures.day, 0);
+  });
+
+  it("reads no day from another panel under a sliding finger", () => {
+    underFinger = { closest: () => ({ inside: false, dataset: { day: "0" } }) };
+
+    el.listeners.pointermove({ pointerType: "touch", clientX: 40, clientY: 600 });
+
+    assert.equal(figures.day, 1);
+  });
+
+  it("ignores a mouse's moves, which the hover already reads", () => {
+    underFinger = dayNode(0);
+
+    el.listeners.pointermove({ pointerType: "mouse", clientX: 40, clientY: 60 });
+
+    assert.equal(figures.day, 1);
+  });
+
+  it("clears on a tap outside the panel and keeps the day on one inside it", () => {
+    onDocument.pointerdown({ target: button });
+    assert.equal(figures.day, 1);
+
+    onDocument.pointerdown({ target: { inside: false } });
+    assert.equal(figures.day, null);
+  });
+
+  it("takes its document listener away with it", () => {
+    figures.destroyed();
+
+    assert.ok(onDocument.pointerdown);
+    assert.equal(removed.pointerdown, onDocument.pointerdown);
+  });
+
+  it("keeps the day when focus moves to its own chart and clears on any other move", () => {
+    el.listeners.focusout({ relatedTarget: chart });
+    assert.equal(figures.day, 1);
+
+    el.listeners.focusout({ relatedTarget: button });
+    assert.equal(figures.day, null);
+
+    figures.show(1);
+    el.listeners.focusout({ relatedTarget: { inside: false, matches: () => true } });
+    assert.equal(figures.day, null);
+
+    figures.show(1);
+    el.listeners.focusout({ relatedTarget: null });
+    assert.equal(figures.day, null);
   });
 });

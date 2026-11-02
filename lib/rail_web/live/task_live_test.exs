@@ -7493,7 +7493,7 @@ defmodule RailWeb.TaskLiveTest do
       issue: hand_filed,
       task: task
     } do
-      {:ok, hand_task} = Pipeline.create_task(hand_filed, :plan)
+      hand_task = Repo.get_by!(Task, issue_id: hand_filed.id)
       {:ok, view, _html} = live(conn, ~p"/tasks/#{hand_task.id}?item=stage-1")
       refute has_element?(view, "[id^='review-item-stage-']")
       assert has_element?(view, "#review-item-plan[aria-current='true']")

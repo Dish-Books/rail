@@ -41,13 +41,13 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     %{project: project, issue: issue, issue_id: issue_id, task: task, task_id: task_id, role: role}
   end
 
-  test "an issue has at most one task", %{project: project, issue: issue, issue_id: issue_id, task_id: task_id} do
+  test "an issue has at most one task", %{project: project, issue: issue, issue_id: issue_id} do
     attrs = %{issue_id: issue_id, worktree_name: "wt", worktree_path: "/tmp/wt", scratch_path: "/tmp/scratch"}
 
     assert {:error, changeset} = %Task{} |> Task.changeset(attrs, project.id) |> Repo.insert()
     assert %{issue_id: ["has already been taken"]} = errors_on(changeset)
 
-    assert {:ok, %Task{id: ^task_id}} = Pipeline.create_task(issue, :plan)
+    assert {:error, :task_exists} = Pipeline.create_task(issue, :plan)
   end
 
   test "changeset validates required fields" do

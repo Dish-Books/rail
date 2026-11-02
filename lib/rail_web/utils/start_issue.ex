@@ -15,7 +15,7 @@ defmodule RailWeb.Utils.StartIssue do
   alias Rail.Scope
 
   # Read again rather than trusted from the page: the id comes from the browser, `start_task/1` takes no scope, and a
-  # second start of a live task would spawn a second agent on it.
+  # start from a stale page opens the task it finds.
   def start_issue(socket, issue_id, reload) do
     scope = socket.assigns.current_scope
 
@@ -47,6 +47,7 @@ defmodule RailWeb.Utils.StartIssue do
   defp finish({:error, reason}, socket, reload, error), do: socket |> put_flash(:error, error.(reason)) |> reload.()
 
   defp start_error(%Changeset{errors: [issue_id: _taken]}), do: someone_else()
+  defp start_error(:task_exists), do: someone_else()
   defp start_error({:worktree_failed, reason}) when is_binary(reason), do: "Could not create the worktree: #{reason}"
   defp start_error({:worktree_failed, reason}), do: "Could not create the worktree: #{inspect(reason)}"
   defp start_error({:spawn_failed, reason, _run}), do: "Could not start the agent: #{inspect(reason)}"
@@ -61,6 +62,6 @@ defmodule RailWeb.Utils.StartIssue do
   defp adopt_error(reason) when is_binary(reason), do: "Could not check out the pull request: #{reason}"
   defp adopt_error(reason), do: "Could not start: #{inspect(reason)}"
 
-  # The unique index on a task's issue refused the insert, since another tab's start committed first.
+  # Another tab's start committed first: the create found its task, or the unique index refused the insert.
   defp someone_else, do: "Someone else just started this issue."
 end

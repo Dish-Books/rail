@@ -1903,7 +1903,8 @@ defmodule RailWeb.IssuesLiveTest do
       render_async(view)
 
       assert has_element?(view, "#issue-start-#{ready.id}[aria-label='Start #{ready.identifier}']", "Start")
-      assert has_element?(view, "#issue-start-#{ready.id}[phx-disable-with]")
+      refute has_element?(view, "#issue-start-#{ready.id}[phx-disable-with]")
+      assert has_element?(view, "#issue-start-#{ready.id} .pi-play")
       assert has_element?(view, "#issue-card-#{linked.id} [data-qa='issue-external-link'][onclick]")
       refute has_element?(view, "#task-link-#{ready.id}")
       refute has_element?(view, "#issue-start-#{done.id}")
@@ -2168,6 +2169,32 @@ defmodule RailWeb.IssuesLiveTest do
       render_click(view, "start_issue", %{"issue_id" => ready.id})
 
       assert has_element?(view, "#flash-error", "Someone else just started this issue.")
+    end
+
+    test "a start whose re-read missed a task another tab committed stops at the task, with no spawn", %{
+      conn: conn,
+      project: project,
+      ready: ready,
+      open_task: open_task
+    } do
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+      {task, run} = open_task.(ready, :plan, %{status: :running})
+
+      # The re-read has found no task, as it does while the first tab's start is still in its transaction.
+      stub(Issues, :get_issue, fn _id, _opts -> {:ok, %{ready | task: nil, project: project}} end)
+      stub(Issues, :link_pull_request, fn _scope, _issue -> {:ok, nil} end)
+      stub(Rail.Git, :get_or_create_worktree, fn _project, _task -> {:ok, task.worktree_path} end)
+      reject(&Tools.start_os_process/2)
+      allow(Issues, self(), view.pid)
+      allow(Rail.Git, self(), view.pid)
+      allow(Tools, self(), view.pid)
+
+      render_click(view, "start_issue", %{"issue_id" => ready.id})
+
+      assert has_element?(view, "#flash-error", "Someone else just started this issue.")
+      assert Repo.reload!(run).started_at == run.started_at
+      assert [_one] = Repo.all(from t in Task, where: t.issue_id == ^ready.id)
     end
 
     test "a start takes up a linked pull request, one GitHub finds, and says why it cannot", %{

@@ -476,6 +476,7 @@ defmodule RailWeb.IssueLiveTest do
     refute html =~ "Looking for a pull request"
 
     assert has_element?(view, "#issue-start-review")
+    refute has_element?(view, "#issue-start-review[phx-disable-with]")
     assert has_element?(view, "#issue-pull-request", "Linked")
     refute has_element?(view, "#issue-start-plan")
   end
