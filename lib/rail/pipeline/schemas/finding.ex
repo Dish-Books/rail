@@ -100,8 +100,9 @@ defmodule Rail.Pipeline.Schemas.Finding do
   required, every field is held to its limit, and nothing it says may hold tool-call markup.
   """
   def raise_changeset(finding, attrs) do
+    # An agent's null is a field left out, so `steps` keeps its default and never reaches its NOT NULL column.
     finding
-    |> cast(attrs, @raised)
+    |> cast(attrs, @raised, empty_values: [nil | empty_values()])
     |> cast_embed(:places, with: &FindingPlace.changeset/2)
     |> cast_embed(:evidence, with: &FindingEvidence.changeset/2)
     |> validate_required(@required)

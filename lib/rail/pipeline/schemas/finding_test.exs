@@ -100,7 +100,29 @@ defmodule Rail.Pipeline.Schemas.FindingTest do
     assert %{screen: ["a screen finding's Where is the `screen` and the `steps` to it"]} =
              errors_on(Finding.raise_changeset(%Finding{}, screen))
 
+    assert %{screen: ["a screen finding's Where is the `screen` and the `steps` to it"]} =
+             errors_on(Finding.raise_changeset(%Finding{}, %{screen | "steps" => nil}))
+
     assert Finding.raise_changeset(%Finding{}, %{screen | "steps" => ["Open the task"]}).valid?
+  end
+
+  test "null steps read as no steps on a finding and its places, and its issue is written from them", %{attrs: attrs} do
+    places = [
+      %{"file" => "lib/a.ex", "line" => 3, "steps" => nil},
+      %{"screen" => "Issues page", "label" => "The sort menu", "steps" => nil}
+    ]
+
+    changeset = Finding.raise_changeset(%Finding{}, Map.merge(attrs, %{"steps" => nil, "places" => places}))
+
+    assert %{valid?: true} = changeset
+
+    assert %Finding{steps: [], places: [%FindingPlace{steps: []}, %FindingPlace{steps: []}]} =
+             finding = Ecto.Changeset.apply_changes(changeset)
+
+    task = %Task{issue: %Issue{identifier: "RAIL-131", url: "https://linear.app/x/issue/RAIL-131"}}
+
+    assert %{description: description} = Finding.calculate_issue(finding, task)
+    assert description =~ "Applies in 2 places:\n\n1. `lib/a.ex:3`\n2. Issues page, The sort menu\n\n**Fix.**"
   end
 
   test "evidence and places stay inside their roots", %{attrs: attrs} do
