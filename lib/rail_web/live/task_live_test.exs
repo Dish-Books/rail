@@ -2587,7 +2587,8 @@ defmodule RailWeb.TaskLiveTest do
       send(view.pid, {:pipeline_changed, "tsk_another"})
       assert has_element?(view, "#task-approve-plan")
 
-      {:ok, _working} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+      # Written past `update_run/2`, whose broadcast would take the button away before the page can be raced.
+      run |> Run.changeset(%{status: :running, stage_outcome: :in_progress}) |> Repo.update!()
       view |> element("#task-approve-plan") |> render_click()
 
       assert has_element?(view, "#task-actions-error", "Something is still running on this task.")
@@ -5945,7 +5946,8 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      {:ok, _running} = Pipeline.update_run(run, %{status: :running})
+      # Written past `update_run/2`, whose broadcast would take the ruling away before the page can be raced.
+      run |> Run.changeset(%{status: :running}) |> Repo.update!()
       view |> element("#decide-skip-unhandled-nil") |> render_click()
 
       assert has_element?(view, "#review-error", "Something is still running on this task.")
