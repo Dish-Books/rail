@@ -4,10 +4,12 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
   plan itself, each saved with Rail's tools.
 
   How the step works is the same for every project, so it is here in the brief rather than in a
-  prompt file. Given an issue this creates the task too, and queues the ticket's move to In Progress.
+  prompt file. Given an issue this creates the task too, claims the issue for whoever started it and
+  queues the ticket's move to In Progress.
   """
 
   import Rail.Pipeline.Utils.BroadcastPipelineChanged
+  import Rail.Pipeline.Utils.ClaimForStarter
   import Rail.Pipeline.Utils.FormatComments
   import Rail.Pipeline.Utils.FormatStageOutputs
   import Rail.Pipeline.Utils.FormatTicket
@@ -24,43 +26,48 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
+  alias Rail.Scope
   alias Rail.Tools
 
   @doc """
-  Creates the task for an issue at Plan and starts its run, or spawns a Plan run `enter_stage/3`
-  already started.
+  Creates the task for an issue at Plan and starts its run, claiming the issue for the scope's user.
 
-  A checkout no worktree can be made in leaves the issue without a task, so it can be started
-  again; a run that is recorded but fails to spawn keeps its task, with the failure on the run.
-  Returns whatever `Tools.start_os_process/2` does.
+  A checkout no worktree can be made in leaves the issue without a task or an owner, so it can be
+  started again; a run that is recorded but fails to spawn keeps its task, with the failure on the
+  run. Returns whatever `Tools.start_os_process/2` does.
   """
-  def start_plan_run(%Issue{} = issue) do
+  def start_plan_run(%Scope{} = scope, %Issue{} = issue) do
     %Issue{project: %Project{} = project} = issue = Repo.preload(issue, :project)
     {:ok, %Role{} = role} = Roles.get_role(project_id: project.id, stage: :plan)
 
-    with {:ok, {run, worktree_path}} <- record_run(issue, project, role) do
+    with {:ok, {run, worktree_path}} <- record_run(scope, issue, project, role) do
       # Pages showing whether an issue has a task, such as Triage, learn of it here.
       broadcast_pipeline_changed(run)
+      Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id})
       spawn_os_process(%{run | role: role}, worktree_path)
     end
   end
 
-  # A task a custom stage started before Plan reaches it here, so its issue becomes the ticket now when Product is off.
+  @doc """
+  Spawns a Plan run `enter_stage/3` already started. A task a custom stage started reaches Plan here, so with Product
+  off its issue becomes the ticket now.
+  """
   def start_plan_run(%Run{task: %Task{} = task, role: %Role{stage: :plan}} = run) do
     {:ok, _round} = issue_as_ticket(Repo.preload(task, [:project, :issue]))
     spawn_os_process(run, task.worktree_path)
   end
 
-  # The spawn reads the run from another process, so it has to wait for the
-  # commit; everything before it rolls back together.
-  defp record_run(%Issue{} = issue, %Project{} = project, %Role{} = role) do
+  # The spawn reads the run from another process, so it has to wait for the commit; everything before it
+  # rolls back together. The claim is last because it locks the issue's row, which no git fetch should hold.
+  defp record_run(%Scope{} = scope, %Issue{} = issue, %Project{} = project, %Role{} = role) do
     Repo.transaction(fn ->
       with {:ok, task} <- Pipeline.create_task(issue, :plan),
            {:ok, _job} <- Issues.advance_issue_state(issue),
            task = Repo.preload(task, [:project, :issue]),
            {:ok, _round} <- issue_as_ticket(task),
            {:ok, worktree_path} <- ensure_worktree(project, task),
-           {:ok, run} <- Pipeline.start_or_resume_run(task, role, worktree_path) do
+           {:ok, run} <- Pipeline.start_or_resume_run(task, role, worktree_path),
+           :ok <- claim_for_starter(scope, issue) do
         {run, worktree_path}
       else
         {:error, reason} -> Repo.rollback(reason)

@@ -559,6 +559,60 @@ defmodule RailWeb.TaskLiveTest do
     assert Repo.get!(Issue, task.issue_id).owner_user_id == scope.user.id
   end
 
+  test "a person who started an issue finds themselves its owner, with no Claim", %{
+    conn: conn,
+    project: project,
+    scope: scope
+  } do
+    starter = scope.user |> Ecto.Changeset.change(linear_user_id: "lin_usr_task_live") |> Repo.update!()
+
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_task_live_started",
+        identifier: "TLV-20",
+        title: "Started from its issue page",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+    {:ok, %Task{id: task_id}} = Pipeline.start_task(Scope.for_user(starter), issue)
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task_id}")
+
+    refute has_element?(view, "#claim-task")
+  end
+
+  test "a person who never linked Linear starts the issue and the task page still offers Claim", %{
+    conn: conn,
+    project: project,
+    scope: scope
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_task_live_unlinked",
+        identifier: "TLV-21",
+        title: "Started by somebody unlinked",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+    {:ok, %Task{id: task_id}} = Pipeline.start_task(scope, issue)
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task_id}")
+
+    assert has_element?(view, "#claim-task")
+  end
+
   test "claiming an issue somebody claimed since the page loaded says so", %{
     conn: conn,
     task: task,

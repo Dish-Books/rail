@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequest do
 
   import Ecto.Query
   import Rail.Pipeline.Utils.BuildTask
+  import Rail.Pipeline.Utils.ClaimForStarter
   import Rail.Pipeline.Utils.PrepareWorktree
   import Rail.Pipeline.Utils.StartChecks
 
@@ -21,11 +22,11 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequest do
 
   @doc """
   Adopts the open pull request `Issues.link_pull_request/2` finds for `issue` as its task and starts the round's
-  checks, looking it up again since the issue's link may be stale.
-  Returns `{:ok, task}`, or `{:error, reason}`: `:not_found`, `:task_exists`, `:no_pull_request`,
+  checks, looking it up again since the issue's link may be stale. The scope's user becomes the owner of an unowned
+  issue. Returns `{:ok, task}`, or `{:error, reason}`: `:not_found`, `:task_exists`, `:no_pull_request`,
   `:pull_request_from_fork`, `{:pull_request_base, base}`, `:pull_request_taken`, or what GitHub or git refused.
   """
-  def adopt_pull_request(%Scope{user: user} = scope, %Issue{} = issue) do
+  def adopt_pull_request(%Scope{} = scope, %Issue{} = issue) do
     %Issue{project: %Project{} = project} = issue = Repo.preload(issue, [:project, :task], force: true)
 
     with :ok <- accessible(scope, issue),
@@ -33,7 +34,8 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequest do
          true <- is_map(pull_request) || {:error, :no_pull_request},
          {:ok, branch} <- adoptable(pull_request, project),
          :ok <- Git.fetch_branch(project, branch),
-         {:ok, task} <- insert(project, issue, pull_request, branch, user),
+         {:ok, task} <- insert(scope, project, issue, pull_request, branch),
+         Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id}),
          # Claimed before the checks start, so they share one slot rather than each claiming its own.
          {:ok, task, _worktree_path} <- prepare_worktree(project, task) do
       {:ok, task} = Pipeline.enter_stage(task, :review, start: false)
@@ -67,7 +69,7 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequest do
     )
   end
 
-  defp insert(%Project{} = project, %Issue{} = issue, pull_request, branch, user) do
+  defp insert(%Scope{user: user} = scope, %Project{} = project, %Issue{} = issue, pull_request, branch) do
     Repo.transaction(fn ->
       attrs = %{
         stage: :review,
@@ -92,7 +94,9 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequest do
              })
              |> Repo.update(),
            # In the transaction, so an issue whose branch will not check out is left without a task to start again.
-           {:ok, _worktree_path} <- Git.get_or_create_worktree(project, task) do
+           {:ok, _worktree_path} <- Git.get_or_create_worktree(project, task),
+           # Last, because it locks the issue's row, which no git fetch should hold.
+           :ok <- claim_for_starter(scope, issue) do
         task
       else
         {:error, reason} -> Repo.rollback(reason)

@@ -364,6 +364,44 @@ defmodule RailWeb.IssueLiveTest do
     assert_redirect(view, ~p"/tasks/#{task_id}")
   end
 
+  test "a second page on an issue shows the new owner and drops Start when someone starts it", %{
+    conn: conn,
+    project: project,
+    user: user
+  } do
+    user |> Ecto.Changeset.change(linear_user_id: "lin_usr_issue_live") |> Repo.update!()
+
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_two_tabs",
+        identifier: "IPG-20",
+        title: "Open in two tabs",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+    assert {:ok, starting, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    assert {:ok, second, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    allow(Git, self(), starting.pid)
+    allow(Tools, self(), starting.pid)
+
+    render_async(starting)
+    render_async(second)
+    assert has_element?(second, "#issue-owner", "Unassigned")
+    assert has_element?(second, "#issue-start-plan")
+
+    starting |> element("#issue-start-plan") |> render_click()
+
+    assert has_element?(second, "#issue-owner", "Issue Live")
+    refute has_element?(second, "#issue-start-plan")
+    assert has_element?(second, "#issue-task-link")
+  end
+
   test "an issue offers one Start at Plan button, where every task begins", %{conn: conn, project: project} do
     issue =
       %Issue{}

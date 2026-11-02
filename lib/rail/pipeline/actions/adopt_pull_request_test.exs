@@ -1,9 +1,13 @@
 defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
   use Rail.DataCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Git
   alias Rail.GitHub.Client
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Tracker
+  alias Rail.Issues.Workers.AdvanceTrackerState
+  alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
@@ -11,8 +15,10 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Roles
+  alias Rail.Scope
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
+  alias Rail.Users
 
   setup %{project: %{linear_workspace_id: workspace_id}} do
     scope = system_scope()
@@ -102,7 +108,13 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
       %{head_sha: String.duplicate("a", 40), dirty_digest: String.duplicate("0", 64)}
     end)
 
-    %{scope: scope, project: project, issue: issue, pull_request: pull_request}
+    {:ok, starter} =
+      Users.register_oauth_user(%{github_id: "gh_adopter", login: "adopter", email: "adopter@example.com"})
+
+    {:ok, starter} = Users.update_user(scope, starter, %{project_ids: [project.id]})
+    starter = starter |> Ecto.Changeset.change(linear_user_id: "lin_usr_adopter") |> Repo.update!()
+
+    %{scope: scope, project: project, issue: issue, pull_request: pull_request, starter: starter}
   end
 
   test "starts the issue's task at Review on the pull request's branch, with QA and the code reviewer checking it", %{
@@ -145,6 +157,90 @@ defmodule Rail.Pipeline.Actions.AdoptPullRequestTest do
 
     started = for %Run{status: :running} = run <- Repo.all(Run), run.task_id == task.id, do: Repo.preload(run, :role)
     assert started |> Enum.map(& &1.role.stage) |> Enum.sort() == [:qa, :review]
+  end
+
+  test "the person who adopts an unassigned issue owns it, and its ticket moves to In Review", %{
+    issue: %{id: issue_id} = issue,
+    starter: %{id: starter_id} = starter
+  } do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+    stub(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{run: run}} end)
+
+    expect(Tracker.Linear, :advance_issue, fn %Issue{id: ^issue_id, owner_user_id: ^starter_id}, :in_review -> :ok end)
+
+    assert {:ok, %Task{stage: :review}} = Pipeline.adopt_pull_request(Scope.for_user(starter), issue)
+
+    assert %Issue{owner_user_id: ^starter_id} = Repo.reload!(issue)
+    assert_enqueued(worker: SyncIssue, args: %{issue_id: issue_id, fields: ["owner_user_id"]})
+    assert_received {:issue_changed, ^issue_id}
+    assert :ok = perform_job(AdvanceTrackerState, %{issue_id: issue_id})
+  end
+
+  test "an issue a teammate owns keeps that owner, and the page still hears of the start", %{
+    issue: %{id: issue_id} = issue,
+    starter: starter
+  } do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+    stub(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{run: run}} end)
+
+    {:ok, %{id: teammate_id}} =
+      Users.register_oauth_user(%{github_id: "gh_adopt_mate", login: "adopt-mate", email: "adopt-mate@example.com"})
+
+    issue = issue |> Ecto.Changeset.change(owner_user_id: teammate_id) |> Repo.update!()
+
+    assert {:ok, %Task{}} = Pipeline.adopt_pull_request(Scope.for_user(starter), issue)
+
+    assert %Issue{owner_user_id: ^teammate_id} = Repo.reload!(issue)
+    refute_enqueued(worker: SyncIssue)
+    assert_received {:issue_changed, ^issue_id}
+  end
+
+  test "a person who never linked Linear adopts it with the issue left unassigned", %{
+    project: project,
+    issue: issue
+  } do
+    stub(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{run: run}} end)
+
+    {:ok, unlinked} =
+      Users.register_oauth_user(%{github_id: "gh_adopt_none", login: "adopt-none", email: "adopt-none@example.com"})
+
+    {:ok, unlinked} = Users.update_user(system_scope(), unlinked, %{project_ids: [project.id]})
+
+    assert {:ok, %Task{}} = Pipeline.adopt_pull_request(Scope.for_user(unlinked), issue)
+
+    assert %Issue{owner_user_id: nil} = Repo.reload!(issue)
+    refute_enqueued(worker: SyncIssue)
+  end
+
+  test "an adoption that fails claims nothing and leaves no task", %{
+    issue: %{id: issue_id} = issue,
+    starter: starter
+  } do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+    scope = Scope.for_user(starter)
+
+    # Claiming locks the issue's row, which a git fetch must not hold, so no owner is set yet in here.
+    expect(Git, :get_or_create_worktree, fn _project, %Task{issue_id: ^issue_id} ->
+      assert %Issue{owner_user_id: nil} = Repo.get!(Issue, issue_id)
+      {:error, "no checkout"}
+    end)
+
+    assert {:error, "no checkout"} = Pipeline.adopt_pull_request(scope, issue)
+
+    Req.Test.stub(Client, fn conn ->
+      case conn.request_path do
+        "/app/installations/" <> _id -> Req.Test.json(conn, %{"token" => "ghs_token"})
+        "/repos/org/adopt/pulls" -> Req.Test.json(conn, [])
+      end
+    end)
+
+    assert {:error, :no_pull_request} = Pipeline.adopt_pull_request(scope, issue)
+
+    refute Repo.get_by(Task, issue_id: issue_id)
+    assert %Issue{owner_user_id: nil} = Repo.reload!(issue)
+    refute_enqueued(worker: SyncIssue)
+    refute_enqueued(worker: AdvanceTrackerState)
+    refute_received {:issue_changed, ^issue_id}
   end
 
   test "sets the worktree up once, and starts every check when the setup finishes", %{
