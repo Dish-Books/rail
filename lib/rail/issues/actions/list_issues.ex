@@ -11,7 +11,7 @@ defmodule Rail.Issues.Actions.ListIssues do
   Lists a page of issues, most recently updated first, along with how many
   match in all.
 
-  Options: `:project_id` (one id or a list), `:owner_user_id`, `:cycle_id` (Linear's id for the cycle), `:state`,
+  Options: `:project_id` (one id or a list), `:owner_user_id`, `:cycle_id` (Linear's id for the cycle, or a list), `:state`,
   `:show_finished`, `:search`, `:completed_after`, `:archived`, `:priority`, `:limit`, `:offset` and `:preload`.
 
   An issue archived in its tracker is left out unless a task holds it, or
@@ -60,6 +60,7 @@ defmodule Rail.Issues.Actions.ListIssues do
   defp filter_owner(query, user_id), do: where(query, [i], i.owner_user_id == ^user_id)
 
   defp filter_cycle(query, nil), do: query
+  defp filter_cycle(query, cycle_ids) when is_list(cycle_ids), do: where(query, [i], i.cycle_external_id in ^cycle_ids)
   defp filter_cycle(query, cycle_id), do: where(query, [i], i.cycle_external_id == ^cycle_id)
 
   defp filter_state(query, nil), do: query

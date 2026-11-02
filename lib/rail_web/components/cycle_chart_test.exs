@@ -32,6 +32,20 @@ defmodule RailWeb.Components.CycleChartTest do
     assert html =~ "Nov 8"
   end
 
+  test "its ids take a prefix, so two charts on one page do not share one", %{cycle: cycle} do
+    html =
+      render_component(&CycleChart.cycle_chart/1,
+        cycle: cycle,
+        label: "Cycle 12",
+        today: ~D[2026-10-29],
+        id_prefix: "cycle-RAIL"
+      )
+
+    assert html =~ ~s(id="cycle-RAIL-chart")
+    assert html =~ ~s(id="cycle-RAIL-chart-today")
+    refute html =~ ~s(id="cycle-chart")
+  end
+
   test "an ended cycle has no rule on today and nothing past its last day", %{cycle: cycle} do
     full = 1..14 |> Enum.to_list() |> Enum.map(&(&1 * 1.0))
     ended = %{cycle | status: :ended, scope_history: full, started_history: full, completed_history: full}

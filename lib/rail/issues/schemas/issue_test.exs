@@ -303,14 +303,27 @@ defmodule Rail.Issues.Schemas.IssueTest do
                %{label: "Triage", state: :triage},
                %{label: "Done", state: :done},
                %{label: "Todo", state: :todo, count: 1}
-             ] = Issue.calculate_status_groups(issues, statuses, 2)
+             ] = Issue.calculate_status_groups(issues, statuses, %{"prj_a" => 2})
 
       assert [%{label: "Canceled", state: :canceled}, %{label: "Paused", state: :backlog}] =
                Issue.calculate_status_groups(
                  [issue.("iss_8", :canceled, "Canceled", 1), issue.("iss_9", :backlog, "Paused", 1)],
                  [%{name: "Paused", type: "paused", position: 9}, %{name: "Canceled", type: "canceled", position: 5}],
-                 0
+                 %{"prj_a" => 0}
                )
+    end
+
+    test "an unestimated issue in a group counts its own project's default estimate" do
+      statuses = [%{name: "In Progress", type: "started", position: 1}]
+
+      issues = [
+        %Issue{id: "iss_a", project_id: "prj_a", state: :in_progress, state_name: "In Progress", parent: nil},
+        %Issue{id: "iss_b", project_id: "prj_b", state: :in_progress, state_name: "In Progress", parent: nil},
+        %Issue{id: "iss_c", project_id: "prj_b", state: :in_progress, state_name: "In Progress", estimate: 5, parent: nil}
+      ]
+
+      assert [%{label: "In Progress", count: 3, points: 9}] =
+               Issue.calculate_status_groups(issues, statuses, %{"prj_a" => 1, "prj_b" => 3})
     end
 
     test "a dimmed copy adds nothing to a group, and each copy of a parent has its own key" do
@@ -331,7 +344,7 @@ defmodule Rail.Issues.Schemas.IssueTest do
       assert [
                %{count: 1, points: 1, rows: [%{dimmed: true, key: "group-0-iss_p-above-iss_a"}]},
                %{count: 1, points: 2, rows: [%{dimmed: true, key: "group-1-iss_p-above-iss_b"}]}
-             ] = Issue.calculate_status_groups([started, waiting], statuses, 0)
+             ] = Issue.calculate_status_groups([started, waiting], statuses, %{"prj_a" => 0})
     end
 
     test "an In Progress issue under a status named In Review shows as In Review" do

@@ -93,6 +93,69 @@ defmodule RailWeb.Components.CyclePanelTest do
              "starts tomorrow"
   end
 
+  test "with a project it opens under a header that closes it, and every id takes its prefix", %{
+    cycle: cycle,
+    progress: progress
+  } do
+    project = %{id: "prj_rail", key: "RAIL"}
+
+    html =
+      render_component(&CyclePanel.cycle_panel/1,
+        cycle: cycle,
+        progress: progress,
+        project: project,
+        id_prefix: "cycle-RAIL",
+        today: ~D[2026-10-29]
+      )
+
+    assert html =~ ~s(phx-click="toggle_cycle_panel")
+    assert html =~ ~s(phx-value-project_id="prj_rail")
+    assert html =~ ~s(aria-expanded="true")
+    assert html =~ "RAIL"
+    assert html =~ "pi-caret-up"
+    refute html =~ "lg:sticky"
+
+    ids = ~r/\sid="([^"]+)"/ |> Regex.scan(html, capture: :all_but_first) |> List.flatten()
+
+    assert Enum.sort(ids) ==
+             Enum.sort([
+               "cycle-RAIL-panel",
+               "cycle-RAIL-panel-toggle",
+               "cycle-RAIL-panel-tag",
+               "cycle-RAIL-panel-dates",
+               "cycle-RAIL-progress",
+               "cycle-RAIL-scope",
+               "cycle-RAIL-started",
+               "cycle-RAIL-completed",
+               "cycle-RAIL-chart",
+               "cycle-RAIL-chart-today",
+               "cycle-RAIL-owners",
+               "cycle-RAIL-owner-usr_mk",
+               "cycle-RAIL-owner-usr_al"
+             ])
+  end
+
+  test "closed, it is one row naming the cycle, its dates and its share done", %{cycle: cycle, progress: progress} do
+    html =
+      render_component(&CyclePanel.cycle_panel/1,
+        cycle: cycle,
+        progress: progress,
+        project: %{id: "prj_rail", key: "RAIL"},
+        open: false,
+        id_prefix: "cycle-RAIL",
+        today: ~D[2026-10-29]
+      )
+
+    assert html =~ ~s(id="cycle-RAIL-panel-toggle")
+    assert html =~ ~s(aria-expanded="false")
+    assert html =~ "Cycle 12"
+    assert html =~ "Oct 26 – Nov 8 · 10 days left"
+    assert html =~ ~r/40%\s*<\/span>\s*of 57/
+    assert html =~ "pi-caret-down"
+    refute html =~ "cycle-RAIL-scope"
+    refute html =~ "Michael Kim"
+  end
+
   test "a running cycle with no change to read says nothing of it", %{cycle: cycle, progress: progress} do
     html =
       render_component(&CyclePanel.cycle_panel/1,

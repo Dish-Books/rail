@@ -52,6 +52,34 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
     assert Enum.sort([high_id, low_id]) == issues |> Enum.map(& &1.id) |> Enum.sort()
   end
 
+  test "list_issues takes a list of cycles, as it does of projects", %{
+    project: %Project{id: project_id},
+    other_project: %Project{id: other_id}
+  } do
+    insert = fn external_id, project_id, cycle ->
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project_id,
+        external_id: external_id,
+        identifier: external_id,
+        title: external_id,
+        state: :todo,
+        cycle_external_id: cycle
+      })
+      |> Repo.insert!()
+    end
+
+    %Issue{id: here_id} = insert.("lin_lcl1", project_id, "cyc_here")
+    %Issue{id: there_id} = insert.("lin_lcl2", other_id, "cyc_there")
+    insert.("lin_lcl3", project_id, "cyc_elsewhere")
+    insert.("lin_lcl4", other_id, nil)
+
+    assert %{total: 2, issues: issues} =
+             Issues.list_issues(project_id: [project_id, other_id], cycle_id: ["cyc_here", "cyc_there"])
+
+    assert Enum.sort([here_id, there_id]) == issues |> Enum.map(& &1.id) |> Enum.sort()
+  end
+
   test "list_issues filters by project, state and whether finished issues show", %{
     project: %Project{id: project_id},
     other_project: other_project
