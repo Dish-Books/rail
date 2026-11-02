@@ -1708,6 +1708,52 @@ defmodule RailWeb.IssuesLiveTest do
       assert has_element?(view, "#cycle-scope", "4")
     end
 
+    test "an issue finishing moves today's point on the Completed line in every open tab", %{
+      conn: conn,
+      project: project,
+      cycles: cycles,
+      reviewing: reviewing
+    } do
+      today = Date.utc_today()
+
+      running =
+        cycles.cycles
+        |> Enum.find(& &1.current)
+        |> Map.merge(%{starts_on: Date.add(today, -1), ends_on: Date.add(today, 12)})
+
+      stub(Issues, :get_cycles, fn _project -> {:ok, %{cycles | cycles: [running]}} end)
+      {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+
+      tabs =
+        for _tab <- 1..2 do
+          {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+          render_async(view)
+          assert has_element?(view, "path[stroke='#6366f1'][d='M4.0,128.0 L28.0,128.0']")
+          view
+        end
+
+      assert {:ok, _issue} =
+               Issues.handle_linear_webhook(workspace, %{
+                 "type" => "Issue",
+                 "action" => "update",
+                 "data" => %{
+                   "id" => reviewing.external_id,
+                   "teamId" => "lin_team_id",
+                   "identifier" => "CYC-1",
+                   "title" => "Title CYC-1",
+                   "cycleId" => "cyc_12",
+                   "estimate" => 3,
+                   "state" => %{"name" => "Done", "type" => "completed"}
+                 }
+               })
+
+      for view <- tabs do
+        assert has_element?(view, "#cycle-completed", "3")
+        assert has_element?(view, "path[stroke='#6366f1'][d='M4.0,128.0 L28.0,73.5']")
+        assert has_element?(view, "rect[data-day='1'][data-completed='3']")
+      end
+    end
+
     test "a saved cycle view opens on the current cycle by its number", %{conn: conn, viewer: viewer} do
       {:ok, _viewer} = Users.set_issues_filters(Scope.for_user(viewer), %{"cycle" => "current"})
 
