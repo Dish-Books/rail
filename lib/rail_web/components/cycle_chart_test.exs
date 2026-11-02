@@ -42,6 +42,7 @@ defmodule RailWeb.Components.CycleChartTest do
     assert ["0"] = doc |> Floki.find("svg[role=img]") |> Floki.attribute("tabindex")
     assert [class] = doc |> Floki.find("svg[role=img]") |> Floki.attribute("class")
     assert "touch-pan-y" in String.split(class)
+    assert "not-focus-visible:outline-none" in String.split(class)
     assert length(Floki.find(doc, "g[data-marker='0'] circle")) == 3
   end
 

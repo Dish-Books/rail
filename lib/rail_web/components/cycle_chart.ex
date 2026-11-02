@@ -47,7 +47,7 @@ defmodule RailWeb.Components.CycleChart do
     <figure id={"#{@id_prefix}-chart"} class="m-0 max-w-sm">
       <svg
         viewBox="0 0 320 150"
-        class="w-full h-auto rounded touch-pan-y focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+        class="w-full h-auto rounded touch-pan-y not-focus-visible:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
         role="img"
         aria-label={@summary}
         tabindex={@day_rects != [] && "0"}
