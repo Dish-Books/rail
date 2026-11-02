@@ -364,6 +364,39 @@ defmodule RailWeb.IssueLiveTest do
     assert_redirect(view, ~p"/tasks/#{task_id}")
   end
 
+  test "an in-progress issue with no task can still be started at Plan from its page", %{
+    conn: conn,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_moving",
+        identifier: "IPG-41",
+        title: "Moving outside Rail",
+        state: :in_progress,
+        state_name: "In Progress"
+      })
+      |> Repo.insert!()
+
+    expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+
+    expect(Tools, :start_os_process, fn %Run{} = run, _argv ->
+      {:ok, %OsProcess{task_id: run.task_id, run: run}}
+    end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    allow(Git, self(), view.pid)
+    allow(Tools, self(), view.pid)
+
+    render_async(view)
+    view |> element("#issue-start-plan") |> render_click()
+
+    assert %Task{id: task_id, stage: :plan} = Repo.get_by(Task, issue_id: issue.id)
+    assert_redirect(view, ~p"/tasks/#{task_id}")
+  end
+
   test "a stale page whose issue has since started opens the task and leaves its run alone", %{
     conn: conn,
     project: project

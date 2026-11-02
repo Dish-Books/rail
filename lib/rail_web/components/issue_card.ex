@@ -1,7 +1,8 @@
 defmodule RailWeb.Components.IssueCard do
   @moduledoc """
   One issue as a single row of the issues list, opening the issue's page. A sub-issue is indented, a dimmed parent is
-  context. An `actionable` row opens its task, a flagged one at `waiting_path/1`, and offers Start on an issue with none.
+  context. An `actionable` row opens its task, a flagged one at `waiting_path/1`. With no task it offers Start, or a
+  No task chip once the issue's status says the work has started.
   """
   use RailWeb, :html
 
@@ -29,8 +30,9 @@ defmodule RailWeb.Components.IssueCard do
     run = assigns.run && %{assigns.run | task: task}
     needs = actionable and run != nil and Run.needs_attention?(run)
     finished = Issue.finished_state?(issue.state)
-    # A reopened issue's merged task is history, so with no task of its own the row starts one.
+    # A reopened issue's merged task is history, so with no task of its own the row is Start or No task by its status.
     started = Enum.find([issue.task, finished && issue.merged_task], &match?(%Task{}, &1))
+    no_task = actionable and not assigns.dimmed and is_nil(issue.task) and not finished
 
     assigns =
       assigns
@@ -39,7 +41,8 @@ defmodule RailWeb.Components.IssueCard do
       |> assign(:flag, row_flag(actionable, needs, run))
       |> assign(:flagged, needs)
       |> assign(:style, if(actionable and task != nil, do: run_state_style(run, task)))
-      |> assign(:show_start, actionable and not assigns.dimmed and is_nil(issue.task) and not finished)
+      |> assign(:show_start, no_task and not Issue.started_state?(issue.state))
+      |> assign(:show_no_task, no_task and Issue.started_state?(issue.state))
       |> assign(:sub_issues_done, done)
       |> assign(:sub_issues, total)
       |> assign(:blocked_title, "Blocked by #{blocker_names}")
@@ -108,7 +111,7 @@ defmodule RailWeb.Components.IssueCard do
         </span>
       </span>
 
-      <%!-- LiveView reads clicks at the window, so a stop here would silence Start: an actionable row stops per link. --%>
+      <%!-- LiveView reads clicks at the window, so a stop here would silence Start: an actionable row's links stop for themselves. --%>
       <div
         class="flex items-center gap-2 shrink-0"
         onclick={!@actionable && "event.stopPropagation()"}
@@ -171,6 +174,17 @@ defmodule RailWeb.Components.IssueCard do
         >
           <.icon name="pi-play" class="h-3.5 w-3.5" /> Start
         </button>
+
+        <.link
+          :if={@show_no_task}
+          navigate={@path}
+          id={"issue-no-task-#{@key}"}
+          title="No task in Rail. Open the issue to start one."
+          class="inline-flex items-center gap-1.5 h-6 px-2 rounded-full border border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+        >
+          <.icon name="pi-minus-circle" class="h-3.5 w-3.5 shrink-0" />
+          <span>No task</span>
+        </.link>
 
         <a
           :if={@issue.url not in [nil, ""]}

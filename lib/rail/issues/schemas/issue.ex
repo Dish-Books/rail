@@ -14,6 +14,7 @@ defmodule Rail.Issues.Schemas.Issue do
   @priorities [:urgent, :high, :medium, :low]
   @states [:backlog, :triage, :todo, :in_progress, :in_review, :done, :canceled, :duplicate]
   @finished_states [:done, :canceled, :duplicate]
+  @started_states [:in_progress, :in_review]
   @optional_steps [:product, :design, :architect, :demo]
   @plan_steps [:product, :design, :architect]
 
@@ -260,6 +261,8 @@ defmodule Rail.Issues.Schemas.Issue do
 
   def finished_state?(state) when is_atom(state), do: state in @finished_states
   def finished_state?(_other), do: false
+
+  def started_state?(state), do: state in @started_states
 
   def finished?(state), do: finished_state?(state)
   def closed?(state), do: finished_state?(state)
