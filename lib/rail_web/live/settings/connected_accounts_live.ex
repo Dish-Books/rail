@@ -72,7 +72,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
           <div class="flex items-center gap-4 p-5">
             <.account_avatar
               label={initials(@current_user)}
-              src={@current_user && @current_user.avatar_url}
+              src={@current_user.avatar_url}
               id="github-avatar"
             />
 

@@ -240,16 +240,16 @@ defmodule RailWeb.Live.RunConversation do
               data-qa="run-metadata-row"
               class="flex items-center flex-wrap gap-x-1.5 gap-y-1 px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400"
             >
-              <span :if={@selected_run} id="metadata-run-status">
+              <span id="metadata-run-status">
                 {format_run_status(@selected_run.status)} ·
               </span>
 
-              <span :if={@selected_run && Run.usage(@selected_run)} id="metadata-run-usage">
+              <span :if={Run.usage(@selected_run)} id="metadata-run-usage">
                 {Run.usage(@selected_run)} ·
               </span>
 
               <span
-                :if={@selected_run && @selected_run.conversation_id not in [nil, ""]}
+                :if={@selected_run.conversation_id not in [nil, ""]}
                 id="metadata-run-conversation-id"
                 title={@selected_run.conversation_id}
                 class="select-text truncate max-w-[10rem]"

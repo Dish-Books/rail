@@ -27,6 +27,10 @@ defmodule RailWeb.Utils.RenderMarkdownTest do
     assert html =~ "<del>gone</del>"
   end
 
+  test "braces after inline code stay on the page as written" do
+    assert render_markdown("`x`{.foo} and `y`{a=1}") == "<p><code>x</code>{.foo} and <code>y</code>{a=1}</p>"
+  end
+
   test "raw HTML is escaped, not rendered" do
     html = render_markdown("<script>alert(1)</script>\n\nA <b>tag</b>")
 

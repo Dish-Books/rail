@@ -3,7 +3,7 @@ import Config
 config :elixir, :time_zone_database, Tz.TimeZoneDatabase
 
 config :esbuild,
-  version: "0.25.0",
+  version: "0.28.2",
   rail: [
     args:
       ~w(js/app.js --bundle --splitting --format=esm --chunk-names=chunks/[name]-[hash] --target=es2020 --outdir=../priv/static/assets --external:/fonts/* --external:/images/*),
@@ -82,7 +82,6 @@ config :rail, RailWeb.Endpoint,
 # profile lives, and nil means the system temp directory. `max_per_task` is how many tabs one task's
 # agents hold open at once.
 config :rail, :browser, root: nil, cpus: 2, shm_size_gb: 2, max_per_task: 6
-config :rail, :fetch_parsers, true
 
 # Where agents, setup and CI run, and what is kept back for Rail, Postgres and project services.
 # The machine's CPUs and memory are read at runtime; only `:docker` (prod) holds a sandbox to its share of CPU.
@@ -101,7 +100,7 @@ config :rail,
   generators: [timestamp_type: :utc_datetime_usec]
 
 config :tailwind,
-  version: "4.3.0",
+  version: "4.3.3",
   rail: [
     args: ~w(
       --input=css/app.css

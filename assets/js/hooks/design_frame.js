@@ -96,6 +96,7 @@ function seenText(node) {
 
 // What a person sees the element say: never the source of a script or style inside it.
 export function elementText(element) {
+  // biome-ignore lint/performance/useDomNodeTextContent: textContent would read hidden text a person never sees.
   const text = typeof element.innerText === "string" ? element.innerText : seenText(element);
   return text.split(/\s+/).filter(Boolean).join(" ").slice(0, LIMITS.text);
 }

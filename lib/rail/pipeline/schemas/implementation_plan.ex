@@ -13,7 +13,7 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
 
   @decision_kinds %{"Decision" => :decision, "Ruled out" => :ruled_out, "Assumption" => :assumption}
 
-  @extension [autolink: true, strikethrough: true, table: true, tasklist: true]
+  @extension [autolink: true, strikethrough: true, table: true, tasklist: true, inline_code_attributes: false]
 
   @empty %{approach: nil, data_changes: [], decisions: [], cards: nil, criteria: [], verification: nil}
 

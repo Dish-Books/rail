@@ -56,7 +56,8 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
 
     # The spawn is in the background; waited on, so it never outlives the test's stubs.
     stub(Tools, :start_os_process, fn spawned, _argv ->
-      send(test, {:spawned, spawned.id}) && {:ok, %OsProcess{run: spawned}}
+      send(test, {:spawned, spawned.id})
+      {:ok, %OsProcess{run: spawned}}
     end)
 
     assert {:ok, :sent, %Run{id: run_id}} = Pipeline.send_message(system_scope(), run, "Please add a test")
@@ -66,8 +67,16 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
   test "a message whose run is deleted while it waits on the task's lock starts nothing", %{idle: idle} do
     %Run{id: run_id, task_id: task_id} = run = idle.()
     test = self()
-    stub(Rail.Git, :get_or_create_worktree, fn _project, task -> send(test, :worktree) && {:ok, task.worktree_path} end)
-    stub(Tools, :start_os_process, fn spawned, _argv -> send(test, :spawned) && {:ok, %OsProcess{run: spawned}} end)
+
+    stub(Rail.Git, :get_or_create_worktree, fn _project, task ->
+      send(test, :worktree)
+      {:ok, task.worktree_path}
+    end)
+
+    stub(Tools, :start_os_process, fn spawned, _argv ->
+      send(test, :spawned)
+      {:ok, %OsProcess{run: spawned}}
+    end)
 
     with_task_lock(task_id, fn ->
       assert {:ok, :sent, %Run{}} = Pipeline.send_message(system_scope(), run, "Please add a test")

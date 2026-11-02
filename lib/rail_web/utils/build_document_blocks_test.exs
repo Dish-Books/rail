@@ -106,6 +106,11 @@ defmodule RailWeb.Utils.BuildDocumentBlocksTest do
     assert [%{html: nil}] = build_document_blocks("```sketch\ndef a, do: 1\n```\n", "notes.txt")
   end
 
+  test "braces after inline code stay in the line's text and html" do
+    assert [%{text: "x{.foo} reads on", html: html}] = build_document_blocks("`x`{.foo} reads on\n")
+    assert html =~ "<code>x</code>{.foo} reads on"
+  end
+
   test "words split by emphasis or a soft break read as written, and raw HTML is escaped" do
     assert [%{text: "Say bold now and next", html: html}, %{text: "<b>x</b>", html: block}] =
              build_document_blocks("Say **bold** now\nand next\n\n<b>x</b>\n")

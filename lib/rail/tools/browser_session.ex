@@ -35,8 +35,6 @@ defmodule Rail.Tools.BrowserSession do
   alias Rail.Tools.BrowserRegistry
   alias Rail.Tools.Schemas.BrowserSession
 
-  require Logger
-
   @viewport %{width: 1920, height: 1080}
 
   @screencast %{format: "jpeg", quality: 80, maxWidth: 1920, maxHeight: 1080, everyNthFrame: 1}

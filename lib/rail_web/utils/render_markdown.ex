@@ -8,7 +8,7 @@ defmodule RailWeb.Utils.RenderMarkdown do
   """
 
   @options [
-    extension: [autolink: true, strikethrough: true, table: true, tasklist: true],
+    extension: [autolink: true, strikethrough: true, table: true, tasklist: true, inline_code_attributes: false],
     render: [escape: true, unsafe: false]
   ]
 
