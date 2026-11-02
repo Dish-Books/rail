@@ -15,7 +15,7 @@ defmodule Rail.Pipeline.Actions.StartTask do
 
   @doc """
   Creates the task for `issue` at its first stage, starts its run and returns `{:ok, task}`. A checkout no worktree
-  can be made in leaves the issue without a task, so it can be started again.
+  can be made in leaves the issue without a task, so it can be started again; a second start gets `{:error, :task_exists}`.
   """
   def start_task(%Issue{} = issue) do
     case Issue.calculate_stages(issue) do
@@ -43,16 +43,9 @@ defmodule Rail.Pipeline.Actions.StartTask do
     end)
   end
 
-  # A second start, from another tab, finds the task and its round already there.
   defp issue_round(%Task{} = task, %Issue{} = issue) do
-    case Pipeline.read_plan(task) do
-      %Round{} = round ->
-        {:ok, round}
-
-      nil ->
-        {:ok, round} = Pipeline.create_round(task)
-        round |> Round.approve_changeset(nil) |> Round.issue_ticket_changeset(issue) |> Repo.update()
-    end
+    {:ok, round} = Pipeline.create_round(task)
+    round |> Round.approve_changeset(nil) |> Round.issue_ticket_changeset(issue) |> Repo.update()
   end
 
   defp worktree(%Project{} = project, %Task{} = task) do

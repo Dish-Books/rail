@@ -93,6 +93,7 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
                  "left" => %{"type" => "array", "items" => %{"required" => ["place", "reason"]}},
                  "test" => %{"type" => "object", "required" => ["file", "name"]},
                  "files" => %{"type" => "array", "items" => %{"type" => "string"}},
+                 "recommendation" => %{"enum" => ["fix", "skip", "new_issue"]},
                  "evidence" => %{
                    "type" => "array",
                    "items" => %{

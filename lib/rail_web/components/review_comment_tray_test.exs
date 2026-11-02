@@ -353,4 +353,156 @@ defmodule RailWeb.Components.ReviewCommentTrayTest do
                "Changed rulings and comments you send now go to the lead, which saves a revised fix plan in place of this one."
     end
   end
+
+  describe "new issues" do
+    setup do
+      %{
+        new_issues: [
+          %Finding{key: "resort", kind: :code, title: "Issues page re-sorts", file: "lib/x/issues_live.ex", line: 214},
+          %Finding{key: "branch", kind: :screen, title: "A long branch name overflows", screen: "Task page, header"}
+        ]
+      }
+    end
+
+    test "each gets a New issue row after the Fix rows that opens it, counted toward Send", %{
+      fix: fix,
+      diff: diff,
+      gate: gate,
+      new_issues: new_issues
+    } do
+      doc =
+        (&ReviewCommentTray.review_comment_tray/1)
+        |> render_component(
+          fix: fix,
+          new_issues: new_issues,
+          finding_comments: [],
+          diff_comments: diff,
+          screen_comments: [],
+          gate: gate,
+          target: nil
+        )
+        |> Floki.parse_fragment!()
+
+      assert [
+               "review-tray-finding-send-twice",
+               "review-tray-finding-removed",
+               "review-tray-new-issue-resort",
+               "review-tray-new-issue-branch",
+               "review-tray-diff-dcm_1"
+             ] =
+               doc
+               |> Floki.find(
+                 "[data-qa=review_tray_finding], [data-qa=review_tray_new_issue], [data-qa=review_tray_comment]"
+               )
+               |> Floki.attribute("id")
+
+      row = Floki.find(doc, "#review-tray-new-issue-resort")
+      assert Floki.text(row) =~ ~r/New issue\s+issues_live.ex:214\s+Open\s+Issues page re-sorts/
+      assert ["open_tray_finding"] = Floki.attribute(row, "phx-click")
+      assert ["resort"] = Floki.attribute(row, "phx-value-key")
+      assert doc |> Floki.find("#send-review-tray:not([disabled])") |> Floki.text() =~ "Send 5"
+
+      assert doc |> Floki.find("#review-send-tray-hint") |> Floki.text() =~
+               "The Review lead is idle and starts a fix round on these at once, and files 2 new issues."
+
+      doc =
+        (&ReviewCommentTray.review_comment_tray/1)
+        |> render_component(
+          fix: [],
+          new_issues: tl(new_issues),
+          finding_comments: [],
+          diff_comments: diff,
+          screen_comments: [],
+          gate: gate,
+          target: nil
+        )
+        |> Floki.parse_fragment!()
+
+      assert doc |> Floki.find("#review-send-tray-hint") |> Floki.text() =~
+               "Nothing to fix. Send starts a fix round on your comments, and files 1 new issue."
+    end
+
+    test "alone they leave Finish review offered, which files them, held by CI and by findings left to rule", %{
+      gate: gate,
+      new_issues: new_issues
+    } do
+      attrs = %{
+        fix: [],
+        new_issues: new_issues,
+        finding_comments: [],
+        diff_comments: [],
+        screen_comments: [],
+        gate: gate,
+        target: nil
+      }
+
+      doc = (&ReviewCommentTray.review_comment_tray/1) |> render_component(attrs) |> Floki.parse_fragment!()
+
+      assert doc |> Floki.find("#review-send-tray") |> Floki.text() =~ ~r/Not sent\s+2/
+      assert [_finish] = Floki.find(doc, "#finish-review:not([disabled])")
+      assert [] = Floki.find(doc, "#send-review-tray")
+      assert [_one, _two] = Floki.find(doc, "[data-qa=review_tray_new_issue]")
+
+      assert doc |> Floki.find("#review-send-tray-hint") |> Floki.text() =~
+               "Finish review files 2 new issues and closes the review."
+
+      doc =
+        (&ReviewCommentTray.review_comment_tray/1)
+        |> render_component(%{attrs | gate: %{gate | ci_failed: true}})
+        |> Floki.parse_fragment!()
+
+      assert [_finish] = Floki.find(doc, "#finish-review[disabled]")
+      assert doc |> Floki.find("#review-send-tray-hint") |> Floki.text() =~ "CI failed on the fix commit"
+
+      doc =
+        (&ReviewCommentTray.review_comment_tray/1)
+        |> render_component(%{attrs | gate: %{gate | undecided: 1}})
+        |> Floki.parse_fragment!()
+
+      assert [_finish] = Floki.find(doc, "#finish-review[disabled]")
+      assert doc |> Floki.find("#review-send-tray-hint") |> Floki.text() =~ "1 still needs a ruling."
+    end
+
+    test "while a plan waits they still show, and say what Send does with them", %{gate: gate, new_issues: new_issues} do
+      attrs = %{
+        fix: [],
+        new_issues: new_issues,
+        finding_comments: [],
+        diff_comments: [],
+        screen_comments: [],
+        gate: %{gate | plan: true},
+        target: nil
+      }
+
+      doc = (&ReviewCommentTray.review_comment_tray/1) |> render_component(attrs) |> Floki.parse_fragment!()
+
+      assert [_one, _two] = Floki.find(doc, "[data-qa=review_tray_new_issue]")
+      assert doc |> Floki.find("#send-review-tray:not([disabled])") |> Floki.text() =~ "Send 2"
+
+      assert doc |> Floki.find("#review-send-tray-hint") |> Floki.text() =~
+               "Send files 2 new issues and leaves the fix plan waiting on approval."
+
+      rulings = [%{key: "tray-count", title: "Tray count", was: :fix, now: :new_issue}]
+
+      doc =
+        (&ReviewCommentTray.review_comment_tray/1)
+        |> render_component(Map.put(%{attrs | new_issues: tl(new_issues)}, :rulings, rulings))
+        |> Floki.parse_fragment!()
+
+      assert doc |> Floki.find("#review-tray-ruling-tray-count") |> Floki.text() =~ "New issue, was Fix"
+
+      assert doc |> Floki.find("#review-send-tray-hint") |> Floki.text() =~
+               "The fix plan is out of date. Send asks the lead to revise it, and files 1 new issue."
+
+      doc =
+        (&ReviewCommentTray.review_comment_tray/1)
+        |> render_component(%{attrs | gate: %{gate | plan: true, emptied: true}})
+        |> Floki.parse_fragment!()
+
+      assert [_finish] = Floki.find(doc, "#finish-review:not([disabled])")
+
+      assert doc |> Floki.find("#review-send-tray-hint") |> Floki.text() =~
+               "Nothing is ruled Fix now. Finish review drops the fix plan, files 2 new issues and closes the review."
+    end
+  end
 end

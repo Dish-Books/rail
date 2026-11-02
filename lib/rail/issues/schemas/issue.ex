@@ -67,6 +67,8 @@ defmodule Rail.Issues.Schemas.Issue do
 
     # The live task. Cleaned-up tasks stay in the table as history.
     has_one :task, Task, where: [cleaned_up_at: nil]
+    # The task it merged with, which `task` drops once it is cleaned up, right after the merge.
+    has_one :merged_task, Task, where: [stage: :merged]
     has_many :comments, Comment
 
     timestamps()

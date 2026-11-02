@@ -225,7 +225,6 @@ defmodule RailWeb.Components.IssueView do
                   id="issue-start-review"
                   data-qa="issue-start-review"
                   phx-click="adopt_pull_request"
-                  phx-disable-with="Starting..."
                   class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 cursor-pointer"
                 >
                   <.icon name="pi-git-pull-request" class="h-3.5 w-3.5" />

@@ -8,6 +8,7 @@ import { ChatComposer } from "./hooks/chat_composer";
 import { CommandOutput } from "./hooks/command_output";
 import { CopyText } from "./hooks/copy_text";
 import { CurrentInView } from "./hooks/current_in_view";
+import { CycleFigures } from "./hooks/cycle_figures";
 import { DemoCaptions } from "./hooks/demo_captions";
 import { DesignFrame, ElementPreview } from "./hooks/design_frame";
 import { DiffScroller } from "./hooks/diff_scroller";
@@ -43,6 +44,7 @@ const Hooks = {
   BrowserScreencast,
   DemoCaptions,
   CurrentInView,
+  CycleFigures,
   ScrollSelectedTab,
   ImageFallback,
   SidebarResize,

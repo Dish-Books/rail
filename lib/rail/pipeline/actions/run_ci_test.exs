@@ -98,6 +98,18 @@ defmodule Rail.Pipeline.Actions.RunCiTest do
              Pipeline.run_ci(system_scope(), run)
   end
 
+  test "a CI starting or failing to start is said on the pipeline topic, for lists that show the run", %{
+    run: %{task_id: task_id} = run
+  } do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+
+    expect(Tools, :start_command_process, fn _spawned, :ci, _command, _opts -> {:error, :no_sandbox} end)
+
+    assert {:error, "Could not start CI: :no_sandbox"} = Pipeline.run_ci(system_scope(), run)
+    assert_received {:pipeline_changed, ^task_id}
+    assert_received {:pipeline_changed, ^task_id}
+  end
+
   # The engineer role holds 1 CPU; CI holds the project's number, read afresh at each start.
   test "CI holds the project's CPUs, not its role's, and the next CI holds a raised number", %{
     project: project,

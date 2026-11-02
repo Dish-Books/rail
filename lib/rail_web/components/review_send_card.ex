@@ -1,7 +1,7 @@
 defmodule RailWeb.Components.ReviewSendCard do
   @moduledoc """
   A Send from the Review tray as it went out, in the conversation under its sender: what it sent, then a row for
-  each finding, each changed ruling and each numbered comment.
+  each finding, each changed ruling, each issue it filed and each numbered comment.
   """
   use RailWeb, :html
 
@@ -46,6 +46,22 @@ defmodule RailWeb.Components.ReviewSendCard do
           <.icon name="pi-swap-bold" class="size-[11px]" />
         </span>
         <span class="min-w-0 wrap-anywhere">{ruling.title} · {ruling.now}, was {ruling.was}</span>
+      </p>
+      <p
+        :for={issue <- @sent.issues}
+        data-qa="review_send_card_row"
+        class="flex items-start gap-2 text-[12.5px]"
+      >
+        <span
+          aria-hidden="true"
+          class="mt-0.5 size-[18px] shrink-0 grid place-items-center rounded-full ring-1 ring-inset ring-slate-400 dark:ring-slate-500 text-slate-600 dark:text-slate-300"
+        >
+          <.icon name="pi-plus-square-bold" class="size-[11px]" />
+        </span>
+        <span class="min-w-0 truncate">
+          <span class="font-mono text-blue-600 dark:text-blue-400">{issue.identifier}</span>
+          · {issue.title}
+        </span>
       </p>
       <p
         :for={comment <- @sent.comments}

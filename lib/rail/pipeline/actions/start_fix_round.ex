@@ -13,6 +13,9 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
   new comments, for a revised plan. A round that changes down to nothing ends as Finish review does, and so does a
   Send on a plan left with nothing to fix and no comment.
 
+  Every Send, Finish review included, first files the findings ruled New issue, once its gates pass. While a fix plan
+  waits, a Send of new issues alone files them and leaves the plan waiting.
+
   What was ruled and sent is learned from, since a ruling can change until now: a Fix on a suppressed finding
   overrides its rule, and every other Fix and every comment is a correction.
   """
@@ -48,13 +51,15 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
 
   @revise_steps "Revise the fix plan to match and save it again with `save_fix_plan`, covering every finding now ruled Fix and every comment of the round, then end your turn. Change nothing in the worktree and commit nothing."
 
+  @new_issue_rules "Each is a follow-up outside this task: change nothing for it on the branch, leave it out of every fix plan, and never save it with `save_finding`."
+
   @comment_rules "The comments are not findings: never save one with `save_finding`. Open a screen comment's picture at the path it gives."
 
   @doc """
   Sends the Review tray of the scope user on `run`, the task's Review run. Returns `{:ok, run}` as it now stands, or
   `{:error, reason}` while the run works, there is nothing left to start, nothing changed
   while a fix plan waits, a review with nothing to fix would finish on a commit CI has not passed or with findings
-  nobody has ruled, or the task is cleaned up or not yet at Review.
+  nobody has ruled, the tracker refused a new issue, or the task is cleaned up or not yet at Review.
   """
   def start_fix_round(%Scope{} = scope, %Run{} = run) do
     run = Run |> Repo.get!(run.id) |> Repo.preload([task: [:issue, :project, :runs]], force: true)
@@ -65,23 +70,31 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
 
     # Nobody rules past Review, so a finding a later turn marked not fixed is not sent as Fix there.
     fix = if run.task.stage == :review, do: Enum.filter(findings, &Finding.outstanding?/1), else: []
+    awaiting = if run.task.stage == :review, do: Enum.filter(findings, &Finding.awaiting_issue?/1), else: []
     waiting = waiting_plan(Pipeline.read_fix_plan(run.task))
     changes = if waiting, do: FixPlan.calculate_ruling_changes(waiting, run.task, findings).unsent, else: []
 
     with :ok <- startable(run.task, passes),
          claimed = claim(scope, run.task),
          comments = claimed.finding ++ claimed.diff ++ claimed.screen,
-         :ok <- changed(waiting, changes, comments, fix),
+         :ok <- changed(waiting, changes, comments, fix, awaiting),
          :ok <- sendable(run.task, finished?, fix, if(waiting, do: waiting.comments ++ comments, else: comments)),
-         :ok <- ruled(finished?, fix, if(waiting, do: waiting.comments ++ comments, else: comments), findings) do
-      sent = Map.put(claimed, :fix, fix)
+         :ok <- ruled(finished?, fix, if(waiting, do: waiting.comments ++ comments, else: comments), findings),
+         {:ok, filed} <- filing(scope, run, awaiting, claimed) do
+      sent = claimed |> Map.put(:fix, fix) |> Map.put(:filed, filed)
+      send_round(run, waiting, sent, changes, length(passes))
+    end
+  end
 
-      cond do
-        waiting != nil and fix == [] and waiting.comments == [] and comments == [] -> finish(run, waiting)
-        waiting != nil -> revise(run, waiting, sent, changes)
-        fix == [] and comments == [] -> finish(run, nil)
-        true -> resume(run, sent, length(passes))
-      end
+  defp send_round(%Run{} = run, waiting, %{fix: fix, filed: filed} = sent, changes, round) do
+    comments = sent.finding ++ sent.diff ++ sent.screen
+
+    cond do
+      waiting != nil and fix == [] and waiting.comments == [] and comments == [] -> finish(run, waiting, filed)
+      waiting != nil and changes == [] and comments == [] -> record_filed(run, waiting, filed)
+      waiting != nil -> revise(run, waiting, sent, changes)
+      fix == [] and comments == [] -> finish(run, nil, filed)
+      true -> resume(run, sent, round)
     end
   end
 
@@ -90,9 +103,10 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
 
   # A plan waiting on approval is approved or changed: a Send with nothing new would only ask for the same plan. One
   # whose rulings have left nothing to fix and no comment is no round any more, so the Send finishes the review.
-  defp changed(%FixPlan{comments: []}, [], [], []), do: :ok
-  defp changed(%FixPlan{}, [], [], _fix), do: {:error, :fix_plan_waiting}
-  defp changed(_waiting, _changes, _comments, _fix), do: :ok
+  # New issues to file are something new, though the plan stays as it is.
+  defp changed(%FixPlan{comments: []}, [], [], [], _awaiting), do: :ok
+  defp changed(%FixPlan{}, [], [], _fix, []), do: {:error, :fix_plan_waiting}
+  defp changed(_waiting, _changes, _comments, _fix, _awaiting), do: :ok
 
   defp startable(%Task{cleaned_up_at: %DateTime{}}, _passes), do: {:error, :cleaned_up}
 
@@ -167,12 +181,59 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
 
   defp claim(%Scope{}, %Task{}), do: %{finding: [], diff: [], screen: []}
 
+  # Filed once the gates pass, so a refused Send files nothing. A Send that waited on another's filing can find the
+  # review finished by it, and then has nothing left to start.
+  defp filing(%Scope{}, %Run{}, [], _claimed), do: {:ok, []}
+
+  defp filing(%Scope{} = scope, %Run{} = run, awaiting, claimed) do
+    with {:ok, filed} <- Pipeline.file_finding_issues(scope, run.task, awaiting),
+         %{finished_at: nil} <- run.task |> Pipeline.read_review() |> List.last() do
+      {:ok, filed}
+    else
+      {:error, reason, _filed} ->
+        unsend(claimed)
+        {:error, reason}
+
+      %{finished_at: %DateTime{}} ->
+        unsend(claimed)
+        {:error, :nothing_to_start}
+    end
+  end
+
+  # Another Send filed them while this one waited on the lock, so this one brings nothing new.
+  # coveralls-ignore-start (only two Sends racing for one finding's row lock reach it)
+  defp record_filed(%Run{}, %FixPlan{}, []), do: {:error, :fix_plan_waiting}
+  # coveralls-ignore-stop
+
+  # The plan waiting on approval leaves the new issues out already, so the lead is not resumed for them.
+  defp record_filed(%Run{} = run, %FixPlan{round: round}, filed) do
+    note =
+      join([
+        sent_line([{length(filed), "new issue"}]),
+        "The human filed these findings as new issues while fix round #{round}'s plan waited on approval. #{@new_issue_rules}",
+        Enum.map(filed, &new_issue/1)
+      ])
+
+    send_back(run.task, :review_lead, note)
+    broadcast_pipeline_changed(run.task)
+    {:ok, run}
+  end
+
   # Finishing the review is when its run completes, which every page showing the task hears. A chat turn that
   # stopped or failed left the review agent in progress with its error, which the finished review settles.
-  defp finish(%Run{} = run, waiting) do
+  defp finish(%Run{} = run, waiting, filed) do
     # A round changed down to nothing leaves no plan to approve, and its turns plan nothing more.
     if waiting, do: File.rm!(fix_plan_path(run.task))
-    send_back(run.task, :review_lead, "Finish review: nothing was ruled Fix.")
+
+    note =
+      join([
+        filed != [] && sent_line([{length(filed), "new issue"}]),
+        "Finish review: nothing was ruled Fix.",
+        filed != [] && "The human filed these findings as new issues. #{@new_issue_rules}",
+        Enum.map(filed, &new_issue/1)
+      ])
+
+    send_back(run.task, :review_lead, note)
     _task = finish_review(run.task)
 
     {:ok, finished} =
@@ -202,7 +263,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
     known = MapSet.new(waiting.findings, & &1.key)
     added = Enum.reject(sent.fix, &MapSet.member?(known, &1.key))
     comments = numbered(sent, length(waiting.comments) + 1, run.task)
-    note = revision_note(waiting, changes, added, comments, run.task)
+    note = revision_note(waiting, changes, added, comments, sent)
 
     fix_plan = %{
       waiting
@@ -320,11 +381,13 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
   defp block(%ScreenComment{} = comment, screens, scratch_path),
     do: ScreenComment.calculate_block(comment, Enum.find(screens, &(&1.key == comment.key)), scratch_path)
 
-  defp note(%{fix: fix}, comments, round, %Task{}) do
+  defp note(%{fix: fix, filed: filed}, comments, round, %Task{}) do
     sections = [
-      sent_line([{length(fix), "finding"}, {length(comments), "comment"}]),
+      sent_line([{length(fix), "finding"}, {length(filed), "new issue"}, {length(comments), "comment"}]),
       opening(fix, comments, round),
       Enum.map(fix, &finding/1),
+      filed != [] && "The human filed these findings as new issues. #{@new_issue_rules}",
+      Enum.map(filed, &new_issue/1),
       Enum.map(comments, &elem(&1, 1)),
       comments != [] && @comment_rules,
       @plan_steps
@@ -333,19 +396,21 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
     join(sections)
   end
 
-  defp revision_note(%FixPlan{round: round}, changes, added, comments, %Task{}) do
+  defp revision_note(%FixPlan{round: round}, changes, added, comments, %{filed: filed}) do
     rulings =
       Enum.map(changes, fn change ->
         ~s(<ruling_change key="#{change.key}" was="#{ruling(change.was)}" now="#{ruling(change.now)}">\n#{change.title}\n</ruling_change>)
       end)
 
     sections = [
-      sent_line([{length(changes), "changed ruling"}, {length(comments), "comment"}]),
+      sent_line([{length(changes), "changed ruling"}, {length(filed), "new issue"}, {length(comments), "comment"}]),
       "The human changed fix round #{round} while its plan waited on approval. #{@revise_steps}",
       rulings != [] && "These rulings changed since the last Send. Leave a finding no longer ruled Fix out of the plan:",
       rulings,
       added != [] && "Now ruled Fix, whole:",
       Enum.map(added, &finding/1),
+      filed != [] && "The human filed these findings as new issues. #{@new_issue_rules}",
+      Enum.map(filed, &new_issue/1),
       comments != [] && "New comments, numbered on from the round's:",
       Enum.map(comments, &elem(&1, 1)),
       comments != [] && @comment_rules
@@ -368,6 +433,7 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
 
   defp ruling(:fix), do: "Fix"
   defp ruling(:skip), do: "Don't fix"
+  defp ruling(:new_issue), do: "New issue"
 
   defp opening([], comments, round),
     do:
@@ -375,11 +441,11 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
 
   defp opening(fix, [], round),
     do:
-      "Start fix round #{round}. The human ruled these #{length(fix)} findings Fix, and they are all of them: anything not here was ruled Don't fix or is already fixed."
+      "Start fix round #{round}. The human ruled these #{length(fix)} findings Fix, and they are all of them: anything not here was ruled Don't fix, filed as a new issue, or is already fixed."
 
   defp opening(fix, comments, round),
     do:
-      "Start fix round #{round}. The human ruled these #{length(fix)} findings Fix, and they are all of them: anything not here was ruled Don't fix or is already fixed. Their #{count(comments, "comment")} follow the findings."
+      "Start fix round #{round}. The human ruled these #{length(fix)} findings Fix, and they are all of them: anything not here was ruled Don't fix, filed as a new issue, or is already fixed. Their #{count(comments, "comment")} follow the findings."
 
   defp count(items, word) when length(items) == 1, do: "1 #{word}"
   defp count(items, word), do: "#{length(items)} #{word}s"
@@ -406,6 +472,9 @@ defmodule Rail.Pipeline.Actions.StartFixRound do
     </finding>
     """)
   end
+
+  defp new_issue(%Finding{issue: issue} = finding),
+    do: ~s(<new_issue key="#{finding.key}" identifier="#{issue.identifier}">\n#{finding.title}\n</new_issue>)
 
   defp label(%FindingPlace{label: label}) when is_binary(label), do: ", #{label}"
   defp label(%FindingPlace{}), do: ""

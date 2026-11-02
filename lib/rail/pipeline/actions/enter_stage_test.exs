@@ -91,6 +91,16 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     assert_enqueued(worker: AdvanceTrackerState, args: %{issue_id: task.issue_id})
   end
 
+  test "a run that could not start is said on the pipeline topic once it settles", %{task: %Task{id: task_id} = task} do
+    stub(Tools, :start_os_process, fn _spawned, _argv -> {:error, :dispatch_disabled} end)
+    {:ok, _entered} = Pipeline.enter_stage(task, :split, start: false)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+
+    assert {:ok, %Run{status: :failed}} = Pipeline.enter_stage(task, :review)
+    assert_received {:pipeline_changed, ^task_id}
+    assert_received {:pipeline_changed, ^task_id}
+  end
+
   test "entering a stage, started or not, tells whoever is watching the pipeline", %{task: %Task{id: task_id} = task} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)

@@ -2,6 +2,7 @@ defmodule RailWeb.Components.UpNextTest do
   use Rail.DataCase, async: true
 
   import Phoenix.LiveViewTest
+  import RailWeb.Utils.StageLabel, only: [waiting_path: 1]
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.IssueStage
@@ -237,6 +238,9 @@ defmodule RailWeb.Components.UpNextTest do
     assert ["/tasks/tsk_review"] = href.(:review)
     assert ["/tasks/tsk_plan"] = href.(:plan)
 
+    asked = %{waiting.(:engineer) | status: :blocked_on_input, stage_outcome: :in_progress}
+    assert waiting_path(asked) == "/tasks/tsk_engineer?item=plan&agent=engineer"
+
     # A task at a custom stage opens on that stage's own item, its conversation beside it.
     custom = %{
       waiting.(:custom)
@@ -334,6 +338,7 @@ defmodule RailWeb.Components.UpNextTest do
     assert html =~ ~s(href="/tasks/#{task_id}?item=findings")
     assert html =~ "Ready to merge"
     assert html =~ "the pull request is waiting on you to merge it."
+    assert waiting_path(shown) == "/tasks/#{task_id}?item=findings"
 
     html = render_component(&UpNext.up_next/1, runs: [waiting.(:engineer), shown])
 
@@ -514,6 +519,8 @@ defmodule RailWeb.Components.UpNextTest do
       assert Floki.text(row) =~ "fix plan to approve"
       assert Floki.text(row) =~ "Review"
       assert [^href] = Floki.attribute(row, "href")
+      # A flagged row in the cycle view reads the same place off the run alone.
+      assert waiting_path(run) == href
     end
   end
 end

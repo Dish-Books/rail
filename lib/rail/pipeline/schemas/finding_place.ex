@@ -22,8 +22,9 @@ defmodule Rail.Pipeline.Schemas.FindingPlace do
   Builds a changeset for one place as the agent named it.
   """
   def changeset(place, attrs) do
+    # An agent's null is a field left out, so `steps` keeps its default.
     place
-    |> cast(attrs, [:file, :line, :end_line, :label, :screen, :steps])
+    |> cast(attrs, [:file, :line, :end_line, :label, :screen, :steps], empty_values: [nil | empty_values()])
     |> validate_length(:label, max: 80)
     |> validate_length(:screen, max: 160)
     |> validate_number(:line, greater_than: 0, message: "must be a positive whole number")

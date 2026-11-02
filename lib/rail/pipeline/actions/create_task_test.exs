@@ -1,6 +1,8 @@
 defmodule Rail.Pipeline.Actions.CreateTaskTest do
   use Rail.DataCase, async: true
 
+  import Ecto.Query
+
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -42,9 +44,10 @@ defmodule Rail.Pipeline.Actions.CreateTaskTest do
     assert {:ok, %Task{worktree_name: "michael/crt-1-fix"}} = Pipeline.create_task(issue, :engineer)
   end
 
-  test "returns the task an issue already has", %{issue: issue} do
+  test "refuses an issue that already has a live task", %{issue: issue} do
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue, :plan)
 
-    assert {:ok, %Task{id: ^task_id, stage: :plan}} = Pipeline.create_task(issue, :plan)
+    assert {:error, :task_exists} = Pipeline.create_task(issue, :plan)
+    assert [%Task{id: ^task_id}] = Repo.all(from t in Task, where: t.issue_id == ^issue.id)
   end
 end

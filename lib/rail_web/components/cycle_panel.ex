@@ -1,7 +1,7 @@
 defmodule RailWeb.Components.CyclePanel do
   @moduledoc """
-  The cycle beside its issues: its dates and whether it is current, its progress in points with the burnup chart,
-  and each owner's share done. An owner row raises `pick_owner`; the figures stay the whole cycle's.
+  The cycle beside its issues: its dates and status, its progress in points with the burnup chart, and each assignee's
+  share done. An assignee row raises `pick_owner`, and hovering a day of the chart swaps the figures for that day's.
   """
   use RailWeb, :html
 
@@ -57,12 +57,21 @@ defmodule RailWeb.Components.CyclePanel do
     <aside
       id={"#{@id_prefix}-panel"}
       aria-label={@label}
-      class="w-full lg:w-[340px] shrink-0 lg:sticky lg:top-0 order-first lg:order-none rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-4 space-y-5"
+      phx-hook="CycleFigures"
+      data-cycle={@cycle.id}
+      class="group/cycle w-full lg:w-[380px] shrink-0 lg:sticky lg:top-0 order-first lg:order-none rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-4 space-y-5"
     >
       <div>
         <div class="flex items-center gap-2 flex-wrap">
           <.tag id={"#{@id_prefix}-panel-tag"} status={@cycle.status} />
-          <span id={"#{@id_prefix}-panel-dates"} class="text-xs text-slate-500 dark:text-slate-400">{@dates}</span>
+          <span
+            id={"#{@id_prefix}-panel-dates"}
+            data-field="date"
+            data-today={@dates}
+            class="text-xs text-slate-500 dark:text-slate-400 group-data-[hovering]/cycle:font-semibold group-data-[hovering]/cycle:text-slate-800 dark:group-data-[hovering]/cycle:text-slate-100"
+          >
+            {@dates}
+          </span>
         </div>
         <h2 class="mt-2 text-lg font-bold text-slate-900 dark:text-slate-100 break-words">
           {@label}
@@ -84,7 +93,13 @@ defmodule RailWeb.Components.CyclePanel do
     assigns = assign_header(assigns)
 
     ~H"""
-    <section id={"#{@id_prefix}-panel"} aria-label={@label}>
+    <section
+      id={"#{@id_prefix}-panel"}
+      aria-label={@label}
+      phx-hook="CycleFigures"
+      data-cycle={@cycle.id}
+      class="group/cycle"
+    >
       <button
         type="button"
         id={"#{@id_prefix}-panel-toggle"}
@@ -97,7 +112,9 @@ defmodule RailWeb.Components.CyclePanel do
         <.tag id={"#{@id_prefix}-panel-tag"} status={@cycle.status} />
         <span
           id={"#{@id_prefix}-panel-dates"}
-          class="min-w-0 flex-1 text-xs text-slate-500 dark:text-slate-400 truncate"
+          data-field="date"
+          data-today={@dates}
+          class="min-w-0 flex-1 text-xs text-slate-500 dark:text-slate-400 truncate group-data-[hovering]/cycle:font-semibold group-data-[hovering]/cycle:text-slate-800 dark:group-data-[hovering]/cycle:text-slate-100"
         >
           {@dates}
         </span>
@@ -126,31 +143,66 @@ defmodule RailWeb.Components.CyclePanel do
   attr :today, :any, required: true
 
   defp details(assigns) do
-    since = Calendar.strftime(assigns.cycle.starts_on, "%b %-d")
+    %{cycle: cycle, progress: progress} = assigns
+    planned? = cycle.status == :upcoming
+    show_chart = not planned? and cycle.scope_history != []
 
     assigns =
       assigns
-      |> assign(:scope_note, scope_note(assigns.cycle.status, assigns.progress.scope_change, since))
-      |> assign(:show_chart, assigns.cycle.status != :upcoming and assigns.cycle.scope_history != [])
-      |> assign(:chart_starts, since)
+      |> assign(:planned, planned?)
+      |> assign(:scope_change, if(planned?, do: "", else: change_label(progress.scope_change)))
+      |> assign(:show_chart, show_chart)
+      |> assign(:days, if(show_chart, do: day_figures(cycle, progress, assigns.today), else: []))
+      |> assign(:chart_starts, Calendar.strftime(cycle.starts_on, "%b %-d"))
 
     ~H"""
     <div id={"#{@id_prefix}-progress"} class="grid grid-cols-3 gap-4">
-      <.figure id={"#{@id_prefix}-scope"} name="Scope" color="#94a3b8" dashed points={@progress.scope}>
-        <p :if={@scope_note} class="text-xs text-slate-600 dark:text-slate-300">{@scope_note}</p>
+      <.figure
+        id={"#{@id_prefix}-scope"}
+        field="scope"
+        name="Scope"
+        color="#94a3b8"
+        dashed
+        points={@progress.scope}
+      >
+        <:change>
+          <span
+            data-field="scopeChange"
+            data-today={@scope_change}
+            class="text-xs font-medium text-slate-600 dark:text-slate-300"
+          >
+            {@scope_change}
+          </span>
+        </:change>
+        <p :if={@planned} class="text-xs text-slate-500 dark:text-slate-400">Planned so far</p>
       </.figure>
-      <.figure id={"#{@id_prefix}-started"} name="Started" color="#0d9488" points={@progress.started}>
-        <p class="text-xs text-slate-500 dark:text-slate-400">
+      <.figure
+        id={"#{@id_prefix}-started"}
+        field="started"
+        name="Started"
+        color="#0d9488"
+        points={@progress.started}
+      >
+        <p
+          data-field="startedShare"
+          data-today={share(@progress.started, @progress.scope)}
+          class="text-xs text-slate-500 dark:text-slate-400"
+        >
           {share(@progress.started, @progress.scope)}
         </p>
       </.figure>
       <.figure
         id={"#{@id_prefix}-completed"}
+        field="completed"
         name="Completed"
         color="#6366f1"
         points={@progress.completed}
       >
-        <p class="text-xs text-slate-500 dark:text-slate-400">
+        <p
+          data-field="completedShare"
+          data-today={share(@progress.completed, @progress.scope)}
+          class="text-xs text-slate-500 dark:text-slate-400"
+        >
           {share(@progress.completed, @progress.scope)}
         </p>
       </.figure>
@@ -162,6 +214,7 @@ defmodule RailWeb.Components.CyclePanel do
       label={@label}
       today={@today}
       id_prefix={@id_prefix}
+      days={@days}
     />
     <p
       :if={!@show_chart}
@@ -172,7 +225,7 @@ defmodule RailWeb.Components.CyclePanel do
     </p>
 
     <div :if={@progress.owners != []} id={"#{@id_prefix}-owners"} class="pt-1">
-      <p class="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">Owners</p>
+      <p class="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">Assignees</p>
       <ul class="space-y-0.5">
         <li :for={owner <- @progress.owners}>
           <button
@@ -236,10 +289,13 @@ defmodule RailWeb.Components.CyclePanel do
   end
 
   attr :id, :string, required: true
+  # What `CycleFigures` calls this figure, and `#{field}Unit` its unit.
+  attr :field, :string, required: true
   attr :name, :string, required: true
   attr :color, :string, required: true
   attr :dashed, :boolean, default: false
   attr :points, :integer, required: true
+  slot :change
   slot :inner_block
 
   # Each figure names its line's stroke beside it, so no line is told apart by color alone.
@@ -261,10 +317,21 @@ defmodule RailWeb.Components.CyclePanel do
         {@name}
       </p>
       <p class="mt-1 flex items-baseline gap-1 whitespace-nowrap">
-        <span class="text-lg font-semibold text-slate-900 dark:text-slate-100">{@points}</span>
-        <span class="text-xs font-medium text-slate-500 dark:text-slate-400">
-          {if @points == 1, do: "pt", else: "pts"}
+        <span
+          data-field={@field}
+          data-today={@points}
+          class="text-lg font-semibold text-slate-900 dark:text-slate-100"
+        >
+          {@points}
         </span>
+        <span
+          data-field={"#{@field}Unit"}
+          data-today={unit(@points)}
+          class="text-xs font-medium text-slate-500 dark:text-slate-400"
+        >
+          {unit(@points)}
+        </span>
+        {render_slot(@change)}
       </p>
       {render_slot(@inner_block)}
     </div>
@@ -297,10 +364,43 @@ defmodule RailWeb.Components.CyclePanel do
     end
   end
 
-  defp scope_note(:upcoming, _change, _since), do: "Planned so far"
-  defp scope_note(_status, nil, _since), do: nil
-  defp scope_note(_status, change, since) when change >= 0, do: "+#{change}% since #{since}"
-  defp scope_note(_status, change, since), do: "#{change}% since #{since}"
+  # Every day with history, ready to show on hover. Today reads the panel's own numbers, so leaving it changes nothing.
+  defp day_figures(cycle, progress, today) do
+    first = List.first(cycle.scope_history)
+    total = Date.diff(cycle.ends_on, cycle.starts_on) + 1
+
+    for {scope, index} <- cycle.scope_history |> Enum.take(total) |> Enum.with_index() do
+      date = Date.add(cycle.starts_on, index)
+      live? = cycle.status == :running and date == today
+      points = if live?, do: progress.scope, else: round(scope)
+      started = if live?, do: progress.started, else: round(Enum.at(cycle.started_history, index, 0))
+      completed = if live?, do: progress.completed, else: round(Enum.at(cycle.completed_history, index, 0))
+
+      %{
+        "data-date" => "#{Calendar.strftime(date, "%a %b %-d")} · day #{index + 1} of #{total}",
+        "data-scope" => points,
+        "data-scope-unit" => unit(points),
+        "data-scope-change" => scope_change(points, first),
+        "data-started" => started,
+        "data-started-unit" => unit(started),
+        "data-started-share" => share(started, points),
+        "data-completed" => completed,
+        "data-completed-unit" => unit(completed),
+        "data-completed-share" => share(completed, points)
+      }
+    end
+  end
+
+  # A cycle opening at 0 has no change to read, as `Rail.Issues.get_cycle_progress/2` says of today.
+  defp scope_change(points, first) when first > 0, do: change_label(round((points - first) / first * 100))
+  defp scope_change(_points, _first), do: ""
+
+  defp change_label(nil), do: ""
+  defp change_label(change) when change >= 0, do: "+#{change}%"
+  defp change_label(change), do: "#{change}%"
+
+  defp unit(1), do: "pt"
+  defp unit(_points), do: "pts"
 
   defp share(_part, 0), do: "0%"
   defp share(part, whole), do: "#{round(part / whole * 100)}%"

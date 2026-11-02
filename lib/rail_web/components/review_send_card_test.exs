@@ -64,4 +64,33 @@ defmodule RailWeb.Components.ReviewSendCardTest do
     assert doc |> Floki.find("[data-qa=review_send_card_row]") |> Floki.text() =~
              "Tray count leaves out finding comments · Don't fix, was Fix"
   end
+
+  test "a Send that filed new issues reads a row per issue, its identifier and the finding's title" do
+    sent =
+      FixPlan.parse_note("""
+      Sent 1 finding and 1 new issue.
+
+      <finding key="send-twice" severity="major" kind="code">
+      Send leaves screen comments out of the round
+      </finding>
+
+      <new_issue key="resort" identifier="RAIL-152">
+      Issues page re-sorts after every sync
+      </new_issue>
+      """)
+
+    doc =
+      (&ReviewSendCard.review_send_card/1)
+      |> render_component(id: "msg-5", sender: "You", sent: sent)
+      |> Floki.parse_fragment!()
+
+    assert doc |> Floki.find("[data-qa=review_send_card_summary]") |> Floki.text() =~ "sent 1 finding and 1 new issue"
+
+    assert ["Send leaves screen comments out of the round", "RAIL-152 · Issues page re-sorts after every sync"] =
+             doc
+             |> Floki.find("[data-qa=review_send_card_row]")
+             |> Enum.map(&(&1 |> Floki.text() |> String.split() |> Enum.join(" ")))
+
+    assert doc |> Floki.find("[data-qa=review_send_card_row] .font-mono") |> Floki.text() == "RAIL-152"
+  end
 end
