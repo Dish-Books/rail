@@ -160,7 +160,7 @@ defmodule Rail.Triage.SlackSocketTest do
     workspace: workspace,
     channel: channel
   } do
-    start_supervised!({SlackSocket, workspace: workspace, backoff: 10, drain: 1_000})
+    socket = start_supervised!({SlackSocket, workspace: workspace, backoff: 10, drain: 1_000})
     assert_receive {:fake_slack_connected, first}, @connect_timeout
 
     send(first, {:push, {:text, Jason.encode!(%{"type" => "disconnect", "reason" => "refresh_requested"})}})
@@ -183,6 +183,9 @@ defmodule Rail.Triage.SlackSocketTest do
     eventually(fn -> assert %Message{} = Repo.get_by(Message, text: "Sent down the old connection") end)
 
     assert_receive {:fake_slack_closed, ^first}, @connect_timeout
+    # The socket closes the old connection before it forgets it, so the test waits for both before it stops the socket.
+    assert %SlackSocket{links: %{} = links} = :sys.get_state(socket)
+    assert map_size(links) == 1
   end
 
   test "every connection files what was posted while there was none", %{workspace: workspace, history: history} do
