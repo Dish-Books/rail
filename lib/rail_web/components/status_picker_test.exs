@@ -113,13 +113,43 @@ defmodule RailWeb.Components.StatusPickerTest do
       view |> element("#status-picker-#{id}-trigger") |> render_click()
 
       assert_receive {:reading, reader}
-      refute has_element?(view, "#status-picker-#{id}-menu")
+      refute has_element?(view, "#status-picker-#{id}-menu [role='menu']")
+      refute has_element?(view, "#status-picker-#{id}-menu [role='alert']")
 
       send(reader, :answer)
       render_async(view)
       assert has_element?(view, "#status-picker-#{id}-status-st_review")
 
       view |> element("#status-picker-#{id}-trigger") |> render_click()
+      refute has_element?(view, "#status-picker-#{id}-menu")
+      assert has_element?(view, "#status-picker-#{id}-trigger[aria-expanded='false']")
+
+      view |> element("#status-picker-#{id}-trigger") |> render_click()
+      assert has_element?(view, "#status-picker-#{id}-status-st_review")
+      refute_received {:reading, _second}
+    end
+
+    test "a click away during the read reaches the hook, and the answer opens no menu", %{conn: conn, issue: %{id: id}} do
+      test = self()
+
+      stub(Issues, :get_statuses, fn _scope, _project ->
+        send(test, {:reading, self()})
+
+        receive do
+          :answer -> {:ok, @statuses}
+        end
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues")
+      view |> element("#status-picker-#{id}-trigger") |> render_click()
+
+      assert_receive {:reading, reader}
+      assert has_element?(view, "#status-picker-#{id}-menu[phx-hook='StatusMenu']")
+
+      view |> element("#status-picker-#{id}-menu") |> render_hook("close")
+      send(reader, :answer)
+      render_async(view)
+
       refute has_element?(view, "#status-picker-#{id}-menu")
       assert has_element?(view, "#status-picker-#{id}-trigger[aria-expanded='false']")
 
@@ -204,6 +234,50 @@ defmodule RailWeb.Components.StatusPickerTest do
       view |> element("#status-picker-#{id}-trigger") |> render_click()
       view |> element("#status-picker-#{id}-trigger") |> render_click()
       refute has_element?(view, "#status-picker-#{id}-menu [role='alert']")
+    end
+
+    test "the refusal note goes once a live update moves the ticket to another status", %{
+      conn: conn,
+      issue: %{id: id} = issue
+    } do
+      stub(Issues, :get_statuses, fn _scope, _project -> {:ok, @statuses} end)
+      {:ok, view, _html} = live(conn, ~p"/issues")
+      Req.Test.allow(Rail.Linear, self(), view.pid)
+
+      view |> element("#status-picker-#{id}-trigger") |> render_click()
+      render_async(view)
+
+      Req.Test.expect(Rail.Linear, &Req.Test.json(&1, %{"data" => %{"issueUpdate" => %{"success" => false}}}))
+      view |> element("#status-picker-#{id}-status-st_review") |> render_click()
+      assert has_element?(view, "#status-picker-#{id}-menu [role='alert']")
+
+      issue |> Issue.tracker_changeset(%{state: :in_review, state_name: "In Review"}) |> Repo.update!()
+      Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, id})
+
+      assert has_element?(view, "#status-picker-#{id}-status-st_review[aria-current='true']")
+      assert has_element?(view, "#status-picker-#{id}-menu")
+      refute has_element?(view, "#status-picker-#{id}-menu [role='alert']")
+    end
+
+    test "the refusal note stays through a live update that leaves the status alone", %{
+      conn: conn,
+      issue: %{id: id} = issue
+    } do
+      stub(Issues, :get_statuses, fn _scope, _project -> {:ok, @statuses} end)
+      {:ok, view, _html} = live(conn, ~p"/issues")
+      Req.Test.allow(Rail.Linear, self(), view.pid)
+
+      view |> element("#status-picker-#{id}-trigger") |> render_click()
+      render_async(view)
+
+      Req.Test.expect(Rail.Linear, &Req.Test.json(&1, %{"data" => %{"issueUpdate" => %{"success" => false}}}))
+      view |> element("#status-picker-#{id}-status-st_review") |> render_click()
+
+      issue |> Issue.tracker_changeset(%{title: "Renamed in Linear"}) |> Repo.update!()
+      Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, id})
+
+      assert has_element?(view, "#issue-card-#{id}", "Renamed in Linear")
+      assert has_element?(view, "#status-picker-#{id}-menu [role='alert']", "It is still In Progress.")
     end
 
     test "a live update that moves a row leaves its menu, and a pick there acts on its own issue", %{
@@ -326,7 +400,8 @@ defmodule RailWeb.Components.StatusPickerTest do
       view |> element("#status-picker-#{id}-trigger") |> render_click()
       view |> element("#status-picker-#{id}-trigger") |> render_click()
       assert_receive {:reading, second}
-      refute has_element?(view, "#status-picker-#{id}-menu")
+      refute has_element?(view, "#status-picker-#{id}-menu [role='menu']")
+      refute has_element?(view, "#status-picker-#{id}-menu [role='alert']")
 
       send(second, {:ok, @statuses})
       render_async(view)

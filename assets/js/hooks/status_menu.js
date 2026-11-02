@@ -19,17 +19,47 @@ export function calculateMenuPosition(trigger, menu, viewport) {
   };
 }
 
+// What a click does to an open menu. A pick in flight keeps the menu and the page, since a refusal shows there.
+export function calculateAwayAction({ inMenu, onTrigger, picking }) {
+  if (inMenu) return "none";
+  if (picking) return "stop";
+  return onTrigger ? "none" : "close";
+}
+
+// A pick moves its row in a later patch, and LiveView restores focus only to inputs. Any press ends the watch.
+export function returnFocus(doc, trigger) {
+  const focusTrigger = () => trigger?.focus({ preventScroll: true });
+  const watching = new AbortController();
+  const { signal } = watching;
+
+  focusTrigger();
+  doc.addEventListener(
+    "phx:update",
+    () => {
+      if (doc.activeElement !== doc.body) return;
+      watching.abort();
+      focusTrigger();
+    },
+    { signal }
+  );
+  doc.addEventListener("keydown", () => watching.abort(), { capture: true, signal });
+  doc.addEventListener("pointerdown", () => watching.abort(), { capture: true, signal });
+}
+
 export const StatusMenu = {
   mounted() {
+    // Morphdom keeps this node through a row move, and a detached one takes no focus after a navigation.
+    this.triggerEl = this.trigger();
     this.place = () => this.position();
     // A row moved by a patch can come back out of the top layer, in a browser with no moveBefore.
-    this.keepOpen = () => this.show();
+    this.keepOpen = () => {
+      if (this.shown) this.show();
+    };
     this.onKey = (event) => this.step(event);
     this.onAway = (event) => this.closeOnAway(event);
+    this.onEscape = (event) => this.holdEscape(event);
 
-    this.show();
-    this.position();
-    this.focusCurrent();
+    this.reveal();
 
     // Capture, since the page's scrollers are inner elements and scroll does not bubble.
     window.addEventListener("scroll", this.place, true);
@@ -37,10 +67,14 @@ export const StatusMenu = {
     document.addEventListener("phx:update", this.keepOpen);
     // Here rather than phx-click-away, which skips a row scrolled out of view. Capture, since a row's links stop theirs.
     document.addEventListener("click", this.onAway, true);
+    // Capture on document runs ahead of LiveView's listeners on the window.
+    document.addEventListener("keydown", this.onEscape, true);
     this.el.addEventListener("keydown", this.onKey);
   },
 
   updated() {
+    this.reveal();
+    if (!this.shown) return;
     this.show();
     // Only a change of size moves it: a row that moved under an open menu leaves the menu where it is.
     if (this.el.offsetHeight !== this.height) this.position();
@@ -52,11 +86,26 @@ export const StatusMenu = {
     window.removeEventListener("resize", this.place);
     document.removeEventListener("phx:update", this.keepOpen);
     document.removeEventListener("click", this.onAway, true);
-    if (document.activeElement === document.body) this.trigger()?.focus();
+    document.removeEventListener("keydown", this.onEscape, true);
+    if (this.shown && document.activeElement === document.body) returnFocus(document, this.triggerEl);
   },
 
   trigger() {
     return document.getElementById(this.el.dataset.trigger);
+  },
+
+  // The menu mounts with the click, empty until the read answers, so a click away reaches it during the read.
+  reveal() {
+    if (this.shown || !this.el.querySelector("button")) return;
+    const active = document.activeElement;
+    if (active !== document.body && !this.triggerEl?.contains(active)) {
+      this.pushEventTo(this.el, "close");
+      return;
+    }
+    this.shown = true;
+    this.show();
+    this.position();
+    this.focusCurrent();
   },
 
   show() {
@@ -76,9 +125,25 @@ export const StatusMenu = {
     this.height = this.el.offsetHeight;
   },
 
+  picking() {
+    return this.el.querySelector('[role="menuitem"].phx-click-loading') !== null;
+  },
+
   closeOnAway(event) {
-    if (this.el.contains(event.target) || this.trigger()?.contains(event.target)) return;
-    this.pushEventTo(this.el, "close");
+    const action = calculateAwayAction({
+      inMenu: this.el.contains(event.target),
+      onTrigger: Boolean(this.trigger()?.contains(event.target)),
+      picking: this.picking()
+    });
+    if (action === "stop") {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    if (action === "close") this.pushEventTo(this.el, "close");
+  },
+
+  holdEscape(event) {
+    if (event.key === "Escape" && this.picking()) event.stopPropagation();
   },
 
   items() {

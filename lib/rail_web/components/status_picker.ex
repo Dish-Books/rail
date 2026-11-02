@@ -20,12 +20,17 @@ defmodule RailWeb.Components.StatusPicker do
   end
 
   def update(assigns, socket) do
+    pick_failed =
+      socket.assigns.pick_failed and
+        Issue.calculate_status_name(socket.assigns.issue) == Issue.calculate_status_name(assigns.issue)
+
     socket =
       socket
       |> assign(:id, assigns.id)
       |> assign(:issue, assigns.issue)
       |> assign(:current_scope, assigns.current_scope)
       |> assign(:labeled, assigns[:labeled] || false)
+      |> assign(:pick_failed, pick_failed)
 
     {:ok, socket}
   end
@@ -37,7 +42,6 @@ defmodule RailWeb.Components.StatusPicker do
       |> assign(:shown_state, Issue.calculate_shown_state(assigns.issue))
       |> assign(:tracker, Issue.tracker_label(assigns.issue.tracker))
       |> assign(:trigger_id, trigger_id(assigns))
-      |> assign(:show_menu, assigns.open and (assigns.read_failed or is_list(assigns.statuses)))
 
     ~H"""
     <div
@@ -86,7 +90,7 @@ defmodule RailWeb.Components.StatusPicker do
 
       <%!-- The empty click binding keeps a click on the padding off the row; stopping it would hide it from LiveView. --%>
       <div
-        :if={@show_menu}
+        :if={@open}
         id={"#{@id}-menu"}
         popover="manual"
         phx-hook="StatusMenu"
@@ -127,7 +131,7 @@ defmodule RailWeb.Components.StatusPicker do
               Could not change the status in {@tracker}. It is still {@name}.
             </span>
           </p>
-          <ul role="none" class="max-h-72 overflow-y-auto p-1">
+          <ul role="none" class="max-h-80 overflow-y-auto p-1">
             <li :for={status <- @statuses} role="none">
               <button
                 type="button"
