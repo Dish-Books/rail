@@ -1769,6 +1769,42 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "#task-page")
   end
 
+  test "the Issue tab changes the status from Properties and leaves the task where it is", %{
+    conn: conn,
+    task: %{id: task_id, stage: stage, issue_id: issue_id} = task
+  } do
+    stub(Issues, :get_statuses, fn _scope, _project ->
+      {:ok, [%{id: "st_review", name: "In Review", state: :in_review}]}
+    end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=issue")
+    Req.Test.allow(Rail.Linear, self(), view.pid)
+
+    view |> element("#issue-status") |> render_click()
+    render_async(view)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueUpdate" => %{
+            "success" => true,
+            "issue" => %{
+              "state" => %{"name" => "In Review", "type" => "started"},
+              "updatedAt" => "2026-11-01T10:00:00.000Z"
+            }
+          }
+        }
+      })
+    end)
+
+    view |> element("#issue-status-picker-#{issue_id}-status-st_review") |> render_click()
+
+    assert has_element?(view, "#issue-status", "In Review")
+    assert has_element?(view, "#task-page")
+    assert %Issue{state_name: "In Review"} = Repo.get!(Issue, issue_id)
+    assert %Task{id: ^task_id, stage: ^stage} = Repo.get!(Task, task_id)
+  end
+
   test "a tab with no issue loaded changes nothing on an owner or comment event", %{
     conn: conn,
     task: task,

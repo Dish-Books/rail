@@ -2,8 +2,8 @@ defmodule RailWeb.IssueLive do
   @moduledoc """
   One issue, laid out the way Linear lays it out: the title and description on
   the left with its comment threads beneath, its properties down the right. The
-  assignee can be changed and comments posted here, and both reach Linear;
-  everything else is edited in Linear and arrives by sync or webhook.
+  status and assignee can be changed and comments posted here, and all three reach
+  the tracker; everything else is edited there and arrives by sync or webhook.
   """
   use RailWeb, :live_view
 
@@ -59,6 +59,7 @@ defmodule RailWeb.IssueLive do
       <.issue_view
         :if={@issue}
         issue={@issue}
+        current_scope={@current_scope}
         assignees={@assignees}
         assignee_query={@assignee_query}
         comment_nonce={@comment_nonce}

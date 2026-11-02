@@ -22,6 +22,7 @@ import { LocalTime } from "./hooks/local_time";
 import { ScrollSelectedTab } from "./hooks/scroll_selected_tab";
 import { Shortcuts } from "./hooks/shortcuts";
 import { SidebarResize } from "./hooks/sidebar_resize";
+import { StatusMenu } from "./hooks/status_menu";
 import { Theme } from "./hooks/theme";
 
 const Hooks = {
@@ -46,7 +47,8 @@ const Hooks = {
   CycleFigures,
   ScrollSelectedTab,
   ImageFallback,
-  SidebarResize
+  SidebarResize,
+  StatusMenu
 };
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content");

@@ -188,7 +188,7 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-status-badge']", "In Progress")
 
     # Starting work happens on the issue's page, not from the list.
-    refute has_element?(view, "#issue-card-#{issue.id} button")
+    refute has_element?(view, "#issue-card-#{issue.id} button", "Plan")
 
     # Clicking the row opens the issue's page.
     issue_path = ~p"/issues/#{issue.identifier}"
@@ -1289,6 +1289,125 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view_bad, "#issues-subtitle", "Issues across all projects")
   end
 
+  describe "changing a status" do
+    setup %{conn: conn, project: project} do
+      {:ok, viewer} =
+        Users.register_oauth_user(%{
+          github_id: "gh_status_viewer",
+          login: "status_viewer",
+          email: "status_viewer@example.com",
+          admin: true
+        })
+
+      statuses = [
+        %{id: "st_review", name: "In Review", state: :in_review},
+        %{id: "st_done", name: "Done", state: :done}
+      ]
+
+      stub(Issues, :get_statuses, fn _scope, _project -> {:ok, statuses} end)
+
+      issue =
+        %Issue{}
+        |> Issue.tracker_changeset(%{
+          project_id: project.id,
+          external_id: "lin_STS-1",
+          identifier: "STS-1",
+          title: "To move",
+          state: :in_progress,
+          state_name: "In Progress"
+        })
+        |> Repo.insert!()
+
+      answered = fn state, completed_at ->
+        fn conn ->
+          Req.Test.json(conn, %{
+            "data" => %{
+              "issueUpdate" => %{
+                "success" => true,
+                "issue" => %{"state" => state, "completedAt" => completed_at, "updatedAt" => "2026-11-01T10:00:00.000Z"}
+              }
+            }
+          })
+        end
+      end
+
+      %{conn: log_in_user(conn, viewer), issue: issue, answered: answered}
+    end
+
+    test "a pick in the plain list shows in a second view with no reload, and a dimmed copy offers no menu", %{
+      conn: conn,
+      issue: %{id: id},
+      answered: answered
+    } do
+      {:ok, view, _html} = live(conn, ~p"/issues")
+      {:ok, other_view, _html} = live(conn, ~p"/issues")
+      Req.Test.allow(Rail.Linear, self(), view.pid)
+
+      view |> element("#status-picker-#{id}-trigger") |> render_click()
+      render_async(view)
+
+      Req.Test.expect(Rail.Linear, answered.(%{"name" => "In Review", "type" => "started"}, nil))
+      view |> element("#status-picker-#{id}-status-st_review") |> render_click()
+
+      assert has_element?(view, "#issue-card-#{id} [data-qa='issue-status-badge'][title='In Review']")
+      assert has_element?(other_view, "#issue-card-#{id} [data-qa='issue-status-badge'][title='In Review']")
+      assert has_element?(other_view, "#issue-card-#{id} .text-emerald-500")
+    end
+
+    test "Done leaves the list while Show finished is off, and stays with it on", %{
+      conn: conn,
+      issue: %{id: id},
+      answered: answered
+    } do
+      {:ok, view, _html} = live(conn, ~p"/issues")
+      {:ok, finished_view, _html} = live(conn, ~p"/issues?finished=true")
+      Req.Test.allow(Rail.Linear, self(), view.pid)
+
+      view |> element("#status-picker-#{id}-trigger") |> render_click()
+      render_async(view)
+
+      Req.Test.expect(
+        Rail.Linear,
+        answered.(%{"name" => "Done", "type" => "completed"}, "2026-11-01T10:00:00.000Z")
+      )
+
+      view |> element("#status-picker-#{id}-status-st_done") |> render_click()
+
+      refute has_element?(view, "#issue-card-#{id}")
+      assert has_element?(finished_view, "#issue-card-#{id} [data-qa='issue-status-badge'][title='Done']")
+    end
+
+    test "a dimmed copy of a parent keeps its plain mark", %{conn: conn, project: project} do
+      insert = fn identifier, attrs ->
+        %Issue{}
+        |> Issue.tracker_changeset(
+          Map.merge(
+            %{
+              project_id: project.id,
+              external_id: "lin_#{identifier}",
+              identifier: identifier,
+              title: "Title #{identifier}",
+              state: :in_progress
+            },
+            attrs
+          )
+        )
+        |> Repo.insert!()
+      end
+
+      %{id: parent_id} = insert.("STS-2", %{state: :done, state_name: "Done"})
+      %{id: child_id} = insert.("STS-3", %{parent_external_id: "lin_STS-2"})
+
+      {:ok, view, _html} = live(conn, ~p"/issues")
+
+      dimmed = "#issue-card-#{parent_id}-above-#{child_id}"
+      assert has_element?(view, "#{dimmed} [data-qa='issue-status-badge'][title='Done']")
+      refute has_element?(view, "#{dimmed} button[data-qa='issue-status-badge']")
+      refute has_element?(view, "#status-picker-#{parent_id}-trigger")
+      assert has_element?(view, "#status-picker-#{child_id}-trigger")
+    end
+  end
+
   describe "remembered filters" do
     setup %{conn: conn} do
       {:ok, user} =
@@ -1581,6 +1700,80 @@ defmodule RailWeb.IssuesLiveTest do
       assert_patched(view, ~p"/issues")
       assert has_element?(view, "#issue-card-#{outside.id}")
       assert %User{issues_filters: %{}} = Repo.reload!(viewer)
+    end
+
+    test "a pick moves the row between groups and changes both groups and the figures, in a second view too", %{
+      conn: conn,
+      working: %{id: working_id},
+      ready: %{id: ready_id}
+    } do
+      statuses = [
+        %{id: "st_ready", name: "Ready for Dev", state: :backlog},
+        %{id: "st_started", name: "In Progress", state: :in_progress},
+        %{id: "st_review", name: "In Review", state: :in_review},
+        %{id: "st_done", name: "Done", state: :done}
+      ]
+
+      stub(Issues, :get_statuses, fn _scope, _project -> {:ok, statuses} end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      {:ok, other_view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+      render_async(other_view)
+      Req.Test.allow(Rail.Linear, self(), view.pid)
+
+      answered = fn state, completed_at ->
+        fn conn ->
+          Req.Test.json(conn, %{
+            "data" => %{
+              "issueUpdate" => %{
+                "success" => true,
+                "issue" => %{"state" => state, "completedAt" => completed_at, "updatedAt" => "2026-11-01T10:00:00.000Z"}
+              }
+            }
+          })
+        end
+      end
+
+      assert has_element?(view, "#cycle-issues section[aria-label='In Review']", "1 issue")
+      assert has_element?(view, "#cycle-started", "5")
+
+      view |> element("#status-picker-#{working_id}-trigger") |> render_click()
+      render_async(view)
+
+      Req.Test.expect(Rail.Linear, answered.(%{"name" => "In Review", "type" => "started"}, nil))
+      view |> element("#status-picker-#{working_id}-status-st_review") |> render_click()
+
+      for shown <- [view, other_view] do
+        assert has_element?(shown, "#cycle-issues section[aria-label='In Review'] #issue-card-#{working_id}")
+        assert has_element?(shown, "#cycle-issues section[aria-label='In Review']", "2 issues")
+        assert has_element?(shown, "#cycle-issues section[aria-label='In Review'] [title='5 points']")
+        refute has_element?(shown, "#cycle-issues section[aria-label='In Progress']")
+      end
+
+      # Starting an issue raises Started, in the open page and the other one.
+      view |> element("#status-picker-#{ready_id}-trigger") |> render_click()
+      render_async(view)
+
+      Req.Test.expect(Rail.Linear, answered.(%{"name" => "In Progress", "type" => "started"}, nil))
+      view |> element("#status-picker-#{ready_id}-status-st_started") |> render_click()
+
+      assert has_element?(view, "#cycle-started", "6")
+      assert has_element?(other_view, "#cycle-started", "6")
+      assert has_element?(other_view, "#cycle-issues section[aria-label='In Progress'] #issue-card-#{ready_id}")
+
+      # Reaching Done raises Completed.
+      refute has_element?(other_view, "#cycle-completed", "2")
+
+      Req.Test.expect(
+        Rail.Linear,
+        answered.(%{"name" => "Done", "type" => "completed"}, "2026-11-01T10:00:00.000Z")
+      )
+
+      view |> element("#status-picker-#{working_id}-trigger") |> render_click()
+      view |> element("#status-picker-#{working_id}-status-st_done") |> render_click()
+
+      assert has_element?(other_view, "#cycle-completed", "2")
     end
 
     test "picking an owner narrows the list while the figures stay the cycle's, and nothing matching names the cycle", %{
