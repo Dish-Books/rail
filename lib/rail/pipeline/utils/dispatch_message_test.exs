@@ -77,6 +77,14 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     %{project: project, task: task, run: run, run_id: run_id}
   end
 
+  test "the run going out is said on the pipeline topic, for lists that show it", %{run: %{task_id: task_id} = run} do
+    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+
+    assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
+    assert_received {:pipeline_changed, ^task_id}
+  end
+
   test "sends the queued message to the one Plan agent, with no subagents and the stored prompt the repo has no file for, and takes it off the run",
        %{run: run, run_id: run_id} do
     expect(Tools, :start_os_process, fn spawned, argv ->

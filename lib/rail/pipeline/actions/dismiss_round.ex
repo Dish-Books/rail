@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Actions.DismissRound do
   """
 
   import Ecto.Query
+  import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.UnsentRound
 
   alias Rail.Pipeline
@@ -49,6 +50,7 @@ defmodule Rail.Pipeline.Actions.DismissRound do
       end)
 
     Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run.id}", {:run_changed, run.id})
+    broadcast_pipeline_changed(closed)
     Pipeline.append_run_events(run.id, nil, ["[rail] Questions dismissed. Nothing was sent to #{run.role.name}."])
 
     {:ok, closed}

@@ -17,9 +17,8 @@ defmodule Rail.Pipeline.Actions.StartTask do
   alias Rail.Tools.Schemas.OsProcess
 
   @doc """
-  Creates the task for `issue` at its first stage, starts its run and returns `{:ok, task}`, or `{:error, :not_found}`
-  for a project the scope cannot access. A checkout no worktree can be made in leaves the issue without a task or an
-  owner, so it can be started again.
+  Creates the task for `issue` at its first stage, starts its run and returns `{:ok, task}`, or `{:error, reason}`:
+  `:not_found`, `:task_exists` for a second start, or what the worktree or the spawn refused.
   """
   def start_task(%Scope{} = scope, %Issue{} = issue) do
     if Scope.can_access_project?(scope, issue.project_id), do: start(scope, issue), else: {:error, :not_found}
@@ -55,16 +54,9 @@ defmodule Rail.Pipeline.Actions.StartTask do
     end)
   end
 
-  # A second start, from another tab, finds the task and its round already there.
   defp issue_round(%Task{} = task, %Issue{} = issue) do
-    case Pipeline.read_plan(task) do
-      %Round{} = round ->
-        {:ok, round}
-
-      nil ->
-        {:ok, round} = Pipeline.create_round(task)
-        round |> Round.approve_changeset(nil) |> Round.issue_ticket_changeset(issue) |> Repo.update()
-    end
+    {:ok, round} = Pipeline.create_round(task)
+    round |> Round.approve_changeset(nil) |> Round.issue_ticket_changeset(issue) |> Repo.update()
   end
 
   defp worktree(%Project{} = project, %Task{} = task) do

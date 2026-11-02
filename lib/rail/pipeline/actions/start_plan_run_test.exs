@@ -224,6 +224,23 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
     refute_enqueued(worker: SyncIssue)
   end
 
+  test "an issue that already has its task and Plan run is refused, and nothing is spawned or resumed", %{
+    roles: %{plan: role},
+    issue: issue
+  } do
+    {:ok, task} = Pipeline.create_task(Repo.preload(issue, :project), :plan)
+
+    {:ok, run} =
+      Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
+
+    reject(&Tools.start_os_process/2)
+
+    assert {:error, :task_exists} = Pipeline.start_plan_run(system_scope(), issue)
+
+    assert Repo.reload!(run).started_at == run.started_at
+    refute_enqueued(worker: AdvanceTrackerState)
+  end
+
   test "given a run it spawns that run, its brief carrying what is already saved", %{
     roles: %{plan: role},
     issue: issue

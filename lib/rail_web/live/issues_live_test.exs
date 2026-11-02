@@ -2,6 +2,7 @@ defmodule RailWeb.IssuesLiveTest do
   use RailWeb.ConnCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  import Ecto.Query
   import Phoenix.LiveViewTest
   import Rail.Pipeline.Utils.BuildTask
 
@@ -9,12 +10,18 @@ defmodule RailWeb.IssuesLiveTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.IssueStage
   alias Rail.Issues.Workers.LinearSync
+  alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Scope
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
   alias Rail.Users.Schemas.User
   alias Rail.Workflows.Schemas.Workflow
@@ -1483,6 +1490,15 @@ defmodule RailWeb.IssuesLiveTest do
 
       [ana, bo] = people
 
+      # A task at `stage` with its role's run in the state `attrs` say.
+      open_task = fn issue, stage, attrs ->
+        {:ok, task} = issue |> Repo.preload(:project) |> Pipeline.create_task(stage)
+        {:ok, role} = Roles.get_role(project_id: project.id, stage: Task.role_stage(stage))
+        defaults = %{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()}
+        {:ok, run} = Pipeline.create_run(Map.merge(defaults, attrs))
+        {task, run}
+      end
+
       %{
         conn: conn |> log_in_user(viewer) |> init_test_session(%{selected_project_id: project.id}),
         viewer: viewer,
@@ -1490,6 +1506,7 @@ defmodule RailWeb.IssuesLiveTest do
         bo: bo,
         cycles: cycles,
         insert: insert,
+        open_task: open_task,
         reviewing:
           insert.("CYC-1", %{
             state: :in_progress,
@@ -1555,7 +1572,8 @@ defmodule RailWeb.IssuesLiveTest do
       assert has_element?(view, "#cycle-panel[aria-label='Cycle 12']")
       assert has_element?(view, "#cycle-scope", "6")
       assert has_element?(view, "#cycle-started", "5")
-      assert has_element?(view, "#cycle-scope", "+20% since Oct 26")
+      assert has_element?(view, "#cycle-scope", "+20%")
+      refute render(view) =~ "since Oct 26"
       assert has_element?(view, "#cycle-chart")
       assert has_element?(view, "#filter-priority-all", "All (3)")
       assert has_element?(view, "#filter-priority-high", "High (1)")
@@ -1787,6 +1805,508 @@ defmodule RailWeb.IssuesLiveTest do
       ids = ~r/id="(issue-card-[^"]+)"/ |> Regex.scan(html, capture: :all_but_first) |> List.flatten()
       assert ids == Enum.uniq(ids)
       assert has_element?(view, "#cycle-issues section[aria-label='In Progress']", "2 issues")
+    end
+
+    test "a started row shows its stage and run by icon and words, and only a run waiting on a person flags it", %{
+      conn: conn,
+      insert: insert,
+      open_task: open_task
+    } do
+      in_cycle = %{state: :in_progress, state_name: "In Progress", cycle_external_id: "cyc_12"}
+      stopped = %{status: :finished}
+
+      rows = [
+        {:engineer, %{status: :blocked_on_input}, "Implement needs an answer", "pi-question", "border-l-amber-400"},
+        {:engineer, %{status: :finished, error: "boom"}, "Implement failed", "pi-warning-circle", "border-l-red-500"},
+        {:engineer, stopped, "Implement stopped", "pi-pause-circle", "border-l-amber-400"},
+        {:plan, %{status: :finished, stage_outcome: :done}, "Review the plan", "pi-chat-text", "border-l-amber-400"},
+        {:engineer, %{status: :running}, "Implement running", "pi-play-circle", "border-l-transparent"},
+        {:engineer, %{status: :waiting_for_resources}, "Implement waiting for resources", "pi-hourglass-medium",
+         "border-l-transparent"}
+      ]
+
+      shown =
+        for {{stage, attrs, words, icon, edge}, index} <- Enum.with_index(rows) do
+          issue = insert.("ROW-#{index}", in_cycle)
+          open_task.(issue, stage, attrs)
+          {issue, words, icon, edge}
+        end
+
+      queued = insert.("ROW-Q", in_cycle)
+      {:ok, _task} = queued |> Repo.preload(:project) |> Pipeline.create_task(:engineer)
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+
+      for {issue, words, icon, edge} <- shown do
+        assert has_element?(view, "#task-link-#{issue.id}", words)
+        assert has_element?(view, "#task-link-#{issue.id} .#{icon}")
+        assert has_element?(view, "#issue-card-#{issue.id}.#{edge}")
+        assert has_element?(view, "#issue-card-#{issue.id}[data-flagged='true']") == (edge != "border-l-transparent")
+      end
+
+      assert has_element?(view, "#task-link-#{queued.id}", "Queued for Implement")
+      assert has_element?(view, "#task-link-#{queued.id} .pi-clock")
+      refute has_element?(view, "#issue-card-#{queued.id}[data-flagged]")
+    end
+
+    test "a run with its questions unanswered needs an answer rather than reading as stopped", %{
+      conn: conn,
+      working: working,
+      open_task: open_task
+    } do
+      {task, run} = open_task.(working, :engineer, %{status: :finished})
+      Repo.insert!(%Question{task_id: task.id, run_id: run.id, prompt: "Which vendor?"})
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+
+      assert has_element?(view, "#task-link-#{working.id}", "Implement needs an answer")
+      assert has_element?(view, "#issue-card-#{working.id}[data-flagged='true']")
+    end
+
+    test "a click anywhere on a started row opens its task, and a flagged one where Up next opens it", %{
+      conn: conn,
+      working: working,
+      reviewing: reviewing,
+      open_task: open_task
+    } do
+      {%{id: running_id}, _run} = open_task.(working, :engineer, %{status: :running})
+      {%{id: asking_id}, _run} = open_task.(reviewing, :engineer, %{status: :blocked_on_input})
+      asking = "/tasks/#{asking_id}?item=plan&agent=engineer"
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+
+      assert has_element?(view, "#task-link-#{reviewing.id}[href='#{asking}']")
+      assert has_element?(view, "#task-link-#{working.id}[href='/tasks/#{running_id}']")
+      # Only the links stop the click, since a stop around them would silence Start at the window.
+      refute has_element?(view, "#issue-card-#{working.id} div[onclick]")
+      assert has_element?(view, "#task-link-#{working.id}[onclick]")
+
+      assert {:error, {:live_redirect, %{to: ^asking}}} = view |> element("#issue-card-#{reviewing.id}") |> render_click()
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+
+      to = "/tasks/#{running_id}"
+      assert {:error, {:live_redirect, %{to: ^to}}} = view |> element("#issue-card-#{working.id}") |> render_click()
+    end
+
+    test "a row with no task offers Start and opens the issue page, and a finished one offers nothing", %{
+      conn: conn,
+      ready: ready,
+      insert: insert
+    } do
+      linked = insert.("ROW-U", %{state: :todo, cycle_external_id: "cyc_12", url: "https://linear.app/row-u"})
+      done = insert.("ROW-D", %{state: :done, state_name: "Done", cycle_external_id: "cyc_12"})
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12&finished=true")
+      render_async(view)
+
+      assert has_element?(view, "#issue-start-#{ready.id}[aria-label='Start #{ready.identifier}']", "Start")
+      refute has_element?(view, "#issue-start-#{ready.id}[phx-disable-with]")
+      assert has_element?(view, "#issue-start-#{ready.id} .pi-play")
+      assert has_element?(view, "#issue-card-#{linked.id} [data-qa='issue-external-link'][onclick]")
+      refute has_element?(view, "#task-link-#{ready.id}")
+      refute has_element?(view, "#issue-start-#{done.id}")
+
+      to = "/issues/#{ready.identifier}"
+      assert {:error, {:live_redirect, %{to: ^to}}} = view |> element("#issue-card-#{ready.id}") |> render_click()
+    end
+
+    test "a merged issue's row reads Merged and opens its task, also once the task is cleaned up", %{
+      conn: conn,
+      insert: insert
+    } do
+      merged = insert.("ROW-M", %{state: :done, state_name: "Done", cycle_external_id: "cyc_12"})
+      {:ok, task} = merged |> Repo.preload(:project) |> Pipeline.create_task(:engineer)
+      {:ok, _merged} = Pipeline.update_task(task, %{stage: :merged, cleaned_up_at: DateTime.utc_now()})
+      to = "/tasks/#{task.id}"
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12&finished=true")
+      render_async(view)
+
+      assert has_element?(view, "#task-link-#{merged.id}", "Merged")
+      assert has_element?(view, "#task-link-#{merged.id} .pi-git-merge")
+      refute has_element?(view, "#issue-start-#{merged.id}")
+      refute has_element?(view, "#issue-card-#{merged.id}[data-flagged]")
+      assert {:error, {:live_redirect, %{to: ^to}}} = view |> element("#issue-card-#{merged.id}") |> render_click()
+    end
+
+    test "a reopened issue has no task, however it merged before, so its row starts one and opens the issue", %{
+      conn: conn,
+      insert: insert
+    } do
+      reopened = insert.("ROW-R", %{state: :todo, state_name: "Ready for Dev", cycle_external_id: "cyc_12"})
+      {:ok, task} = reopened |> Repo.preload(:project) |> Pipeline.create_task(:engineer)
+      {:ok, _merged} = Pipeline.update_task(task, %{stage: :merged, cleaned_up_at: DateTime.utc_now()})
+      to = "/issues/#{reopened.identifier}"
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+
+      assert has_element?(view, "#issue-start-#{reopened.id}")
+      refute has_element?(view, "#task-link-#{reopened.id}")
+      assert {:error, {:live_redirect, %{to: ^to}}} = view |> element("#issue-card-#{reopened.id}") |> render_click()
+    end
+
+    test "a dimmed parent has no Start and no chip, and opens its task, or its page with none", %{
+      conn: conn,
+      insert: insert
+    } do
+      started = insert.("ROW-P1", %{state: :in_progress, state_name: "In Progress"})
+      plain = insert.("ROW-P2", %{state: :in_progress, state_name: "In Progress"})
+      {:ok, task} = started |> Repo.preload(:project) |> Pipeline.create_task(:split)
+
+      for {parent, identifier} <- [{started, "ROW-C1"}, {plain, "ROW-C2"}] do
+        insert.(identifier, %{
+          state: :in_progress,
+          state_name: "In Progress",
+          cycle_external_id: "cyc_12",
+          parent_external_id: parent.external_id
+        })
+      end
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+
+      for parent <- [started, plain] do
+        copy = "[data-context='true'][data-qa~='issue-card-#{parent.id}']"
+        assert has_element?(view, copy)
+        refute has_element?(view, "#{copy} [data-qa^='task-link']")
+        refute has_element?(view, "#{copy} [id^='issue-start']")
+      end
+
+      to = "/tasks/#{task.id}"
+
+      assert {:error, {:live_redirect, %{to: ^to}}} =
+               view |> element("[data-context='true'][data-qa~='issue-card-#{started.id}']") |> render_click()
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+      to = "/issues/#{plain.identifier}"
+
+      assert {:error, {:live_redirect, %{to: ^to}}} =
+               view |> element("[data-context='true'][data-qa~='issue-card-#{plain.id}']") |> render_click()
+    end
+
+    test "a row keeps up with its run through the writers themselves, including an answer sent elsewhere", %{
+      conn: conn,
+      working: working,
+      open_task: open_task
+    } do
+      stub(Rail.Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+      test_pid = self()
+
+      stub(Tools, :start_os_process, fn spawned, _argv ->
+        send(test_pid, {:resumed, spawned.id})
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      {task, %{id: run_id} = run} = open_task.(working, :engineer, %{status: :running, conversation_id: "sess_row"})
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+      assert has_element?(view, "#task-link-#{working.id}", "Implement running")
+
+      {:ok, parked} = Pipeline.update_run(run, %{status: :blocked_on_input})
+      assert has_element?(view, "#task-link-#{working.id}", "Implement needs an answer")
+      assert has_element?(view, "#issue-card-#{working.id}[data-flagged='true']")
+
+      question = Repo.insert!(%Question{task_id: task.id, run_id: run.id, prompt: "Which vendor?"})
+      {:ok, _answered} = Pipeline.answer_question(system_scope(), question, "Acme")
+
+      assert {:ok, _delivery, _sent} =
+               Pipeline.send_answers(system_scope(), Repo.preload(parked, task: :issue))
+
+      assert_receive {:resumed, ^run_id}
+      assert render(view) =~ "Implement running"
+      refute has_element?(view, "#issue-card-#{working.id}[data-flagged]")
+    end
+
+    test "a new task takes the Start off its row without a reload", %{conn: conn, ready: ready} do
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+      assert has_element?(view, "#issue-start-#{ready.id}")
+
+      {:ok, task} = ready |> Repo.preload(:project) |> Pipeline.create_task(:plan)
+      {:ok, role} = Roles.get_role(project_id: ready.project_id, stage: :plan)
+
+      {:ok, run} =
+        Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :starting, started_at: DateTime.utc_now()})
+
+      {:ok, _running} = Pipeline.update_run(run, %{status: :running})
+
+      refute has_element?(view, "#issue-start-#{ready.id}")
+      assert has_element?(view, "#task-link-#{ready.id}", "Plan running")
+    end
+
+    test "Start starts the issue and opens the task", %{conn: conn, ready: ready} do
+      stub(Issues, :link_pull_request, fn _scope, _issue -> {:ok, nil} end)
+      expect(Rail.Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+      expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      allow(Rail.Git, self(), view.pid)
+      allow(Tools, self(), view.pid)
+      render_async(view)
+
+      view |> element("#issue-start-#{ready.id}") |> render_click()
+
+      assert %Task{id: task_id, stage: :plan} = Repo.get_by(Task, issue_id: ready.id)
+      assert_redirect(view, ~p"/tasks/#{task_id}")
+    end
+
+    test "Start makes a linked person the owner of an unassigned issue and queues its ticket's assignee", %{
+      conn: conn,
+      project: project,
+      insert: insert
+    } do
+      %{id: issue_id} =
+        issue = insert.("ROW-S", %{state: :backlog, state_name: "Ready for Dev", cycle_external_id: "cyc_12"})
+
+      {:ok, starter} =
+        Users.register_oauth_user(%{github_id: "gh_row_start", login: "row_start", email: "row_start@example.com"})
+
+      {:ok, starter} = Users.update_user(system_scope(), starter, %{project_ids: [project.id]})
+      %{id: starter_id} = starter = starter |> Ecto.Changeset.change(linear_user_id: "lin_usr_row") |> Repo.update!()
+
+      stub(Issues, :link_pull_request, fn _scope, _issue -> {:ok, nil} end)
+      expect(Rail.Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+      expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+      {:ok, view, _html} = live(log_in_user(conn, starter), ~p"/issues?cycle=12")
+      allow(Rail.Git, self(), view.pid)
+      allow(Tools, self(), view.pid)
+      render_async(view)
+
+      view |> element("#issue-start-#{issue_id}") |> render_click()
+
+      assert %Issue{owner_user_id: ^starter_id} = Repo.reload!(issue)
+      assert_enqueued(worker: SyncIssue, args: %{issue_id: issue_id, fields: ["owner_user_id"]})
+    end
+
+    test "a stale row whose issue has since started opens the task and leaves its run alone", %{
+      conn: conn,
+      ready: ready,
+      open_task: open_task
+    } do
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+      assert has_element?(view, "#issue-start-#{ready.id}")
+
+      # Sent as the event, since any other test's broadcast may have refreshed the row by now.
+      {task, run} = open_task.(ready, :plan, %{status: :running})
+      reject(&Pipeline.start_task/2)
+      reject(&Tools.start_os_process/2)
+      allow(Pipeline, self(), view.pid)
+      allow(Tools, self(), view.pid)
+
+      render_click(view, "start_issue", %{"issue_id" => ready.id})
+
+      assert_redirect(view, ~p"/tasks/#{task.id}")
+      assert Repo.reload!(run).started_at == run.started_at
+      assert [_one] = Repo.all(from t in Task, where: t.issue_id == ^ready.id)
+    end
+
+    test "a start for an issue the person cannot reach, or a finished one, starts nothing", %{
+      conn: conn,
+      project: project,
+      insert: insert
+    } do
+      {:ok, granted} =
+        Users.register_oauth_user(%{github_id: "gh_row_grant", login: "row_grant", email: "row_grant@example.com"})
+
+      {:ok, granted} = Users.update_user(system_scope(), granted, %{project_ids: [project.id]})
+
+      {:ok, %Project{id: hidden_id}} =
+        Projects.create_project(system_scope(), %{
+          name: "Out of Reach",
+          github_repo: "example/out-of-reach",
+          github_installation_id: 557,
+          key: "OOR",
+          default_branch: "main",
+          clone_path: "/tmp/out-of-reach"
+        })
+
+      hidden = insert.("OOR-1", %{project_id: hidden_id, state: :todo})
+      finished = insert.("ROW-F", %{state: :done, state_name: "Done", cycle_external_id: "cyc_12"})
+
+      reject(&Pipeline.start_task/2)
+      reject(&Pipeline.adopt_pull_request/2)
+      reject(&Issues.link_pull_request/2)
+
+      {:ok, view, _html} = live(log_in_user(conn, granted), ~p"/issues?cycle=12")
+      allow(Pipeline, self(), view.pid)
+      render_async(view)
+
+      for id <- [hidden.id, finished.id, "iss_gone"] do
+        assert render_click(view, "start_issue", %{"issue_id" => id}) =~ "cycle-issues"
+      end
+
+      assert [] = Repo.all(from t in Task, where: t.issue_id in ^[hidden.id, finished.id])
+    end
+
+    test "a start that fails says why, and only a row with no task can start again", %{
+      conn: conn,
+      ready: ready,
+      working: working
+    } do
+      stub(Issues, :link_pull_request, fn _scope, _issue -> {:error, :unavailable} end)
+      expect(Rail.Git, :get_or_create_worktree, fn _project, _task -> {:error, "no checkout"} end)
+      expect(Rail.Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+
+      # As the launch does: it settles the run on why it could not start, and hands it back.
+      expect(Tools, :start_os_process, fn run, _argv ->
+        {:ok, failed} = Pipeline.update_run(run, %{status: :finished, error: "Failed to spawn runner: :enoent"})
+        {:error, {:spawn_failed, :enoent, failed}}
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      allow(Rail.Git, self(), view.pid)
+      allow(Tools, self(), view.pid)
+      render_async(view)
+
+      view |> element("#issue-start-#{ready.id}") |> render_click()
+      assert has_element?(view, "#flash-error", "Could not create the worktree: no checkout")
+      assert has_element?(view, "#issue-start-#{ready.id}")
+      refute Repo.get_by(Task, issue_id: ready.id)
+
+      view |> element("#issue-start-#{working.id}") |> render_click()
+      assert has_element?(view, "#flash-error", "Could not start the agent: :enoent")
+      assert %Task{} = Repo.get_by(Task, issue_id: working.id)
+      refute has_element?(view, "#issue-start-#{working.id}")
+      assert has_element?(view, "#issue-card-#{working.id}.border-l-red-500", "Plan failed")
+    end
+
+    test "a second tab's insert the index refuses says someone else started it, and spawns nothing", %{
+      conn: conn,
+      project: project,
+      ready: ready
+    } do
+      {:ok, _first} = ready |> Repo.preload(:project) |> Pipeline.create_task(:plan)
+      {:error, %Ecto.Changeset{} = refused} = project |> build_task(ready, %{stage: :plan}) |> Repo.insert()
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+
+      # The re-read has found no task, as it does while the first tab's start is still in its transaction.
+      stub(Issues, :get_issue, fn _id, _opts -> {:ok, %{ready | task: nil, project: project}} end)
+      stub(Issues, :link_pull_request, fn _scope, _issue -> {:ok, nil} end)
+      expect(Pipeline, :start_task, fn _scope, _issue -> {:error, refused} end)
+      allow(Issues, self(), view.pid)
+      allow(Pipeline, self(), view.pid)
+
+      render_click(view, "start_issue", %{"issue_id" => ready.id})
+
+      assert has_element?(view, "#flash-error", "Someone else just started this issue.")
+    end
+
+    test "a start whose re-read missed a task another tab committed stops at the task, with no spawn", %{
+      conn: conn,
+      project: project,
+      ready: ready,
+      open_task: open_task
+    } do
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+      {task, run} = open_task.(ready, :plan, %{status: :running})
+
+      # The re-read has found no task, as it does while the first tab's start is still in its transaction.
+      stub(Issues, :get_issue, fn _id, _opts -> {:ok, %{ready | task: nil, project: project}} end)
+      stub(Issues, :link_pull_request, fn _scope, _issue -> {:ok, nil} end)
+      stub(Rail.Git, :get_or_create_worktree, fn _project, _task -> {:ok, task.worktree_path} end)
+      reject(&Tools.start_os_process/2)
+      allow(Issues, self(), view.pid)
+      allow(Rail.Git, self(), view.pid)
+      allow(Tools, self(), view.pid)
+
+      render_click(view, "start_issue", %{"issue_id" => ready.id})
+
+      assert has_element?(view, "#flash-error", "Someone else just started this issue.")
+      assert Repo.reload!(run).started_at == run.started_at
+      assert [_one] = Repo.all(from t in Task, where: t.issue_id == ^ready.id)
+    end
+
+    test "a start takes up a linked pull request, one GitHub finds, and says why it cannot", %{
+      conn: conn,
+      project: project,
+      ready: ready,
+      working: working,
+      reviewing: reviewing
+    } do
+      {:ok, _linked} =
+        ready
+        |> Issue.pull_request_changeset(%{pr_number: 41, pr_url: "https://github.com/org/app/pull/41", pr_title: "Built"})
+        |> Repo.update()
+
+      expect(Issues, :link_pull_request, fn _scope, %Issue{id: id} when id == reviewing.id -> {:ok, %{"number" => 43}} end)
+
+      expect(Issues, :link_pull_request, fn _scope, %Issue{id: id} when id == working.id -> {:ok, %{"number" => 42}} end)
+
+      {:error, %Ecto.Changeset{} = refused} =
+        Repo.transaction(fn ->
+          {:ok, _first} = reviewing |> Repo.preload(:project) |> Pipeline.create_task(:review)
+          {:error, changeset} = project |> build_task(reviewing, %{stage: :review}) |> Repo.insert()
+          Repo.rollback(changeset)
+        end)
+
+      expect(Pipeline, :adopt_pull_request, fn _scope, %Issue{id: id} when id == ready.id ->
+        {:error, :pull_request_from_fork}
+      end)
+
+      expect(Pipeline, :adopt_pull_request, fn _scope, %Issue{id: id} when id == reviewing.id -> {:error, refused} end)
+
+      expect(Pipeline, :adopt_pull_request, fn _scope, %Issue{id: id} = adopted when id == working.id ->
+        Pipeline.create_task(Repo.preload(adopted, :project), :review)
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      allow(Issues, self(), view.pid)
+      allow(Pipeline, self(), view.pid)
+      render_async(view)
+
+      view |> element("#issue-start-#{ready.id}") |> render_click()
+      assert has_element?(view, "#flash-error", "That pull request comes from a fork, which Rail cannot push fixes to.")
+
+      view |> element("#issue-start-#{reviewing.id}") |> render_click()
+      assert has_element?(view, "#flash-error", "Someone else just started this issue.")
+
+      view |> element("#issue-start-#{working.id}") |> render_click()
+      assert %Task{id: task_id, stage: :review} = Repo.get_by(Task, issue_id: working.id)
+      assert_redirect(view, ~p"/tasks/#{task_id}")
+    end
+
+    test "the plain list keeps its rows: no Start, its chip, and a click on the issue page", %{
+      conn: conn,
+      ready: ready,
+      working: working,
+      open_task: open_task
+    } do
+      {_task, _run} = open_task.(working, :engineer, %{status: :blocked_on_input})
+
+      {:ok, view, _html} = live(conn, ~p"/issues")
+      render_async(view)
+
+      refute has_element?(view, "#issue-start-#{ready.id}")
+      refute has_element?(view, "#issue-card-#{working.id}[data-flagged]")
+      assert has_element?(view, "#task-link-#{working.id} .pi-git-branch")
+      assert has_element?(view, "#issue-card-#{working.id} div[onclick]")
+
+      to = "/issues/#{working.identifier}"
+      assert {:error, {:live_redirect, %{to: ^to}}} = view |> element("#issue-card-#{working.id}") |> render_click()
+    end
+
+    test "the plain list does not reload on a run's change, which it does not show", %{
+      conn: conn,
+      insert: insert
+    } do
+      {:ok, view, _html} = live(conn, ~p"/issues")
+      render_async(view)
+
+      late = insert.("ROW-L", %{})
+      send(view.pid, {:pipeline_changed, "tsk_elsewhere"})
+
+      refute render(view) =~ late.identifier
     end
   end
 

@@ -1,6 +1,6 @@
 defmodule Rail.Pipeline.Utils.BroadcastPipelineChanged do
   @moduledoc """
-  Says on `"pipeline"` that a task's stage or its run changed, for the Overview to reload.
+  Says on `"pipeline"` that a task's stage or its run changed, for the pages that show them to reload.
   """
 
   alias Rail.Pipeline.Schemas.Run

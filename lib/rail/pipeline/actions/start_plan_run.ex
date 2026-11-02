@@ -34,7 +34,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
 
   A checkout no worktree can be made in leaves the issue without a task or an owner, so it can be
   started again; a run that is recorded but fails to spawn keeps its task, with the failure on the
-  run. Returns whatever `Tools.start_os_process/2` does.
+  run. Returns whatever `Tools.start_os_process/2` does, or `{:error, :task_exists}` for an issue with a live task.
   """
   def start_plan_run(%Scope{} = scope, %Issue{} = issue) do
     %Issue{project: %Project{} = project} = issue = Repo.preload(issue, :project)

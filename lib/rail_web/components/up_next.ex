@@ -15,7 +15,6 @@ defmodule RailWeb.Components.UpNext do
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Roles.Schemas.Role
 
   attr :runs, :list, required: true
   # Children of a split a canceled or deleted sibling keeps from starting: `%{status:, parent:}`, a
@@ -31,11 +30,7 @@ defmodule RailWeb.Components.UpNext do
           do: run.id
 
     # Read once per render too: a fix round's plan waiting on approval is a file on disk.
-    fix_plans =
-      for %Run{role: %Role{stage: :review_lead}, task: %Task{stage: stage} = task} = run <- assigns.runs,
-          stage in [:review, :finalize] and Run.state(run) == :done and fix_plan_waiting?(task),
-          into: MapSet.new(),
-          do: run.id
+    fix_plans = for run <- assigns.runs, waiting_fix_plan?(run), into: MapSet.new(), do: run.id
 
     # A custom stage's saved file is on disk too, and its agent stops once it is saved.
     approving =
@@ -68,7 +63,7 @@ defmodule RailWeb.Components.UpNext do
 
       <.link
         :if={@featured}
-        {destination(@featured, @fix_plans)}
+        navigate={waiting_path(@featured, MapSet.member?(@fix_plans, @featured.id))}
         id={"up-next-featured-#{@featured.id}"}
         data-qa="up-next-featured"
         class="@container group block rounded-xl border border-amber-300 dark:border-amber-800/70 bg-amber-50 dark:bg-amber-950/30 px-5 py-4 transition-colors hover:bg-amber-100/70 dark:hover:bg-amber-950/50"
@@ -124,7 +119,7 @@ defmodule RailWeb.Components.UpNext do
 
       <.link
         :for={run <- @rest}
-        {destination(run, @fix_plans)}
+        navigate={waiting_path(run, MapSet.member?(@fix_plans, run.id))}
         id={if finalizing?(run), do: "up-next-finalize-row-#{run.id}", else: "up-next-row-#{run.id}"}
         data-qa="up-next-row"
         class="group flex items-center gap-4 rounded-xl border border-slate-200 dark:border-slate-700/70 bg-white dark:bg-slate-800/40 px-5 py-3.5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/70"
@@ -182,39 +177,6 @@ defmodule RailWeb.Components.UpNext do
   defp parent_identifier(%Run{task: %Task{parent_task: %Task{issue: %{identifier: identifier}}}}), do: identifier
   defp parent_identifier(%Run{}), do: nil
 
-  # Review is what the merge is decided on, so a change ready for it opens on its findings, and one at Finalize on
-  # the task, whose header merges it. A question is answered in its agent's conversation, beside the plan, which the
-  # task opens on by itself only for the agent taking messages: Plan at Plan, a custom stage at its own, the review
-  # agent after.
-  defp destination(run, fix_plans) do
-    cond do
-      MapSet.member?(fix_plans, run.id) ->
-        [navigate: ~p"/tasks/#{run.task_id}?item=fix_plan"]
-
-      finalizing?(run) ->
-        [navigate: ~p"/tasks/#{run.task_id}"]
-
-      ready_to_merge?(run) ->
-        [navigate: ~p"/tasks/#{run.task_id}?item=findings"]
-
-      Run.state(run) == :blocked and not chat_run?(run) ->
-        [navigate: ~p"/tasks/#{run.task_id}?item=plan&agent=#{run.role.stage}"]
-
-      true ->
-        [navigate: ~p"/tasks/#{run.task_id}"]
-    end
-  end
-
-  defp chat_run?(%Run{role: %Role{custom_stage: name}, task: %Task{} = task} = run) when is_binary(name),
-    do: Task.works_stage?(task, run.role)
-
-  defp chat_run?(%Run{role: %Role{stage: stage}, task: %Task{stage: :plan}}), do: stage == :plan
-  defp chat_run?(%Run{role: %Role{stage: stage}}), do: stage == :review_lead
-
-  # The Review run of a task at Finalize waits only on someone marking it ready.
-  defp finalizing?(%Run{task: %Task{stage: :finalize}} = run), do: Run.state(run) == :done
-  defp finalizing?(%Run{}), do: false
-
   # A Review round or fix plan waiting on a person carries the Review screen's Findings icon; every other card is words alone.
   defp featured_icon(%Run{task: %Task{} = task} = run, fix_plans) do
     cond do
@@ -225,14 +187,6 @@ defmodule RailWeb.Components.UpNext do
   end
 
   defp featured_icon(nil, _fix_plans), do: nil
-
-  # A finished Review with a pull request to merge has nothing left to wait on but the merge.
-  defp ready_to_merge?(%Run{role: %Role{stage: :review_lead}, task: %Task{pr_url: pr_url} = task} = run)
-       when is_binary(pr_url) do
-    ready_to_merge?(task, run)
-  end
-
-  defp ready_to_merge?(%Run{}), do: false
 
   # Three things bring a run here, and they are not the same errand. A done run has
   # produced the work of its stage and waits on that being read. A blocked run

@@ -98,10 +98,13 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
       %Issue{skipped_steps: [:product, :design, :architect]} |> Issue.tracker_changeset(attrs) |> Repo.insert!()
 
     stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
-    stub(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+    expect(Tools, :start_os_process, 1, fn %Run{} = run, _argv ->
+      {:ok, %OsProcess{task_id: run.task_id, run: run}}
+    end)
 
     assert {:ok, %Task{id: task_id}} = Pipeline.start_task(system_scope(), issue)
-    assert {:ok, %Task{id: ^task_id}} = Pipeline.start_task(system_scope(), issue)
+    assert {:error, :task_exists} = Pipeline.start_task(system_scope(), issue)
     assert [%Round{number: 1}] = Repo.all(from r in Round, where: r.task_id == ^task_id)
   end
 
@@ -218,7 +221,7 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
     assert_received {:issue_changed, ^issue_id}
   end
 
-  test "a second person starting the same issue at Plan finds the first's task and ownership", %{
+  test "a second person starting the same issue at Plan is refused, and the first keeps the task and ownership", %{
     attrs: attrs,
     starter: %{id: starter_id} = starter,
     teammate: teammate
@@ -229,13 +232,13 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
     stub(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
 
     assert {:ok, %Task{id: task_id}} = Pipeline.start_task(Scope.for_user(starter), issue)
-    assert {:ok, %Task{id: ^task_id}} = Pipeline.start_task(Scope.for_user(teammate), issue)
+    assert {:error, :task_exists} = Pipeline.start_task(Scope.for_user(teammate), issue)
 
     assert [%Task{id: ^task_id}] = Repo.all(from t in Task, where: t.issue_id == ^issue.id)
     assert %Issue{owner_user_id: ^starter_id} = Repo.reload!(issue)
   end
 
-  test "a second person starting the same issue at Engineer finds the first's task and ownership", %{
+  test "a second person starting the same issue at Engineer is refused, and the first keeps the task and ownership", %{
     attrs: attrs,
     starter: %{id: starter_id} = starter,
     teammate: teammate
@@ -247,7 +250,7 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
     stub(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
 
     assert {:ok, %Task{id: task_id}} = Pipeline.start_task(Scope.for_user(starter), issue)
-    assert {:ok, %Task{id: ^task_id}} = Pipeline.start_task(Scope.for_user(teammate), issue)
+    assert {:error, :task_exists} = Pipeline.start_task(Scope.for_user(teammate), issue)
 
     assert [%Task{id: ^task_id}] = Repo.all(from t in Task, where: t.issue_id == ^issue.id)
     assert %Issue{owner_user_id: ^starter_id} = Repo.reload!(issue)

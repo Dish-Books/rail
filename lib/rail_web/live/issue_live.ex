@@ -9,10 +9,10 @@ defmodule RailWeb.IssueLive do
 
   import RailWeb.Utils.HandleIssueEvent
   import RailWeb.Utils.IssueRelative
+  import RailWeb.Utils.StartIssue
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Scope
   alias Rail.Users
@@ -74,26 +74,8 @@ defmodule RailWeb.IssueLive do
     """
   end
 
-  def handle_event("start_task", _params, socket) do
-    case Pipeline.start_task(socket.assigns.current_scope, socket.assigns.issue) do
-      {:ok, task} ->
-        {:noreply, push_navigate(socket, to: ~p"/tasks/#{task.id}")}
-
-      {:error, reason} ->
-        socket = socket |> put_flash(:error, start_error(reason)) |> load_issue(socket.assigns.issue.id)
-        {:noreply, socket}
-    end
-  end
-
-  def handle_event("adopt_pull_request", _params, socket) do
-    case Pipeline.adopt_pull_request(socket.assigns.current_scope, socket.assigns.issue) do
-      {:ok, task} ->
-        {:noreply, push_navigate(socket, to: ~p"/tasks/#{task.id}")}
-
-      {:error, reason} ->
-        socket = socket |> put_flash(:error, adopt_error(reason)) |> load_issue(socket.assigns.issue.id)
-        {:noreply, socket}
-    end
+  def handle_event(event, _params, socket) when event in ["start_task", "adopt_pull_request"] do
+    {:noreply, start_issue(socket, socket.assigns.issue.id, &load_issue(&1, &1.assigns.issue.id))}
   end
 
   def handle_event(event, params, socket) when event in @issue_events do
@@ -207,16 +189,4 @@ defmodule RailWeb.IssueLive do
   end
 
   defp read_blockers(socket), do: socket
-
-  defp start_error({:worktree_failed, reason}), do: "Could not create the worktree: #{reason}"
-  defp start_error({:spawn_failed, reason, _run}), do: "Could not start the agent: #{inspect(reason)}"
-  defp start_error(:dispatch_disabled), do: "Dispatch is switched off, so no agent was started."
-  defp start_error(reason), do: "Could not start: #{inspect(reason)}"
-
-  defp adopt_error(:no_pull_request), do: "The pull request is no longer open."
-  defp adopt_error(:pull_request_from_fork), do: "That pull request comes from a fork, which Rail cannot push fixes to."
-  defp adopt_error({:pull_request_base, base}), do: "That pull request merges into #{base}, not the default branch."
-  defp adopt_error(:pull_request_taken), do: "Another task already works on that pull request's branch."
-  defp adopt_error(reason) when is_binary(reason), do: "Could not check out the pull request: #{reason}"
-  defp adopt_error(reason), do: "Could not start: #{inspect(reason)}"
 end
