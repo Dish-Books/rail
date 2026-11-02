@@ -76,6 +76,18 @@ defmodule Rail.Issues.Tracker do
   @callback check_assignable(User.t()) :: :ok | {:error, term()}
 
   @doc """
+  The statuses a person can pick for `project`'s tickets, in workflow order, each with its string `:id`, its `:name` and
+  the `:state` its icon shows.
+  """
+  @callback get_statuses(Project.t()) :: {:ok, [map()]} | {:error, term()}
+
+  @doc """
+  Moves the ticket to `status`, one `c:get_statuses/1` returned, as the scope's user where the tracker can, and returns
+  the attributes Rail keeps for it as the tracker now has them.
+  """
+  @callback set_status(Scope.t(), Issue.t(), map()) :: {:ok, map()} | {:error, term()}
+
+  @doc """
   The project's cycles oldest first, each with its dates, status, whether it is current, the team's default estimate
   and its daily scope, started (done work included) and completed history, and the team's statuses in tracker order.
   """

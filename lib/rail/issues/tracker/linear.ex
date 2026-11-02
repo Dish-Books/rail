@@ -189,6 +189,33 @@ defmodule Rail.Issues.Tracker.Linear do
     end
   end
 
+  @impl true
+  def get_statuses(%Project{linear_team_id: nil}), do: {:error, :linear_team_not_found}
+
+  def get_statuses(%Project{} = project) do
+    case Linear.team(project) do
+      {:ok, %{"teams" => %{"nodes" => [%{"states" => %{"nodes" => states}}]}}} ->
+        statuses = states |> Enum.sort_by(&{calculate_rank(&1), &1["id"]}) |> Enum.map(&format_status/1)
+        {:ok, statuses}
+
+      {:ok, _no_team} ->
+        {:error, :linear_team_not_found}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # Sent by id, since `linear_state_ids` holds one status per type and has neither In Review nor a custom one.
+  @impl true
+  def set_status(scope, %Issue{project: %Project{} = project} = issue, %{id: state_id}) do
+    case Linear.update_issue(project, issue.external_id, %{"stateId" => state_id}, as: scope) do
+      {:ok, %{"issueUpdate" => %{"success" => true, "issue" => node}}} -> {:ok, format_linear_issue(node)}
+      {:ok, _not_updated} -> {:error, {:linear_mutation_failed, "issueUpdate"}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   # Linear hears about an owner through the user's Linear id.
   @impl true
   def check_assignable(%User{linear_user_id: linear_user_id}) when is_binary(linear_user_id), do: :ok
@@ -215,6 +242,11 @@ defmodule Rail.Issues.Tracker.Linear do
       end
 
     {type_rank, position}
+  end
+
+  defp format_status(state) do
+    %{state: rail_state, state_name: name} = format_linear_issue(%{"state" => state})
+    %{id: state["id"], name: name, state: Issue.calculate_shown_state(%Issue{state: rail_state, state_name: name})}
   end
 
   # The current cycle is the one running, or else the next to start. Linear's end is the moment after the last day.

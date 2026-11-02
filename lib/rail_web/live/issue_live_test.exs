@@ -539,6 +539,58 @@ defmodule RailWeb.IssueLiveTest do
     refute has_element?(view, "#issue-start")
   end
 
+  test "a status picked in Properties shows at once, in a second tab too, and reaches Linear", %{
+    conn: conn,
+    project: project
+  } do
+    %Issue{id: issue_id} =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_pick",
+        identifier: "IPG-30",
+        title: "Pick a status",
+        state: :in_progress,
+        state_name: "In Progress"
+      })
+      |> Repo.insert!()
+
+    stub(Issues, :get_statuses, fn _scope, _project ->
+      {:ok, [%{id: "st_review", name: "In Review", state: :in_review}]}
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/issues/IPG-30")
+    {:ok, other_view, _html} = live(conn, ~p"/issues/IPG-30")
+    Req.Test.allow(Rail.Linear, self(), view.pid)
+
+    view |> element("#issue-status") |> render_click()
+    render_async(view)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"id" => "lin_page_pick", "input" => %{"stateId" => "st_review"}} = Jason.decode!(body)["variables"]
+
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueUpdate" => %{
+            "success" => true,
+            "issue" => %{
+              "state" => %{"name" => "In Review", "type" => "started"},
+              "updatedAt" => "2026-11-01T10:00:00.000Z"
+            }
+          }
+        }
+      })
+    end)
+
+    view |> element("#issue-status-picker-#{issue_id}-status-st_review") |> render_click()
+
+    assert has_element?(view, "#issue-status", "In Review")
+    assert has_element?(other_view, "#issue-status", "In Review")
+    assert %Issue{state: :in_progress, state_name: "In Review"} = Repo.get!(Issue, issue_id)
+    refute_enqueued(worker: SyncIssue)
+  end
+
   test "an open page follows Linear closing its issue and stops offering to start it", %{
     conn: conn,
     project: project

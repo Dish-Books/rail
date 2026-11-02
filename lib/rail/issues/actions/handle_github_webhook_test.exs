@@ -7,6 +7,7 @@ defmodule Rail.Issues.Actions.HandleGithubWebhookTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Learnings.Workers.IssueFinished
+  alias Rail.Pipeline
   alias Rail.Users
 
   describe "issues" do
@@ -51,6 +52,28 @@ defmodule Rail.Issues.Actions.HandleGithubWebhookTest do
                })
 
       assert [_once] = all_enqueued(worker: IssueFinished, args: %{issue_id: issue.id})
+    end
+
+    test "a finish tells the pipeline once, so a split moves on", %{github_project: project} do
+      %{id: issue_id} = issue = github_issue(project, %{number: 182, state: :in_review})
+
+      closed =
+        github_issue_json(%{
+          "node_id" => issue.external_id,
+          "number" => 182,
+          "state" => "closed",
+          "state_reason" => "completed",
+          "closed_at" => "2026-10-06T11:02:00Z",
+          "updated_at" => "2026-10-06T11:02:00Z"
+        })
+
+      expect(Pipeline, :handle_issue_finished, 1, fn %Issue{id: ^issue_id, state: :done} -> :ok end)
+
+      assert {:ok, %Issue{state: :done}} =
+               Issues.handle_github_webhook(project, "issues", %{"action" => "closed", "issue" => closed})
+
+      assert {:ok, %Issue{state: :done}} =
+               Issues.handle_github_webhook(project, "issues", %{"action" => "edited", "issue" => closed})
     end
 
     test "a delivery older than what Rail holds changes nothing", %{github_project: project} do

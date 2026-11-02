@@ -354,7 +354,11 @@ defmodule RailWeb.IssuesLive do
                     </span>
                   </div>
                   <div class="divide-y divide-slate-200 dark:divide-slate-800 border-b border-slate-200 dark:border-slate-700">
-                    <.issue_rows rows={group.rows} blockers={@blockers} />
+                    <.issue_rows
+                      rows={group.rows}
+                      blockers={@blockers}
+                      current_scope={@current_scope}
+                    />
                   </div>
                 </section>
               </div>
@@ -382,7 +386,7 @@ defmodule RailWeb.IssuesLive do
             data-qa="issues-table issues-list"
             class="rounded-xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-200 dark:divide-slate-800 overflow-hidden"
           >
-            <.issue_rows rows={@rows} blockers={@blockers} />
+            <.issue_rows rows={@rows} blockers={@blockers} current_scope={@current_scope} />
           </div>
 
           <div
@@ -599,6 +603,7 @@ defmodule RailWeb.IssuesLive do
 
   attr :rows, :list, required: true
   attr :blockers, :map, required: true
+  attr :current_scope, :any, required: true
 
   # A dimmed copy is a parent whose task is not loaded, so it carries no stage chip.
   defp issue_rows(assigns) do
@@ -606,6 +611,7 @@ defmodule RailWeb.IssuesLive do
     <%= for row <- @rows do %>
       <.issue_card
         issue={row.issue}
+        current_scope={@current_scope}
         row_key={row.key}
         dimmed={row.dimmed}
         task={if(row.dimmed, do: nil, else: row.issue.task && %{row.issue.task | issue: row.issue})}
@@ -615,6 +621,7 @@ defmodule RailWeb.IssuesLive do
       <.issue_card
         :for={sub <- row.sub_issues}
         issue={sub.issue}
+        current_scope={@current_scope}
         row_key={sub.key}
         nested
         task={sub.issue.task && %{sub.issue.task | issue: sub.issue}}

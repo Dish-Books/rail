@@ -238,6 +238,7 @@ defmodule RailWeb.TaskLive do
             <.issue_view
               :if={@issue != nil}
               issue={@issue}
+              current_scope={@current_scope}
               assignees={@assignees}
               assignee_query={@assignee_query}
               comment_nonce={@comment_nonce}

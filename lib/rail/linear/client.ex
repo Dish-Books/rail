@@ -206,6 +206,7 @@ defmodule Rail.Linear.Client do
           states {
             nodes {
               id
+              name
               type
               position
             }
@@ -377,13 +378,16 @@ defmodule Rail.Linear.Client do
   end
 
   @doc """
-  Updates a ticket. `input` is Linear's `IssueUpdateInput`.
+  Updates a ticket and returns it as it now reads. `input` is Linear's `IssueUpdateInput`.
   """
   def update_issue(%Project{} = project, issue_id, %{} = input, opts \\ []) do
     query = """
     mutation IssueUpdate($id: String!, $input: IssueUpdateInput!) {
       issueUpdate(id: $id, input: $input) {
         success
+        issue {
+          #{@issue_fields}
+        }
       }
     }
     """
