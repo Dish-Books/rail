@@ -7,6 +7,8 @@ defmodule RailWeb.Utils.StageLabel do
   anyone is waiting, and `:done` does not say done with what.
   """
 
+  use RailWeb, :verified_routes
+
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.FixPlan
@@ -102,6 +104,14 @@ defmodule RailWeb.Utils.StageLabel do
   def ready_to_merge?(%Task{stage: :review} = task, run), do: Run.state(run) == :done and review_finished?(task)
   def ready_to_merge?(_task, _run), do: false
 
+  @doc "True when `run` is the Review lead's, done, on a pull request ready to merge at Review."
+  def ready_to_merge?(%Run{role: %Role{stage: :review_lead}, task: %Task{pr_url: pr_url} = task} = run)
+      when is_binary(pr_url) do
+    ready_to_merge?(task, run)
+  end
+
+  def ready_to_merge?(%Run{}), do: false
+
   @doc """
   True when `run` is the Review lead's at a task at Review, done and not ready to merge: a round waiting on a person.
   """
@@ -141,6 +151,38 @@ defmodule RailWeb.Utils.StageLabel do
   end
 
   def fix_plan_waiting?(%Task{}), do: false
+
+  @doc "True when `run` is the done Review lead's on a task whose fix plan waits on a person. Reads a file on disk."
+  def waiting_fix_plan?(%Run{role: %Role{stage: :review_lead}, task: %Task{stage: stage} = task} = run)
+      when stage in [:review, :finalize], do: Run.state(run) == :done and fix_plan_waiting?(task)
+
+  def waiting_fix_plan?(%Run{}), do: false
+
+  @doc "True when `run` is done at a task at Finalize, so all it waits on is someone marking the task ready."
+  def finalizing?(%Run{task: %Task{stage: :finalize}} = run), do: Run.state(run) == :done
+  def finalizing?(%Run{}), do: false
+
+  @doc """
+  Where a person deals with waiting `run`: its fix plan, its findings, or a question in its agent's conversation, which
+  the task opens on by itself only for the agent taking messages. `fix_plan?` is `waiting_fix_plan?/1`'s answer.
+  """
+  def waiting_path(%Run{} = run), do: waiting_path(run, waiting_fix_plan?(run))
+
+  def waiting_path(%Run{} = run, fix_plan?) do
+    cond do
+      fix_plan? -> ~p"/tasks/#{run.task_id}?item=fix_plan"
+      finalizing?(run) -> ~p"/tasks/#{run.task_id}"
+      ready_to_merge?(run) -> ~p"/tasks/#{run.task_id}?item=findings"
+      Run.state(run) == :blocked and not chat_run?(run) -> ~p"/tasks/#{run.task_id}?item=plan&agent=#{run.role.stage}"
+      true -> ~p"/tasks/#{run.task_id}"
+    end
+  end
+
+  defp chat_run?(%Run{role: %Role{custom_stage: name}, task: %Task{} = task} = run) when is_binary(name),
+    do: Task.works_stage?(task, run.role)
+
+  defp chat_run?(%Run{role: %Role{stage: stage}, task: %Task{stage: :plan}}), do: stage == :plan
+  defp chat_run?(%Run{role: %Role{stage: stage}}), do: stage == :review_lead
 
   # A custom stage moves on only by approval, so its stopped agent waits on a person either way.
   defp stopped_label(%Task{stage: :custom} = task, run) do

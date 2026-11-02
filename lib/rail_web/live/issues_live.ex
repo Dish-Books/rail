@@ -2,6 +2,8 @@ defmodule RailWeb.IssuesLive do
   @moduledoc false
   use RailWeb, :live_view
 
+  import RailWeb.Utils.StartIssue
+
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Task
@@ -18,14 +20,17 @@ defmodule RailWeb.IssuesLive do
     :owner_user,
     :workflow,
     :children,
-    parent: [:project, :owner_user, :workflow, :children],
-    task: [runs: :role, parent_task: [children: :issue]]
+    :merged_task,
+    parent: [:project, :owner_user, :workflow, :children, :task, :merged_task],
+    # A run's questions, without which `Run.state/1` reads one with its round unanswered as stopped.
+    task: [runs: [:role, :questions], parent_task: [children: :issue]]
   ]
 
   def mount(_params, _session, socket) do
-    # Workflows too, since a row names the workflow that opened it.
+    # Workflows too, since a row names the workflow that opened it, and runs, since a cycle's rows show theirs.
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
       Phoenix.PubSub.subscribe(Rail.PubSub, "workflows")
     end
 
@@ -354,7 +359,7 @@ defmodule RailWeb.IssuesLive do
                     </span>
                   </div>
                   <div class="divide-y divide-slate-200 dark:divide-slate-800 border-b border-slate-200 dark:border-slate-700">
-                    <.issue_rows rows={group.rows} blockers={@blockers} />
+                    <.issue_rows rows={group.rows} blockers={@blockers} actionable />
                   </div>
                 </section>
               </div>
@@ -485,6 +490,10 @@ defmodule RailWeb.IssuesLive do
     {:noreply, save_and_patch(socket, changes)}
   end
 
+  def handle_event("start_issue", %{"issue_id" => issue_id}, socket) do
+    {:noreply, start_issue(socket, issue_id, &reload_data/1)}
+  end
+
   # The pull runs in the background a page at a time; the button stays busy
   # until every project it started has said it is done.
   def handle_event("sync_issues", _params, socket) do
@@ -529,6 +538,13 @@ defmodule RailWeb.IssuesLive do
   def handle_info({:issue_comments_changed, _issue_id}, socket), do: {:noreply, socket}
 
   def handle_info({:workflows_changed, _project_id}, socket), do: {:noreply, reload_data(socket)}
+
+  # Whatever the task: a new one belongs to no row yet.
+  def handle_info({:pipeline_changed, _task_id}, %{assigns: %{view: :cycle}} = socket) do
+    {:noreply, reload_data(socket)}
+  end
+
+  def handle_info({:pipeline_changed, _task_id}, socket), do: {:noreply, socket}
 
   # `:cycles` stays nil until every project has answered, so the view never gains a project after it shows. One
   # project's cycle named only as the current one is written as its number, so a reload opens the same one.
@@ -599,8 +615,9 @@ defmodule RailWeb.IssuesLive do
 
   attr :rows, :list, required: true
   attr :blockers, :map, required: true
+  attr :actionable, :boolean, default: false
 
-  # A dimmed copy is a parent whose task is not loaded, so it carries no stage chip.
+  # A dimmed copy is context for its children, so it carries no stage chip, though an actionable one opens its task.
   defp issue_rows(assigns) do
     ~H"""
     <%= for row <- @rows do %>
@@ -608,7 +625,8 @@ defmodule RailWeb.IssuesLive do
         issue={row.issue}
         row_key={row.key}
         dimmed={row.dimmed}
-        task={if(row.dimmed, do: nil, else: row.issue.task && %{row.issue.task | issue: row.issue})}
+        actionable={@actionable}
+        task={if(row.dimmed, do: nil, else: row_task(row.issue, @actionable))}
         run={if(row.dimmed, do: nil, else: stage_run(row.issue.task))}
         open_blockers={open_blockers(@blockers, row.issue)}
       />
@@ -617,7 +635,8 @@ defmodule RailWeb.IssuesLive do
         issue={sub.issue}
         row_key={sub.key}
         nested
-        task={sub.issue.task && %{sub.issue.task | issue: sub.issue}}
+        actionable={@actionable}
+        task={row_task(sub.issue, @actionable)}
         run={stage_run(sub.issue.task)}
         open_blockers={open_blockers(@blockers, sub.issue)}
       />
@@ -635,7 +654,7 @@ defmodule RailWeb.IssuesLive do
     <aside
       id="cycle-panels"
       aria-label="Cycles"
-      class="w-full lg:w-[340px] shrink-0 order-first lg:order-none rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 divide-y divide-slate-200 dark:divide-slate-700 overflow-hidden"
+      class="w-full lg:w-[380px] shrink-0 order-first lg:order-none rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 divide-y divide-slate-200 dark:divide-slate-700 overflow-hidden"
     >
       <%= for section <- @sections do %>
         <.cycle_panel
@@ -660,6 +679,15 @@ defmodule RailWeb.IssuesLive do
     </aside>
     """
   end
+
+  # A finished issue's merged task stands in once cleaned up, with no run, which is all a merged task reads from.
+  defp row_task(%Issue{task: %Task{} = task} = issue, _actionable), do: %{task | issue: issue}
+
+  defp row_task(%Issue{merged_task: %Task{} = merged} = issue, true) do
+    if Issue.finished_state?(issue.state), do: %{merged | issue: issue}
+  end
+
+  defp row_task(%Issue{}, _actionable), do: nil
 
   # Picked out of the runs already loaded rather than queried per row.
   defp stage_run(%Task{} = task), do: Task.stage_run(task)

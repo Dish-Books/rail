@@ -364,6 +364,33 @@ defmodule RailWeb.IssueLiveTest do
     assert_redirect(view, ~p"/tasks/#{task_id}")
   end
 
+  test "a stale page whose issue has since started opens the task and leaves its run alone", %{
+    conn: conn,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_stale",
+        identifier: "IPG-40",
+        title: "Started elsewhere",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    render_async(view)
+
+    {:ok, task} = issue |> Repo.preload(:project) |> Pipeline.create_task(:plan)
+    reject(&Pipeline.start_task/1)
+    allow(Pipeline, self(), view.pid)
+
+    view |> element("#issue-start-plan") |> render_click()
+
+    assert_redirect(view, ~p"/tasks/#{task.id}")
+  end
+
   test "an issue offers one Start at Plan button, where every task begins", %{conn: conn, project: project} do
     issue =
       %Issue{}
@@ -743,6 +770,7 @@ defmodule RailWeb.IssueLiveTest do
       end
 
     expect(Git, :get_or_create_worktree, fn _project, _task -> {:error, "no checkout"} end)
+    expect(Git, :get_or_create_worktree, fn _project, _task -> {:error, {:github_api_error, 503}} end)
     expect(Git, :get_or_create_worktree, 3, fn _project, task -> {:ok, task.worktree_path} end)
     expect(Tools, :start_os_process, fn run, _argv -> {:error, {:spawn_failed, :enoent, run}} end)
     expect(Tools, :start_os_process, fn _run, _argv -> {:error, :dispatch_disabled} end)
@@ -755,6 +783,9 @@ defmodule RailWeb.IssueLiveTest do
     render_async(view)
     view |> element("#issue-start-plan") |> render_click()
     assert has_element?(view, "#flash-error", "Could not create the worktree: no checkout")
+
+    view |> element("#issue-start-plan") |> render_click()
+    assert has_element?(view, "#flash-error", "Could not create the worktree: {:github_api_error, 503}")
 
     view |> element("#issue-start-plan") |> render_click()
     assert has_element?(view, "#flash-error", "Could not start the agent: :enoent")
