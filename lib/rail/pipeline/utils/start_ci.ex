@@ -7,6 +7,8 @@ defmodule Rail.Pipeline.Utils.StartCi do
   ticket owner's git identity, since recording it may mean a commit.
   """
 
+  import Rail.Pipeline.Utils.BroadcastPipelineChanged
+
   alias Rail.Git
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -21,6 +23,7 @@ defmodule Rail.Pipeline.Utils.StartCi do
   def start_ci(%Run{task: %Task{} = task} = run) do
     %Project{} = project = Repo.get!(Project, task.project_id)
     {:ok, running} = run |> Run.changeset(%{status: :running, error: nil, exit_code: nil}) |> Repo.update()
+    broadcast_pipeline_changed(running)
 
     opts = [
       timeout_ms: to_timeout(minute: project.ci_timeout_minutes),
@@ -35,7 +38,7 @@ defmodule Rail.Pipeline.Utils.StartCi do
       {:error, reason} ->
         attrs = %{status: :finished, error: "Could not start CI: #{inspect(reason)}"}
         {:ok, failed} = running |> Run.changeset(attrs) |> Repo.update()
-        {:error, failed}
+        {:error, broadcast_pipeline_changed(failed)}
     end
   end
 end

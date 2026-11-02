@@ -253,4 +253,77 @@ defmodule RailWeb.Utils.StageLabelTest do
       refute fix_plan_waiting?(%Task{stage: :review})
     end
   end
+
+  describe "waiting_path/1" do
+    setup do
+      scratch = Path.join(System.tmp_dir!(), "waiting_path_#{System.unique_integer([:positive])}")
+      on_exit(fn -> File.rm_rf(scratch) end)
+
+      waiting = fn stage, role_stage, attrs ->
+        task = %Task{id: "tsk_1", stage: stage, scratch_path: scratch, issue: %Issue{identifier: "WTP-1"}}
+        struct(%Run{task_id: "tsk_1", questions: [], task: task, role: %Role{stage: role_stage}}, attrs)
+      end
+
+      %{scratch: scratch, waiting: waiting}
+    end
+
+    test "opens a question in its agent's conversation, unless the task opens there by itself", %{waiting: waiting} do
+      asked = %{status: :blocked_on_input}
+
+      assert waiting_path(waiting.(:engineer, :engineer, asked)) == "/tasks/tsk_1?item=plan&agent=engineer"
+      assert waiting_path(waiting.(:plan, :plan, asked)) == "/tasks/tsk_1"
+      assert waiting_path(waiting.(:review, :review_lead, asked)) == "/tasks/tsk_1"
+      assert waiting_path(waiting.(:plan, :engineer, asked)) == "/tasks/tsk_1?item=plan&agent=engineer"
+    end
+
+    test "a custom stage's own agent takes its question where the task opens", %{waiting: waiting} do
+      run = waiting.(:custom, nil, %{status: :blocked_on_input})
+      task = %{run.task | custom_stage: "License check"}
+
+      assert waiting_path(%{run | task: task, role: %Role{custom_stage: "License check"}}) == "/tasks/tsk_1"
+    end
+
+    test "a change ready to merge opens on its findings, and one at Finalize on the task", %{
+      scratch: scratch,
+      waiting: waiting
+    } do
+      File.mkdir_p!(Path.join(scratch, "reviews"))
+      done = %{status: :finished, stage_outcome: :done}
+      at_finalize = waiting.(:finalize, :review_lead, done)
+
+      assert waiting_path(at_finalize) == "/tasks/tsk_1"
+      refute ready_to_merge?(waiting.(:review, :review_lead, done))
+      refute ready_to_merge?(waiting.(:plan, :plan, done))
+    end
+
+    test "a fix plan waiting on a person opens the plan, at Review and at Finalize", %{
+      scratch: scratch,
+      waiting: waiting
+    } do
+      File.mkdir_p!(Path.join(scratch, "fix_plans"))
+
+      File.write!(
+        Path.join(scratch, "fix_plans/WTP-1.json"),
+        Jason.encode!(%{round: 1, findings: [], comments: [], plan: "p", covered_comments: 0})
+      )
+
+      done = %{status: :finished, stage_outcome: :done}
+
+      for stage <- [:review, :finalize] do
+        run = waiting.(stage, :review_lead, done)
+
+        assert waiting_fix_plan?(run)
+        assert waiting_path(run) == "/tasks/tsk_1?item=fix_plan"
+      end
+
+      refute waiting_fix_plan?(waiting.(:review, :review_lead, %{status: :running}))
+      refute waiting_fix_plan?(waiting.(:plan, :plan, done))
+    end
+
+    test "only a done run at Finalize is finalizing", %{waiting: waiting} do
+      assert finalizing?(waiting.(:finalize, :review_lead, %{status: :finished, stage_outcome: :done}))
+      refute finalizing?(waiting.(:finalize, :review_lead, %{status: :running}))
+      refute finalizing?(waiting.(:review, :review_lead, %{status: :finished, stage_outcome: :done}))
+    end
+  end
 end

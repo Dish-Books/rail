@@ -12,6 +12,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   degrades to a message that is still queued rather than one that is lost.
   """
 
+  import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.DeliverPlanComments
   import Rail.Pipeline.Utils.PrepareTurn
   import Rail.Pipeline.Utils.PrepareWorktree
@@ -187,9 +188,10 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   end
 
   # The dispatch runs in the background, so whoever queued the message only learns
-  # it went out, or came back, from the run's topic.
-  defp broadcast_changed(%Run{id: id}) do
+  # it went out, or came back, from the run's topic, and a list showing the run from `"pipeline"`.
+  defp broadcast_changed(%Run{id: id} = run) do
     Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{id}", {:run_changed, id})
+    broadcast_pipeline_changed(run)
   end
 
   defp fail(%Run{} = run, reason) do
