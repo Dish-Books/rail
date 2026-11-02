@@ -259,6 +259,17 @@ defmodule Rail.Pipeline.Schemas.FixPlanTest do
              } = FixPlan.calculate_ruling_changes(fix_plan, task, findings)
     end
 
+    test "a finding recommended New issue and then ruled Fix reads as was New issue, which nobody ruled", %{
+      fix_plan: fix_plan,
+      task: task,
+      findings: [send, tray, focus]
+    } do
+      findings = [send, tray, %{focus | recommendation: :new_issue, decision: :fix}]
+
+      assert %{unsent: [%{key: "composer-focus", was: :new_issue, now: :fix}]} =
+               FixPlan.calculate_ruling_changes(fix_plan, task, findings)
+    end
+
     test "nothing changes before a plan is saved against what was sent, once approved, or past Review", %{
       fix_plan: fix_plan,
       task: task,

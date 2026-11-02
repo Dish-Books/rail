@@ -1,14 +1,14 @@
 defmodule RailWeb.Components.FindingIssue do
   @moduledoc """
-  The card at the top of a finding ruled New issue: the issue Send files, as it will be filed, and once filed the
-  issue it became, linked in its tracker.
+  The card at the top of a finding ruled or recommended New issue: the issue a Send files, as it will be filed, and
+  once filed the issue it became, linked in its tracker.
   """
   use RailWeb, :html
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Finding
 
-  attr :finding, Finding, required: true, doc: "ruled New issue, its issue loaded"
+  attr :finding, Finding, required: true, doc: "ruled or recommended New issue, its issue loaded"
   attr :preview, :map, default: nil, doc: "`Rail.Pipeline.Schemas.Finding.calculate_issue/2`, until it is filed"
   attr :project_name, :string, required: true
 
@@ -60,19 +60,25 @@ defmodule RailWeb.Components.FindingIssue do
   end
 
   def finding_issue(assigns) do
-    assigns = assign(assigns, :priority, priority(assigns.preview.priority))
+    ruled? = assigns.finding.decision == :new_issue
+
+    assigns =
+      assigns
+      |> assign(:priority, priority(assigns.preview.priority))
+      |> assign(:heading, if(ruled?, do: "Filed when you send", else: "Filed if you rule New issue"))
+      |> assign(:label, if(ruled?, do: "The issue Send files", else: "The issue a New issue ruling files"))
 
     ~H"""
     <section
       id="finding-issue"
       data-qa="finding_issue"
       data-filed="false"
-      aria-label="The issue Send files"
+      aria-label={@label}
       class="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden"
     >
       <div class="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-[12px]">
         <.icon name="pi-plus-square-bold" class="size-3.5 text-slate-500 dark:text-slate-400" />
-        <span class="font-semibold text-slate-700 dark:text-slate-200">Filed when you send</span>
+        <span class="font-semibold text-slate-700 dark:text-slate-200">{@heading}</span>
         <span class="ml-auto min-w-0 wrap-anywhere text-slate-500 dark:text-slate-400">
           {@project_name} · Triage · {@priority}
         </span>
@@ -87,7 +93,7 @@ defmodule RailWeb.Components.FindingIssue do
         <div data-qa="finding_issue_description" class="wrap-anywhere">
           <.markdown
             content={@preview.description}
-            class="text-[12.5px] prose-p:my-1.5 prose-code:before:content-none prose-code:after:content-none"
+            class="text-[12.5px] prose-p:my-1.5 prose-ol:my-1.5 prose-li:my-0 prose-code:before:content-none prose-code:after:content-none"
           />
         </div>
       </div>

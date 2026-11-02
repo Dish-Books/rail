@@ -263,7 +263,11 @@ defmodule Rail.Pipeline.Schemas.FixPlan do
         do: %{
           key: finding.key,
           title: finding.title,
-          was: if(MapSet.member?(before, finding.key), do: :fix, else: not_fix(previous_ruling(finding))),
+          was:
+            if(MapSet.member?(before, finding.key),
+              do: :fix,
+              else: not_fix(previous_ruling(finding) || finding.recommendation)
+            ),
           now: if(MapSet.member?(now, finding.key), do: :fix, else: not_fix(finding.decision))
         }
   end

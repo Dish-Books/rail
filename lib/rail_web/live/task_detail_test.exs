@@ -234,7 +234,7 @@ defmodule RailWeb.Live.TaskDetailTest do
     assert has_element?(view, "#finding-view-only-send [data-qa=review_finding_state]", "Needs your call")
   end
 
-  # An unruled finding goes to the round on the review agent's recommendation, so Send does not wait on a ruling.
+  # An unruled finding recommended Fix goes to the round, so Send does not wait on a ruling.
   test "Send carries the findings to fix, unruled ones on their recommendation; ruling moves on to the next", %{
     conn: conn,
     task: task,
@@ -589,6 +589,71 @@ defmodule RailWeb.Live.TaskDetailTest do
     refute has_element?(view, "#decide-fix-send-twice")
     refute has_element?(view, "#decide-new_issue-send-twice")
     refute has_element?(view, "#review-tray-new-issue-send-twice")
+  end
+
+  test "a finding recommended New issue shows its card before any ruling, and ruling moves on like the other buttons", %{
+    conn: conn,
+    task: task,
+    code: code,
+    screen: screen
+  } do
+    stub(@clock, :monotonic_ms, fn -> 0 end)
+    recommended = Map.put(code, :recommendation, :new_issue)
+
+    {:ok, _first} = Pipeline.save_finding(task, Map.put(recommended, :key, "view-only-send"))
+    {:ok, _second} = Pipeline.save_finding(task, Map.put(screen, :key, "send-twice"))
+    {:ok, _third} = Pipeline.save_finding(task, Map.merge(recommended, %{key: "leaks-a-token", severity: :nit}))
+    {:ok, _pass} = Pipeline.save_review(task)
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    view |> element("#finding-view-only-send") |> render_click()
+    assert has_element?(view, "#finding-issue[data-filed=false]", "Filed if you rule New issue")
+    assert has_element?(view, "[data-qa=finding_recommendation]", "recommends New issue")
+
+    view |> element("#decide-new_issue-view-only-send") |> render_click()
+    assert has_element?(view, "#finding-send-twice[aria-current=true]")
+    refute has_element?(view, "#finding-issue")
+
+    view |> element("#finding-view-only-send") |> render_click()
+    assert has_element?(view, "#finding-issue[data-filed=false]", "Filed when you send")
+
+    view |> element("#finding-leaks-a-token") |> render_click()
+    assert has_element?(view, "#finding-issue", "Filed if you rule New issue")
+
+    stub(@clock, :monotonic_ms, fn -> 1_000 end)
+    view |> element("#decide-fix-leaks-a-token") |> render_click()
+    refute has_element?(view, "#finding-leaks-a-token[aria-current=true]")
+
+    view |> element("#finding-leaks-a-token") |> render_click()
+    assert has_element?(view, "#decide-fix-leaks-a-token[aria-pressed=true]")
+    refute has_element?(view, "#finding-issue")
+  end
+
+  test "the card of a finding recommended New issue stays through a fix round and goes past Review", %{
+    conn: conn,
+    task: task,
+    code: code
+  } do
+    recommended = code |> Map.put(:key, "view-only-send") |> Map.put(:recommendation, :new_issue)
+    {:ok, _finding} = Pipeline.save_finding(task, recommended)
+    {:ok, _pass} = Pipeline.save_review(task)
+
+    {:ok, _fixing} = Pipeline.update_task(task, %{stage: :engineer})
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    view |> element("#review-item-findings") |> render_click()
+    assert has_element?(view, "#finding-issue", "Filed if you rule New issue")
+
+    {:ok, _finalizing} = Pipeline.update_task(task, %{stage: :finalize})
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    view |> element("#review-item-findings") |> render_click()
+    assert has_element?(view, "[data-qa=finding_why]", "Why new issue")
+    refute has_element?(view, "#finding-issue")
+
+    {:ok, _merged} = Pipeline.update_task(task, %{stage: :merged})
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    view |> element("#review-item-findings") |> render_click()
+    assert has_element?(view, "[data-qa=finding_why]", "Why new issue")
+    refute has_element?(view, "#finding-issue")
   end
 
   test "a task that has left Review offers no + on its findings", %{conn: conn, task: task, code: code} do

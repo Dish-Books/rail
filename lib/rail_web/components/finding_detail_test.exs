@@ -177,6 +177,29 @@ defmodule RailWeb.Components.FindingDetailTest do
     assert doc |> Floki.find("[data-qa=finding_note]") |> Floki.text() =~ "You ruled New issue"
   end
 
+  test "an unruled finding recommended New issue shows the issue it would become, and no preview draws no card" do
+    finding = %{@finding | recommendation: :new_issue}
+
+    doc =
+      (&FindingDetail.finding_detail/1)
+      |> render_component(
+        [
+          finding: finding,
+          preview: %{title: "Send twice", description: "**Problem.** Sends twice.", priority: :medium},
+          project_name: "Rail"
+        ] ++ @attrs
+      )
+      |> Floki.parse_fragment!()
+
+    assert [_card] = Floki.find(doc, "#finding-issue[data-filed=false]")
+    assert doc |> Floki.find("[data-qa=finding_recommendation]") |> Floki.text() =~ "recommends New issue"
+    assert doc |> Floki.find("[data-qa=finding_why] dt") |> Floki.text() =~ "Why new issue"
+
+    doc = (&FindingDetail.finding_detail/1) |> render_component([finding: finding] ++ @attrs) |> Floki.parse_fragment!()
+
+    assert [] = Floki.find(doc, "#finding-issue")
+  end
+
   test "once filed, the header links the issue it became and the ruling buttons are gone" do
     issue = %Issue{
       identifier: "RAIL-152",

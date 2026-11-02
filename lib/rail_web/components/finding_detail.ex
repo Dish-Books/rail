@@ -34,7 +34,11 @@ defmodule RailWeb.Components.FindingDetail do
   attr :names, :map, default: %{}, doc: "who ruled, by user id"
   attr :viewer_id, :string, default: nil
   attr :suppressor, :any, default: nil
-  attr :preview, :map, default: nil, doc: "`Rail.Pipeline.Schemas.Finding.calculate_issue/2`, while ruled New issue"
+
+  attr :preview, :map,
+    default: nil,
+    doc: "`Rail.Pipeline.Schemas.Finding.calculate_issue/2`, while ruled or recommended New issue"
+
   attr :project_name, :string, default: nil
   attr :neighbours, :map, required: true
 
@@ -64,6 +68,7 @@ defmodule RailWeb.Components.FindingDetail do
       |> assign(:outcome, calculate_outcome(assigns.finding, assigns.running))
       # A finding with no commit, unfixed or fixed before Rail noted one, has none to name.
       |> assign(:show_fixed_in, is_binary(assigns.finding.fixed_in))
+      |> assign(:show_issue, is_map(assigns.preview) or is_binary(assigns.finding.issue_id))
 
     ~H"""
     <div
@@ -170,7 +175,7 @@ defmodule RailWeb.Components.FindingDetail do
           <%!-- The header does not scroll, so the title's comments open here, where any number of them fit. --%>
           <.under commenting={@commenting} piece={:title} caption="Title" qa="finding_title_comments" />
           <.finding_issue
-            :if={Finding.state(@finding) == :new_issue}
+            :if={@show_issue}
             finding={@finding}
             preview={@preview}
             project_name={@project_name}
@@ -242,7 +247,7 @@ defmodule RailWeb.Components.FindingDetail do
             </.field>
             <.field
               :if={@finding.why}
-              label={if @finding.recommendation == :skip, do: "Why skip", else: "Why fix"}
+              label={Finding.why_label(@finding)}
               qa="finding_why"
               commenting={@commenting}
               piece={:why}
@@ -258,9 +263,7 @@ defmodule RailWeb.Components.FindingDetail do
             class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"
           >
             <span class={["size-1.5 rounded-full", dot(@finding)]} />
-            {raised_by(@finding)} recommends {if @finding.recommendation == :skip,
-              do: "Don't fix",
-              else: "Fix"}
+            {raised_by(@finding)} recommends {Finding.recommendation_label(@finding)}
           </p>
 
           <div

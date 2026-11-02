@@ -56,8 +56,7 @@ defmodule Rail.Pipeline.Schemas.FindingComment do
   def calculate_piece(%Finding{} = finding, :where, nil), do: piece("Where", where(finding))
   def calculate_piece(%Finding{} = finding, :fix, nil), do: piece("Fix", finding.fix)
 
-  def calculate_piece(%Finding{recommendation: recommendation} = finding, :why, nil),
-    do: piece(if(recommendation == :skip, do: "Why skip", else: "Why fix"), finding.why)
+  def calculate_piece(%Finding{} = finding, :why, nil), do: piece(Finding.why_label(finding), finding.why)
 
   def calculate_piece(%Finding{} = finding, :rule, nil), do: piece("Rule", finding.rule)
 

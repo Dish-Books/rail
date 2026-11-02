@@ -80,6 +80,9 @@ defmodule Rail.Pipeline.Schemas.FindingCommentTest do
     assert %{label: "Why skip"} =
              FindingComment.calculate_piece(%{finding | recommendation: :skip}, :why, nil)
 
+    assert %{label: "Why new issue"} =
+             FindingComment.calculate_piece(%{finding | recommendation: :new_issue}, :why, nil)
+
     assert %{label: "Rule", quote: "A round is sent once."} = FindingComment.calculate_piece(finding, :rule, nil)
 
     assert %{label: "Where", quote: "lib/a.ex:3"} =

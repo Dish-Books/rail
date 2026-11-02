@@ -1288,8 +1288,13 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign(:filed, if(open?, do: filed(socket, selected), else: []))
     |> assign(:names, if(open?, do: names(socket, selected), else: %{}))
     |> assign(:suppressor, if(open?, do: suppressor(selected)))
-    # The issue a Send would file, read the way the filing reads it.
-    |> assign(:preview, if(Finding.awaiting_issue?(selected), do: Finding.calculate_issue(selected, socket.assigns.task)))
+    # The issue a Send would file, read the way the filing reads it. Nobody rules past Review, so none is offered there.
+    |> assign(
+      :preview,
+      if(socket.assigns.task.stage not in [:finalize, :merged] and Finding.previews_issue?(selected),
+        do: Finding.calculate_issue(selected, socket.assigns.task)
+      )
+    )
     |> assign_code(if(open?, do: selected))
   end
 
@@ -1640,7 +1645,7 @@ defmodule RailWeb.Live.TaskDetail do
     %{
       total: length(findings),
       undecided: Enum.count(findings, &Finding.undecided?/1),
-      # An unruled finding goes to the round on its recommendation, but is counted as still to rule.
+      # An unruled finding recommended Fix goes to the round, but is counted as still to rule.
       fix: Enum.count(findings, &(Finding.outstanding?(&1) and not Finding.undecided?(&1))),
       fixed: Enum.count(findings, &(&1.status == :fixed)),
       new_issues: Enum.count(findings, &(Finding.state(&1) == :new_issue)),

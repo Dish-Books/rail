@@ -451,8 +451,9 @@ defmodule Rail.Mcp.Utils.McpTools do
           },
           "recommendation" => %{
             "type" => "string",
-            "enum" => ["fix", "skip"],
-            "description" => "Whether you would fix it. Your advice; the human decides."
+            "enum" => ["fix", "skip", "new_issue"],
+            "description" =>
+              "Whether you would fix it, skip it or file it as a new issue. Your advice; the human decides."
           },
           "checklist_rule" => %{
             "type" => "string",

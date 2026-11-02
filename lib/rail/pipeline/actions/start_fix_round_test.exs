@@ -178,6 +178,37 @@ defmodule Rail.Pipeline.Actions.StartFixRoundTest do
     assert [%{finished_at: nil}] = Pipeline.read_review(task)
   end
 
+  # A filing cannot be undone, so a recommendation alone never files, and with nothing else to send the review waits.
+  test "a Send leaves a finding only recommended New issue unruled and unfiled", %{
+    task: task,
+    run: run,
+    crash: crash,
+    nit: nit
+  } do
+    {:ok, _ruled} = Pipeline.decide_finding(system_scope(), crash, :skip)
+    nit |> Ecto.Changeset.change(recommendation: :new_issue) |> Repo.update!()
+
+    assert {:error, {:undecided_findings, 1}} = Pipeline.start_fix_round(system_scope(), run)
+    assert %Finding{decision: nil, issue_id: nil} = Repo.reload!(nit)
+    assert [%{finished_at: nil}] = Pipeline.read_review(task)
+  end
+
+  test "a Send takes a finding recommended Fix to the round and leaves one recommended New issue out", %{
+    run: run,
+    nit: nit
+  } do
+    nit |> Ecto.Changeset.change(recommendation: :new_issue) |> Repo.update!()
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ ~s(<finding key="nil-crash")
+      refute prompt =~ ~s(key="a-nit")
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{status: :running}} = Pipeline.start_fix_round(system_scope(), run)
+    assert %Finding{decision: nil, issue_id: nil} = Repo.reload!(nit)
+  end
+
   # A chat turn that stopped or failed leaves the lead in progress with its error, which a finished review clears.
   test "Finish review after a stopped or failed chat turn saves the run done, with no error", %{
     task: task,

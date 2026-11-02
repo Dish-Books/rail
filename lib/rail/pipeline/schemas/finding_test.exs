@@ -41,6 +41,11 @@ defmodule Rail.Pipeline.Schemas.FindingTest do
     assert Finding.where(finding) == "lib/a.ex:3-9"
   end
 
+  test "the lead can recommend New issue", %{attrs: attrs} do
+    assert %{valid?: true, changes: %{recommendation: :new_issue}} =
+             Finding.raise_changeset(%Finding{}, %{attrs | "recommendation" => "new_issue"})
+  end
+
   test "a finding with no evidence and no place is refused naming both", %{attrs: attrs} do
     changeset = Finding.raise_changeset(%Finding{}, %{attrs | "evidence" => [], "places" => []})
 
@@ -176,6 +181,36 @@ defmodule Rail.Pipeline.Schemas.FindingTest do
     refute Finding.awaiting_issue?(%Finding{})
   end
 
+  # A filing cannot be undone, so the lead's advice alone neither goes to a round nor files.
+  test "a finding recommended New issue goes to no round, files nothing and still waits on a ruling" do
+    recommended = %Finding{recommendation: :new_issue}
+
+    refute Finding.outstanding?(recommended)
+    refute Finding.awaiting_issue?(recommended)
+    assert Finding.undecided?(recommended)
+  end
+
+  test "a finding previews its issue while ruled New issue and unfiled, or recommended so and unruled" do
+    assert Finding.previews_issue?(%Finding{recommendation: :new_issue})
+    assert Finding.previews_issue?(%Finding{recommendation: :fix, decision: :new_issue})
+
+    refute Finding.previews_issue?(%Finding{recommendation: :fix})
+    refute Finding.previews_issue?(%Finding{recommendation: :new_issue, decision: :fix})
+    refute Finding.previews_issue?(%Finding{recommendation: :new_issue, decision: :skip})
+    refute Finding.previews_issue?(%Finding{recommendation: :new_issue, decision: :new_issue, issue_id: "iss_1"})
+    refute Finding.previews_issue?(%Finding{recommendation: :new_issue, suppressed_by_id: "lrn_1"})
+    refute Finding.previews_issue?(%Finding{recommendation: :new_issue, status: :fixed})
+  end
+
+  test "a recommendation and its Why read by what the lead advised" do
+    assert Finding.recommendation_label(%Finding{recommendation: :fix}) == "Fix"
+    assert Finding.recommendation_label(%Finding{recommendation: :skip}) == "Don't fix"
+    assert Finding.recommendation_label(%Finding{recommendation: :new_issue}) == "New issue"
+    assert Finding.why_label(%Finding{recommendation: :fix}) == "Why fix"
+    assert Finding.why_label(%Finding{recommendation: :skip}) == "Why skip"
+    assert Finding.why_label(%Finding{recommendation: :new_issue}) == "Why new issue"
+  end
+
   test "the issue a finding is filed as carries what it says and links back to the task and its pull request" do
     task = %Task{
       issue: %Issue{identifier: "RAIL-131", url: "https://linear.app/x/issue/RAIL-131"},
@@ -225,6 +260,45 @@ defmodule Rail.Pipeline.Schemas.FindingTest do
     assert description =~ ~r/Raised in Review of \[RAIL-131\]\([^)]+\)\z/
     assert %{priority: :low} = Finding.calculate_issue(%{finding | severity: :minor}, task)
     assert %{priority: :low} = Finding.calculate_issue(%{finding | severity: :nit}, task)
+  end
+
+  test "the issue of a finding with several places numbers each after its Where, and one with a single place does not" do
+    task = %Task{issue: %Issue{identifier: "RAIL-131", url: "https://linear.app/x/issue/RAIL-131"}}
+
+    finding = %Finding{
+      kind: :code,
+      problem: "The sort resets.",
+      file: "lib/rail_web/live/issues_live.ex",
+      line: 214,
+      fix: "Reload with the sort in the filters.",
+      why: "It predates this branch.",
+      severity: :minor,
+      places: [
+        %FindingPlace{file: "lib/rail_web/live/issues_live.ex", line: 214, end_line: 226, label: "handle_info/2"},
+        %FindingPlace{file: "lib/rail/issues/list_issues.ex", line: 9},
+        %FindingPlace{screen: "Issues page", label: "The sort menu", steps: ["Sort by priority", "Wait for a sync"]}
+      ]
+    }
+
+    assert %{description: description} = Finding.calculate_issue(finding, task)
+
+    assert description =~
+             """
+             **Where.** `lib/rail_web/live/issues_live.ex:214`
+
+             Applies in 3 places:
+
+             1. `lib/rail_web/live/issues_live.ex:214-226`, handle_info/2
+             2. `lib/rail/issues/list_issues.ex:9`
+             3. Issues page, The sort menu
+                 1. Sort by priority
+                 2. Wait for a sync
+
+             **Fix.** Reload with the sort in the filters.
+             """
+
+    assert %{description: single} = Finding.calculate_issue(%{finding | places: Enum.take(finding.places, 1)}, task)
+    assert single =~ "**Where.** `lib/rail_web/live/issues_live.ex:214`\n\n**Fix.**"
   end
 
   test "a place reads covered or left by the latest fix, and neither before any fix" do

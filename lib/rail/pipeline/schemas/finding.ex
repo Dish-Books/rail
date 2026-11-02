@@ -24,7 +24,7 @@ defmodule Rail.Pipeline.Schemas.Finding do
   @kinds [:code, :screen]
   @raised_by [:code_reviewer, :explorer, :review_lead]
   @severities [:blocker, :major, :minor, :nit]
-  @recommendations [:fix, :skip]
+  @recommendations [:fix, :skip, :new_issue]
   @decisions [:fix, :skip, :new_issue]
   @statuses [:open, :fixed, :not_fixed]
   @key ~r/\A[a-z0-9][a-z0-9-]*\z/
@@ -185,6 +185,14 @@ defmodule Rail.Pipeline.Schemas.Finding do
   def awaiting_issue?(%__MODULE__{}), do: false
 
   @doc """
+  True when this finding's card shows the issue a Send would file: ruled New issue and not yet filed, or recommended
+  so with nobody having ruled it.
+  """
+  def previews_issue?(%__MODULE__{status: :fixed}), do: false
+  def previews_issue?(%__MODULE__{decision: nil, recommendation: :new_issue} = finding), do: not suppressed?(finding)
+  def previews_issue?(%__MODULE__{} = finding), do: awaiting_issue?(finding)
+
+  @doc """
   Where a finding sits right now, as the one word the list groups and colors by.
   """
   def state(%__MODULE__{status: :fixed}), do: :fixed
@@ -223,7 +231,7 @@ defmodule Rail.Pipeline.Schemas.Finding do
       Enum.join(
         [
           "**Problem.** #{finding.problem}",
-          "**Where.** #{where_markdown(finding)}",
+          "**Where.** #{where_markdown(finding)}#{places_markdown(finding)}",
           "**Fix.** #{finding.fix}",
           "**Why.** #{finding.why}",
           "Raised in Review of [#{issue.identifier}](#{issue.url})#{pr}"
@@ -243,11 +251,33 @@ defmodule Rail.Pipeline.Schemas.Finding do
   def severity_label(:minor), do: "Minor"
   def severity_label(:nit), do: "Nit"
 
+  def recommendation_label(%__MODULE__{recommendation: :skip}), do: "Don't fix"
+  def recommendation_label(%__MODULE__{recommendation: :new_issue}), do: "New issue"
+  def recommendation_label(%__MODULE__{}), do: "Fix"
+
+  def why_label(%__MODULE__{recommendation: :skip}), do: "Why skip"
+  def why_label(%__MODULE__{recommendation: :new_issue}), do: "Why new issue"
+  def why_label(%__MODULE__{}), do: "Why fix"
+
   defp where_markdown(%__MODULE__{kind: :code} = finding), do: "`#{where(finding)}`"
 
   defp where_markdown(%__MODULE__{steps: steps} = finding) do
     numbered = steps |> Enum.with_index(1) |> Enum.map_join("\n", fn {step, n} -> "#{n}. #{step}" end)
     "#{where(finding)}\n\n#{numbered}"
+  end
+
+  # A finding's own Where names one place, so one with several lists them all, as the note to the lead does.
+  defp places_markdown(%__MODULE__{places: [_first, _second | _rest] = places}) do
+    listed = places |> Enum.with_index(1) |> Enum.map_join("\n", fn {place, n} -> "#{n}. #{place_markdown(place)}" end)
+    "\n\nApplies in #{length(places)} places:\n\n#{listed}"
+  end
+
+  defp places_markdown(%__MODULE__{}), do: ""
+
+  defp place_markdown(%FindingPlace{file: file, label: label, steps: steps} = place) do
+    where = if is_binary(file), do: "`#{FindingPlace.describe(place)}`", else: FindingPlace.describe(place)
+    said = if is_binary(label), do: "#{where}, #{label}", else: where
+    steps |> Enum.with_index(1) |> Enum.reduce(said, fn {step, n}, text -> "#{text}\n    #{n}. #{step}" end)
   end
 
   defp issue_priority(:blocker), do: :high
