@@ -146,13 +146,15 @@ defmodule RailWeb.Components.CyclePanel do
     %{cycle: cycle, progress: progress} = assigns
     planned? = cycle.status == :upcoming
     show_chart = not planned? and cycle.scope_history != []
+    charted = with_today(cycle, progress, assigns.today)
 
     assigns =
       assigns
       |> assign(:planned, planned?)
       |> assign(:scope_change, if(planned?, do: "", else: change_label(progress.scope_change)))
       |> assign(:show_chart, show_chart)
-      |> assign(:days, if(show_chart, do: day_figures(cycle, progress, assigns.today), else: []))
+      |> assign(:charted, charted)
+      |> assign(:days, if(show_chart, do: day_figures(charted, List.first(cycle.scope_history)), else: []))
       |> assign(:chart_starts, Calendar.strftime(cycle.starts_on, "%b %-d"))
 
     ~H"""
@@ -210,7 +212,7 @@ defmodule RailWeb.Components.CyclePanel do
 
     <.cycle_chart
       :if={@show_chart}
-      cycle={@cycle}
+      cycle={@charted}
       label={@label}
       today={@today}
       id_prefix={@id_prefix}
@@ -364,17 +366,38 @@ defmodule RailWeb.Components.CyclePanel do
     end
   end
 
-  # Every day with history, ready to show on hover. Today reads the panel's own numbers, so leaving it changes nothing.
-  defp day_figures(cycle, progress, today) do
-    first = List.first(cycle.scope_history)
+  # A running cycle's lines end on today at the panel's own figures, whatever Linear holds for the day.
+  defp with_today(%{status: :running, scope_history: [_first | _later]} = cycle, progress, today) do
+    index = Date.diff(today, cycle.starts_on)
+
+    if index in 0..Date.diff(cycle.ends_on, cycle.starts_on) do
+      %{
+        cycle
+        | scope_history: place_today(cycle.scope_history, index, progress.scope),
+          started_history: place_today(cycle.started_history, index, progress.started),
+          completed_history: place_today(cycle.completed_history, index, progress.completed)
+      }
+    else
+      cycle
+    end
+  end
+
+  defp with_today(cycle, _progress, _today), do: cycle
+
+  defp place_today(values, index, figure) do
+    recorded = Enum.take(values, index)
+    Enum.concat([recorded, List.duplicate(List.last(values, 0), index - length(recorded)), [figure]])
+  end
+
+  # Every day the chart draws, ready to show on hover. `first` is Linear's, so today's change matches the panel's.
+  defp day_figures(cycle, first) do
     total = Date.diff(cycle.ends_on, cycle.starts_on) + 1
 
     for {scope, index} <- cycle.scope_history |> Enum.take(total) |> Enum.with_index() do
       date = Date.add(cycle.starts_on, index)
-      live? = cycle.status == :running and date == today
-      points = if live?, do: progress.scope, else: round(scope)
-      started = if live?, do: progress.started, else: round(Enum.at(cycle.started_history, index, 0))
-      completed = if live?, do: progress.completed, else: round(Enum.at(cycle.completed_history, index, 0))
+      points = round(scope)
+      started = round(Enum.at(cycle.started_history, index, 0))
+      completed = round(Enum.at(cycle.completed_history, index, 0))
 
       %{
         "data-date" => "#{Calendar.strftime(date, "%a %b %-d")} · day #{index + 1} of #{total}",
