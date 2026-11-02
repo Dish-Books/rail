@@ -77,7 +77,7 @@ defmodule RailWeb.Components.CyclePanelTest do
     assert ["50", "51", "57"] = Floki.attribute(doc, "rect[data-day]", "data-scope")
     assert ["+0%", "+2%", "+14%"] = Floki.attribute(doc, "rect[data-day]", "data-scope-change")
     assert ["pts", "pts", "pts"] = Floki.attribute(doc, "rect[data-day]", "data-scope-unit")
-    # Linear's day three says 0 started, and the panel's 43 is what today reads.
+    # Linear has no started figure for day three, and the panel's 43 is what today reads.
     assert ["6", "43", "43"] = Floki.attribute(doc, "rect[data-day]", "data-started")
     assert ["12%", "84%", "75%"] = Floki.attribute(doc, "rect[data-day]", "data-started-share")
     assert ["2", "23", "23"] = Floki.attribute(doc, "rect[data-day]", "data-completed")
@@ -119,8 +119,8 @@ defmodule RailWeb.Components.CyclePanelTest do
       (&CyclePanel.cycle_panel/1)
       |> render_component(
         cycle: %{cycle | scope_history: [+0.0, 1.0], started_history: [+0.0, 1.0], completed_history: [+0.0, 1.0]},
-        progress: %{progress | scope_change: nil},
-        today: ~D[2026-11-07]
+        progress: %{progress | scope: 1, started: 1, completed: 1, scope_change: nil},
+        today: ~D[2026-10-27]
       )
       |> Floki.parse_fragment!()
 
@@ -128,6 +128,173 @@ defmodule RailWeb.Components.CyclePanelTest do
     assert ["pts", "pt"] = Floki.attribute(doc, "rect[data-day]", "data-completed-unit")
     assert ["", ""] = Floki.attribute(doc, "rect[data-day]", "data-scope-change")
     assert [""] = doc |> Floki.find("[data-field=scopeChange]") |> Floki.attribute("data-today")
+  end
+
+  test "a running cycle's lines end on today at the panel's figures when Linear has none for today", %{
+    cycle: cycle,
+    progress: progress
+  } do
+    html =
+      render_component(&CyclePanel.cycle_panel/1,
+        cycle: cycle,
+        progress: %{progress | scope: 60, started: 44, completed: 25},
+        today: ~D[2026-10-28]
+      )
+
+    doc = Floki.parse_fragment!(html)
+
+    assert html =~ ~s(aria-label="Cycle 12: scope 60 points, started 44, completed 25")
+    assert ["52.0"] = doc |> Floki.find("#cycle-chart-today") |> Floki.attribute("x1")
+
+    assert ["M4.0,35.3 L28.0,24.4 L52.0,18.9", "M52.0,18.9 L316.0,18.9"] =
+             Floki.attribute(doc, "path[stroke='#94a3b8']", "d")
+
+    assert ["M4.0,117.1 L28.0,49.8 L52.0,48.0"] = Floki.attribute(doc, "path[stroke='#0d9488']", "d")
+    assert ["M4.0,124.4 L28.0,86.2 L52.0,82.5"] = Floki.attribute(doc, "path[stroke='#6366f1']", "d")
+    assert ["52.0", "52.0"] = Floki.attribute(doc, "circle[r='4']", "cx")
+    assert ["48.0", "82.5"] = Floki.attribute(doc, "circle[r='4']", "cy")
+
+    assert ["51", "57", "60"] = Floki.attribute(doc, "rect[data-day]", "data-scope")
+    assert ["6", "43", "44"] = Floki.attribute(doc, "rect[data-day]", "data-started")
+    assert ["2", "23", "25"] = Floki.attribute(doc, "rect[data-day]", "data-completed")
+  end
+
+  test "hovering today, the last day to reach, reads the panel's figures on the today rule", %{
+    cycle: cycle,
+    progress: progress
+  } do
+    doc =
+      (&CyclePanel.cycle_panel/1)
+      |> render_component(
+        cycle: cycle,
+        progress: %{progress | scope: 60, started: 44, completed: 25, scope_change: 18},
+        today: ~D[2026-10-28]
+      )
+      |> Floki.parse_fragment!()
+
+    assert ["0", "1", "2"] = Floki.attribute(doc, "rect[data-day]", "data-day")
+    assert ["Wed Oct 28 · day 3 of 14"] = Floki.attribute(doc, "rect[data-day='2']", "data-date")
+    [rule] = doc |> Floki.find("#cycle-chart-today") |> Floki.attribute("x1")
+    assert [^rule] = doc |> Floki.find("g[data-marker='2'] line") |> Floki.attribute("x1")
+    assert ["18.9", "48.0", "82.5"] = doc |> Floki.find("g[data-marker='2'] circle") |> Floki.attribute("cy")
+
+    for {field, attribute} <- [
+          {"scope", "data-scope"},
+          {"scopeUnit", "data-scope-unit"},
+          {"scopeChange", "data-scope-change"},
+          {"started", "data-started"},
+          {"startedUnit", "data-started-unit"},
+          {"startedShare", "data-started-share"},
+          {"completed", "data-completed"},
+          {"completedUnit", "data-completed-unit"},
+          {"completedShare", "data-completed-share"}
+        ] do
+      [shown] = doc |> Floki.find("[data-field=#{field}]") |> Floki.attribute("data-today")
+      assert [^shown] = Floki.attribute(doc, "rect[data-day='2']", attribute)
+    end
+  end
+
+  test "lines Linear stopped short of today run flat from their own last figure and move on today only", %{
+    cycle: cycle,
+    progress: progress
+  } do
+    doc =
+      (&CyclePanel.cycle_panel/1)
+      |> render_component(
+        cycle: %{
+          cycle
+          | scope_history: [51.0, 57.0, 58.0, 59.0],
+            started_history: [6.0, 43.0],
+            completed_history: []
+        },
+        progress: %{progress | scope: 62, started: 45, completed: 24},
+        today: ~D[2026-11-01]
+      )
+      |> Floki.parse_fragment!()
+
+    assert ["51", "57", "58", "59", "59", "59", "62"] = Floki.attribute(doc, "rect[data-day]", "data-scope")
+    assert ["6", "43", "43", "43", "43", "43", "45"] = Floki.attribute(doc, "rect[data-day]", "data-started")
+    assert ["0", "0", "0", "0", "0", "0", "24"] = Floki.attribute(doc, "rect[data-day]", "data-completed")
+    assert [_scope, _started, _completed] = doc |> Floki.find("g[data-marker='4'] circle") |> Floki.attribute("cy")
+  end
+
+  test "the panel's figure beats Linear's for today and a day past today goes, while an ended cycle keeps them", %{
+    cycle: cycle,
+    progress: progress
+  } do
+    ahead = %{cycle | scope_history: [51.0, 57.0, 70.0, 80.0], started_history: [6.0, 43.0, 44.0, 45.0]}
+
+    running =
+      (&CyclePanel.cycle_panel/1)
+      |> render_component(cycle: ahead, progress: %{progress | scope: 60, started: 30}, today: ~D[2026-10-27])
+      |> Floki.parse_fragment!()
+
+    assert ["51", "60"] = Floki.attribute(running, "rect[data-day]", "data-scope")
+    assert ["6", "30"] = Floki.attribute(running, "rect[data-day]", "data-started")
+
+    ended =
+      (&CyclePanel.cycle_panel/1)
+      |> render_component(cycle: %{ahead | status: :ended}, progress: %{progress | scope: 60}, today: ~D[2026-10-27])
+      |> Floki.parse_fragment!()
+
+    assert ["51", "57", "70", "80"] = Floki.attribute(ended, "rect[data-day]", "data-scope")
+    assert [] = Floki.find(ended, "#cycle-chart-today")
+  end
+
+  test "on a cycle's first day, hovering today reads the panel's change, measured from Linear's first figure", %{
+    cycle: cycle,
+    progress: progress
+  } do
+    doc =
+      (&CyclePanel.cycle_panel/1)
+      |> render_component(
+        cycle: %{cycle | scope_history: [50.0], started_history: [6.0], completed_history: [2.0]},
+        progress: %{progress | scope: 60, scope_change: 20},
+        today: ~D[2026-10-26]
+      )
+      |> Floki.parse_fragment!()
+
+    assert ["+20%"] = Floki.attribute(doc, "rect[data-day]", "data-scope-change")
+    assert ["+20%"] = doc |> Floki.find("[data-field=scopeChange]") |> Floki.attribute("data-today")
+  end
+
+  test "the target ends on the live scope", %{cycle: cycle, progress: progress} do
+    doc =
+      (&CyclePanel.cycle_panel/1)
+      |> render_component(
+        cycle: %{cycle | scope_history: [100.0, 57.0]},
+        progress: %{progress | scope: 60},
+        today: ~D[2026-10-27]
+      )
+      |> Floki.parse_fragment!()
+
+    assert [target] = Floki.attribute(doc, "path[data-line=target]", "d")
+    assert String.ends_with?(target, "L316.0,62.5")
+  end
+
+  test "a running cycle with today outside its dates keeps what Linear recorded", %{cycle: cycle, progress: progress} do
+    for today <- [~D[2026-10-25], ~D[2026-11-09]] do
+      doc =
+        (&CyclePanel.cycle_panel/1)
+        |> render_component(cycle: cycle, progress: %{progress | scope: 60}, today: today)
+        |> Floki.parse_fragment!()
+
+      assert ["51", "57"] = Floki.attribute(doc, "rect[data-day]", "data-scope")
+      assert [] = Floki.find(doc, "#cycle-chart-today")
+    end
+  end
+
+  test "a running cycle with no history still says when the chart starts", %{cycle: cycle, progress: progress} do
+    html =
+      render_component(&CyclePanel.cycle_panel/1,
+        cycle: %{cycle | scope_history: [], started_history: [], completed_history: []},
+        progress: progress,
+        today: ~D[2026-10-28]
+      )
+
+    assert html =~ "The chart starts on Oct 26."
+    refute html =~ ~s(id="cycle-chart")
+    refute html =~ "data-day="
   end
 
   test "a picked owner reads Clear filter and dims the others", %{cycle: cycle, progress: progress} do

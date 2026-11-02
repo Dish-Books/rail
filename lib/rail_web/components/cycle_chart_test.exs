@@ -104,7 +104,7 @@ defmodule RailWeb.Components.CycleChartTest do
     assert_in_delta y.(26), full, 0.1
 
     assert ["61.8", "142.7", "223.6", "304.4"] = Floki.attribute(doc, "rect[fill='url(#cycle-hatch)']", "x")
-    assert ["23.1", "23.1", "23.1", "11.6"] = Floki.attribute(doc, "rect[fill='url(#cycle-hatch)']", "width")
+    assert ["17.3", "17.3", "17.3", "11.6"] = Floki.attribute(doc, "rect[fill='url(#cycle-hatch)']", "width")
     assert doc |> Floki.find("#cycle-chart-legend") |> Floki.text() =~ "Target"
     assert doc |> Floki.find("#cycle-chart-legend") |> Floki.text() =~ "Weekend"
   end
@@ -125,7 +125,89 @@ defmodule RailWeb.Components.CycleChartTest do
       |> Floki.parse_fragment!()
 
     assert ["4.0"] = Floki.attribute(doc, "rect[fill='url(#cycle-hatch)']", "x")
-    assert ["52.0"] = Floki.attribute(doc, "rect[fill='url(#cycle-hatch)']", "width")
+    assert ["26.0"] = Floki.attribute(doc, "rect[fill='url(#cycle-hatch)']", "width")
+  end
+
+  test "hovering anywhere in the hatching reads a Saturday or a Sunday, on every weekend of the cycle" do
+    dates = Enum.map(0..27, &Date.add(~D[2026-10-26], &1))
+    figures = List.duplicate(10.0, 28)
+
+    cycle = %{
+      starts_on: ~D[2026-10-26],
+      ends_on: ~D[2026-11-22],
+      status: :ended,
+      scope_history: figures,
+      started_history: figures,
+      completed_history: figures
+    }
+
+    days = for date <- dates, do: %{"data-weekday" => Calendar.strftime(date, "%a")}
+
+    doc =
+      (&CycleChart.cycle_chart/1)
+      |> render_component(cycle: cycle, label: "Cycle 14", today: ~D[2026-12-01], days: days)
+      |> Floki.parse_fragment!()
+
+    spans =
+      for rect <- Floki.find(doc, "rect[data-day], rect[fill='url(#cycle-hatch)']") do
+        [left] = Floki.attribute(rect, "x")
+        [width] = Floki.attribute(rect, "width")
+        left = String.to_float(left)
+        {Floki.attribute(rect, "data-weekday"), left, left + String.to_float(width)}
+      end
+
+    bands = for {[], left, right} <- spans, do: {left, right}
+    assert [_first, _second, _third, {304.4, band_edge}] = bands
+    assert_in_delta band_edge, 316.0, 0.1
+
+    # A tenth is what rounding each edge to one decimal can leave of an overlap.
+    for {band_left, band_right} <- bands do
+      read =
+        for {[weekday], left, right} <- spans,
+            left < band_right - 0.1 and right > band_left + 0.1,
+            uniq: true,
+            do: weekday
+
+      assert ["Sat", "Sun"] = read
+    end
+  end
+
+  test "the today rule sits on a band over a weekend and clear of every band on a Monday" do
+    for {today, weekend?} <- [
+          {~D[2026-10-31], true},
+          {~D[2026-11-01], true},
+          {~D[2026-11-02], false},
+          {~D[2026-11-22], true}
+        ] do
+      cycle = %{
+        starts_on: ~D[2026-10-26],
+        ends_on: ~D[2026-11-22],
+        status: :running,
+        scope_history: [10.0],
+        started_history: [],
+        completed_history: []
+      }
+
+      doc =
+        (&CycleChart.cycle_chart/1)
+        |> render_component(cycle: cycle, label: "Cycle 14", today: today)
+        |> Floki.parse_fragment!()
+
+      [rule] = doc |> Floki.find("#cycle-chart-today") |> Floki.attribute("x1")
+      rule = String.to_float(rule)
+
+      on_band? =
+        doc
+        |> Floki.find("rect[fill='url(#cycle-hatch)']")
+        |> Enum.any?(fn band ->
+          [left] = Floki.attribute(band, "x")
+          [width] = Floki.attribute(band, "width")
+          left = String.to_float(left)
+          rule >= left and rule <= left + String.to_float(width) + 0.1
+        end)
+
+      assert on_band? == weekend?
+    end
   end
 
   test "the hatch takes the prefix, so a closed panel beside it cannot take the pattern away", %{cycle: cycle} do

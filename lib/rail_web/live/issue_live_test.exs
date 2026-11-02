@@ -397,6 +397,72 @@ defmodule RailWeb.IssueLiveTest do
     assert_redirect(view, ~p"/tasks/#{task_id}")
   end
 
+  test "a second page on an issue shows the new owner and drops Start when someone starts it", %{
+    conn: conn,
+    project: project,
+    user: user
+  } do
+    user |> Ecto.Changeset.change(linear_user_id: "lin_usr_issue_live") |> Repo.update!()
+
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_two_tabs",
+        identifier: "IPG-20",
+        title: "Open in two tabs",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+    assert {:ok, starting, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    assert {:ok, second, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    allow(Git, self(), starting.pid)
+    allow(Tools, self(), starting.pid)
+
+    render_async(starting)
+    render_async(second)
+    assert has_element?(second, "#issue-owner", "Unassigned")
+    assert has_element?(second, "#issue-start-plan")
+
+    starting |> element("#issue-start-plan") |> render_click()
+
+    assert has_element?(second, "#issue-owner", "Issue Live")
+    refute has_element?(second, "#issue-start-plan")
+    assert has_element?(second, "#issue-task-link")
+  end
+
+  test "a second page on an issue that starts at Engineer reads the run, not Queued", %{conn: conn, project: project} do
+    issue =
+      %Issue{skipped_steps: [:product, :design, :architect]}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_two_tabs_engineer",
+        identifier: "IPG-21",
+        title: "Open in two tabs at Engineer",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    stub(Git, :branch_fingerprint, fn _worktree_path -> nil end)
+    expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+    assert {:ok, starting, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    assert {:ok, second, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    allow(Git, self(), starting.pid)
+    allow(Tools, self(), starting.pid)
+
+    render_async(starting)
+    render_async(second)
+    starting |> element("#issue-start-plan") |> render_click()
+
+    assert has_element?(second, "#issue-task-link", "Implement running")
+  end
+
   test "a stale page whose issue has since started opens the task and leaves its run alone", %{
     conn: conn,
     project: project
@@ -416,7 +482,7 @@ defmodule RailWeb.IssueLiveTest do
     render_async(view)
 
     {:ok, task} = issue |> Repo.preload(:project) |> Pipeline.create_task(:plan)
-    reject(&Pipeline.start_task/1)
+    reject(&Pipeline.start_task/2)
     allow(Pipeline, self(), view.pid)
 
     view |> element("#issue-start-plan") |> render_click()
@@ -598,6 +664,58 @@ defmodule RailWeb.IssueLiveTest do
 
     assert has_element?(view, "#issue-status", "Duplicate")
     refute has_element?(view, "#issue-start")
+  end
+
+  test "a status picked in Properties shows at once, in a second tab too, and reaches Linear", %{
+    conn: conn,
+    project: project
+  } do
+    %Issue{id: issue_id} =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_pick",
+        identifier: "IPG-30",
+        title: "Pick a status",
+        state: :in_progress,
+        state_name: "In Progress"
+      })
+      |> Repo.insert!()
+
+    stub(Issues, :get_statuses, fn _scope, _project ->
+      {:ok, [%{id: "st_review", name: "In Review", state: :in_review}]}
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/issues/IPG-30")
+    {:ok, other_view, _html} = live(conn, ~p"/issues/IPG-30")
+    Req.Test.allow(Rail.Linear, self(), view.pid)
+
+    view |> element("#issue-status") |> render_click()
+    render_async(view)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"id" => "lin_page_pick", "input" => %{"stateId" => "st_review"}} = Jason.decode!(body)["variables"]
+
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueUpdate" => %{
+            "success" => true,
+            "issue" => %{
+              "state" => %{"name" => "In Review", "type" => "started"},
+              "updatedAt" => "2026-11-01T10:00:00.000Z"
+            }
+          }
+        }
+      })
+    end)
+
+    view |> element("#issue-status-picker-#{issue_id}-status-st_review") |> render_click()
+
+    assert has_element?(view, "#issue-status", "In Review")
+    assert has_element?(other_view, "#issue-status", "In Review")
+    assert %Issue{state: :in_progress, state_name: "In Review"} = Repo.get!(Issue, issue_id)
+    refute_enqueued(worker: SyncIssue)
   end
 
   test "an open page follows Linear closing its issue and stops offering to start it", %{

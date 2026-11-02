@@ -14,6 +14,7 @@ defmodule Rail.Workflows.Workers.StartWorkflowTask do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Scope
 
   @impl Oban.Worker
   def backoff(%Oban.Job{attempt: attempt}), do: attempt * 120
@@ -22,7 +23,7 @@ defmodule Rail.Workflows.Workers.StartWorkflowTask do
   def perform(%Oban.Job{args: %{"issue_id" => issue_id}}) do
     with {:ok, %Issue{task: nil} = issue} <- Issues.get_issue(issue_id, preload: [:project, :task]),
          false <- Issue.finished_state?(issue.state),
-         result = Pipeline.start_task(issue),
+         result = Pipeline.start_task(Scope.for_system(), issue),
          broadcast_workflows_changed(issue.project),
          {:error, reason} <- result,
          # Retried only while nothing was committed; a spawn refused after the task exists is not.

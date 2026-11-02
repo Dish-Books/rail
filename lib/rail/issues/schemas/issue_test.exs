@@ -363,6 +363,13 @@ defmodule Rail.Issues.Schemas.IssueTest do
       assert :in_review = Issue.calculate_shown_state(%Issue{state: :in_review})
     end
 
+    test "calculate_status_name/1 is the tracker's name, or else Rail's label" do
+      assert "Waiting on deploy" =
+               Issue.calculate_status_name(%Issue{state: :in_progress, state_name: "Waiting on deploy"})
+
+      assert "In Progress" = Issue.calculate_status_name(%Issue{state: :in_progress, state_name: nil})
+    end
+
     test "only unfinished blockers are open" do
       entries = for state <- [:todo, :done, :canceled, :duplicate, :in_progress], do: %{issue: %Issue{state: state}}
 

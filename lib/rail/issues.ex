@@ -3,14 +3,16 @@ defmodule Rail.Issues do
   Context boundary for issues, tracked in Linear or GitHub Issues.
 
   Local edits write the issue and `Rail.Issues.Workers.SyncIssue` pushes them to
-  the tracker, through the project's `Rail.Issues.Tracker`. Each tracker tells Rail
-  about its own changes through a webhook.
+  the tracker, through the project's `Rail.Issues.Tracker`. A person's status change
+  goes the other way: the tracker hears first and the row follows its answer. Each
+  tracker tells Rail about its own changes through a webhook.
   """
 
   alias Rail.Issues.Actions
 
   defdelegate list_issues(opts \\ []), to: Actions.ListIssues
   defdelegate get_cycles(project), to: Actions.GetCycles
+  defdelegate get_statuses(scope, project), to: Actions.GetStatuses
   defdelegate get_blockers(issues), to: Actions.GetBlockers
   defdelegate get_cycle_progress(project, cycle), to: Actions.GetCycleProgress
   defdelegate get_issue(id, opts \\ []), to: Actions.GetIssue
@@ -20,6 +22,7 @@ defmodule Rail.Issues do
   defdelegate link_pull_request(scope, issue), to: Actions.LinkPullRequest
   defdelegate advance_issue_state(issue), to: Actions.AdvanceIssueState
   defdelegate reset_issue_state(issue, state), to: Actions.ResetIssueState
+  defdelegate set_issue_status(scope, issue, status), to: Actions.SetIssueStatus
 
   defdelegate sync_issues(project), to: Actions.SyncIssues
   defdelegate import_issue(project, identifier), to: Actions.ImportIssue

@@ -13,8 +13,10 @@ defmodule RailWeb.Components.IssueCard do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Workflows.Schemas.Workflow
+  alias RailWeb.Components.StatusPicker
 
   attr :issue, :map, required: true
+  attr :current_scope, :any, required: true
   attr :task, :map, default: nil
   attr :run, :any, default: nil
   # A parent can show more than once on a page, so each row brings its own key; it defaults to the issue's id.
@@ -82,13 +84,22 @@ defmodule RailWeb.Components.IssueCard do
       </span>
 
       <span
+        :if={@dimmed}
         data-qa="issue-status-badge"
-        title={status_label(@issue)}
+        title={Issue.calculate_status_name(@issue)}
         class="flex items-center justify-center w-4 shrink-0"
       >
         <.status_icon state={Issue.calculate_shown_state(@issue)} />
-        <span class="sr-only">{status_label(@issue)}</span>
+        <span class="sr-only">{Issue.calculate_status_name(@issue)}</span>
       </span>
+
+      <.live_component
+        :if={not @dimmed}
+        module={StatusPicker}
+        id={"status-picker-#{@key}"}
+        issue={@issue}
+        current_scope={@current_scope}
+      />
 
       <span class="flex-1 min-w-0 flex items-center gap-1.5">
         <span
@@ -233,7 +244,4 @@ defmodule RailWeb.Components.IssueCard do
   end
 
   defp priority_label(priority), do: Issue.priority_label(priority) || "Medium"
-
-  # Linear's own name first, as the issue page shows it, since several Linear states share one Rail state.
-  defp status_label(%{state_name: state_name, state: state}), do: state_name || Issue.state_label(state) || "Triage"
 end

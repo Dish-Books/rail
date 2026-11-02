@@ -14,8 +14,8 @@ defmodule RailWeb.Utils.StartIssue do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Scope
 
-  # Read again rather than trusted from the page: the id comes from the browser, `start_task/1` takes no scope, and a
-  # start from a stale page opens the task it finds.
+  # Read again rather than trusted from the page: the id comes from the browser, and a start from a stale page opens
+  # the task it finds.
   def start_issue(socket, issue_id, reload) do
     scope = socket.assigns.current_scope
 
@@ -29,7 +29,7 @@ defmodule RailWeb.Utils.StartIssue do
           scope |> Pipeline.adopt_pull_request(issue) |> finish(socket, reload, &adopt_error/1)
 
         true ->
-          issue |> Pipeline.start_task() |> finish(socket, reload, &start_error/1)
+          scope |> Pipeline.start_task(issue) |> finish(socket, reload, &start_error/1)
       end
     else
       _gone_or_refused -> reload.(socket)

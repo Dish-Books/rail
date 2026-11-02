@@ -559,6 +559,60 @@ defmodule RailWeb.TaskLiveTest do
     assert Repo.get!(Issue, task.issue_id).owner_user_id == scope.user.id
   end
 
+  test "a person who started an issue finds themselves its owner, with no Claim", %{
+    conn: conn,
+    project: project,
+    scope: scope
+  } do
+    starter = scope.user |> Ecto.Changeset.change(linear_user_id: "lin_usr_task_live") |> Repo.update!()
+
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_task_live_started",
+        identifier: "TLV-20",
+        title: "Started from its issue page",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+    {:ok, %Task{id: task_id}} = Pipeline.start_task(Scope.for_user(starter), issue)
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task_id}")
+
+    refute has_element?(view, "#claim-task")
+  end
+
+  test "a person who never linked Linear starts the issue and the task page still offers Claim", %{
+    conn: conn,
+    project: project,
+    scope: scope
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_task_live_unlinked",
+        identifier: "TLV-21",
+        title: "Started by somebody unlinked",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+    {:ok, %Task{id: task_id}} = Pipeline.start_task(scope, issue)
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task_id}")
+
+    assert has_element?(view, "#claim-task")
+  end
+
   test "claiming an issue somebody claimed since the page loaded says so", %{
     conn: conn,
     task: task,
@@ -1767,6 +1821,42 @@ defmodule RailWeb.TaskLiveTest do
 
     assert has_element?(view, "#issue-comments", "From the task")
     assert has_element?(view, "#task-page")
+  end
+
+  test "the Issue tab changes the status from Properties and leaves the task where it is", %{
+    conn: conn,
+    task: %{id: task_id, stage: stage, issue_id: issue_id} = task
+  } do
+    stub(Issues, :get_statuses, fn _scope, _project ->
+      {:ok, [%{id: "st_review", name: "In Review", state: :in_review}]}
+    end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=issue")
+    Req.Test.allow(Rail.Linear, self(), view.pid)
+
+    view |> element("#issue-status") |> render_click()
+    render_async(view)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueUpdate" => %{
+            "success" => true,
+            "issue" => %{
+              "state" => %{"name" => "In Review", "type" => "started"},
+              "updatedAt" => "2026-11-01T10:00:00.000Z"
+            }
+          }
+        }
+      })
+    end)
+
+    view |> element("#issue-status-picker-#{issue_id}-status-st_review") |> render_click()
+
+    assert has_element?(view, "#issue-status", "In Review")
+    assert has_element?(view, "#task-page")
+    assert %Issue{state_name: "In Review"} = Repo.get!(Issue, issue_id)
+    assert %Task{id: ^task_id, stage: ^stage} = Repo.get!(Task, task_id)
   end
 
   test "a tab with no issue loaded changes nothing on an owner or comment event", %{

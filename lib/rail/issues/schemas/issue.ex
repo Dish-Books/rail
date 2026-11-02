@@ -256,6 +256,9 @@ defmodule Rail.Issues.Schemas.Issue do
 
   def calculate_shown_state(%__MODULE__{state: state}), do: state
 
+  @doc "The tracker's name for the issue's status, or Rail's label for its state when the tracker gave none."
+  def calculate_status_name(%__MODULE__{state_name: name, state: state}), do: name || state_label(state)
+
   @doc "The entries of a blocked-by list whose issue is not finished yet."
   def calculate_open_blockers(entries) when is_list(entries), do: Enum.reject(entries, &finished_state?(&1.issue.state))
 
