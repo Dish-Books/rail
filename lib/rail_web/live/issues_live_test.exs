@@ -6,6 +6,7 @@ defmodule RailWeb.IssuesLiveTest do
   import Phoenix.LiveViewTest
   import Rail.Pipeline.Utils.BuildTask
 
+  alias Phoenix.LiveView.Socket
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.IssueStage
@@ -26,6 +27,7 @@ defmodule RailWeb.IssuesLiveTest do
   alias Rail.Users.Schemas.User
   alias Rail.Workflows.Schemas.Workflow
   alias Rail.Workflows.Schemas.WorkflowDefinition
+  alias RailWeb.IssuesLive
 
   setup do
     # A role's prompt is read from the project's clone, which another test may have made, so reading it here
@@ -2296,17 +2298,11 @@ defmodule RailWeb.IssuesLiveTest do
       assert {:error, {:live_redirect, %{to: ^to}}} = view |> element("#issue-card-#{working.id}") |> render_click()
     end
 
-    test "the plain list does not reload on a run's change, which it does not show", %{
-      conn: conn,
-      insert: insert
-    } do
-      {:ok, view, _html} = live(conn, ~p"/issues")
-      render_async(view)
+    # Called directly: a live page also reloads on any other test's broadcast, so it could not show this.
+    test "the plain list does not reload on a run's change, which it does not show" do
+      socket = %Socket{assigns: %{__changed__: %{}, view: :list}}
 
-      late = insert.("ROW-L", %{})
-      send(view.pid, {:pipeline_changed, "tsk_elsewhere"})
-
-      refute render(view) =~ late.identifier
+      assert {:noreply, ^socket} = IssuesLive.handle_info({:pipeline_changed, "tsk_elsewhere"}, socket)
     end
   end
 
