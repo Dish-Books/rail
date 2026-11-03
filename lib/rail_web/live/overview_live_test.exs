@@ -1002,6 +1002,18 @@ defmodule RailWeb.OverviewLiveTest do
       assert_redirect(view, ~p"/project-selection?#{[project_id: project.id, return_to: "/"]}")
     end
 
+    test "the Rail mark on Everyone's view opens My work, as the Overview icon does", %{conn: conn} do
+      assert {:ok, view, _html} = live(conn, ~p"/?everyone=true")
+
+      assert {:error, {:live_redirect, %{to: "/"}}} = view |> element("#nav-overview") |> render_click()
+      assert {:ok, view, _html} = live(conn, ~p"/?everyone=true")
+      assert {:error, {:live_redirect, %{to: "/"}}} = redirect = view |> element("#app-brand") |> render_click()
+
+      assert {:ok, view, _html} = follow_redirect(redirect, conn)
+      assert has_element?(view, "#overview-view-mine[aria-pressed='true']")
+      assert has_element?(view, "#nav-overview[data-active='true']")
+    end
+
     test "the chosen view is the link, so a reload or a shared link opens on it", %{
       conn: conn,
       rival: rival,
