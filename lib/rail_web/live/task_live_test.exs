@@ -2265,6 +2265,31 @@ defmodule RailWeb.TaskLiveTest do
       end
     end
 
+    test "a pick while Plan is working moves every page open on the task to the picked design", %{
+      conn: conn,
+      task: task,
+      run: run,
+      save_ticket: save_ticket,
+      save_options: save_options
+    } do
+      save_ticket.()
+      save_options.(["cards", "table", "timeline"])
+      {:ok, _working} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+
+      assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      one |> element("#design-tab-table") |> render_click()
+      one |> element("#pick-design-table") |> render_click()
+
+      for view <- [one, two] do
+        _settled = render(view)
+        refute has_element?(view, "[id^='pick-design-']")
+        refute has_element?(view, "[role='tablist'][aria-label='Design options']")
+        assert has_element?(view, ~s(iframe[id^='design-page-table-'][src*="comments=1"]))
+      end
+    end
+
     test "a run starting, stopping or failing keeps the ticket, the design and the plan on the page", %{
       conn: conn,
       task: task,
