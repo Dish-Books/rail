@@ -28,8 +28,12 @@ defmodule RailWeb.Utils.StageLabel do
   # No role runs at merged, so there is no run to say anything; the task is done.
   def stage_label(%Task{stage: :merged}, _run), do: "Merged"
 
-  # Finalize waits on people, not on the run, so a run a comment resumed there does not change what it says.
-  def stage_label(%Task{stage: :finalize} = task, _run), do: task |> Task.finalize_state() |> finalize_label()
+  # Finalize waits on people, so it says where it stands there, unless a comment resumed its run, which is at work.
+  def stage_label(%Task{stage: :finalize} = task, run) do
+    if finalize_run_working?(task, run),
+      do: run_label(task, run),
+      else: task |> Task.finalize_state() |> finalize_label()
+  end
 
   # A split parent's work is its children's, so all it says of itself is that its plan was approved.
   def stage_label(%Task{stage: :split}, _run), do: "Plan approved"
@@ -54,20 +58,7 @@ defmodule RailWeb.Utils.StageLabel do
     end
   end
 
-  # Read off its status before the state it shares with a run waiting for a sandbox.
-  def stage_label(%Task{} = task, %Run{status: :waiting_for_usage}), do: "#{Task.stage_label(task)} waiting for usage"
-
-  def stage_label(%Task{} = task, run) do
-    case Run.state(run) do
-      :queued -> "Queued for #{Task.stage_label(task)}"
-      :running -> "#{Task.stage_label(task)} running"
-      :waiting -> "#{Task.stage_label(task)} waiting for resources"
-      :blocked -> "#{Task.stage_label(task)} needs an answer"
-      :failed -> "#{Task.stage_label(task)} failed"
-      :stopped -> stopped_label(task, run)
-      :done -> approval_label(task)
-    end
-  end
+  def stage_label(%Task{} = task, run), do: run_label(task, run)
 
   @doc "What a task at Finalize says of itself in `state`, `Task.finalize_state/1`'s."
   def finalize_label(:not_ready), do: "Ready to finalize"
@@ -75,6 +66,15 @@ defmodule RailWeb.Utils.StageLabel do
   def finalize_label(:merging), do: "Merging"
   def finalize_label(:refused), do: "Merge refused"
   def finalize_label(:merged), do: "Merged"
+
+  @doc """
+  True when `task` is at Finalize, not yet merging, and `run` is at work on it: resumed by a comment and running,
+  waiting to, or asking a question. Finalize then reads as the run, not as the people it otherwise waits on.
+  """
+  def finalize_run_working?(%Task{stage: :finalize} = task, run),
+    do: Task.finalize_state(task) in [:not_ready, :ready] and Run.state(run) in [:running, :waiting, :blocked]
+
+  def finalize_run_working?(_task, _run), do: false
 
   @doc """
   What the human is being asked to read, for a stage that has finished.
@@ -183,6 +183,21 @@ defmodule RailWeb.Utils.StageLabel do
 
   defp chat_run?(%Run{role: %Role{stage: stage}, task: %Task{stage: :plan}}), do: stage == :plan
   defp chat_run?(%Run{role: %Role{stage: stage}}), do: stage == :review_lead
+
+  # Read off its status before the state it shares with a run waiting for a sandbox.
+  defp run_label(%Task{} = task, %Run{status: :waiting_for_usage}), do: "#{Task.stage_label(task)} waiting for usage"
+
+  defp run_label(%Task{} = task, run) do
+    case Run.state(run) do
+      :queued -> "Queued for #{Task.stage_label(task)}"
+      :running -> "#{Task.stage_label(task)} running"
+      :waiting -> "#{Task.stage_label(task)} waiting for resources"
+      :blocked -> "#{Task.stage_label(task)} needs an answer"
+      :failed -> "#{Task.stage_label(task)} failed"
+      :stopped -> stopped_label(task, run)
+      :done -> approval_label(task)
+    end
+  end
 
   # A custom stage moves on only by approval, so its stopped agent waits on a person either way.
   defp stopped_label(%Task{stage: :custom} = task, run) do

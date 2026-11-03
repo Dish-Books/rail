@@ -162,17 +162,29 @@ defmodule RailWeb.Utils.StageLabelTest do
     assert stage_label(task, done) == "Review the plan"
   end
 
-  # Finalize waits on people, so a run a comment resumed there does not change what the task says.
-  test "a task at Finalize reads where it stands there, whatever its Review run is doing" do
+  test "a task at Finalize reads where it stands there while its Review run is idle" do
     now = DateTime.utc_now()
 
-    for run <- [nil, %Run{status: :running}, %Run{status: :finished, stage_outcome: :done}] do
+    for run <- [nil, %Run{status: :finished, stage_outcome: :done}, %Run{status: :finished, error: "Gave up."}] do
       assert stage_label(%Task{stage: :finalize}, run) == "Ready to finalize"
       assert stage_label(%Task{stage: :finalize, marked_ready_at: now}, run) == "Ready for tech lead"
       assert stage_label(%Task{stage: :finalize, marked_ready_at: now, merge_started_at: now}, run) == "Merging"
       assert stage_label(%Task{stage: :finalize, marked_ready_at: now, merge_error: "No"}, run) == "Merge refused"
       assert stage_label(%Task{stage: :merged, merged_at: now}, run) == "Merged"
     end
+  end
+
+  test "a task at Finalize whose run a comment resumed reads as that run until it is done, unless it is merging" do
+    now = DateTime.utc_now()
+    running = %Run{status: :running, stage_outcome: :done}
+
+    assert stage_label(%Task{stage: :finalize}, running) == "Finalize running"
+    assert stage_label(%Task{stage: :finalize, marked_ready_at: now}, running) == "Finalize running"
+    assert stage_label(%Task{stage: :finalize}, %Run{status: :waiting_for_resources}) == "Finalize waiting for resources"
+    assert stage_label(%Task{stage: :finalize}, %Run{status: :waiting_for_usage}) == "Finalize waiting for usage"
+    assert stage_label(%Task{stage: :finalize}, %Run{status: :blocked_on_input}) == "Finalize needs an answer"
+    assert stage_label(%Task{stage: :finalize, marked_ready_at: now, merge_started_at: now}, running) == "Merging"
+    assert stage_label(%Task{stage: :merged, merged_at: now}, running) == "Merged"
   end
 
   test "a custom stage reads by its name, and once its agent stops waits on a person's Approve or on its file" do

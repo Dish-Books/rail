@@ -291,7 +291,7 @@ defmodule RailWeb.Utils.ChildStatusTest do
     run: run,
     now: now
   } do
-    lead = [run.(:review_lead, status: :running)]
+    lead = [run.(:review_lead, status: :finished, stage_outcome: :done)]
     unmarked = child.(1, stage: :finalize, runs: lead)
 
     assert %{
@@ -310,6 +310,19 @@ defmodule RailWeb.Utils.ChildStatusTest do
 
     refused = %{ready | merge_error: "Required check failed"}
     assert %{state: :refused, line: "Merge refused: Required check failed"} = child_status(refused, [refused])
+  end
+
+  test "a child at Finalize whose run a comment resumed reads as that run, waiting on no one", %{child: child, run: run} do
+    resumed = child.(1, stage: :finalize, runs: [run.(:review_lead, status: :running, stage_outcome: :done)])
+
+    assert %{
+             state: :running,
+             label: "Finalize running",
+             cells: [%{mark: :done}, %{mark: :done}, %{mark: :current, chip: %{label: "Finalize running"}}],
+             needs_attention: false,
+             badge: nil,
+             action: nil
+           } = child_status(resumed, [resumed])
   end
 
   test "a failed child at the engineer stage reads Implement failed", %{child: child, run: run} do

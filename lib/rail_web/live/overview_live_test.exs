@@ -1607,8 +1607,15 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#up-next-featured-#{run_id} [data-qa='up-next-chip']", "Ready for review")
       assert has_element?(view, "#in-progress-task-#{task.id} span.font-semibold", ~r/^Review$/)
 
-      {:ok, %Run{id: ^run_id}} = Pipeline.start_fix_round(system_scope(), run)
+      {:ok, %Run{id: ^run_id} = finalizing} = Pipeline.start_fix_round(system_scope(), run)
 
+      # A comment resumes the run at Finalize, which is at work on it until it is done again.
+      {:ok, resumed} = Pipeline.update_run(finalizing, %{status: :running})
+      assert {:ok, view, _html} = live(conn, ~p"/")
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='running']", "Finalize running")
+      refute has_element?(view, "#in-progress-task-#{task.id}.bg-amber-50")
+
+      {:ok, _done} = Pipeline.update_run(resumed, %{status: :finished})
       assert {:ok, view, _html} = live(conn, ~p"/")
       assert has_element?(view, "#up-next-finalize-row-#{run_id}[href='/tasks/#{task.id}']", "Finalize")
       assert has_element?(view, "#in-progress-task-#{task.id}.bg-amber-50", "Ready to finalize")
