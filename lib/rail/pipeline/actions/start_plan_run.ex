@@ -159,7 +159,7 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
       on?.(:design) &&
         "Then the design, only when the change has a screen: three options, each saved with `save_design_option`. When nothing anyone sees changes there are no options: skip them and say so in one line.",
       (on?.(:architect) and on?.(:design)) &&
-        "Then the implementation plan, saved with `save_plan` as `plan`. Write everything that does not hang on the screen first. Once the options are saved, either write the screen-specific details for the option you recommend, naming it as `design` when you save, or leave them until the pick. Never plan for all three.",
+        "Then the implementation plan, saved with `save_plan` as `plan`. Write everything that does not hang on the screen first. Once the options are saved, either write the screen-specific details for the option you recommend, naming it as `design` when you save, or leave them until the pick. Never plan for all of them.",
       (on?.(:architect) and not on?.(:design)) &&
         "Then the implementation plan, saved with `save_plan` as `plan`.",
       on?.(:architect) &&
@@ -259,7 +259,8 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     Use `google-chrome`, or Google Chrome's full path on macOS, where that is what is installed. The window is taller than 1080 because headless Chrome keeps about 90px of it for itself.
 
     - Save each option with `save_design_option` as soon as its page and screenshot exist: its `key`, `title`, a `summary` of one or two sentences on the position it takes, `good_at` and `costs` as lists of short phrases, and `assumptions`, what you assumed so it can be vetoed. The human sees each option the moment it is saved, so save one before you start the next. A key is lowercase letters, digits and dashes, and names that option's files.
-    - Retake an option's screenshot every time its page changes, and save the option again. The screenshot is what gets published. Write no manifest yourself.#{if on?.(:architect), do: "\n- When you plan for an option, read its page: its markup carries the layout, states and copy the ticket only describes. Plan every state it shows."}
+    - Retake an option's screenshot every time its page changes, and save the option again. The screenshot is what gets published. Write no manifest yourself.
+    - Before the pick, a new direction the human asks for, such as a mix of two options, is another option: save it under a new key, so every earlier option stays as it was. A change to one option is saved again under that option's key.#{if on?.(:architect), do: "\n- When you plan for an option, read its page: its markup carries the layout, states and copy the ticket only describes. Plan every state it shows."}
     """
   end
 

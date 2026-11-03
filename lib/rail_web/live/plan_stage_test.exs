@@ -13,6 +13,8 @@ defmodule RailWeb.Live.PlanStageTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Scope
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
   # The smallest plan the structure allows: one decision, one card and one criterion, and no data changes.
@@ -351,6 +353,77 @@ defmodule RailWeb.Live.PlanStageTest do
     refute has_element?(view, "#plan-tab-design-waiting")
     assert has_element?(view, "#plan-section-plan:not(.hidden)")
     assert has_element?(view, "#plan-section-design.hidden")
+  end
+
+  test "with four options and the run stopped, each has a tab, Design raises a hand, and picking the fourth keeps only it",
+       %{conn: conn, task: task, run: run} do
+    # Picking tells the stopped run, which resumes in a worktree that is only a directory and spawns nothing.
+    worktree = Path.join(task.scratch_path, "worktree")
+    File.mkdir_p!(worktree)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree})
+    stub(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    dir = Path.join(task.scratch_path, "design")
+    File.mkdir_p!(dir)
+
+    for key <- ["cards", "table", "timeline", "cards-table"] do
+      File.write!(Path.join(dir, "#{key}.html"), "<h1>#{key}</h1>")
+      File.write!(Path.join(dir, "#{key}.png"), "png bytes")
+      {:ok, _option} = Pipeline.save_design_option(task, %{key: key, title: "Title #{key}", summary: "#{key}."})
+    end
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+    assert has_element?(view, "#plan-tab-design[aria-selected='true'] #plan-tab-design-waiting")
+    refute has_element?(view, "[id^='design-tab-missing-']")
+
+    for key <- ["cards", "table", "timeline", "cards-table"] do
+      view |> element("#design-tab-#{key}") |> render_click()
+      assert has_element?(view, "[role='tablist'][aria-label='Design options'] #design-tab-#{key}", "Title #{key}")
+      assert has_element?(view, "#design-option-title", "Title #{key}")
+      assert has_element?(view, "#design-comment-control #pick-design-#{key}", "Use this design")
+      refute has_element?(view, "#pick-in-conversation")
+    end
+
+    view |> element("#pick-design-cards-table") |> render_click()
+
+    assert File.read!(Path.join(dir, "picked")) == "cards-table"
+    assert %{picked: "cards-table", options: [%{key: "cards-table"}]} = Pipeline.read_design(task)
+    assert Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "I picked Title cards-table (cards-table)."))
+    refute File.exists?(Path.join(dir, "cards.html"))
+    refute has_element?(view, "#plan-tab-design-waiting")
+    refute has_element?(view, "[role='tablist'][aria-label='Design options']")
+    assert has_element?(view, "#plan-section-design #design-option-cards-table", "Picked")
+  end
+
+  test "a fourth option saved while two pages are open shows on both as a tab, without a reload", %{
+    conn: conn,
+    task: task
+  } do
+    dir = Path.join(task.scratch_path, "design")
+    File.mkdir_p!(dir)
+
+    for key <- ["cards", "table", "timeline", "cards-table"] do
+      File.write!(Path.join(dir, "#{key}.html"), "<h1>#{key}</h1>")
+      File.write!(Path.join(dir, "#{key}.png"), "png bytes")
+    end
+
+    for key <- ["cards", "table", "timeline"],
+        do: {:ok, _option} = Pipeline.save_design_option(task, %{key: key, title: "Title #{key}", summary: "#{key}."})
+
+    assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+    assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}?item=plan")
+    refute has_element?(two, "#design-tab-cards-table")
+
+    {:ok, _option} =
+      Pipeline.save_design_option(task, %{key: "cards-table", title: "Cards with a table", summary: "Both."})
+
+    for view <- [one, two] do
+      _settled = render(view)
+      assert has_element?(view, "#design-tab-cards-table", "Cards with a table")
+      assert has_element?(view, "#design-tab-cards", "Title cards")
+      assert has_element?(view, "#plan-tab-design-waiting")
+    end
   end
 
   test "a tab Plan is writing carries a spinner and no hand", %{conn: conn, task: task, run: run} do

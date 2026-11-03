@@ -138,6 +138,8 @@ Every option:
 
 ### Refining
 
+Before the pick, a new direction the human asks for, such as a mix of two options, becomes another option beside the first three, under a key of its own. Leave the options already saved as they are.
+
 Once the human picks an option, every message after that is feedback on that one option. Change the page, retake its screenshot, and reply in a sentence or two saying what changed. Do not bring back the options that were not picked, and do not start over unless asked. When feedback removes something, remove it outright rather than finding it a new home. When feedback conflicts with an acceptance criterion or with the existing product, say so and propose the smallest change that satisfies both.
 
 - Prefer removing UI to adding it. Every panel, count and label earns its place.

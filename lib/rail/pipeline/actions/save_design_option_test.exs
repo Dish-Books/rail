@@ -68,12 +68,45 @@ defmodule Rail.Pipeline.Actions.SaveDesignOptionTest do
     assert %{options: [%{key: "round-bar", title: "Renamed"}, %{key: "inline"}]} = Pipeline.read_design(task)
   end
 
-  test "a fourth key before a pick is refused", %{task: task, option: option} do
+  test "a fourth key before a pick is added after the first three, which stay as they were", %{
+    task: task,
+    option: option
+  } do
     for key <- ["round-bar", "inline", "drawer"],
+        do: {:ok, _saved} = Pipeline.save_design_option(task, %{option | "key" => key, "title" => "Title #{key}"})
+
+    assert {:ok, %{key: "fourth", title: "Round bar with inline drafts"}} =
+             Pipeline.save_design_option(task, %{option | "key" => "fourth", "title" => "Round bar with inline drafts"})
+
+    assert %{
+             options: [
+               %{key: "round-bar", title: "Title round-bar"},
+               %{key: "inline", title: "Title inline"},
+               %{key: "drawer", title: "Title drawer"},
+               %{key: "fourth", title: "Round bar with inline drafts"}
+             ],
+             picked: nil
+           } = Pipeline.read_design(task)
+  end
+
+  test "after a pick from four options every other key is refused, a new one too", %{
+    task: task,
+    dir: dir,
+    option: option
+  } do
+    for key <- ["round-bar", "inline", "drawer", "fourth"],
         do: {:ok, _saved} = Pipeline.save_design_option(task, %{option | "key" => key})
 
-    assert {:error, changeset} = Pipeline.save_design_option(task, %{option | "key" => "fourth"})
-    assert %{key: ["would be a fourth option; save again under round-bar, inline, drawer"]} = errors_on(changeset)
+    File.write!(Path.join(dir, "picked"), "fourth")
+    File.write!(Path.join(dir, "fifth.html"), "<html>fifth</html>")
+    File.write!(Path.join(dir, "fifth.png"), "png")
+
+    for key <- ["round-bar", "inline", "drawer", "fifth"] do
+      assert {:error, changeset} = Pipeline.save_design_option(task, %{option | "key" => key})
+      assert %{key: ["is not the picked option fourth, the only one that can be saved now"]} = errors_on(changeset)
+    end
+
+    assert {:ok, %{key: "fourth"}} = Pipeline.save_design_option(task, %{option | "key" => "fourth"})
   end
 
   test "after a pick only the picked key can be saved", %{task: task, dir: dir, option: option} do

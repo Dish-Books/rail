@@ -299,7 +299,8 @@ defmodule Rail.Mcp.Utils.McpTools do
       "description" =>
         "Save one design option once its page `<key>.html` and screenshot `<key>.png` exist in the design " <>
           "folder, and save it again whenever it changes. The panel shows each option as it is saved, while " <>
-          "the others are still being built. Three options before the human picks, and only the picked one after.",
+          "the others are still being built. Three options come first, and more can follow under new keys before " <>
+          "the human picks. Only the picked one can be saved after.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{
