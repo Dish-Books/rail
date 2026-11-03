@@ -148,6 +148,15 @@ defmodule Rail.Issues.Schemas.IssueTest do
       refute Issue.closed?(:todo)
     end
 
+    test "started_state?/1 holds for the states work is under way in, and no other" do
+      assert Issue.started_state?(:in_progress)
+      assert Issue.started_state?(:in_review)
+
+      for state <- [:triage, :backlog, :todo, :done, :canceled, :duplicate, nil] do
+        refute Issue.started_state?(state)
+      end
+    end
+
     test "active?/1 identifies non-terminal working states" do
       for state <- [:triage, :backlog, :todo, :in_progress, :in_review] do
         assert Issue.active?(state)
