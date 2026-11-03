@@ -7,7 +7,8 @@ defmodule RailWeb.Utils.RunStateStyle do
   `:blocked` is.
   """
 
-  import RailWeb.Utils.StageLabel, only: [custom_stage_waiting?: 2, finalize_label: 1, review_waiting?: 2]
+  import RailWeb.Utils.StageLabel,
+    only: [custom_stage_waiting?: 2, finalize_label: 1, finalize_run_working?: 2, review_waiting?: 2]
 
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -39,18 +40,10 @@ defmodule RailWeb.Utils.RunStateStyle do
 
   @doc """
   The look of `run`'s state on `task`, which gives a Review round waiting on a person the Findings icon. A task
-  at Finalize, or merged, looks like where it stands there, whatever its run is doing.
+  at Finalize, or merged, looks like where it stands there, unless a comment resumed its run, which is at work.
   """
-  def run_state_style(_run, %Task{stage: stage} = task) when stage in [:finalize, :merged] do
-    state = if stage == :merged, do: :merged, else: Task.finalize_state(task)
-    color = finalize_color(state)
-
-    %{
-      icon: finalize_icon(state),
-      text_class: classes(color, :text),
-      chip_class: classes(color, :chip),
-      pill_label: finalize_label(state)
-    }
+  def run_state_style(run, %Task{stage: stage} = task) when stage in [:finalize, :merged] do
+    if finalize_run_working?(task, run), do: run_state_style(run), else: finalize_style(task)
   end
 
   # A custom stage's stopped agent waits on a person, for its Approve or for a message to save its file.
@@ -67,6 +60,18 @@ defmodule RailWeb.Utils.RunStateStyle do
   def run_state_style(run, task) do
     style = run_state_style(run)
     if review_waiting?(task, run), do: %{style | icon: "pi-list-checks"}, else: style
+  end
+
+  defp finalize_style(%Task{stage: stage} = task) do
+    state = if stage == :merged, do: :merged, else: Task.finalize_state(task)
+    color = finalize_color(state)
+
+    %{
+      icon: finalize_icon(state),
+      text_class: classes(color, :text),
+      chip_class: classes(color, :chip),
+      pill_label: finalize_label(state)
+    }
   end
 
   defp finalize_icon(:not_ready), do: "pi-flag"
