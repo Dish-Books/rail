@@ -955,6 +955,58 @@ defmodule RailWeb.Live.TaskDetailTest do
     assert has_element?(view, "#send-review-tray:not([disabled])", "Send 1")
   end
 
+  # A reconnect mounts the page again from its URL, so the finding open in Findings is named there.
+  test "the URL names the open finding, and a page opened on it shows that finding", %{
+    conn: conn,
+    task: task,
+    code: code
+  } do
+    {:ok, _first} = Pipeline.save_finding(task, Map.put(code, :key, "first-finding"))
+    {:ok, _second} = Pipeline.save_finding(task, Map.put(code, :key, "second-finding"))
+    {:ok, _pass} = Pipeline.save_review(task)
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=findings")
+
+    assert_patch(view, ~p"/tasks/#{task.id}?item=findings&finding=first-finding")
+
+    view |> element("#finding-second-finding") |> render_click()
+
+    assert_patch(view, ~p"/tasks/#{task.id}?item=findings&finding=second-finding")
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=findings&finding=second-finding")
+
+    assert has_element?(view, "#finding-second-finding[aria-current=true]")
+    assert has_element?(view, "#finding-first-finding[aria-current=false]")
+
+    # A comment box open on a piece is named too, so a reconnect draws it for form recovery to fill.
+    view |> element("#finding-place-2 > [data-qa=finding_comment_add]") |> render_click()
+
+    assert_patch(view, ~p"/tasks/#{task.id}?item=findings&finding=second-finding&comment=place-1")
+
+    view |> element("#finding-comment-form [data-qa=finding_comment_cancel]") |> render_click()
+
+    assert_patch(view, ~p"/tasks/#{task.id}?item=findings&finding=second-finding")
+
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=findings&finding=second-finding&comment=place-1")
+
+    assert has_element?(view, "#finding-place-2 #finding-comment-form")
+
+    view |> form("#finding-comment-form", %{"body" => "Typed before the reconnect."}) |> render_change()
+
+    assert has_element?(view, "#finding-comment-body", "Typed before the reconnect.")
+
+    # A piece the finding no longer has opens no box, and the URL drops it.
+    {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?item=findings&finding=second-finding&comment=place-9")
+
+    refute has_element?(view, "#finding-comment-form")
+    assert_patch(view, ~p"/tasks/#{task.id}?item=findings&finding=second-finding")
+
+    # Leaving Findings drops the finding from the URL.
+    view |> element("#review-item-diff") |> render_click()
+
+    assert_patch(view, ~p"/tasks/#{task.id}?item=diff")
+  end
+
   # Update is a round of its own at Engineer, with nothing ruled Fix: the engineer merges, it is not the lead at work.
   test "an Update round at Engineer says the engineer merges the default branch, and a failed or stopped one says so",
        %{conn: conn, project: project, task: task, engineer_run: engineer_run} do
