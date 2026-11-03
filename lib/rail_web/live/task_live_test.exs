@@ -3544,6 +3544,59 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "[data-qa='document_comment_form']")
     end
 
+    test "Edit changes a comment's text on its card and in the tray, and a blank text keeps the box open", %{
+      conn: conn,
+      task: task,
+      scope: scope,
+      run: run,
+      design: design,
+      key: key
+    } do
+      {:ok, design_comment} = Pipeline.create_plan_comment(scope, run, design)
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#line-ticket-#{key.("Criterion 1")} [data-qa='line_comment_add']") |> render_click()
+      view |> form("[data-qa='document_comment_form']", %{"body" => "Which page?"}) |> render_submit()
+      [%PlanComment{id: id}] = scope |> Pipeline.list_plan_comments(task) |> Enum.reject(&(&1.id == design_comment.id))
+      card = "#document-comment-#{id}"
+
+      view |> element("#{card} [data-qa='comment_edit']") |> render_click()
+      assert has_element?(view, "#{card} [data-qa='comment_edit_body']", "Which page?")
+      view |> form("#{card} [data-qa='comment_edit_form']", %{"body" => "  "}) |> render_submit()
+      # The box hears how its save went once the page has saved it.
+      _settled = render(view)
+      assert has_element?(view, "#{card} [data-qa='comment_edit_form']")
+      view |> element("#{card} [data-qa='comment_edit_cancel']") |> render_click()
+      refute has_element?(view, "#{card} [data-qa='comment_edit_form']")
+      assert has_element?(view, card, "Which page?")
+
+      view |> element("#{card} [data-qa='comment_edit']") |> render_click()
+      view |> form("#{card} [data-qa='comment_edit_form']", %{"body" => "Which page, the"}) |> render_change()
+      assert has_element?(view, "#{card} [data-qa='comment_edit_body']", "Which page, the")
+      view |> form("#{card} [data-qa='comment_edit_form']", %{"body" => "Which page, the list?"}) |> render_submit()
+      _settled = render(view)
+      refute has_element?(view, "#{card} [data-qa='comment_edit_form']")
+      assert has_element?(view, card, "Which page, the list?")
+      view |> element("#plan-comment-tray-fold") |> render_click()
+      assert has_element?(view, "#plan-comment-#{id}", "Which page, the list?")
+
+      # A design comment is drawn only in the tray, so it is edited there.
+      row = "#plan-comment-#{design_comment.id}"
+      view |> element("#{row} [data-qa='comment_edit']") |> render_click()
+      view |> form("#{row} [data-qa='comment_edit_form']", %{"body" => "Off by default."}) |> render_submit()
+      _settled = render(view)
+      refute has_element?(view, "#{row} [data-qa='comment_edit_form']")
+      assert has_element?(view, row, "Off by default.")
+      assert Repo.get!(PlanComment, design_comment.id).body == "Off by default."
+
+      # Sent from another tab while the box was open, it keeps the text it was sent with, and the box closes.
+      view |> element("#{card} [data-qa='comment_edit']") |> render_click()
+      Repo.update_all(from(c in PlanComment, where: c.id == ^id), set: [status: :sent])
+      view |> form("#{card} [data-qa='comment_edit_form']", %{"body" => "Too late."}) |> render_submit()
+      _settled = render(view)
+      refute has_element?(view, "#{card} [data-qa='comment_edit_form']")
+      assert Repo.get!(PlanComment, id).body == "Which page, the list?"
+    end
+
     test "with no conversation no line offers a +, and the tray keeps its comments without Send", %{
       conn: conn,
       task: task,
@@ -4564,7 +4617,7 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#diff-file-shipped-ex [data-qa='diff_comment_quote']", "committed")
     end
 
-    test "an unsent comment cannot be resolved, and a removed one is gone, a remove from a page drawn before it changing nothing",
+    test "an unsent comment cannot be resolved but can be edited, and a removed one is gone, a remove from a page drawn before it changing nothing",
          %{conn: conn, task: task, scope: scope} do
       comment = %{path: "shipped.ex", line_kind: :added, line: 1, line_text: "committed", filter: :branch}
       {:ok, kept} = Pipeline.create_diff_comment(scope, task, Map.put(comment, :body, "Keep this one."))
@@ -4585,6 +4638,15 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("[data-qa='diff_comment_remove'][phx-value-id='#{dropped.id}']") |> render_click()
       refute has_element?(view, "[data-qa='diff_comment']", "Drop this one.")
       assert has_element?(view, "[data-qa='diff_comment']", "Keep this one.")
+
+      view |> element("#diff-comment-#{kept.id} [data-qa='comment_edit']") |> render_click()
+      view |> form("#diff-comment-#{kept.id} [data-qa='comment_edit_form']", %{"body" => "Keep it."}) |> render_submit()
+      # The box hears how its save went once the page has saved it.
+      _settled = render(view)
+      assert has_element?(view, "#diff-comment-#{kept.id}", "Keep it.")
+
+      assert [%DiffComment{body: "Keep it."}] =
+               scope |> Pipeline.list_diff_comments(task) |> Enum.filter(&(&1.id == kept.id))
 
       # A click from a page drawn before the removal names a comment that is gone.
       view |> with_target("#diff-view") |> render_click("remove_diff_comment", %{"id" => dropped.id})

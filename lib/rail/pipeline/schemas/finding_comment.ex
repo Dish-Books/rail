@@ -48,6 +48,17 @@ defmodule Rail.Pipeline.Schemas.FindingComment do
   end
 
   @doc """
+  Builds a changeset that changes only the comment's text, for its author editing it before it is sent.
+  """
+  def edit_changeset(%__MODULE__{} = comment, attrs) do
+    comment
+    |> cast(attrs, [:body])
+    # A blank text casts to nil, which is refused below.
+    |> update_change(:body, &(&1 && String.trim(&1)))
+    |> validate_required([:body])
+  end
+
+  @doc """
   The piece `piece` of `finding` as `%{label:, quote:}`, what a reader knows it by and what it says, or nil when the
   finding has no such piece.
   """

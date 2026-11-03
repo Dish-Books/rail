@@ -61,6 +61,15 @@ defmodule Rail.Pipeline.Schemas.DiffComment do
   end
 
   @doc """
+  Builds a changeset that changes only the comment's text, for its author editing it before it is sent.
+  """
+  def edit_changeset(%__MODULE__{} = comment, attrs) do
+    comment
+    |> cast(attrs, [:body])
+    |> validate_required([:body])
+  end
+
+  @doc """
   The lines around `row` in its hunk of `rows`, a file's diff rows: up to six
   either side, never past the hunk, each with its diff glyph and `row` marked `>`.
   """

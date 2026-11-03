@@ -65,7 +65,7 @@ defmodule RailWeb.Components.ReviewCommentTrayTest do
     [finding_row] = Floki.find(doc, "#review-tray-finding-fcm_1")
 
     assert Floki.text(finding_row) =~
-             ~r/1\s+Finding\s+Removed comment comes back\s*·\s*Place 2, Plan tab\s*Remove\s+It is the tray too./
+             ~r/1\s+Finding\s+Removed comment comes back\s*·\s*Place 2, Plan tab\s*Edit\s+Remove\s+It is the tray too./
 
     assert ["removed"] =
              finding_row |> Floki.find("[data-qa=review_tray_finding_comment]") |> Floki.attribute("phx-value-key")
@@ -74,10 +74,10 @@ defmodule RailWeb.Components.ReviewCommentTrayTest do
              finding_row |> Floki.find("[data-qa=remove_review_tray_comment]") |> Floki.attribute("phx-value-kind")
 
     [diff_row] = Floki.find(doc, "#review-tray-diff-dcm_1")
-    assert Floki.text(diff_row) =~ ~r/2\s+Diff\s+tray.ex:61\s+Remove\s+Keep one hint./
+    assert Floki.text(diff_row) =~ ~r/2\s+Diff\s+tray.ex:61\s+Edit\s+Remove\s+Keep one hint./
 
     [screen_row] = Floki.find(doc, "#review-tray-screen-scm_1")
-    assert Floki.text(screen_row) =~ ~r/3\s+Screen\s+Toolbar\s+e52a0bd\s+Remove\s+It wraps./
+    assert Floki.text(screen_row) =~ ~r/3\s+Screen\s+Toolbar\s+e52a0bd\s+Edit\s+Remove\s+It wraps./
     assert screen_row |> Floki.find("[data-qa=review_tray_screen]") |> Floki.attribute("phx-value-key") == ["toolbar"]
 
     assert doc |> Floki.find("#review-send-tray") |> Floki.text() =~ ~r/Not sent\s+5\s+your comments only you see/

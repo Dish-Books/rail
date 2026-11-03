@@ -25,13 +25,18 @@ defmodule RailWeb.TaskLive do
   alias Rail.Learnings.Schemas.Learning
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.DiffComment
+  alias Rail.Pipeline.Schemas.FindingComment
+  alias Rail.Pipeline.Schemas.PlanComment
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.ScreenComment
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
   alias Rail.Tools
   alias Rail.Users
+  alias RailWeb.Live.CommentBody
   alias RailWeb.Live.CustomStage
   alias RailWeb.Live.DiffView
   alias RailWeb.Live.PlanStage
@@ -469,6 +474,24 @@ defmodule RailWeb.TaskLive do
       send_update(TaskActions, id: "task-actions")
     end
 
+    {:noreply, socket}
+  end
+
+  # An edited comment is saved here, where the reader's scope is, and its box hears how it went. One that took tells
+  # the author's tabs, which read their comments again.
+  def handle_info({:update_comment, comment, body, id}, socket) do
+    %{current_scope: scope} = socket.assigns
+    attrs = %{"body" => body}
+
+    saved =
+      case comment do
+        %PlanComment{} -> Pipeline.update_plan_comment(scope, comment, attrs)
+        %DiffComment{} -> Pipeline.update_diff_comment(scope, comment, attrs)
+        %FindingComment{} -> Pipeline.update_finding_comment(scope, comment, attrs)
+        %ScreenComment{} -> Pipeline.update_screen_comment(scope, comment, attrs)
+      end
+
+    send_update(CommentBody, id: id, saved: saved)
     {:noreply, socket}
   end
 

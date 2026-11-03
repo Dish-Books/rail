@@ -72,7 +72,7 @@ defmodule RailWeb.Components.PlanCommentTray do
           id={"plan-comment-#{comment.id}"}
           data-qa="plan_comment_row"
           data-found={to_string(comment.id not in @dashed)}
-          class="flex items-start gap-2.5 px-2 py-2 rounded-lg hover:bg-slate-200/50 dark:hover:bg-slate-700/40"
+          class="group/comment flex items-start gap-2.5 px-2 py-2 rounded-lg hover:bg-slate-200/50 dark:hover:bg-slate-700/40"
         >
           <span
             aria-hidden="true"
@@ -114,6 +114,8 @@ defmodule RailWeb.Components.PlanCommentTray do
               >
                 <.icon name="pi-arrows-clockwise-bold" class="size-[11px]" />Changed
               </span>
+              <span class="ml-auto" />
+              <.comment_edit_button place="tray" comment={comment} class="font-sans" />
               <button
                 type="button"
                 id={"remove-plan-comment-#{comment.id}"}
@@ -121,18 +123,22 @@ defmodule RailWeb.Components.PlanCommentTray do
                 phx-click="remove_plan_comment"
                 phx-value-id={comment.id}
                 phx-target={@target}
-                class="ml-auto shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded font-sans text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-500"
+                class="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded font-sans text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-500"
               >
                 <.icon name="pi-trash" class="size-[13px]" />Remove
               </button>
             </div>
-            <p class={[
-              "mt-0.5 text-[12.5px] leading-[18px] line-clamp-2 wrap-break-word",
-              comment.id not in @dashed && "text-slate-800 dark:text-slate-100",
-              comment.id in @dashed && "text-slate-500 dark:text-slate-400"
-            ]}>
-              {comment.body}
-            </p>
+            <.comment_body
+              place="tray"
+              comment={comment}
+              label={if comment.target == :design, do: comment.selector, else: comment.element_label}
+              class={[
+                "mt-0.5 text-[12.5px] leading-[18px] line-clamp-2 wrap-break-word",
+                comment.id not in @dashed && "text-slate-800 dark:text-slate-100",
+                comment.id in @dashed && "text-slate-500 dark:text-slate-400"
+              ]}
+              narrow
+            />
           </div>
         </div>
       </div>
