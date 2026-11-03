@@ -14,8 +14,8 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
   import Rail.Pipeline.Utils.FormatStageOutputs
   import Rail.Pipeline.Utils.FormatTicket
   import Rail.Pipeline.Utils.LearningsBrief
+  import Rail.Pipeline.Utils.MakeIssueWorktree
 
-  alias Rail.Git
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -57,22 +57,23 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
     spawn_os_process(run, task.worktree_path)
   end
 
-  # The spawn reads the run from another process, so it has to wait for the commit; everything before it
-  # rolls back together. The claim is last because it locks the issue's row, which no git fetch should hold.
+  # The worktree comes first, as no transaction may wait on a git fetch. The spawn reads the run from another
+  # process, so it has to wait for the commit; everything before it rolls back together.
   defp record_run(%Scope{} = scope, %Issue{} = issue, %Project{} = project, %Role{} = role) do
-    Repo.transaction(fn ->
-      with {:ok, task} <- Pipeline.create_task(issue, :plan),
-           {:ok, _job} <- Issues.advance_issue_state(issue),
-           task = Repo.preload(task, [:project, :issue]),
-           {:ok, _round} <- issue_as_ticket(task),
-           {:ok, worktree_path} <- ensure_worktree(project, task),
-           {:ok, run} <- Pipeline.start_or_resume_run(task, role, worktree_path),
-           :ok <- claim_for_starter(scope, issue) do
-        {run, worktree_path}
-      else
-        {:error, reason} -> Repo.rollback(reason)
-      end
-    end)
+    with {:ok, worktree_path} <- make_issue_worktree(project, issue) do
+      Repo.transaction(fn ->
+        with {:ok, task} <- Pipeline.create_task(issue, :plan),
+             {:ok, _job} <- Issues.advance_issue_state(issue),
+             task = Repo.preload(task, [:project, :issue]),
+             {:ok, _round} <- issue_as_ticket(task),
+             {:ok, run} <- Pipeline.start_or_resume_run(task, role, worktree_path),
+             :ok <- claim_for_starter(scope, issue) do
+          {run, worktree_path}
+        else
+          {:error, reason} -> Repo.rollback(reason)
+        end
+      end)
+    end
   end
 
   # With Product off nobody writes a ticket, so round 1 starts out holding the issue as it.
@@ -82,13 +83,6 @@ defmodule Rail.Pipeline.Actions.StartPlanRun do
       round |> Round.issue_ticket_changeset(issue) |> Repo.update()
     else
       {:ok, nil}
-    end
-  end
-
-  defp ensure_worktree(%Project{} = project, %Task{} = task) do
-    case Git.get_or_create_worktree(project, task) do
-      {:ok, resolved} -> {:ok, resolved}
-      {:error, reason} -> {:error, {:worktree_failed, reason}}
     end
   end
 

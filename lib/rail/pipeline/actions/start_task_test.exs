@@ -305,8 +305,10 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
     scope = Scope.for_user(starter)
 
-    # Claiming locks the issue's row, which a git fetch must not hold, so no owner is set yet in here.
+    # No transaction is open while git fetches, so nothing is recorded or claimed yet in here.
     stub(Git, :get_or_create_worktree, fn _project, %Task{issue_id: issue_id} ->
+      refute Repo.in_transaction?()
+      refute Repo.exists?(from t in Task, where: t.issue_id == ^issue_id)
       assert %Issue{owner_user_id: nil} = Repo.get!(Issue, issue_id)
       {:error, :clone_missing}
     end)
@@ -329,6 +331,27 @@ defmodule Rail.Pipeline.Actions.StartTaskTest do
 
     refute_enqueued(worker: SyncIssue)
     refute_enqueued(worker: AdvanceTrackerState)
+  end
+
+  test "a task another start records while git runs refuses this one at Engineer, which records nothing", %{
+    attrs: attrs,
+    starter: starter
+  } do
+    issue =
+      %Issue{skipped_steps: [:product, :design, :architect]} |> Issue.tracker_changeset(attrs) |> Repo.insert!()
+
+    expect(Git, :get_or_create_worktree, fn _project, task ->
+      {:ok, _theirs} = Pipeline.create_task(Repo.preload(issue, :project), :engineer)
+      {:ok, task.worktree_path}
+    end)
+
+    reject(Tools, :start_os_process, 2)
+
+    assert {:error, :task_exists} = Pipeline.start_task(Scope.for_user(starter), issue)
+
+    assert [%Task{id: task_id}] = Repo.all(from t in Task, where: t.issue_id == ^issue.id)
+    assert [] = Repo.all(from r in Round, where: r.task_id == ^task_id)
+    assert %Issue{owner_user_id: nil} = Repo.reload!(issue)
   end
 
   test "a project the person cannot access is refused and nothing starts", %{attrs: attrs} do

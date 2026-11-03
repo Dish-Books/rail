@@ -5,8 +5,8 @@ defmodule Rail.Pipeline.Actions.StartTask do
   """
 
   import Rail.Pipeline.Utils.ClaimForStarter
+  import Rail.Pipeline.Utils.MakeIssueWorktree
 
-  alias Rail.Git
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
@@ -41,30 +41,25 @@ defmodule Rail.Pipeline.Actions.StartTask do
     end
   end
 
-  # With no Plan to come, round 1 holds the issue as its ticket, approved by Rail so Merge waits on no plan.
-  # The claim is last because it locks the issue's row, which no git fetch should hold.
+  # The worktree comes first, as no transaction may wait on a git fetch.
   defp record_task(%Scope{} = scope, %Issue{project: %Project{} = project} = issue, first, planned?) do
-    Repo.transaction(fn ->
-      with {:ok, task} <- Pipeline.create_task(issue, first),
-           {:ok, _round} <- if(planned?, do: {:ok, nil}, else: issue_round(task, issue)),
-           {:ok, _worktree_path} <- worktree(project, task),
-           :ok <- claim_for_starter(scope, issue) do
-        task
-      else
-        {:error, reason} -> Repo.rollback(reason)
-      end
-    end)
+    with {:ok, _worktree_path} <- make_issue_worktree(project, issue),
+         do: Repo.transaction(fn -> insert_task(scope, issue, first, planned?) end)
+  end
+
+  # With no Plan to come, round 1 holds the issue as its ticket, approved by Rail so Merge waits on no plan.
+  defp insert_task(%Scope{} = scope, %Issue{} = issue, first, planned?) do
+    with {:ok, task} <- Pipeline.create_task(issue, first),
+         {:ok, _round} <- if(planned?, do: {:ok, nil}, else: issue_round(task, issue)),
+         :ok <- claim_for_starter(scope, issue) do
+      task
+    else
+      {:error, reason} -> Repo.rollback(reason)
+    end
   end
 
   defp issue_round(%Task{} = task, %Issue{} = issue) do
     {:ok, round} = Pipeline.create_round(task)
     round |> Round.approve_changeset(nil) |> Round.issue_ticket_changeset(issue) |> Repo.update()
-  end
-
-  defp worktree(%Project{} = project, %Task{} = task) do
-    case Git.get_or_create_worktree(project, task) do
-      {:ok, resolved} -> {:ok, resolved}
-      {:error, reason} -> {:error, {:worktree_failed, reason}}
-    end
   end
 end
