@@ -20,16 +20,16 @@ defmodule Rail.Issues.Actions.ClaimIssue do
     with :ok <- Tracker.tracker(issue).check_assignable(user), do: claim(user, issue)
   end
 
+  # No transaction of its own: a start claims inside its own, which a rollback here would abort.
   defp claim(user, %Issue{} = issue) do
-    Repo.transaction(fn ->
-      # Read again: somebody may have claimed it since the page loaded.
-      case Repo.get_by!(Issue, id: issue.id, project_id: issue.project_id) do
-        %Issue{owner_user_id: owner_user_id} when is_binary(owner_user_id) ->
-          Repo.rollback(:already_assigned)
+    # Read again: somebody may have claimed it since the page loaded.
+    case Repo.get_by!(Issue, id: issue.id, project_id: issue.project_id) do
+      %Issue{owner_user_id: owner_user_id} when is_binary(owner_user_id) ->
+        {:error, :already_assigned}
 
-        %Issue{} = unassigned ->
-          unassigned |> Issue.changeset(%{owner_user_id: user.id}) |> Repo.update!()
-      end
-    end)
+      %Issue{} = unassigned ->
+        claimed = unassigned |> Issue.changeset(%{owner_user_id: user.id}) |> Repo.update!()
+        {:ok, claimed}
+    end
   end
 end

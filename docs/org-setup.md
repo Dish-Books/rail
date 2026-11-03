@@ -112,4 +112,4 @@ Check: Settings > Roles lists a role for each of plan, engineer, review, QA and 
 
 ## 8. First task
 
-Pick a small issue, claim it (Rail moves a tracker's status forward only once the issue has an owner), and start Plan. A run tab appears on the task within seconds. On a GitHub-tracked project the issue's label moves to `rail:in-progress`, then `rail:in-review` once review starts.
+Pick a small issue and start Plan. Starting makes you the issue's owner, which Rail needs before it moves a tracker's status forward. On a Linear project that takes a linked Linear account. Without one the issue stays unassigned until you link it and press Claim on the task page. A run tab appears on the task within seconds. On a GitHub-tracked project the issue's label moves to `rail:in-progress`, then `rail:in-review` once review starts.

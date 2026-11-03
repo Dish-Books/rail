@@ -14,8 +14,10 @@ defmodule RailWeb.Components.IssueView do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Workflows.Schemas.Workflow
+  alias RailWeb.Components.StatusPicker
 
   attr :issue, :any, required: true
+  attr :current_scope, :any, required: true
   attr :assignees, :list, required: true
   attr :assignee_query, :string, required: true
   attr :comment_nonce, :integer, required: true
@@ -254,10 +256,13 @@ defmodule RailWeb.Components.IssueView do
           <section class="space-y-3">
             <h2 class="text-xs font-medium text-slate-500 dark:text-slate-400">Properties</h2>
 
-            <div id="issue-status" data-qa="issue-status" class="flex items-center gap-2.5">
-              <.status_icon state={Issue.calculate_shown_state(@issue)} />
-              <span>{@issue.state_name || Issue.state_label(@issue.state)}</span>
-            </div>
+            <.live_component
+              module={StatusPicker}
+              id={"issue-status-picker-#{@issue.id}"}
+              issue={@issue}
+              current_scope={@current_scope}
+              labeled
+            />
 
             <div id="issue-priority" data-qa="issue-priority" class="flex items-center gap-2.5">
               <.priority_icon priority={@issue.priority} />

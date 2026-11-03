@@ -4,7 +4,8 @@ defmodule Rail.Issues.Actions.HandleGithubWebhook do
   into Rail, as `Rail.Issues.Actions.HandleLinearWebhook` does for Linear.
 
   The row is written with `Issue.tracker_changeset/2`: the change came from GitHub, so nothing
-  is pushed back to it. An update that finishes an open issue is handed to Learnings.
+  is pushed back to it. An update that finishes an open issue is handed to Learnings and the
+  pipeline, which only queue their work.
   """
 
   import Ecto.Query
@@ -15,6 +16,7 @@ defmodule Rail.Issues.Actions.HandleGithubWebhook do
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
   alias Rail.Learnings
+  alias Rail.Pipeline
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Users.Schemas.User
@@ -44,7 +46,11 @@ defmodule Rail.Issues.Actions.HandleGithubWebhook do
       attrs = Map.merge(attrs, %{project_id: project.id, owner_user_id: owner})
 
       with {:ok, issue} <- existing |> Issue.tracker_changeset(attrs) |> Repo.insert_or_update() do
-        if finished?(existing, issue), do: {:ok, _job} = Learnings.handle_issue_finished(issue)
+        if finished?(existing, issue) do
+          {:ok, _job} = Learnings.handle_issue_finished(issue)
+          Pipeline.handle_issue_finished(issue)
+        end
+
         Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id})
         {:ok, issue}
       end

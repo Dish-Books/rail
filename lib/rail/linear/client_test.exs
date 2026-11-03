@@ -303,7 +303,8 @@ defmodule Rail.Linear.ClientTest do
     test "looks the team up by the project's key", %{project: project} do
       Req.Test.expect(Linear, fn conn ->
         {:ok, body, conn} = Plug.Conn.read_body(conn)
-        assert %{"teamKey" => "TEAM"} = Jason.decode!(body)["variables"]
+        assert %{"query" => query, "variables" => %{"teamKey" => "TEAM"}} = Jason.decode!(body)
+        assert query =~ ~r/states \{\s+nodes \{\s+id\s+name\s+type\s+position/
         Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_uuid"}]}}})
       end)
 
@@ -386,10 +387,16 @@ defmodule Rail.Linear.ClientTest do
   end
 
   describe "update_issue/4" do
-    test "sends the input for the issue", %{project: project} do
+    test "sends the input for the issue and asks for the issue back", %{project: project} do
       Req.Test.expect(Linear, fn conn ->
         {:ok, body, conn} = Plug.Conn.read_body(conn)
-        assert %{"id" => "lin_iss_1", "input" => %{"title" => "Updated"}} = Jason.decode!(body)["variables"]
+
+        assert %{"query" => query, "variables" => %{"id" => "lin_iss_1", "input" => %{"title" => "Updated"}}} =
+                 Jason.decode!(body)
+
+        assert query =~ ~r/issueUpdate\(.*\) \{\s+success\s+issue \{\s+id/s
+        assert query =~ "completedAt"
+        assert query =~ "updatedAt"
         Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
       end)
 

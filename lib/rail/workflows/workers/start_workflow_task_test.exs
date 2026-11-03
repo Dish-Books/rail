@@ -4,11 +4,13 @@ defmodule Rail.Workflows.Workers.StartWorkflowTaskTest do
 
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
+  alias Rail.Users
   alias Rail.Workflows.Schemas.Workflow
   alias Rail.Workflows.Schemas.WorkflowDefinition
   alias Rail.Workflows.Workers.StartWorkflowTask
@@ -63,6 +65,31 @@ defmodule Rail.Workflows.Workers.StartWorkflowTaskTest do
     assert_receive {:workflows_changed, ^project_id}
   end
 
+  test "a task the job starts assigns nobody", %{issue: issue} do
+    expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+    assert :ok = perform_job(StartWorkflowTask, %{issue_id: issue.id})
+
+    assert %Issue{owner_user_id: nil} = Repo.reload!(issue)
+    refute_enqueued(worker: SyncIssue)
+  end
+
+  test "an issue opened with an owner keeps that owner", %{issue: issue} do
+    {:ok, %{id: owner_id}} =
+      Users.register_oauth_user(%{github_id: "gh_wf_owner", login: "wf-owner", email: "wf-owner@example.com"})
+
+    issue |> Ecto.Changeset.change(owner_user_id: owner_id) |> Repo.update!()
+
+    expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+    expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+    assert :ok = perform_job(StartWorkflowTask, %{issue_id: issue.id})
+
+    assert %Issue{owner_user_id: ^owner_id} = Repo.reload!(issue)
+    refute_enqueued(worker: SyncIssue)
+  end
+
   test "an issue whose workflow turned every Plan step off starts its task at Engineer, with no Plan run", %{
     project: project,
     issue: %{id: issue_id} = issue
@@ -100,7 +127,7 @@ defmodule Rail.Workflows.Workers.StartWorkflowTaskTest do
 
   test "an issue that already has a task is left alone", %{issue: %{id: issue_id} = issue} do
     {:ok, %Task{id: task_id}} = issue |> Repo.preload(:project) |> Pipeline.create_task(:plan)
-    reject(Pipeline, :start_task, 1)
+    reject(Pipeline, :start_task, 2)
 
     assert :ok = perform_job(StartWorkflowTask, %{issue_id: issue_id})
     assert [%Task{id: ^task_id}] = Repo.all(from(t in Task, where: t.issue_id == ^issue_id))
@@ -108,7 +135,7 @@ defmodule Rail.Workflows.Workers.StartWorkflowTaskTest do
 
   test "an issue finished before the job ran is left alone", %{issue: %{id: issue_id} = issue} do
     issue |> Issue.tracker_changeset(%{state: :done}) |> Repo.update!()
-    reject(Pipeline, :start_task, 1)
+    reject(Pipeline, :start_task, 2)
 
     assert :ok = perform_job(StartWorkflowTask, %{issue_id: issue_id})
     assert [] = Repo.all(from(t in Task, where: t.issue_id == ^issue_id))
@@ -116,7 +143,7 @@ defmodule Rail.Workflows.Workers.StartWorkflowTaskTest do
 
   test "a deleted issue finishes the job", %{issue: %{id: issue_id} = issue} do
     Repo.delete!(issue)
-    reject(Pipeline, :start_task, 1)
+    reject(Pipeline, :start_task, 2)
 
     assert :ok = perform_job(StartWorkflowTask, %{issue_id: issue_id})
   end

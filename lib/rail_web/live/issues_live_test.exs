@@ -6,10 +6,12 @@ defmodule RailWeb.IssuesLiveTest do
   import Phoenix.LiveViewTest
   import Rail.Pipeline.Utils.BuildTask
 
+  alias Phoenix.LiveView.Socket
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.IssueStage
   alias Rail.Issues.Workers.LinearSync
+  alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
@@ -25,6 +27,7 @@ defmodule RailWeb.IssuesLiveTest do
   alias Rail.Users.Schemas.User
   alias Rail.Workflows.Schemas.Workflow
   alias Rail.Workflows.Schemas.WorkflowDefinition
+  alias RailWeb.IssuesLive
 
   setup do
     # A role's prompt is read from the project's clone, which another test may have made, so reading it here
@@ -188,7 +191,7 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-status-badge']", "In Progress")
 
     # Starting work happens on the issue's page, not from the list.
-    refute has_element?(view, "#issue-card-#{issue.id} button")
+    refute has_element?(view, "#issue-card-#{issue.id} button", "Plan")
 
     # Clicking the row opens the issue's page.
     issue_path = ~p"/issues/#{issue.identifier}"
@@ -1289,6 +1292,125 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view_bad, "#issues-subtitle", "Issues across all projects")
   end
 
+  describe "changing a status" do
+    setup %{conn: conn, project: project} do
+      {:ok, viewer} =
+        Users.register_oauth_user(%{
+          github_id: "gh_status_viewer",
+          login: "status_viewer",
+          email: "status_viewer@example.com",
+          admin: true
+        })
+
+      statuses = [
+        %{id: "st_review", name: "In Review", state: :in_review},
+        %{id: "st_done", name: "Done", state: :done}
+      ]
+
+      stub(Issues, :get_statuses, fn _scope, _project -> {:ok, statuses} end)
+
+      issue =
+        %Issue{}
+        |> Issue.tracker_changeset(%{
+          project_id: project.id,
+          external_id: "lin_STS-1",
+          identifier: "STS-1",
+          title: "To move",
+          state: :in_progress,
+          state_name: "In Progress"
+        })
+        |> Repo.insert!()
+
+      answered = fn state, completed_at ->
+        fn conn ->
+          Req.Test.json(conn, %{
+            "data" => %{
+              "issueUpdate" => %{
+                "success" => true,
+                "issue" => %{"state" => state, "completedAt" => completed_at, "updatedAt" => "2026-11-01T10:00:00.000Z"}
+              }
+            }
+          })
+        end
+      end
+
+      %{conn: log_in_user(conn, viewer), issue: issue, answered: answered}
+    end
+
+    test "a pick in the plain list shows in a second view with no reload, and a dimmed copy offers no menu", %{
+      conn: conn,
+      issue: %{id: id},
+      answered: answered
+    } do
+      {:ok, view, _html} = live(conn, ~p"/issues")
+      {:ok, other_view, _html} = live(conn, ~p"/issues")
+      Req.Test.allow(Rail.Linear, self(), view.pid)
+
+      view |> element("#status-picker-#{id}-trigger") |> render_click()
+      render_async(view)
+
+      Req.Test.expect(Rail.Linear, answered.(%{"name" => "In Review", "type" => "started"}, nil))
+      view |> element("#status-picker-#{id}-status-st_review") |> render_click()
+
+      assert has_element?(view, "#issue-card-#{id} [data-qa='issue-status-badge'][title='In Review']")
+      assert has_element?(other_view, "#issue-card-#{id} [data-qa='issue-status-badge'][title='In Review']")
+      assert has_element?(other_view, "#issue-card-#{id} .text-emerald-500")
+    end
+
+    test "Done leaves the list while Show finished is off, and stays with it on", %{
+      conn: conn,
+      issue: %{id: id},
+      answered: answered
+    } do
+      {:ok, view, _html} = live(conn, ~p"/issues")
+      {:ok, finished_view, _html} = live(conn, ~p"/issues?finished=true")
+      Req.Test.allow(Rail.Linear, self(), view.pid)
+
+      view |> element("#status-picker-#{id}-trigger") |> render_click()
+      render_async(view)
+
+      Req.Test.expect(
+        Rail.Linear,
+        answered.(%{"name" => "Done", "type" => "completed"}, "2026-11-01T10:00:00.000Z")
+      )
+
+      view |> element("#status-picker-#{id}-status-st_done") |> render_click()
+
+      refute has_element?(view, "#issue-card-#{id}")
+      assert has_element?(finished_view, "#issue-card-#{id} [data-qa='issue-status-badge'][title='Done']")
+    end
+
+    test "a dimmed copy of a parent keeps its plain mark", %{conn: conn, project: project} do
+      insert = fn identifier, attrs ->
+        %Issue{}
+        |> Issue.tracker_changeset(
+          Map.merge(
+            %{
+              project_id: project.id,
+              external_id: "lin_#{identifier}",
+              identifier: identifier,
+              title: "Title #{identifier}",
+              state: :in_progress
+            },
+            attrs
+          )
+        )
+        |> Repo.insert!()
+      end
+
+      %{id: parent_id} = insert.("STS-2", %{state: :done, state_name: "Done"})
+      %{id: child_id} = insert.("STS-3", %{parent_external_id: "lin_STS-2"})
+
+      {:ok, view, _html} = live(conn, ~p"/issues")
+
+      dimmed = "#issue-card-#{parent_id}-above-#{child_id}"
+      assert has_element?(view, "#{dimmed} [data-qa='issue-status-badge'][title='Done']")
+      refute has_element?(view, "#{dimmed} button[data-qa='issue-status-badge']")
+      refute has_element?(view, "#status-picker-#{parent_id}-trigger")
+      assert has_element?(view, "#status-picker-#{child_id}-trigger")
+    end
+  end
+
   describe "remembered filters" do
     setup %{conn: conn} do
       {:ok, user} =
@@ -1583,6 +1705,80 @@ defmodule RailWeb.IssuesLiveTest do
       assert %User{issues_filters: %{}} = Repo.reload!(viewer)
     end
 
+    test "a pick moves the row between groups and changes both groups and the figures, in a second view too", %{
+      conn: conn,
+      working: %{id: working_id},
+      ready: %{id: ready_id}
+    } do
+      statuses = [
+        %{id: "st_ready", name: "Ready for Dev", state: :backlog},
+        %{id: "st_started", name: "In Progress", state: :in_progress},
+        %{id: "st_review", name: "In Review", state: :in_review},
+        %{id: "st_done", name: "Done", state: :done}
+      ]
+
+      stub(Issues, :get_statuses, fn _scope, _project -> {:ok, statuses} end)
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      {:ok, other_view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+      render_async(other_view)
+      Req.Test.allow(Rail.Linear, self(), view.pid)
+
+      answered = fn state, completed_at ->
+        fn conn ->
+          Req.Test.json(conn, %{
+            "data" => %{
+              "issueUpdate" => %{
+                "success" => true,
+                "issue" => %{"state" => state, "completedAt" => completed_at, "updatedAt" => "2026-11-01T10:00:00.000Z"}
+              }
+            }
+          })
+        end
+      end
+
+      assert has_element?(view, "#cycle-issues section[aria-label='In Review']", "1 issue")
+      assert has_element?(view, "#cycle-started", "5")
+
+      view |> element("#status-picker-#{working_id}-trigger") |> render_click()
+      render_async(view)
+
+      Req.Test.expect(Rail.Linear, answered.(%{"name" => "In Review", "type" => "started"}, nil))
+      view |> element("#status-picker-#{working_id}-status-st_review") |> render_click()
+
+      for shown <- [view, other_view] do
+        assert has_element?(shown, "#cycle-issues section[aria-label='In Review'] #issue-card-#{working_id}")
+        assert has_element?(shown, "#cycle-issues section[aria-label='In Review']", "2 issues")
+        assert has_element?(shown, "#cycle-issues section[aria-label='In Review'] [title='5 points']")
+        refute has_element?(shown, "#cycle-issues section[aria-label='In Progress']")
+      end
+
+      # Starting an issue raises Started, in the open page and the other one.
+      view |> element("#status-picker-#{ready_id}-trigger") |> render_click()
+      render_async(view)
+
+      Req.Test.expect(Rail.Linear, answered.(%{"name" => "In Progress", "type" => "started"}, nil))
+      view |> element("#status-picker-#{ready_id}-status-st_started") |> render_click()
+
+      assert has_element?(view, "#cycle-started", "6")
+      assert has_element?(other_view, "#cycle-started", "6")
+      assert has_element?(other_view, "#cycle-issues section[aria-label='In Progress'] #issue-card-#{ready_id}")
+
+      # Reaching Done raises Completed.
+      refute has_element?(other_view, "#cycle-completed", "2")
+
+      Req.Test.expect(
+        Rail.Linear,
+        answered.(%{"name" => "Done", "type" => "completed"}, "2026-11-01T10:00:00.000Z")
+      )
+
+      view |> element("#status-picker-#{working_id}-trigger") |> render_click()
+      view |> element("#status-picker-#{working_id}-status-st_done") |> render_click()
+
+      assert has_element?(other_view, "#cycle-completed", "2")
+    end
+
     test "picking an owner narrows the list while the figures stay the cycle's, and nothing matching names the cycle", %{
       conn: conn,
       ana: ana,
@@ -1706,6 +1902,52 @@ defmodule RailWeb.IssuesLiveTest do
 
       assert has_element?(view, "#issue-card-#{only.id}")
       assert has_element?(view, "#cycle-scope", "4")
+    end
+
+    test "an issue finishing moves today's point on the Completed line in every open tab", %{
+      conn: conn,
+      project: project,
+      cycles: cycles,
+      reviewing: reviewing
+    } do
+      today = Date.utc_today()
+
+      running =
+        cycles.cycles
+        |> Enum.find(& &1.current)
+        |> Map.merge(%{starts_on: Date.add(today, -1), ends_on: Date.add(today, 12)})
+
+      stub(Issues, :get_cycles, fn _project -> {:ok, %{cycles | cycles: [running]}} end)
+      {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+
+      tabs =
+        for _tab <- 1..2 do
+          {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+          render_async(view)
+          assert has_element?(view, "path[stroke='#6366f1'][d='M4.0,128.0 L28.0,128.0']")
+          view
+        end
+
+      assert {:ok, _issue} =
+               Issues.handle_linear_webhook(workspace, %{
+                 "type" => "Issue",
+                 "action" => "update",
+                 "data" => %{
+                   "id" => reviewing.external_id,
+                   "teamId" => "lin_team_id",
+                   "identifier" => "CYC-1",
+                   "title" => "Title CYC-1",
+                   "cycleId" => "cyc_12",
+                   "estimate" => 3,
+                   "state" => %{"name" => "Done", "type" => "completed"}
+                 }
+               })
+
+      for view <- tabs do
+        assert has_element?(view, "#cycle-completed", "3")
+        assert has_element?(view, "path[stroke='#6366f1'][d='M4.0,128.0 L28.0,73.5']")
+        assert has_element?(view, "rect[data-day='1'][data-completed='3']")
+      end
     end
 
     test "a saved cycle view opens on the current cycle by its number", %{conn: conn, viewer: viewer} do
@@ -2056,6 +2298,35 @@ defmodule RailWeb.IssuesLiveTest do
       assert_redirect(view, ~p"/tasks/#{task_id}")
     end
 
+    test "Start makes a linked person the owner of an unassigned issue and queues its ticket's assignee", %{
+      conn: conn,
+      project: project,
+      insert: insert
+    } do
+      %{id: issue_id} =
+        issue = insert.("ROW-S", %{state: :backlog, state_name: "Ready for Dev", cycle_external_id: "cyc_12"})
+
+      {:ok, starter} =
+        Users.register_oauth_user(%{github_id: "gh_row_start", login: "row_start", email: "row_start@example.com"})
+
+      {:ok, starter} = Users.update_user(system_scope(), starter, %{project_ids: [project.id]})
+      %{id: starter_id} = starter = starter |> Ecto.Changeset.change(linear_user_id: "lin_usr_row") |> Repo.update!()
+
+      stub(Issues, :link_pull_request, fn _scope, _issue -> {:ok, nil} end)
+      expect(Rail.Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+      expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+
+      {:ok, view, _html} = live(log_in_user(conn, starter), ~p"/issues?cycle=12")
+      allow(Rail.Git, self(), view.pid)
+      allow(Tools, self(), view.pid)
+      render_async(view)
+
+      view |> element("#issue-start-#{issue_id}") |> render_click()
+
+      assert %Issue{owner_user_id: ^starter_id} = Repo.reload!(issue)
+      assert_enqueued(worker: SyncIssue, args: %{issue_id: issue_id, fields: ["owner_user_id"]})
+    end
+
     test "a stale row whose issue has since started opens the task and leaves its run alone", %{
       conn: conn,
       ready: ready,
@@ -2067,7 +2338,7 @@ defmodule RailWeb.IssuesLiveTest do
 
       # Sent as the event, since any other test's broadcast may have refreshed the row by now.
       {task, run} = open_task.(ready, :plan, %{status: :running})
-      reject(&Pipeline.start_task/1)
+      reject(&Pipeline.start_task/2)
       reject(&Tools.start_os_process/2)
       allow(Pipeline, self(), view.pid)
       allow(Tools, self(), view.pid)
@@ -2102,7 +2373,7 @@ defmodule RailWeb.IssuesLiveTest do
       hidden = insert.("OOR-1", %{project_id: hidden_id, state: :todo})
       finished = insert.("ROW-F", %{state: :done, state_name: "Done", cycle_external_id: "cyc_12"})
 
-      reject(&Pipeline.start_task/1)
+      reject(&Pipeline.start_task/2)
       reject(&Pipeline.adopt_pull_request/2)
       reject(&Issues.link_pull_request/2)
 
@@ -2162,7 +2433,7 @@ defmodule RailWeb.IssuesLiveTest do
       # The re-read has found no task, as it does while the first tab's start is still in its transaction.
       stub(Issues, :get_issue, fn _id, _opts -> {:ok, %{ready | task: nil, project: project}} end)
       stub(Issues, :link_pull_request, fn _scope, _issue -> {:ok, nil} end)
-      expect(Pipeline, :start_task, fn _issue -> {:error, refused} end)
+      expect(Pipeline, :start_task, fn _scope, _issue -> {:error, refused} end)
       allow(Issues, self(), view.pid)
       allow(Pipeline, self(), view.pid)
 
@@ -2266,17 +2537,11 @@ defmodule RailWeb.IssuesLiveTest do
       assert {:error, {:live_redirect, %{to: ^to}}} = view |> element("#issue-card-#{working.id}") |> render_click()
     end
 
-    test "the plain list does not reload on a run's change, which it does not show", %{
-      conn: conn,
-      insert: insert
-    } do
-      {:ok, view, _html} = live(conn, ~p"/issues")
-      render_async(view)
+    # Called directly: a live page also reloads on any other test's broadcast, so it could not show this.
+    test "the plain list does not reload on a run's change, which it does not show" do
+      socket = %Socket{assigns: %{__changed__: %{}, view: :list}}
 
-      late = insert.("ROW-L", %{})
-      send(view.pid, {:pipeline_changed, "tsk_elsewhere"})
-
-      refute render(view) =~ late.identifier
+      assert {:noreply, ^socket} = IssuesLive.handle_info({:pipeline_changed, "tsk_elsewhere"}, socket)
     end
   end
 

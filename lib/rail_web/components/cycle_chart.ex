@@ -1,7 +1,7 @@
 defmodule RailWeb.Components.CycleChart do
   @moduledoc """
-  A cycle's burnup from Linear's daily history: scope, started and completed, the target line, hatched weekends and a
-  rule on today. Each of `days` adds that day's figures and hidden marker, which the panel's `CycleFigures` hook shows.
+  A cycle's burnup, its history run to today by `CyclePanel`: the three lines, the target, hatched weekends that stop
+  short of Monday and a rule on today. Each of `days` adds that day's figures and a marker the `CycleFigures` hook shows.
   """
   use RailWeb, :html
 
@@ -14,7 +14,7 @@ defmodule RailWeb.Components.CycleChart do
   attr :label, :string, required: true
   attr :today, :any, required: true
   attr :id_prefix, :string, default: "cycle"
-  # One map of `data-*` figures per day with history, oldest first; `CyclePanel` builds them.
+  # One map of `data-*` figures per day the lines reach, oldest first; `CyclePanel` builds them.
   attr :days, :list, default: []
 
   def cycle_chart(assigns) do
@@ -36,7 +36,7 @@ defmodule RailWeb.Components.CycleChart do
       |> assign(:projection, cycle.status == :running && projection(cycle.scope_history, last, days, x, y))
       |> assign(:today_x, today_x(cycle, today, days, x))
       |> assign(:ends, ends(cycle, x, y))
-      |> assign(:weekends, weekends(dates, x))
+      |> assign(:weekends, weekends(dates, x, step))
       |> assign(:target_path, dates |> target_values(List.last(cycle.scope_history) || 0) |> line_path(x, y))
       |> assign(:markers, markers(assigns.days, cycle, x, y))
       |> assign(:day_rects, day_rects(assigns.days, x, step))
@@ -271,15 +271,16 @@ defmodule RailWeb.Components.CycleChart do
       else: []
   end
 
-  # From each Saturday, or a Sunday the cycle opens on, to the Monday after, cut off at the last day.
-  defp weekends(dates, x) do
+  # From each Saturday, or a Sunday the cycle opens on, to where Monday's hover column starts, cut off at the last day.
+  defp weekends(dates, x, step) do
     last = length(dates) - 1
 
     for {date, index} <- Enum.with_index(dates),
         weekday = Date.day_of_week(date),
         weekday == 6 or (weekday == 7 and index == 0),
         index < last do
-      {coord(x.(index)), coord(x.(min(index + 8 - weekday, last)) - x.(index))}
+      right = min(x.(index + 8 - weekday) - step / 2, @right)
+      {coord(x.(index)), coord(right - x.(index))}
     end
   end
 

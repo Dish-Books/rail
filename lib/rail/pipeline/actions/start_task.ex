@@ -1,8 +1,10 @@
 defmodule Rail.Pipeline.Actions.StartTask do
   @moduledoc """
   Starts an issue's task at the first of its stages: Plan, a custom stage its workflow placed first, or Engineer when
-  its workflow turned every Plan step off.
+  its workflow turned every Plan step off. The person who starts an unowned issue becomes its owner.
   """
+
+  import Rail.Pipeline.Utils.ClaimForStarter
 
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
@@ -11,31 +13,42 @@ defmodule Rail.Pipeline.Actions.StartTask do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias Rail.Scope
   alias Rail.Tools.Schemas.OsProcess
 
   @doc """
-  Creates the task for `issue` at its first stage, starts its run and returns `{:ok, task}`. A checkout no worktree
-  can be made in leaves the issue without a task, so it can be started again; a second start gets `{:error, :task_exists}`.
+  Creates the task for `issue` at its first stage, starts its run and returns `{:ok, task}`, or `{:error, reason}`:
+  `:not_found`, `:task_exists` for a second start, or what the worktree or the spawn refused.
   """
-  def start_task(%Issue{} = issue) do
+  def start_task(%Scope{} = scope, %Issue{} = issue) do
+    if Scope.can_access_project?(scope, issue.project_id), do: start(scope, issue), else: {:error, :not_found}
+  end
+
+  defp start(%Scope{} = scope, %Issue{} = issue) do
     case Issue.calculate_stages(issue) do
       [:plan | _later] ->
-        with {:ok, %OsProcess{task_id: task_id}} <- Pipeline.start_plan_run(issue), do: Pipeline.get_task(task_id)
+        with {:ok, %OsProcess{task_id: task_id}} <- Pipeline.start_plan_run(scope, issue),
+             do: Pipeline.get_task(task_id)
 
       [first | _later] = stages ->
-        with {:ok, %Task{} = task} <- record_task(Repo.preload(issue, :project), first, :plan in stages) do
+        with {:ok, %Task{} = task} <- record_task(scope, Repo.preload(issue, :project), first, :plan in stages) do
+          Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id})
           {:ok, _run} = Pipeline.enter_stage(task, first, fresh: true)
+          # Again now the run exists, so an open page reads it rather than Queued.
+          Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id})
           Pipeline.get_task(task.id)
         end
     end
   end
 
   # With no Plan to come, round 1 holds the issue as its ticket, approved by Rail so Merge waits on no plan.
-  defp record_task(%Issue{project: %Project{} = project} = issue, first, planned?) do
+  # The claim is last because it locks the issue's row, which no git fetch should hold.
+  defp record_task(%Scope{} = scope, %Issue{project: %Project{} = project} = issue, first, planned?) do
     Repo.transaction(fn ->
       with {:ok, task} <- Pipeline.create_task(issue, first),
            {:ok, _round} <- if(planned?, do: {:ok, nil}, else: issue_round(task, issue)),
-           {:ok, _worktree_path} <- worktree(project, task) do
+           {:ok, _worktree_path} <- worktree(project, task),
+           :ok <- claim_for_starter(scope, issue) do
         task
       else
         {:error, reason} -> Repo.rollback(reason)
