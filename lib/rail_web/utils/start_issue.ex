@@ -2,6 +2,9 @@ defmodule RailWeb.Utils.StartIssue do
   @moduledoc """
   Starts an issue from any page: the one place that decides between opening the task it has, adopting its pull
   request and starting at its first stage. The page passes how it reloads afterwards.
+
+  Only a pull request already linked is adopted. GitHub is not asked here, as its answer held every start up; the
+  issue page links one as it opens.
   """
   use RailWeb, :verified_routes
 
@@ -25,7 +28,7 @@ defmodule RailWeb.Utils.StartIssue do
         match?(%Task{}, issue.task) ->
           push_navigate(socket, to: ~p"/tasks/#{issue.task.id}")
 
-        pull_request?(scope, issue) ->
+        is_integer(issue.pr_number) ->
           scope |> Pipeline.adopt_pull_request(issue) |> finish(socket, reload, &adopt_error/1)
 
         true ->
@@ -34,13 +37,6 @@ defmodule RailWeb.Utils.StartIssue do
     else
       _gone_or_refused -> reload.(socket)
     end
-  end
-
-  # GitHub not answering is no reason to hold a start back, as the issue page offers Plan when its own check fails.
-  defp pull_request?(%Scope{}, %Issue{pr_number: number}) when is_integer(number), do: true
-
-  defp pull_request?(%Scope{} = scope, %Issue{} = issue) do
-    match?({:ok, %{}}, Issues.link_pull_request(scope, issue))
   end
 
   defp finish({:ok, %Task{} = task}, socket, _reload, _error), do: push_navigate(socket, to: ~p"/tasks/#{task.id}")

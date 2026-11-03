@@ -2453,7 +2453,6 @@ defmodule RailWeb.IssuesLiveTest do
       conn: conn,
       ready: ready
     } do
-      stub(Issues, :link_pull_request, fn _scope, _issue -> {:ok, nil} end)
       expect(Rail.Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
       expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
 
@@ -2471,12 +2470,16 @@ defmodule RailWeb.IssuesLiveTest do
       assert_redirect(view, ~p"/tasks/#{task_id}")
     end
 
-    test "Start starts the issue and opens the task", %{conn: conn, ready: ready} do
-      stub(Issues, :link_pull_request, fn _scope, _issue -> {:ok, nil} end)
+    test "Start starts the issue and opens the task, without asking GitHub for a pull request", %{
+      conn: conn,
+      ready: ready
+    } do
+      reject(&Issues.link_pull_request/2)
       expect(Rail.Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
       expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
 
       {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      allow(Issues, self(), view.pid)
       allow(Rail.Git, self(), view.pid)
       allow(Tools, self(), view.pid)
       render_async(view)
@@ -2501,7 +2504,6 @@ defmodule RailWeb.IssuesLiveTest do
       {:ok, starter} = Users.update_user(system_scope(), starter, %{project_ids: [project.id]})
       %{id: starter_id} = starter = starter |> Ecto.Changeset.change(linear_user_id: "lin_usr_row") |> Repo.update!()
 
-      stub(Issues, :link_pull_request, fn _scope, _issue -> {:ok, nil} end)
       expect(Rail.Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
       expect(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
 
@@ -2583,7 +2585,6 @@ defmodule RailWeb.IssuesLiveTest do
       insert: insert
     } do
       spawning = insert.("ROW-SP", %{state: :todo, state_name: "Todo", cycle_external_id: "cyc_12"})
-      stub(Issues, :link_pull_request, fn _scope, _issue -> {:error, :unavailable} end)
       expect(Rail.Git, :get_or_create_worktree, fn _project, _task -> {:error, "no checkout"} end)
       expect(Rail.Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
 
@@ -2625,7 +2626,6 @@ defmodule RailWeb.IssuesLiveTest do
 
       # The re-read has found no task, as it does while the first tab's start is still in its transaction.
       stub(Issues, :get_issue, fn _id, _opts -> {:ok, %{ready | task: nil, project: project}} end)
-      stub(Issues, :link_pull_request, fn _scope, _issue -> {:ok, nil} end)
       expect(Pipeline, :start_task, fn _scope, _issue -> {:error, refused} end)
       allow(Issues, self(), view.pid)
       allow(Pipeline, self(), view.pid)
@@ -2647,7 +2647,6 @@ defmodule RailWeb.IssuesLiveTest do
 
       # The re-read has found no task, as it does while the first tab's start is still in its transaction.
       stub(Issues, :get_issue, fn _id, _opts -> {:ok, %{ready | task: nil, project: project}} end)
-      stub(Issues, :link_pull_request, fn _scope, _issue -> {:ok, nil} end)
       stub(Rail.Git, :get_or_create_worktree, fn _project, _task -> {:ok, task.worktree_path} end)
       reject(&Tools.start_os_process/2)
       allow(Issues, self(), view.pid)
@@ -2661,7 +2660,7 @@ defmodule RailWeb.IssuesLiveTest do
       assert [_one] = Repo.all(from t in Task, where: t.issue_id == ^ready.id)
     end
 
-    test "a start takes up a linked pull request, one GitHub finds, and says why it cannot", %{
+    test "a start takes up a linked pull request and says why it cannot", %{
       conn: conn,
       project: project,
       ready: ready,
@@ -2670,18 +2669,13 @@ defmodule RailWeb.IssuesLiveTest do
       refused_row = insert.("ROW-PR1", %{state: :todo, state_name: "Todo", cycle_external_id: "cyc_12"})
       adopted_row = insert.("ROW-PR2", %{state: :todo, state_name: "Todo", cycle_external_id: "cyc_12"})
 
-      {:ok, _linked} =
-        ready
-        |> Issue.pull_request_changeset(%{pr_number: 41, pr_url: "https://github.com/org/app/pull/41", pr_title: "Built"})
-        |> Repo.update()
+      for {row, number} <- [{ready, 41}, {refused_row, 43}, {adopted_row, 42}] do
+        row
+        |> Issue.pull_request_changeset(%{pr_number: number, pr_url: "https://github.com/org/app/pull/#{number}"})
+        |> Repo.update!()
+      end
 
-      expect(Issues, :link_pull_request, fn _scope, %Issue{id: id} when id == refused_row.id ->
-        {:ok, %{"number" => 43}}
-      end)
-
-      expect(Issues, :link_pull_request, fn _scope, %Issue{id: id} when id == adopted_row.id ->
-        {:ok, %{"number" => 42}}
-      end)
+      reject(&Issues.link_pull_request/2)
 
       {:error, %Ecto.Changeset{} = refused} =
         Repo.transaction(fn ->

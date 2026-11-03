@@ -202,10 +202,12 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
 
     starter = starter |> Ecto.Changeset.change(linear_user_id: "lin_usr_plan_starter") |> Repo.update!()
 
-    # The task is rolled back, so its id is only known from the attempt at its worktree. Claiming locks the issue's
-    # row, which a git fetch must not hold, so no owner is set yet in here.
+    # The worktree is made before the task is recorded, so its id is only known from the attempt. No transaction is
+    # open while git fetches, so nothing is recorded or claimed yet in here.
     expect(Git, :get_or_create_worktree, fn _project, task ->
       send(test_pid, {:worktree_for, task.id})
+      refute Repo.in_transaction?()
+      refute Repo.exists?(from t in Task, where: t.issue_id == ^task.issue_id)
       assert %Issue{owner_user_id: nil} = Repo.get!(Issue, task.issue_id)
 
       {:error,
@@ -234,10 +236,34 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
 
     reject(&Tools.start_os_process/2)
+    reject(Git, :get_or_create_worktree, 2)
 
     assert {:error, :task_exists} = Pipeline.start_plan_run(system_scope(), issue)
 
     assert Repo.reload!(run).started_at == run.started_at
+    refute_enqueued(worker: AdvanceTrackerState)
+  end
+
+  test "a task another start records while git runs refuses this one, which records and spawns nothing", %{
+    issue: issue
+  } do
+    {:ok, starter} =
+      Users.register_oauth_user(%{github_id: "gh_plan_racer", login: "plan-racer", email: "plan-racer@example.com"})
+
+    starter = starter |> Ecto.Changeset.change(linear_user_id: "lin_usr_plan_racer") |> Repo.update!()
+
+    expect(Git, :get_or_create_worktree, fn _project, task ->
+      {:ok, _theirs} = Pipeline.create_task(Repo.preload(issue, :project), :plan)
+      {:ok, task.worktree_path}
+    end)
+
+    reject(&Tools.start_os_process/2)
+
+    assert {:error, :task_exists} = Pipeline.start_plan_run(Scope.for_user(starter), issue)
+
+    assert [_theirs] = Repo.all(from t in Task, where: t.issue_id == ^issue.id)
+    refute Repo.exists?(Run)
+    assert %Issue{owner_user_id: nil} = Repo.reload!(issue)
     refute_enqueued(worker: AdvanceTrackerState)
   end
 
