@@ -77,7 +77,7 @@ defmodule RailWeb.Live.TaskDetail do
       |> open_url_file(assigns)
       |> assign(assigns)
       |> assign_new(:error, fn -> nil end)
-      |> assign_new(:selected_key, fn -> nil end)
+      |> assign_new(:selected_key, fn -> assigns[:url_finding] end)
       |> assign_new(:plan_round, fn -> assigns[:url_round] end)
       |> assign_new(:advanced_to, fn -> nil end)
       |> assign_new(:filed_index, fn -> 0 end)
@@ -87,6 +87,8 @@ defmodule RailWeb.Live.TaskDetail do
       |> assign_new(:screen_open, fn -> nil end)
       |> assign_new(:screen_draft, fn -> nil end)
       |> assign_new(:finding_draft, fn -> nil end)
+      |> assign_new(:reopen_comment, fn -> assigns[:url_comment] end)
+      |> assign_new(:finding_url, fn -> {assigns[:url_finding], assigns[:url_comment]} end)
       |> assign_new(:fix_plan_draft, fn -> nil end)
       |> assign_new(:comment_order, fn -> "newest" end)
       |> assign_new(:reported_lifted, fn -> nil end)
@@ -605,22 +607,8 @@ defmodule RailWeb.Live.TaskDetail do
     end
   end
 
-  # The piece is read off the finding this tab shows, so only a piece it draws can be commented on.
   def handle_event("open_finding_comment", %{"piece" => piece} = params, socket) do
-    %{selected: selected, commentable: commentable} = socket.assigns
-    piece = Enum.find(Ecto.Enum.values(FindingComment, :piece), &(Atom.to_string(&1) == piece))
-
-    index =
-      case Integer.parse(params["index"] || "") do
-        {index, ""} -> index
-        _no_index -> nil
-      end
-
-    socket =
-      if commentable and selected != nil and FindingComment.calculate_piece(selected, piece, index) != nil,
-        do: assign(socket, :finding_draft, %{finding_id: selected.id, piece: piece, index: index, body: nil}),
-        else: socket
-
+    socket = socket |> open_finding_draft(piece, params["index"]) |> sync_finding_url()
     {:noreply, socket}
   end
 
@@ -631,7 +619,8 @@ defmodule RailWeb.Live.TaskDetail do
   def handle_event("change_finding_comment", _params, socket), do: {:noreply, socket}
 
   def handle_event("cancel_finding_comment", _params, socket) do
-    {:noreply, assign(socket, :finding_draft, nil)}
+    socket = socket |> assign(:finding_draft, nil) |> sync_finding_url()
+    {:noreply, socket}
   end
 
   # A blank comment keeps the box open on what was typed.
@@ -642,18 +631,18 @@ defmodule RailWeb.Live.TaskDetail do
     case Pipeline.create_finding_comment(scope, task, attrs) do
       {:ok, _comment} ->
         socket = socket |> assign(:finding_draft, nil) |> assign(:error, nil) |> assign_finding_comments()
-        {:noreply, socket}
+        {:noreply, sync_finding_url(socket)}
 
       {:error, %Ecto.Changeset{}} ->
         {:noreply, assign(socket, :finding_draft, %{draft | body: body})}
 
       {:error, :not_found} ->
         socket = socket |> assign(:finding_draft, nil) |> assign(:error, "That finding has no such piece to comment on.")
-        {:noreply, socket}
+        {:noreply, sync_finding_url(socket)}
 
       {:error, reason} ->
         socket = socket |> assign(:finding_draft, nil) |> assign(:error, message_for(reason))
-        {:noreply, socket}
+        {:noreply, sync_finding_url(socket)}
     end
   end
 
@@ -903,9 +892,10 @@ defmodule RailWeb.Live.TaskDetail do
   defp default_item(%Task{}), do: :findings
 
   # The page puts the open item in the URL, so a reload comes back to it.
+  # Another item's URL names no finding, so coming back to Findings names it again.
   defp pick(socket, item) do
     if item != socket.assigns.item, do: send(self(), {:review_item, item})
-    assign(socket, :item, item)
+    socket |> assign(:item, item) |> assign(:finding_url, {nil, nil})
   end
 
   defp assign_demo_and_browsers(%{assigns: %{task: task}} = socket, runs) do
@@ -969,9 +959,55 @@ defmodule RailWeb.Live.TaskDetail do
     |> assign(:commentable, task.stage in [:review, :finalize, :merged] and is_nil(task.cleaned_up_at))
     |> assign_finding_comments()
     |> assign_comments()
+    |> reopen_finding_draft()
+    |> sync_finding_url()
     |> watch()
     |> tray(findings, passes, phase)
   end
+
+  # The piece is read off the finding this tab shows, so only a piece it draws can be commented on.
+  defp open_finding_draft(socket, piece, index) do
+    %{selected: selected, commentable: commentable} = socket.assigns
+    piece = Enum.find(Ecto.Enum.values(FindingComment, :piece), &(Atom.to_string(&1) == piece))
+
+    index =
+      case Integer.parse(index || "") do
+        {index, ""} -> index
+        _no_index -> nil
+      end
+
+    if commentable and selected != nil and FindingComment.calculate_piece(selected, piece, index) != nil,
+      do: assign(socket, :finding_draft, %{finding_id: selected.id, piece: piece, index: index, body: nil}),
+      else: socket
+  end
+
+  # The box the URL names opens once, on the page's first read, so form recovery has it to put its text back in.
+  defp reopen_finding_draft(%{assigns: %{reopen_comment: "" <> anchor}} = socket) do
+    [piece | index] = String.split(anchor, "-", parts: 2)
+    socket |> assign(:reopen_comment, nil) |> open_finding_draft(piece, List.first(index))
+  end
+
+  defp reopen_finding_draft(socket), do: socket
+
+  # The URL names the finding open in Findings and the piece its box is open on, so a reconnect or a reload opens
+  # both again. The stage remembers what it last named, as the page's patch draws nothing here.
+  defp sync_finding_url(%{assigns: %{item: :findings, selected: %Finding{key: key}, finding_draft: draft}} = socket) do
+    comment =
+      case draft do
+        %{piece: piece, index: nil} -> Atom.to_string(piece)
+        %{piece: piece, index: index} -> "#{piece}-#{index}"
+        nil -> nil
+      end
+
+    if {key, comment} == socket.assigns.finding_url do
+      socket
+    else
+      send(self(), {:review_finding, key, comment})
+      assign(socket, :finding_url, {key, comment})
+    end
+  end
+
+  defp sync_finding_url(socket), do: socket
 
   defp assign_comments(%{assigns: %{task: task, item: item, current_scope: scope}} = socket),
     do: assign(socket, :comments, if(item == :comments, do: Pipeline.list_comments(scope, task), else: []))

@@ -69,6 +69,10 @@ defmodule RailWeb.TaskLive do
       |> assign(:item, nil)
       |> assign(:agent, nil)
       |> assign(:round, nil)
+      |> assign(:finding, nil)
+      |> assign(:comment, nil)
+      |> assign(:url_finding, nil)
+      |> assign(:url_comment, nil)
       |> assign(:plan_run, nil)
       |> assign(:rounds, [])
       |> assign(:review_run, nil)
@@ -137,26 +141,40 @@ defmodule RailWeb.TaskLive do
 
   def handle_params(%{"id" => task_id} = params, _uri, socket) do
     url = %{url_id: task_id, child: params["child"], focus_file: params["file"]}
+    opened = %{item: params["item"], agent: params["agent"], round: params["round"]}
+    same_task? = socket.assigns.task != nil and Map.take(socket.assigns, Map.keys(url)) == url
 
-    # The stage naming its item, or the conversation its agent, reads nothing again. A stale item is safe: the
-    # stage reads it only on mount or a new task.
+    # The stage naming its finding draws nothing: the stage named it. The stage naming its item, or the
+    # conversation its agent, reads nothing again. A stale item is safe: the stage reads it only on mount or a new
+    # task.
     socket =
-      if socket.assigns.task != nil and Map.take(socket.assigns, Map.keys(url)) == url do
-        socket
-        |> assign(:item, params["item"])
-        |> assign(:agent, params["agent"])
-        |> assign(:round, params["round"])
-        |> apply_task(socket.assigns.task)
-      else
-        socket
-        |> assign(:url_id, task_id)
-        |> assign(:task_id, task_id)
-        |> assign(:child, params["child"])
-        |> assign(:item, params["item"])
-        |> assign(:agent, params["agent"])
-        |> assign(:round, params["round"])
-        |> assign(:focus_file, params["file"])
-        |> refresh_task()
+      cond do
+        same_task? and Map.take(socket.assigns, Map.keys(opened)) == opened ->
+          socket |> assign(:finding, params["finding"]) |> assign(:comment, params["comment"])
+
+        same_task? ->
+          socket
+          |> assign(:item, params["item"])
+          |> assign(:agent, params["agent"])
+          |> assign(:round, params["round"])
+          |> assign(:finding, params["finding"])
+          |> assign(:comment, params["comment"])
+          |> apply_task(socket.assigns.task)
+
+        true ->
+          socket
+          |> assign(:url_id, task_id)
+          |> assign(:task_id, task_id)
+          |> assign(:child, params["child"])
+          |> assign(:item, params["item"])
+          |> assign(:agent, params["agent"])
+          |> assign(:round, params["round"])
+          |> assign(:finding, params["finding"])
+          |> assign(:comment, params["comment"])
+          |> assign(:url_finding, params["finding"])
+          |> assign(:url_comment, params["comment"])
+          |> assign(:focus_file, params["file"])
+          |> refresh_task()
       end
 
     {:noreply, socket}
@@ -206,6 +224,8 @@ defmodule RailWeb.TaskLive do
           current_scope={@current_scope}
           url_item={@item}
           url_round={@round}
+          url_finding={@url_finding}
+          url_comment={@url_comment}
           url_file={@focus_file}
         >
           <:breadcrumb :if={@show_switcher}>
@@ -508,6 +528,17 @@ defmodule RailWeb.TaskLive do
     socket = socket |> assign(:plan_tab, nil) |> push_patch(to: path, replace: true)
     {:noreply, socket}
   end
+
+  # Findings opened another finding, or a comment box on one of its pieces, which the URL names in place, so a
+  # reconnect or a reload opens them again.
+  def handle_info({:review_finding, key, comment}, %{assigns: assigns} = socket)
+      when {key, comment} != {assigns.finding, assigns.comment} do
+    %{item: item, agent: agent, round: round} = assigns
+    path = task_path(socket, item: item, agent: agent, round: round, finding: key, comment: comment)
+    {:noreply, push_patch(socket, to: path, replace: true)}
+  end
+
+  def handle_info({:review_finding, _key, _comment}, socket), do: {:noreply, socket}
 
   # Sent by the stage as it drew, so it can land after the task was discarded underneath the page.
   def handle_info({:watch_browser, _name}, %{assigns: %{task: nil}} = socket), do: {:noreply, socket}
