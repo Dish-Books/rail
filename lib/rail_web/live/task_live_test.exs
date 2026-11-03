@@ -2355,6 +2355,31 @@ defmodule RailWeb.TaskLiveTest do
       end
     end
 
+    test "a pick while Plan is working moves every page open on the task to the picked design", %{
+      conn: conn,
+      task: task,
+      run: run,
+      save_ticket: save_ticket,
+      save_options: save_options
+    } do
+      save_ticket.()
+      save_options.(["cards", "table", "timeline"])
+      {:ok, _working} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+
+      assert {:ok, one, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert {:ok, two, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      one |> element("#design-tab-table") |> render_click()
+      one |> element("#pick-design-table") |> render_click()
+
+      for view <- [one, two] do
+        _settled = render(view)
+        refute has_element?(view, "[id^='pick-design-']")
+        refute has_element?(view, "[role='tablist'][aria-label='Design options']")
+        assert has_element?(view, ~s(iframe[id^='design-page-table-'][src*="comments=1"]))
+      end
+    end
+
     test "a run starting, stopping or failing keeps the ticket, the design and the plan on the page", %{
       conn: conn,
       task: task,
@@ -2443,6 +2468,57 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#design-costs", "Busy at 1280px")
       assert has_element?(view, "#design-assumptions", "Ten per page.")
       refute has_element?(view, "[role='tablist'][aria-label='Design options']")
+    end
+
+    test "every option offers Use this design in the Comment row with no Open, and it picks the option shown", %{
+      conn: conn,
+      task: task,
+      design_dir: dir,
+      save_ticket: save_ticket,
+      save_options: save_options
+    } do
+      save_ticket.()
+      save_options.(["cards", "table", "timeline"])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      for key <- ["cards", "table", "timeline"] do
+        view |> element("#design-tab-#{key}") |> render_click()
+
+        assert has_element?(view, "#design-option-title", String.capitalize(key))
+        assert has_element?(view, "#design-comment-control #pick-design-#{key}", "Use this design")
+        assert has_element?(view, "[data-qa='pick_design']")
+        refute has_element?(view, "[id^='open-design-']")
+      end
+
+      view |> element("#design-comment-control #pick-design-timeline") |> render_click()
+
+      assert File.read!(Path.join(dir, "picked")) == "timeline"
+    end
+
+    test "the picked design keeps its frame, takes the overlay only after the pick, and has nothing between the summary and Good at",
+         %{conn: conn, task: task, save_ticket: save_ticket, save_options: save_options} do
+      save_ticket.()
+      save_options.(["cards", "table", "timeline"])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#design-tab-table") |> render_click()
+
+      assert has_element?(view, "iframe[id^='design-page-table-']")
+      refute has_element?(view, ~s(iframe[src*="comments=1"]))
+
+      view |> element("#pick-design-table") |> render_click()
+
+      assert has_element?(view, ~s(iframe[id^='design-page-table-'][src*="comments=1"]))
+      refute has_element?(view, "[id^='open-design-']")
+      refute has_element?(view, "[id^='pick-design-']")
+      refute has_element?(view, "#pick-in-conversation")
+
+      assert [_frame, title_block, good_at, _costs, _assumptions] =
+               view |> render() |> Floki.parse_document!() |> Floki.find("#design-option-table > *")
+
+      assert Floki.text(title_block) =~ "Table summary."
+      assert Floki.attribute(good_at, "id") == ["design-good-at"]
     end
 
     test "a pick of another option than the plan's shows the pick while the plan says it is revising", %{
@@ -2629,8 +2705,9 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='task_error_card']", error)
       refute has_element?(view, "#plan-tab-design-waiting")
       assert has_element?(view, "#plan-section-design #design-tab-missing-3", "Not saved")
-      assert has_element?(view, "#pick-in-conversation", "Pick in the conversation.")
+      assert has_element?(view, "#design-comment-control #pick-in-conversation", "Pick in the conversation.")
       refute has_element?(view, "#pick-design-cards")
+      refute has_element?(view, "[id^='open-design-']")
       assert has_element?(view, "#plan-section-plan #plan-plan-pending")
     end
 
@@ -2909,7 +2986,6 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(view, ~s(iframe[src*="comments=1"]))
-      refute has_element?(view, ~s(#open-design-waiting-lanes[href*="comments=1"]))
 
       view |> with_target("#plan-stage") |> render_hook("select_element", element)
       refute has_element?(view, "[data-qa='plan_comment_form']")

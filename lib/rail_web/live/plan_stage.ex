@@ -671,7 +671,28 @@ defmodule RailWeb.Live.PlanStage do
             commenting={@commenting}
             disabled_reason={@comment_reason}
             target={@target}
-          />
+          >
+            <button
+              :if={@picked == nil and @can_pick and (@full or @running)}
+              type="button"
+              id={"pick-design-#{@option.key}"}
+              data-qa="pick_design"
+              phx-click="pick"
+              phx-value-key={@option.key}
+              phx-target={@target}
+              class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Use this design
+            </button>
+
+            <span
+              :if={@picked == nil and @can_pick and not @full and not @running}
+              id="pick-in-conversation"
+              class="text-[11.5px] text-slate-500 dark:text-slate-400"
+            >
+              Pick in the conversation.
+            </span>
+          </.design_comment_control>
 
           <div
             id={"design-frame-#{@option.key}"}
@@ -754,40 +775,6 @@ defmodule RailWeb.Live.PlanStage do
           >
             {@option.summary}
           </p>
-        </div>
-
-        <div class="flex items-center gap-3">
-          <button
-            :if={@picked == nil and @can_pick and (@full or @running)}
-            type="button"
-            id={"pick-design-#{@option.key}"}
-            data-qa="pick_design"
-            phx-click="pick"
-            phx-value-key={@option.key}
-            phx-target={@target}
-            class="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Use this design
-          </button>
-
-          <a
-            :if={@option.html != nil}
-            id={"open-design-#{@option.key}"}
-            href={~p"/tasks/#{@task.id}/design/#{@option.key}?v=#{@option.html_version}"}
-            target="_blank"
-            rel="noopener"
-            class="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-semibold border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800"
-          >
-            Open <.icon name="pi-arrow-up-right" class="size-4" />
-          </a>
-
-          <span
-            :if={@picked == nil and @can_pick and not @full and not @running}
-            id="pick-in-conversation"
-            class="text-[13px] text-slate-500 dark:text-slate-400"
-          >
-            Pick in the conversation.
-          </span>
         </div>
 
         <.tradeoffs
