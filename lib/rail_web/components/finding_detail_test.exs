@@ -108,9 +108,9 @@ defmodule RailWeb.Components.FindingDetailTest do
 
     test "the reader's unsent comments show under their pieces with the tray's numbers, and the box under its piece",
          %{finding: finding} do
-      on_title = %{id: "fcm_0", body: "Say who."}
-      on_fix = %{id: "fcm_1", body: "Guard it higher up."}
-      on_place = %{id: "fcm_2", body: "And its caller."}
+      on_title = %{id: "fcm_0", label: "Title", body: "Say who."}
+      on_fix = %{id: "fcm_1", label: "Fix", body: "Guard it higher up."}
+      on_place = %{id: "fcm_2", label: "Place 1", body: "And its caller."}
 
       doc =
         (&FindingDetail.finding_detail/1)
@@ -127,10 +127,10 @@ defmodule RailWeb.Components.FindingDetailTest do
       # The header does not scroll, so the title's comments are drawn in the body under a caption, not under it.
       assert [] = Floki.find(doc, "[data-qa=finding_title] [data-qa=document_comment]")
       [title] = Floki.find(doc, "[data-qa=finding_title_comments]")
-      assert Floki.text(title) =~ ~r/Title\s+1\s+You\s+Not sent\s+Remove\s+Say who./
+      assert Floki.text(title) =~ ~r/Title\s+1\s+You\s+Not sent\s+Edit\s+Remove\s+Say who./
 
       [fix] = Floki.find(doc, "[data-qa=finding_fix] [data-qa=document_comment]")
-      assert Floki.text(fix) =~ ~r/2\s+You\s+Not sent\s+Remove\s+Guard it higher up./
+      assert Floki.text(fix) =~ ~r/2\s+You\s+Not sent\s+Edit\s+Remove\s+Guard it higher up./
 
       assert ["remove_finding_comment"] =
                fix |> Floki.find("[data-qa=document_comment_remove]") |> Floki.attribute("phx-click")
@@ -514,7 +514,7 @@ defmodule RailWeb.Components.FindingDetailTest do
         |> render_component(
           Keyword.merge(attrs,
             offered: true,
-            comments: %{{:place, 2} => [{%{id: "fcm_1", body: "Use it here too."}, 1}]},
+            comments: %{{:place, 2} => [{%{id: "fcm_1", label: "Place 3", body: "Use it here too."}, 1}]},
             draft: %{piece: :place, index: 1, body: "And here"}
           )
         )

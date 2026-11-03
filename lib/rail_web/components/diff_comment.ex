@@ -2,7 +2,7 @@ defmodule RailWeb.Components.DiffComment do
   @moduledoc """
   One comment on a line of the diff: unsent, sending while Send is on its way, sent,
   or resolved and folded to one line until the reader opens it. Only its author can
-  remove, resolve or unresolve it.
+  edit, remove, resolve or unresolve it, and edit or remove it only while unsent.
 
   A comment lifted off its line quotes the line as it read when it was written,
   because that quote is what the engineer is sent.
@@ -63,7 +63,7 @@ defmodule RailWeb.Components.DiffComment do
       id={"diff-comment-#{@comment.id}"}
       data-qa="diff_comment"
       class={[
-        "max-w-[760px] rounded-r-lg border border-l-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5",
+        "group/comment max-w-[760px] rounded-r-lg border border-l-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5",
         @comment.status == :unsent && "border-l-amber-500 dark:border-l-amber-500",
         @comment.status == :sent && "border-l-slate-400 dark:border-l-slate-500",
         @comment.status == :resolved && "border-l-emerald-500 dark:border-l-emerald-500"
@@ -120,6 +120,8 @@ defmodule RailWeb.Components.DiffComment do
         >
           <.icon name="pi-arrows-clockwise-bold" class="size-3" />Line changed
         </span>
+        <span class="ml-auto" />
+        <.comment_edit_button :if={@comment.status == :unsent} place="card" comment={@comment} />
         <button
           :if={@comment.status == :unsent}
           type="button"
@@ -172,20 +174,28 @@ defmodule RailWeb.Components.DiffComment do
         <span class="whitespace-pre-wrap break-all pr-2 text-slate-700 dark:text-slate-200">{@comment.line_text}</span>
       </div>
 
-      <p
-        phx-no-format
-        class={[
-          "text-[13px] leading-[21px] text-slate-800 dark:text-slate-100 whitespace-pre-wrap break-words",
-          @lifted? && "mt-1.5",
-          not @lifted? && "mt-0.5"
-        ]}
-      >{@comment.body}</p>
+      <.comment_body
+        :if={@comment.status == :unsent}
+        place="card"
+        comment={@comment}
+        label={quote_label(@comment)}
+        class={body_class(@lifted?)}
+      />
+      <p :if={@comment.status != :unsent} phx-no-format class={body_class(@lifted?)}>{@comment.body}</p>
     </div>
     """
   end
 
+  defp body_class(lifted?) do
+    [
+      "text-[13px] leading-[21px] text-slate-800 dark:text-slate-100 whitespace-pre-wrap break-words",
+      lifted? && "mt-1.5",
+      not lifted? && "mt-0.5"
+    ]
+  end
+
   defp action_class do
-    "ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+    "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
   end
 
   defp quote_label(%{line_kind: :deleted, line: line}), do: "Removed line #{line}"

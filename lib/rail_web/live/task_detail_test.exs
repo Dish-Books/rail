@@ -443,7 +443,7 @@ defmodule RailWeb.Live.TaskDetailTest do
     assert %{stage_outcome: :in_progress} = Repo.reload!(run)
   end
 
-  test "a finding comment's box cancels, closes on another finding, and Remove takes a comment out", %{
+  test "a finding comment's box cancels, closes on another finding, Edit changes a comment and Remove takes it out", %{
     conn: conn,
     user: user,
     task: task,
@@ -481,6 +481,12 @@ defmodule RailWeb.Live.TaskDetailTest do
     refute has_element?(view, "[data-qa=finding_title_comments] [data-qa=document_comment]")
 
     view |> element("#finding-view-only-send") |> render_click()
+    title = "[data-qa=finding_title_comments] [data-qa=document_comment]"
+    view |> element("#{title} [data-qa=comment_edit]") |> render_click()
+    view |> form("#{title} [data-qa=comment_edit_form]", %{"body" => "Say who wrote it."}) |> render_submit()
+    # The box hears how its save went once the page has saved it.
+    _settled = render(view)
+    assert has_element?(view, title, "Say who wrote it.")
     view |> element("[data-qa=finding_title_comments] [data-qa=document_comment_remove]") |> render_click()
     refute has_element?(view, "[data-qa=finding_title_comments] [data-qa=document_comment]")
     refute has_element?(view, "#review-send-tray [data-kind=finding]")
@@ -1914,7 +1920,7 @@ defmodule RailWeb.Live.TaskDetailTest do
       assert has_element?(view, "#review-item-findings[title='Findings: Fix round 2 · writing the fix plan']")
     end
 
-    test "Remove takes a comment out of the screen view, and a state a retake took away closes it", %{
+    test "Edit changes a comment in the screen view and Remove takes it out, and a state a retake took away closes it", %{
       conn: conn,
       task: task,
       user: user
@@ -1929,6 +1935,11 @@ defmodule RailWeb.Live.TaskDetailTest do
       {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       view |> element("#review-item-screens") |> render_click()
       view |> element("#screen-toolbar") |> render_click()
+      view |> element("#screen-view [data-qa=comment_edit]") |> render_click()
+      view |> form("#screen-view [data-qa=comment_edit_form]", %{"body" => "Hi there."}) |> render_submit()
+      # The box hears how its save went once the page has saved it.
+      _settled = render(view)
+      assert has_element?(view, "#screen-view [data-qa=screen_comment]", "Hi there.")
       view |> element("#screen-view [data-qa=screen_comment_remove]") |> render_click()
 
       refute has_element?(view, "#screen-view [data-qa=screen_comment]")

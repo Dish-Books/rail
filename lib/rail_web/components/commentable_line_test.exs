@@ -147,19 +147,21 @@ defmodule RailWeb.Components.CommentableLineTest do
     }
 
     html =
-      ~H"""
-      <CommentableLine.commentable_line
-        layout={:values}
-        doc={:ticket}
-        placed={@placed}
-        offered
-        target={nil}
-      >
-        <:value line={@priority}>Medium</:value>
-        <:value line={@estimate}>3 Points</:value>
-      </CommentableLine.commentable_line>
-      """
-      |> rendered_to_string()
+      fn assigns ->
+        ~H"""
+        <CommentableLine.commentable_line
+          layout={:values}
+          doc={:ticket}
+          placed={@placed}
+          offered
+          target={nil}
+        >
+          <:value line={@priority}>Medium</:value>
+          <:value line={@estimate}>3 Points</:value>
+        </CommentableLine.commentable_line>
+        """
+      end
+      |> render_component(assigns)
       |> Floki.parse_fragment!()
 
     assert [value_class, _estimate] = Floki.attribute(html, "[data-qa='commentable_value']", "class")
@@ -212,17 +214,19 @@ defmodule RailWeb.Components.CommentableLineTest do
     assigns = %{line: row, placed: %{row.key => [{comment.("pcm_c", row), 1}]}}
 
     html =
-      ~H"""
-      <CommentableLine.commentable_line
-        line={@line}
-        layout={:table_row}
-        doc={:plan}
-        placed={@placed}
-        offered
-        target={nil}
-      />
-      """
-      |> rendered_to_string()
+      fn assigns ->
+        ~H"""
+        <CommentableLine.commentable_line
+          line={@line}
+          layout={:table_row}
+          doc={:plan}
+          placed={@placed}
+          offered
+          target={nil}
+        />
+        """
+      end
+      |> render_component(assigns)
       |> Floki.parse_fragment!()
 
     assert [class] = Floki.attribute(html, "[data-qa='commentable_line']", "class")

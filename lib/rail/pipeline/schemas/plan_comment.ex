@@ -87,6 +87,17 @@ defmodule Rail.Pipeline.Schemas.PlanComment do
   end
 
   @doc """
+  Builds a changeset that changes only the comment's text, for its author editing it before it is sent.
+  """
+  def edit_changeset(%__MODULE__{} = comment, attrs) do
+    comment
+    |> cast(attrs, [:body])
+    # A blank text casts to nil, which is refused below.
+    |> update_change(:body, &(&1 && String.trim(&1)))
+    |> validate_required([:body])
+  end
+
+  @doc """
   Puts one person's comments in the order a round is numbered in: the design's, the ticket's, the plan's, the next
   round's plan's, then a custom stage's output's, each oldest first.
   """

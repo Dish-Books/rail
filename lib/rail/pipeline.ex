@@ -131,16 +131,20 @@ defmodule Rail.Pipeline do
   defdelegate create_diff_comment(scope, task, attrs), to: Actions.CreateDiffComment
   defdelegate list_diff_comments(scope, task, opts \\ []), to: Actions.ListDiffComments
   defdelegate delete_diff_comment(scope, comment), to: Actions.DeleteDiffComment
+  defdelegate update_diff_comment(scope, comment, attrs), to: Actions.UpdateDiffComment
   defdelegate set_diff_comment_resolved(scope, comment, resolved?), to: Actions.SetDiffCommentResolved
   defdelegate create_screen_comment(scope, task, attrs), to: Actions.CreateScreenComment
   defdelegate list_screen_comments(scope, task, opts \\ []), to: Actions.ListScreenComments
   defdelegate delete_screen_comment(scope, comment), to: Actions.DeleteScreenComment
+  defdelegate update_screen_comment(scope, comment, attrs), to: Actions.UpdateScreenComment
   defdelegate create_finding_comment(scope, task, attrs), to: Actions.CreateFindingComment
   defdelegate list_finding_comments(scope, task, opts \\ []), to: Actions.ListFindingComments
   defdelegate delete_finding_comment(scope, comment), to: Actions.DeleteFindingComment
+  defdelegate update_finding_comment(scope, comment, attrs), to: Actions.UpdateFindingComment
   defdelegate create_plan_comment(scope, run, attrs), to: Actions.CreatePlanComment
   defdelegate list_plan_comments(scope, task, opts \\ []), to: Actions.ListPlanComments
   defdelegate delete_plan_comment(scope, comment), to: Actions.DeletePlanComment
+  defdelegate update_plan_comment(scope, comment, attrs), to: Actions.UpdatePlanComment
   defdelegate list_comments(scope, task), to: Actions.ListComments
   defdelegate send_plan_comments(scope, run), to: Actions.SendPlanComments
   defdelegate stop_and_send_message(scope, run, opts \\ []), to: Actions.StopAndSendMessage

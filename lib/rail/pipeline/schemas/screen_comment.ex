@@ -41,6 +41,17 @@ defmodule Rail.Pipeline.Schemas.ScreenComment do
   end
 
   @doc """
+  Builds a changeset that changes only the comment's text, for its author editing it before it is sent.
+  """
+  def edit_changeset(%__MODULE__{} = comment, attrs) do
+    comment
+    |> cast(attrs, [:body])
+    # A blank text casts to nil, which is refused below.
+    |> update_change(:body, &(&1 && String.trim(&1)))
+    |> validate_required([:body])
+  end
+
+  @doc """
   Writes `comment` as the block the Review lead is sent. `screen` is its state as `Rail.Pipeline.list_screens/1` reads
   it at Send, or nil once no picture of it is left, and `scratch_path` the task's, whose QA folder holds the picture.
   """

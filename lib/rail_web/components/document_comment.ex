@@ -18,7 +18,7 @@ defmodule RailWeb.Components.DocumentComment do
       id={"document-comment-#{@comment.id}"}
       data-qa="document_comment"
       data-lifted="true"
-      class="rounded-lg border border-dashed border-slate-300 dark:border-slate-600 px-3 py-2"
+      class="group/comment rounded-lg border border-dashed border-slate-300 dark:border-slate-600 px-3 py-2"
     >
       <div class="flex items-center gap-2 min-w-0">
         <span
@@ -36,6 +36,8 @@ defmodule RailWeb.Components.DocumentComment do
         <span class="min-w-0 truncate font-mono text-[10.5px] text-slate-500 dark:text-slate-400">
           {@comment.element_label} as you commented on it
         </span>
+        <span class="ml-auto" />
+        <.comment_edit_button place="card" comment={@comment} />
         <.remove comment={@comment} event={@remove} target={@target} />
       </div>
       <blockquote
@@ -43,10 +45,12 @@ defmodule RailWeb.Components.DocumentComment do
         data-qa="document_comment_quote"
         class="mt-1.5 ml-[26px] pl-2.5 border-l-2 border-slate-300 dark:border-slate-600 text-[12.5px] leading-[18px] text-slate-500 dark:text-slate-400 whitespace-pre-wrap wrap-anywhere"
       >{@comment.element_text}</blockquote>
-      <p
-        phx-no-format
+      <.comment_body
+        place="card"
+        comment={@comment}
+        label={name(@comment)}
         class="mt-1 ml-[26px] text-[12.5px] leading-[18px] text-slate-700 dark:text-slate-200 whitespace-pre-wrap wrap-anywhere"
-      >{@comment.body}</p>
+      />
     </div>
     """
   end
@@ -56,7 +60,7 @@ defmodule RailWeb.Components.DocumentComment do
     <div
       id={"document-comment-#{@comment.id}"}
       data-qa="document_comment"
-      class="max-w-[760px] rounded-r-lg border border-l-2 border-slate-200 dark:border-slate-700 border-l-amber-500 dark:border-l-amber-500 bg-white dark:bg-slate-900 px-3 py-1.5"
+      class="group/comment max-w-[760px] rounded-r-lg border border-l-2 border-slate-200 dark:border-slate-700 border-l-amber-500 dark:border-l-amber-500 bg-white dark:bg-slate-900 px-3 py-1.5"
     >
       <div class="flex flex-wrap items-center gap-x-2 gap-y-1 min-h-5 min-w-0">
         <span
@@ -79,12 +83,16 @@ defmodule RailWeb.Components.DocumentComment do
         >
           {name(@comment)}
         </span>
+        <span class="ml-auto" />
+        <.comment_edit_button place="card" comment={@comment} />
         <.remove comment={@comment} event={@remove} target={@target} />
       </div>
-      <p
-        phx-no-format
+      <.comment_body
+        place="card"
+        comment={@comment}
+        label={name(@comment)}
         class="mt-0.5 text-[13px] leading-[21px] text-slate-800 dark:text-slate-100 whitespace-pre-wrap wrap-anywhere"
-      >{@comment.body}</p>
+      />
     </div>
     """
   end
@@ -101,14 +109,15 @@ defmodule RailWeb.Components.DocumentComment do
       phx-value-id={@comment.id}
       phx-target={@target}
       data-qa="document_comment_remove"
-      class="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+      class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
     >
       <.icon name="pi-trash" class="size-3.5" />Remove
     </button>
     """
   end
 
-  # Every node of a diagram has the same label, so the node is named by its id.
+  # Every node of a diagram has the same label, so the node is named by its id. A finding's piece has a label of its own.
   defp name(%{element_kind: :node, element_text: id}), do: "Node #{id}"
   defp name(%{element_label: label}), do: label
+  defp name(%{label: label}), do: label
 end
