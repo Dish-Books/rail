@@ -267,6 +267,16 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
                Mcp.call_run_tool(lead, "save_finding", Map.put(finding, "evidence", [escape]))
     end
 
+    test "a refusal inside a single embed names the embed it was in", %{project: project, task: task} do
+      {:ok, plan_role} = Roles.get_role(project_id: project.id, stage: :plan)
+      plan = %RunContext{os_process: %OsProcess{task_id: task.id}, role: plan_role, user: nil}
+
+      assert {:error, {:refused, refused}} = Mcp.call_run_tool(plan, "save_plan", %{"plan" => @plan})
+
+      assert refused =~ "ticket title: is required."
+      assert refused =~ "ticket description: is required."
+    end
+
     test "a field that should be a list says so", %{project: project, task: task} do
       {:ok, plan_role} = Roles.get_role(project_id: project.id, stage: :plan)
       plan = %RunContext{os_process: %OsProcess{task_id: task.id}, role: plan_role, user: nil}

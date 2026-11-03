@@ -140,13 +140,18 @@ defmodule Rail.Mcp.Actions.CallRunTool do
       end
 
     nested =
-      for {field, changes} when is_list(changes) <- changeset.changes,
-          {%Ecto.Changeset{valid?: false} = child, index} <- Enum.with_index(changes, 1),
-          error <- errors(child, at(prefix, "#{field} #{index}")),
+      for {field, changes} <- changeset.changes,
+          {%Ecto.Changeset{valid?: false} = child, at} <- children(at(prefix, field), changes),
+          error <- errors(child, at),
           do: error
 
     own ++ nested
   end
+
+  # An entry in a list is named by its place in it; a single embed by its field alone.
+  defp children(at, changes) when is_list(changes), do: Enum.with_index(changes, &{&1, "#{at} #{&2 + 1}"})
+  defp children(at, %Ecto.Changeset{} = child), do: [{child, at}]
+  defp children(_at, _change), do: []
 
   defp at(nil, field), do: to_string(field)
   defp at(prefix, field), do: "#{prefix} #{field}"
