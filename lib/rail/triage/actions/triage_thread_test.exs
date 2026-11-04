@@ -217,6 +217,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
       brief = Enum.find(argv, &(&1 =~ "Triage the Slack thread in"))
       assert brief =~ "Where the issue should be linked, write `{issue link}`"
       assert brief =~ "the reply says the item is already tracked in that issue, giving its identifier"
+      assert brief =~ "An issue's `title` states the behavior the product should have"
       refute brief =~ "external"
       File.write!(result_path, Jason.encode!(%{"items" => []}))
       {:ok, ""}
