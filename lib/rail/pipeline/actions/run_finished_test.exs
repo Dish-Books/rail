@@ -567,7 +567,10 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     {_run, os_process} = exited.(:plan, %{})
 
     assert {:ok,
-            %Run{stage_outcome: :in_progress, error: "The Plan agent saved 2 design options. It needs 3, or a pick."}} =
+            %Run{
+              stage_outcome: :in_progress,
+              error: "The Plan agent saved 2 design options. It needs at least 3, or a pick."
+            }} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
   end
 

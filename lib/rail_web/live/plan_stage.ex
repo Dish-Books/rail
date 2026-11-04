@@ -538,7 +538,7 @@ defmodule RailWeb.Live.PlanStage do
       assigns
       |> assign(:picked, assigns.design && assigns.design.picked)
       |> assign(:slots, slots(assigns.design, assigns.running))
-      |> assign(:full, match?(%{options: [_one, _two, _three]}, assigns.design))
+      |> assign(:full, match?(%{options: [_one, _two, _three | _more]}, assigns.design))
 
     ~H"""
     <div
@@ -1317,7 +1317,7 @@ defmodule RailWeb.Live.PlanStage do
     cond do
       picked != nil -> nil
       running -> :working
-      length(options) == 3 -> :pick
+      length(options) >= 3 -> :pick
       true -> nil
     end
   end

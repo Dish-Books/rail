@@ -88,11 +88,27 @@ defmodule Rail.Pipeline.Utils.PlanRunFinishedTest do
     assert %Run{error: "The Plan agent did not save a ticket."} = plan_run_finished(run, [])
   end
 
-  test "options that are neither three nor picked record how many", %{run: run, ticket: ticket, options: options} do
+  test "fewer than three options and no pick record how many", %{run: run, ticket: ticket, options: options} do
     ticket.()
+    options.(["a"], ["a"])
+
+    assert %Run{error: "The Plan agent saved 1 design option. It needs at least 3, or a pick."} =
+             plan_run_finished(run, [])
+
     options.(["a", "b"], ["a", "b"])
 
-    assert %Run{error: "The Plan agent saved 2 design options. It needs 3, or a pick."} = plan_run_finished(run, [])
+    assert %Run{error: "The Plan agent saved 2 design options. It needs at least 3, or a pick."} =
+             plan_run_finished(run, [])
+  end
+
+  test "four or more options and no pick finish clean", %{run: run, ticket: ticket, plan: plan, options: options} do
+    ticket.()
+    plan.()
+    options.(["a", "b", "c", "d"], ["a", "b", "c", "d"])
+    assert %Run{error: nil} = plan_run_finished(run, [])
+
+    options.(["a", "b", "c", "d", "e"], ["a", "b", "c", "d", "e"])
+    assert %Run{error: nil} = plan_run_finished(run, [])
   end
 
   test "an option missing its page or screenshot is named", %{run: run, ticket: ticket, options: options, design_dir: dir} do

@@ -153,7 +153,6 @@ defmodule Rail.Pipeline.Actions.StartPlanRunTest do
       assert prompt =~ "1. The ticket first. Save it with `save_plan`"
       assert prompt =~ "three options, each saved with `save_design_option`"
       assert prompt =~ "skip them and say so in one line"
-      assert prompt =~ "Never plan for all three."
       assert prompt =~ "which one you recommend and why"
       assert prompt =~ "4. Have the plan checked in the turn that first saves it"
       assert prompt =~ "Start one subagent on a clean context to read it against the code."

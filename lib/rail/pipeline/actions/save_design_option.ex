@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.SaveDesignOption do
   @moduledoc """
   Checks one option the designer saved and puts it in the manifest `read_design/1`
-  reads: only once its page and screenshot exist, three before a pick, one after.
+  reads: only once its page and screenshot exist, any number before a pick, only the picked one after.
   """
 
   import Ecto.Changeset
@@ -14,7 +14,6 @@ defmodule Rail.Pipeline.Actions.SaveDesignOption do
   alias Rail.Repo
 
   @key ~r/\A[a-z0-9-]+\z/
-  @limit 3
 
   @types %{
     key: :string,
@@ -55,7 +54,7 @@ defmodule Rail.Pipeline.Actions.SaveDesignOption do
           |> validate_required([:key, :title, :summary])
           |> validate_format(:key, @key, message: "must be lowercase letters, digits and dashes")
           |> validate_built(dir)
-          |> validate_room(entries, Pipeline.read_design(task))
+          |> validate_room(Pipeline.read_design(task))
 
         case apply_action(changeset, :insert) do
           {:ok, option} -> write(dir, entries, option)
@@ -81,22 +80,14 @@ defmodule Rail.Pipeline.Actions.SaveDesignOption do
     end)
   end
 
-  defp validate_room(%Ecto.Changeset{valid?: false} = changeset, _entries, _design), do: changeset
+  defp validate_room(%Ecto.Changeset{valid?: false} = changeset, _design), do: changeset
 
-  defp validate_room(changeset, entries, design) do
+  defp validate_room(changeset, design) do
     key = get_field(changeset, :key)
-    keys = for %{"key" => saved} <- entries, do: saved
 
-    cond do
-      match?(%{picked: picked} when is_binary(picked) and picked != key, design) ->
-        add_error(changeset, :key, "is not the picked option #{design.picked}, the only one that can be saved now")
-
-      key not in keys and length(keys) >= @limit ->
-        add_error(changeset, :key, "would be a fourth option; save again under #{Enum.join(keys, ", ")}")
-
-      true ->
-        changeset
-    end
+    if match?(%{picked: picked} when is_binary(picked) and picked != key, design),
+      do: add_error(changeset, :key, "is not the picked option #{design.picked}, the only one that can be saved now"),
+      else: changeset
   end
 
   # What is on disk already, whoever wrote it. An entry that is not an object

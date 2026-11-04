@@ -2696,7 +2696,7 @@ defmodule RailWeb.TaskLiveTest do
     } do
       save_ticket.()
       save_options.(["cards", "table"])
-      error = "The Plan agent saved 2 design options. It needs 3, or a pick."
+      error = "The Plan agent saved 2 design options. It needs at least 3, or a pick."
       {:ok, _failed} = Pipeline.update_run(run, %{error: error, stage_outcome: :in_progress})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")

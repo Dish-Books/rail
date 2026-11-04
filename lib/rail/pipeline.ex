@@ -3,7 +3,7 @@ defmodule Rail.Pipeline do
   Context boundary for the Rail development pipeline.
 
   A task is created at `:plan`, where one agent writes the plan on the task's first
-  round: a ticket, three design options when the change has a screen, and one
+  round: a ticket, at least three design options when the change has a screen, and one
   implementation plan. The human picks an option, and one approval publishes the
   ticket and the picked design and marks the round approved. Engineer
   builds it and commits it, keeping the branch up to date with the default branch
