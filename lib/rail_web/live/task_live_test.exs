@@ -142,6 +142,21 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "[data-qa='task_status_chip']", "Review the plan")
   end
 
+  test "the Rail mark opens Overview with the picked project still picked", %{
+    conn: conn,
+    project: project,
+    task: task
+  } do
+    conn = init_test_session(conn, %{selected_project_id: project.id})
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    assert {:error, {:live_redirect, %{to: "/"}}} = redirect = view |> element("#app-brand") |> render_click()
+
+    assert {:ok, view, _html} = follow_redirect(redirect, conn)
+    assert has_element?(view, "#nav-overview[data-active='true']")
+    assert has_element?(view, "#selected-project-name", project.name)
+  end
+
   test "a workflow's task names the workflow and its stages after the PR, linked to Settings for an admin", %{
     conn: conn,
     project: project,
