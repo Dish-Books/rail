@@ -92,7 +92,7 @@ defmodule Rail.Pipeline.Utils.PlanRunFinishedTest do
     ticket.()
     options.(["a"], ["a"])
 
-    assert %Run{error: "The Plan agent saved 1 design options. It needs at least 3, or a pick."} =
+    assert %Run{error: "The Plan agent saved 1 design option. It needs at least 3, or a pick."} =
              plan_run_finished(run, [])
 
     options.(["a", "b"], ["a", "b"])

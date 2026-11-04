@@ -26,7 +26,8 @@ defmodule Rail.Pipeline.Utils.PlanRunFinished do
           "The Plan agent did not save a ticket."
 
         options != [] and design.picked == nil and length(options) < 3 ->
-          "The Plan agent saved #{length(options)} design options. It needs at least 3, or a pick."
+          "The Plan agent saved #{length(options)} design #{if length(options) == 1, do: "option", else: "options"}. " <>
+            "It needs at least 3, or a pick."
 
         incomplete != [] ->
           "Saved design options missing a page or screenshot: #{Enum.map_join(incomplete, ", ", & &1.key)}."
