@@ -88,6 +88,10 @@ defmodule Rail.Issues.Tracker.Github do
     end
   end
 
+  # GitHub has no links on an issue apart from its body and comments, which people write.
+  @impl true
+  def link_url(%Issue{}, _url, _title), do: :ok
+
   # An issue is named by its number: `key#123`, `#123` or `123`.
   @impl true
   def canonical_identifier(%Project{key: key}, identifier) do

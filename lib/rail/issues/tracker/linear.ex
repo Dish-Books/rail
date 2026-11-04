@@ -114,6 +114,15 @@ defmodule Rail.Issues.Tracker.Linear do
   end
 
   @impl true
+  def link_url(%Issue{project: %Project{} = project} = issue, url, title) do
+    case Linear.link_url(project, issue.external_id, url, title) do
+      {:ok, %{"attachmentLinkURL" => %{"success" => true}}} -> :ok
+      {:ok, _not_linked} -> {:error, {:linear_mutation_failed, "attachmentLinkURL"}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @impl true
   def canonical_identifier(%Project{}, identifier), do: {:ok, identifier}
 
   # Rail keeps only the project's own team's tickets.

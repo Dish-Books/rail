@@ -40,6 +40,12 @@ defmodule Rail.Issues.Tracker do
               {:ok, Comment.t()} | {:error, term()}
 
   @doc """
+  Links `url` to the ticket under `title`, such as the Slack thread it was reported in. Linking the same URL again
+  adds no second link.
+  """
+  @callback link_url(Issue.t(), String.t(), String.t()) :: :ok | {:error, term()}
+
+  @doc """
   The identifier Rail keeps for what `identifier` names on `project`, or `:error` when it names nothing.
   """
   @callback canonical_identifier(Project.t(), String.t()) :: {:ok, String.t()} | :error

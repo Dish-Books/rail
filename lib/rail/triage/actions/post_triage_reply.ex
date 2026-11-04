@@ -9,6 +9,8 @@ defmodule Rail.Triage.Actions.PostTriageReply do
   import Rail.Triage.Utils.SettleThread
   import Rail.Triage.Utils.SlackIssueLink
 
+  alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Repo
   alias Rail.Scope
   alias Rail.Triage.Schemas.Item
@@ -16,7 +18,8 @@ defmodule Rail.Triage.Actions.PostTriageReply do
   @doc """
   Posts an item's reply, with the person's edits, in the thread as them. A reply
   that links its issue waits until the issue exists, and one someone else is
-  already posting is not posted again.
+  already posting is not posted again. The issue that already tracks the item is
+  linked to the thread once the reply is posted.
   """
   def post_triage_reply(%Scope{} = scope, %Item{id: item_id}, attrs) do
     item = Repo.get!(Item, item_id)
@@ -39,6 +42,7 @@ defmodule Rail.Triage.Actions.PostTriageReply do
         )
         |> Repo.update()
 
+      :ok = link_existing_issue(item)
       {:ok, _thread} = settle_thread(item.thread)
       {:ok, item}
     end
@@ -50,6 +54,16 @@ defmodule Rail.Triage.Actions.PostTriageReply do
       {:error, reason}
     end
   end
+
+  # Posting the reply is the person accepting the pass's match, so the ticket that already tracks the item now points
+  # back at the thread too. An issue the item created was linked when it was created.
+  defp link_existing_issue(%Item{existing_issue: %Issue{} = issue, thread: %{permalink: permalink}})
+       when is_binary(permalink) do
+    {:ok, _job} = Issues.link_url(issue, permalink, "Slack thread")
+    :ok
+  end
+
+  defp link_existing_issue(%Item{}), do: :ok
 
   defp open(%Item{retriaging: true}), do: {:error, :locked}
   defp open(%Item{reply_posted_at: %DateTime{}}), do: {:error, :already_posted}
