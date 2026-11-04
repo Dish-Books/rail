@@ -343,7 +343,7 @@ defmodule Rail.Triage.Actions.TriageThread do
           "assumptions": [{"text": "what you took as given without checking", "corrected": false}],
           "existing_issue": null,
           "issue_note": "which issue you checked covers this, or that none does",
-          "issue": {"title": "the issue's title", "description": "the problem, its cause and its evidence", "priority": "medium", "estimate": 2},
+          "issue": {"title": "the behavior the product should have, once the issue is done", "description": "the problem, its cause and its evidence", "priority": "medium", "estimate": 2},
           "reply": "the reply a teammate would post in the thread, or null"
         }
       ]
@@ -356,6 +356,7 @@ defmodule Rail.Triage.Actions.TriageThread do
     - `change` is `raised` for the message that first brought an item up, `widened` or `narrowed` when a later message changes its scope, and `added` for a new item raised later in the thread. `passage` is quoted verbatim from the message.
     - `kind` is `bug` or `feature_request`. A bug's `verdict` is `confirmed`, `not_reproduced` or `already_fixed`; a request's is `built`, `partly_built` or `not_built`.
     - Never propose a fix, a design or a plan, anywhere. There is no field for one.
+    - An issue's `title` states the behavior the product should have, as a sentence that is true once the issue is done, never what goes wrong today: "Saving a draft keeps its attachments", not "Attachments are lost when saving a draft". A title naming the fault reads as the behavior wanted, so whoever picks it up builds the bug. It says what should happen, not how to make it happen. The `description` is where the problem, its cause and its evidence go.
     - `existing_issue` is the identifier of the Linear issue that already covers the item, such as `TRI-23`, or null. When one does, leave `issue` null, and #{tracked(thread)}
     - `priority` is `urgent`, `high`, `medium` or `low`.
     - `estimate` is the issue's points on Product's scale: 1, 2, 3 or 5, and 8 for work too big for one ticket. Judge it from how much of the behavior exists and what the code shows, or leave it null where you cannot. It is a number only, never a description of the work.
