@@ -1,7 +1,9 @@
 defmodule Rail.Triage.Actions.PostTriageReplyTest do
   use Rail.DataCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Git
+  alias Rail.Issues.Workers.LinkTrackerUrl
   alias Rail.Projects
   alias Rail.Scope
   alias Rail.Tools
@@ -45,6 +47,8 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
              Repo.get_by!(Message, external_id: "1790000700.000100")
 
     assert %Thread{status: :done} = Repo.get!(Thread, thread.id)
+    # No issue tracks the item, so there is none to link the thread to.
+    refute_enqueued(worker: LinkTrackerUrl)
     assert {:error, :already_posted} = Triage.post_triage_reply(scope, item, %{})
   end
 
@@ -209,7 +213,7 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
       })
     end)
 
-    {:ok, _issue} = Rail.Issues.create_issue(system_scope(), project, %{title: "Sidebar"})
+    {:ok, issue} = Rail.Issues.create_issue(system_scope(), project, %{title: "Sidebar"})
 
     tracked = triage_bug(%{"existing_issue" => "TRI-11", "reply" => "Already tracked in {issue link}."})
     %Thread{items: [item]} = triage_with(thread, %{"items" => [tracked]})
@@ -221,7 +225,12 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
       Req.Test.json(conn, %{"ok" => true, "ts" => "1790002000.000100"})
     end)
 
+    refute_enqueued(worker: LinkTrackerUrl)
     assert {:ok, %Item{reply_posted_at: %DateTime{}}} = Triage.post_triage_reply(scope, item, %{})
+
+    # Posting the reply accepts the pass's match, so the issue now links back to the thread.
+    %Thread{permalink: "https://slack.example/archives/" <> _ts = permalink} = Repo.get!(Thread, thread.id)
+    assert_enqueued(worker: LinkTrackerUrl, args: %{issue_id: issue.id, url: permalink, title: "Slack thread"})
   end
 
   describe "in an external channel" do

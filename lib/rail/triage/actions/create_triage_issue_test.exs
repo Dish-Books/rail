@@ -1,8 +1,10 @@
 defmodule Rail.Triage.Actions.CreateTriageIssueTest do
   use Rail.DataCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Workers.LinkTrackerUrl
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Scope
@@ -88,7 +90,10 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
                "reply_text" => "Thanks Priya, we fixed the stuck tasks. Filed as {issue link}."
              })
 
-    assert %Thread{status: :done} = Repo.get!(Thread, thread.id)
+    assert %Thread{status: :done, permalink: "https://slack.example/archives/" <> _ts = permalink} =
+             Repo.get!(Thread, thread.id)
+
+    assert_enqueued(worker: LinkTrackerUrl, args: %{issue_id: issue_id, url: permalink, title: "Slack thread"})
     refute Repo.exists?(from(t in Task, where: t.issue_id == ^issue_id))
 
     assert %Message{sent_by_user_id: ^user_id, author_name: "Michael", text: "Thanks Priya" <> _rest} =

@@ -467,6 +467,23 @@ defmodule Rail.Linear.Client do
     end
   end
 
+  @doc """
+  Links `url` to a ticket under `title`. Linear keeps one link per URL on a ticket, so linking it again changes nothing.
+  """
+  def link_url(%Project{} = project, issue_id, url, title, opts \\ []) do
+    query = """
+    mutation AttachmentLinkURL($issueId: String!, $url: String!, $title: String) {
+      attachmentLinkURL(issueId: $issueId, url: $url, title: $title) {
+        success
+      }
+    }
+    """
+
+    with {:ok, token} <- token(project, opts) do
+      execute_query(token, query, %{"issueId" => issue_id, "url" => url, "title" => title}, opts)
+    end
+  end
+
   # The store signs the upload URL over `content-type` but Linear does not hand it
   # back among the headers, so the PUT has to carry the type the mutation declared
   # or the signature it is checked against is for a request nobody made.

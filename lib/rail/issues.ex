@@ -21,6 +21,7 @@ defmodule Rail.Issues do
   defdelegate claim_issue(scope, issue), to: Actions.ClaimIssue
   defdelegate link_pull_request(scope, issue), to: Actions.LinkPullRequest
   defdelegate advance_issue_state(issue), to: Actions.AdvanceIssueState
+  defdelegate link_url(issue, url, title), to: Actions.LinkUrl
   defdelegate reset_issue_state(issue, state), to: Actions.ResetIssueState
   defdelegate set_issue_status(scope, issue, status), to: Actions.SetIssueStatus
 

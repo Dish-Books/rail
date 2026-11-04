@@ -1,6 +1,6 @@
 defmodule Rail.Triage.Actions.CreateTriageIssue do
   @moduledoc """
-  Accepts an item's proposed issue: creates it with the person's edits and posts its link
+  Accepts an item's proposed issue: creates it with the person's edits, links the thread to it, and posts its link
   in the thread as them, unless the channel is external. Its task waits for Start at Plan.
   """
 
@@ -80,6 +80,9 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
           issue_estimate: attrs.estimate
         )
         |> Repo.update!()
+
+        # The ticket points back at the thread it was reported in.
+        if thread.permalink, do: {:ok, _job} = Issues.link_url(issue, thread.permalink, "Slack thread")
 
         {:ok, issue}
 
