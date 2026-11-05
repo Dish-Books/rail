@@ -133,6 +133,19 @@ defmodule RailWeb.TaskLiveTest do
     }
   end
 
+  test "a plan sent to the tech leads reads Ready for tech lead in the header", %{conn: conn, task: task} do
+    round = Repo.insert!(%Round{task_id: task.id, number: 1, plan: "A plan."})
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    assert has_element?(view, "#task-status-chip", "Review the plan")
+    refute has_element?(view, "#task-status-chip .pi-seal-check")
+
+    round |> Round.ready_changeset(nil) |> Repo.update!()
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    assert has_element?(view, "#task-status-chip.text-amber-700 .pi-seal-check")
+    assert has_element?(view, "#task-status-chip", "Ready for tech lead")
+  end
+
   test "the header names the issue, its branch and what the run is doing", %{conn: conn, task: task} do
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 

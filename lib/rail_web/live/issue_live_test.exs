@@ -12,6 +12,7 @@ defmodule RailWeb.IssueLiveTest do
   alias Rail.Issues.Workers.LinearSync
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
@@ -329,6 +330,39 @@ defmodule RailWeb.IssueLiveTest do
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
 
     assert has_element?(view, "#issue-task-link", ~r/^\s*Review\s*$/)
+  end
+
+  test "the task link of a plan sent to the tech leads reads Ready for tech lead", %{conn: conn, project: project} do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_plan_sent",
+        identifier: "IPG-14",
+        title: "Plan with the leads",
+        state: :in_progress
+      })
+      |> Repo.insert!()
+      |> Repo.preload(:project)
+
+    {:ok, task} = Pipeline.create_task(issue, :plan)
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+    {:ok, plan} = Roles.get_role(project_id: project.id, stage: :plan)
+
+    {:ok, _done} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: plan.id,
+        status: :finished,
+        stage_outcome: :done,
+        started_at: DateTime.utc_now()
+      })
+
+    Repo.insert!(%Round{task_id: task.id, number: 1, plan: "A plan.", ready_at: DateTime.utc_now()})
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    assert has_element?(view, "#issue-task-link", "Ready for tech lead")
   end
 
   test "an issue with no task can be started from its page", %{conn: conn, project: project} do

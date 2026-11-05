@@ -5,6 +5,7 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Repo
 
   # The smallest plan the structure allows: one decision, one card and one criterion, and no data changes.
   @plan """
@@ -168,6 +169,16 @@ defmodule Rail.Pipeline.Actions.SavePlanTest do
 
       assert %Round{plan: ^plan, plan_saved_at: %DateTime{}, design: nil} = Pipeline.read_plan(task)
       assert_received {:output_saved, ^task_id}
+    end
+
+    test "a save takes a sent plan back from the tech leads and tells Overview", %{task: %Task{id: task_id} = task} do
+      {:ok, round} = Pipeline.save_plan(task, %{plan: @plan})
+      round |> Round.ready_changeset(nil) |> Repo.update!()
+      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+
+      assert {:ok, %Round{ready_at: nil, ready_by_id: nil}} = Pipeline.save_plan(task, %{plan: @plan})
+      assert %Round{ready_at: nil} = Pipeline.read_plan(task)
+      assert_received {:pipeline_changed, ^task_id}
     end
 
     test "a blank plan, or one without the heading, is refused and leaves the earlier plan", %{task: task, plan: plan} do

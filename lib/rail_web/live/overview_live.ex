@@ -163,7 +163,7 @@ defmodule RailWeb.OverviewLive do
     user_id = socket.assigns.current_scope.user.id
     # A nil owner means no filter, so the own view must always name the user.
     owner_user_id = if everyone, do: nil, else: user_id
-    preload = [:role, :questions, task: [:project, :issue, parent_task: :issue]]
+    preload = [:role, :questions, task: [:project, :issue, :rounds, parent_task: :issue]]
 
     # A reload that overlaps an issue's deletion can read a task or run whose issue is already gone.
     runs =

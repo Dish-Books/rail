@@ -1301,6 +1301,115 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#in-progress-task-#{task.id} [data-qa='in-progress-age']", "1h 0m")
     end
 
+    test "a plan its owner sends leaves Up next, Waiting on you and the badge without a reload, and reads Ready for tech lead",
+         %{conn: conn, user: user, roles: roles, task_for: task_for} do
+      task = task_for.("Send the plan", %{stage: :plan})
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+      {:ok, %Run{id: run_id} = run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:plan].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.utc_now(),
+          completed_at: DateTime.utc_now()
+        })
+
+      Repo.insert!(%Round{
+        task_id: task.id,
+        number: 1,
+        plan: "## Implementation plan",
+        ticket: %Round.Ticket{title: "T", description: "D"}
+      })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+      assert has_element?(view, "#up-next-featured-#{run_id} [data-qa='up-next-chip']", "Ready for review")
+      assert has_element?(view, "#up-next-featured-#{run_id} [data-qa='up-next-action']", ~r/^\s*Review\s*$/)
+
+      assert has_element?(
+               view,
+               "#up-next-featured-#{run_id} [data-qa='up-next-summary']",
+               "Waiting on you to read the plan."
+             )
+
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")
+      assert has_element?(view, "#attention-badge", "1")
+      assert has_element?(view, "#in-progress-task-#{task.id}", "Review the plan")
+
+      {:ok, _sent} = Pipeline.send_plan_to_lead(Scope.for_user(user), run)
+
+      refute has_element?(view, "#up-next-featured-#{run_id}")
+      refute has_element?(view, "#up-next-row-#{run_id}")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
+      refute has_element?(view, "#attention-badge")
+      refute has_element?(view, "#plan-queue-section")
+      assert has_element?(view, "#in-progress-task-#{task.id}.border-slate-200 .pi-seal-check.text-amber-700")
+      assert has_element?(view, "#in-progress-task-#{task.id}", "Ready for tech lead")
+    end
+
+    test "a sent plan saved again, or given a design option, comes back to its owner and leaves Plans to approve", %{
+      conn: conn,
+      project: project,
+      user: user,
+      roles: roles,
+      task_for: task_for
+    } do
+      {:ok, lead} =
+        Users.register_oauth_user(%{github_id: "gh_ovl_back_lead", login: "ovl-back-lead", email: "back@example.com"})
+
+      {:ok, lead} = Users.update_user(system_scope(), lead, %{tech_lead: true, project_ids: [project.id]})
+
+      task = task_for.("Saved again", %{stage: :plan})
+      on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+      {:ok, %Run{id: run_id} = run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:plan].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.utc_now(),
+          completed_at: DateTime.utc_now()
+        })
+
+      Repo.insert!(%Round{
+        task_id: task.id,
+        number: 1,
+        plan: "## Implementation plan",
+        ticket: %Round.Ticket{title: "T", description: "D"}
+      })
+
+      {:ok, _sent} = Pipeline.send_plan_to_lead(Scope.for_user(user), run)
+      queued = "#plan-queue-row-#{task.issue.identifier}"
+
+      assert {:ok, owner_view, _html} = live(conn, ~p"/")
+      assert {:ok, lead_view, _html} = live(log_in_user(build_conn(), lead), ~p"/")
+      refute has_element?(owner_view, "#up-next-featured-#{run_id}")
+      assert has_element?(lead_view, queued)
+
+      {:ok, _saved} = Pipeline.save_plan(task, %{title: "Saved again"})
+
+      assert has_element?(owner_view, "#up-next-featured-#{run_id} [data-qa='up-next-chip']", "Ready for review")
+      assert has_element?(owner_view, "#stat-waiting [data-qa='stat-value']", "1")
+      refute has_element?(lead_view, queued)
+
+      {:ok, _sent} = Pipeline.send_plan_to_lead(Scope.for_user(user), run)
+      assert has_element?(lead_view, queued)
+      refute has_element?(owner_view, "#up-next-featured-#{run_id}")
+
+      design = Path.join(task.scratch_path, "design")
+      File.mkdir_p!(design)
+      for file <- ["cards.html", "cards.png"], do: File.write!(Path.join(design, file), "cards")
+
+      {:ok, _option} =
+        Pipeline.save_design_option(task, %{"key" => "cards", "title" => "Cards", "summary" => "As cards."})
+
+      assert has_element?(owner_view, "#up-next-featured-#{run_id} [data-qa='up-next-action']", "Pick")
+      assert has_element?(owner_view, "#stat-waiting [data-qa='stat-value']", "1")
+      refute has_element?(lead_view, queued)
+    end
+
     test "a run whose questions are all answered leads as ready to send", %{
       conn: conn,
       roles: roles,

@@ -7,6 +7,7 @@ defmodule RailWeb.Utils.StageLabelTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
@@ -160,6 +161,19 @@ defmodule RailWeb.Utils.StageLabelTest do
 
     refute waiting_on_pick?(task)
     assert stage_label(task, done) == "Review the plan"
+  end
+
+  test "a plan sent to the tech leads reads Ready for tech lead once its run is done, and as its run otherwise" do
+    sent = %Task{stage: :plan, rounds: [%Round{number: 1, ready_at: DateTime.utc_now()}]}
+    done = %Run{status: :finished, stage_outcome: :done}
+
+    assert stage_label(sent, done) == "Ready for tech lead"
+    assert sent_plan_waiting?(sent, done)
+    assert stage_label(sent, %Run{status: :blocked_on_input}) == "Plan needs an answer"
+    refute sent_plan_waiting?(sent, %Run{status: :blocked_on_input})
+    assert stage_label(sent, %Run{status: :finished, error: "It went wrong"}) == "Plan failed"
+    assert stage_label(sent, %Run{status: :finished}) == "Plan stopped"
+    refute sent_plan_waiting?(%{sent | stage: :engineer}, done)
   end
 
   test "a task at Finalize reads where it stands there while its Review run is idle" do

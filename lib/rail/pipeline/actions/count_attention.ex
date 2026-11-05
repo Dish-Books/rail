@@ -13,7 +13,11 @@ defmodule Rail.Pipeline.Actions.CountAttention do
   """
   def count_attention(opts \\ []) do
     waiting =
-      [project_id: opts[:project_id], owner_user_id: opts[:owner_user_id], preload: [:role, :questions, task: :issue]]
+      [
+        project_id: opts[:project_id],
+        owner_user_id: opts[:owner_user_id],
+        preload: [:role, :questions, task: [:issue, :rounds]]
+      ]
       |> Pipeline.list_runs()
       |> Enum.group_by(& &1.task_id)
       |> Enum.count(fn {_task_id, [%Run{task: task} | _rest] = runs} ->

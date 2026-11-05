@@ -20,7 +20,7 @@ defmodule Rail.Pipeline.Workers.NotifyOwner do
   def perform(%Oban.Job{args: %{"run_id" => run_id}}) do
     with %Run{task_id: task_id} <- Repo.get(Run, run_id),
          %Task{issue: %Issue{owner_user_id: "" <> owner_id}} = task <-
-           Task |> Repo.get(task_id) |> Repo.preload([:issue, runs: [:role, :questions]]),
+           Task |> Repo.get(task_id) |> Repo.preload([:issue, :rounds, runs: [:role, :questions]]),
          %Run{id: ^run_id} = run <- Task.stage_run(task),
          true <- Run.needs_attention?(%{run | task: task}),
          state when state in [:blocked, :failed, :done] <- Run.state(run),

@@ -6,10 +6,12 @@ defmodule Rail.Pipeline.Actions.SaveDesignOption do
 
   import Ecto.Changeset
   import Ecto.Query
+  import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.WriteScratchFile
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
 
@@ -25,7 +27,7 @@ defmodule Rail.Pipeline.Actions.SaveDesignOption do
   }
 
   @doc """
-  Saves the option in `attrs` on `task`, replacing one under the same key.
+  Saves the option in `attrs` on `task`, replacing one under the same key, and takes back a sent plan.
   Returns `{:ok, option}` as `read_design/1` reads it, `{:error, {:step_off, :design}}` when the task's workflow
   turned Design off, or `{:error, changeset}`.
   """
@@ -57,13 +59,22 @@ defmodule Rail.Pipeline.Actions.SaveDesignOption do
           |> validate_room(Pipeline.read_design(task))
 
         case apply_action(changeset, :insert) do
-          {:ok, option} -> write(dir, entries, option)
-          {:error, changeset} -> Repo.rollback(changeset)
+          {:ok, option} ->
+            # What was sent is no longer what the plan says, and a new option needs a pick only the owner is asked for.
+            with %Round{ready_at: %DateTime{}, approved_at: nil} = round <- Pipeline.read_plan(task) do
+              round |> Round.unsent_changeset() |> Repo.update!()
+            end
+
+            write(dir, entries, option)
+
+          {:error, changeset} ->
+            Repo.rollback(changeset)
         end
       end)
 
     with {:ok, key} <- result do
       Pipeline.broadcast_output_saved(task)
+      broadcast_pipeline_changed(task)
       {:ok, Enum.find(Pipeline.read_design(task).options, &(&1.key == key))}
     end
   end

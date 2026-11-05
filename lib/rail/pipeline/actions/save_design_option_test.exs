@@ -3,6 +3,8 @@ defmodule Rail.Pipeline.Actions.SaveDesignOptionTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Round
+  alias Rail.Repo
 
   setup %{project: project} do
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -40,6 +42,28 @@ defmodule Rail.Pipeline.Actions.SaveDesignOptionTest do
 
     assert %{options: [%{key: "round-bar"}], picked: nil} = Pipeline.read_design(task)
     assert_received {:output_saved, ^task_id}
+  end
+
+  test "an option saved after the plan was sent takes it back from the tech leads and tells Overview", %{
+    task: %{id: task_id} = task,
+    option: option
+  } do
+    Repo.insert!(%Round{task_id: task_id, number: 1, plan: "A plan.", ready_at: DateTime.utc_now()})
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+
+    assert {:ok, %{key: "round-bar"}} = Pipeline.save_design_option(task, option)
+
+    assert %Round{ready_at: nil, ready_by_id: nil} = Pipeline.read_plan(task)
+    assert_received {:pipeline_changed, ^task_id}
+  end
+
+  test "an option saved on an approved plan leaves its send as it was", %{task: %{id: task_id} = task, option: option} do
+    sent_at = ~U[2026-01-01 10:00:00.000000Z]
+    Repo.insert!(%Round{task_id: task_id, number: 1, plan: "A plan.", ready_at: sent_at, approved_at: sent_at})
+
+    assert {:ok, %{key: "round-bar"}} = Pipeline.save_design_option(task, option)
+
+    assert %Round{ready_at: ^sent_at} = Pipeline.read_plan(task)
   end
 
   test "an option without its page or screenshot is refused naming each", %{task: task, dir: dir, option: option} do

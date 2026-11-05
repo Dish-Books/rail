@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Actions.SavePlan do
   """
 
   import Ecto.Changeset
+  import Rail.Pipeline.Utils.BroadcastPipelineChanged
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -41,6 +42,8 @@ defmodule Rail.Pipeline.Actions.SavePlan do
            given |> Map.take(["plan", "record_demo"]) |> Map.put("ticket", ticket) |> Map.merge(design),
          {:ok, saved} <- round |> Round.plan_changeset(attrs) |> Repo.insert_or_update() do
       Pipeline.broadcast_output_saved(task)
+      # Overview hears only this, and a save takes a sent plan back from the tech leads.
+      broadcast_pipeline_changed(task)
       {:ok, saved}
     else
       %Round{approved_at: %DateTime{}} -> {:error, :round_approved}

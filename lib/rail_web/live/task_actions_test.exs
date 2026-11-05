@@ -1039,6 +1039,25 @@ defmodule RailWeb.Live.TaskActionsTest do
       refute has_element?(view, "#task-actions-error")
     end
 
+    test "once sent, a tech lead sees Approve plan and its owner Sent to the tech leads, beside Ready for tech lead", %{
+      conn: conn,
+      plan_task: task,
+      plan_run: run,
+      dan: dan,
+      michael: michael
+    } do
+      {:ok, run} = Pipeline.update_run(run, %{stage_outcome: :done})
+      {:ok, _sent} = Pipeline.send_plan_to_lead(Scope.for_user(dan), run)
+
+      assert {:ok, view, _html} = live(log_in_user(conn, michael), ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#task-approve-plan", "Approve plan")
+      assert has_element?(view, "#task-status-chip", "Ready for tech lead")
+
+      assert {:ok, view, _html} = live(log_in_user(conn, dan), ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#task-plan-sent", "Sent to the tech leads")
+      assert has_element?(view, "#task-status-chip", "Ready for tech lead")
+    end
+
     test "with Architect off a tech lead who owns it approves the ticket alone, and the task moves to Engineer", %{
       conn: conn,
       plan_task: task,

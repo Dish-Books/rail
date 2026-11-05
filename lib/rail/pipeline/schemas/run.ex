@@ -197,13 +197,13 @@ defmodule Rail.Pipeline.Schemas.Run do
   Only the run of the stage the task is in can be waiting: a stage latches its
   run to `:done` and leaves it that way, so the plan run of a task already at
   engineer is a finished verdict, not an outstanding one. Requires `role`, `task`
-  and the task's `issue` to be preloaded.
+  and the task's `issue` to be preloaded, and at Plan the task's `rounds`.
 
   A blocked run stays blocked until its answers are sent, so it keeps its place
   in the queue while the human works through the batch. A run at a stage a human
   signs off is waiting on that sign-off once it is done: its ticket, design pick
-  and plan approved, its diff sent to review, its findings ruled, or, at Finalize,
-  the task marked ready for a tech lead.
+  and plan sent to the tech leads, its diff sent to review, its findings ruled, or,
+  at Finalize, the task marked ready for a tech lead.
 
   A run that failed or stopped is waiting too, and on the same person. Neither
   moves on its own - a failure is fixed by a message and a stopped run is resumed
@@ -280,6 +280,8 @@ defmodule Rail.Pipeline.Schemas.Run do
   defp waiting_state?(:stopped, _task), do: true
   # Once a teammate marks it ready, a task at Finalize is the review queue's, not its owner's.
   defp waiting_state?(:done, %Task{stage: :finalize, marked_ready_at: marked}), do: is_nil(marked)
+  # A plan sent to the tech leads is theirs to approve, as a task marked ready is theirs to merge.
+  defp waiting_state?(:done, %Task{stage: :plan} = task), do: not Task.plan_sent?(task)
   defp waiting_state?(:done, %Task{stage: stage}), do: stage in [:plan, :engineer, :review]
   defp waiting_state?(_running_or_queued, _task), do: false
 
