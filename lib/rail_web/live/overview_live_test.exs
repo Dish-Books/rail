@@ -446,7 +446,7 @@ defmodule RailWeb.OverviewLiveTest do
       unmarked = task_for.("Not marked", %{stage: :finalize, pr_number: 153})
 
       assert {:ok, view, _html} = live(conn, ~p"/")
-      assert has_element?(view, "#review-queue-empty", "Nothing is waiting for a tech lead.")
+      assert has_element?(view, "#review-queue-empty", "No task at Finalize is marked ready.")
 
       {:ok, _marked} = Pipeline.mark_ready(Scope.for_user(user), ready)
       row = "#review-queue-row-#{ready.issue.identifier}"
@@ -1346,6 +1346,8 @@ defmodule RailWeb.OverviewLiveTest do
       refute has_element?(view, "#plan-queue-section")
       assert has_element?(view, "#in-progress-task-#{task.id}.border-slate-200 .pi-seal-check.text-amber-700")
       assert has_element?(view, "#in-progress-task-#{task.id}", "Ready for tech lead")
+      assert has_element?(view, "#review-queue-empty", "No task at Finalize is marked ready.")
+      refute has_element?(view, "#review-queue-empty", "tech lead")
     end
 
     test "a sent plan saved again, or given a design option, comes back to its owner and leaves Plans to approve", %{
