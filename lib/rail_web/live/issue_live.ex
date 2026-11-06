@@ -138,7 +138,7 @@ defmodule RailWeb.IssueLive do
       :workflow,
       :parent,
       :children,
-      task: [runs: :role, parent_task: [children: :issue]],
+      task: [:rounds, runs: :role, parent_task: [children: :issue]],
       comments: [:author_user, replies: :author_user]
     ]
 

@@ -8,7 +8,13 @@ defmodule RailWeb.Utils.RunStateStyle do
   """
 
   import RailWeb.Utils.StageLabel,
-    only: [custom_stage_waiting?: 2, finalize_label: 1, finalize_run_working?: 2, review_waiting?: 2]
+    only: [
+      custom_stage_waiting?: 2,
+      finalize_label: 1,
+      finalize_run_working?: 2,
+      review_waiting?: 2,
+      sent_plan_waiting?: 2
+    ]
 
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -39,11 +45,15 @@ defmodule RailWeb.Utils.RunStateStyle do
   end
 
   @doc """
-  The look of `run`'s state on `task`, which gives a Review round waiting on a person the Findings icon. A task
-  at Finalize, or merged, looks like where it stands there, unless a comment resumed its run, which is at work.
+  The look of `run`'s state on `task`: a Review round waiting on a person has the Findings icon, and a sent plan, a
+  Finalize task or a merged one looks like where it stands, unless a comment resumed a Finalize run, which is at work.
   """
   def run_state_style(run, %Task{stage: stage} = task) when stage in [:finalize, :merged] do
-    if finalize_run_working?(task, run), do: run_state_style(run), else: finalize_style(task)
+    cond do
+      finalize_run_working?(task, run) -> run_state_style(run)
+      stage == :merged -> finalize_style(:merged)
+      true -> finalize_style(Task.finalize_state(task))
+    end
   end
 
   # A custom stage's stopped agent waits on a person, for its Approve or for a message to save its file.
@@ -59,11 +69,15 @@ defmodule RailWeb.Utils.RunStateStyle do
 
   def run_state_style(run, task) do
     style = run_state_style(run)
-    if review_waiting?(task, run), do: %{style | icon: "pi-list-checks"}, else: style
+
+    cond do
+      sent_plan_waiting?(task, run) -> finalize_style(:ready)
+      review_waiting?(task, run) -> %{style | icon: "pi-list-checks"}
+      true -> style
+    end
   end
 
-  defp finalize_style(%Task{stage: stage} = task) do
-    state = if stage == :merged, do: :merged, else: Task.finalize_state(task)
+  defp finalize_style(state) do
     color = finalize_color(state)
 
     %{

@@ -7,6 +7,7 @@ defmodule Rail.Pipeline.Workers.NotifyOwnerTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Finding
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Workers.NotifyOwner
   alias Rail.Projects
@@ -214,6 +215,26 @@ defmodule Rail.Pipeline.Workers.NotifyOwnerTest do
       assert :ok = perform_job(NotifyOwner, %{run_id: lead_id, os_process_id: "osp_6"})
       assert_received {:posted, %{"text" => text}}
       assert text =~ "\nReady to finalize."
+    end
+
+    test "posts nothing for a turn that ends on a plan sent to the tech leads, and still asks for an answer", %{
+      task: task,
+      run: run,
+      posted: posted
+    } do
+      Repo.insert!(%Round{task_id: task.id, number: 1, plan: "A plan.", ready_at: DateTime.utc_now()})
+
+      %Run{id: done_id} =
+        run.(:plan, %{stage_outcome: :done, started_at: DateTime.shift(DateTime.utc_now(), minute: -5)})
+
+      assert :ok = perform_job(NotifyOwner, %{run_id: done_id, os_process_id: "osp_1"})
+      refute_received {:posted, _message}
+
+      %Run{id: blocked_id} = run.(:plan, %{status: :blocked_on_input})
+      posted.()
+      assert :ok = perform_job(NotifyOwner, %{run_id: blocked_id, os_process_id: "osp_2"})
+      assert_received {:posted, %{"text" => text}}
+      assert text =~ "\nPlan needs an answer from you."
     end
 
     test "posts nothing for a run the stage has moved on from", %{run: run, posted: posted} do

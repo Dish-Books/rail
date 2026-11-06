@@ -100,6 +100,12 @@ defmodule Rail.Pipeline.Schemas.Round do
     do: change(round, ready_at: DateTime.utc_now(), ready_by_id: user_id)
 
   @doc """
+  Builds a changeset taking the round's plan back from the tech leads, for a change that leaves what was sent out
+  of date.
+  """
+  def unsent_changeset(%__MODULE__{} = round), do: change(round, ready_at: nil, ready_by_id: nil)
+
+  @doc """
   Builds a changeset marking the round approved by `user_id`, which is nil when Rail approved it.
   """
   def approve_changeset(%__MODULE__{} = round, user_id) do

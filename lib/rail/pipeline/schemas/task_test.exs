@@ -7,6 +7,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   alias Rail.Issues.Schemas.IssueStage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -143,6 +144,18 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
 
     assert Task.running?(%{task | runs: [idle, busy]})
+  end
+
+  test "plan_sent?/1 is true only at Plan with the first round sent and not approved, and false without rounds" do
+    now = DateTime.utc_now()
+    sent = %Round{number: 1, ready_at: now}
+
+    assert Task.plan_sent?(%Task{stage: :plan, rounds: [sent, %Round{number: 2}]})
+    refute Task.plan_sent?(%Task{stage: :plan, rounds: [%{sent | ready_at: nil}]})
+    refute Task.plan_sent?(%Task{stage: :plan, rounds: [%{sent | approved_at: now}]})
+    refute Task.plan_sent?(%Task{stage: :engineer, rounds: [sent]})
+    refute Task.plan_sent?(%Task{stage: :plan, rounds: []})
+    refute Task.plan_sent?(%Task{stage: :plan})
   end
 
   test "worktree_present?/1 answers for the directory, not the path", %{task: task} do

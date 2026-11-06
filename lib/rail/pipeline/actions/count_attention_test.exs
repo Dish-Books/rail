@@ -7,6 +7,7 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Users.Schemas.User
@@ -208,6 +209,29 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
       })
 
     assert Pipeline.count_attention() == 1
+  end
+
+  test "a done Plan run counts until its plan is sent to the tech leads, and not after", %{
+    roles: roles,
+    task_for: task_for
+  } do
+    task = task_for.(:plan)
+
+    {:ok, _done} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:plan].id,
+        status: :finished,
+        stage_outcome: :done,
+        started_at: DateTime.utc_now(),
+        completed_at: DateTime.utc_now()
+      })
+
+    round = Repo.insert!(%Round{task_id: task.id, number: 1, plan: "A plan."})
+    assert Pipeline.count_attention() == 1
+
+    round |> Round.ready_changeset(nil) |> Repo.update!()
+    assert Pipeline.count_attention() == 0
   end
 
   test "a task whose issue shipped is not counted", %{roles: roles, task_for: task_for} do

@@ -14,6 +14,7 @@ defmodule RailWeb.IssuesLiveTest do
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
@@ -2104,6 +2105,22 @@ defmodule RailWeb.IssuesLiveTest do
 
       assert has_element?(view, "#task-link-#{working.id}", "Implement needs an answer")
       assert has_element?(view, "#issue-card-#{working.id}[data-flagged='true']")
+    end
+
+    test "a plan sent to the tech leads reads Ready for tech lead and is not flagged", %{
+      conn: conn,
+      working: working,
+      open_task: open_task
+    } do
+      {task, _run} = open_task.(working, :plan, %{status: :finished, stage_outcome: :done})
+      Repo.insert!(%Round{task_id: task.id, number: 1, plan: "A plan.", ready_at: DateTime.utc_now()})
+
+      {:ok, view, _html} = live(conn, ~p"/issues?cycle=12")
+      render_async(view)
+
+      assert has_element?(view, "#task-link-#{working.id}", "Ready for tech lead")
+      assert has_element?(view, "#task-link-#{working.id} .pi-seal-check")
+      refute has_element?(view, "#issue-card-#{working.id}[data-flagged]")
     end
 
     test "a click anywhere on a started row opens its task, and a flagged one where Up next opens it", %{

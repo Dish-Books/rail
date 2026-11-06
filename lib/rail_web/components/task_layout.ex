@@ -5,7 +5,7 @@ defmodule RailWeb.Components.TaskLayout do
   """
   use RailWeb, :html
 
-  import RailWeb.Utils.StageLabel, only: [ready_to_merge?: 2, review_waiting?: 2]
+  import RailWeb.Utils.StageLabel, only: [ready_to_merge?: 2, review_waiting?: 2, sent_plan_waiting?: 2]
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Run
@@ -81,7 +81,8 @@ defmodule RailWeb.Components.TaskLayout do
             <.icon
               :if={
                 @line != nil or ready_to_merge?(@task, @stage_run) or
-                  review_waiting?(@task, @stage_run) or @task.stage in [:finalize, :merged] or
+                  review_waiting?(@task, @stage_run) or sent_plan_waiting?(@task, @stage_run) or
+                  @task.stage in [:finalize, :merged] or
                   (@task.stage == :custom and Run.state(@stage_run) == :stopped)
               }
               name={chip_style(@task, @stage_run).icon}

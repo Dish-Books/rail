@@ -192,6 +192,14 @@ defmodule Rail.Pipeline.Schemas.Task do
   def running?(%__MODULE__{runs: runs}) when is_list(runs), do: Enum.any?(runs, &Run.running?/1)
   def running?(%__MODULE__{}), do: false
 
+  @doc """
+  True when `task` is at Plan with its first round sent to the tech leads and not approved, so the plan waits on
+  them. Requires `rounds` to be preloaded, and reads a task without them as not sent.
+  """
+  def plan_sent?(%__MODULE__{stage: :plan, rounds: [%Round{ready_at: %DateTime{}, approved_at: nil} | _later]}), do: true
+
+  def plan_sent?(%__MODULE__{}), do: false
+
   def stages, do: @stages
 
   @doc """

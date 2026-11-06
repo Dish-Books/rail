@@ -84,6 +84,7 @@ defmodule RailWeb.Utils.StageLabel do
   """
   def approval_label(%Task{stage: :plan} = task) do
     cond do
+      Task.plan_sent?(task) -> finalize_label(:ready)
       waiting_on_pick?(task) -> "Pick a design"
       match?(%Task{issue: %Issue{}}, task) and Issue.skips_step?(task.issue, :architect) -> "Review the ticket"
       true -> "Review the plan"
@@ -119,6 +120,13 @@ defmodule RailWeb.Utils.StageLabel do
     do: Run.state(run) == :done and not ready_to_merge?(task, run)
 
   def review_waiting?(_task, _run), do: false
+
+  @doc """
+  True when `task`'s plan is sent to the tech leads and `run`, its Plan run, is done, so the plan waits on them. Reads
+  `task`'s `rounds`.
+  """
+  def sent_plan_waiting?(%Task{stage: :plan} = task, run), do: Task.plan_sent?(task) and Run.state(run) == :done
+  def sent_plan_waiting?(_task, _run), do: false
 
   @doc """
   True when `task` is at a custom stage whose agent has stopped with its file saved, so the file waits on a person's

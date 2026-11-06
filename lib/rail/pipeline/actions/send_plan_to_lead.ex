@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.SendPlanToLead do
   @moduledoc """
   The task's owner sends its plan to the tech leads, which puts it in their queue. Nothing starts: a lead's
-  approval does that. Saving the plan again takes it back out, since what was sent is no longer what it says.
+  approval does that. Saving the plan or a design option again takes it back out, since what was sent is out of date.
   """
 
   import Rail.Pipeline.Utils.BroadcastPipelineChanged

@@ -32,7 +32,7 @@ defmodule RailWeb.Components.ReviewQueue do
         id="review-queue-empty"
         class="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 px-5 py-6 text-sm text-center text-slate-500 dark:text-slate-400"
       >
-        Nothing is waiting for a tech lead.
+        No task at Finalize is marked ready.
       </p>
 
       <div :if={@tasks != []} id="review-queue" class="space-y-3">

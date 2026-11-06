@@ -980,6 +980,8 @@ defmodule RailWeb.TaskLive do
     roles = if task.project_id, do: Rail.Roles.list_roles(task.project_id), else: []
     runs = role_runs(roles, task)
     rounds = Pipeline.list_rounds(task)
+    # The header reads whether the plan is sent off the task's own rounds.
+    task = %{task | rounds: rounds}
     back_to_plan = discardable?(task) and task.stage != :plan and match?(%Round{plan: "" <> _plan}, List.first(rounds))
 
     socket
