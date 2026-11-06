@@ -106,6 +106,21 @@ defmodule Rail.Git.Actions.LoadBranchHistoryTest do
              Git.load_branch_history(task)
   end
 
+  test "on a task handed over, the commits before the first round read are the pull request's", %{
+    task: task,
+    repo: repo
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{submitted_at: DateTime.utc_now()})
+    git!(repo, ["commit", "--allow-empty", "-m", "Built locally"])
+
+    assert %{commits: [%{label: "Pull request"}]} = Git.load_branch_history(task)
+
+    read = repo |> git!(["rev-parse", "HEAD"]) |> String.trim()
+    git!(repo, ["commit", "--allow-empty", "-m", "Fix 1 finding from round 1"])
+
+    assert %{commits: [%{label: "Fix round 1"}, %{label: "Pull request"}]} = Git.load_branch_history(task, [read])
+  end
+
   # Merging what someone pushed to the branch itself brings in none of main, so it is not labeled as main.
   test "a merge of the branch's own remote is labeled by that branch, with its own subject", %{
     task: task,

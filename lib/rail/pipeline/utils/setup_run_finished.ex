@@ -4,6 +4,7 @@ defmodule Rail.Pipeline.Utils.SetupRunFinished do
   waiting for it, or failed on what the script said.
   """
 
+  import Ecto.Query
   import Rail.Pipeline.Utils.StartChecks
 
   alias Rail.Git
@@ -31,9 +32,10 @@ defmodule Rail.Pipeline.Utils.SetupRunFinished do
           resuming_chat?(run) ->
             run
 
-          # A check's setup at Review held back the others, since they share the worktree.
+          # A check's setup at Review held back the others, since they share the worktree. A sibling already under
+          # way, as when one check is retried, is left running.
           task.stage == :review and role.stage in Task.check_stages() ->
-            :ok = start_checks(task)
+            :ok = start_checks(task, except: under_way(task) -- [role.stage])
             %{Repo.get!(Run, run.id) | task: task, role: role}
 
           Task.works_stage?(task, role) ->
@@ -59,6 +61,12 @@ defmodule Rail.Pipeline.Utils.SetupRunFinished do
   def setup_run_finished(%Run{} = run, _opts) do
     why = run.error || "exit #{run.exit_code}"
     fail(run, "The worktree setup script failed (#{why}). Its output is above; once what it reports is fixed, retry.")
+  end
+
+  defp under_way(%Task{id: task_id}) do
+    for %Run{} = sibling <- Repo.all(from r in Run, where: r.task_id == ^task_id, preload: :role),
+        Run.running?(sibling),
+        do: sibling.role.stage
   end
 
   defp resuming_chat?(%Run{pending_chat: queued}) when queued in [nil, ""], do: false

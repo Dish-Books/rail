@@ -23,7 +23,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   setup %{project: project} do
     roles =
-      Map.new([:plan, :engineer, :qa, :review_lead, :demo], fn stage ->
+      Map.new([:plan, :engineer, :qa, :review, :review_lead, :demo], fn stage ->
         {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
 
         {stage, role}
@@ -733,6 +733,62 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     assert {:ok, %Run{status: :running}} = Pipeline.run_finished(os_process, %{exit_code: 0}, async: false)
     assert %Run{pending_chat: "Also check the logs"} = Repo.reload!(run)
+  end
+
+  test "a worktree set up on a check at Review starts that check and those that waited on it", %{
+    task: task,
+    roles: roles,
+    exited: exited
+  } do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
+    task |> Pipeline.read_plan() |> Ecto.Changeset.change(record_demo: true) |> Repo.update!()
+    {%Run{id: run_id}, os_process} = exited.(:qa, %{})
+    os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
+    %{id: qa_role_id} = roles[:qa]
+    test_pid = self()
+
+    stub(Tools, :start_os_process, fn spawned, _argv ->
+      send(test_pid, {:started, Repo.preload(spawned, :role, force: true).role.stage})
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{id: ^run_id, role_id: ^qa_role_id, status: :running, task: %Task{}, role: %{stage: :qa}}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+
+    assert_received {:started, :qa}
+    assert_received {:started, :review}
+    assert_received {:started, :demo}
+    refute_received {:started, _other}
+  end
+
+  # A sibling running is under way; one an earlier round finished is started again with the rest.
+  test "a worktree set up on a retried check at Review leaves a sibling under way running", %{
+    task: task,
+    roles: roles,
+    exited: exited
+  } do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
+    task |> Pipeline.read_plan() |> Ecto.Changeset.change(record_demo: true) |> Repo.update!()
+    {_run, os_process} = exited.(:qa, %{})
+    os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
+
+    for {stage, status} <- [review: :running, demo: :finished] do
+      {:ok, _sibling} =
+        Pipeline.create_run(%{task_id: task.id, role_id: roles[stage].id, status: status, started_at: DateTime.utc_now()})
+    end
+
+    test_pid = self()
+
+    stub(Tools, :start_os_process, fn spawned, _argv ->
+      send(test_pid, {:started, Repo.preload(spawned, :role, force: true).role.stage})
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{status: :running}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+
+    assert_received {:started, :qa}
+    assert_received {:started, :demo}
+    refute_received {:started, _other}
   end
 
   test "a worktree set up for a stage the task has since left enters nothing", %{task: task, exited: exited} do

@@ -1,9 +1,9 @@
 defmodule RailWeb.Live.PlanStage do
   @moduledoc """
   The Plan step: the ticket, the design options and the plan, each a tab that switches in the browser, and the one
-  Approve in the header. A child of a split shows only its approved part. A step the task's workflow turned off
-  reads as off, and with Product off the issue stands as the ticket. The file of each custom stage run before Plan is
-  a tab first.
+  Approve in the header. A child of a split shows only its approved part, and a pull request handed over shows its
+  issue's ticket and where it came from. A step the task's workflow turned off reads as off, and with Product off the
+  issue stands as the ticket. The file of each custom stage run before Plan is a tab first.
 
   Everything here is read off scratch and the runs whenever the page reloads it, so a save shows
   the moment it lands. What waits on the human opens when the step opens, and only a click changes it after.
@@ -42,6 +42,7 @@ defmodule RailWeb.Live.PlanStage do
       |> assign_new(:reported_changed, fn -> nil end)
       |> assign_new(:selected_key, fn -> nil end)
       |> assign_earlier()
+      |> assign_submitted()
       |> load()
       |> prepend_earlier_tabs()
       |> assign_reviewed()
@@ -170,14 +171,21 @@ defmodule RailWeb.Live.PlanStage do
           </.plan_section>
 
           <.plan_section id="design" open={@open_tab.tab}>
+            <p
+              :if={@submitted}
+              id="plan-design-submitted"
+              class="text-sm text-slate-500 dark:text-slate-400"
+            >
+              None. Submitted work has no design options.
+            </p>
             <.step_off
-              :if={:design in @skipped}
+              :if={!@submitted and :design in @skipped}
               id="plan-design-off"
               icon="pi-palette"
               text="This workflow turned Design off, so its tasks have no design options."
             />
             <.design_pane
-              :if={:design not in @skipped}
+              :if={!@submitted and :design not in @skipped}
               task={@task}
               design={@design}
               option={@option}
@@ -195,14 +203,15 @@ defmodule RailWeb.Live.PlanStage do
           </.plan_section>
 
           <.plan_section id="plan" open={@open_tab.tab}>
+            <.submitted_pane :if={@submitted} task={@task} />
             <.step_off
-              :if={:architect in @skipped}
+              :if={!@submitted and :architect in @skipped}
               id="plan-plan-off"
               icon="pi-list-checks"
               text={"This workflow turned Architect off, so there is no implementation plan. Engineer builds from #{if :product in @skipped, do: "the issue", else: "the ticket"}."}
             />
             <.plan_pane
-              :if={:architect not in @skipped}
+              :if={!@submitted and :architect not in @skipped}
               plan={@plan}
               sheet={@sheet}
               banner={@banner}
@@ -890,6 +899,46 @@ defmodule RailWeb.Live.PlanStage do
     """
   end
 
+  attr :task, Task, required: true
+
+  # A pull request handed over has no plan, so this says where the work came from in its place.
+  defp submitted_pane(assigns) do
+    ~H"""
+    <div
+      id="plan-submitted"
+      data-qa="plan_submitted"
+      class="max-w-3xl rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 flex items-start gap-3"
+    >
+      <.icon name="pi-upload-simple" class="size-5 mt-0.5 text-slate-500 dark:text-slate-300" />
+      <div class="min-w-0 text-sm">
+        <p class="font-semibold text-slate-900 dark:text-slate-100">
+          Handed to Rail{submitter(@task)},
+          <.local_time id="plan-submitted-at" at={@task.submitted_at} />
+        </p>
+        <p class="mt-1 text-slate-500 dark:text-slate-400">
+          Pull request
+          <a
+            href={@task.pr_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            id="plan-submitted-pr"
+            class="font-mono text-[12.5px] text-blue-600 dark:text-blue-400 hover:underline"
+          >#{@task.pr_number}</a>
+          from
+          <span
+            id="plan-submitted-branch"
+            class="font-mono text-[12.5px] text-slate-700 dark:text-slate-300 break-all"
+          >{@task.worktree_name}</span>
+          at <span
+            id="plan-submitted-head"
+            class="font-mono text-[12.5px] text-slate-700 dark:text-slate-300"
+          >{String.slice(@task.submitted_head || "", 0, 7)}</span>. There is no plan, so the ticket is the whole specification.
+        </p>
+      </div>
+    </div>
+    """
+  end
+
   attr :child_of, :map, required: true
   attr :plan, :any, required: true
   attr :sheet, :any, required: true
@@ -1088,6 +1137,10 @@ defmodule RailWeb.Live.PlanStage do
     |> close_line_draft_unless_offered()
     |> assign_comments()
   end
+
+  # A pull request handed over has no design or plan to write, so its parts say where it came from instead.
+  defp assign_submitted(%{assigns: %{task: %Task{} = task}} = socket),
+    do: assign(socket, :submitted, is_struct(task.submitted_at, DateTime))
 
   # The files custom stages saved before Plan ran, which Plan was given; one run after Plan is not Plan's to show.
   defp assign_earlier(%{assigns: %{task: %Task{issue: issue} = task}} = socket) do
@@ -1400,6 +1453,11 @@ defmodule RailWeb.Live.PlanStage do
   end
 
   defp slots(_design, _running), do: []
+
+  # Nobody is named once the person who handed it over has left Rail.
+  defp submitter(%Task{submitted_by: %{name: name}}) when is_binary(name), do: " by #{name}"
+  defp submitter(%Task{submitted_by: %{login: login}}), do: " by #{login}"
+  defp submitter(%Task{}), do: ""
 
   defp respond({:ok, _run}, socket) do
     send(self(), :task_changed)

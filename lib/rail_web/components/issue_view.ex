@@ -6,8 +6,8 @@ defmodule RailWeb.Components.IssueView do
   The issue page and the task page's first tab are the same view of the same
   thing, so both render this; the task page hides the section pointing at the
   task the reader is already on. The events it raises - `assign`,
-  `filter_assignees`, `comment`, `draft_comment`, `start_task`, `adopt_pull_request` - belong
-  to whichever LiveView renders it.
+  `filter_assignees`, `comment`, `draft_comment`, `start_task`, `adopt_pull_request`, `draft_review`,
+  `start_review` - belong to whichever LiveView renders it.
   """
   use RailWeb, :html
 
@@ -26,6 +26,9 @@ defmodule RailWeb.Components.IssueView do
   attr :checking_pull_request, :boolean, default: false
   # A child of a split is owned through its parent, so its owner is read here, not changed.
   attr :owner_editable, :boolean, default: true
+  # What was typed into Start at's pull request field, kept with the reason it was refused.
+  attr :pull_request, :string, default: ""
+  attr :review_error, :string, default: nil
   # The workflow that opened the issue, named under its title; only admins can follow it to Settings.
   attr :workflow, :any, default: nil
   attr :link_workflow, :boolean, default: false
@@ -44,6 +47,14 @@ defmodule RailWeb.Components.IssueView do
       |> assign(:blocks, (assigns.blockers && assigns.blockers.blocks) || [])
       |> assign(:sub_issues, Enum.map(Issue.calculate_children(assigns.issue), &%{issue: &1, in_project: true}))
       |> assign(:sub_issue_count, "#{done}/#{total}")
+      # A task works on a branch of its own, which a pull request handed over names rather than the tracker.
+      |> assign(
+        :branch,
+        case assigns.issue.task do
+          %Task{worktree_name: name} when is_binary(name) -> name
+          _no_task -> assigns.issue.branch_name
+        end
+      )
 
     ~H"""
     <div id="issue-page" data-qa="issue-page" class="max-w-5xl mx-auto space-y-6">
@@ -243,6 +254,36 @@ defmodule RailWeb.Components.IssueView do
                 <span class="font-mono">#{@issue.pr_number}</span>
                 <span class="truncate">{@issue.pr_title}</span>
               </a>
+
+              <form
+                :if={not @checking_pull_request and is_nil(@issue.pr_number)}
+                id="issue-hand-over"
+                data-qa="issue-hand-over"
+                phx-change="draft_review"
+                phx-submit="start_review"
+                class="mt-3 space-y-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 p-3"
+              >
+                <.input
+                  id="start-review-pr"
+                  name="pull_request"
+                  label="Or hand Rail a pull request"
+                  value={@pull_request}
+                  errors={if @review_error, do: [@review_error], else: []}
+                  size="small"
+                  placeholder="#212 or its link"
+                  autocomplete="off"
+                  class="min-w-0 font-mono text-[12px] text-ellipsis"
+                  container_class="min-w-0 wrap-anywhere"
+                />
+                <button
+                  type="submit"
+                  phx-disable-with="Starting…"
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg ring-1 ring-inset ring-slate-300 dark:ring-slate-600 text-slate-700 dark:text-slate-200 text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                >
+                  <.icon name="pi-play" class="h-3.5 w-3.5" />
+                  <span>Review</span>
+                </button>
+              </form>
             </div>
 
             <p
@@ -366,7 +407,7 @@ defmodule RailWeb.Components.IssueView do
             <p id="issue-project">{@issue.project.name}</p>
           </section>
 
-          <section :if={@issue.url not in [nil, ""] or @issue.branch_name} class="space-y-3">
+          <section :if={@issue.url not in [nil, ""] or @branch} class="space-y-3">
             <h2 class="text-xs font-medium text-slate-500 dark:text-slate-400">Links</h2>
 
             <a
@@ -383,17 +424,17 @@ defmodule RailWeb.Components.IssueView do
             </a>
 
             <button
-              :if={@issue.branch_name}
+              :if={@branch}
               type="button"
               id="issue-branch"
               phx-hook="CopyText"
-              data-copy-text={@issue.branch_name}
+              data-copy-text={@branch}
               title="Copy branch name"
               class="group w-full flex items-center gap-2.5 text-left text-slate-900 dark:text-slate-100 cursor-pointer"
             >
               <.icon name="pi-git-branch" class="h-4 w-4 text-slate-500 dark:text-slate-400" />
               <span class="flex-1 min-w-0 font-mono text-xs truncate group-hover:underline">
-                {@issue.branch_name}
+                {@branch}
               </span>
               <.icon name="pi-copy" class="h-4 w-4 text-slate-400 group-data-[copied=true]:hidden" />
               <.icon

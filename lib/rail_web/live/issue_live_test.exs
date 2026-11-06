@@ -15,6 +15,7 @@ defmodule RailWeb.IssueLiveTest do
   alias Rail.Pipeline.Schemas.Round
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Workers.StartReviewChecks
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
@@ -81,6 +82,31 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-project", "Test Project")
     assert has_element?(view, "#issue-tracker-link[href='https://linear.app/issue/IPG-7']")
     assert has_element?(view, "#issue-branch[phx-hook='CopyText'][data-copy-text='ipg-7-ap-aging']")
+  end
+
+  test "the branch link of an issue whose task took a pull request over names the pull request's branch", %{
+    conn: conn,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_pr_branch",
+        identifier: "IPG-34",
+        title: "Built locally",
+        state: :in_progress,
+        branch_name: "ipg-34-built-locally"
+      })
+      |> Repo.insert!()
+      |> Repo.preload(:project)
+
+    {:ok, task} = Pipeline.create_task(issue, :review)
+    {:ok, _task} = Pipeline.update_task(task, %{worktree_name: "michael/hosts-on-sandboxes"})
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    assert has_element?(view, "#issue-branch[data-copy-text='michael/hosts-on-sandboxes']", "michael/hosts-on-sandboxes")
   end
 
   test "an issue a workflow opened names it under the title, as plain text for someone who is not an admin", %{
@@ -396,6 +422,176 @@ defmodule RailWeb.IssueLiveTest do
 
     assert %Task{id: task_id, stage: :plan} = Repo.get_by(Task, issue_id: issue.id)
     assert_redirect(view, ~p"/tasks/#{task_id}")
+  end
+
+  test "a pull request handed over opens its task", %{conn: conn, user: %{id: user_id}, project: project} do
+    %Issue{id: issue_id} =
+      issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_pr",
+        identifier: "IPG-30",
+        title: "Built locally",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    expect(Pipeline, :start_task, fn %{user: %{id: ^user_id}}, %Issue{id: ^issue_id} = issue, :review, "#212" ->
+      Pipeline.create_task(Repo.preload(issue, :project), :review)
+    end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    render_async(view)
+    allow(Pipeline, self(), view.pid)
+
+    assert has_element?(view, "#issue-hand-over label", "Or hand Rail a pull request")
+    assert has_element?(view, "#start-review-pr[placeholder='#212 or its link']")
+
+    view |> form("#issue-hand-over", %{pull_request: "#212"}) |> render_submit()
+
+    assert %Task{id: task_id} = Repo.get_by(Task, issue_id: issue.id)
+    assert_redirect(view, ~p"/tasks/#{task_id}")
+  end
+
+  test "a pull request Rail cannot take is refused under its field, keeping what was typed, with no task made", %{
+    conn: conn,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_pr_refused",
+        identifier: "IPG-31",
+        title: "Merged already",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    Req.Test.stub(Rail.GitHub.Client, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"POST", "/app/installations/1/access_tokens"} ->
+          Req.Test.json(conn, %{"token" => "ghs_token"})
+
+        {"GET", "/repos/example/test-seed/pulls/198"} ->
+          Req.Test.json(conn, %{"number" => 198, "state" => "closed", "merged" => true})
+      end
+    end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    render_async(view)
+    refute has_element?(view, "#start-review-pr-error")
+
+    view |> form("#issue-hand-over", %{pull_request: "#198"}) |> render_submit()
+
+    assert has_element?(view, "#start-review-pr-error", "#198 is merged, so there is nothing left to review.")
+    assert has_element?(view, "#start-review-pr[value='#198'][aria-invalid='true']")
+    assert has_element?(view, "#issue-start-plan")
+    refute Repo.get_by(Task, issue_id: issue.id)
+
+    # What is typed next survives the issue reloading under it.
+    view |> form("#issue-hand-over", %{pull_request: "#19"}) |> render_change()
+    send(view.pid, {:issue_changed, issue.id})
+    assert has_element?(view, "#start-review-pr[value='#19']")
+  end
+
+  test "each reason a pull request is refused is said plainly", %{conn: conn, project: project} do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_pr_reasons",
+        identifier: "IPG-32",
+        title: "Refused",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    render_async(view)
+
+    for {reason, said} <- [
+          {:not_a_pull_request, "Give the pull request's number, such as #212, or its link."},
+          {{:other_repository, "someone/else"}, "That links to someone/else, not example/test-seed."},
+          {{:no_pull_request, "example/test-seed", 2120}, "example/test-seed has no pull request #2120."},
+          {{:pull_request_closed, 199}, "#199 is closed, so there is nothing left to review."},
+          {{:pull_request_from_fork, 207}, "#207 comes from a fork, so Rail could not push fixes to it."},
+          {{:pull_request_into, 205, "release/2026-10", "main"}, "#205 merges into release/2026-10, not main."},
+          {{:pull_request_taken, 209, "RAIL-118"}, "RAIL-118 already works on #209."},
+          {{:branch_failed, "no such ref"}, "Could not check out the pull request's branch: no such ref"},
+          {{:github_api_error, 500, %{}}, "GitHub answered 500, so Rail could not take the pull request. Try again."},
+          {%Req.TransportError{reason: :timeout},
+           "Could not reach GitHub, so Rail could not take the pull request. Try again."},
+          {:boom, "Could not start: :boom"}
+        ] do
+      expect(Pipeline, :start_task, fn _scope, %Issue{}, :review, "#1" -> {:error, reason} end)
+      allow(Pipeline, self(), view.pid)
+
+      view |> form("#issue-hand-over", %{pull_request: "#1"}) |> render_submit()
+
+      assert has_element?(view, "#start-review-pr-error", said)
+    end
+  end
+
+  # Another tab, the overview or a workflow may start it, and the page follows without a reload.
+  test "an open page switches Start at for the task link once the issue's task starts elsewhere", %{
+    conn: conn,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_pr_elsewhere",
+        identifier: "IPG-33",
+        title: "Started in another tab",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    render_async(view)
+    assert has_element?(view, "#issue-hand-over")
+
+    {:ok, task} = Pipeline.create_task(Repo.preload(issue, :project), :review)
+    {:ok, task} = Pipeline.enter_stage(task, :review, start: false)
+
+    assert has_element?(view, "#issue-task-link")
+    refute has_element?(view, "#issue-start")
+
+    # Another task's change says nothing about this issue, which keeps its link.
+    send(view.pid, {:pipeline_changed, "tsk_another"})
+    assert has_element?(view, "a#issue-task-link[href='/tasks/#{task.id}']")
+  end
+
+  test "an open page reads Review running once a hand-over's checks start, without a reload", %{
+    conn: conn,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.tracker_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_pr_checks",
+        identifier: "IPG-35",
+        title: "Handed over",
+        state: :todo
+      })
+      |> Repo.insert!()
+      |> Repo.preload(:project)
+
+    {:ok, task} = Pipeline.create_task(issue, :review)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    assert has_element?(view, "#issue-task-link", "Queued for Review")
+
+    stub(Tools, :start_os_process, fn %Run{} = run, _argv -> {:ok, %OsProcess{task_id: run.task_id, run: run}} end)
+    assert :ok = perform_job(StartReviewChecks, %{task_id: task.id})
+
+    assert has_element?(view, "#issue-task-link", "Review running")
   end
 
   test "an in-progress issue with no task can still be started at Plan from its page", %{
@@ -1049,6 +1245,9 @@ defmodule RailWeb.IssueLiveTest do
         state: :todo
       })
       |> Repo.insert!()
+
+    # With no task the page reloads on any task's change, which another test's broadcast would set off.
+    {:ok, _task} = Pipeline.create_task(Repo.preload(issue, :project), :plan)
 
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
 

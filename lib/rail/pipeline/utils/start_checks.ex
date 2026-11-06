@@ -13,6 +13,7 @@ defmodule Rail.Pipeline.Utils.StartChecks do
 
   import Ecto.Query
   import Rail.Pipeline.Utils.MatchesGlob
+  import Rail.Pipeline.Utils.PrepareWorktree
   import Rail.Pipeline.Utils.RoundChange
   import Rail.Pipeline.Utils.StartRoleRun
 
@@ -33,18 +34,24 @@ defmodule Rail.Pipeline.Utils.StartChecks do
   @doc """
   Starts QA, the code reviewer and what the round's plan asks for on `task`, with last round's reports from them
   cleared and every checking run open again. Returns `:ok`. A role the project does not have starts nothing.
+  While setup is pending only the first starts, and its setup the rest. `except:` stages are left as they are.
   """
-  def start_checks(%Task{} = task) do
-    for role <- [:qa, :review], do: File.rm(Path.join([task.scratch_path, "reports", "#{role}.md"]))
+  def start_checks(%Task{} = task, opts \\ []) do
+    except = Keyword.get(opts, :except, [])
+    checks = Task.check_stages() -- except
+
+    for role <- checks, do: File.rm(Path.join([task.scratch_path, "reports", "#{role}.md"]))
 
     # A run done in the last round reads as not done in this one, so nothing waiting on it starts early.
     Repo.update_all(
       from(r in Run,
         join: role in assoc(r, :role),
-        where: r.task_id == ^task.id and role.stage in [:qa, :review, :review_lead]
+        where: r.task_id == ^task.id and role.stage in ^[:review_lead | checks]
       ),
       set: [stage_outcome: :in_progress]
     )
+
+    {task, setup_pending?} = prepare(task)
 
     stages =
       case unseen(task) do
@@ -57,18 +64,27 @@ defmodule Rail.Pipeline.Utils.StartChecks do
       end
 
     roles =
-      for stage <- stages, {:ok, %Role{} = role} <- [Roles.get_role(project_id: task.project_id, stage: stage)], do: role
+      for stage <- stages -- except,
+          {:ok, %Role{} = role} <- [Roles.get_role(project_id: task.project_id, stage: stage)],
+          do: role
 
-    # A worktree not set up yet holds every check back: the first sets it up, and the setup's finish starts them all.
-    for role <- if(set_up?(task), do: roles, else: Enum.take(roles, 1)) do
+    # A worktree not set up yet holds every check back: the first sets it up, and the setup's finish starts the rest.
+    for role <- if(setup_pending?, do: Enum.take(roles, 1), else: roles) do
       {:ok, %Run{}} = start_role_run(task, role, fresh: true)
     end
 
     :ok
   end
 
-  defp set_up?(%Task{worktree_setup_at: %DateTime{}}), do: true
-  defp set_up?(%Task{project_id: project_id}), do: Repo.get!(Project, project_id).worktree_setup_script in [nil, ""]
+  # Prepared once, so every run shares the one slot; a worktree that cannot be made fails each run on its own.
+  defp prepare(%Task{} = task) do
+    with %Project{} = project <- Repo.get(Project, task.project_id),
+         {:ok, %Task{} = prepared, _worktree_path} <- prepare_worktree(project, task) do
+      {prepared, prepared.worktree_setup_at == nil and project.worktree_setup_script not in [nil, ""]}
+    else
+      _unavailable -> {task, false}
+    end
+  end
 
   # A demo is recorded only when the round's plan asks.
   defp asked(%Issue{skipped_steps: skipped}, %Round{record_demo: true}), do: if(:demo in skipped, do: [], else: [:demo])
